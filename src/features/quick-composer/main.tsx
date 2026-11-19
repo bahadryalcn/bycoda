@@ -1,7 +1,7 @@
 import { bootSecondaryWindowAppearance } from "../settings/model/secondaryWindowAppearance";
 import { QueryProvider } from "../../app/QueryProvider";
 import "../../app/model/fileUiAdapters";
-import "../model-routing/public/rendererBootstrap";
+import { startRendererModelRoutingAfterPaint } from "../model-routing/public/rendererBootstrap";
 import React from "react";
 import { languageReady } from "../../shared/i18n";
 import ReactDOM from "react-dom/client";
@@ -30,6 +30,10 @@ if (import.meta.hot)
 
 // Every show also reloads the theme after a hidden window resumes.
 const applyAppearance = bootSecondaryWindowAppearance();
+const onShown = () => {
+  applyAppearance();
+  startRendererModelRoutingAfterPaint();
+};
 
 void languageReady.then(async () => {
   if (getGroupLockView().settings.startInPrivacyMode) {
@@ -41,9 +45,9 @@ void languageReady.then(async () => {
       <QueryProvider>
         <PrivacyLaunchGate>
           {new URLSearchParams(window.location.search).get("popup") === "git" ? (
-            <QuickGitPopup onShown={applyAppearance} />
+            <QuickGitPopup onShown={onShown} />
           ) : (
-            <QuickComposer onShown={applyAppearance} />
+            <QuickComposer onShown={onShown} />
           )}
         </PrivacyLaunchGate>
       </QueryProvider>

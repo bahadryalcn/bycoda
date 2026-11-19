@@ -194,11 +194,10 @@ async function applyInboundRules(
       reason = rule.pausedReason;
     }
     const day = Math.floor(s.now() / 86_400_000) * 86_400_000;
-    const quotaDayStart = Math.floor(s.now() / 86_400_000) * 86_400_000;
     if (
       (await s.jobArchive.jobCount(
         "json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'",
-        [rule.id, quotaDayStart, quotaDayStart + 86_400_000],
+        [rule.id, day, day + 86_400_000],
       )) >= rule.dailyLimit
     )
       reason = "Daily automatic reply limit reached.";
@@ -217,14 +216,14 @@ async function applyInboundRules(
     }
     const account = await s.get<SocialAccount>("account", rule.accountId);
     const policy = await s.policy(account, rule);
-    if (
-      (await s.list<SocialDraft>("draft")).filter(
-        (item) =>
-          item.generation?.ruleId === rule.id &&
-          item.createdAt >= day &&
-          item.createdAt < day + 86_400_000,
-      ).length >= rule.dailyLimit
-    )
+    const generationCount = await s.store.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM social_records WHERE kind='draft'
+         AND json_extract(value,'$.generation.ruleId')=?
+         AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<?`,
+      )
+      .get(rule.id, day, day + 86_400_000);
+    if (Number(generationCount?.count) >= rule.dailyLimit)
       reason = "Daily AI generation limit reached.";
     if (!reason && !policy.agent) {
       try {

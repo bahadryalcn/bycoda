@@ -1,5 +1,6 @@
 import { safeErrorDetail } from "../../integrations/harness/core/errorDetail";
 import { t } from "../../shared/i18n";
+import { errorText } from "../../shared/lib/errors";
 import { workspaceActionErrorSentence } from "./workspaceActionError";
 
 export type WindowTransferNoticeTone = "info" | "danger";
@@ -47,7 +48,7 @@ export function subscribeWindowTransferNotice(listener: () => void): () => void 
 
 /** A rejection reason for display; the protocol keeps the raw `String(error)`. */
 export function transferFailureReason(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const raw = errorText(error ?? "");
   return raw.replace(/^(?:\w*Error:\s*)+/, "").trim();
 }
 

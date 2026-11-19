@@ -203,7 +203,11 @@ impl Launcher<'_> {
     }
 }
 
-fn run_configured(path: &Path, directory: &mut Option<PathBuf>) -> io::Result<i32> {
+fn run_configured(
+    path: &Path,
+    directory: &mut Option<PathBuf>,
+    job: &mut Option<job::LifetimeJob>,
+) -> io::Result<i32> {
     let file = File::open(path).map_err(|error| step("read launcher configuration", error))?;
     let configuration: Configuration = serde_json::from_reader(file)
         .map_err(|error| step("parse launcher configuration", error.into()))?;
@@ -217,7 +221,7 @@ fn run_configured(path: &Path, directory: &mut Option<PathBuf>) -> io::Result<i3
     };
     // Joining before the first spawn puts every Host process in a kill-on-close job, so a
     // killed launcher cannot leave an unsupervised Host holding the port and database.
-    let _job = match job::bind_children_to_launcher() {
+    *job = match job::bind_children_to_launcher() {
         Ok(job) => Some(job),
         Err(error) => {
             launcher.note(
@@ -247,13 +251,16 @@ fn run_configured(path: &Path, directory: &mut Option<PathBuf>) -> io::Result<i3
     )
 }
 
-pub fn run(path: &Path) -> io::Result<i32> {
+pub fn run_and_exit(path: &Path) -> ! {
     // Until the configuration validates, its own folder is where the Host data lives.
     let mut directory = path
         .parent()
         .filter(|parent| parent.is_absolute())
         .map(Path::to_path_buf);
-    let result = run_configured(path, &mut directory);
+    // The launcher is itself in the job. Let Windows close the handle on process
+    // exit, after we set the exit code, so dropping it cannot terminate us first.
+    let mut job = None;
+    let result = run_configured(path, &mut directory, &mut job);
     if let (Err(error), Some(directory)) = (&result, &directory) {
         // A windowless launcher has no stderr: host.log is where support will look.
         record(
@@ -262,7 +269,10 @@ pub fn run(path: &Path) -> io::Result<i32> {
             &format!("Host launcher failed: {error}"),
         );
     }
-    result
+    std::process::exit(result.unwrap_or_else(|error| {
+        eprintln!("Host launcher failed: {error}");
+        1
+    }));
 }
 
 #[cfg(test)]

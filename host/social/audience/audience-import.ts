@@ -233,7 +233,9 @@ export async function importAudience(
     try {
       batch = await ctx.store.transaction(() => writeBatch(ctx, account, list, rows, now));
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "Unknown error.";
+      const message = error instanceof Error ? error.message : "Unknown error";
+      // The reason is followed by a sentence; end it with exactly one full stop.
+      const reason = /[.!?]$/u.test(message) ? message : `${message}.`;
       throw new Error(
         `The import stopped at rows ${rowRange(rows)}: ${reason} ${
           imported ? `${imported} contacts from earlier rows were saved.` : "Nothing was imported."

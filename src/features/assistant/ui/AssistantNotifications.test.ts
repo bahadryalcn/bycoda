@@ -84,10 +84,23 @@ it("does not read the snapshot itself while the window is visible", async () => 
   expect(mock.refresh).not.toHaveBeenCalled();
   vi.restoreAllMocks();
 });
-// Regression: a hidden window still refreshes itself, because the shared poller pauses there.
-it("refreshes the snapshot itself while the window is hidden", async () => {
-  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-  await mount();
-  await vi.waitFor(() => expect(mock.refresh).toHaveBeenCalledOnce());
-  vi.restoreAllMocks();
-});
+it.each(["visible", "hidden"] as const)(
+  "leaves snapshot polling to the store while %s",
+  async (visibility) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 19, 10));
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue(visibility);
+    saveDailySummaryTime("11:00");
+    try {
+      await mount();
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      expect(mock.lead).toHaveBeenCalledOnce();
+      expect(mock.refresh).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(59 * 60_000));
+      expect(mock.lead).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+  },
+);

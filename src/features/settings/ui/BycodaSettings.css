@@ -6,11 +6,17 @@
   --settings-column: 80rem;
   --settings-column-maximized: 96rem;
   --settings-group-gap: 28px;
-  /* Block size of the sticky page bar: 16px top padding, 4px bottom, one compact title line.
-     Pages that stick beneath the bar offset from this token, never from a hard-coded sum. */
-  --settings-page-bar-height: calc(var(--ui-control-height-compact) + 20px);
   container-type: inline-size;
   container-name: settings-workbench;
+}
+.settings-page-bar,
+.bycoda-settings-form {
+  --settings-page-bar-padding-start: 16px;
+  --settings-page-bar-padding-end: 4px;
+  --settings-page-bar-height: calc(
+    var(--ui-control-height-compact) + var(--settings-page-bar-padding-start) +
+      var(--settings-page-bar-padding-end)
+  );
 }
 /* Dialogs, including the peek panel, share the sticky page bar's opaque ground. */
 .bycoda-settings-workbench[data-settings-embedded] {
@@ -42,7 +48,8 @@
   gap: 8px;
   max-inline-size: var(--settings-column);
   margin-inline: auto;
-  padding: 16px 32px 4px;
+  padding-block: var(--settings-page-bar-padding-start) var(--settings-page-bar-padding-end);
+  padding-inline: 32px;
   min-inline-size: 0;
 }
 .settings-page-bar .settings-page-title[data-size] {
@@ -124,7 +131,7 @@
     flex: none;
   }
   .settings-page-bar-inner {
-    padding: 12px 16px 4px;
+    padding-inline: 16px;
   }
 }
 
@@ -169,9 +176,11 @@
   padding: 8px 32px 48px;
 }
 @container settings-workbench (max-width: 760px) {
+  .settings-page-bar,
   .bycoda-settings-form {
-    /* The narrow page bar drops its top padding to 12px (see .settings-page-bar-inner). */
-    --settings-page-bar-height: calc(var(--ui-control-height-compact) + 16px);
+    --settings-page-bar-padding-start: 12px;
+  }
+  .bycoda-settings-form {
     padding: 8px 16px 48px;
   }
 }

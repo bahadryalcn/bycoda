@@ -125,6 +125,7 @@ type Live = {
   modeId: string;
   muteUpdates: boolean;
   cancelled: boolean;
+  exitError?: Error;
   runtimeMode: RuntimeMode;
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
@@ -206,16 +207,16 @@ export async function sendHermesTurn(input: SendTurnInput): Promise<void> {
         live.muteUpdates = false;
         try {
           await applyModelSelection(live, input, acp);
-          if (live.cancelled) return;
-          await applyRuntimeMode(live, input.runtimeMode, live.planning, acp);
-          if (live.cancelled) return;
-          await prompt(live, input, acp);
+          if (!live.cancelled) await applyRuntimeMode(live, input.runtimeMode, live.planning, acp);
+          if (!live.cancelled) await prompt(live, input, acp);
         } catch (error) {
-          if (live.cancelled) return;
-          if (liveByThread.get(input.sessionId) === live)
-            await stopHermesSession(input.sessionId, live.handle);
-          throw error;
+          if (!live.cancelled) {
+            if (liveByThread.get(input.sessionId) === live)
+              await stopHermesSession(input.sessionId, live.handle);
+            throw error;
+          }
         }
+        if (live.exitError) throw live.exitError;
       },
     );
 
@@ -448,12 +449,14 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
       handle,
       (line) => acp.pushLine(line),
       (code) => {
+        const error = providerExitError("Hermes Agent", code, stderrTail);
         const live = liveRef.current;
         if (live) {
+          if (!live.cancelled) live.exitError = error;
           live.cancelled = true;
           clearBackgroundInputs(live);
         }
-        acp.close(providerExitError("Hermes Agent", code, stderrTail));
+        acp.close(error);
         if (liveByThread.get(input.sessionId)?.handle === handle)
           liveByThread.delete(input.sessionId);
         emit({ type: "session.ended", code });

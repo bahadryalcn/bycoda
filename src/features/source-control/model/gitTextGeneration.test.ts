@@ -68,6 +68,20 @@ it("routes PR generation to the same Host", async () => {
   );
 });
 
+// Issue #1369: cancelling stops the provider call, locally and on a Host.
+it("hands the cancel signal to the local harness and to the Host request", async () => {
+  const controller = new AbortController();
+  vi.mocked(localPr).mockResolvedValueOnce(null);
+  await generatePrContent("/repo", undefined, undefined, undefined, controller.signal);
+  expect(vi.mocked(localPr).mock.calls[0]?.[4]).toBe(controller.signal);
+
+  controller.abort();
+  await expect(
+    generatePrContent("remote://env/home/repo", undefined, undefined, undefined, controller.signal),
+  ).rejects.toThrow();
+  expect(remote.request).not.toHaveBeenCalled();
+});
+
 it("reports a failed PR generation without provider text, locally and on a Host", async () => {
   vi.spyOn(console, "debug").mockImplementation(() => {});
   vi.mocked(localPr).mockRejectedValueOnce(new Error("401 for account owner@example.com"));

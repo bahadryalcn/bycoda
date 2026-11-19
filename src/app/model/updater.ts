@@ -29,6 +29,7 @@ export type UpdaterSnapshot = {
 const MAX_NOTES = 1200;
 
 let pendingUpdate: Update | null = null;
+let probeSerial = 0;
 let updateFlow: Promise<UpdaterSnapshot> | null = null;
 let updateFlowManual = false;
 let installation: Promise<UpdaterSnapshot> | null = null;
@@ -87,9 +88,12 @@ async function checkFeeds(currentVersion: string, explicit: boolean): Promise<Up
 /** `explicit` marks a check the user asked for, as opposed to a background probe. */
 export async function probeForUpdate(explicit = false): Promise<Update | null> {
   if (!(await isUpdaterEnabled())) return null;
+  // A channel switch starts a newer probe while an older one may still be in flight; only the
+  // newest probe may set the update an install would use, so the old feed cannot overwrite it.
+  const serial = ++probeSerial;
   const update = await checkFeeds(await readAppVersion(), explicit);
   // A running flow or install owns the update its prompt names; a background probe must not swap it.
-  if (!updateFlow && !installation) pendingUpdate = update;
+  if (serial === probeSerial && !updateFlow && !installation) pendingUpdate = update;
   if (update) announceUpdateAvailable(update.version);
   return update;
 }

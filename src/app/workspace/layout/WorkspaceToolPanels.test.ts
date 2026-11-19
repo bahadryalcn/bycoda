@@ -204,7 +204,10 @@ it("contains an Assistant panel failure and recovers without touching neighbouri
     assistantFailure.failing = false;
     await click("Try again");
     expect(rootNode.textContent).not.toContain("This view could not be displayed");
-    expect(rootNode.textContent).toContain("Tool header");
+    // The recovered view mounts again; its ToolHeader renders the tool tabs, not the fixture text.
+    expect(rootNode.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "Room · Arif",
+    );
     // A second failure leaves through Back to workspace.
     assistantFailure.failing = true;
     await act(async () => root.render(createElement(Workspace)));

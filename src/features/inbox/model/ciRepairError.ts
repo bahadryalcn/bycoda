@@ -1,5 +1,6 @@
 import { safeErrorDetail } from "../../../integrations/harness/core/errorDetail";
 import { t } from "../../../shared/i18n";
+import { errorText } from "../../../shared/lib/errors";
 
 /** Why a CI repair run could not start in the chosen project chat. */
 export type CiRepairStartErrorCode =
@@ -45,6 +46,6 @@ export function presentCiRepairError(reason: unknown): string {
     }
   }
   const summary = t("Could not start the CI repair.");
-  const detail = safeErrorDetail(reason instanceof Error ? reason.message : String(reason ?? ""));
+  const detail = safeErrorDetail(errorText(reason ?? ""));
   return detail ? `${summary} ${detail}` : summary;
 }

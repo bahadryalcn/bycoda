@@ -15,6 +15,7 @@ function canonicalContext(
     delivering: new Set(),
     pausedGoals: new Set(),
     projectListCache: new Map(),
+    registeredBudgetRuns: new Map(),
     budgets: { read: async () => undefined },
     now: () => 2,
     get: async () => stored,

@@ -96,13 +96,15 @@ describe("readTextSlice", () => {
     await writeFile(path, "aaaa\nbbbb\ncccc\ndddd\n");
     const first = await readTextSlice(path, 0, null);
     const stamp = stampOf(first);
-    expect((await readTextSlice(path, first.end, stamp)).text).toBe("cccc\ndddd\n");
+    // A small file fits one page, so the second page starts at a fixed line boundary instead.
+    const second = "aaaa\nbbbb\n".length;
+    expect((await readTextSlice(path, second, stamp)).text).toBe("cccc\ndddd\n");
 
     await writeFile(path, "aaaa\nbbbb\ncccc\ndddd\neeee\n");
-    await expect(readTextSlice(path, first.end, stamp)).rejects.toThrow(TEXT_FILE_CHANGED);
+    await expect(readTextSlice(path, second, stamp)).rejects.toThrow(TEXT_FILE_CHANGED);
 
     await writeFile(path, "aa\n");
-    await expect(readTextSlice(path, first.end, stamp)).rejects.toThrow(TEXT_FILE_CHANGED);
+    await expect(readTextSlice(path, second, stamp)).rejects.toThrow(TEXT_FILE_CHANGED);
   });
 
   it("refuses binary content", async () => {

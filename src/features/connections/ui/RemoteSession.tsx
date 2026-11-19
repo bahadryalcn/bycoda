@@ -180,6 +180,7 @@ import {
   classifyRemoteError,
   describeRemoteError,
   isConnectionFailure,
+  remoteErrorText,
 } from "../model/remoteFailure";
 import { errorText } from "../../../shared/lib/errors";
 import { useQuietRetry } from "../model/useQuietRetry";
@@ -1041,7 +1042,7 @@ function ConnectedRemoteSession({
               const currentData = remoteDataStateRef.current;
               publishRemoteDataState({
                 phase: currentData.updatedAt ? "stale" : "error",
-                error: describeRemoteError(reason).message,
+                error: remoteErrorText(reason),
                 updatedAt: currentData.updatedAt,
               });
             },
@@ -1225,7 +1226,7 @@ function ConnectedRemoteSession({
           const currentData = remoteDataStateRef.current;
           publishRemoteDataState({
             phase: "error",
-            error: describeRemoteError(reason).message,
+            error: remoteErrorText(reason),
             updatedAt: currentData.updatedAt,
           });
           setOnline(false);

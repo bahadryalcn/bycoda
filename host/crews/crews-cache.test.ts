@@ -44,7 +44,12 @@ async function fixture() {
   const writer = new HostStore(path);
   await writer.ready;
   let now = 1000;
-  const tasks = { ready: Promise.resolve(), list: vi.fn(async () => []), tick: vi.fn() };
+  const tasks = {
+    ready: Promise.resolve(),
+    list: vi.fn(async () => []),
+    listCrewRun: vi.fn(async () => []),
+    tick: vi.fn(),
+  };
   const current = {
     revision: 1,
     updatedAt: 1000,

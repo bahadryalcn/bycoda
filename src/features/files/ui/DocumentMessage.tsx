@@ -22,7 +22,8 @@ export function DocumentMessage({
           className="w-full min-w-0 max-w-xl"
         />
       ) : (
-        <EmptyState title={title} description={children ?? ""} />
+        // Children can hold a recovery button (Retry), so they stay visible rather than behind the info affordance.
+        <EmptyState title={title} description={children ?? ""} showDescription />
       )}
     </div>
   );

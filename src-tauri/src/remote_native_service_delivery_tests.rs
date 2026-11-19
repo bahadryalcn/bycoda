@@ -86,6 +86,7 @@ impl Fixture {
             delivery_epoch_gaps_supported: false,
             bounded_format_supported: false,
             delivery_admission_supported: false,
+            desktop_take_wait_supported: false,
             journal: Some(JournalAccess::fixture(store.clone())),
             delivery_cursor: Mutex::new(None),
             delivery_ack_cursor: Mutex::new(None),

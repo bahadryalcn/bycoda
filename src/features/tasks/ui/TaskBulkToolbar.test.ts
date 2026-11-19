@@ -120,7 +120,7 @@ it("locks pending deletion, retains failures and retries only failed identities"
   expect(container.textContent).toContain("1 succeeded, 0 skipped, 1 failed");
   expect(onDeleted).toHaveBeenCalledExactlyOnceWith(first);
   expect(onSelect).toHaveBeenLastCalledWith(new Set([bulkTaskKey(second)]));
-  await act(async () => button("Retry failed tasks").click());
+  await act(async () => button("Repeat on failed tasks").click());
   expect(remove).toHaveBeenCalledTimes(3);
   expect(remove.mock.calls.map(([row]) => row.id)).toEqual(["first", "second", "second"]);
   await act(async () => button("Clear selection").click());

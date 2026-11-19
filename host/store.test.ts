@@ -1244,6 +1244,34 @@ function session(id: string, projectId: string, extra: Partial<HostSession> = {}
     ...extra,
   } as unknown as HostSession;
 }
+
+it("persists conversation image reservations across reopening and removes them with the session", async () => {
+  const directory = open();
+  const path = join(directory, "image-budget.db");
+  const first = new HostStore(path);
+  try {
+    const project = await first.addProject(directory, "Test");
+    await first.save(session("image-session", project.id), {});
+    await expect(first.reserveConversationImage("image-session", 3)).resolves.toBe(1);
+  } finally {
+    await first.close();
+  }
+
+  const reopened = new HostStore(path);
+  cleanups.push(() => reopened.close());
+  await expect(reopened.conversationImagesUsed("image-session")).resolves.toBe(1);
+  expect(
+    await Promise.all([
+      reopened.reserveConversationImage("image-session", 3),
+      reopened.reserveConversationImage("image-session", 3),
+      reopened.reserveConversationImage("image-session", 3),
+    ]),
+  ).toEqual([2, 3, undefined]);
+  await expect(reopened.conversationImagesUsed("image-session")).resolves.toBe(3);
+  await reopened.deleteSession("image-session");
+  await expect(reopened.conversationImagesUsed("image-session")).resolves.toBe(0);
+});
+
 it("uses pending run identities ahead of checkpointed session metadata", async () => {
   const directory = open();
   const store = new HostStore(join(directory, "host.db"));

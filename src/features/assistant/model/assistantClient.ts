@@ -23,6 +23,7 @@ let pending: Promise<void> | null = null;
 /** Bumped when a mutation completes; a read that started under an older value predates it. */
 let mutationGeneration = 0;
 let consumers = 0;
+let backgroundConsumers = 0;
 let poller: ReturnType<typeof setInterval> | undefined;
 /** Notifies only when a field actually changes, so repeated identical refreshes are silent. */
 const emit = (patch: Partial<State>) => {
@@ -85,13 +86,30 @@ export function refreshAssistant(): Promise<void> {
   return runRefresh(true);
 }
 
-function pollAssistant(): Promise<void> {
-  return runRefresh(false);
-}
-
 /** Background refresh: awaits fresh data without flipping `loading`, so unchanged data wakes nobody. */
 export function refreshAssistantQuietly(): Promise<void> {
   return runRefresh(false);
+}
+
+function retainSnapshotPolling(background = false) {
+  if (background) backgroundConsumers++;
+  consumers++;
+  if (consumers === 1) {
+    void refreshAssistant();
+    poller = setInterval(() => {
+      if (backgroundConsumers > 0 || document.visibilityState !== "hidden") {
+        void refreshAssistantQuietly();
+      }
+    }, 15_000);
+  }
+  return () => {
+    if (background) backgroundConsumers--;
+    consumers--;
+    if (consumers === 0) {
+      clearInterval(poller);
+      poller = undefined;
+    }
+  };
 }
 
 /**
@@ -152,14 +170,19 @@ export function latestAssistantSnapshot() {
   return state.snapshot;
 }
 
-/** Calls `listener` on every snapshot change without rendering; returns the unsubscribe. */
+/** Follows snapshot changes without rendering and keeps polling for background delivery. */
 export function watchAssistantSnapshot(listener: (state: AssistantClientState) => void) {
   let seen = state.snapshot;
-  return subscribe(() => {
+  const unsubscribe = subscribe(() => {
     if (state.snapshot === seen) return;
     seen = state.snapshot;
     listener(state);
   });
+  const stopPolling = retainSnapshotPolling(true);
+  return () => {
+    unsubscribe();
+    stopPolling();
+  };
 }
 
 /**
@@ -186,22 +209,8 @@ export function useAssistantSnapshot<T>(
     cache.current = { state, select, value: kept };
     return kept;
   });
-  useEffect(() => {
-    consumers++;
-    if (consumers === 1) {
-      void refreshAssistant();
-      poller = setInterval(() => {
-        if (document.visibilityState !== "hidden") void pollAssistant();
-      }, 15000);
-    }
-    return () => {
-      consumers--;
-      if (consumers === 0) {
-        clearInterval(poller);
-        poller = undefined;
-      }
-    };
-  }, []);
+  // Effect reason: keep the shared snapshot poller alive while this view is mounted.
+  useEffect(() => retainSnapshotPolling(), []);
   if (select) return value;
   return { ...(value as State), refresh: refreshAssistant };
 }

@@ -191,6 +191,7 @@ export type HarnessAdapter = {
   generatePrContent?(
     cwd: string,
     context?: HarnessOperationContext,
+    signal?: AbortSignal,
   ): Promise<(PrContent & { base: string; head: string }) | null>;
   /** Optional LLM branch name from a user message. */
   generateBranchName?(
@@ -1480,9 +1481,12 @@ export async function generateHarnessPrContent(
   harness: HarnessId,
   cwd: string,
   context?: HarnessOperationContext,
+  signal?: AbortSignal,
 ): Promise<(PrContent & { base: string; head: string }) | null> {
   const adapter = getHarness(harness);
   if (!adapter?.generatePrContent) return null;
+  signal?.throwIfAborted();
+  if (signal) return adapter.generatePrContent(cwd, context, signal);
   return context ? adapter.generatePrContent(cwd, context) : adapter.generatePrContent(cwd);
 }
 

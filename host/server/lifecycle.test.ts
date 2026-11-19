@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as hostLog from "../diagnostics/logger";
 import { BOOT_OPTIONAL_READY_MS } from "./boot-phases";
 import { armShutdownDeadline, createLifecycleRuntime, shutdownExitCode } from "./lifecycle";
 
@@ -78,6 +79,26 @@ describe("host shutdown drains", () => {
     await closing;
     expect(closing.pendingDrains()).toEqual([]);
   });
+
+  it("waits for Assistant room commands to close on shutdown (#1099)", async () => {
+    let finish!: () => void;
+    const commandsClosed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const close = vi.fn(() => commandsClosed);
+    const runtime = await createLifecycleRuntime(
+      dependenciesWith({ roomFiles: { folders: { close } } }) as never,
+      () => undefined,
+    );
+    const closing = runtime.closeResources();
+    try {
+      await vi.waitFor(() => expect(closing.pendingDrains()).toEqual(["assistantCommands"]));
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      finish();
+      await closing;
+    }
+  });
 });
 
 describe("armShutdownDeadline", () => {
@@ -124,6 +145,44 @@ describe("shutdownExitCode", () => {
 });
 
 describe("host boot recovery", () => {
+  it("logs bounded background startup failure fields without the raw message (#424)", async () => {
+    const warn = vi.fn();
+    const logger = hostLog.createLogger("host.startup");
+    const logging = vi.spyOn(hostLog, "createLogger").mockReturnValue({ ...logger, warn });
+    const error = Object.assign(new Error("private startup path"), {
+      code: "E".repeat(100),
+      syscall: "open",
+    });
+    const server = new EventEmitter();
+    const runtime = await createLifecycleRuntime(
+      dependenciesWith({
+        server,
+        tunnels: {
+          boot: async () => {
+            throw error;
+          },
+          close: async () => undefined,
+        },
+      }) as never,
+      () => undefined,
+    );
+    try {
+      server.emit("listening");
+      await runtime.startup;
+      expect(warn).toHaveBeenCalledWith('Host background startup step "automatic-tunnel" failed.', {
+        step: "automatic-tunnel",
+        error: "Error",
+        code: "E".repeat(64),
+        syscall: "open",
+        fingerprint: expect.stringMatching(/^[a-f\d]{12}$/),
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(error.message);
+    } finally {
+      logging.mockRestore();
+      await runtime.closeResources();
+    }
+  });
+
   it("does not hold start-up behind a wedged optional service", async () => {
     vi.useFakeTimers();
     const wedged = new Promise<void>(() => undefined);

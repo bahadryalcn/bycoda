@@ -141,20 +141,23 @@ it("clears only live activity of the requested job in one pass, leaving other jo
   await activity("b1", "job-b");
   await activity("none");
   await f.repository.trash("activity", a2.id, a2.version, 500);
-  const deletedAt = (id: string) =>
-    f.repository.store.db.prepare("SELECT deleted_at FROM assistant_activity WHERE id=?").get(id)
-      .deleted_at;
+  const deletedAt = async (id: string) =>
+    (
+      await f.repository.store.db
+        .prepare("SELECT deleted_at FROM assistant_activity WHERE id=?")
+        .get(id)
+    )?.deleted_at;
 
   await f.repository.trashActivity("job-a", 2000);
   expect((await f.repository.list<{ id: string }>("activity")).map((row) => row.id).sort()).toEqual(
     ["b1", "none"],
   );
-  expect(deletedAt(a1.id)).toBe(2000);
+  expect(await deletedAt(a1.id)).toBe(2000);
   // An already-trashed row keeps its original deletion time instead of being re-stamped.
-  expect(deletedAt(a2.id)).toBe(500);
+  expect(await deletedAt(a2.id)).toBe(500);
 
   await f.repository.trashActivity(undefined, 3000);
   expect(await f.repository.list("activity")).toEqual([]);
-  expect(deletedAt("b1")).toBe(3000);
-  expect(deletedAt("none")).toBe(3000);
+  expect(await deletedAt("b1")).toBe(3000);
+  expect(await deletedAt("none")).toBe(3000);
 });

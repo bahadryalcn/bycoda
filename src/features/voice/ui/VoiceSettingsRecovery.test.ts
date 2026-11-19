@@ -93,7 +93,7 @@ it("keeps voice style dialog open after failed save", async () => {
   await click("Save");
   expect(closed).not.toHaveBeenCalled();
   expect(localStorage.getItem("bycoda.voice.persona")).toBeNull();
-  expect(document.body.textContent).toContain("could not be saved");
+  expect(document.body.textContent).toContain("Couldn’t save the voice style");
 });
 it("shows unknown credential status with retry after read failure", async () => {
   backend.cloudStatus.mockRejectedValue(new Error("Audit host unavailable"));

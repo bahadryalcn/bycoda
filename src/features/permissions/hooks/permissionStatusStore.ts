@@ -44,7 +44,7 @@ export function readPermissionStatus(force = false): Promise<void> {
     } catch {
       if (request === generation) publish({ report: undefined, loading: false, failed: true });
     } finally {
-      if (inFlight?.done === done) inFlight = undefined;
+      if (inFlight?.generation === request) inFlight = undefined;
     }
   })();
   inFlight = { generation: request, done };
@@ -55,17 +55,24 @@ function readQuietly() {
   void readPermissionStatus();
 }
 
+/** A hidden window has nobody watching the grant poll (#603); the next show reads at once. */
+function readWhileVisible() {
+  if (!document.hidden) readQuietly();
+}
+
 function sync() {
   const active = subscribers > 0;
   if (active && !detach) {
     // One focus listener and one native-change subscription serve every consumer.
     window.addEventListener("focus", readQuietly);
+    document.addEventListener("visibilitychange", readWhileVisible);
     const dispose = listenSystemPermissionsChanged((report) => {
       generation++;
       publish({ report, loading: false, failed: false });
     });
     detach = () => {
       window.removeEventListener("focus", readQuietly);
+      document.removeEventListener("visibilitychange", readWhileVisible);
       dispose();
     };
     readQuietly();
@@ -79,7 +86,7 @@ function sync() {
   }
   const polling = active && setupWatchers > 0;
   if (polling && timer === undefined) {
-    timer = window.setInterval(readQuietly, SETUP_POLL_MS);
+    timer = window.setInterval(readWhileVisible, SETUP_POLL_MS);
     readQuietly();
   } else if (!polling && timer !== undefined) {
     window.clearInterval(timer);

@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SocialAccount, SocialSnapshot } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import { remoteRequest } from "../../../connections/public/connections";
 import { AccountsScreen } from "./AccountsScreen";
 
 // The detail, dialog and general cards are covered by their own tests; this file covers the list.
@@ -151,6 +152,36 @@ it("does not read the accounts while the screen is hidden", async () => {
   act(() => root.render(createElement(AccountsScreen, { ...props(read), active: false })));
   await flush();
   expect(read).not.toHaveBeenCalled();
+});
+
+it("waits for a slow account poll to settle before starting another round (#1060)", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(remoteRequest).mockClear();
+    const response = { snapshot: snapshot([]) };
+    let finish!: (value: typeof response) => void;
+    const read = vi
+      .fn(async () => response)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const input = props(read);
+    const needsHuman = vi.spyOn(input.client.browser.needsHuman, "list");
+    await act(async () => root.render(createElement(AccountsScreen, input)));
+    await act(async () => vi.advanceTimersByTimeAsync(180_000));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(needsHuman).toHaveBeenCalledTimes(1);
+    await act(async () => finish(response));
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(needsHuman).toHaveBeenCalledTimes(2);
+    expect(remoteRequest).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("opens the Connect account dialog from the header and closes it again", async () => {

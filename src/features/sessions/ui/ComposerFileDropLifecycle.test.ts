@@ -438,6 +438,12 @@ describe("Composer image drops", () => {
           new File(["notes"], "notes.txt", { type: "text/plain" }),
         ]);
       });
+      // The valid sibling is read through a FileReader, which needs real macrotasks to finish.
+      for (let waited = 0; waited < 2000 && attachmentCount() !== 1; waited += 10) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
 
       expect(attachmentCount()).toBe(1);
       expect(alertText()).toBe("backup.zip is larger than 20 MB and was not attached.");

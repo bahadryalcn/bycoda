@@ -1117,7 +1117,10 @@ describe("reviewed campaign approval", () => {
       expect(generate).toHaveBeenCalledTimes(1);
       expect(s.send).toHaveBeenCalledTimes(1);
       s.clock.value = Date.parse("2026-11-04T08:01:00Z");
+      const list = vi.spyOn(s.social, "list");
       await s.thread(account, "second-ai", "release");
+      expect(list).not.toHaveBeenCalledWith("draft");
+      list.mockRestore();
       await s.social.tick();
       expect(generate).toHaveBeenCalledTimes(1);
       expect(s.send).toHaveBeenCalledTimes(1);

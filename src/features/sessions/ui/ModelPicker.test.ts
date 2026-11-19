@@ -73,6 +73,7 @@ vi.mock("../../../shared/ui/Popover", async () => ({
             : "false",
         "data-side": props.side,
         "aria-label": props["aria-label"],
+        "aria-activedescendant": props["aria-activedescendant"],
         "data-model-picker": props["data-model-picker"] ? "" : undefined,
       },
       children,
@@ -1158,6 +1159,64 @@ describe("model picker", () => {
   });
 
   describe("recent-models quick switch from the keyboard", () => {
+    it.each([true, false])(
+      "skips unavailable recent models (Claude available: %s)",
+      async (claudeAvailable) => {
+        const models = [
+          { id: "grok:grok-4.6", name: "Grok", harness: "grok" as const },
+          { id: "claude:opus-5", name: "Opus", harness: "claude" as const },
+        ];
+        const source = {
+          modelsFor: (harness: string) => models.filter((model) => model.harness === harness),
+          resolve: () => models[0],
+          find: (id: string) => models.find((model) => model.id === id),
+          available: (harness: string) => harness === "claude" && claudeAvailable,
+          probed: () => false,
+          refresh: () => {},
+        };
+        const onChange = vi.fn();
+        saveRecentModelChoice("claude", "claude:opus-5");
+        await act(async () =>
+          root.render(
+            createElement(
+              ModelSourceContext.Provider,
+              { value: source },
+              createElement(ModelPicker, {
+                harness: "grok",
+                model: models[0].id,
+                values: {},
+                hotkeys: true,
+                onChange,
+                onSettingsChange: vi.fn(),
+              }),
+            ),
+          ),
+        );
+        const trigger = container.querySelector<HTMLButtonElement>(
+          'button[aria-haspopup="dialog"]',
+        )!;
+        await keyDown(trigger, "ContextMenu");
+        const menu = recentMenu()!;
+        const active = () => menu.getAttribute("aria-activedescendant");
+        if (claudeAvailable) {
+          const opus = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
+            (row) => row.textContent?.includes("Opus"),
+          )!;
+          expect(active()).toBe(opus.id);
+          await keyDown(menu, "ArrowDown");
+          expect(active()).toBe(opus.id);
+          await keyDown(menu, "Enter");
+          expect(onChange).toHaveBeenCalledWith("claude", "claude:opus-5");
+        } else {
+          expect(active()).toBeNull();
+          expect(menu.textContent).toContain("No available provider models found.");
+          await keyDown(menu, "ArrowDown");
+          await keyDown(menu, "Enter");
+          expect(onChange).not.toHaveBeenCalled();
+        }
+      },
+    );
+
     const chords: { name: string; init: KeyboardEventInit }[] = [
       { name: "Alt+ArrowDown", init: { key: "ArrowDown", altKey: true } },
       { name: "ContextMenu", init: { key: "ContextMenu" } },

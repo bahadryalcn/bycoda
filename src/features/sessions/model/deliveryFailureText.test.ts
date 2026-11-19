@@ -26,6 +26,12 @@ describe("deliveryFailureSentence", () => {
     expect(deliveryFailureSentence(raw, t)).toBe(raw);
   });
 
+  it("does not claim a message was unsent when the Host could not confirm the result", () => {
+    const raw =
+      "RPC_WS_REMOTE: The Host operation could not be confirmed. Refresh its state before retrying. The operation outcome is unknown; reconcile its command receipt before retrying.";
+    expect(deliveryFailureSentence(raw, t)).toBe("Delivery unconfirmed");
+  });
+
   it("leads with the readable first line of a multi-line reason", () => {
     expect(deliveryFailureSentence("Provider crashed: exit 1\nNative output", t)).toBe(
       "Provider crashed: exit 1",

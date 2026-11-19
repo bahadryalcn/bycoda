@@ -42,7 +42,9 @@ vi.mock("../../sessions/model/models", () => ({
   hasLiveCatalog: () => false,
 }));
 const refreshHarnessCatalogs = vi.fn(async () => new Set<string>());
+// The card refreshes through the strict variant; the other-window listener uses the logging one.
 vi.mock("../../../integrations/harness/core/registry", () => ({
+  refreshHarnessCatalogs: (...args: unknown[]) => refreshHarnessCatalogs(...(args as [])),
   refreshHarnessCatalogsStrict: (...args: unknown[]) => refreshHarnessCatalogs(...(args as [])),
 }));
 const eventListeners = new Set<(event: { payload: unknown }) => void>();

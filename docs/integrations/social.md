@@ -25,6 +25,8 @@ connection/project filters visible on each of them.
 | Inbox    | Unified conversations and comments across accounts, with status, timeline, reply options and auto-refresh.                                                               |
 | Accounts | Connections, account type and driver, per-account permissions, the autonomy policy, the browser section (visibility, live view, NEEDS_HUMAN), and the AI model settings. |
 
+When the browser queue cannot refresh, Command shows the failure with a retry if the last list was empty.
+
 Screen state is retained across navigation. Drafts, forms and per-conversation reply
 text are independent. Switching hosts clears that host's private data. A failed refresh
 keeps the last data and shows a retry action.

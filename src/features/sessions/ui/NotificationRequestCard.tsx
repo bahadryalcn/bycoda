@@ -109,9 +109,7 @@ export function NotificationRequestCard({
           <X className="icon-sm" />
         </Button>
       ) : null}
-      {/* One footer row: source, harness and time on the left, the question badge
-          or the way to answer on the right. An approval's identity is its
-          ApprovalRequest title, so it gets no second badge. */}
+      {/* Source and time share the footer with the action that opens the conversation. */}
       <Text
         as="div"
         size="caption"
@@ -134,16 +132,14 @@ export function NotificationRequestCard({
           data-no-drag=""
         >
           {notice.kind === "question" ? <Badge tone="warning">{t("Question")}</Badge> : null}
-          {notice.kind === "question" ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={() => onFocusSession(session.id)}
-            >
-              {t("Answer")}
-            </Button>
-          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={() => onFocusSession(session.id)}
+          >
+            {notice.kind === "question" ? t("Answer") : t("Open session")}
+          </Button>
         </span>
       </Text>
       {notice.kind === "approval" ? (

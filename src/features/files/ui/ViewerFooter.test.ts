@@ -12,7 +12,11 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (path: string) => `asset:${path}` }));
-vi.mock("../../../platform/tauri/platform", () => ({ IS_MAC: false, IS_WIN: true }));
+vi.mock("../../../platform/tauri/platform", async (original) => ({
+  ...(await original<typeof import("../../../platform/tauri/platform")>()),
+  IS_MAC: false,
+  IS_WIN: true,
+}));
 vi.mock("../../../platform/tauri/fs", async (original) => ({
   ...(await original<typeof import("../../../platform/tauri/fs")>()),
   readBinaryFile: mocks.readBinary,

@@ -114,6 +114,9 @@ available while the original result is checked.
 
 ## Conversation tools
 
+The tool machine picker lists **This computer** once for local projects. For
+remote projects, it lists the project Host and **This computer** separately.
+
 Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed. A provider reads its tools only when it starts, so one that started while the Host did not answer, or that outlived a Host restart, starts again before the next message once the Host answers; the conversation and its context continue. If that start does not restore the tools, bycoda waits ten minutes before trying again.
 
 For Codex, bycoda sets `agents.enabled=false` in thread start/resume config to

@@ -134,7 +134,10 @@ describe("support tab", () => {
     await click(button("Send to support"));
     expect(container.textContent).toContain("Add a subject.");
     type(subject(), "Sync stuck");
-    expect(container.textContent).not.toContain("Add a subject.");
+    // The field is valid at once; its message leaves through an exit animation.
+    expect(subject().getAttribute("aria-invalid")).toBeNull();
+    expect(message().getAttribute("aria-invalid")).toBe("true");
+    await vi.waitFor(() => expect(container.textContent).not.toContain("Add a subject."));
     expect(container.textContent).toContain("Add a message.");
   });
 

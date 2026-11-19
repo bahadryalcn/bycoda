@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { JsonViewer } from "./json-viewer";
+
+// Assert the current page independently of motion's exit frames.
+vi.mock("motion/react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("motion/react")>()),
+  AnimatePresence: ({ children }: { children: ReactNode }) => children,
+}));
 
 let root: Root;
 let container: HTMLDivElement;

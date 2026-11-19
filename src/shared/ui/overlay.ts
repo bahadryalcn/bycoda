@@ -489,7 +489,8 @@ export function useOverlay(
       initialFocus(entry).focus({ preventScroll: true });
     return () => {
       registered.current = null;
-      const wasTop = entries[entries.length - 1] === entry;
+      // Passive entries (tooltips) above this one do not own focus, so they must not block restoring it.
+      const wasTop = !entries.slice(entries.indexOf(entry) + 1).some((item) => !item.passive);
       entries.splice(entries.indexOf(entry), 1);
       syncInert();
       if (!entries.length) {

@@ -9,6 +9,7 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Heading } from "../../../shared/ui/Heading";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { FolderOpen, Trash2 } from "../../../shared/ui/icons";
 import type { Worktree } from "../model/worktrees";
 import styles from "./WorktreesPage.module.css";
@@ -42,7 +43,7 @@ export function WorktreeRow({
   onDelete: () => void;
 }) {
   const folderName = projectName(tree.path);
-  const head = t("Detached at {p0}", { p0: tree.head.slice(0, 7) });
+  const head = t("Detached at {p0}", { p0: shortSha(tree.head) });
   const sessions =
     sessionCount === 1
       ? t("{p0} session in this worktree", { p0: sessionCount })

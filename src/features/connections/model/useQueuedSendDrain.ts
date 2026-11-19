@@ -139,8 +139,7 @@ export function useQueuedSendDrain(input: {
       });
       return;
     }
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    const timer = setTimeout(() => {
+    const attempt = () => {
       const currentQueue = queue.current();
       if (
         currentQueue.status === "paused" ||
@@ -167,12 +166,10 @@ export function useQueuedSendDrain(input: {
       // re-render this hook, so look again later at a bounded pace instead of spinning. The
       // head stays first in the queue and is offered again with the same id.
       const delay = queuedDrainRetryDelay(refusals.current++);
-      retryTimer = setTimeout(() => setDrainRetry((value) => value + 1), delay);
-    }, 0);
-    return () => {
-      clearTimeout(timer);
-      clearTimeout(retryTimer);
+      timer = setTimeout(attempt, delay);
     };
+    let timer = setTimeout(attempt, 0);
+    return () => clearTimeout(timer);
   }, [
     next,
     drainRetry,
@@ -182,6 +179,7 @@ export function useQueuedSendDrain(input: {
     input.providers,
     capabilities,
     pageCacheOnly,
+    remoteDeleted,
     input.authorityGeneration,
   ]);
   return {

@@ -3,6 +3,7 @@ import { startProviderAccountHostSync } from "../../../features/providers/public
 import { WorkspaceActionError } from "../../model/workspaceActionError";
 import { startModelEnabledHostSync } from "../../../features/sessions/model/modelEnabledHostSync";
 import { startBykitHostSync } from "../../../features/host-tools/public/bykitHostSync";
+import { startRendererModelRoutingAfterPaint } from "../../../features/model-routing/public/rendererBootstrap";
 import {
   getShellSessions,
   sessionsRef,
@@ -58,6 +59,8 @@ export function useRemoteHostSync(): RemoteHostSync {
   const refreshAdoptedSessionRef = useRef<RefreshAdoptedSession>(undefined);
   useEffect(() => startProviderAccountHostSync(), []);
   useEffect(() => startModelEnabledHostSync(), []);
+  // Start delegation and catalog synchronization once the workspace has painted.
+  useEffect(() => startRendererModelRoutingAfterPaint(), []);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- publishes the Settings bykit switch to the local Host while the workspace is mounted
   useEffect(() => startBykitHostSync(), []);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- timer reporting owner input to other connected Hosts while the workspace is mounted

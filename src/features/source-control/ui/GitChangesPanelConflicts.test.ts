@@ -19,7 +19,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 
 vi.mock("../../../platform/tauri/fs", () => ({
   gitDiffIndex: vi.fn(),
-  gitHistory: vi.fn(async () => []),
+  gitHistory: vi.fn(async () => ({ head: null, commits: [] })),
   gitOperationStatus: vi.fn(async () => ({ operation: null, conflicts: [] })),
   gitOperationContinue: vi.fn(async () => {}),
   gitOperationAbort: vi.fn(async () => {}),

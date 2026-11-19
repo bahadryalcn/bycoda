@@ -336,6 +336,12 @@ it("does not rerun native body search when a list refresh brings the same notes"
   await act(async () => vi.advanceTimersByTimeAsync(150));
   expect(searchCount()).toBe(before);
   expect(container.querySelectorAll("button[data-note-id]")).toHaveLength(1);
+  stored = { ...stored, updatedAt: stored.updatedAt + 1 };
+  await act(async () => window.dispatchEvent(new Event(NOTES_CHANGED_EVENT)));
+  expect(container.querySelectorAll("button[data-note-id]")).toHaveLength(1);
+  expect(container.textContent).not.toContain("Searching note content");
+  await act(async () => vi.advanceTimersByTimeAsync(150));
+  expect(searchCount()).toBe(before + 1);
 });
 
 it("shows a preloaded note immediately while refreshing in the background", async () => {
@@ -485,6 +491,15 @@ it("keeps the desktop split preference and source undo state when a narrow pane 
     undo(source);
   });
   expect(source.state.doc.toString()).toBe("Keep this text.");
+});
+
+it("builds the Source editor only when Source is first shown, then keeps it", async () => {
+  await render();
+  expect(container.querySelector("[data-note-editor]")).toBeNull();
+  await act(async () => tab("Source").click());
+  const source = editorView();
+  await act(async () => tab("Document").click());
+  expect(editorView()).toBe(source);
 });
 
 it("moves focus and selection through mode tabs and associates the active panel", async () => {
@@ -734,8 +749,11 @@ it("opens in the Document view and edits a block with formatting, preserving oth
       .click(),
   );
   expect(view.state.doc.toString()).toBe("**Keep** this text.");
-  // Block editing in the Document view never builds the Source editor.
-  expect(container.querySelector("[data-note-editor]")).toBeNull();
+  // Block editing in the Document view never builds the Source editor; only the block's own editor exists.
+  const sourceEditors = [...container.querySelectorAll("[data-note-editor]")].filter(
+    (editor) => !editor.closest(".note-active-block, .note-writing-area"),
+  );
+  expect(sourceEditors).toHaveLength(0);
   // Leaving block editing only returns to reading; the edit is saved by Ctrl+S/autosave.
   await act(async () =>
     [...container.querySelectorAll<HTMLButtonElement>("button")]

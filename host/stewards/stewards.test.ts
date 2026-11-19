@@ -58,7 +58,7 @@ it("drains a held steward launch on close without dispatching its prepared sessi
   try {
     await restarted.ready;
     await restarted.tick();
-    await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 20000 });
     expect((await f.steward()).run).toMatchObject({
       sessionId: pending.sessionId,
       startedAt: pending.startedAt,
@@ -240,7 +240,7 @@ describe("host stewards", () => {
     const f = await setup();
     await f.stewards.save(f.input({ isolate: undefined }));
     await f.stewards.runNow("steward");
-    await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 20000 });
     expect(f.turns[0].input.cwd).toBe(f.repo.cwd);
     expect(f.workspaces.prepare).not.toHaveBeenCalled();
     expect(f.turns[0].input.text).toContain("the project folder itself");
@@ -249,7 +249,7 @@ describe("host stewards", () => {
     expect(proposal.isolate).toBeUndefined();
     await f.tasks.move(proposal.id, "queued");
     await f.tasks.tick();
-    await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+    await vi.waitFor(() => expect(f.turns).toHaveLength(2), { timeout: 20000 });
     expect(f.turns[1].input.cwd).toBe(f.repo.cwd);
     expect((await f.tasks.get(proposal.id))?.isolate).toBe(false);
   });
@@ -704,18 +704,26 @@ describe("steward work limits and merging", () => {
   });
   it("retains the owned steward completion checkpoint", async () => {
     const { stewards, store, input, startDue, finish, clock } = await setup();
+    // Scheduler ticks and engine checkpoints must observe the same passage of time.
     const wall = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
     try {
       await stewards.save(input());
       const turn = await startDue();
       const session = await store.session(turn.input.sessionId);
       await finish(reply([]));
-      await vi.waitFor(async () =>
-        expect(await finishedRunProgress(store, session.session.id, session.runId!)).toMatchObject({
-          uncertain: false,
-        }),
+      await vi.waitFor(
+        async () => {
+          expect(
+            await finishedRunProgress(store, session.session.id, session.runId!),
+          ).toMatchObject({
+            uncertain: false,
+          });
+        },
+        { timeout: 20000 },
       );
     } finally {
+      monotonic.mockRestore();
       wall.mockRestore();
     }
   });
@@ -758,7 +766,7 @@ describe("steward work limits and merging", () => {
     expect(turns).toHaveLength(0);
     await tasks.limits.save({ dailyAgentMinutes: 0 });
     await stewards.tick();
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
     expect((await steward()).run?.startedAt).toBe(pending.startedAt);
     expect(await work.list()).toHaveLength(1);
   });

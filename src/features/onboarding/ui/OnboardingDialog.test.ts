@@ -68,11 +68,13 @@ vi.mock("../../sessions/ui/ProviderSignInDialog", () => ({
   ProviderSignInDialog: ({
     harness,
     accountId,
+    completeDescription,
     onSignedIn,
     onClose,
   }: {
     harness: string;
     accountId?: string;
+    completeDescription?: string;
     onSignedIn: () => void;
     onClose: () => void;
   }) =>
@@ -80,6 +82,7 @@ vi.mock("../../sessions/ui/ProviderSignInDialog", () => ({
       "button",
       {
         "data-provider-account": accountId,
+        "data-complete-description": completeDescription,
         onClick: () => {
           onSignedIn();
           onClose();
@@ -237,7 +240,8 @@ describe("onboarding workflow", () => {
   it("allows starting without importing any project", async () => {
     await projects();
     await toggleAllProjects();
-    await click("Finish setup");
+    // With nothing selected the import button stays disabled; Skip import is the exit.
+    await click("Skip import");
     expect(mock.run).not.toHaveBeenCalled();
     expect(onFinish).toHaveBeenCalledOnce();
   });
@@ -323,6 +327,13 @@ describe("onboarding workflow", () => {
     );
     expect(loadCrewTheme()).toBe("star-wars");
     expect(loadCrewSceneEnabled()).toBe(true);
+    expect(container.textContent).not.toContain("Obi-Wan leads, Yoda advises");
+    const crewHelp = container.querySelector<HTMLButtonElement>(
+      'button.onboarding-section-info[aria-label="Help"]',
+    )!;
+    await act(async () => crewHelp.click());
+    expect(document.body.textContent).toContain("Obi-Wan leads, Yoda advises");
+    await act(async () => crewHelp.click());
     await act(async () =>
       container.querySelector<HTMLButtonElement>("#onboarding-crew-lotr")!.click(),
     );
@@ -335,6 +346,30 @@ describe("onboarding workflow", () => {
     );
     expect(loadCrewSceneEnabled()).toBe(false);
     expect(loadCrewTheme()).toBe("star-wars");
+  });
+  it("passes the sign-in completion text through translation", async () => {
+    const i18n =
+      await vi.importActual<typeof import("../../../shared/i18n")>("../../../shared/i18n");
+    const original = i18n.getLanguagePreference();
+    await i18n.setLanguagePreference("tr");
+    try {
+      mock.available.mockImplementation((id: string) => id === "codex");
+      await render();
+      await click(i18n.t("Agents"));
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>(
+            `[aria-label="${i18n.t("Sign in to {p0}", { p0: "Codex" })}"]`,
+          )!
+          .click(),
+      );
+      const dialog = container.querySelector("[data-complete-description]");
+      expect(dialog?.getAttribute("data-complete-description")).toBe(
+        "Ajanınız bağlandı. Çalışma alanı kurulumuna devam edebilirsiniz.",
+      );
+    } finally {
+      await i18n.setLanguagePreference(original);
+    }
   });
   it("shows installed providers without listing missing ones and preserves visibility choices", async () => {
     mock.available.mockImplementation((id: string) => id === "codex");

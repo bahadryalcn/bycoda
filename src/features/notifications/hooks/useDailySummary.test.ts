@@ -135,11 +135,11 @@ it("adds yesterday's active time to the headline when the local Host answers", a
   totals.mockResolvedValue({ yesterday: 125 });
   await act(async () => root.render(createElement(Harness, { machineId: "local" })));
   expect(totals).toHaveBeenCalledWith("local");
-  expect(notify).toHaveBeenCalledWith("Summary · 125m active yesterday");
+  expect(notify).toHaveBeenCalledWith("Summary · 125m active yesterday", expect.any(Number));
 });
 
 it("keeps the plain headline without a Host or without activity data", async () => {
   await act(async () => root.render(createElement(Harness)));
   expect(totals).not.toHaveBeenCalled();
-  expect(notify).toHaveBeenCalledWith("Summary");
+  expect(notify).toHaveBeenCalledWith("Summary", expect.any(Number));
 });

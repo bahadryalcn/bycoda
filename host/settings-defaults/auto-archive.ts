@@ -145,7 +145,8 @@ export function createDefaultsAutoArchive(dependencies: {
           devices ??= (dependencies.draftDevices?.() ?? Promise.resolve(undefined)).catch(
             () => undefined,
           );
-          const clientDraft = await dependencies.hasUnsentDraft?.(row.id, windowMs, await devices);
+          const pairedDevices = await devices;
+          const clientDraft = await dependencies.hasUnsentDraft?.(row.id, windowMs, pairedDevices);
           const merged =
             settings.archiveMergedSessions && (await hasMergedArchivePullRequest(store, row.id));
           if (
@@ -155,6 +156,9 @@ export function createDefaultsAutoArchive(dependencies: {
               now(),
             )
           )
+            return;
+          // Only sessions about to be archived need to recheck the live pairing list.
+          if (pairedDevices && (await dependencies.hasUnsentDraft?.(row.id, windowMs)) !== false)
             return;
           signal.throwIfAborted();
           await store.updateSession(row.id, { archived: true }, value.authorityGeneration);

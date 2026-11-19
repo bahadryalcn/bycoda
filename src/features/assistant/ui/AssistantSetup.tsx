@@ -330,7 +330,7 @@ export function AssistantSetup({
         expectedEnvironmentId,
       );
       assertSource();
-      if (!profile?.setupComplete) throw new Error(t("Setup was not confirmed by the Host."));
+      if (!profile?.setupComplete) throw new Error(t("Setup could not be confirmed by the Host."));
       draftWriter.clear();
       setFinished(true);
     } catch (cause) {

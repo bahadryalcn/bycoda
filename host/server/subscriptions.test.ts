@@ -110,12 +110,13 @@ function environmentRuntime() {
     projects: [{ id: "a", cwd: "/a", name: "A", registered: true }] as DirectoryProject[],
     privacyReady: true,
     sessions: [] as { id: string; title: string }[],
+    sessionProjects: new Map<string, string>(),
     /** The fresh desktop snapshots; moves only when one ages out or arrives. */
     freshClients: '["desktop"]',
     listCalls: 0,
   };
   const live: {
-    onChange?: () => void;
+    onChange?: (sessionIds: string[]) => void;
     onSourceChange?: () => void;
     onDirectoryChange?: () => void;
     groupLock: { access: () => unknown };
@@ -134,7 +135,15 @@ function environmentRuntime() {
   const store = {
     environmentId: "env",
     unattributedChangeVersion: 0,
-    db: { outsideScope: async (run: () => unknown) => await run() },
+    db: {
+      outsideScope: async (run: () => unknown) => await run(),
+      prepare: () => ({
+        get: async (id: string) => {
+          const projectId = state.sessionProjects.get(id);
+          return projectId === undefined ? undefined : { project_id: projectId };
+        },
+      }),
+    },
     projects: async () => state.projects.map(({ registered: _registered, ...project }) => project),
     projectVersion: () => 1,
     versions: { scope: () => 1, session: () => 1 },
@@ -162,6 +171,7 @@ function environmentRuntime() {
       list: state.sessions,
     }),
     desktop: { live },
+    sessionRead: async (_id: unknown, run: () => unknown) => await run(),
     signal: { notify: () => undefined },
     catalogs: noop,
   } as never);
@@ -196,6 +206,31 @@ function environmentRuntime() {
   };
   return { runtime, state, live, events, open };
 }
+
+it("refreshes only the project of an unsubscribed Host session on a desktop beat (#825)", async () => {
+  const { runtime, state, live } = environmentRuntime();
+  const invalidate = vi.spyOn(runtime.subscriptionHub, "invalidate");
+  runtime.streamProjectVersions.set("a", 1);
+  runtime.streamProjectVersions.set("b", 1);
+  state.sessionProjects.set("host-session", "a");
+
+  try {
+    live.onChange!(["host-session"]);
+    await vi.waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ kind: "project", projectId: "a" }),
+    );
+    expect(invalidate).not.toHaveBeenCalledWith({ kind: "project", projectId: "b" });
+
+    invalidate.mockClear();
+    live.onChange!(["desktop-only-session"]);
+    await vi.waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ kind: "project", projectId: "b" }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ kind: "project", projectId: "a" });
+  } finally {
+    runtime.unsubscribeChanges();
+  }
+});
 
 it("publishes the whole project directory on the environment stream and keeps the legacy projects field", async () => {
   vi.useFakeTimers();

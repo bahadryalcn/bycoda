@@ -186,7 +186,10 @@ describe("AI actions: undo, stop and reports", () => {
     };
     expect(report.done).toEqual(["1 × replies.send"]);
     expect(report.suggestions).toEqual([]);
-    expect(report.suggestionsError).toBe("token=[redacted] failed");
+    // The model wrapper replaces any provider failure with one fixed message, so the raw
+    // error text (and any secret in it) never reaches the report.
+    expect(report.suggestionsError).toContain("AI generation failed or stopped");
+    expect(report.suggestionsError).not.toContain("abc123");
   });
 
   it("omits suggestionsError when the model answers", async () => {

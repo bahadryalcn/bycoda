@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { translateAt } from "../../../shared/i18n/core";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setLanguagePreference, translateAt } from "../../../shared/i18n/core";
 import { taskClientErrors } from "./taskClientErrors";
 
 describe("task and epic client errors", () => {
+  beforeAll(async () => {
+    await setLanguagePreference("tr");
+    await setLanguagePreference("en");
+  });
   // Regression: these messages reached the board untranslated because they were
   // thrown as English literals with no catalog entry for the other locales.
   it.each([

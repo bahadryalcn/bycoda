@@ -835,7 +835,9 @@ it.each([
   },
 );
 
-it("holds an actual typed pending Composer React commit instead of masking the next changed snapshot", async () => {
+// #962: live draft text stays out of SessionPane render state, so a typed edit has no pending
+// React commit to hold; the closure reads it from the native input at capture time.
+it("captures an actual typed Composer draft from the native input without a pending React commit", async () => {
   await pane();
   const field = container.querySelector("textarea")!;
   let closed!: ParentInputClosure;
@@ -849,8 +851,12 @@ it("holds an actual typed pending Composer React commit instead of masking the n
     inputClosures.push(closed);
   });
   expect(field.value).toBe("  typed pending  ");
-  expect(closed.current()).toBe(false);
-  await expect(closed.capture()).rejects.toThrow();
+  expect(closed.current()).toBe(true);
+  const captured = await closed.capture();
+  expect(captured.snapshots.find((entry) => entry.kind === "session-parent")?.snapshot.draft).toBe(
+    "  typed pending  ",
+  );
+  captured.release();
   await act(async () => closed.release());
   expect(field.value).toBe("  typed pending  ");
 });

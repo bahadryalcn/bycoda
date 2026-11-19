@@ -42,6 +42,16 @@ it("renders one native button with the option contract, slots and state attribut
     expect(node.textContent).toBe("ilabelt");
     act(() => node.click());
     expect(click).toHaveBeenCalledOnce();
+
+    // #1047 derives selection for options and preserves explicit overrides.
+    await act(async () =>
+      root.render(createElement(ListRow, { ref, role: "option", active: true })),
+    );
+    expect(ref.current?.getAttribute("aria-selected")).toBe("true");
+    await act(async () => root.render(createElement(ListRow, { ref, role: "option" })));
+    expect(ref.current?.getAttribute("aria-selected")).toBe("false");
+    await act(async () => root.render(createElement(ListRow, { ref, active: true })));
+    expect(ref.current?.hasAttribute("aria-selected")).toBe(false);
   } finally {
     await act(async () => root.unmount());
     host.remove();

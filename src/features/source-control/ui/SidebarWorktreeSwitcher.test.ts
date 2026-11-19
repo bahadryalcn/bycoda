@@ -333,7 +333,9 @@ it("labels detached and folder-only working copies with the shared messages", as
   });
   setWorktreeFocus("/picker", { path: "/picker-d", branch: null });
   await render();
-  expect(trigger().textContent).toBe("pickerDetached abcdef1");
+  expect(
+    trigger().querySelector("[data-workspace-copy-name] > :not([aria-hidden])")?.textContent,
+  ).toBe("Detached abcdef1");
   await act(async () => trigger().click());
   expect(option("Project folder · all sessions").textContent).toContain("Project folder");
   expect(option("Detached abcdef1").textContent).toContain("Detached abcdef1");

@@ -19,11 +19,15 @@ it("shows a localized unavailable label for a missing linked job and keeps valid
   const item = conversationMessageItem({
     message: {
       id: "message-1",
+      version: 1,
+      createdAt: Date.parse("2026-11-19T10:00:00Z"),
+      updatedAt: Date.parse("2026-11-19T10:00:00Z"),
+      threadId: "thread-1",
       role: "assistant",
+      via: "text",
       text: "Done",
-      createdAt: "2026-11-19T10:00:00Z",
       jobIds: ["00000000-0000-4000-8000-000000000794", "live-job"],
-    } as AssistantMessage,
+    } satisfies AssistantMessage,
     authorName: "Assistant",
     jobs: [{ id: "live-job", title: "Live job" }],
     clearing: false,
@@ -33,7 +37,7 @@ it("shows a localized unavailable label for a missing linked job and keeps valid
   const container = document.createElement("div"),
     root = createRoot(container);
   document.body.append(container);
-  await act(async () => root.render(createElement("div", null, item.children)));
+  await act(async () => root.render(createElement("div", null, item.body)));
 
   const summary = [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Jobs"),

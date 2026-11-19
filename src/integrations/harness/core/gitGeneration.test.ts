@@ -55,6 +55,22 @@ describe("shared Git text generation", () => {
     await expect(generation.generatePrContent("/p")).rejects.toThrow("offline");
     expect(account).not.toHaveBeenCalled();
   });
+  // #1369: cancelling the PR dialog must stop the provider call.
+  it("passes the abort signal to the PR provider run and skips it when already cancelled", async () => {
+    const run = vi.fn().mockResolvedValue('{"title":"Add file","body":"Details"}');
+    const generation = createGitTextGeneration({ run, timeoutMs: 60000, label: "Grok Build" });
+    const controller = new AbortController();
+    await generation.generatePrContent("/p", undefined, controller.signal);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+    run.mockClear();
+    fs.gitRangeContext.mockClear();
+    controller.abort();
+    await expect(
+      generation.generatePrContent("/p", undefined, controller.signal),
+    ).rejects.toThrow();
+    expect(fs.gitRangeContext).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
   it("rejects an unusable PR reply and returns parsed content otherwise", async () => {
     const run = vi.fn().mockResolvedValueOnce("not json");
     const generation = createGitTextGeneration({ run, timeoutMs: 60000, label: "Grok Build" });

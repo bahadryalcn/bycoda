@@ -70,6 +70,8 @@ export function createTailnetServeHosts(read: () => Promise<MobileAccessStatus>)
   timer.unref?.();
   return {
     current: () => hosts,
+    retryUnknownHost: (host: string) =>
+      pending && tailnetServeHost({ state: "ready", endpoint: `https://${host}` }) === host,
     refresh,
     observe,
     dispose: () => clearInterval(timer),

@@ -145,7 +145,13 @@ registerAgentDefaultsSync({
       clearTimeout(timer);
       timer = undefined;
       if (stopped || document.hidden) return;
-      timer = setTimeout(() => void poll(), nextAgentDefaultsPollDelay(unchanged, failures));
+      // A window hidden after this timer was planned skips the read; `catchUp` resumes it.
+      timer = setTimeout(
+        () => {
+          if (!document.hidden) void poll();
+        },
+        nextAgentDefaultsPollDelay(unchanged, failures),
+      );
     };
     const poll = async () => {
       clearTimeout(timer);

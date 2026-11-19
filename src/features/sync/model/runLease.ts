@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+
 /**
  * The run lease: which side may start a turn of one conversation right now.
  *
@@ -64,7 +66,7 @@ export function isLeaseHeld(failure: unknown): boolean {
 
 /** The refusal without its machine-readable prefix, for people. */
 export function leaseHeldText(failure: unknown): string {
-  const text = failure instanceof Error ? failure.message : String(failure ?? "");
+  const text = errorText(failure ?? "");
   return text
     .replace(/^Error:\s*/, "")
     .replace(/^Host rejected request:\s*/i, "")

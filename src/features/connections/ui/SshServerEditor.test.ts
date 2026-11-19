@@ -262,9 +262,9 @@ it("keeps independent legacy and per-hop drafts when the mode is switched both w
     document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Per-hop SSH policy"]')!;
   await act(async () => toggle().click());
   expect(
-    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Host"]')!.value,
+    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Hostname"]')!.value,
   ).toBe("");
-  await setAriaInput("Jump host 1: Host", "typed-bastion");
+  await setAriaInput("Jump host 1: Hostname", "typed-bastion");
   await setAriaInput("Jump host 1: Identity file", "~/typed key reference");
   await act(async () => toggle().click());
   expect(
@@ -273,7 +273,7 @@ it("keeps independent legacy and per-hop drafts when the mode is switched both w
   await input("Jump host", "edited@legacy:2222");
   await act(async () => toggle().click());
   expect(
-    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Host"]')!.value,
+    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Hostname"]')!.value,
   ).toBe("typed-bastion");
   expect(
     document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Identity file"]')!
@@ -415,7 +415,7 @@ it("rejects mixed HTTP/jump routes until the owner explicitly chooses one withou
       .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Per-hop SSH policy"]')!
       .click(),
   );
-  await setAriaInput("Jump host 1: Host", "typed-hop.invalid");
+  await setAriaInput("Jump host 1: Hostname", "typed-hop.invalid");
   await submit();
   expect(saveSshConnection).toHaveBeenCalledTimes(1);
   await act(async () => toggleProxy().click());
@@ -425,7 +425,7 @@ it("rejects mixed HTTP/jump routes until the owner explicitly chooses one withou
   ]);
   await act(async () => toggleProxy().click());
   expect(
-    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Host"]')!.value,
+    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Hostname"]')!.value,
   ).toBe("typed-hop.invalid");
 });
 it("blocks incomplete or nonliteral proxy ports before quick connect", async () => {

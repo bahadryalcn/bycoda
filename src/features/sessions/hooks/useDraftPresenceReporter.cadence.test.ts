@@ -43,6 +43,9 @@ let container: HTMLElement;
 
 beforeEach(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  // The hook loads the connections module lazily; a first load needs real I/O, which fake timers
+  // cannot advance, so the (mocked) module is cached before they are installed.
+  await import("../../connections/public/connections");
   vi.useFakeTimers();
   vi.clearAllMocks();
   hidden.value = false;
@@ -59,10 +62,9 @@ beforeEach(async () => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => {
-    root.render(createElement(Probe));
-    await vi.advanceTimersByTimeAsync(1000);
-  });
+  // Mounted first so the effect has armed its timer before the clock moves.
+  await act(async () => root.render(createElement(Probe)));
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(reports()).toEqual([[]]);
 });
 
@@ -79,7 +81,8 @@ it("does not evaluate drafts every second; the heartbeat is 30 s", async () => {
   act(() => env.draftListener?.("s1"));
   await advance(400);
   env.hasUnsentComposerDraft.mockClear();
-  await advance(29_000);
+  // The heartbeat armed at mount (1.4 s ago): 28 s later it is still short of its 30 s beat.
+  await advance(28_000);
   expect(env.hasUnsentComposerDraft).not.toHaveBeenCalled();
 });
 

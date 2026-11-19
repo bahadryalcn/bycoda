@@ -886,16 +886,10 @@ describe("agent app commands", () => {
       expect.objectContaining({ prompt: "Test prompt", draft: true }),
       result.id,
     );
-    host.sessions = vi.fn(async () => [
-      {
-        id: result.id,
-        title: "Test prompt",
-        harness: "codex",
-        model: "codex:test",
-        busy: false,
-        hasDraft: true,
-      },
-    ]);
+    // Membership is read from the exact session, not from listing the project's sessions.
+    host.session = vi.fn(async (id) =>
+      id === result.id ? { ...newSession("codex", source.cwd), id } : null,
+    );
     const moved = await handleAgentApp(
       source,
       "folder",

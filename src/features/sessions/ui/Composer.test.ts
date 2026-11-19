@@ -752,7 +752,8 @@ describe("Composer question focus", () => {
 
     const list = document.querySelector<HTMLElement>('[data-mcp-picker] [role="listbox"]')!;
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
-    expect(list.parentElement?.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
+    // The shared picker list owns the four-row height through its `standard` list height.
+    expect(list.closest("[data-list-height]")?.getAttribute("data-list-height")).toBe("standard");
     expect(list.querySelector('[role="option"]')?.className).toMatch(/_row_/);
     const pickerDialog = document.querySelector("[data-mcp-picker]")?.closest('[role="dialog"]');
     expect(pickerDialog?.getAttribute("aria-label")).toBe("Choose an MCP server");
@@ -1024,7 +1025,7 @@ describe("Composer question focus", () => {
       await act(async () =>
         root.render(createElement(Composer, { ...props, worktreeRemoved: true })),
       );
-      expect(field().placeholder).toContain("Select a branch or worktree");
+      expect(field().placeholder).toContain("bir dal veya çalışma ağacı seçin");
       expect(field().getAttribute("aria-label")).toBe("Mesaj");
 
       await act(async () =>
@@ -2289,7 +2290,11 @@ describe("Composer question focus", () => {
     expect(container.textContent).toContain(
       "Update bycoda to create managed sessions on this remote Host.",
     );
-    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Send"]')?.disabled).toBe(true);
+    expect(
+      container
+        .querySelector<HTMLButtonElement>('[aria-label^="Send"]')
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
     const textarea = container.querySelector("textarea")!;
     await act(async () =>
       textarea.dispatchEvent(
@@ -2302,9 +2307,11 @@ describe("Composer question focus", () => {
       textarea.value = "/draft Keep this remote draft";
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Save draft"]')?.disabled).toBe(
-      true,
-    );
+    expect(
+      container
+        .querySelector<HTMLButtonElement>('[aria-label^="Save draft"]')
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
     await act(async () =>
       textarea.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),

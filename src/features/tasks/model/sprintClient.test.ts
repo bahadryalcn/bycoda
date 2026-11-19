@@ -185,14 +185,15 @@ describe("sprint planning authority", () => {
     expect(board.sprints).toEqual([sprint]);
     expect(board.loading).toBe(false);
     let refresh!: Promise<void>;
+    const concurrent: Promise<void>[] = [];
     await act(async () => {
       refresh = board.refresh();
-      for (let tick = 0; tick < 20; tick++) expect(board.refresh()).toBe(refresh);
+      for (let tick = 0; tick < 20; tick++) concurrent.push(board.refresh());
     });
     expect(mocks.request.mock.calls.filter((call) => call[1] === "tasks.events")).toHaveLength(1);
     await act(async () => {
       resolveEvents({ cursor: 0, events: [], hasMore: false });
-      await refresh;
+      await Promise.all([refresh, ...concurrent]);
     });
     expect(mocks.request.mock.calls.filter((call) => call[1] === "tasks.events")).toHaveLength(1);
     expect(mocks.request.mock.calls.filter((call) => call[1] === "sprints.list")).toHaveLength(2);
@@ -605,6 +606,8 @@ describe("sprint planning authority", () => {
           if (id === "remote") throw new Error("Offline");
           return { cursor: 5, hasMore: false, events: [] };
         }
+        // The healthy source commits its caught-up cursor; without this it would fail and back off too.
+        if (method === "sprints.ingest") return {};
         throw new Error(`Unexpected ${method}`);
       });
       await act(async () => root!.render(createElement(Harness, { projects })));

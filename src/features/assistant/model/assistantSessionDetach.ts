@@ -8,6 +8,7 @@ import { captureAssistantHostRead } from "./assistantHostRead";
 import { assistantJobProjectIds } from "./assistantJobs";
 import { isProjectLocked } from "../../group-lock/model/groupLock";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { unconfirmedError } from "./unconfirmedOutcome";
 export class AssistantSessionDetachError extends Error {
   constructor(
     message: string,
@@ -109,9 +110,7 @@ export async function prepareAssistantSessionDetach(input: {
         const result = await request(write);
         guard();
         if (result.ok !== true)
-          throw new Error(
-            "Supervision removal is unconfirmed. Check its status before continuing.",
-          );
+          throw unconfirmedError("Supervision removal", "Check its status before continuing.");
       } catch (error) {
         throw new AssistantSessionDetachError(
           presentRemoteError(error, { explicit: true }),

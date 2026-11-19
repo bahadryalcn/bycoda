@@ -140,7 +140,11 @@ describe("external tunnels host ownership", () => {
     s.install.mockRejectedValueOnce(new Error("offline"));
     const record = await s.service.start(dev);
     expect(record.issue).toBe("cli-missing");
-    expect((await s.service.status()).tunnels[0]).toMatchObject({ canStop: false });
+    expect((await s.service.status()).tunnels[0]).toMatchObject({
+      state: "error",
+      issue: "cli-missing",
+      canStop: false,
+    });
     s.install.mockResolvedValueOnce("/private/cloudflared");
     expect((await s.service.start(dev)).state).toBe("starting");
     expect(s.launch).toHaveBeenCalledOnce();

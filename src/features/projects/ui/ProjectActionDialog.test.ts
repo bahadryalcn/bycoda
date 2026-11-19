@@ -25,11 +25,13 @@ beforeEach(() => {
 });
 const recorder = () =>
   document.querySelector<HTMLButtonElement>('button[aria-pressed][aria-label="Keybinding"]')!;
-const press = (target: Element, init: KeyboardEventInit) => {
+// `act` returns a thenable whose `then` yields nothing, so the event is returned after awaiting it.
+const press = async (target: Element, init: KeyboardEventInit) => {
   const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
-  return act(async () => {
+  await act(async () => {
     target.dispatchEvent(event);
-  }).then(() => event);
+  });
+  return event;
 };
 async function mountDialog(props: { onClose?: () => void; onSave?: () => void } = {}) {
   const host = document.createElement("div");
@@ -102,13 +104,31 @@ it("leaves an IME candidate's Escape to the input method, in and out of capture"
   }
 });
 
+it("describes the clear shortcut key before capture without requiring hover", async () => {
+  const unmount = await mountDialog();
+  try {
+    const description = recorder().getAttribute("aria-describedby");
+    expect(description).toBeTruthy();
+    expect(document.getElementById(description!)?.textContent).toContain("Del disables");
+  } finally {
+    await unmount();
+  }
+});
+
 it("records a chord into the stored form without saving or closing the dialog by itself", async () => {
   const onSave = vi.fn();
   const onClose = vi.fn();
   const unmount = await mountDialog({ onSave, onClose });
   try {
     await act(async () => recorder().click());
-    await press(recorder(), { key: "k", code: "KeyK", ctrlKey: true });
+    // Ctrl+K belongs to another command, so the save would be disabled; use a free chord.
+    await press(recorder(), {
+      key: "y",
+      code: "KeyY",
+      ctrlKey: true,
+      altKey: true,
+      shiftKey: true,
+    });
     expect(recorder().getAttribute("aria-pressed")).toBe("false");
     expect(onSave).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
@@ -118,7 +138,7 @@ it("records a chord into the stored form without saving or closing the dialog by
         .click(),
     );
     expect(onSave).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ shortcut: "Control+KeyK" }),
+      expect.objectContaining({ shortcut: expect.stringContaining("KeyY") }),
     );
   } finally {
     await unmount();

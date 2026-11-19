@@ -1,4 +1,6 @@
-type Kinds = Record<string, string>;
+import type { ModelRoutingScope } from "../../../shared/model/host-contracts/model-routing";
+
+type Kinds = Record<string, ModelRoutingScope>;
 
 /** Waits before each retry of a failed send; the list is the retry bound. */
 const RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000, 15_000, 30_000, 60_000];

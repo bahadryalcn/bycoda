@@ -289,6 +289,20 @@ it("adds a tag on Enter without replaying the snapshot's status or tag list", as
   expect(tagInput().value).toBe("");
 });
 
+it("enforces the tag bounds and lets the owner remove a tag at the limit (#664)", async () => {
+  const fake = fakeClient();
+  const tags = ["vip", ...Array.from({ length: 9 }, (_, index) => `tag-${index}`)];
+  await mount(fake.client, { threadId: "t1", item: item({ tags }) });
+  expect(tagInput().maxLength).toBe(40);
+  expect(tagInput().disabled).toBe(true);
+  const remove = element.querySelector<HTMLButtonElement>('button[aria-label="Remove vip"]');
+  expect(remove).not.toBeNull();
+  await act(async () => remove!.click());
+  expect(fake.writes()).toEqual([
+    { action: "inbox.setStatus", input: { threadId: "t1", removeTags: ["vip"] } },
+  ]);
+});
+
 it("does not save a duplicate or blank tag", async () => {
   const fake = fakeClient();
   await mount(fake.client);

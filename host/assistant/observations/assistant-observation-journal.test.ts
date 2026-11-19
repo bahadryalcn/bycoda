@@ -325,7 +325,9 @@ it("indexes the expiry lookup used by retention and keeps retained rows when upg
     (await store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args))
       .map((row) => String(row.detail))
       .join("\n");
-  const expiryLookup = "SELECT MAX(sequence) FROM assistant_observation_events WHERE expires_at<=?";
+  // `+` keeps SQLite's rowid min/max shortcut from bypassing the index, as in the retention SQL.
+  const expiryLookup =
+    "SELECT MAX(+sequence) FROM assistant_observation_events WHERE expires_at<=?";
   expect(await plan(expiryLookup, Date.now())).toContain("assistant_observation_expiry");
 
   await store.db.exec("DROP INDEX assistant_observation_expiry");
@@ -337,4 +339,12 @@ it("indexes the expiry lookup used by retention and keeps retained rows when upg
       Number(row.sequence),
     ),
   ).toEqual([kept.sequence]);
+  // The retention trigger uses the index-friendly form, also when reopening an older database.
+  expect(
+    (
+      await store.db
+        .prepare("SELECT sql FROM sqlite_master WHERE name='assistant_observation_retention'")
+        .get()
+    )?.sql,
+  ).toContain("MAX(+sequence)");
 });

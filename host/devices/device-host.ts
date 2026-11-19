@@ -415,7 +415,6 @@ export class DeviceHost {
         .find(existsSync);
     if (!npm)
       throw new Error("npm CLI is unavailable beside the host Node runtime. Configure npmCliPath.");
-    await this.sweepToolLeftovers();
     for (const tool of tools) {
       await assertDeviceAuthority(effect);
       const spec = TOOLS[tool];
@@ -448,14 +447,16 @@ export class DeviceHost {
         await rm(stage, { recursive: true, force: true }).catch(() => {});
       }
     }
+    // A previous cache can be the only recoverable copy until its replacement is live.
+    await this.sweepToolLeftovers(tools);
   }
   /**
    * Removes stage and replaced-cache siblings left by earlier installs. Runs inside
    * runExclusive and only matches the UUID-suffixed names, never a live version directory.
    */
-  private async sweepToolLeftovers() {
+  private async sweepToolLeftovers(tools: (keyof typeof TOOLS)[]) {
     // shortcut: assumes one Host per data directory; a second Host sharing it could lose an in-flight stage, upgrade to a lock marker if that becomes possible.
-    for (const tool of Object.keys(TOOLS) as (keyof typeof TOOLS)[]) {
+    for (const tool of tools) {
       const parent = dirname(this.dir(tool));
       const names = await readdir(parent).catch(() => [] as string[]);
       await Promise.all(

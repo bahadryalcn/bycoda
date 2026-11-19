@@ -76,7 +76,7 @@ export class HostBulkTransfers {
       maxBytes: 128 * 1024 * 1024,
       maxSnapshotBytes: 32 * 1024 * 1024,
       maxLeases: WS_LIMITS.maxReadJobs + WS_LIMITS.maxControlJobs,
-      // Idle window between chunk reads; the descriptor's `expiresAt` is only the first one.
+      // Idle window between chunk reads. The descriptor carries the hard deadline.
       ttlMs: 120_000,
       // Hard cap from creation: a slow link can keep a download alive, never forever.
       maxLifetimeMs: 15 * 60_000,
@@ -180,7 +180,7 @@ export class HostBulkTransfers {
         entry.descriptor.sha256 === sha256
       ) {
         entry.touched = this.now();
-        // A fresh request for the same content must not hand out a nearly expired descriptor.
+        // A fresh request for the same content renews the idle window.
         this.slide(entry);
         return { $bulk: entry.descriptor };
       }
@@ -204,6 +204,7 @@ export class HostBulkTransfers {
       this.remove(oldest.descriptor.transferId);
     }
     const created = this.now();
+    const hardDeadline = created + Math.max(this.limits.maxLifetimeMs, this.limits.ttlMs);
     const descriptor = BulkDescriptorSchema.parse({
       kind: "bulk",
       transferId: randomUUID(),
@@ -211,7 +212,8 @@ export class HostBulkTransfers {
       totalBytes: bytes.length,
       chunkBytes: this.limits.chunkBytes,
       sha256,
-      expiresAt: created + this.limits.ttlMs,
+      // Clients use this as a ceiling for the whole download. Idle expiry is enforced here.
+      expiresAt: hardDeadline,
     });
     this.entries.set(descriptor.transferId, {
       descriptor,
@@ -220,8 +222,8 @@ export class HostBulkTransfers {
       dependencyKeys: lease.dependencyKeys,
       bytes,
       touched: created,
-      deadline: descriptor.expiresAt,
-      hardDeadline: created + Math.max(this.limits.maxLifetimeMs, this.limits.ttlMs),
+      deadline: created + this.limits.ttlMs,
+      hardDeadline,
       authorities,
       users: 0,
       retained: true,

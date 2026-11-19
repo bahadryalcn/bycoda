@@ -218,8 +218,9 @@ it("opens the live view for the chosen account only, without resolving or sendin
   await act(async () => buttons("Open live view")[1]!.click());
   await settle();
   expect(element.querySelector('section[aria-label="Live browser view"]')).not.toBeNull();
-  expect(browserViewFrame).toHaveBeenCalledWith("acc-two");
-  expect(browserViewFrame).not.toHaveBeenCalledWith("acc-one");
+  // #1067 starts the chosen account without a frame cursor.
+  expect(browserViewFrame).toHaveBeenCalledWith("acc-two", undefined);
+  expect(browserViewFrame.mock.calls.map(([accountId]) => accountId)).not.toContain("acc-one");
   expect(resolve).not.toHaveBeenCalled();
   expect(browserViewInput).not.toHaveBeenCalled();
 });

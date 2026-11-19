@@ -312,7 +312,7 @@ export function AssistantSettings({
     } catch (cause) {
       if (nativeSaved)
         throw new Error(
-          t("Permission saved. Host settings were not confirmed; review before retrying."),
+          t("Permission saved. Host settings could not be confirmed; review before retrying."),
         );
       throw cause;
     }
@@ -325,7 +325,7 @@ export function AssistantSettings({
         consentEnvironment,
       );
       if (retained.ok !== true)
-        throw new Error(t("The retention change was not confirmed. Check before retrying."));
+        throw new Error(t("The retention change could not be confirmed. Check before retrying."));
       setSavedRetention(retention);
     }
   }

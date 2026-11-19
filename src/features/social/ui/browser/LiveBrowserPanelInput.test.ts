@@ -157,11 +157,12 @@ it("restarts the frame requests for the new account when the account changes", a
   const { client, browserViewFrame } = clientWith(async () => FRAME);
   await mount(client, "first");
   await mount(client, "second");
-  expect(browserViewFrame).toHaveBeenCalledWith("second");
+  // #1067 sends an empty frame cursor when opening a different account.
+  expect(browserViewFrame).toHaveBeenCalledWith("second", undefined);
   browserViewFrame.mockClear();
   await advance(1_500);
-  expect(browserViewFrame).not.toHaveBeenCalledWith("first");
-  expect(browserViewFrame).toHaveBeenCalledWith("second");
+  expect(browserViewFrame.mock.calls.map(([accountId]) => accountId)).not.toContain("first");
+  expect(browserViewFrame).toHaveBeenCalledWith("second", undefined);
 });
 
 it("sends typed text once on submit, clears the field and keeps autofill off", async () => {

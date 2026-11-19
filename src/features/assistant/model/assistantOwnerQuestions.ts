@@ -15,6 +15,7 @@ import {
 } from "../../sessions/model/userQuestion";
 import type { QuestionDraft } from "../../sessions/model/questionDrafts";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { unconfirmedError } from "./unconfirmedOutcome";
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 export type OwnerQuestionRequest =
@@ -217,9 +218,7 @@ export class AssistantOwnerQuestionDraft {
     const stored = readRecord(this.storage, this.scope);
     if (stored?.intent && (!this.record.intent || !same(stored.intent, this.record.intent))) {
       this.record = stored;
-      throw new Error(
-        "The previous answer is unconfirmed. Check the original question before retrying.",
-      );
+      throw unconfirmedError("The previous answer", "Check the original question before retrying.");
     }
   }
   /** Draft-store notifications reach every card; only the card whose answer changed writes or fails. */
@@ -292,9 +291,7 @@ export class AssistantOwnerQuestionDraft {
     this.assert();
     this.adoptPending();
     if (this.record.intent)
-      throw new Error(
-        "The previous answer is unconfirmed. Check the original question before retrying.",
-      );
+      throw unconfirmedError("The previous answer", "Check the original question before retrying.");
     const question = this.record.question;
     if (question.sourceCurrent === false || !["open", "snoozed"].includes(question.status))
       throw new Error("This question changed with its work. Refresh it before answering.");

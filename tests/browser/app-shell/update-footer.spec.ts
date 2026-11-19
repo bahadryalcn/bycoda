@@ -461,43 +461,25 @@ test.describe("touch footer targets", () => {
   });
 });
 
-test("wide footer reveals the update label without changing rail width", async ({ page }) => {
+test("wide footer opens the update tooltip without moving its actions", async ({ page }) => {
   await page.goto(`${route}?account`);
   const rail = page.locator("[data-account-fixture-rail]");
   const update = page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
   await expect(update).toBeVisible();
-  const labelPainted = () =>
-    update.getByText("Update", { exact: true }).evaluate((element) => {
-      let current: Element | null = element;
-      while (current && current.tagName !== "BUTTON") {
-        if (getComputedStyle(current).opacity === "0") return false;
-        current = current.parentElement;
-      }
-      return true;
-    });
-  await expect.poll(labelPainted).toBe(false);
-  const railWidth = (await rail.boundingBox())!.width;
-  const collapsed = (await update.boundingBox())!.width;
+  const actions = await rail.locator("[data-sidebar-account-footer]").getByRole("button").all();
+  expect(actions.length).toBeGreaterThan(1);
+  const bounds = () => Promise.all([rail, ...actions].map((action) => action.boundingBox()));
+  const restingBounds = await bounds();
+  const tooltip = page.getByRole("tooltip").filter({ hasText: `Update to ${nextVersion}` });
   await update.hover();
-  await expect
-    .poll(async () => (await update.boundingBox())!.width)
-    .toBeGreaterThan(collapsed + 20);
-  await expect.poll(labelPainted).toBe(true);
-  expect((await rail.boundingBox())!.width).toBe(railWidth);
-  await update.focus();
+  await expect(tooltip).toBeVisible();
+  expect(await bounds()).toEqual(restingBounds);
   await page.mouse.move(700, 10);
-  await expect
-    .poll(async () => (await update.boundingBox())!.width)
-    .toBeGreaterThan(collapsed + 20);
-  const bounds = (await rail.boundingBox())!;
-  for (const button of await rail
-    .locator("[data-sidebar-account-footer]")
-    .getByRole("button")
-    .all()) {
-    const box = (await button.boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(bounds.x);
-    expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width);
-  }
+  await expect(tooltip).toBeHidden();
+  await page.keyboard.press("Tab");
+  await update.focus();
+  await expect(tooltip).toBeVisible();
+  expect(await bounds()).toEqual(restingBounds);
 });
 
 test("captures account rail and footer in both themes and widths", async ({ page }) => {

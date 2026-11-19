@@ -140,6 +140,7 @@ describe("PeopleTable", () => {
 
   it("keeps the Host order and offers no sort while more pages remain", () => {
     renderTable({ people: [grace, ada], hasMore: true });
+    expect(document.body.textContent).toContain("Load all people to sort.");
     expect(document.querySelector('[aria-label="Sort by Name"]')).toBeNull();
     expect(document.querySelector('[aria-label="Sort by Score"]')).toBeNull();
     expect(firstRowCell()?.textContent).toContain("Grace");
@@ -147,6 +148,7 @@ describe("PeopleTable", () => {
 
   it("sorts the rows once every page is loaded", () => {
     renderTable({ people: [grace, ada], hasMore: false });
+    expect(document.body.textContent).not.toContain("Load all people to sort.");
     act(() => document.querySelector<HTMLButtonElement>('[aria-label="Sort by Name"]')!.click());
     expect(firstRowCell()?.textContent).toContain("Ada");
   });

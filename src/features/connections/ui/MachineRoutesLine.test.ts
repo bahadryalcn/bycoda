@@ -159,6 +159,20 @@ it("saves a turned-off address without moving the rows", async () => {
   expect(order()).toEqual(before);
 });
 
+it("shows the shared error message and keeps the confirmed setting when saving fails", async () => {
+  invoke.mockImplementation(answer(ROUTES));
+  await render();
+  invoke.mockRejectedValue(new Error("Could not save the route preference"));
+  const toggle = container.querySelector<HTMLButtonElement>(
+    '[data-route="10.0.0.4"] [role="switch"]',
+  )!;
+  await act(async () => toggle.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Could not save the route preference",
+  );
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+});
+
 it("shows only the saved other address when the desktop lacks the route command", async () => {
   invoke.mockImplementation((command: string) =>
     command === "remote_machine_routes"

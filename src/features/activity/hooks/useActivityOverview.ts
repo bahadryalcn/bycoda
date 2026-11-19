@@ -125,7 +125,7 @@ export function useActivityOverview(): ActivityOverview {
               query: { timeZone, date: localDateFor(new Date(), timeZone) },
             });
             const names = deviceNames.current;
-            if (summary.perDevice.some((entry) => !names.has(entry.deviceId))) {
+            if ((summary.perDevice ?? []).some((entry) => !names.has(entry.deviceId))) {
               try {
                 for (const device of (await api.listDevices()).items) {
                   names.set(device.id, device.name);

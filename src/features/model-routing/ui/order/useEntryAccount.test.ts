@@ -43,6 +43,7 @@ it("keeps the account list identity across unrelated store notifications", () =>
   expect(first.account?.label).toBe("A");
 
   act(() => void window.dispatchEvent(new Event("bycoda-provider-accounts-changed")));
+  render({ harness: "claude", providerAccountId: "account-a" });
   expect(renders.at(-1)!.accounts).toBe(first.accounts);
 });
 

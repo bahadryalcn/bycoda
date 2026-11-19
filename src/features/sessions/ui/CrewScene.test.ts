@@ -136,9 +136,9 @@ it("stands exactly five speakers and sits them again when work ends", () => {
   ).toBe(true);
 });
 
-it("exposes one descriptive image, with no interactive game controls", () => {
+it("exposes one descriptive group, with no interactive game controls", () => {
   container.innerHTML = renderToStaticMarkup(createElement(CrewScene));
-  expect(container.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain(
+  expect(container.querySelector('[role="group"]')?.getAttribute("aria-label")).toContain(
     "bycoda sign",
   );
   expect(container.querySelectorAll("canvas[aria-hidden=true]")).toHaveLength(1);
@@ -270,7 +270,8 @@ it("cleans observers and timer on unmount", () => {
   act(() => root.render(null));
   expect(vi.getTimerCount()).toBe(0);
   expect(intersectionDisconnect).toHaveBeenCalledOnce();
-  expect(resizeDisconnect).toHaveBeenCalledOnce();
+  // The scene's own observer and the window-wide one that follows the clipped labels.
+  expect(resizeDisconnect).toHaveBeenCalledTimes(2);
   expect(state.dispose).toHaveBeenCalled();
 });
 

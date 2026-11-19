@@ -312,6 +312,7 @@ export function ProjectActionDialog({
               label={t("Keybinding")}
               platform={shortcutPlatform}
               placeholder={t("Click here and press a shortcut")}
+              description={t("Del disables · Esc cancels")}
               value={recorderShortcutFromStored(draft.shortcut, shortcutPlatform)}
               onValueChange={(value) => {
                 const stored = value ? storedShortcutFromRecorder(value, shortcutPlatform) : "";

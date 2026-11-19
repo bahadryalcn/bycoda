@@ -951,7 +951,7 @@ mod tests {
         seed(&conn, "unclaimable", "/three");
         set(&mut conn, &["late".into()], 400, 100).unwrap();
         set(&mut conn, &["early".into()], 200, 100).unwrap();
-        set(&mut conn, &["unclaimable".into()], 100, 100).unwrap();
+        set(&mut conn, &["unclaimable".into()], 150, 100).unwrap();
         let claimable = ["early", "late"];
         assert_eq!(
             next_due(&conn, claimable.iter().copied()).unwrap(),

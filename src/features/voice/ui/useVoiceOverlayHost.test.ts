@@ -102,13 +102,18 @@ it("serializes state only while detached, then sends the initial sync and later 
   );
   await act(async () => {});
   expect(serialized).toHaveBeenCalled();
-  expect(mocks.emit).toHaveBeenCalledWith("voice_overlay_state", expect.anything());
+  // emitTo is scoped to the overlay window label, then the event name, then the payload.
+  expect(mocks.emit).toHaveBeenCalledWith(
+    "voice-overlay-main",
+    "voice_overlay_state",
+    expect.anything(),
+  );
   const sent = mocks.emit.mock.calls.length;
   await act(async () =>
     root.render(createElement(Mirror, { detached: true, state: state("three") })),
   );
-  await act(async () => {});
-  expect(mocks.emit.mock.calls.length).toBeGreaterThan(sent);
+  // The emit follows a dynamic import, so wait for it rather than one flush.
+  await vi.waitFor(() => expect(mocks.emit.mock.calls.length).toBeGreaterThan(sent));
   await act(async () => root.unmount());
 });
 it("releases partial subscriptions and surfaces registration failure", async () => {

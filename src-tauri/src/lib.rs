@@ -1436,6 +1436,7 @@ fn teardown_on_exit(handle: &tauri::AppHandle) {
     diagnostics::clear_recovered_on_exit();
     diagnostics::flush_logs();
     assistant_presence::shutdown(handle);
+    conversation_tools_bridge::stop_desktop_relay();
     conversation_tools_bridge::shutdown_ssh_executions();
     if handle
         .try_state::<desktop_control_window::State>()

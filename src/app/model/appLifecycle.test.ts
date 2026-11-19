@@ -748,6 +748,9 @@ it("boots with sidebar history that resolves after the restore finishes", async 
   const store = await import("../../features/sessions/data/sessionStore");
   const { loadBootWorkspace } = await import("./appLifecycle");
   const rows = [{ id: "history-1", cwd: "/hinted/project" }] as never;
+  // The mocked store is shared with the earlier restore tests: start from no saved workspace so
+  // the hinted project is the one the boot lists history for.
+  vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(null);
   vi.mocked(recents.lastProjectPath).mockReturnValueOnce("/hinted/project");
   vi.mocked(store.listSessionsByProject).mockImplementationOnce(
     () => new Promise((resolve) => setTimeout(() => resolve(rows), 20)),
@@ -854,8 +857,14 @@ it("claims every restored session in one batch before any remote Host key", asyn
       new Set([...ids].filter((id) => id === "a" || id === "remote:remote://machine/repo:host-c")),
   );
   vi.mocked(ownership.abortRestoredSession).mockClear();
+  // Binding a remote shell announces on `window`, which the node test environment lacks.
+  vi.stubGlobal("window", new EventTarget());
   const { loadResumedWorkspace } = await import("./appLifecycle");
-  await loadResumedWorkspace();
+  try {
+    await loadResumedWorkspace();
+  } finally {
+    vi.unstubAllGlobals();
+  }
   const calls = vi.mocked(ownership.claimRestoredSessions).mock.calls;
   expect(calls).toHaveLength(2);
   expect([...calls[0][0]]).toEqual(["a", "b", "c", "d"]);

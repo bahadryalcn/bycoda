@@ -261,6 +261,7 @@ it("deduplicates concurrent refreshes and publishes the settled catalog", async 
   expect(mocks.setHarnessModels).toHaveBeenCalledExactlyOnceWith(
     "pi",
     expect.arrayContaining([expect.objectContaining({ nativeId: "antigravity/shared-id" })]),
+    true,
   );
   expectStopped();
 });

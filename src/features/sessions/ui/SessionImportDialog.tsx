@@ -821,7 +821,7 @@ function FolderSection({
         </Button>
       </div>
       {open ? (
-        <ul className="pb-1">
+        <ul className="@container/import-rows pb-1">
           {folder.items.slice(0, limit).map((item) => {
             const key = candidateKey(item);
             const imported = isAlreadyImported(item, stored);
@@ -882,7 +882,7 @@ function FolderSection({
                       <Text
                         size="micro"
                         tone="secondary"
-                        className="shrink-0 whitespace-nowrap text-right"
+                        className="shrink-0 whitespace-nowrap text-right @max-[480px]/import-rows:hidden"
                       >
                         {formatBytes(item.sizeBytes)}
                       </Text>

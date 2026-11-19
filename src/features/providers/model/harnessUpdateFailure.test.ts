@@ -59,6 +59,16 @@ describe("describeHarnessUpdateFailure", () => {
     });
   });
 
+  it("redacts updater output attached to an unchanged version", () => {
+    const result = describeHarnessUpdateFailure("grok", {
+      kind: "stillOn",
+      version: "1.0.82",
+      detail: "Package manager response: Bearer fake-token-12345",
+    });
+    expect(result.detail).toBe("Package manager response: Bearer <redacted>");
+    expect(result.toastMessage).toContain("Bearer <redacted>");
+  });
+
   it("leaves the toast at the headline when the detail is blank", () => {
     const result = describeHarnessUpdateFailure("opencode", {
       kind: "stage",

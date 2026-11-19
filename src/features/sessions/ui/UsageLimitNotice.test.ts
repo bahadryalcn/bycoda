@@ -86,6 +86,8 @@ it("asks the composer to open its model picker", async () => {
 
 it("offers supported message recovery when direct resume is unavailable", async () => {
   await render({ limit: { resetsAt: Date.now() - 1000 } });
+  // The minute clock trails the reset; the zero-delay deadline timer records the reset itself.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
   expect(button("Resume")).toBeUndefined();
   expect(container.textContent).toContain("Send a message to continue.");
 });

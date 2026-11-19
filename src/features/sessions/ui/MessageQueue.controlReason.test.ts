@@ -40,3 +40,28 @@ it("explains a Steer held for an unconfirmed delivery and keeps row action names
     }
   }
 });
+
+it.each([
+  [
+    "paused",
+    false,
+    "Resume",
+    "This queue action is unavailable. Reopen the conversation and try again.",
+  ],
+  ["restored", true, "Send next", "Queue is waiting for the current turn to finish."],
+  [undefined, true, "Steer", "This host cannot steer the active turn. The message remains queued."],
+] as const)(
+  "explains an unavailable queue action in status %s",
+  async (status, busy, label, reason) => {
+    const messages: QueuedMessage[] = [{ id: "q1", text: "first", attachments: [] }];
+    await act(async () =>
+      root.render(createElement(MessageQueue, { messages, status, busy, canAttach: true })),
+    );
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.getAttribute("aria-label") === label || node.textContent === label,
+    );
+    expect(button?.disabled).toBe(false);
+    expect(button?.getAttribute("aria-disabled")).toBe("true");
+    expect(button?.getAttribute("aria-description")).toBe(reason);
+  },
+);

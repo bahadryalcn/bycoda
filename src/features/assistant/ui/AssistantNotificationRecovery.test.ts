@@ -66,7 +66,7 @@ it("checks only the selected project's original notification status and never re
   expect(container.textContent).toContain("notice-1");
   expect(container.textContent).toContain("Outcome unknown");
   await act(async () => button("Check original status").click());
-  expect(container.textContent).toContain("Native queue accepted; display not confirmed");
+  expect(container.textContent).toContain("Native queue accepted; display could not be confirmed");
   expect(request.mock.calls.map(([input]) => input.op)).toEqual([
     "threads.open",
     "observation.delivery.list",

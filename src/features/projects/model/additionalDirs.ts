@@ -64,17 +64,28 @@ function storedDirsMap(key: string) {
         return { value, valid: false, version };
       }
     },
+    /** Records a map this module just wrote, so `value` stays the last written map. */
+    written(text: string | null, map: DirsMap) {
+      const current = localStorage;
+      if (storage !== current || raw !== text) version += 1;
+      storage = current;
+      raw = text;
+      value = map;
+      valid = true;
+    },
   };
 }
 
 const projectDirsStore = storedDirsMap(KEY);
 
 function saveAll(all: DirsMap): boolean {
+  const text = JSON.stringify(all);
   try {
-    localStorage.setItem(KEY, JSON.stringify(all));
+    localStorage.setItem(KEY, text);
   } catch {
     return false;
   }
+  projectDirsStore.written(text, all);
   notifyProjectPathsChanged();
   return true;
 }
@@ -163,9 +174,12 @@ function loadSessionOverrides(): SessionOverrides {
 
 function saveSessionOverrides(all: SessionOverrides): boolean {
   let saved = true;
+  const empty = Object.keys(all).length === 0;
+  const text = empty ? null : JSON.stringify(all);
   try {
-    if (Object.keys(all).length > 0) localStorage.setItem(SESSION_KEY, JSON.stringify(all));
+    if (text !== null) localStorage.setItem(SESSION_KEY, text);
     else localStorage.removeItem(SESSION_KEY);
+    sessionOverridesStore.written(text, all);
   } catch {
     saved = false;
   }

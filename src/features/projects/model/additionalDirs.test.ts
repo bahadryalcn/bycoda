@@ -190,4 +190,13 @@ describe("unreadable stored folders", () => {
     expect(loadSessionAdditionalDirs("s1")).toBeUndefined();
     expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/work/api"]);
   });
+
+  it("keeps the most recently saved session override after the stored text becomes unreadable", () => {
+    expect(saveSessionAdditionalDirs("s1", "/work/web", ["/work/ui"])).toBe(true);
+    localStorage.setItem(SESSIONS_KEY, "not json");
+
+    expect(loadSessionAdditionalDirs("s1")).toEqual(["/work/ui"]);
+    expect(saveSessionAdditionalDirs("s1", "/work/web", null)).toBe(false);
+    expect(localStorage.getItem(SESSIONS_KEY)).toBe("not json");
+  });
 });

@@ -2,6 +2,7 @@
 import { act, createElement, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { loadAutoFetch, saveAutoFetch, subscribeAutoFetch } from "../model/autoFetch";
 import { saveGitPanelSection, type SectionRepositoryChoice } from "../model/panelSections";
 
 vi.mock("../../../shared/ui/SearchableSelect", () => ({
@@ -44,6 +45,23 @@ import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 let host: HTMLDivElement;
 let root: Root;
 const toggleAutoFetch = vi.fn();
+
+it("shares a saved auto fetch preference with every subscribed panel", () => {
+  const previous = loadAutoFetch();
+  const first = vi.fn(() => loadAutoFetch());
+  const second = vi.fn(() => loadAutoFetch());
+  const unsubscribeFirst = subscribeAutoFetch(first);
+  const unsubscribeSecond = subscribeAutoFetch(second);
+  try {
+    expect(saveAutoFetch(!previous)).toBe(true);
+    expect(first).toHaveReturnedWith(!previous);
+    expect(second).toHaveReturnedWith(!previous);
+  } finally {
+    unsubscribeFirst();
+    unsubscribeSecond();
+    saveAutoFetch(previous);
+  }
+});
 
 function Panel({ repositories }: { repositories?: SectionRepositoryChoice }) {
   const pane = useRef<HTMLDivElement>(null);

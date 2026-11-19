@@ -45,6 +45,7 @@ vi.mock("../../inbox/model/githubTasks", () => ({
 }));
 
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { setLanguagePreference } from "../../../shared/i18n";
 import { openWorkspaceUrl } from "../../connections/public/workspaceUrls";
 import {
   githubWorkItem,
@@ -301,20 +302,33 @@ describe("GitHub work item link preview", () => {
     expect(document.querySelector("[data-hover-card]")).not.toBeNull();
   });
 
-  it("labels an issue chip with its translated kind word in the accessible name", () => {
+  it("localizes visible and accessible labels for GitHub issues and pull requests", async () => {
     const issueLink: UserLink = {
       url: "https://github.com/acme/widgets/issues/9",
       host: "github.com",
       displayUrl: "github.com/acme/widgets/issues/9",
       githubWorkItem: { kind: "issue", repo: "acme/widgets", number: 9 },
     };
-    act(() => root.render(createElement(UserLinkPreview, { link: issueLink })));
-    const chip = container.querySelector<HTMLAnchorElement>(
-      '[data-github-work-item-chip="issue"]',
-    )!;
+    await setLanguagePreference("de");
+    try {
+      act(() =>
+        root.render([
+          createElement(UserLinkPreview, { key: "issue", link: issueLink }),
+          createElement(UserLinkPreview, { key: "pr", link }),
+        ]),
+      );
+      const issue = container.querySelector('[data-github-work-item-chip="issue"]');
+      const pr = container.querySelector('[data-github-work-item-chip="pr"]');
 
-    expect(chip.textContent).toBe("Issue #9");
-    expect(chip.getAttribute("aria-label")).toBe("Open issue #9 in acme/widgets");
+      expect(issue?.textContent).toBe("Problem #9");
+      expect(issue?.getAttribute("aria-label")).toBe("Öffnen Sie das Problem #9 in acme/widgets");
+      expect(pr?.textContent).toBe("Pull-Anfrage #73");
+      expect(pr?.getAttribute("aria-label")).toBe(
+        "Öffnen Sie die Pull-Anfrage #73 in acme/widgets",
+      );
+    } finally {
+      await act(async () => setLanguagePreference("en"));
+    }
   });
 
   it("keeps the chip clickable and opens the original URL", () => {

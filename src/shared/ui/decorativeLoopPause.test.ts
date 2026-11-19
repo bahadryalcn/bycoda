@@ -8,12 +8,12 @@ const PAUSED_LOOPS: Array<{ path: string; selector: RegExp }> = [
   {
     path: "src/features/voice/ui/VoiceCompanion.module.css",
     selector:
-      /:global\(html:is\(\[data-decorative-motion="off"\], \[data-window-focus="off"\]\)\) \.launcherAvatar \.launcherDot\s*\{\s*animation-play-state: paused;\s*\}/,
+      /:global\(html:is\(\[data-decorative-motion="off"\],\s*\[data-window-focus="off"\]\)\)\s+\.launcherAvatar\s+\.launcherDot\s*\{\s*animation-play-state: paused;\s*\}/,
   },
   {
     path: "src/shared/ui/arc/expanding-button-group/expanding-button-group.module.css",
     selector:
-      /:global\(html:is\(\[data-decorative-motion="off"\], \[data-window-focus="off"\]\)\) \.item\[aria-busy="true"\] \.icon\s*\{\s*animation-play-state: paused;\s*\}/,
+      /:global\(html:is\(\[data-decorative-motion="off"\],\s*\[data-window-focus="off"\]\)\)\s+\.item\[aria-busy="true"\]\s+\.icon\s*\{\s*animation-play-state: paused;\s*\}/,
   },
   {
     path: "src/shared/ui/arc/line-chart/line-chart.module.css",

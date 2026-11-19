@@ -88,16 +88,20 @@ export function NeedsHumanList({
     }
   };
 
-  if (items === null)
-    return failed ? (
+  if (failed && !items?.length)
+    return (
       <FailureState
         context="list"
-        description={t("Waiting items could not be loaded.")}
+        description={
+          items === null
+            ? t("Waiting items could not be loaded.")
+            : t("Waiting items could not be refreshed.")
+        }
         onRetry={refresh}
       />
-    ) : (
-      <LoadingText delay={false}>{t("Loading…")}</LoadingText>
     );
+
+  if (items === null) return <LoadingText delay={false}>{t("Loading…")}</LoadingText>;
 
   if (items.length === 0)
     return quietWhenEmpty ? null : <EmptyHint message={t("Nothing is waiting for you.")} />;

@@ -309,7 +309,6 @@ export function CrewWorkManager({
                 context="panel"
                 title={t("Could not load crews")}
                 error={state.error}
-                retryLabel={t("Retry")}
                 onRetry={() => state.refetch()}
               />
             ) : (

@@ -15,12 +15,18 @@ type CopiedFile = { name: string; mimeType: string; data: string };
 
 /** Marks one embedded file; its value is the escaped file name. */
 const FILE_ATTRIBUTE = 'data-bycoda-file="';
+const LEGACY_FILES_ATTRIBUTE = 'data-bycoda-files="';
 const DATA_URI_PREFIX = "data:";
 const BASE64_MARKER = ";base64,";
 /** Room for the message text, markup and file names around the base64 payload. */
 const MAX_CLIPBOARD_METADATA_CHARS = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_BASE64_CHARS = Math.ceil(MAX_EMBED_BYTES / 3) * 4;
 const MAX_CLIPBOARD_HTML_CHARS = MAX_CLIPBOARD_BASE64_CHARS + MAX_CLIPBOARD_METADATA_CHARS;
+// Older builds URI-encoded the attachment JSON and duplicated the bytes as data URIs.
+const MAX_LEGACY_METADATA_CHARS = 64 * 1024;
+const MAX_LEGACY_PAYLOAD_CHARS = MAX_CLIPBOARD_BASE64_CHARS * 3 + MAX_LEGACY_METADATA_CHARS;
+const MAX_LEGACY_HTML_CHARS =
+  MAX_LEGACY_PAYLOAD_CHARS + MAX_CLIPBOARD_BASE64_CHARS + MAX_LEGACY_METADATA_CHARS;
 
 const HTML_ESCAPES: Record<string, string> = {
   "&": "&amp;",
@@ -153,12 +159,13 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
 export function messageFilesFromClipboard(clipboard: Pick<DataTransfer, "getData">): File[] | null {
   try {
     const html = clipboard.getData("text/html");
-    if (!html || html.length > MAX_CLIPBOARD_HTML_CHARS) return null;
+    if (!html || html.length > MAX_LEGACY_HTML_CHARS) return null;
+    let cursor = html.indexOf(FILE_ATTRIBUTE);
+    if (cursor < 0) return legacyMessageFiles(html);
+    if (html.length > MAX_CLIPBOARD_HTML_CHARS) return null;
     // Walk the markers with indexOf: no DOM parse and no copy of the base64 until it is decoded.
     const files: CopiedFile[] = [];
     let decodedBytes = 0;
-    let cursor = html.indexOf(FILE_ATTRIBUTE);
-    if (cursor < 0) return null;
     while (cursor >= 0) {
       if (files.length >= MAX_ATTACHMENTS) return null;
       const nameStart = cursor + FILE_ATTRIBUTE.length;
@@ -188,6 +195,32 @@ export function messageFilesFromClipboard(clipboard: Pick<DataTransfer, "getData
   } catch {
     return null;
   }
+}
+
+function legacyMessageFiles(html: string): File[] | null {
+  const marker = html.indexOf(LEGACY_FILES_ATTRIBUTE);
+  if (marker < 0) return null;
+  const start = marker + LEGACY_FILES_ATTRIBUTE.length;
+  const end = html.indexOf('"', start);
+  if (end <= start || end - start > MAX_LEGACY_PAYLOAD_CHARS) return null;
+  const files: unknown = JSON.parse(decodeURIComponent(html.slice(start, end)));
+  if (!Array.isArray(files) || files.length > MAX_ATTACHMENTS) return null;
+
+  let decodedBytes = 0;
+  for (const file of files) {
+    if (
+      typeof file?.name !== "string" ||
+      typeof file?.mimeType !== "string" ||
+      typeof file?.data !== "string"
+    ) {
+      return null;
+    }
+    decodedBytes += embeddedByteLength(file.data);
+    if (decodedBytes > MAX_EMBED_BYTES) return null;
+  }
+  return files.map(
+    (file) => new File([decodeBase64(file.data)], file.name, { type: file.mimeType }),
+  );
 }
 
 /** A WebView clipboard write that never settles must not leave a copy action pending forever. */

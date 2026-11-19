@@ -118,8 +118,8 @@ mod tests {
 
     use super::{check_both, is_newer};
 
-    fn version(candidate: &&'static str) -> &'static str {
-        *candidate
+    fn version<'a>(candidate: &'a &'static str) -> &'a str {
+        candidate
     }
 
     #[tokio::test]

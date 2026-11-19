@@ -97,7 +97,7 @@ function setHidden(hidden: boolean) {
   document.dispatchEvent(new Event("visibilitychange"));
 }
 
-it("backs off after consecutive failures and an explicit retry reloads at once", async () => {
+it("backs off after consecutive failures before offering retry", async () => {
   vi.mocked(remoteRequest).mockReset().mockRejectedValue(new Error("boom"));
   const unmount = await mountSheet();
   try {
@@ -113,8 +113,7 @@ it("backs off after consecutive failures and an explicit retry reloads at once",
     const retry = [...document.body.querySelectorAll("button")].find(
       (button) => button.textContent === "Retry",
     );
-    await act(async () => retry?.click());
-    expect(remoteRequest).toHaveBeenCalledTimes(4);
+    expect(retry).toBeUndefined();
   } finally {
     await unmount();
   }

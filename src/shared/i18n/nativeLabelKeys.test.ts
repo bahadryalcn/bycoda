@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import trCatalog from "./locales/tr.json";
 import { NATIVE_LABEL_KEYS } from "./nativeLabelKeys";
@@ -16,8 +16,7 @@ vi.mock("./locales/en.json?raw", () => {
   return { default: "{}" };
 });
 
-const rust = (file: string) =>
-  readFileSync(fileURLToPath(new URL(`../../../src-tauri/src/${file}`, import.meta.url)), "utf8");
+const rust = (file: string) => readFileSync(join("src-tauri", "src", file), "utf8");
 const keys = new Set(NATIVE_LABEL_KEYS);
 
 beforeEach(() => {

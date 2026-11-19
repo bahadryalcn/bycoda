@@ -182,6 +182,12 @@ async function render(
   );
 }
 
+/** The providers page mounts one provider's panels; pick it from the rail first (#1021). */
+async function selectProvider(title: string) {
+  const item = container.querySelector<HTMLButtonElement>(`[aria-label^="${title},"]`);
+  if (item) await act(async () => item.click());
+}
+
 /** Selects an Appearance tab; hidden tabs keep their DOM but defer updates. */
 async function openAppearanceTab(label: string) {
   const tab = [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find(
@@ -783,6 +789,21 @@ describe("settings pages", () => {
     expect(onToggleMaximize).toHaveBeenCalledOnce();
   });
 
+  // Issue #1248: Escape that cancels an IME candidate must not close Settings.
+  it("closes on a plain Escape but not on an IME-composing one", async () => {
+    const onClose = vi.fn();
+    await render("general", { onClose });
+    const press = (init: KeyboardEventInit) =>
+      act(async () => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", ...init }));
+      });
+    await press({ isComposing: true });
+    await press({ keyCode: 229 });
+    expect(onClose).not.toHaveBeenCalled();
+    await press({});
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("restyles instead of remounting when the overlay is maximized", async () => {
     await render("general", { embedded: true, onToggleMaximize: vi.fn() });
     const search = container.querySelector<HTMLElement>(".settings-page-title")!;
@@ -1251,6 +1272,8 @@ describe("settings pages", () => {
       resetCredits: null,
       updatedAt: Date.now(),
       error: "Claude not signed in",
+      // Signed-out detection reads the structured reason, never the error text (#1217).
+      reason: "signedOut",
       status: "unavailable",
     });
     await render("providers");
@@ -1336,6 +1359,7 @@ describe("settings pages", () => {
       return undefined;
     });
     await render("providers");
+    await selectProvider("Codex");
 
     const details = container.querySelector<HTMLButtonElement>(
       '[aria-label="Show Codex CLI details"]',
@@ -1352,6 +1376,7 @@ describe("settings pages", () => {
       const id = `${provider.toLowerCase()}-binary-path`;
       if (!document.querySelector(`#${id}`)) {
         if (!document.querySelector(`[aria-label="Edit ${provider} CLI path"]`)) {
+          await selectProvider(provider);
           await act(async () =>
             container
               .querySelector<HTMLButtonElement>(`[aria-label^="Show ${provider} CLI details"]`)!
@@ -1436,6 +1461,7 @@ describe("settings pages", () => {
       return undefined;
     });
     await render("providers");
+    await selectProvider("Codex");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Show Codex CLI details"]')!.click(),
     );
@@ -1741,6 +1767,8 @@ describe("settings pages", () => {
       false,
     );
     for (const harness of HARNESSES) {
+      // One provider's panels mount at a time (#1021); each trigger appears once selected.
+      await selectProvider(HARNESS_TITLE[harness]);
       expect(
         container.querySelector(`[aria-label="Show ${HARNESS_TITLE[harness]} CLI details"]`),
       ).not.toBeNull();
@@ -1827,6 +1855,7 @@ describe("settings pages", () => {
 
   it("returns focus to the CLI trigger when the details popover closes", async () => {
     await render("providers");
+    await selectProvider("Codex");
     const trigger = container.querySelector<HTMLButtonElement>(
       '[aria-label="Show Codex CLI details"]',
     )!;
@@ -1849,6 +1878,7 @@ describe("settings pages", () => {
       return undefined;
     });
     await render("providers");
+    await selectProvider("Codex");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Show Codex CLI details"]')!.click(),
     );

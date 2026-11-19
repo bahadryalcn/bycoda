@@ -2,11 +2,19 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { recordRateLimitHistory, useRateLimitHistory } from "./rateLimitHistory";
 import { idleRateLimits } from "./rateLimits";
 const key = "bycoda.quotaHistory.v1";
 const segmentPrefix = `${key}.segment.`;
-beforeEach(() => localStorage.clear());
+type History = typeof import("./rateLimitHistory");
+let recordRateLimitHistory: History["recordRateLimitHistory"];
+let useRateLimitHistory: History["useRateLimitHistory"];
+// The history keeps this window's unfolded samples and a snapshot in module state, and clearing
+// storage does not fire a storage event in the same window, so each test loads a fresh module.
+beforeEach(async () => {
+  localStorage.clear();
+  vi.resetModules();
+  ({ recordRateLimitHistory, useRateLimitHistory } = await import("./rateLimitHistory"));
+});
 const segmentKeys = () =>
   Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)!).filter(
     (name) => name.startsWith(segmentPrefix),

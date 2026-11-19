@@ -9,29 +9,29 @@ import { expect, it } from "vitest";
 const dir = "src/features/social/ui/content";
 const css = readFileSync(`${dir}/content.css`, "utf8");
 const component = readFileSync(`${dir}/ContentCalendar.tsx`, "utf8");
-const narrow = css.match(/@container content-calendar \(max-width:\s*40rem\) \{([\s\S]*?)\n\}/);
+const narrow = css.match(/@container content-calendar \(max-width:\s*56rem\) \{([\s\S]*?)\n\}/);
 
 it("declares the calendar root once as the named inline-size container", () => {
   expect(css.match(/container:\s*content-calendar\s*\/\s*inline-size;/g)).toHaveLength(1);
   expect(css).toMatch(/\.content-calendar \{\s*container: content-calendar \/ inline-size;/);
 });
 
-it("keeps the seven-column grid as the default for month and wide panes", () => {
+it("keeps the seven-column grid as the default in wide panes", () => {
   expect(css).toMatch(
     /\.content-calendar-weekdays,\s*\.content-calendar-grid \{\s*display: grid;\s*grid-template-columns: repeat\(7, minmax\(0, 1fr\)\);/,
   );
 });
 
-it("stacks week days into one column inside the narrow container query", () => {
+it("stacks days from either view into one column inside the narrow container query", () => {
   expect(narrow).not.toBeNull();
   expect(narrow![1]).toMatch(
-    /\.content-calendar\[data-view="week"\] \.content-calendar-grid \{\s*grid-template-columns: minmax\(0, 1fr\);/,
+    /\.content-calendar \.content-calendar-grid \{\s*grid-template-columns: minmax\(0, 1fr\);/,
   );
 });
 
-it("drops the empty-day minimum height only in the stacked week agenda", () => {
+it("drops the minimum height for both stacked agendas", () => {
   expect(narrow![1]).toMatch(
-    /\.content-calendar\[data-view="week"\] \.content-day \{\s*min-height: 0;/,
+    /\.content-calendar\[data-view\] \.content-day \{\s*min-block-size: 0;/,
   );
   // The base day rule keeps its 9rem minimum for the wide grid.
   expect(css).toMatch(/\.content-day \{[^}]*min-height: 9rem;/);
@@ -46,6 +46,15 @@ it("turns day hairlines into row rules in the stacked agenda", () => {
 it("lays the day header (weekday, number) out on one line in each agenda row", () => {
   expect(narrow![1]).toMatch(
     /\.content-day-title \{\s*flex-direction: row;\s*align-items: baseline;/,
+  );
+});
+
+it("uses full day labels in the narrow month agenda instead of the weekday grid header", () => {
+  expect(narrow![1]).toMatch(
+    /\.content-calendar \.content-calendar-weekdays,\s*\.content-calendar\[data-view="month"\] \.content-day-number \{\s*display: none;/,
+  );
+  expect(narrow![1]).toMatch(
+    /\.content-calendar\[data-view="month"\] \.content-day-weekday \{\s*display: inline;/,
   );
 });
 

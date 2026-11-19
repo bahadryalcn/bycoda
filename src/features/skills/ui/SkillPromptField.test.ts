@@ -85,6 +85,12 @@ describe("SkillPromptField", () => {
     expect(picker).not.toBeNull();
     expect(frame?.style.position).toBe("fixed");
     expect(frame?.style.width).toBe("300px");
+    const listbox = document.getElementById(field.getAttribute("aria-controls")!);
+    expect(listbox?.getAttribute("role")).toBe("listbox");
+    const activeOption = document.getElementById(field.getAttribute("aria-activedescendant")!);
+    expect(listbox?.contains(activeOption)).toBe(true);
+    expect(activeOption?.getAttribute("role")).toBe("option");
+    expect(activeOption?.textContent).toContain("/review");
     expect(document.body.textContent).toContain("/review");
     expect(document.body.textContent).not.toContain("Review the current changes");
     expect(document.body.textContent).not.toContain("New skill");

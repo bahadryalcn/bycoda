@@ -189,7 +189,7 @@ it("retries unchanged unaccepted canonical input with the same request and froze
   const restored = f.model();
   expect(() =>
     restored.submit({ ...answer, answers: { "host-question": ["host-option-b"] } }, f.request, 999),
-  ).toThrow("unconfirmed");
+  ).toThrow("could not be confirmed");
   await restored.retry(f.request);
   expect(f.calls[1].input).toMatchObject({ requestId: "owner-request", answers: answer.answers });
 });
@@ -275,7 +275,7 @@ it("keeps pending input when a receipt belongs to another payload and prevents a
       f.request,
       3600000,
     ),
-  ).toThrow("unconfirmed");
+  ).toThrow("could not be confirmed");
   const receipt = f.receipts.get("owner-request")!;
   f.receipts.set("owner-request", {
     ...receipt,

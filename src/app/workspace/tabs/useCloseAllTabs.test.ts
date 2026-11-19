@@ -201,7 +201,10 @@ it("asks again for a file that became dirty in the active tab during the prompt"
   await act(async () => closeAll());
   await act(async () =>
     setLiveTabs((previous) =>
-      previous.map((value) => (value.id === "a" ? openEditorTab(value, file("two")) : value)),
+      // Pinned: an unpinned open would replace the preview tab that holds "one".
+      previous.map((value) =>
+        value.id === "a" ? openEditorTab(value, file("two"), { pin: true }) : value,
+      ),
     ),
   );
   deps.dirtyFilesRef.current.add("two");

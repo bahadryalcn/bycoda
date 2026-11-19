@@ -93,6 +93,8 @@ afterEach(() => {
 });
 
 it("re-reads only the newest page on each poll, however many pages are loaded", async () => {
+  const read = vi.fn(async () => pageAt(0));
+  readFresh = read;
   await render("x");
   await advance(10);
   await act(async () => {
@@ -101,13 +103,15 @@ it("re-reads only the newest page on each poll, however many pages are loaded", 
   expect(reads).toEqual([0, 2]);
   server = ["z", ...server];
   await advance(INTERVAL);
+  expect(read).toHaveBeenCalledTimes(1);
   // The query itself was not refetched: no extra page reads, and both loaded pages survive.
   expect(reads).toEqual([0, 2]);
-  expect(state.data?.pages.map((page) => page.rows)).toEqual([
+  const data = cache.getQueryData<Data>(["list", "x"]);
+  expect(data?.pages.map((page) => page.rows)).toEqual([
     ["z", "a"],
     ["c", "d"],
   ]);
-  expect(state.hasNextPage).toBe(true);
+  expect(data?.pages.at(-1)?.next).toBe(4);
 });
 
 it("does not repeat a list that was loaded less than half an interval ago", async () => {

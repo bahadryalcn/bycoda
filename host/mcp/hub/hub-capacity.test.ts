@@ -111,6 +111,8 @@ describe("MCP hub capacity", () => {
     const hub = hubWith(dir, [definition("fake-a", dir), definition("fake-b", dir)], {
       maxChildren: 1,
       capacityWaitMs: 150,
+      // A loaded machine can take longer than the 4 s default to handshake; that must not evict the busy child.
+      startupGraceMs: 60_000,
     });
     const busy = hub.serve("fake-a", "s1", tool("hold"));
     await until(async () => ((await hub.status()).children[0]?.pending ?? 0) >= 1);
@@ -124,6 +126,8 @@ describe("MCP hub capacity", () => {
     const status = await hub.status();
     expect(status.children.map((child) => child.name)).toEqual(["fake-a"]);
     expect(status.children[0].pending).toBeGreaterThanOrEqual(1);
+    // The child logs its pid when it starts; wait for it so a loaded machine cannot read an empty log.
+    await until(() => pids(dir, "fake-a")[0] > 0);
     expect(alive(pids(dir, "fake-a")[0])).toBe(true);
     hub.shutdown();
     expect((await busy)?.error?.message).toContain("stopped");
@@ -249,11 +253,13 @@ describe("MCP hub capacity", () => {
     const hub = hubWith(dir, [definition("fake-a", dir), definition("fake-b", dir)], {
       maxChildren: 1,
       capacityWaitMs: 5_000,
+      startupGraceMs: 60_000,
     });
     const busy = hub.serve("fake-a", "s1", tool("hold"));
     await until(async () => ((await hub.status()).children[0]?.pending ?? 0) >= 1);
     const waiting = hub.serve("fake-b", "s2", tool("echo", { text: "b" }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Shutdown only closes waiters already queued for a slot; wait for the queue, not a fixed delay.
+    await until(() => (hub as unknown as { slotQueue: unknown[] }).slotQueue.length > 0);
 
     hub.shutdown();
 

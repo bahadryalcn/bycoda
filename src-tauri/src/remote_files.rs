@@ -846,7 +846,8 @@ mod tests {
         let oldest = stored(&root, "a", 10, Duration::from_secs(5 * HOURS));
         let older = stored(&root, "b", 10, Duration::from_secs(3 * HOURS));
         let newer = stored(&root, "c", 10, Duration::from_secs(2 * HOURS));
-        reclaim(&base, &root, &[], Some((0, 10)), 25, 100).unwrap();
+        let retained_bytes = 10 + std::fs::metadata(newer.join(MANIFEST)).unwrap().len();
+        reclaim(&base, &root, &[], Some((0, 10)), retained_bytes + 10, 100).unwrap();
         assert!(!oldest.exists());
         assert!(!older.exists());
         assert!(newer.join("copy.bin").exists());

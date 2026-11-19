@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { attachDevServerTunnel, TUNNEL_CAPABILITY } from "../dev-servers/dev-server-tunnel";
 import { hostBulkDependencies } from "../transport/http/bulk";
 import { attachHostWebSocketTransport } from "../transport/ws/server";
 import { requestingDeviceName } from "../desktop/remoteActivity";
@@ -37,11 +38,13 @@ export function createWebsocketRuntime(
     // Phones away from home reach /ws through this Host's own Tailscale Serve name;
     // the proxy connects from loopback and the bearer credential still authenticates.
     allowedHosts: tailnetHosts.current,
+    retryUnknownHost: tailnetHosts.retryUnknownHost,
     server: dependencies.server,
     environmentId: dependencies.engine.store.environmentId,
     mobileIngressSecret: dependencies.mobileIngressSecret,
     methods: dependencies.domainDispatcher.methods,
     capabilities: [
+      TUNNEL_CAPABILITY,
       "browser.sessionScopes.v1",
       "browser.ownerPresentationScopes.v1",
       "native.buffers.recovery.v1",
@@ -49,6 +52,9 @@ export function createWebsocketRuntime(
       "transport.ws.devices.v1",
       "transport.ws.devices.preview.mobile.v1",
       "transport.ws.voice.v1",
+      // The phone's background voice socket has no HTTP fallback: without this its spoken
+      // message ("assistant.request") is refused as incompatible before it is ever sent.
+      "assistant.v1",
       "native.services.v1",
       "native.workspaces.v1",
       "native.buffers.upload.v1",
@@ -121,5 +127,30 @@ export function createWebsocketRuntime(
         async () => await dependencies.domainDispatcher.dispatch(method, params, context),
       ),
   });
-  return { websocket };
+  // The tunnel shares the Host listener and its lifecycle: closing the websocket runtime
+  // also closes every open dev-server tunnel.
+  const tunnel = attachDevServerTunnel({
+    server: dependencies.server,
+    allowedHosts: tailnetHosts.current,
+    mobileIngressSecret: dependencies.mobileIngressSecret,
+    authenticate: async (token) =>
+      await dependencies.engine.store.db.outsideScope(async () =>
+        (await dependencies.engine.store.authenticated(token))
+          ? {
+              id: createHash("sha256").update(token).digest("hex"),
+              authorized: async () => await dependencies.engine.store.authenticated(token),
+            }
+          : null,
+      ),
+    endpoint: async (params) => await dependencies.devServerAccess.endpoint(params),
+  });
+  return {
+    websocket: {
+      ...websocket,
+      close: async () => {
+        await tunnel.close();
+        await websocket.close();
+      },
+    },
+  };
 }

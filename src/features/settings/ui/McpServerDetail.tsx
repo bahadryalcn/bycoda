@@ -71,6 +71,7 @@ export function McpServerDetail({
   globalOnly,
   hub,
   actions,
+  stale = false,
   onClose,
 }: {
   entry: McpCatalogEntry;
@@ -79,12 +80,14 @@ export function McpServerDetail({
   globalOnly: boolean;
   hub: McpHub;
   actions: McpRowActions;
+  stale?: boolean;
   onClose: () => void;
 }) {
   const hubEntry = entry.hub;
   const policy = hub.loading?.policy;
   const transport = hubEntry?.kind ?? entry.configs[0]?.transport ?? "";
-  const hubLocked = hub.saving || !!hub.busy || !!hub.loading?.corrupt;
+  const hubLocked = stale || hub.saving || !!hub.busy || !!hub.loading?.corrupt;
+  const configLocked = stale || actions.locked;
   const [fileError, setFileError] = useState("");
   // Close button, Escape and backdrop all reach `onClose`; Remove can end the entry the draft belongs to.
   const leave = useLeaveGuard();
@@ -94,7 +97,9 @@ export function McpServerDetail({
         side="end"
         size="40rem"
         title={entry.name}
-        description={[transport.toUpperCase(), statusLabel(status)].filter(Boolean).join(" · ")}
+        description={[transport.toUpperCase(), stale ? t("Unavailable") : statusLabel(status)]
+          .filter(Boolean)
+          .join(" · ")}
         onClose={() => leave.guard(onClose)}
       >
         <div className="grid gap-6">
@@ -214,7 +219,7 @@ export function McpServerDetail({
                       p1: `${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`,
                     })}
                     on={server.enabled !== false}
-                    disabled={actions.locked || !actions.canToggle(server)}
+                    disabled={configLocked || !actions.canToggle(server)}
                     onChange={() => void actions.setEnabled(server)}
                   />
                 </Row>
@@ -254,7 +259,7 @@ export function McpServerDetail({
                       server={server}
                       cwd={cwd}
                       globalOnly={globalOnly}
-                      disabled={actions.locked}
+                      disabled={configLocked}
                       onSaved={actions.refresh}
                     />
                   </Row>
@@ -268,7 +273,7 @@ export function McpServerDetail({
                       size="sm"
                       variant="secondary"
                       loading={actions.busyKey === `${key}:login`}
-                      disabled={actions.locked}
+                      disabled={configLocked}
                       onClick={() => void actions.providerSignIn(server)}
                     >
                       {t("Sign in")}
@@ -281,7 +286,7 @@ export function McpServerDetail({
                       size="sm"
                       tone="danger"
                       loading={actions.busyKey === `${key}:remove`}
-                      disabled={actions.locked}
+                      disabled={configLocked}
                       onClick={() => leave.guard(() => void actions.remove(server))}
                     >
                       {t("Remove")}

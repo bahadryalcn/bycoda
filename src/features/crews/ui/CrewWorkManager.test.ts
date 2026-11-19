@@ -40,12 +40,12 @@ it("offers retry only after a load failure and preserves its pending state", asy
   try {
     await act(async () => render());
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(container.textContent).not.toContain("Retry");
+    expect(container.textContent).not.toContain("Try again");
     Object.assign(state, { error: new Error("Host unreachable") });
     await act(async () => render());
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
     const retry = [...container.querySelectorAll("button")].find((node) =>
-      node.textContent?.includes("Retry"),
+      node.textContent?.includes("Try again"),
     )!;
     expect(retry).toBeDefined();
     await act(async () => retry.click());

@@ -2,15 +2,9 @@
 
 fn main() {
     let mut arguments = std::env::args_os().skip(1);
-    let code = match (arguments.next(), arguments.next()) {
-        (Some(path), None) => bycoda_host_service_launcher::run(std::path::Path::new(&path)),
-        _ => Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Expected exactly one Host launcher configuration path.",
-        )),
-    };
-    std::process::exit(code.unwrap_or_else(|error| {
-        eprintln!("Host launcher failed: {error}");
-        1
-    }));
+    if let (Some(path), None) = (arguments.next(), arguments.next()) {
+        bycoda_host_service_launcher::run_and_exit(std::path::Path::new(&path));
+    }
+    eprintln!("Host launcher failed: Expected exactly one Host launcher configuration path.");
+    std::process::exit(1);
 }

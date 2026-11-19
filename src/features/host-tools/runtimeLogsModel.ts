@@ -111,7 +111,7 @@ function appendableRuntimeLogs(
   existing: readonly RuntimeLogEntry[],
   incoming: readonly RuntimeLogEntry[],
 ): RuntimeLogEntry[] | undefined {
-  const last = existing.at(-1)?.cursor ?? -Infinity;
+  const last = existing[existing.length - 1]?.cursor ?? -Infinity;
   const fresh: RuntimeLogEntry[] = [];
   const seen = new Set<string>();
   for (const entry of incoming) {
@@ -166,13 +166,13 @@ export function createRuntimeLogFilter(filters: RuntimeLogFilters) {
   const query = filters.search?.trim().toLocaleLowerCase();
   const levels = filters.levels ? new Set(filters.levels) : undefined;
   const sourceIds = filters.sourceIds?.length ? new Set(filters.sourceIds) : undefined;
-  return (entry: RuntimeLogEntry) => {
+  return (entry: RuntimeLogEntry, message?: string, level?: RuntimeLogDisplayLevel) => {
     if (filters.source && entry.source !== filters.source) return false;
     if (sourceIds && !sourceIds.has(entry.sourceId)) return false;
-    if (levels && !levels.has(runtimeLogDisplayLevel(entry))) return false;
+    if (levels && !levels.has(level ?? runtimeLogDisplayLevel(entry, message))) return false;
     if (!query) return true;
     return [
-      entry.message,
+      message ?? entry.message,
       entry.stack,
       entry.location?.file,
       runtimeLogDetailsText(entry.details),
@@ -181,16 +181,21 @@ export function createRuntimeLogFilter(filters: RuntimeLogFilters) {
 }
 
 export function filterRuntimeLogs(entries: readonly RuntimeLogEntry[], filters: RuntimeLogFilters) {
-  return entries.filter(createRuntimeLogFilter(filters));
+  const pass = createRuntimeLogFilter(filters);
+  return entries.filter((entry) => pass(entry));
 }
 
 /** Repeated errors and warnings share a group per source and value; everything else is alone. */
-export function runtimeLogGroupId(entry: RuntimeLogEntry, groupRepeated: boolean) {
+export function runtimeLogGroupId(
+  entry: RuntimeLogEntry,
+  groupRepeated: boolean,
+  message?: string,
+) {
   return groupRepeated && (entry.level === "error" || entry.level === "warn")
     ? JSON.stringify([
         entry.sourceId,
         entry.level,
-        entry.message,
+        message ?? entry.message,
         entry.stack,
         entry.location,
         runtimeLogDetailsText(entry.details),

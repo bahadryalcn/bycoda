@@ -55,6 +55,9 @@ describe("crew scene label layout", () => {
   it("keeps the labels layer non-interactive so navigation under the scene is unchanged", () => {
     const layer = ruleFor("CrewScene.css", ".crew-scene__labels");
     expect(layer?.body).toMatch(/pointer-events:\s*none/);
-    expect(scene).toMatch(/className="crew-scene__labels" aria-hidden="true"/);
+    // Hero labels stay in the accessibility tree (clipped ones take focus); only the background hides.
+    expect(scene).toMatch(
+      /className="crew-scene__labels"\s+aria-hidden=\{variant === "background" \? true : undefined\}/,
+    );
   });
 });

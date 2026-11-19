@@ -47,7 +47,12 @@ describe("AI plan retention", () => {
   });
 
   it("prunes when a new plan is made, and keeps the new plan", async () => {
-    const kit = makeKit();
+    // The model must answer with a plan, otherwise planning stops before it reaches retention.
+    const kit = makeKit({
+      modelReply: {
+        steps: [{ action: STEP.action, input: STEP.input, summary: STEP.summary }],
+      },
+    });
     await savePlan(kit.ctx, stored(id(1), OLD, ["s1"]));
     const created = await planCommand(kit.ctx, { text: "Reply to the draft." });
     expect(kit.settings.has(`ai.plan.${id(1)}`)).toBe(false);

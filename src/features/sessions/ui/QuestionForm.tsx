@@ -84,6 +84,7 @@ function QuestionFormContent({
   docked = false,
   attachmentsSupported = true,
   remote = false,
+  checkpointNoticeOwned,
   onReply,
   onInteraction,
 }: Props) {
@@ -522,7 +523,7 @@ function QuestionFormContent({
           {...surfaceAttributes({ variant: "inset", frame: "pane", edge: "top" }, styles.footer)}
         >
           <div className={styles.feedback}>
-            {parentClosed && !props.checkpointNoticeOwned ? (
+            {parentClosed && !checkpointNoticeOwned ? (
               <LiveText text={t("Preparing session checkpoint. Your draft is kept.")} />
             ) : null}
             {capacityMessage ? <InlineError>{capacityMessage}</InlineError> : null}

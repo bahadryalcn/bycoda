@@ -79,7 +79,13 @@ const titles = () =>
   [...element.querySelectorAll<HTMLElement>(".social-activity-row")].map(
     (row) => row.textContent ?? "",
   );
-const order = () => titles().map((text) => /(Post|AI) (\w+)/.exec(text)?.[0]);
+// #661 measures merged history order from the AI summary or post body, without timestamps.
+const order = () =>
+  [...element.querySelectorAll(".social-activity-row")].map((row) =>
+    [...row.querySelectorAll(".social-activity-title, .social-activity-details > p")]
+      .map((part) => part.textContent)
+      .find((text) => /^(Post|AI) /.test(text ?? "")),
+  );
 
 it("reaches jobs past the first page with Load more and keeps the project scope", async () => {
   const jobs = Array.from({ length: 45 }, (_, index) =>

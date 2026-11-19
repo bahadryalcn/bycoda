@@ -130,3 +130,22 @@ it("shows Offline only while the Host cannot be read, then restores the snapshot
   ).toBe("present");
   expect(snapshot.effectivePresence).toBe("present");
 });
+// #315: one timeout at the freshness boundary instead of a fixed 15 s tick per mounted chip.
+it("re-renders once at the staleness boundary and keeps no recurring timer", async () => {
+  const snapshot = {
+    presence: { state: "present" as const, since: 1, updatedAt: 1 },
+    automaticPresence: { state: "present" as const, supported: true, since: 1, updatedAt: 10000 },
+  };
+  await act(() => root.render(createElement(AssistantPresenceStatus, { snapshot, compact: true })));
+  expect(vi.getTimerCount()).toBe(1);
+  await act(() => vi.advanceTimersByTime(299000));
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "Current availability: Here",
+  );
+  await act(() => vi.advanceTimersByTime(2000));
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "Current availability: Away",
+  );
+  // Stale reading: no further boundary ahead, so no timer is left running.
+  expect(vi.getTimerCount()).toBe(0);
+});

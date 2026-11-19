@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatSessionTitle } from "../../features/sessions/model/session";
 import { formatReminderTime } from "../../features/sessions/model/sessionReminders";
+import { HOVER_CARD_CLOSE_MS, HOVER_CARD_OPEN_MS } from "../../shared/ui/Tooltip";
 import { Sidebar } from "./Sidebar";
 import { setSessionDeletionStatus } from "../../features/sessions/model/sessionDeletionStatus";
 import { OPEN_CREWS_PAGE_EVENT } from "../../features/crews/model/crewsPage";
@@ -1530,7 +1531,7 @@ describe("sidebar orchestration card", () => {
     expect(card().querySelector('[data-orchestration-agent="worker"]')).not.toBeNull();
   });
 
-  it("opens the custom subagent tooltip immediately on hover", () => {
+  it("opens the subagent hover card after the shared hover delay and closes it on leave", async () => {
     props.busySessionIds = new Set();
     props.sessions[0].orchestration = {
       status: "active",
@@ -1555,9 +1556,13 @@ describe("sidebar orchestration card", () => {
     act(() => render());
     const trigger = card().querySelector<HTMLButtonElement>("[data-orchestration-icon]")!;
 
-    act(() => trigger.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    // The card is the shared HoverCard: it opens after its rest delay on pointer enter.
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, HOVER_CARD_OPEN_MS + 100));
+    });
 
-    const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]')!;
+    const tooltip = document.querySelector<HTMLElement>("[data-hover-card]")!;
     expect(tooltip).not.toBeNull();
     expect(tooltip.classList.contains("popover-open")).toBe(true);
     expect(tooltip.textContent).toContain("1/2 done");
@@ -1566,8 +1571,11 @@ describe("sidebar orchestration card", () => {
     expect(tooltip.textContent).toContain("Check types");
     expect(tooltip.textContent).toContain("Done");
 
-    act(() => trigger.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
-    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent("pointerout", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, HOVER_CARD_CLOSE_MS + 100));
+    });
+    expect(document.querySelector("[data-hover-card]")).toBeNull();
   });
 
   it("renders saved worker details without claiming the workers are running", () => {
@@ -2144,7 +2152,9 @@ describe("collapsed rail Inbox actions", () => {
     expect(workspace()).not.toBeNull();
     act(() => workspace().click());
     expect(drawer()?.dataset.sidebarDrawer).toBe("open");
-    expect(drawer()?.className).not.toContain("absolute");
+    // Only narrow windows overlay the drawer (`max-[596px]:absolute`); it stays in flow otherwise.
+    expect(drawer()?.className).not.toMatch(/(^|\s)absolute(\s|$)/);
+    expect(drawer()?.className).toContain("max-[596px]:absolute");
     expect(drawer()?.querySelector("aside")?.className).toContain("body-glass");
     expect(container.querySelector('[data-compact-project-rail] [role="tablist"]')).toBeNull();
     expect(animations).toHaveLength(1);

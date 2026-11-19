@@ -35,7 +35,8 @@ vi.mock("../model/workspaceClient", () => ({
 }));
 vi.mock("../../sessions/data/sessionStore", () => ({
   shouldPersistSession: vi.fn(() => false),
-  upsertSession: vi.fn(),
+  // The real store write is async; a `.catch` on its result must not throw inside the store update.
+  upsertSession: vi.fn(async () => undefined),
 }));
 const workspace: ManagedWorkspace = {
   id: "workspace",
@@ -231,7 +232,9 @@ it("backs off temporary read failures and stops after a bounded number of attemp
     // The second wait is longer than the first.
     await act(async () => vi.advanceTimersByTime(TEMPORARY_RELOAD_MS));
     expect(vi.mocked(getWorkspaceCapabilities)).toHaveBeenCalledTimes(2);
-    await act(async () => vi.advanceTimersByTime(TEMPORARY_RELOAD_MAX_MS * 10));
+    // Each retry is scheduled only after its rejected read settles, so step the clock per attempt.
+    for (let step = 0; step < TEMPORARY_RELOAD_ATTEMPTS; step += 1)
+      await act(async () => vi.advanceTimersByTime(TEMPORARY_RELOAD_MAX_MS));
     expect(vi.mocked(getWorkspaceCapabilities)).toHaveBeenCalledTimes(
       TEMPORARY_RELOAD_ATTEMPTS + 1,
     );

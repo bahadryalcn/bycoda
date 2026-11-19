@@ -1,4 +1,5 @@
 import { errorText } from "../../../shared/lib/errors";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
@@ -732,10 +733,10 @@ export function InboxPrChecks({
               <Text as="p" size="caption" tone="secondary" className="mt-1 break-all">
                 {checks.pipelineOid && checks.pipelineOid !== checks.headOid
                   ? t("Pipeline commit {p0}, source commit {p1}", {
-                      p0: checks.pipelineOid.slice(0, 12),
-                      p1: checks.headOid.slice(0, 12),
+                      p0: shortSha(checks.pipelineOid),
+                      p1: shortSha(checks.headOid),
                     })
-                  : t("Checked commit {p0}", { p0: checks.headOid.slice(0, 12) })}
+                  : t("Checked commit {p0}", { p0: shortSha(checks.headOid) })}
               </Text>
             </Tooltip>
           ) : null}

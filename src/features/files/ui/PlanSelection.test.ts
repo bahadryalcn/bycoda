@@ -78,8 +78,9 @@ it("offers plan selection actions, quotes only the selection and saves its sourc
     await render(true, "Updated plan");
     expect(document.querySelector('[role="toolbar"]')).toBeNull();
     await select();
+    // Page scroll moves the menu with the still-selected text; only losing the text dismisses it.
     await act(async () => window.dispatchEvent(new Event("scroll")));
-    expect(document.querySelector('[role="toolbar"]')).toBeNull();
+    expect(document.querySelector('[role="toolbar"]')).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
     window.getSelection()?.removeAllRanges();

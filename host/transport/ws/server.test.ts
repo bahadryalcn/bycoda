@@ -124,7 +124,14 @@ async function fixture(
   overrides: Partial<
     Pick<
       HostWebSocketOptions,
-      "authenticate" | "dispatch" | "limits" | "allowedHosts" | "methods" | "bulk" | "subscriptions"
+      | "authenticate"
+      | "dispatch"
+      | "limits"
+      | "allowedHosts"
+      | "retryUnknownHost"
+      | "methods"
+      | "bulk"
+      | "subscriptions"
     >
   > = {},
 ) {
@@ -138,16 +145,22 @@ async function fixture(
       ? [{ id: "project-a", name: "Fixture", cwd: "C:/Fixture", optional: undefined }]
       : { environmentId: ENVIRONMENT, providers: ["codex"], optional: undefined },
   );
-  const authenticate = vi.fn<HostWebSocketOptions["authenticate"]>(async (token) => {
-    if (token !== TOKEN_A && token !== TOKEN_B) return null;
-    return { id: token === TOKEN_A ? "device-a" : "device-b", authorized: async () => permitted };
-  });
+  const authenticate = vi.fn<HostWebSocketOptions["authenticate"]>(
+    overrides.authenticate ??
+      (async (token) => {
+        if (token !== TOKEN_A && token !== TOKEN_B) return null;
+        return {
+          id: token === TOKEN_A ? "device-a" : "device-b",
+          authorized: async () => permitted,
+        };
+      }),
+  );
   const transport = attachHostWebSocketTransport({
     server,
     environmentId: ENVIRONMENT,
-    authenticate,
     dispatch,
     ...overrides,
+    authenticate,
   });
   await new Promise<void>((resolve) => {
     server.listen(0, "127.0.0.1", resolve);
@@ -293,6 +306,21 @@ describe("native WebSocket upgrade and negotiation", () => {
     const client = host.connect({ headers: { Host: "127.0.0.1:54321" } });
     await client.opened;
     expect(await client.hello()).toMatchObject({ result: { environmentId: ENVIRONMENT } });
+  });
+
+  it("asks an unknown Serve host to retry during discovery without authenticating it (#822)", async () => {
+    const name = "fixture.tailnet.ts.net";
+    let pending = true;
+    const host = await fixture({
+      allowedHosts: () => (pending ? [] : [name]),
+      retryUnknownHost: (candidate: string) => pending && candidate === name,
+    });
+    const connect = (Host: string) => host.connect({ headers: { Host } }).opened;
+    await expect(connect(name)).rejects.toThrow(/503/);
+    await expect(connect("other.example")).rejects.toThrow(/400/);
+    expect(host.authenticate).not.toHaveBeenCalled();
+    pending = false;
+    await expect(connect(name)).resolves.toBeUndefined();
   });
 
   it("requires hello before data and advertises only the routed read pilot", async () => {
@@ -552,6 +580,26 @@ describe("WebSocket read admission and safe disclosure", () => {
     await host.ready(TOKEN_A);
     await expect(host.connect().opened).rejects.toThrow(/429/);
     await host.ready(TOKEN_B);
+  });
+
+  it("replaces a silent same-device socket before its first pending ping (#827)", async () => {
+    const host = await fixture({
+      limits: {
+        maxSocketsPerDevice: 1,
+        heartbeatIntervalMs: 60_000,
+        heartbeatResponseTimeoutMs: 5_000,
+      },
+    });
+    const silent = await host.ready(TOKEN_A);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 65_000);
+    onTestFinished(() => clock.mockRestore());
+    const otherDevice = await host.ready(TOKEN_B);
+
+    await host.ready(TOKEN_A);
+
+    expect(await silent.closed).toEqual({ code: 1001, reason: "Replaced by a newer connection." });
+    expect(otherDevice.socket.readyState).toBe(WebSocket.OPEN);
+    await expect(host.connect().opened).rejects.toThrow(/429/);
   });
 
   it("bounds unauthenticated upgrade work before awaiting authentication", async () => {
@@ -1211,9 +1259,10 @@ describe("WS framing and orderly disposal", () => {
         limits: { heartbeatIntervalMs: 5, heartbeatResponseTimeoutMs: 40 },
       });
       const client = host.connect({ autoPong: false });
+      const ping = new Promise((resolve) => client.socket.once("ping", resolve));
       await client.opened;
       expect(await client.hello("hello-acks")).toHaveProperty("result");
-      await new Promise((resolve) => client.socket.once("ping", resolve));
+      await ping;
       for (let index = 0; index < 8; index += 1) {
         expect(await client.request(`ack-${index}`, "connection.probe")).toHaveProperty("result");
         await new Promise((resolve) => setTimeout(resolve, 20));

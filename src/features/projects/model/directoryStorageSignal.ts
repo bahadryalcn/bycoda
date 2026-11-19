@@ -82,3 +82,7 @@ export function directoryStorageGeneration(): number | undefined {
   }
   return generation;
 }
+
+// Install before project setup accesses the writers. Happy DOM binds each
+// method to the storage instance on first access, bypassing later wrappers.
+install();

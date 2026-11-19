@@ -1,5 +1,6 @@
 import { MenuRow } from "../../../shared/ui/MenuRow";
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { TogglePill } from "./ModelExtras";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { usePointerMovement } from "../../../shared/ui/picker/usePointerMovement";
@@ -482,7 +483,7 @@ export function ModelPicker({
   );
   const recentIndex = recentEnabledIndices.includes(recentClamped)
     ? recentClamped
-    : (recentEnabledIndices[0] ?? recentClamped);
+    : recentEnabledIndices[0];
 
   const visibleModels = useMemo(
     () =>
@@ -713,14 +714,14 @@ export function ModelPicker({
           source.available(item.harness) ? [index] : [],
         );
         if (!enabled.length) return;
-        const position = enabled.indexOf(recentIndex);
+        const position = recentIndex === undefined ? -1 : enabled.indexOf(recentIndex);
         setRecentActive(enabled[(position + direction + enabled.length) % enabled.length]!);
         return;
       }
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       event.stopPropagation();
-      const item = recentModels[recentIndex];
+      const item = recentIndex === undefined ? undefined : recentModels[recentIndex];
       if (item) pickModel(item);
     };
 
@@ -1010,12 +1011,22 @@ export function ModelPicker({
           onDismiss={() => setRecentMenu(null)}
           role="menu"
           aria-label={t("Recently used models")}
-          aria-activedescendant={`${recentMenuId}-${recentIndex}`}
+          aria-activedescendant={
+            recentIndex === undefined ? undefined : `${recentMenuId}-${recentIndex}`
+          }
           tabIndex={-1}
           onContextMenu={(event) => event.preventDefault()}
           data-model-picker
           className={popupListClassName}
         >
+          {recentIndex === undefined ? (
+            <LiveText
+              className="px-2 py-1"
+              size="caption"
+              tone="secondary"
+              text={t("No available provider models found. Check Providers and try again.")}
+            />
+          ) : null}
           {recentModels.map((item, index) => {
             const selected = modelChoiceKey(item) === currentChoiceKey;
             const highlighted = index === recentIndex;

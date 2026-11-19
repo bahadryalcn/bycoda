@@ -37,9 +37,10 @@ export type ContentListProps = {
 export function latestPublishJobs(jobs: SocialJob[]): Map<string, SocialJob> {
   const latest = new Map<string, SocialJob>();
   for (const job of jobs) {
-    if (job.kind !== "publish") continue;
-    const current = latest.get(job.campaignId);
-    if (!current || job.scheduledAt > current.scheduledAt) latest.set(job.campaignId, job);
+    const campaignId = job.campaignId;
+    if (job.kind !== "publish" || !campaignId) continue;
+    const current = latest.get(campaignId);
+    if (!current || job.scheduledAt > current.scheduledAt) latest.set(campaignId, job);
   }
   return latest;
 }

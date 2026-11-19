@@ -93,7 +93,7 @@ it("pauses polling while hidden and reloads once when shown again", async () => 
 
 it("lists devices only while a summary device is unknown", async () => {
   const root = await mount();
-  await act(async () => vi.advanceTimersByTime(2 * 60_000));
+  await act(async () => vi.advanceTimersByTimeAsync(2 * 60_000));
   expect(mocks.getActivitySummary).toHaveBeenCalledTimes(3);
   expect(mocks.listDevices).toHaveBeenCalledTimes(1);
   await act(async () => root.unmount());
@@ -102,7 +102,8 @@ it("lists devices only while a summary device is unknown", async () => {
 it("reports the first failure after a success, not every failed tick", async () => {
   mocks.getActivitySummary.mockResolvedValueOnce(summary).mockRejectedValue(new Error("down"));
   const root = await mount();
-  await act(async () => vi.advanceTimersByTime(3 * 60_000));
+  // Async advance lets each tick settle before the next, so the in-flight guard never skips one.
+  await act(async () => vi.advanceTimersByTimeAsync(3 * 60_000));
   expect(mocks.getActivitySummary).toHaveBeenCalledTimes(4);
   expect(mocks.reportAccountFailure).toHaveBeenCalledTimes(1);
   await act(async () => root.unmount());

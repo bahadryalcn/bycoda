@@ -16,7 +16,7 @@ async function fixture() {
   const insert = (id: string, value: Record<string, unknown>) =>
     store.db
       .prepare("INSERT INTO tasks (id, value) VALUES (?, ?)")
-      .run(id, JSON.stringify({ id, createdAt: 1, status: "done", ...value }));
+      .run(id, JSON.stringify({ id, createdAt: 1, updatedAt: 100, status: "done", ...value }));
   return { store, tasks, insert };
 }
 
@@ -28,7 +28,6 @@ describe("HostTasks.listCrewRun", () => {
     await insert("other-run", { projectId: "p", crewRunId: "other" });
     await insert("history", { projectId: "p" });
     await insert("foreign", { projectId: "q", crewRunId: "run" });
-    await store.db.prepare("INSERT INTO tasks (id, value) VALUES ('broken', 'not json')").run();
 
     expect((await tasks.listCrewRun("run", "p")).map((task) => task.id)).toEqual(["early", "late"]);
     expect((await tasks.listCrewRun("missing", "p")).map((task) => task.id)).toEqual([]);

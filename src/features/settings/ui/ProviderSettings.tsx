@@ -1,5 +1,6 @@
 import {
   providerAccounts,
+  providerAccountsStorageRevision,
   subscribeProviderAccounts,
 } from "../../providers/public/providerAccounts";
 import { mergeProviderCliChecks } from "../model/providerCliChecks";
@@ -116,8 +117,10 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   );
   const rateLimits = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
   const now = useMinuteNow();
-  useSyncExternalStore(subscribeProviderAccounts, () =>
-    JSON.stringify(PROVIDER_ACCOUNT_PROVIDERS.map((provider) => providerAccounts(provider))),
+  useSyncExternalStore(
+    subscribeProviderAccounts,
+    providerAccountsStorageRevision,
+    providerAccountsStorageRevision,
   );
   const [claudeHooks, setClaudeHooks] = useStoredPreferenceState(
     loadClaudeHooks,

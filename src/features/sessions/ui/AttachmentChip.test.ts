@@ -336,7 +336,8 @@ describe("AttachmentChip image preview", () => {
         }),
       ),
     );
-    expect(container.querySelector("button")).toBeNull();
+    // The Save-a-copy action may exist; nothing may open the image or read its bytes.
+    expect(container.querySelector('[aria-label^="Open"]')).toBeNull();
     expect(fs.readBinaryFile).not.toHaveBeenCalled();
   });
   it("reopens a persisted local image on demand and releases its bytes on close", async () => {

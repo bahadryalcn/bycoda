@@ -42,6 +42,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  document.documentElement.style.removeProperty("--sidebar-opacity");
   vi.unstubAllGlobals();
 });
 
@@ -92,6 +93,9 @@ it("commits a keyboard change once per key and never persists a drag preview", (
   });
   expect(appearance.onOpacity).toHaveBeenCalledTimes(1);
   expect(appearance.onOpacity).toHaveBeenCalledWith(Math.round(SIDEBAR_OPACITY_MIN * 100));
+  expect(document.documentElement.style.getPropertyValue("--sidebar-opacity")).toBe(
+    String(SIDEBAR_OPACITY_MIN),
+  );
   act(() => {
     blur.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
   });

@@ -3,6 +3,7 @@ import { act, createElement, useState, type ComponentProps, type ReactNode } fro
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { getLanguagePreference, setLanguagePreference } from "../../../../shared/i18n";
 import { ModelOrderSettings } from "./ModelOrderSettings";
 import { ModelOrderLimits } from "./ModelOrderLimits";
 import { orderDraft, prepareOrderSave, type OrderDraft } from "../../model/modelRoutingDraft";
@@ -40,7 +41,15 @@ vi.mock("../../../settings/public/settings", () => ({
 vi.mock("../../../automations/public/hostMachines", () => ({
   machineCapabilities: async () => [],
 }));
-vi.mock("../../../sessions/public/modelSource", () => ({ useModelSource: vi.fn() }));
+// A Host source that reports no providers: the list derives its Add choices from it.
+vi.mock("../../../sessions/public/modelSource", () => ({
+  useModelSource: () => ({
+    id: "host",
+    available: () => false,
+    probed: () => true,
+    modelsFor: () => [],
+  }),
+}));
 vi.mock("../../../sessions/public/ModelLabel", () => ({ ModelLabel: () => null }));
 vi.mock("../../model/modelProfile", () => ({
   modelProfile: () => ({ intelligence: 4, cost: 2, estimated: true }),
@@ -140,6 +149,33 @@ it.each([
   expect(container.textContent?.includes("New work waits until tomorrow")).toBe(
     usage.dailyAgentMinutes > 0 && usage.usageUncertain,
   );
+});
+
+it("uses the locale's complete agent-time fraction when usage is stale", async () => {
+  const previousLocale = getLanguagePreference();
+  try {
+    await setLanguagePreference("tr");
+    const draft = orderDraft(
+      { ...EMPTY_MODEL_ROUTING, version: 0, updatedAt: 0 },
+      { dailyAgentMinutes: 120, maxRunningTasks: 2 },
+    );
+    const usage = {
+      machineId: "host",
+      machineName: "Workstation",
+      maxRunningTasks: 2,
+      dailyAgentMinutes: 120,
+      usedMinutes: 75,
+      limitReached: false,
+      stale: true,
+    };
+    await act(() =>
+      root.render(createElement(ModelOrderLimits, { draft, usage, onChange: vi.fn() })),
+    );
+    const value = container.querySelector('[role="meter"]')?.getAttribute("aria-valuetext");
+    expect(value).toMatch(/ · .+ \/ .+/);
+  } finally {
+    await act(() => setLanguagePreference(previousLocale));
+  }
 });
 
 it("shows one compact cap table with unlimited placeholders and saved provider rows only", async () => {

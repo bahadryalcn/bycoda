@@ -90,7 +90,6 @@ export function SshAgentForwarding({
   }>({ target, loading: true });
   if (state.target !== target) setState({ target, loading: false, changed: true });
   const [consumedReview, setConsumedReview] = useState<string | undefined>(undefined);
-  const [expired, setExpired] = useState<string | undefined>(undefined);
   const [clock, setClock] = useState(0);
   const request = useCallback(async () => {
     const selected = current.current;
@@ -154,25 +153,38 @@ export function SshAgentForwarding({
   }, [request]);
   const active = state.target === target ? state : undefined;
   const review = active?.review;
+  // The review expires by wall clock. Only the visible countdown needs periodic updates.
   useEffect(() => {
     if (!review) return;
-    const delay = Math.max(0, Math.min(30_000, review.expiresAt - Date.now()));
-    // The tick stops itself at the review's own expiry; a new review object restarts this effect.
-    const interval = setInterval(() => {
+    const { expiresAt } = review;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const stopCountdown = () => clearInterval(interval);
+    const updateCountdown = () => {
+      stopCountdown();
+      if (document.hidden) return;
       const now = Date.now();
       setClock(now);
-      if (now >= review.expiresAt) clearInterval(interval);
-    }, 250);
-    const timeout = setTimeout(() => setExpired(review.reviewId), delay);
+      if (now < expiresAt) interval = setInterval(() => setClock(Date.now()), 1_000);
+    };
+    document.addEventListener("visibilitychange", updateCountdown);
+    updateCountdown();
+    const timeout = setTimeout(
+      () => {
+        stopCountdown();
+        document.removeEventListener("visibilitychange", updateCountdown);
+        setClock(expiresAt);
+      },
+      Math.max(0, expiresAt - Date.now()),
+    );
     return () => {
       clearTimeout(timeout);
-      clearInterval(interval);
+      stopCountdown();
+      document.removeEventListener("visibilitychange", updateCountdown);
     };
   }, [review]);
   const valid = Boolean(
     review?.agentAvailable &&
     review.expiresAt > clock &&
-    expired !== review.reviewId &&
     consumedReview !== review.reviewId &&
     !active?.loading,
   );

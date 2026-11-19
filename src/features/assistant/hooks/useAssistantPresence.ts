@@ -129,7 +129,7 @@ export function useAssistantPresence(port: AssistantPresencePort = nativeAssista
     items.push({
       kind: "item",
       id: "failure",
-      label: t("Availability change was not confirmed."),
+      label: t("Availability change could not be confirmed."),
       disabled: true,
     });
   if (view.writeError && view.retry)

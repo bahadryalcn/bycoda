@@ -80,3 +80,14 @@ it("keeps an untyped cause as redacted detail under the translated fallback", ()
     ),
   ).not.toContain("abc123secretvalue");
 });
+
+it.each([new Error("socket closed"), "socket closed", null, undefined])(
+  "preserves native messages and empty reasons in both workspace error presenters (%s)",
+  (reason) => {
+    const fallback = "Could not open this conversation.";
+    expect(presentWorkspaceActionError(reason, fallback)).toBe(
+      reason == null ? fallback : `${fallback} socket closed`,
+    );
+    expect(rejectedTransferMessage(reason).includes("socket closed")).toBe(reason != null);
+  },
+);

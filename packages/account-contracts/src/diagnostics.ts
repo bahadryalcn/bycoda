@@ -97,7 +97,8 @@ const QUOTED_SECRET_PATTERN = new RegExp(
   "gi",
 );
 const UNQUOTED_SECRET_PATTERN = new RegExp(
-  String.raw`${SECRET_KEY_HEAD}(?:\\?["'])?)[^\s"',;&}]+`,
+  // A backslash that opens a JSON-escaped quote (`\"`) ends the value, so it stays in the text.
+  String.raw`${SECRET_KEY_HEAD}(?:\\?["'])?)(?:[^\s"',;&}\\]|\\(?!["']))+`,
   "gi",
 );
 

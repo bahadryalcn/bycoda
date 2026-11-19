@@ -170,6 +170,8 @@ it("keeps Send disabled with its reason until the owner writes a reply", async (
   await mount(fake.client);
   expect(off(button("Send"))).toBe(true);
   expect(button("Send").getAttribute("aria-description")).toBe("Write a reply first.");
+  act(() => button("Send").focus());
+  expect(document.activeElement).toBe(button("Send"));
   expect(element.textContent).not.toContain("Write a reply first.");
   expect(element.querySelector(".inbox-note")).toBeNull();
   await type("   ");
@@ -554,7 +556,15 @@ it("allows editing a genuinely refused preparation and preserves its text", asyn
   await mount(fake.client);
   await type("Correct this draft");
   await click(button("Send"));
-  expect(element.textContent).toContain("Draft preview changed.");
+  // #679 keeps the Host refusal behind Details while showing an actionable summary.
+  expect(element.querySelector('[role="alert"]')?.textContent).toContain(
+    "Reply preparation could not finish. Retry the same reply or edit its draft.",
+  );
+  expect(document.body.textContent).not.toContain("Draft preview changed.");
+  await click(button("Details"));
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "Draft preview changed.",
+  );
   expect(fake.writes().some((call) => call.action === "replies.send")).toBe(false);
   await click(button("Edit reply"));
   expect(editor().disabled).toBe(false);

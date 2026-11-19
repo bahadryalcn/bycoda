@@ -350,7 +350,7 @@ export function QuickComposer({
   const model = resolvedModel ?? {
     ...choice,
     id: choice.model,
-    name: "Loading model…",
+    name: t("Loading…"),
   };
   const settings = quickSessionModelSettings(model, cwd ?? undefined, modelSettings);
   const runtimeMode = quickSessionRuntimeMode(model.harness, cwd ?? undefined, pickedRuntimeMode);
@@ -669,7 +669,7 @@ export function QuickComposer({
           canOpen={owner.canMutate}
           prepare={(operation) => owner.prepare(() => operation())}
           onChange={setWorkspaceChoice}
-          onError={setError}
+          onError={(message) => setError({ message })}
           onOpenChange={onGitOpenChange}
           onClose={focusPrompt}
         />
@@ -966,7 +966,7 @@ export function QuickComposer({
                   size="inline"
                   kind="filtered"
                   className="px-2 py-2"
-                  description={t("No matching commands")}
+                  description={t("No matches")}
                 />
               ) : (
                 commandOptions.map((command, index) => (

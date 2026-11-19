@@ -252,16 +252,12 @@ export function SshRunbooks({
       clearTimeout(timer);
     };
   }, [runId, currentStatus, busy]);
+  // The execution review only shows whether approval is still valid, so it needs one expiry timer.
   useEffect(() => {
     if (!review) return;
     const { expiresAt } = review;
-    // The tick stops itself at the review's own expiry; a new review object restarts this effect.
-    const timer = setInterval(() => {
-      const now = Date.now();
-      setClock(now);
-      if (now >= expiresAt) clearInterval(timer);
-    }, 500);
-    return () => clearInterval(timer);
+    const timer = setTimeout(() => setClock(expiresAt), Math.max(0, expiresAt - Date.now()));
+    return () => clearTimeout(timer);
   }, [review]);
   return (
     <>

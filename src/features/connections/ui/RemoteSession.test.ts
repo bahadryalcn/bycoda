@@ -1526,7 +1526,7 @@ it("holds explicit worktree remote creation and drafts when the Host lacks manag
   expect(document.body.textContent).toContain(
     "Update bycoda to create managed sessions on this remote Host.",
   );
-  expect(byLabel("Send")!.disabled).toBe(true);
+  expect(byLabel("Send")!.getAttribute("aria-disabled")).toBe("true");
   await act(async () => byLabel("Send")!.click());
   await act(async () =>
     container
@@ -1546,7 +1546,9 @@ it("holds explicit worktree remote creation and drafts when the Host lacks manag
   expect(draft).toBeDefined();
   await act(async () => draft!.click());
   await type("Keep this unsent remote draft");
-  expect(byLabel("Save draft")!.disabled).toBe(true);
+  const saveDraft = byLabel("Save draft")!;
+  expect(saveDraft.getAttribute("aria-disabled")).toBe("true");
+  expect(saveDraft.disabled).toBe(false);
   await act(async () => byLabel("Save draft")!.click());
   await act(async () =>
     container
@@ -3381,10 +3383,11 @@ it("keeps an independent queue-storage retry available beside a connection probl
   openExistingChat();
   await renderRemoteProbe();
   expect(document.body.textContent).toContain("queue storage unavailable");
+  const queueNotice = [...document.querySelectorAll("[data-toast-tone]")].find((notice) =>
+    notice.textContent?.includes("queue storage unavailable"),
+  );
   expect(
-    [...document.body.querySelectorAll("button")].filter(
-      (button) => button.textContent === "Retry",
-    ),
+    [...queueNotice!.querySelectorAll("button")].filter((button) => button.textContent === "Retry"),
   ).toHaveLength(1);
   expect(
     [...document.body.querySelectorAll("button")].filter(
@@ -4187,15 +4190,17 @@ it("shows follow-up attachment preparation and refuses repeated Send while keepi
     await act(async () => notifyRemoteRecovered("env"));
     await settle();
     await act(async () => remoteOverrides.onSubmit!("shell", "New unsent text", []));
-    const dismiss = [...document.body.querySelectorAll("button")].find(
+    const refusal = t("The previous message is still being sent. Your message is kept.");
+    const notice = [...document.querySelectorAll("[data-toast-tone]")].find((entry) =>
+      entry.textContent?.includes(refusal),
+    );
+    const dismiss = [...notice!.querySelectorAll("button")].find(
       (entry) => entry.getAttribute("aria-label") === t("Dismiss notice"),
     )!;
     expect(dismiss).toBeTruthy();
     expect(dismiss.disabled).toBe(false);
     await act(async () => dismiss.click());
-    expect(document.body.textContent).not.toContain(
-      t("The previous message is still being sent. Your message is kept."),
-    );
+    expect(document.body.textContent).not.toContain(refusal);
   } finally {
     await act(async () => setLanguagePreference("en"));
     machineDown = undefined;

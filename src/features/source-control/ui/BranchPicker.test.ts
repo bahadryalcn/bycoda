@@ -246,7 +246,9 @@ it("updates the branch creation row with the entered name", async () => {
 
   const picker = document.querySelector<HTMLElement>("[data-branch-picker]")!;
   const create = [...picker.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Create and checkout feature/picker",
+    (button) =>
+      button.querySelector("[data-middle-truncate] > :not([aria-hidden])")?.textContent ===
+      "Create and checkout feature/picker",
   );
   expect(create).not.toBeUndefined();
   expect(create?.parentElement?.getAttribute("data-surface-frame")).toBe("pane");
@@ -287,7 +289,9 @@ it("checks out the highlighted matching branch when Enter is pressed", async () 
   expect(highlighted.textContent).toContain("feature/picker");
   expect(
     [...picker.querySelectorAll<HTMLButtonElement>("button")].some(
-      (button) => button.textContent === "Create and checkout picker",
+      (button) =>
+        button.querySelector("[data-middle-truncate] > :not([aria-hidden])")?.textContent ===
+        "Create and checkout picker",
     ),
   ).toBe(true);
 
@@ -351,6 +355,13 @@ it("windows a repository with thousands of branches and still searches all of th
   ) {
     return sized(this);
   });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(280);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return sized(this);
+  });
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(280);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {

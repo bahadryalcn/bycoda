@@ -16,6 +16,9 @@ import {
   subscribeWorkspaceBackground,
 } from "../../../model/workspaceBackground";
 import {
+  applyChatBackgroundBlur,
+  applyChatBackgroundEmptyOpacity,
+  applyChatBackgroundSessionOpacity,
   CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT,
   CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT,
   CHAT_BACKGROUND_SCOPE_DEFAULT,
@@ -54,6 +57,7 @@ import { AppearanceSaveFeedback, type AppearanceSettings } from "../../useAppear
 import { AppearanceSection } from "./AppearanceSection";
 import { LayerStack } from "../controls/LayerStack";
 import { GlassControl } from "../controls/GlassControl";
+import { DraftSlider } from "../controls/DraftSlider";
 import { SceneStrip } from "../controls/SceneStrip";
 import { BackgroundPreview, RandomCombinationButton } from "../controls/BackgroundPreview";
 import { BackgroundLibrary } from "../controls/BackgroundLibrary";
@@ -393,13 +397,14 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
             )}
           </div>
           <Row label={t("Blur")} info={t("Applies to global and project images.")}>
-            <Slider
+            <DraftSlider
               label={t("Chat background blur")}
               value={appearance.chatBackgroundBlur}
-              display={`${appearance.chatBackgroundBlur}px`}
+              format={(next) => `${next}px`}
               min={CHAT_BACKGROUND_BLUR_MIN}
               max={CHAT_BACKGROUND_BLUR_MAX}
-              onChange={appearance.onChatBackgroundBlur}
+              apply={applyChatBackgroundBlur}
+              commit={appearance.onChatBackgroundBlur}
             />
           </Row>
         </div>
@@ -485,26 +490,28 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
             label={t("Empty chat visibility")}
             info={t("Background strength before a chat has messages.")}
           >
-            <Slider
+            <DraftSlider
               label={t("Empty chat background visibility")}
               value={emptyVisibility}
-              display={`${emptyVisibility}%`}
+              format={(next) => `${next}%`}
               min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
               max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
-              onChange={appearance.onChatBackgroundEmptyOpacity}
+              apply={(next) => applyChatBackgroundEmptyOpacity(next / 100)}
+              commit={appearance.onChatBackgroundEmptyOpacity}
             />
           </Row>
           <Row
             label={t("Session visibility")}
             info={t("Background strength once the conversation has messages.")}
           >
-            <Slider
+            <DraftSlider
               label={t("Session background visibility")}
               value={sessionVisibility}
-              display={`${sessionVisibility}%`}
+              format={(next) => `${next}%`}
               min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
               max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
-              onChange={appearance.onChatBackgroundSessionOpacity}
+              apply={(next) => applyChatBackgroundSessionOpacity(next / 100)}
+              commit={appearance.onChatBackgroundSessionOpacity}
             />
           </Row>
         </>

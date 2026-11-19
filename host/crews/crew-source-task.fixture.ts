@@ -64,12 +64,14 @@ export function wireCrewWorkEngine(store: HostStore, engine: Pick<HostEngine, "c
 export function wireCrewSourceTasks(crews: HostCrews, tasks: HostTasks, store: HostStore) {
   const sources: HostTask[] = [];
   const list = tasks.list.bind(tasks);
+  const get = tasks.get?.bind(tasks);
   const save = tasks.save?.bind(tasks);
   const tick = tasks.tick.bind(tasks);
   tasks.list = vi.fn(async (projectId?: string) => [
     ...(await list(projectId)),
     ...sources.filter((task) => !projectId || task.projectId === projectId),
   ]);
+  tasks.get = vi.fn(async (id) => sources.find((task) => task.id === id) ?? (await get?.(id)));
   tasks.save = vi.fn(async (raw: unknown) => {
     const task = raw as HostTask;
     if (!task.id.startsWith("crew-")) {

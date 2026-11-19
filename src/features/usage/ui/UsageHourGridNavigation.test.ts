@@ -35,7 +35,11 @@ it("skips disabled hour cells when arrowing past them within the grid", () => {
 
 it("moves horizontally to the next selectable day without wrapping rows", () => {
   const day = new Date(2026, 2, 8);
-  const window: UsageWindow = { start: atHour(day, 5), end: atHour(day, 20) };
+  // The window spans both columns' days so hour 10 is selectable on the next day too.
+  const window: UsageWindow = {
+    start: atHour(day, 5),
+    end: atHour(new Date(2026, 2, 9), 20),
+  };
   const dates = [day.getTime(), new Date(2026, 2, 9).getTime()];
   const isSelectable = (row: number, column: number) => !isHourOutside(dates[column], row, window);
   const size = { rows: 24, columns: dates.length };

@@ -82,6 +82,15 @@ const truthyJson = (value: string, path: string) => {
   const field = `json_extract(${value},'${path}')`;
   return `(${type} IN ('true','array','object') OR (${type} IN ('integer','real') AND ${field}<>0) OR (${type}='text' AND ${field}<>''))`;
 };
+// Repeat the indexed expressions in the query so SQLite can seek the due range.
+const SCHEDULED_AUTOMATION = `CASE WHEN json_valid(value)
+  THEN ${truthyJson("value", "$.enabled")} AND json_extract(value, '$.trigger.kind') IS NOT 'event'
+  ELSE 1 END`;
+// SQL's negative infinity keeps missing or nonnumeric timestamps eligible at any clock time.
+const DUE_AT = `COALESCE(CASE WHEN json_valid(value) THEN
+  CASE WHEN json_type(value, '$.nextRunAt') IN ('integer','real')
+    THEN json_extract(value, '$.nextRunAt') END
+  END, -1e999)`;
 /** A run this overdue was missed while the machine was off or asleep. */
 const MISSED_RUN_GRACE_MS = 12 * 60 * 60000;
 export const MISSED_RUN_SKIP = "Skipped: missed while this machine was off.";
@@ -146,6 +155,8 @@ export class HostAutomations {
       CREATE TABLE IF NOT EXISTS automation_runs (id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_tasks (run_id TEXT PRIMARY KEY, automation_id TEXT NOT NULL, task_id TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS automation_events (automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, event_id TEXT NOT NULL, kind TEXT NOT NULL, project_id TEXT, run_id TEXT NOT NULL, PRIMARY KEY(automation_id,event_id));
+      CREATE INDEX IF NOT EXISTS automations_due_idx ON automations (${DUE_AT})
+        WHERE ${SCHEDULED_AUTOMATION};
       CREATE INDEX IF NOT EXISTS automation_events_event_idx ON automation_events (event_id);
       CREATE INDEX IF NOT EXISTS automation_runs_history_idx ON automation_runs (automation_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS automation_runs_status_idx ON automation_runs (automation_id, json_extract(value, '$.status'));
@@ -190,20 +201,23 @@ export class HostAutomations {
       .map((row) => JSON.parse(String(row.value)) as HostAutomation)
       .sort((a, b) => a.createdAt - b.createdAt);
   }
-  /** Superset of automations that can be due. Only a numeric nextRunAt past `now` is skipped in
-   * SQL; enabled, event-trigger and missing or legacy nextRunAt keep their JS checks in work(). */
+  /** Legacy rows without a numeric nextRunAt still go through the scheduler's JS due check. */
   private async dueCandidates(now: number): Promise<HostAutomation[]> {
     await this.ready;
 
     return (
       await this.store.db
         .prepare(
-          "SELECT value FROM automations WHERE NOT COALESCE(json_type(value, '$.nextRunAt') IN ('integer','real') AND json_extract(value, '$.nextRunAt') > ?, 0)",
+          `SELECT value, rowid FROM automations WHERE ${SCHEDULED_AUTOMATION} AND ${DUE_AT}<=?`,
         )
         .all(now)
     )
-      .map((row) => JSON.parse(String(row.value)) as HostAutomation)
-      .sort((a, b) => a.createdAt - b.createdAt);
+      .map((row) => ({
+        automation: JSON.parse(String(row.value)) as HostAutomation,
+        ordinal: Number(row.rowid),
+      }))
+      .sort((a, b) => a.automation.createdAt - b.automation.createdAt || a.ordinal - b.ordinal)
+      .map(({ automation }) => automation);
   }
   /** Bind this request only, never the saved automation's autonomous lifetime. */
   withAuthorization<T>(authorized: () => Promise<boolean>, work: () => Promise<T>): Promise<T> {

@@ -1781,6 +1781,7 @@ async function deleteNativeProjectBatch(
       removeSessionAdditionalDirs(id);
       // The cache's change listener deletes the saved draft row.
       clearComposerDraft(id, work);
+      retireToolsDraftsForSession(id);
     }
     sessionPersistence.forget?.(outcome.deleted);
     work.confirmRecovery();

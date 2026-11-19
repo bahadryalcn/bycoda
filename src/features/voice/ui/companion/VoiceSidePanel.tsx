@@ -8,7 +8,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { t } from "../../../../shared/i18n";
 import { placeVoiceSidePanel, type VoiceSidePlacement } from "../../model/voiceSidePanel";
 import styles from "./VoiceCompanionParts.module.css";
 

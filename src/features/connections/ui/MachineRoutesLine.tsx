@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { errorText } from "../../../shared/lib/errors";
 import { Badge } from "../../../shared/ui/Badge";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
@@ -25,10 +26,9 @@ type RouteCheck = { address: string; reachable: boolean | null };
 
 /** Tauri's rejection for a command this desktop build does not register: an older desktop
  * without the route store. Only the saved other address is known then, which is expected. */
-const MISSING_ROUTE_COMMAND = /^Command remote_machine_routes not found$/;
+const MISSING_ROUTE_COMMAND = /^(?:Error: )?Command remote_machine_routes not found$/;
 const olderDesktop = (reason: unknown) =>
-  classifyRemoteError(reason).kind === "outdated" ||
-  MISSING_ROUTE_COMMAND.test(String(reason).replace(/^Error: /, ""));
+  classifyRemoteError(reason).kind === "outdated" || MISSING_ROUTE_COMMAND.test(errorText(reason));
 
 const kindLabel = (kind: Route["kind"]) =>
   kind === "tailscale"
@@ -145,7 +145,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
       prefer,
     })
       .then(setRoutes)
-      .catch((reason: unknown) => setError(String(reason)))
+      .catch((reason: unknown) => setError(errorText(reason)))
       .finally(() => setSaving(false));
   };
   const shown = mergeRoutes(machine, routes);

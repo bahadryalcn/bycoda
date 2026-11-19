@@ -215,7 +215,7 @@ describe("session drag preview and gap", () => {
     rect.mockReturnValue(new DOMRect(10, 20, 120, 100));
     pointer(window, "pointermove", 125, 119);
     const preview = document.querySelector<HTMLElement>("[data-drag-preview]")!;
-    expect(preview.style.width).toBe("120px");
+    expect(preview.style.getPropertyValue("--drag-preview-width")).toBe("120px");
     expect(preview.style.transform).toBe("translate3d(10px, 76px, 0)");
     pointer(window, "pointermove", 1, 10);
     expect(preview.style.transform).toBe("translate3d(10px, 20px, 0)");

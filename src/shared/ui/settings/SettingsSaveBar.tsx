@@ -9,7 +9,7 @@ import { StatusDot } from "../StatusDot";
 import { surfaceAttributes } from "../Surface";
 import { Text } from "../Text";
 import { usePendingSource, type PendingChange } from "./pendingChanges";
-import { SettingsFeedback } from "./SettingsFeedback";
+import { SettingsFeedback } from "./SettingsRows";
 import styles from "./SettingsSaveBar.module.css";
 
 export type SettingsSaveBarProps = {

@@ -47,7 +47,8 @@ export function SidebarUpdateFooter({
   const t = useT();
   const [promptOpen, setPromptOpen] = useState(false);
   const { snapshot, notes, setSnapshot } = useAppUpdater();
-  // Only the explicit "Later" button snoozes; Escape, backdrop and close just hide the dialog.
+  // Only the reminder action snoozes. Dismissal and failures leave reminders unchanged.
+  const canSnooze = snapshot.phase !== "error";
   const closePrompt = () => setPromptOpen(false);
   const laterPrompt = () => {
     snoozeUpdatePrompt();
@@ -153,8 +154,8 @@ export function SidebarUpdateFooter({
           onClose={closePrompt}
           footer={
             <ModalActions>
-              <Button variant="ghost" tooltip={t("24 hours")} onClick={laterPrompt}>
-                {t("Later")}
+              <Button variant="ghost" onClick={canSnooze ? laterPrompt : closePrompt}>
+                {canSnooze ? t("Remind me tomorrow") : t("Close")}
               </Button>
               {snapshot.availableVersion ? (
                 <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />

@@ -4,6 +4,10 @@ Open **Settings > Models** to manage model routing, chat defaults, subagents and
 for this computer's Host. Its tabs, in order, are **Background work**, **Defaults** and
 **Providers**. Decision models have their own Settings page.
 
+In a conversation, focus the model picker and press **Alt+Down** to open recent
+models. Arrow keys skip unavailable models. While the menu shows only unavailable
+models, it explains the state and keeps the current selection.
+
 Every explicit-save editor in Settings uses one save bar. Its count opens the list of
 unsaved changes, grouped by provider, account or section, each with its own undo. Switching
 provider or account keeps every edit; a provider with unsaved edits is marked.
@@ -128,6 +132,9 @@ choose a distinct name before starting browser sign-in. Searching for Antigravit
 account setup opens its setup steps.
 
 Provider account rows separate identity from usage status. The check beside an account marks its provider default. Account management shows complete names and plan details, and terminal profiles wrap their full paths. Email masking stays in effect until you choose Reveal email. CLI updates show model-refresh errors only when discovery fails; an unchanged model list needs no warning.
+
+Bycoda updates recognized npm and Homebrew Codex installs through their package manager. If a standalone Codex updater fails, update it with its original installer and check the version again. If Cursor CLI exits without an error message, run `agent update` (or `cursor-agent update`) in a terminal for that installation to see its output.
+If Bycoda cannot verify the new version, update details include the updater's output when available. Some package-managed CLIs print a manual upgrade command and exit successfully without installing an update.
 
 Account profiles lists only signed-in Claude, Codex and Grok profiles: the default CLI home, home folders such as `.claude2`, and accounts saved by the release or dev app. Each signed-in identity appears once, and an account you already added shows as Connected. If automatic terminal profile discovery fails, open Account profiles to see the error and select Find terminal profiles to retry.
 

@@ -43,7 +43,8 @@ export function useCrewManagedSessionsFeed(cwds: readonly string[], enabled = tr
       queryKey: [HOST_CREWS, "managed", cwd],
       enabled,
       staleTime: 5000,
-      refetchInterval: (query) => feedRefetchInterval(query.state.data),
+      refetchInterval: (query: { state: { data: CrewManagedSession[] | undefined } }) =>
+        feedRefetchInterval(query.state.data),
       retry: false,
       queryFn: async () => {
         const machine = backgroundMachineFor(await backgroundMachines(HOST_CREWS), cwd);

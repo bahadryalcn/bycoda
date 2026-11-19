@@ -10,9 +10,11 @@ export function SettingsSearch({
   onReveal: (section: SettingsSectionId, settingId: string | null) => void;
 }) {
   const locale = useLocale();
+  const [indexedLocale, setIndexedLocale] = useState<typeof locale | null>(null);
   const [query, setQuery] = useState("");
   const revealFrame = useRef<number | null>(null);
-  const matches = useMemo(() => searchSettings(query), [query, locale]);
+  const ready = indexedLocale === locale;
+  const matches = useMemo(() => (ready ? searchSettings(query) : []), [query, locale, ready]);
   const results = useMemo(
     () =>
       matches.map((result) => ({
@@ -31,7 +33,10 @@ export function SettingsSearch({
   useEffect(() => {
     // Reason: the first keystroke would otherwise walk the whole message catalog on the main
     // thread. Build the reverse lookup while idle after Settings opens, and again per language.
-    const warm = () => warmSourceMessages();
+    const warm = () => {
+      warmSourceMessages();
+      setIndexedLocale(locale);
+    };
     if (typeof window.requestIdleCallback === "function") {
       const idle = window.requestIdleCallback(warm, { timeout: 2_000 });
       return () => window.cancelIdleCallback(idle);
@@ -48,7 +53,7 @@ export function SettingsSearch({
       label={t("Search settings")}
       clearLabel={t("Clear settings search")}
       resultsLabel={t("Settings search results")}
-      emptyLabel={t("No matching settings")}
+      emptyLabel={ready ? t("No matching settings") : t("Loading…")}
       items={[]}
       query={query}
       onQueryChange={setQuery}

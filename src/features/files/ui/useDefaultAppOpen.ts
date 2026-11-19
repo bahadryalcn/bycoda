@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { openPathWithDefaultApp } from "../../../platform/tauri/fs";
+import { errorText } from "../../../shared/lib/errors";
 
 /**
  * "Open in default app" state for one viewer. `owner` identifies the file/source the
@@ -34,7 +35,7 @@ export function useDefaultAppOpen(owner: object, path: string) {
         if (request === generation.current)
           setFailure({
             owner,
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: errorText(cause),
           });
       } finally {
         if (request === generation.current) {

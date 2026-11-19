@@ -2373,6 +2373,12 @@ mod tests {
                 [],
             )
             .unwrap();
+            // The JSON expression indexes reject corrupt writes. Bypass them in
+            // this fixture to exercise the indexer's recovery from a damaged row.
+            conn.execute_batch(
+                "DROP INDEX session_blocks_roles; DROP INDEX session_blocks_usage_started",
+            )
+            .unwrap();
             let rows = [
                 (0, "a", json!({"id":"a","role":"user","text":"needle before"}).to_string()),
                 (1, "b", "{not json".to_string()),

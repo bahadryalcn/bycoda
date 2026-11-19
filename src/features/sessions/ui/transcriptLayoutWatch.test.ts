@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { TranscriptLayoutWatch } from "./transcriptLayoutWatch";
+import type { TranscriptLayoutWatch as Watch } from "./transcriptLayoutWatch";
 
 type Observer = { callback: ResizeObserverCallback; targets: Set<Element> };
 let observers: Observer[];
+let TranscriptLayoutWatch: typeof Watch;
 
-beforeEach(() => {
+beforeEach(async () => {
   observers = [];
+  // The window-wide resize observer lives in a module; a fresh copy builds one per test.
+  vi.resetModules();
+  ({ TranscriptLayoutWatch } = await import("./transcriptLayoutWatch"));
   vi.useFakeTimers();
   vi.stubGlobal(
     "ResizeObserver",

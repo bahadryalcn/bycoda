@@ -8583,15 +8583,34 @@ fn stat_files_sync(paths: Vec<String>) -> Result<Vec<FileMtime>, String> {
 pub fn list_windows_drives() -> Vec<String> {
     #[cfg(windows)]
     {
-        let mask = unsafe { windows_sys::Win32::Storage::FileSystem::GetLogicalDrives() };
-        (0..26u8)
-            .filter(|bit| mask & (1u32 << bit) != 0)
-            .map(|bit| format!("{}:/", char::from(b'A' + bit)))
-            .collect()
+        drive_roots(unsafe { windows_sys::Win32::Storage::FileSystem::GetLogicalDrives() })
     }
     #[cfg(not(windows))]
     {
         Vec::new()
+    }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn drive_roots(mask: u32) -> Vec<String> {
+    (0..26u8)
+        .filter(|bit| mask & (1u32 << bit) != 0)
+        .map(|bit| format!("{}:/", char::from(b'A' + bit)))
+        .collect()
+}
+
+#[cfg(test)]
+mod drive_roots_tests {
+    use super::drive_roots;
+
+    /// #613: drive letters come from the logical-drive bitmask alone, with no disk I/O.
+    #[test]
+    fn drive_roots_follow_the_logical_drive_bitmask() {
+        assert!(drive_roots(0).is_empty());
+        assert_eq!(drive_roots(0b101), ["A:/", "C:/"]);
+        assert_eq!(drive_roots(1 << 25), ["Z:/"]);
+        // Bits above Z are not drives.
+        assert!(drive_roots(1 << 26).is_empty());
     }
 }
 
@@ -13472,8 +13491,13 @@ mod tests {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        let result = git_bounded_output::run(
-            &mut command,
+        // Other Git tests share the Windows spawn gate. Measure the silent
+        // child's deadline after the fixture has acquired its spawn turn.
+        let turn = GIT_SPAWN_GATE.enter();
+        let child = command.spawn().unwrap();
+        drop(turn);
+        let result = git_bounded_output::collect(
+            child,
             &[],
             1024,
             None,

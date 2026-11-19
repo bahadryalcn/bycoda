@@ -14,6 +14,7 @@ import {
 import { copyNativeCaptureData, isNativeCaptureObject } from "../../shared/lib/native-capture-json";
 
 export type NoteInputWork = NativeInputWork;
+type SizedInput = { text: string; bytes: number };
 type Port = {
   key: string;
   generation: number;
@@ -21,6 +22,8 @@ type Port = {
   controls: NativeInputControls;
   acknowledgedDraft?: { raw: unknown; value: unknown };
   retainedBytes: number;
+  sizedInput?: SizedInput;
+  previousSizedInput?: SizedInput;
   blocked: boolean;
 };
 export const NOTE_PRIVATE_INPUT_LIMITS = Object.freeze({ records: 64, bytes: 64 * 1024 * 1024 });
@@ -357,11 +360,17 @@ export class NoteInputOwner {
         : undefined;
     if (this.retiring && !inherited) return null;
     if (!inherited) {
-      for (const port of this.ports.values()) {
+      const ports = [...this.ports.values()];
+      // The preview range can still reflect the previous render while the source
+      // editor's change schedules its save. Reuse the exact size of that projection.
+      const source = ports.find((port) => port.key === "source");
+      const sourceSize = source?.sizedInput;
+      const previousSourceSize = source?.previousSizedInput;
+      for (const port of ports) {
         if (
           port.blocked ||
-          [...this.ports.values()].filter((entry) => entry.key === port.key).length !== 1 ||
-          !this.reserveInput(port, privateText(port.read().snapshot) ?? "")
+          ports.filter((entry) => entry.key === port.key).length !== 1 ||
+          !this.reserveSnapshot(port, port.read().snapshot, sourceSize, previousSourceSize)
         )
           return null;
       }
@@ -523,15 +532,26 @@ export class NoteInputOwner {
     return this.reserveBytes(port, privateEncoder.encode(text).byteLength, source);
   }
   /** Admission from a snapshot already in hand, using the editor's tracked size when it has one. */
-  private reserveSnapshot(port: Port, snapshot: Record<string, unknown>) {
-    const tracked = snapshot.inputKind === "codemirror" ? snapshot.textBytes : undefined;
-    return this.reserveBytes(
-      port,
-      typeof tracked === "number" && typeof snapshot.text === "string"
-        ? tracked
-        : privateEncoder.encode(privateText(snapshot) ?? "").byteLength,
-      snapshot.source,
-    );
+  private reserveSnapshot(
+    port: Port,
+    snapshot: Record<string, unknown>,
+    sourceSize?: SizedInput,
+    previousSourceSize?: SizedInput,
+  ) {
+    const text = privateText(snapshot) ?? "";
+    const tracked =
+      snapshot.inputKind === "codemirror" && typeof snapshot.textBytes === "number"
+        ? snapshot.textBytes
+        : snapshot.inputKind === "preview-range"
+          ? [sourceSize, previousSourceSize].find((sized) => sized?.text === text)?.bytes
+          : undefined;
+    const bytes = tracked ?? privateEncoder.encode(text).byteLength;
+    if (!this.reserveBytes(port, bytes, snapshot.source)) return false;
+    if (port.key === "source" && port.sizedInput?.text !== text) {
+      port.previousSizedInput = port.sizedInput;
+      port.sizedInput = { text, bytes };
+    }
+    return true;
   }
   private reserveBytes(port: Port, textBytes: number, source: unknown) {
     const small = source === "tag-input" || source === "inline-edit" || port.key === "title";

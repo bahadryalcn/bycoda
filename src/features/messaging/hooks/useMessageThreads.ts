@@ -14,12 +14,11 @@ import {
 } from "../model/messageThreads";
 import {
   accountGeneration,
-  dropAllMessagingCaches,
   subscribeMessagingCaches,
   syncMessagingAccounts,
   threadListCache,
 } from "../model/messagingCache";
-import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
+import "../model/messagingLockPurge";
 
 export const MESSAGES_REFRESH_INTERVAL_MS = 60_000;
 
@@ -164,15 +163,6 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
       }),
     [],
   );
-
-  // Cached bodies leave memory when a group lock engages, not only when an account changes.
-  const lockedGroupIds = useLockSnapshot().lockedGroupIds;
-  const lockedRef = useRef(lockedGroupIds);
-  useEffect(() => {
-    const engaged = [...lockedGroupIds].some((id) => !lockedRef.current.has(id));
-    lockedRef.current = lockedGroupIds;
-    if (engaged) dropAllMessagingCaches();
-  }, [lockedGroupIds]);
 
   // First load and every change to the connected account set.
   useEffect(() => {

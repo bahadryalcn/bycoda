@@ -40,7 +40,14 @@ import { ControlLane, ControlLaneBusy } from "./control-lane";
 import { PeerMessageBudget, WS_MESSAGE_BUDGET } from "./message-budget";
 import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
 import { HostStreamError, type HostSubscriptionHub } from "./subscriptions";
-import { dispatchErrorCode, principalCapabilities, rejectUpgrade, waitFor } from "./server-helpers";
+import {
+  dispatchErrorCode,
+  hostHeaderAllowed,
+  principalCapabilities,
+  rejectUpgrade,
+  waitFor,
+} from "./server-helpers";
+import { isTunnelUpgradeUrl } from "../../dev-servers/dev-server-tunnel";
 import {
   authorizeWith,
   invalidRequestMessage,
@@ -84,6 +91,8 @@ export type HostWebSocketOptions = {
   /** Exact reverse-proxy Host values require deliberate composition. No wildcards.
    * A function is read on every upgrade so a learned proxy name (Tailscale Serve) applies live. */
   allowedHosts?: readonly string[] | (() => readonly string[]);
+  /** Gives a loopback proxy a retryable refusal while its exact name is being discovered. */
+  retryUnknownHost?: (host: string) => boolean;
   limits?: Partial<
     Record<
       | "maxPendingRpc"
@@ -924,39 +933,12 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
   }
 
   function validHost(request: IncomingMessage): boolean {
-    const address = options.server.address();
-    if (!address || typeof address === "string") return false;
-    const allowed = [
-      `127.0.0.1:${address.port}`,
-      `localhost:${address.port}`,
-      `[::1]:${address.port}`,
-      ...((typeof options.allowedHosts === "function"
-        ? options.allowedHosts()
-        : options.allowedHosts) ?? []),
-    ];
-    const host = request.headers.host;
-    if (typeof host !== "string") return false;
-    if (allowed.includes(host)) return true;
-    // SSH may map a different local port onto this listener. The hostname must
-    // still be literal loopback; credentials and hello bind the actual Host.
-    try {
-      const endpoint = new URL(`http://${host}`);
-      const port = Number(endpoint.port || 80);
-      return (
-        endpoint.host === host.toLowerCase() &&
-        !endpoint.username &&
-        !endpoint.password &&
-        ["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname) &&
-        Number.isInteger(port) &&
-        port >= 1 &&
-        port <= 65_535
-      );
-    } catch {
-      return false;
-    }
+    return hostHeaderAllowed(request, options.server, options.allowedHosts);
   }
 
   const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    // `/ws-tunnel` has its own upgrade listener (dev-server-tunnel.ts).
+    if (isTunnelUpgradeUrl(request.url)) return;
     const remoteSource =
       socket instanceof Object && "remoteAddress" in socket
         ? String(socket.remoteAddress ?? "unknown")
@@ -980,11 +962,20 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       closing ||
       request.url !== "/ws" ||
       request.headers.origin !== undefined ||
-      !validHost(request) ||
       !protocol?.includes(WS_SUBPROTOCOL) ||
       !token
     ) {
       rejectUpgrade(socket, token ? 400 : 401);
+      return;
+    }
+    if (!validHost(request)) {
+      const proxy =
+        remoteSource === "127.0.0.1" ||
+        remoteSource === "::1" ||
+        remoteSource === "::ffff:127.0.0.1";
+      const host = request.headers.host;
+      const retry = proxy && typeof host === "string" && options.retryUnknownHost?.(host);
+      rejectUpgrade(socket, retry ? 503 : 400);
       return;
     }
     // Behind a loopback proxy the socket address is shared by every phone. Forwarding headers are

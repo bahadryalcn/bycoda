@@ -118,7 +118,11 @@ it("names the failing field and its rule on each failed save, and keeps the draf
   const fieldError = (label: string) =>
     (field(label).getAttribute("aria-describedby") ?? "")
       .split(" ")
-      .map((id) => document.getElementById(id)?.textContent ?? "")
+      // The message node carries a rolling visual copy after the first child (see TextField.test).
+      .map((id) => {
+        const node = document.getElementById(id);
+        return node?.firstElementChild?.textContent ?? node?.textContent ?? "";
+      })
       .join(" ")
       .trim();
   const type = async (label: string, value: string) => {

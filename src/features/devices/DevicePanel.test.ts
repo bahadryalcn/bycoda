@@ -72,7 +72,11 @@ it("explains a running host with no devices and offers refresh and setup", async
   const api = makeApi();
   vi.mocked(api.list).mockResolvedValue({ devices: [], errors: [] });
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  expect(container.querySelector('[role="status"]')?.textContent).toBe("No devices found");
+  // The bar also reports "No devices" as a status, so name the stage's own message.
+  const statuses = [...container.querySelectorAll('[role="status"]')].map(
+    (node) => node.textContent,
+  );
+  expect(statuses).toContain("No devices found");
   expect(container.querySelector('[role="status"] button')).toBeNull();
   expect(button("Refresh devices")).toBeTruthy();
   expect(button("Setup and access")).toBeTruthy();

@@ -32,6 +32,11 @@ const item = (
   ...overrides,
 });
 
+// #670 gives each virtual item its own conversation button and may add a tag overflow button.
+const conversationButtons = () => [
+  ...element.querySelectorAll<HTMLButtonElement>('[role="listitem"] button.inbox-row'),
+];
+
 function renderList(props: Partial<Parameters<typeof InboxList>[0]> = {}) {
   const onSelect = vi.fn();
   const onMore = vi.fn();
@@ -64,7 +69,7 @@ function renderList(props: Partial<Parameters<typeof InboxList>[0]> = {}) {
 
 it("renders one row per conversation with its title and status, and the unread state once", () => {
   renderList();
-  const rows = [...element.querySelectorAll('[role="listitem"] button')] as HTMLButtonElement[];
+  const rows = conversationButtons();
   expect(rows).toHaveLength(2);
   expect(rows[0].textContent).toContain("Ana");
   expect(rows[0].querySelector('[role="img"][aria-label="Unread"]')).not.toBeNull();
@@ -74,7 +79,7 @@ it("renders one row per conversation with its title and status, and the unread s
 
 it("keeps tags beside the row button, so the row is one interactive control", () => {
   renderList();
-  const rows = [...element.querySelectorAll('[role="listitem"] button')] as HTMLButtonElement[];
+  const rows = conversationButtons();
   expect(rows[0].querySelector("button")).toBeNull();
   expect(rows[0].textContent).not.toContain("vip");
   expect(element.textContent).toContain("vip");
@@ -82,14 +87,14 @@ it("keeps tags beside the row button, so the row is one interactive control", ()
 
 it("marks the selected conversation with aria-current", () => {
   renderList();
-  const rows = [...element.querySelectorAll('[role="listitem"] button')] as HTMLButtonElement[];
+  const rows = conversationButtons();
   expect(rows[0].getAttribute("aria-current")).toBeNull();
   expect(rows[1].getAttribute("aria-current")).toBe("true");
 });
 
 it("selects a conversation on click and loads the next page on Load more", () => {
   const { onSelect, onMore } = renderList();
-  const rows = [...element.querySelectorAll('[role="listitem"] button')] as HTMLButtonElement[];
+  const rows = conversationButtons();
   act(() => rows[0].click());
   expect(onSelect).toHaveBeenCalledWith("t-1");
   const more = [...element.querySelectorAll("button")].find((button) =>

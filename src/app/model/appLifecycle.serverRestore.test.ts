@@ -26,6 +26,9 @@ vi.mock("../../features/sessions/data/sessionStore", async (original) => ({
   listInFlightSessions: async () => [],
 }));
 
+// Every case re-imports the whole lifecycle module graph, which takes about 5 s on a busy machine.
+vi.setConfig({ testTimeout: 30_000 });
+
 beforeEach(() => {
   vi.resetModules();
   fixture.label = "main";

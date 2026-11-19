@@ -763,7 +763,10 @@ async function openSession(registry: SessionBrowserRegistry, sessionId: string) 
 
 it("launches a fresh pooled Chromium after the shared process disconnects or a page crashes", async () => {
   const { loader, processes, pages } = pooledChromium();
-  const registry = new SessionBrowserRegistry(loader);
+  // The crash listener is attached with the runtime-log capture, as in the Host composition.
+  const registry = new SessionBrowserRegistry(loader, Date.now, {
+    runtimeLogs: new RuntimeLogsService(),
+  });
   try {
     const a = await openSession(registry, "a");
     expect(processes).toHaveLength(1);
@@ -788,9 +791,16 @@ it("closes the pooled Chromium after bounded idle without closing it under a liv
     const a = await openSession(registry, "a");
     const b = await openSession(registry, "b");
     await registry.dispatch("browser.close", a, "owner");
-    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    // Past the 2 minute pool idle, yet inside the 5 minute idle close of session b itself.
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
     expect(processes[0].close).not.toHaveBeenCalled();
-    await registry.dispatch("browser.close", b, "owner");
+    // The 30 second control lease lapsed meanwhile, so session b claims again to close.
+    const reclaim = await registry.dispatch(
+      "browser.claim",
+      { projectId: "p", sessionId: "b" },
+      "owner",
+    );
+    await registry.dispatch("browser.close", { ...b, leaseId: reclaim.leaseId }, "owner");
     await vi.advanceTimersByTimeAsync(60_000);
     expect(processes[0].close).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(60_000);

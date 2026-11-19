@@ -21,6 +21,8 @@ async function tooltipText(element: HTMLElement): Promise<string> {
   });
   return text;
 }
+// The binding test hovers many controls, each waiting out the tooltip delay for real.
+vi.setConfig({ testTimeout: 30_000 });
 /** Key caps render without the "+" joiner. */
 const CAPS = MOD.replace("+", "");
 

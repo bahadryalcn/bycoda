@@ -18,6 +18,7 @@ import { HARNESS_TITLE, type HarnessId } from "../../sessions";
 import {
   newProviderAccount,
   providerAccounts,
+  providerAccountsStorageRevision,
   PROVIDER_ACCOUNT_PROVIDERS,
   removeProviderAccount,
   editProviderAccount,
@@ -85,10 +86,6 @@ const SETTINGS_HARNESSES: readonly HarnessId[] = [
   ...SHARED_CLI_ACCOUNT_PROVIDERS,
 ];
 
-/** Serialized account list: changes whenever any provider's accounts change in this or another window. */
-const providerAccountsSnapshot = () =>
-  JSON.stringify(PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts));
-
 export function ProviderAccountsSettings({
   harness,
   onBusyChange,
@@ -101,8 +98,8 @@ export function ProviderAccountsSettings({
   useLocale();
   const accountsRevision = useSyncExternalStore(
     subscribeProviderAccounts,
-    providerAccountsSnapshot,
-    providerAccountsSnapshot,
+    providerAccountsStorageRevision,
+    providerAccountsStorageRevision,
   );
   // Local refreshes cover sign-in and removal results the account list itself does not show.
   const [refreshes, setVersion] = useState(0);

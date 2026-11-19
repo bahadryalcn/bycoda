@@ -60,10 +60,12 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   onAdd.mockClear();
+  account.state = { phase: "signed-out" };
 });
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -84,6 +86,28 @@ it("shows the sign-in prompt and an empty state when nothing is found or the com
 
 it("hides machines that are already added", async () => {
   await render([{ ...native, alreadyAdded: true }]);
+  expect(container.textContent).not.toContain("SSH config");
+});
+
+it("keeps confirmed native candidates through failed refreshes and skips overlapping ticks", async () => {
+  vi.useFakeTimers();
+  await render([native]);
+  let rejectRefresh!: (reason: Error) => void;
+  const read = vi.mocked(invoke);
+  read.mockClear().mockImplementationOnce(
+    () =>
+      new Promise((_, reject) => {
+        rejectRefresh = reject;
+      }),
+  );
+  const advance = (ms: number) => act(async () => vi.advanceTimersByTimeAsync(ms));
+  await advance(30_000);
+  expect(read).toHaveBeenCalledExactlyOnceWith("discover_machine_candidates");
+  await act(async () => rejectRefresh(new Error("Discovery temporarily unavailable")));
+  expect(container.textContent).toContain("SSH config");
+  read.mockResolvedValueOnce([]);
+  await advance(10_000);
+  expect(read).toHaveBeenCalledTimes(2);
   expect(container.textContent).not.toContain("SSH config");
 });
 

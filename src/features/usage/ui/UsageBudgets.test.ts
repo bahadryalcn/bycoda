@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import type { UsageBudget, BudgetReading } from "../model/usageBudgets";
 const readings = vi.hoisted(() => ({
   budgets: [] as UsageBudget[],
@@ -38,6 +38,16 @@ vi.mock("../model/usageBudgetReadings", () => ({
   createBudgetReader: () => vi.fn(async () => readings.reading),
 }));
 import { UsageBudgets } from "./UsageBudgets";
+
+// jsdom has no ResizeObserver; the help popover measures its placement with one.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+});
 
 it("retains empty numeric drafts and native token/percentage constraints in the actual budget editor", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

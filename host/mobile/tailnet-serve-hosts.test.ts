@@ -37,8 +37,12 @@ describe("tailnet serve hosts", () => {
       .mockResolvedValueOnce({ state: "setup-required" });
     const hosts = createTailnetServeHosts(read);
     expect(hosts.current()).toEqual([]);
+    expect(hosts.retryUnknownHost("bab.tail1.ts.net")).toBe(true);
+    expect(hosts.retryUnknownHost("foreign.example.com")).toBe(false);
+    expect(hosts.retryUnknownHost("bab.tail1.ts.net:8443")).toBe(false);
     await vi.advanceTimersByTimeAsync(0);
     expect(hosts.current()).toEqual(["bab.tail1.ts.net"]);
+    expect(hosts.retryUnknownHost("other.tail1.ts.net")).toBe(false);
     // A throw, `unavailable` (how a failed CLI call is reported) and a permission
     // problem are not proof that Serve stopped.
     for (let probe = 0; probe < 3; probe++) {

@@ -59,10 +59,15 @@ export class AssistantObservationJournal {
         id INTEGER PRIMARY KEY CHECK(id=1), sequence INTEGER NOT NULL
       );
       INSERT OR IGNORE INTO assistant_observation_floor VALUES(1,0);
-      CREATE TRIGGER IF NOT EXISTS assistant_observation_retention AFTER INSERT ON assistant_observation_events BEGIN
+      -- Recreated on open: older databases hold a trigger that scans by rowid. MAX(+sequence)
+      -- keeps SQLite from its rowid min/max shortcut so the expiry index serves the lookup.
+      -- Sequences are AUTOINCREMENT and only ever trimmed from the bottom, so they stay contiguous
+      -- and the 10,000-row cap is NEW.sequence-10000 without walking an index with OFFSET.
+      DROP TRIGGER IF EXISTS assistant_observation_retention;
+      CREATE TRIGGER assistant_observation_retention AFTER INSERT ON assistant_observation_events BEGIN
         UPDATE assistant_observation_floor SET sequence=max(sequence,
-          COALESCE((SELECT MAX(sequence) FROM assistant_observation_events WHERE expires_at<=CAST(strftime('%s','now') AS INTEGER)*1000),0),
-          COALESCE((SELECT sequence FROM assistant_observation_events ORDER BY sequence DESC LIMIT 1 OFFSET 10000),0)) WHERE id=1;
+          COALESCE((SELECT MAX(+sequence) FROM assistant_observation_events WHERE expires_at<=CAST(strftime('%s','now') AS INTEGER)*1000),0),
+          NEW.sequence-10000) WHERE id=1;
         DELETE FROM assistant_observation_events WHERE sequence <= (SELECT sequence FROM assistant_observation_floor WHERE id=1);
       END;
     `);
@@ -682,7 +687,7 @@ export class AssistantObservationJournal {
     return this.store.transaction(async () => {
       await this.store.db
         .prepare(`UPDATE assistant_observation_floor SET sequence=max(sequence,
-        COALESCE((SELECT MAX(sequence) FROM assistant_observation_events WHERE expires_at<=?),0)) WHERE id=1`)
+        COALESCE((SELECT MAX(+sequence) FROM assistant_observation_events WHERE expires_at<=?),0)) WHERE id=1`)
         .run(Date.now());
       await this.store.db.exec(
         "DELETE FROM assistant_observation_events WHERE sequence <= (SELECT sequence FROM assistant_observation_floor WHERE id=1)",

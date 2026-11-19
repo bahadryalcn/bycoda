@@ -1215,14 +1215,14 @@ export const Composer = memo(function Composer({
       const next = mergeAttachments(previous, incoming);
       attachmentsRef.current = next;
       setAttachments(next);
-      // Files the full draft left out, and blobs a read skipped, are said, not silently dropped.
-      setPasteError(
-        [releaseOverLimit(previous, next, incoming), notice].filter(Boolean).join(" ") || null,
-      );
+      const said = [releaseOverLimit(previous, next, incoming), notice].filter(Boolean).join(" ");
       draftRevisionRef.current += 1;
       // Skipped duplicates are not in `next`, so they get no token either.
       insertIntoDraft(tokensForIncoming(previous, next.slice(previous.length)));
       syncHasText(ref.current?.value ?? "");
+      // Said after the token insertion: that edit's input event clears the notice line.
+      // Files the full draft left out, and blobs a read skipped, are said, not silently dropped.
+      setPasteError(said || null);
       ref.current?.focus();
     },
     [canMutateDraft, harness, insertIntoDraft, syncHasText],

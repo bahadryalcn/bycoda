@@ -28,7 +28,12 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 vi.mock("./InboxDetail", () => ({
   InboxDetail: ({ item }: { item: InboxItem | null }) =>
-    createElement("output", { "aria-label": "Selected inbox item" }, item?.title ?? ""),
+    createElement(
+      "div",
+      null,
+      createElement("output", { "aria-label": "Selected inbox item" }, item?.title ?? ""),
+      createElement("textarea", { "aria-label": "Comment draft" }),
+    ),
 }));
 vi.mock("./JiraBoardView", () => ({
   JiraBoardView: ({ onSelect }: { onSelect: (issue: never) => void }) =>
@@ -186,6 +191,38 @@ it("groups Jira view and read/refresh icons beside search and retains the select
   expect(button("List").getAttribute("aria-pressed")).toBe("true");
 });
 
+// Issue #1248: Escape that cancels an IME candidate must not close the Inbox.
+it("ignores an IME-composing Escape", async () => {
+  invoke.mockImplementation(async (command) =>
+    command.endsWith("_status") ? { connected: false } : [],
+  );
+  const onClose = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(InboxView, {
+        cwd: "/work/project",
+        recents: [],
+        onClose,
+        onAsk: async () => "session",
+        onAskRestart: async () => "session",
+        onAskMount: () => {},
+        onOpenIntegrations: () => {},
+      }),
+    ),
+  );
+  const press = (init: KeyboardEventInit) =>
+    act(async () => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, ...init }),
+      );
+    });
+  await press({ isComposing: true });
+  await press({ keyCode: 229 });
+  expect(onClose).not.toHaveBeenCalled();
+  await press({});
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
 it("closes the open Jira board detail on Escape before leaving the Inbox", async () => {
   saveInboxSource("jira");
   saveInboxConnections({
@@ -212,9 +249,9 @@ it("closes the open Jira board detail on Escape before leaving the Inbox", async
       }),
     ),
   );
-  const escape = () =>
+  const escape = (target: EventTarget = document.body) =>
     act(async () => {
-      document.body.dispatchEvent(
+      target.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
       );
     });
@@ -227,6 +264,9 @@ it("closes the open Jira board detail on Escape before leaving the Inbox", async
     container.querySelector<HTMLButtonElement>("[data-jira-board-fixture]")!.click(),
   );
   expect(container.querySelector('aside[aria-label="ENG-1"]')).not.toBeNull();
+  await escape(container.querySelector('aside textarea[aria-label="Comment draft"]')!);
+  expect(container.querySelector('aside[aria-label="ENG-1"]')).not.toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
   await escape();
   expect(container.querySelector('aside[aria-label="ENG-1"]')).toBeNull();
   expect(onClose).not.toHaveBeenCalled();

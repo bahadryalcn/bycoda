@@ -169,6 +169,19 @@ describe("account controller", () => {
     });
   });
 
+  it("releases the native sign-in flow when opening the browser fails", async () => {
+    const t = setup();
+    await t.controller.start();
+    t.openExternal.mockRejectedValueOnce(new Error("Browser could not open"));
+    await t.controller.signIn();
+    expect(t.native.signInCancel).toHaveBeenCalledExactlyOnceWith("h1");
+    expect(t.native.signInPoll).not.toHaveBeenCalled();
+    expect(t.controller.getState()).toMatchObject({
+      phase: "signed-out",
+      notice: "sign-in-failed",
+    });
+  });
+
   it("cancel frees the native flow and goes back to signed out", async () => {
     const t = setup({ poll: [] });
     await t.controller.start();
@@ -347,10 +360,15 @@ describe("account controller", () => {
       expect(t.storage.data.has(CACHE_KEY)).toBe(false);
       expect(t.controller.getState()).toMatchObject({ phase: "signed-out", notice: null });
       // The module-level device id stayed cleared: later calls carry no device header.
+      // A signed-out call never reaches the network, so a valid token must exist for a request
+      // to be sent and its headers to be observed.
+      t.setSignedIn(true);
+      const sentBefore = t.requests.length;
       await t.controller
         .api()
         .listDevices()
-        .catch(() => undefined); // -- the signed-out call is rejected; only its headers matter.
+        .catch(() => undefined); // -- the service may reject the call; only its headers matter.
+      expect(t.requests).toHaveLength(sentBefore + 1);
       expect(t.requests.at(-1)!.headers["X-Bycoda-Device"]).toBeUndefined();
     });
 
@@ -374,6 +392,7 @@ describe("account controller", () => {
       const t = setup();
       await t.controller.start();
       t.setSignedIn(true);
+      const devicesBefore = t.server.state.devices.size;
       const release = t.holdAnswers();
       const signIn = t.controller.signIn();
       await vi.waitFor(() => expect(t.requests.length).toBeGreaterThan(0)); // verify(true) is running
@@ -383,7 +402,11 @@ describe("account controller", () => {
       await signIn;
       expect(writes).not.toHaveBeenCalled();
       expect(t.storage.data.has(CACHE_KEY)).toBe(false);
-      expect(t.server.state.devices.size).toBe(0);
+      // The mock service starts with a sample device; this computer must not be added to it.
+      expect(t.server.state.devices.size).toBe(devicesBefore);
+      expect([...t.server.state.devices.values()].map((device) => device.name)).not.toContain(
+        "Ada laptop",
+      );
       expect(t.controller.getState()).toMatchObject({ phase: "signed-out", notice: null });
     });
   });

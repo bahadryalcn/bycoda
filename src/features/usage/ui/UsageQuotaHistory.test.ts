@@ -185,6 +185,15 @@ it("sorts Time and Reset chronologically over year boundaries, with missing rese
 });
 it("bounds plot nodes for thousands of samples while the review table and count keep the data", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // happy-dom has no layout: give the windowed table a viewport and row heights.
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 40 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
   history.splice(
     0,
     history.length,
@@ -212,10 +221,16 @@ it("bounds plot nodes for thousands of samples while the review table and count 
     );
     expect(host.querySelectorAll(".usage-quota-point").length).toBeLessThanOrEqual(180);
     expect(host.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain("5000");
-    expect(host.querySelectorAll("tbody tr")).toHaveLength(100);
+    // The 100 retained rows stay in the data; the table mounts only the visible window,
+    // and only while its disclosure is open (#1204).
+    await openTable(host);
+    const mountedRows = host.querySelectorAll("tbody tr").length;
+    expect(mountedRows).toBeGreaterThan(0);
+    expect(mountedRows).toBeLessThan(100);
   } finally {
     await act(async () => root.unmount());
     host.remove();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   }
 });

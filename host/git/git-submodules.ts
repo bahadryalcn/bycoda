@@ -29,6 +29,7 @@ export type HostGitSubmodules = { paths: string[]; limit: RepositoryDiscoveryLim
 export async function hostGitSubmodules(
   cwd: string,
   includeRepositories = false,
+  maxPaths = MAX_SUBMODULES,
 ): Promise<HostGitSubmodules> {
   const startedAt = monotonicNow();
   const remaining = () => Math.floor(Math.max(0, 15_000 - elapsedSince(startedAt)));
@@ -36,7 +37,8 @@ export async function hostGitSubmodules(
   const queue = [root];
   const seen = new Set([root]);
   const paths: string[] = [];
-  for (let index = 0; index < queue.length; index++) {
+  let limit: RepositoryDiscoveryLimit | null = null;
+  gitlinks: for (let index = 0; index < queue.length; index++) {
     const parent = queue[index];
     const entries = await git(parent, ["ls-files", "--stage", "-z", "--", "."], remaining()).catch(
       (error: { stderr?: unknown }) => {
@@ -58,16 +60,19 @@ export async function hostGitSubmodules(
       if (!(await stat(join(child, ".git")).catch(() => null))) continue;
       const top = await git(child, ["rev-parse", "--show-toplevel"], remaining());
       if ((await realpath(top.trim())) !== child) continue;
-      if (paths.length >= MAX_SUBMODULES) throw new Error("Too many nested submodules");
+      if (paths.length >= maxPaths) {
+        // Keep what was verified; the caller shows the list as limited.
+        limit = "repositories";
+        break gitlinks;
+      }
       seen.add(child);
       paths.push(rel.split(sep).join("/"));
       queue.push(child);
     }
   }
-  let limit: RepositoryDiscoveryLimit | null = null;
   if (includeRepositories) {
     const discovery = await nestedRepositoryCandidates(root, remaining);
-    limit = discovery.limit;
+    limit ??= discovery.limit;
     for (const candidate of discovery.repositories) {
       const child = await realpath(candidate);
       const rel = relative(root, child);
@@ -75,8 +80,7 @@ export async function hostGitSubmodules(
         continue;
       const top = await git(child, ["rev-parse", "--show-toplevel"], remaining());
       if ((await realpath(top.trim())) !== child) continue;
-      if (paths.length >= MAX_SUBMODULES) {
-        // Keep what was verified; the caller shows the list as limited.
+      if (paths.length >= maxPaths) {
         limit = "repositories";
         break;
       }

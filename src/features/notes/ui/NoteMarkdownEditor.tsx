@@ -299,7 +299,7 @@ export function NoteMarkdownEditor({
           // Exact size of `text` when it is the live document's string; absent otherwise, so the
           // owner encodes the text itself.
           ...(documentValue.current !== undefined &&
-          documentValue.current === documentTexts.get(view.state.doc)
+          documentValue.current === documentText(view.state.doc)
             ? { textBytes: bytesOf(view.state.doc) }
             : {}),
           canonicalValue: valueRef.current,

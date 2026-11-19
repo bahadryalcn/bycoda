@@ -88,7 +88,8 @@ describe("syncProjectKindsWith", () => {
         throw new Error("conflict");
       }),
     });
-    await expect(syncProjectKindsWith(io, { "g:/a": "work" })).resolves.toBeUndefined();
+    // The caller learns the Host does not hold the tags, so it can retry.
+    await expect(syncProjectKindsWith(io, { "g:/a": "work" })).resolves.toBe(false);
     expect(io.get).toHaveBeenCalledTimes(2);
     expect(io.save).toHaveBeenCalledTimes(2);
     expect(io.save.mock.calls[1][0]).toBe(2);
@@ -100,19 +101,19 @@ describe("syncProjectKindsWith", () => {
       .mockRejectedValueOnce(new Error("conflict"))
       .mockResolvedValueOnce(state(5));
     const io = fake({ save });
-    await syncProjectKindsWith(io, { "g:/a": "work" });
+    await expect(syncProjectKindsWith(io, { "g:/a": "work" })).resolves.toBe(true);
     expect(save).toHaveBeenCalledTimes(2);
   });
 
   it("skips an unsupported Host and swallows a failed read", async () => {
     vi.spyOn(console, "warn");
     const old = fake({ supported: vi.fn(async () => false) });
-    await syncProjectKindsWith(old, { "g:/a": "work" });
+    await expect(syncProjectKindsWith(old, { "g:/a": "work" })).resolves.toBe(false);
     expect(old.get).not.toHaveBeenCalled();
     const broken = fake({
       get: vi.fn(async () => Promise.reject(new Error("offline"))),
     });
-    await expect(syncProjectKindsWith(broken, { "g:/a": "work" })).resolves.toBeUndefined();
+    await expect(syncProjectKindsWith(broken, { "g:/a": "work" })).resolves.toBe(false);
     expect(broken.save).not.toHaveBeenCalled();
   });
 });

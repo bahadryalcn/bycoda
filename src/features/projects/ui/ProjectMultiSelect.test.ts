@@ -264,7 +264,8 @@ it("creates one group for the selection and rejects a hidden destination with th
   // Regression for #1164: the clash is named on the field and is not reported as a save failure.
   const field = document.querySelector("#project-selection-group-name")!;
   expect(field.getAttribute("aria-invalid")).toBe("true");
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+  // The alert's text content carries more than the sentence alone, so match the sentence.
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
     "A group with this name already exists",
   );
   expect(document.body.textContent).not.toContain("Could not save project changes");
@@ -273,8 +274,11 @@ it("creates one group for the selection and rejects a hidden destination with th
     "/a": group.id,
     "/b": group.id,
   });
+  // Editing the name clears the clash; the message then leaves through its exit animation.
   setName("Team 2");
-  expect(document.querySelector('[role="alert"]')).toBeNull();
+  expect(
+    document.querySelector("#project-selection-group-name")!.getAttribute("aria-invalid"),
+  ).not.toBe("true");
 });
 
 it("renders no toolbar or inline form before or during selection", () => {

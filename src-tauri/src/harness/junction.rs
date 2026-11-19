@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::process::Command;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 /// PowerShell starts in about 300 ms; a longer run means a policy prompt, an AV hold or a broken profile.
@@ -43,23 +44,21 @@ pub(super) fn create(source: &Path, link: &Path) -> std::io::Result<()> {
 
 /// The last few stderr lines, free of control characters and of anything that looks like a credential.
 fn safe_stderr_tail(stderr: &[u8]) -> String {
+    static ANSI_CSI: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]").unwrap());
     let text = String::from_utf8_lossy(stderr);
+    let text = ANSI_CSI.replace_all(&text, "");
     let lines: Vec<String> = text
         .lines()
-        .map(|line| {
-            line.chars()
-                .filter(|c| !c.is_control())
-                .take(200)
-                .collect::<String>()
-                .trim()
-                .to_string()
-        })
-        .filter(|line| {
+        .filter_map(|line| {
+            let cleaned: String = line.chars().filter(|c| !c.is_control()).collect();
+            let line = cleaned.trim();
             let lower = line.to_ascii_lowercase();
-            !line.is_empty()
+            let safe = !line.is_empty()
                 && !["bearer ", "token=", "password=", "passphrase="]
                     .iter()
-                    .any(|secret| lower.contains(secret))
+                    .any(|secret| lower.contains(secret));
+            safe.then(|| line.chars().take(200).collect())
         })
         .collect();
     lines[lines.len().saturating_sub(5)..].join("\n")

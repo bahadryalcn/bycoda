@@ -33,6 +33,7 @@ import {
   generateCommitMessage,
   generatePrContent,
 } from "../../../features/source-control/model/gitTextGeneration";
+import { generatePrContent as generateCorePrContent } from "./textHarness";
 import {
   setHarnessModels,
   resetHarnessModelOverlays,
@@ -126,6 +127,31 @@ it("uses Codex advertised reasoning and service tier for PR generation", async (
       modelSettings: { effort: "high", serviceTier: "fast", autoCompactWindow: "default" },
     }),
   );
+});
+// #1369: the selected-model PR path forwards the dialog's abort signal to the provider run.
+it("forwards the abort signal for PR generation", async () => {
+  vi.mocked(runHarnessTextPrompt).mockResolvedValue('{"title":"Fix","body":"Body"}');
+  const controller = new AbortController();
+  await generateCorePrContent(
+    "/repo",
+    "claude",
+    { harness: "claude", model: "claude:sonnet-5", modelSettings: {} },
+    undefined,
+    controller.signal,
+  );
+  expect(runHarnessTextPrompt).toHaveBeenCalledWith(
+    expect.objectContaining({ signal: controller.signal }),
+  );
+  controller.abort();
+  await expect(
+    generateCorePrContent(
+      "/repo",
+      "claude",
+      { harness: "claude", model: "claude:sonnet-5", modelSettings: {} },
+      undefined,
+      controller.signal,
+    ),
+  ).rejects.toThrow();
 });
 it("rejects malformed output and cancelled requests", async () => {
   const choice = {

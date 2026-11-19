@@ -74,7 +74,7 @@ export function SessionRecoveryControl({
     const ok = await confirm({
       title: t("Dismiss recovered sessions?"),
       message: t(
-        "They leave the recovery list. Their conversation history is kept and running work is not stopped.",
+        "They leave the recovery list. Their session history is kept and running work is not stopped.",
       ),
       confirmLabel: clearLabel,
       danger: false,

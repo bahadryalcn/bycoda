@@ -666,7 +666,11 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
           } catch (error) {
             db.close();
             db = undefined;
-            throw error;
+            if (!busy(error)) throw error;
+            // Another attempt holds the exclusive witness, so even the first statement of a new
+            // connection reports busy; wait for it like a busy BEGIN instead of failing the build.
+            await pause();
+            continue;
           }
         }
         try {

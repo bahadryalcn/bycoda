@@ -1,6 +1,8 @@
 import { forEachAsync } from "../async-collections";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { HostEngine } from "../engine";
 import { HostStore } from "../store";
+import { HostTasks } from "./service";
 import {
   BUDGET_RUN_SEAL_AFTER_MS,
   HostTaskBudgets,
@@ -143,6 +145,40 @@ async function setup() {
 }
 const reported = { inputTokens: 100, outputTokens: 20, cacheReadTokens: 40, cacheWriteTokens: 5 };
 describe("durable task/goal family budgets", () => {
+  it("reclaims a finished reviewer run's budget cache entry and retains its ledger row", async () => {
+    const { store, project, clock, save } = await setup();
+    const tasks = new HostTasks(store, new HostEngine(store, {}), () => clock.now);
+    const task = await tasks.save({
+      id: "task",
+      projectId: project.id,
+      title: "Review",
+      prompt: "Review the change",
+      harness: "codex",
+      model: "test",
+      modelSettings: {},
+      runtimeMode: "auto",
+      maxRunMinutes: 0,
+      review: true,
+      budget: { maxAgentMinutes: 60 },
+    });
+    const sessionId = "reviewer";
+    const runId = "review-run";
+    await save(sessionId, runId);
+    const reviewer = { sessionId, runId, startedAt: clock.now };
+    const verifying = await tasks["write"]({ ...task, status: "verifying", reviewer });
+    const cache = tasks["registeredBudgetRuns"];
+    const ledger = store.db.prepare(
+      `SELECT json_extract(value,'$.taskId') AS taskId, json_extract(value,'$.role') AS role
+       FROM task_run_budget_ledger WHERE session_id=? AND run_id=?`,
+    );
+    const registered = { taskId: task.id, role: "reviewer" };
+    expect(cache.get(task.id)).toBe(JSON.stringify([sessionId, runId]));
+    expect(await ledger.get(sessionId, runId)).toEqual(registered);
+    await tasks["write"]({ ...verifying, status: "done", reviewer: undefined });
+    expect(cache.has(task.id)).toBe(false);
+    expect(await ledger.get(sessionId, runId)).toEqual(registered);
+  });
+
   it("admits another limited run after a confirmed owned completion", async () => {
     const s = await setup();
     await s.save("session", "run");

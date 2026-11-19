@@ -188,7 +188,7 @@ it("opens signup for an account the Host already created without creating anothe
 
 // Regression for #569: the birth date ceiling is the owner's local calendar day, not the UTC day,
 // so it holds in both directions from UTC (east after local midnight, west in the evening).
-const birthdateMax = (local: Date) => {
+const birthdateMax = async (local: Date) => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(local);
   try {
@@ -199,16 +199,17 @@ const birthdateMax = (local: Date) => {
       },
       "acc-9",
     );
+    await submit();
     return element.querySelector("input[data-max]")?.getAttribute("data-max");
   } finally {
     vi.useRealTimers();
   }
 };
 
-it("bounds the birth date by the owner's local day just after local midnight", () => {
-  expect(birthdateMax(new Date(2026, 10, 19, 0, 30))).toBe("2026-11-19");
+it("bounds the birth date by the owner's local day just after local midnight", async () => {
+  expect(await birthdateMax(new Date(2026, 10, 19, 0, 30))).toBe("2026-11-19");
 });
 
-it("bounds the birth date by the owner's local day late in the local evening", () => {
-  expect(birthdateMax(new Date(2026, 10, 19, 23, 30))).toBe("2026-11-19");
+it("bounds the birth date by the owner's local day late in the local evening", async () => {
+  expect(await birthdateMax(new Date(2026, 10, 19, 23, 30))).toBe("2026-11-19");
 });

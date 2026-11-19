@@ -246,7 +246,7 @@ describe("Hermes live ACP sequence", () => {
     const turn = sendHermesTurn({
       sessionId: "hermes-exit-diagnostics",
       cwd: "/repo",
-      model: "hermes:openrouter:gpt-5",
+      model: "hermes:nous:hermes-4",
       runtimeMode: "supervised",
       text: "inspect this",
       attachments: [],
@@ -254,6 +254,16 @@ describe("Hermes live ACP sequence", () => {
     });
     const failed = turn.catch((error: unknown) => error as Error);
     await initialize();
+    await newSession();
+    await waitFor(
+      () => parse().some((message) => message.method === "session/set_mode"),
+      "session/set_mode",
+    );
+    reply(parse().find((message) => message.method === "session/set_mode")!.id, {});
+    await waitFor(
+      () => parse().some((message) => message.method === "session/prompt"),
+      "session/prompt",
+    );
     onStderr!(
       "\u001b[31mfatal: provider refused OPENROUTER_API_KEY=sk-or-0123456789abcdef0123\u001b[0m\r\n",
     );

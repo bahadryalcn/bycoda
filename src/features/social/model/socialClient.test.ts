@@ -100,6 +100,17 @@ describe("socialClient request ids", () => {
   });
 });
 
+it("preserves binary bytes in image and document upload payloads (#1069)", async () => {
+  const client = socialClient("m1");
+  const bytes = new Uint8Array([0, 128, 255, 1]);
+  await client.upload(new File([bytes], "image.png", { type: "image/png" }));
+  await client.uploadDocument(new File([bytes], "file.pdf", { type: "application/pdf" }));
+  expect(remoteRequest.mock.calls).toEqual([
+    ["m1", "social.media.upload", { base64: "AID/AQ==" }],
+    ["m1", "social.media.upload", { kind: "document", base64: "AID/AQ==" }],
+  ]);
+});
+
 describe("socialClient video upload resume", () => {
   const MIB = 1024 * 1024;
   const video = (size = 16) => new File([new Uint8Array(size)], "a.mp4", { type: "video/mp4" });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveUpdateChannel } from "../../features/settings/model/updateChannel";
 import { settleUpdateCheck } from "./updateProbeBackoff";
 import type { UpdaterSnapshot } from "./updater";
@@ -46,19 +46,20 @@ it("backs off background probes while the feed fails and resumes after an explic
     await act(async () => root.render(createElement(Consumer)));
     expect(mocks.probe).toHaveBeenCalledTimes(1);
 
-    await advance(59 * MINUTE);
+    // The base wait is five minutes and doubles per failed background check.
+    await advance(9 * MINUTE);
     expect(mocks.probe).toHaveBeenCalledTimes(1);
     await advance(MINUTE);
     expect(mocks.probe).toHaveBeenCalledTimes(2);
 
-    await advance(119 * MINUTE);
+    await advance(19 * MINUTE);
     expect(mocks.probe).toHaveBeenCalledTimes(2);
     await advance(MINUTE);
     expect(mocks.probe).toHaveBeenCalledTimes(3);
 
-    // A check the user ran elsewhere restores the base interval without waiting four hours.
+    // A check the user ran elsewhere restores the base interval without waiting forty minutes.
     await act(async () => settleUpdateCheck(false, true));
-    await advance(29 * MINUTE);
+    await advance(4 * MINUTE);
     expect(mocks.probe).toHaveBeenCalledTimes(3);
     await advance(MINUTE);
     expect(mocks.probe).toHaveBeenCalledTimes(4);
@@ -128,11 +129,11 @@ it("keeps a failure wait across a remount instead of probing again", async () =>
     expect(mocks.probe).toHaveBeenCalledTimes(1);
 
     await act(async () => root.render(null));
-    await advance(20 * MINUTE);
+    await advance(4 * MINUTE);
     await act(async () => root.render(createElement(Consumer)));
     expect(mocks.probe).toHaveBeenCalledTimes(1);
 
-    await advance(39 * MINUTE);
+    await advance(5 * MINUTE);
     expect(mocks.probe).toHaveBeenCalledTimes(1);
     await advance(MINUTE);
     expect(mocks.probe).toHaveBeenCalledTimes(2);

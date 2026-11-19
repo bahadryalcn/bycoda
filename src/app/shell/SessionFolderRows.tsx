@@ -135,7 +135,7 @@ export function FolderRow({
             <CircleAlert className="icon-xs" tone="warning" strokeWidth={1.75} />
           </span>
         ) : !expanded && !busy && done ? (
-          <Check className="icon-xs" tone="success" strokeWidth={2} />
+          <Check className="icon-xs" tone="success" />
         ) : null}
         <span
           data-action-yield={actionCount ? "" : undefined}

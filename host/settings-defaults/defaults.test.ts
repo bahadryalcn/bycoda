@@ -151,7 +151,7 @@ describe("automatic archive pass budget", () => {
     fakes: Fake[],
     options: {
       hang?: string;
-      draft?: (id: string) => boolean | undefined;
+      draft?: (id: string, devices?: string[]) => boolean | undefined;
       budget?: { deadlineMs?: number; passDeadlineMs?: number };
     } = {},
   ) {
@@ -199,7 +199,7 @@ describe("automatic archive pass budget", () => {
       },
       hasUnsentDraft: async (id, _window, devices) => {
         draftDevices.push(devices);
-        return options.draft ? options.draft(id) : false;
+        return options.draft ? options.draft(id, devices) : false;
       },
       now: () => now,
       ...options.budget,
@@ -221,7 +221,7 @@ describe("automatic archive pass budget", () => {
     expect([...run.archived]).toEqual(["stale"]);
   });
 
-  it("reads the paired devices once per pass and keeps unsent-draft protection", async () => {
+  it("shares the pass's device list and refreshes it only before archiving", async () => {
     const run = fixture(
       [
         { id: "a", project: "p", updatedAt: old },
@@ -232,7 +232,7 @@ describe("automatic archive pass budget", () => {
     );
     expect(await run.archive.tick()).toBe(1);
     expect(run.deviceReads).toHaveLength(1);
-    expect(run.draftDevices).toEqual([["phone"], ["phone"], ["phone"]]);
+    expect(run.draftDevices).toEqual([["phone"], undefined, ["phone"], ["phone"]]);
     expect([...run.archived]).toEqual(["a"]);
   });
 
@@ -246,6 +246,14 @@ describe("automatic archive pass budget", () => {
     );
     await expect(run.archive.tick()).rejects.toThrow(/timed out/);
     expect([...run.archived]).toEqual(["later"]);
+  });
+
+  it("checks the current paired devices before archiving a session", async () => {
+    const run = fixture([{ id: "stale", project: "p", updatedAt: old }], {
+      draft: (_id, devices) => (devices ? false : true),
+    });
+    expect(await run.archive.tick()).toBe(0);
+    expect([...run.archived]).toEqual([]);
   });
 
   it("resumes after the last reached session when the pass budget runs out", async () => {

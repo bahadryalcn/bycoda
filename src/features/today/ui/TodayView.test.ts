@@ -2,12 +2,17 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
-const read = vi.hoisted(() => ({ failed: false, loadedPeriod: "today" as "today" | "week" }));
+const read = vi.hoisted(() => ({
+  failed: false,
+  loadedPeriod: "today" as "today" | "week",
+  refreshing: false,
+  sessions: 0,
+}));
 vi.mock("../hooks/useTodayData", () => ({
   useTodayData: () => ({
     data: {
       period: read.loadedPeriod,
-      totals: { sessions: 0, cost: 0, runMs: 0, unpricedTokens: 0 },
+      totals: { sessions: read.sessions, cost: 0, runMs: 0, unpricedTokens: 0 },
       projects: [],
       days: [],
       window: { start: 0, end: 1 },
@@ -15,7 +20,7 @@ vi.mock("../hooks/useTodayData", () => ({
     loadedPeriod: read.loadedPeriod,
     pricing: null,
     loading: false,
-    refreshing: false,
+    refreshing: read.refreshing,
     failed: read.failed,
     updatedAt: 1,
     reload: () => {},
@@ -71,10 +76,29 @@ it("shows when the figures were last read", () => {
 
 it("aligns active time and the empty text to the loaded period while another one loads", () => {
   read.loadedPeriod = "week";
+  read.refreshing = true;
   const markup = renderToStaticMarkup(createElement(TodayView));
   // The selected period is still "today"; the figures on screen are this week's.
   expect(markup).toContain("90");
   expect(markup).not.toContain(">42<");
   expect(markup).toContain("No agent activity recorded this week.");
   read.loadedPeriod = "today";
+  read.refreshing = false;
+});
+
+it("keeps the previous period's figures mounted during a period refresh", () => {
+  read.loadedPeriod = "week";
+  read.refreshing = true;
+  read.sessions = 3;
+  try {
+    const markup = renderToStaticMarkup(createElement(TodayView));
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toContain("Agent run time");
+    expect(markup).toContain(">3<");
+    expect(markup).toContain(">1h 30m<");
+  } finally {
+    read.loadedPeriod = "today";
+    read.refreshing = false;
+    read.sessions = 0;
+  }
 });

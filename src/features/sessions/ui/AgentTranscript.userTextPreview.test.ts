@@ -163,7 +163,7 @@ it("detects JSON in a message while keeping the surrounding instructions visible
   );
   expect(container.textContent).toContain("Review this:");
   expect(container.textContent).toContain("Keep the key.");
-  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full json"]')!;
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full JSON"]')!;
   expect(trigger).not.toBeNull();
   act(() => trigger.click());
   expect(document.querySelector('[role="dialog"] pre')?.textContent).toContain('{"a":1}');

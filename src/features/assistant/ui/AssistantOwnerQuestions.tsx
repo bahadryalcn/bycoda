@@ -161,7 +161,7 @@ function PendingPresentation({
       // Unknown delivery keeps the exact draft for a later retry; authority and draft mismatches keep their own message.
       setError(
         cause instanceof OwnerQuestionPresentationPending
-          ? t("Still unconfirmed after retry. Check the Host connection.")
+          ? t("Could not be confirmed after retry. Check the Host connection.")
           : actionError(cause),
       );
     } finally {
@@ -178,7 +178,7 @@ function PendingPresentation({
         <InlineError>{error}</InlineError>
       ) : (
         <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.status}>
-          {t("Saving this question is unconfirmed. Retry to verify the original card.")}
+          {t("Saving this question could not be confirmed. Retry to verify the original card.")}
         </Text>
       )}
       <div className={styles.footer}>

@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import {
   assistantRequest,
   latestAssistantSnapshot,
-  refreshAssistantQuietly,
   watchAssistantSnapshot,
   useAssistantSnapshot,
   type AssistantClientState,
@@ -12,6 +11,7 @@ import {
   currentNotification,
   type AssistantNotificationInput,
 } from "../model/assistantNotifications";
+import { msUntilClockTime } from "../model/assistantBriefing";
 import { isLeadWindow } from "../../notifications/hooks/useBackgroundNotifications";
 import { notifyAssistant } from "../../notifications/model/notifications";
 import {
@@ -86,8 +86,12 @@ export function AssistantNotifications() {
     check(current.current);
     return watchAssistantSnapshot((state) => check(selectDelivery(state)));
   }, []);
+  const ready = snapshot?.profile.enabled === true && snapshot.profile.setupComplete;
+  // Effect reason: the daily-summary schedule and its due-time check. It re-runs when the
+  // Assistant becomes ready, so a late snapshot is picked up without a polling interval (#315).
   useEffect(() => {
     let cancelled = false,
+      timer: ReturnType<typeof setTimeout> | undefined,
       running = false,
       preparedDay = "",
       scheduleKey = "",
@@ -105,9 +109,6 @@ export function AssistantNotifications() {
           scheduleKey = key;
         }
         if (cancelled) return;
-        // The shared poller refreshes while the webview is visible, so this read is only needed
-        // in the background, where the poller pauses; it keeps notification intake alive there.
-        if (document.visibilityState === "hidden") await refreshAssistantQuietly();
         const state = current.current;
         if (!state?.profile.enabled || !state.profile.setupComplete || !loadDailySummaryEnabled())
           return;
@@ -129,9 +130,18 @@ export function AssistantNotifications() {
         if (settingsChanged && !cancelled) {
           settingsChanged = false;
           void check();
-        }
+        } else arm();
       }
     };
+    // Snapshot readiness and settings changes re-check independently of the due-time timer.
+    const arm = () => {
+      clearTimeout(timer);
+      if (cancelled) return;
+      const now = new Date();
+      timer = setTimeout(() => void check(), msUntilClockTime(loadDailySummaryTime(), now));
+    };
+    const onVisibility = () => arm();
+    document.addEventListener("visibilitychange", onVisibility);
     const unsubscribe = subscribeDailySummary(() => {
       settingsChanged = true;
       if (!running) {
@@ -140,12 +150,12 @@ export function AssistantNotifications() {
       }
     });
     void check();
-    const timer = setInterval(() => void check(), 15000);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
       unsubscribe();
     };
-  }, []);
+  }, [ready]);
   return null;
 }

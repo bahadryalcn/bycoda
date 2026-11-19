@@ -291,8 +291,10 @@ describe("conversationRowsFrom", () => {
   it("uses a live session's own recorded timestamp when history lacks it", () => {
     const live = newSession("cursor", "/repo");
     live.id = "unsaved";
-    live.turnStoppedAt = 1_700_000_000_000;
-    live.statusRunningSince = 1_600_000_000_000;
+    live.blocks = [
+      { id: "b1", role: "system", text: "", statusRunningSince: 1_600_000_000_000 },
+      { id: "b2", role: "assistant", text: "", turnStoppedAt: 1_700_000_000_000 },
+    ];
     const [row] = conversationRowsFrom([], [live]);
     expect(row.updatedAt).toBe(1_700_000_000_000);
   });
@@ -300,7 +302,7 @@ describe("conversationRowsFrom", () => {
   it("keeps history recency for a live session that has a history row", () => {
     const live = newSession("cursor", "/repo");
     live.id = "s1";
-    live.turnStoppedAt = 1_800_000_000_000;
+    live.blocks = [{ id: "b1", role: "assistant", text: "", turnStoppedAt: 1_800_000_000_000 }];
     const [row] = conversationRowsFrom([summary("s1", "/repo", "Saved", 42)], [live]);
     expect(row.updatedAt).toBe(42);
   });

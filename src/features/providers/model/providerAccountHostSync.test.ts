@@ -5,6 +5,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../../connections/public/connections", () => ({ remoteRequest: mocks.request }));
 import { startProviderAccountHostSync } from "./providerAccountHostSync";
 import { saveProviderAccount, providerAccounts, editProviderAccount } from "./providerAccounts";
+import { announceRemoteRecovery } from "../../connections/model/remoteHealth";
 let stop: (() => void) | undefined;
 async function flush() {
   for (let i = 0; i < 30; i++) await Promise.resolve();
@@ -29,6 +30,26 @@ beforeEach(() => {
 afterEach(() => {
   stop?.();
   vi.useRealTimers();
+});
+it("publishes account styles on recovery when the Host was unavailable at mount", async () => {
+  mocks.invoke.mockResolvedValueOnce(null);
+  stop = startProviderAccountHostSync();
+  await flush();
+  expect(mocks.request).not.toHaveBeenCalled();
+
+  announceRemoteRecovery("local-env");
+  await flush();
+  expect(mocks.request).toHaveBeenCalledWith(
+    "local",
+    "host.settings.save",
+    {
+      providerAccountStyles: expect.objectContaining({
+        codex: expect.objectContaining({ "account-a": expect.objectContaining({ label: "A" }) }),
+      }),
+    },
+    false,
+    true,
+  );
 });
 it("pushes kind and explicitly clears it with Automatic", async () => {
   stop = startProviderAccountHostSync();

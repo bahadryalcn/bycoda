@@ -1,5 +1,5 @@
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
-import { useLocale } from "../../../shared/i18n";
+import { getLocale, useLocale } from "../../../shared/i18n";
 import { formatRelativeTime } from "../model/githubTasks";
 
 /**
@@ -11,7 +11,8 @@ import { formatRelativeTime } from "../model/githubTasks";
 export function InboxRelativeTime({ at }: { at: string }) {
   useLocale();
   const now = useMinuteNow();
-  return <>{formatRelativeTime(at, now)}</>;
+  // The shared formatter defaults its locale to the system locale, not the app language.
+  return <>{formatRelativeTime(at, now, getLocale())}</>;
 }
 
 /** Whether `at` has a label to show; the same validity check the formatter applies. */

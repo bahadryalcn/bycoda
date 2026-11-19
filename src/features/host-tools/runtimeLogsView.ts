@@ -7,7 +7,7 @@ import {
   type RuntimeLogGroup,
   type RuntimeLogsBuffer,
 } from "./runtimeLogsModel";
-import { runtimeLogDisplayLevel } from "./runtimeLogPresentation";
+import { runtimeLogDisplayLevel, type RuntimeLogDisplayLevel } from "./runtimeLogPresentation";
 import type { RuntimeLogEntry } from "./runtimeLogTypes";
 
 export type RuntimeLogsViewState = {
@@ -23,7 +23,7 @@ export type RuntimeLogsViewState = {
   entries: () => RuntimeLogEntry[];
 };
 
-type Item = { entry: RuntimeLogEntry; group: string };
+type Item = { entry: RuntimeLogEntry; group: string; level: RuntimeLogDisplayLevel };
 
 /**
  * The filtered, grouped and counted view of a logs buffer. A poll appends a few entries and may
@@ -74,17 +74,19 @@ export class RuntimeLogsView {
       let drop = 0;
       while (drop < this.items.length && this.items[drop].entry.cursor < firstCursor) {
         const item = this.items[drop++];
-        this.countLevel(item.entry, -1);
+        this.countLevel(item.level, -1);
         touch(item.group).removed++;
       }
       if (drop) this.items = this.items.slice(drop);
     }
     for (const entry of delta ? delta.added : buffer.entries) {
       this.countSource(entry, 1);
-      if (!pass(entry)) continue;
-      const group = runtimeLogGroupId(entry, groupRepeated);
-      this.items.push({ entry, group });
-      this.countLevel(entry, 1);
+      const message = entry.message;
+      const level = runtimeLogDisplayLevel(entry, message);
+      if (!pass(entry, message, level)) continue;
+      const group = runtimeLogGroupId(entry, groupRepeated, message);
+      this.items.push({ entry, group, level });
+      this.countLevel(level, 1);
       touch(group).added.push(entry);
     }
 
@@ -130,7 +132,7 @@ export class RuntimeLogsView {
   private continuation(buffer: RuntimeLogsBuffer) {
     const previous = this.buffer?.entries;
     const next = buffer.entries;
-    const last = previous?.at(-1);
+    const last = previous?.[previous.length - 1];
     if (!previous || !last || !next.length) return undefined;
     let start = next.length;
     while (start > 0 && next[start - 1].cursor > last.cursor) start--;
@@ -155,8 +157,8 @@ export class RuntimeLogsView {
     else if (entry.source === "server") this.server += step;
   }
 
-  private countLevel(entry: RuntimeLogEntry, step: 1 | -1) {
-    if (runtimeLogDisplayLevel(entry) === "error") this.errorCount += step;
-    if (entry.level === "warn") this.warningCount += step;
+  private countLevel(level: RuntimeLogDisplayLevel, step: 1 | -1) {
+    if (level === "error") this.errorCount += step;
+    if (level === "warn") this.warningCount += step;
   }
 }

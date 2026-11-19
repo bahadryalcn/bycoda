@@ -122,21 +122,24 @@ describe("AI plan run", () => {
     );
   });
 
-  it("keeps a completed step saved when its audit write fails, so a rerun does not replay it", async () => {
+  it("keeps a completed step saved when its audit write fails, and the run still finishes", async () => {
     const kit = makeKit();
     const SECOND: AiPlanStep = { ...READ, id: "s3" };
     await savePlan(kit.ctx, plan("owner", [READ, SECOND]));
     kit.store.putAiAction.mockRejectedValueOnce(new Error("Audit store is full."));
-    await expect(runPlan(kit.ctx, { planId: PLAN_ID, approvedStepIds: [] })).rejects.toThrow(
-      "Audit store is full.",
-    );
-    expect(JSON.parse(kit.settings.get(`ai.plan.${PLAN_ID}`) ?? "{}").completed).toEqual(["s1"]);
+    // A log failure is reported but never changes the outcome of an action that already ran.
+    const first = await runPlan(kit.ctx, { planId: PLAN_ID, approvedStepIds: [] });
+    expect(first.results.map((result) => result.status)).toEqual(["done", "done"]);
+    expect(JSON.parse(kit.settings.get(`ai.plan.${PLAN_ID}`) ?? "{}").completed).toEqual([
+      "s1",
+      "s3",
+    ]);
 
     const rerun = await runPlan(kit.ctx, { planId: PLAN_ID, approvedStepIds: [] });
     expect(kit.call.mock.calls.map((args) => args[2])).toEqual([{ id: "d1" }, { id: "d1" }]);
-    expect(rerun.results).toEqual([
-      { stepId: "s1", status: "done", message: "Already done." },
-      { stepId: "s3", status: "done" },
+    expect(rerun.results.map((result) => result.message)).toEqual([
+      "Already done.",
+      "Already done.",
     ]);
   });
 

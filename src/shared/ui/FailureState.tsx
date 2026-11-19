@@ -110,7 +110,7 @@ export function FailureState({
   const [retryPending, setRetryPending] = useState(false);
   const retryGuard = useRef(false);
   const preview = useRef<HTMLPreElement>(null);
-  const full = error instanceof Error ? error.message : String(error ?? "");
+  const full = errorText(error ?? "");
   const copyFeedback = useCopyFeedback({ resetKeys: [title, full] });
   const copy = copyFeedback.status;
   const truncated = full.length > FAILURE_PREVIEW_CHARS;

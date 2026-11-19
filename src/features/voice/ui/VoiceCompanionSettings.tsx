@@ -48,7 +48,7 @@ export function VoiceCompanionSettings({
         id="voice-memory"
         label={t("Memory")}
         descriptionVisible
-        description={t("Keeps short notes about you between conversations on this device.")}
+        description={t("Keeps short notes about you between conversations on this computer.")}
       >
         <Button onClick={() => openAssistant("memory")}>
           {t("Manage ({p0})", {

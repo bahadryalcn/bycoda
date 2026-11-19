@@ -90,6 +90,22 @@ describe("update failure diagnostics", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  it("keeps the updater instructions when an exit-zero update leaves Grok on the old version", async () => {
+    const detail = "Update with winget upgrade xAI.Grok";
+    vi.mocked(updateHarnessCli).mockResolvedValueOnce(detail);
+    vi.mocked(inspectHarnessBinary).mockResolvedValueOnce({
+      path: "grok.exe",
+      version: "1.0.82",
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(
+      runHarnessUpdate({ harness: "grok", installed: "1.0.82", latest: "1.0.83" }),
+    ).resolves.toEqual({
+      status: "failed",
+      failure: { kind: "stillOn", version: "1.0.82", detail },
+    });
+  });
+
   it("preserves the version probe error rather than claiming the old version is still installed", async () => {
     const announce = vi.spyOn(toast, "show");
     vi.mocked(updateHarnessCli).mockResolvedValueOnce(undefined);

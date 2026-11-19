@@ -26,7 +26,7 @@ const recordKey = (value: OwnerQuestionPresentation) =>
   encodeURIComponent(
     JSON.stringify([value.environmentId, value.input.threadId, value.input.requestId]),
   );
-const errorText = "Saving this question is unconfirmed. Retry to verify the original card.";
+const errorText = "Saving this question could not be confirmed. Retry to verify the original card.";
 export class OwnerQuestionPresentationPending extends Error {
   readonly presentation: OwnerQuestionPresentation;
   constructor(presentation: OwnerQuestionPresentation) {

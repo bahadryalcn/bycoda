@@ -582,6 +582,7 @@ export class EnvironmentRuntime {
     this.rejectedRefreshes.count++;
     this.rejectedRefresh = this.port
       .attach()
+      .then(() => undefined)
       .catch(() => {
         /* the next rejected event or the failure path reports it; bounded by the count */
       })

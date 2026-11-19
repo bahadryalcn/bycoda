@@ -29,12 +29,12 @@ it("draws the blame hover card with the shared floating radius, surface and elev
 it("draws the explorer drag preview with the shared floating radius, surface and elevation", () => {
   const rule = ruleBody(".explorer-file-drag-preview");
   expect(rule).toContain("border-radius: var(--ui-radius-popup);");
-  expect(rule).toContain("background: var(--ui-surface-floating) !important;");
+  expect(rule).toContain("background: var(--ui-surface-floating);");
   expect(rule).toContain("box-shadow: var(--ui-elevation-floating);");
 });
 
-it("keeps the light theme override that the drag preview's own background depends on", () => {
-  expect(css).toMatch(
-    /html\.theme-light \.explorer-file-drag-preview \{\s*background: var\(--color-background-base\) !important;/,
-  );
+it("lets the Explorer drag preview styles cascade in either theme", () => {
+  const previewCss = readFileSync("src/features/files/ui/explorerDragPreview.css", "utf8");
+  expect(previewCss).not.toContain("!important");
+  expect(ruleBody("html.theme-light .explorer-file-drag-preview")).not.toContain("background:");
 });

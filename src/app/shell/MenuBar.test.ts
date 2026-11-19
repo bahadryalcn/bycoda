@@ -166,3 +166,17 @@ describe("application menu bar keyboard model", () => {
     expect(bar()).not.toBeNull();
   });
 });
+
+// Issue #516: the title bar's compact popover offers the same File actions as the Alt menu bar.
+describe("compact application menu popover", () => {
+  it("offers Autosave like the Alt menu bar", () => {
+    act(() => {
+      window.dispatchEvent(new CustomEvent("bycoda:app-menu-toggle", { detail: { x: 10, y: 10 } }));
+    });
+    expect(menu()?.getAttribute("aria-label")).toBe("Application menu");
+    const labels = [
+      ...menu()!.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"]'),
+    ].map((row) => row.textContent);
+    expect(labels.some((label) => label?.includes("Autosave"))).toBe(true);
+  });
+});

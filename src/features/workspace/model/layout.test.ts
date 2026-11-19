@@ -193,14 +193,14 @@ describe("pane pixel minimum", () => {
 
   it("bounds the sash by the minimum on both neighbours", () => {
     const range = sashBoundaryRange([0.2, 0.3, 0.5], 1, 0.1);
-    expect(range.min).toBeCloseTo(0.3);
-    expect(range.max).toBeCloseTo(0.6);
+    expect(range.min).toBeCloseTo(0.3); // left neighbour keeps 0.1 from 0.2
+    expect(range.max).toBeCloseTo(0.9); // right neighbour keeps 0.1 of its 0.8 pair share
   });
 
   it("pins the sash to the midpoint of a pair too small for two minimums", () => {
-    const range = sashBoundaryRange([0.5, 0.1, 0.4], 1, 0.2);
-    expect(range.min).toBeCloseTo(0.55);
-    expect(range.max).toBeCloseTo(0.55);
+    const range = sashBoundaryRange([0.5, 0.1, 0.4], 1, 0.3);
+    expect(range.min).toBeCloseTo(0.75);
+    expect(range.max).toBeCloseTo(0.75);
   });
 });
 

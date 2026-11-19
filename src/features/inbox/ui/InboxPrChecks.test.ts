@@ -329,7 +329,7 @@ it("keeps expanded evidence while polling a pending job and shows new steps", as
   await act(async () => rowToggle("Windows")!.click());
   await act(async () =>
     Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("Show 1 more annotations"))!
+      .find((button) => button.textContent?.includes("Show 1 more annotation"))!
       .click(),
   );
   const steps = stepsDetails();
@@ -811,10 +811,10 @@ it("an allowed failure stays failed and the synthetic pipeline SHA shows separat
   );
   expect(markup.textContent).toContain("Optional checks failed");
   expect(markup.textContent).toContain("Failure allowed");
-  expect(markup.textContent).toContain("Pipeline commit merge-result, source commit source-head");
-  expect(markup.textContent?.split("source-head")).toHaveLength(2);
-  expect(markup.textContent).toContain("merge-result");
-  expect(markup.textContent).toContain("source-head");
+  expect(markup.textContent).toContain("Pipeline commit merge-r, source commit source-");
+  expect(markup.textContent?.split("source-")).toHaveLength(2);
+  expect(markup.textContent).not.toContain("merge-result");
+  expect(markup.textContent).not.toContain("source-head");
   expect(markup.textContent).not.toContain("Checks passed");
   expect(markup.querySelector('[aria-label="Open ci/build check"]')).not.toBeNull();
 });

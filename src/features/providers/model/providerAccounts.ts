@@ -162,6 +162,16 @@ export function providerAccountsStorageVersion(): readonly (string | null)[] {
   }
 }
 
+/**
+ * Primitive snapshot for `useSyncExternalStore`: changes exactly when a stored account record
+ * does, and costs string reads only, never a parse or a serialisation of every account.
+ */
+export function providerAccountsStorageRevision(): string {
+  return providerAccountsStorageVersion()
+    .map((value) => value ?? "\u0000")
+    .join("\u0001");
+}
+
 export function providerAccounts(provider: ProviderAccountProvider): ProviderAccount[] {
   const managed = readRecord<StoredAccounts>(ACCOUNTS_KEY);
   const stored = readRecord<StoredAccounts>(LEGACY_ACCOUNTS_KEY);
@@ -422,7 +432,9 @@ export function defaultProviderAccountId(provider: ProviderAccountProvider): str
 }
 
 /** `defaultProviderAccountId` over an account list the caller already holds. */
-export function defaultProviderAccountIdIn(accounts: readonly ProviderAccount[]): string {
+export function defaultProviderAccountIdIn(
+  accounts: readonly Pick<ProviderAccount, "id" | "isDefault">[],
+): string {
   return accounts.find((account) => account.isDefault)?.id ?? DEFAULT_PROVIDER_ACCOUNT_ID;
 }
 

@@ -397,7 +397,9 @@ describe("loadProjectFiles", () => {
     await revalidateProjectFiles(cwd);
     expect(list).toHaveBeenCalledTimes(2);
 
+    // The change is marked stale when the batched directory refresh runs, not synchronously.
     notifyDirsChanged();
+    await vi.runAllTimersAsync();
     await revalidateProjectFiles(cwd);
     expect(list).toHaveBeenCalledTimes(3);
   });

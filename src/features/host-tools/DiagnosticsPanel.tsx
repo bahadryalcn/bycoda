@@ -68,15 +68,12 @@ function ResourceChart({
 }) {
   const [tableOpen, setTableOpen] = useState(false);
   const values = samples.map((sample) =>
-    metric === "cpu" ? sample.process.cpuPercent : sample.process.rssBytes / 1024 ** 2,
+    metric === "cpu" ? sample.process.cpuPercent : sample.process.rssBytes,
   );
+  const formatAmount = (value: number) => (metric === "cpu" ? percent(value) : mib(value));
   // Same text the data table shows: one unit per metric, a gap for missing CPU readings.
   const formatValue = (value: number | null) =>
-    value === null
-      ? t("CPU reading unavailable")
-      : metric === "cpu"
-        ? `${value.toFixed(1)}%`
-        : `${value.toFixed(1)} MiB`;
+    value === null ? t("CPU reading unavailable") : formatAmount(value);
   const readings = values.filter((value): value is number => value !== null);
   // The chart's accessible name is a short summary; every sample is in the table below.
   const summary = readings.length
@@ -87,7 +84,7 @@ function ResourceChart({
   const ceiling =
     metric === "cpu"
       ? Math.max(100, ...values.map((value) => value ?? 0))
-      : Math.max(1, ...values.map((value) => value ?? 0)) * 1.2;
+      : Math.max(1024 ** 2, ...values.map((value) => value ?? 0)) * 1.2;
   const start = samples[0]?.at ?? 0;
   const span = (samples[samples.length - 1]?.at ?? start) - start;
   const points = values.map((value, index) =>
@@ -116,7 +113,7 @@ function ResourceChart({
       className={`resource-chart resource-chart-${metric}`}
     >
       <div className="resource-chart-scale" aria-hidden="true">
-        <span>{metric === "cpu" ? `${ceiling.toFixed(0)}%` : `${ceiling.toFixed(0)} MiB`}</span>
+        <span>{formatAmount(ceiling)}</span>
         <span>0</span>
       </div>
       <svg viewBox="0 0 320 112" role="img" aria-label={`${label}: ${summary}`}>

@@ -534,6 +534,8 @@ it("wakes on a queued message and retries a blocked thread at its saved deadline
     f.advance(60001);
     await vi.advanceTimersByTimeAsync(60000);
     await vi.waitFor(() => expect(f.calls).toHaveLength(2));
+    // Let the pass that made the second call finish (it rescans once to save the next deadline).
+    await vi.advanceTimersByTimeAsync(1000);
     // Between deadlines the worker stays quiet.
     const scans = candidateScans(prepare);
     await vi.advanceTimersByTimeAsync(30000);

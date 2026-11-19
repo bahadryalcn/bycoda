@@ -55,7 +55,7 @@ export function orchestrationTaskLabelCode(
   if (task.needsInput) return "needsInput";
   if (!summary.live && ["running", "cancelling", "queued"].includes(task.status)) return "saved";
   if (summary.status === "paused" && task.status === "queued") return "paused";
-  return {
+  const codes: Record<typeof task.status, OrchestrationTaskLabelCode> = {
     queued: "queued",
     running: "working",
     cancelling: "stopping",
@@ -64,5 +64,6 @@ export function orchestrationTaskLabelCode(
     blocked: "needsReview",
     interrupted: "interrupted",
     cancelled: "cancelled",
-  }[task.status];
+  };
+  return codes[task.status];
 }

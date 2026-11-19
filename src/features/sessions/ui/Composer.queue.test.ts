@@ -110,7 +110,8 @@ describe("retained queue-row actions", () => {
         vi.fn(),
       );
       const steer = container.querySelector<HTMLButtonElement>('button[aria-label="Steer"]')!;
-      expect(steer.disabled).toBe(true);
+      // A disabled control that explains itself stays focusable (aria-disabled, presses swallowed).
+      expect(steer.getAttribute("aria-disabled")).toBe("true");
       await act(async () => {
         steer.click();
         steer.click();
@@ -295,15 +296,15 @@ describe("Shift+Tab queues while a turn runs", () => {
     },
   );
 
-  it("keeps Shift+Tab in the composer without sending when idle or empty", async () => {
+  it("lets Shift+Tab leave the composer without sending when idle or empty (#1244)", async () => {
     const onSubmit = vi.fn(() => true);
     const idle = await renderComposer({ busy: false }, onSubmit);
     await type(idle, "hello");
-    expect(press(idle, shiftTab).defaultPrevented).toBe(true);
+    expect(press(idle, shiftTab).defaultPrevented).toBe(false);
 
     const empty = await renderComposer({ busy: true }, onSubmit);
     await type(empty, "");
-    expect(press(empty, shiftTab).defaultPrevented).toBe(true);
+    expect(press(empty, shiftTab).defaultPrevented).toBe(false);
 
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -607,7 +608,7 @@ describe("a queue restored after a restart", () => {
       "Edit to drop it, or remove the message.",
     );
     const send = [...card.querySelectorAll("button")].find((b) => b.textContent === "Send next")!;
-    expect(send.disabled).toBe(true);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
     act(() => send.click());
     expect(onSteer).not.toHaveBeenCalled();
   });

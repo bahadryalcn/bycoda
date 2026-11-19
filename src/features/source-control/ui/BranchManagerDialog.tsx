@@ -4,6 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useState, type FormEvent } from "react";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Check, GitBranch, MoreHorizontal, Plus } from "../../../shared/ui/icons";
@@ -144,7 +145,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
         disabled={busy}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
+          if (event.key !== "Escape" || isImeComposition(event.nativeEvent)) return;
           event.stopPropagation();
           setEditing(null);
         }}

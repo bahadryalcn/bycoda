@@ -85,7 +85,9 @@ export function useConversationPanelView(
             expectedVersion: target.version,
           });
           if (result.thread?.id !== target.id)
-            throw new Error(t("The conversation clear was not confirmed. Check before retrying."));
+            throw new Error(
+              t("The conversation clear could not be confirmed. Check before retrying."),
+            );
           mergeThread(result.thread, target.id, environmentId);
           setMessages((current) => ({ ...current, [target.id]: [] }));
           setHasMore((current) => ({ ...current, [target.id]: false }));

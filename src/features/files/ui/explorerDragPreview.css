@@ -1,28 +1,27 @@
-/* The floating chip that follows a dragged explorer row. Its !important declarations beat the
-   generic row and drag-state rules that apply to the same element while a drag is active. */
+/* The floating chip that follows a dragged explorer row. */
 .explorer-file-drag-preview {
-  position: fixed !important;
-  inset: 0 auto auto 0 !important;
+  position: fixed;
+  inset: 0 auto auto 0;
   z-index: var(--layer-drag);
-  display: flex !important;
-  width: max-content !important;
+  display: flex;
+  width: max-content;
   max-width: min(280px, calc(100vw - 16px));
-  height: 26px !important;
+  height: 26px;
   align-items: center;
   gap: 6px;
-  margin: 0 !important;
-  padding: 0 9px 0 7px !important;
+  margin: 0;
+  padding: 0 9px 0 7px;
   overflow: hidden;
-  pointer-events: none !important;
+  pointer-events: none;
   border: 1px solid var(--ui-fill-strong);
   border-radius: var(--ui-radius-popup);
-  background: var(--ui-surface-floating) !important;
+  background: var(--ui-surface-floating);
   box-shadow: var(--ui-elevation-floating);
-  color: var(--color-content) !important;
-  font-size: 12px !important;
-  line-height: 1 !important;
+  color: var(--color-content);
+  font-size: 12px;
+  line-height: 1;
   white-space: nowrap;
-  opacity: 0.94 !important;
+  opacity: 0.94;
   will-change: transform;
   contain: paint;
 }
@@ -34,6 +33,5 @@
 }
 
 html.theme-light .explorer-file-drag-preview {
-  background: var(--color-background-base) !important;
-  opacity: 1 !important;
+  opacity: 1;
 }

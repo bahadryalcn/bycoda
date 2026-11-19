@@ -218,7 +218,7 @@ export function OnboardingAgents({
             </div>
           </>
         ) : null}
-        {!checking && listed.length === 0 ? (
+        {probed && listed.length === 0 ? (
           <div className="onboarding-provider-empty" role="status">
             <EmptyState size="inline" kind="empty" description={t("No providers found")} />
             <Text as="p" size="caption" tone="secondary" leading="normal">

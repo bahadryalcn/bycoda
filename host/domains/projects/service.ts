@@ -107,7 +107,12 @@ export function createProjectsService<Project>(dependencies: {
             spawn: runtime().spawn,
             killTree: runtime().killTree,
           }),
-        runtime().folders,
+        // Resolved per call so a missing port cannot fail before the URL is validated.
+        {
+          exists: (path) => runtime().folders.exists(path),
+          claim: (path) => runtime().folders.claim(path),
+          remove: (path) => runtime().folders.remove(path),
+        },
       );
       await assertDomainAuthority(context);
       return result;

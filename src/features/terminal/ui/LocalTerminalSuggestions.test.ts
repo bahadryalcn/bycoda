@@ -157,9 +157,10 @@ it("preserves the keyboard choice when native suggestions arrive late", async ()
     await vi.advanceTimersByTimeAsync(100);
   });
   await key("ArrowDown");
-  expect(host.querySelector('[aria-selected="true"]')?.textContent).toBe("git diff");
+  // The selected row also carries its screen-reader key hint, so match the command text.
+  expect(host.querySelector('[aria-selected="true"]')?.textContent).toContain("git diff");
   await act(async () => resolve(["git status", "git diff", "git log"]));
-  expect(host.querySelector('[aria-selected="true"]')?.textContent).toBe("git diff");
+  expect(host.querySelector('[aria-selected="true"]')?.textContent).toContain("git diff");
   await key("Tab");
   expect(paste).toHaveBeenCalledExactlyOnceWith("diff");
 });

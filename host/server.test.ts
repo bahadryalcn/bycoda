@@ -429,8 +429,16 @@ describe("managed workspace owner RPCs", () => {
         })
       ).value.error,
     ).toBeUndefined();
-    const busy = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
-    expect(busy.state).toBe("active");
+    // Heartbeats can respond before their workspace bookkeeping finishes.
+    const busy = await vi.waitFor(
+      async () => {
+        const current = (await s.call("workspaces.get", { workspaceId: workspace.id })).value
+          .result;
+        expect(current.state).toBe("active");
+        return current;
+      },
+      { timeout: 10_000 },
+    );
     expect(busy.lastActivityAt).toBeGreaterThanOrEqual(workspace.lastActivityAt);
     expect(
       (
@@ -449,8 +457,15 @@ describe("managed workspace owner RPCs", () => {
         })
       ).value.error,
     ).toBeUndefined();
-    const idle = (await s.call("workspaces.get", { workspaceId: workspace.id })).value.result;
-    expect(idle.state).toBe("idle");
+    const idle = await vi.waitFor(
+      async () => {
+        const current = (await s.call("workspaces.get", { workspaceId: workspace.id })).value
+          .result;
+        expect(current.state).toBe("idle");
+        return current;
+      },
+      { timeout: 10_000 },
+    );
     const alias = await s.engine.openProject(workspace.path);
     const terminal = {
       id: "workspace-terminal",
@@ -565,7 +580,7 @@ describe("managed workspace owner RPCs", () => {
     expect(closed.value.result.state).toBe("abandoned");
     expect(git("diff", "--", "source.txt")).toContain("unrelated dirty source");
     expect(s.send).not.toHaveBeenCalled();
-  });
+  }, 60_000); // Real Git prepare, resume and cleanup can each wait on child processes.
 });
 
 it("keeps an idle client connection open well past the desktop's 5 s heartbeat", async () => {
@@ -3888,7 +3903,9 @@ describe("shared queued messages", () => {
         });
         expect(published.value.result.consumer).toBe(clientId);
         s.finish();
-        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"));
+        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"), {
+          timeout: 10_000,
+        });
         // It polls like it always did: still its queue, the host stays out.
         for (let i = 0; i < 4; i++) {
           await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 5);
@@ -3899,7 +3916,13 @@ describe("shared queued messages", () => {
         expect(s.send).toHaveBeenCalledOnce();
         // It stops (its window closed): after the lease the host sends the row.
         await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS + 5_000);
-        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
+        await vi.waitFor(
+          async () => {
+            await vi.advanceTimersByTimeAsync(100);
+            expect(s.send).toHaveBeenCalledTimes(2);
+          },
+          { timeout: 10_000 },
+        );
         expect(s.turn().text).toBe("send a");
         s.finish();
       } finally {
@@ -3984,7 +4007,8 @@ describe("shared queued messages", () => {
         expect(await scheduler.get("blocked-review-continuation")).toMatchObject({
           status: "verifying",
         });
-        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2));
+        // The review is already admitted. Provider dispatch follows asynchronous Host setup.
+        await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(2), { timeout: 10_000 });
         const reviewing = (await scheduler.get("blocked-review-continuation"))!;
         const sessionId = reviewing.reviewer!.sessionId!;
         s.turn().onEvent({
@@ -4048,7 +4072,7 @@ describe("shared queued messages", () => {
     });
 
     it("tells a window its run lease is lost when another side runs the conversation", async () => {
-      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
       try {
         const s = await setup();
         const sessionId = await create(s, "run-lease-lost");
@@ -4056,9 +4080,15 @@ describe("shared queued messages", () => {
         expect((await beat(s, sessionId, "win1", mine.epoch))[sessionId]).toMatchObject({
           epoch: mine.epoch,
         });
-        // Another window runs the conversation after this one's lease ran out.
+        // #1314: a suspend gap alone leaves the original window's activity live.
         vi.setSystemTime(Date.now() + RUN_LEASE_TTL_MS + 30_000);
-        const other = (await acquire(s, sessionId, "desktop:win2")).value.result.lease;
+        expect((await acquire(s, sessionId, "desktop:win2")).value.error).toMatch(/LEASE_HELD/);
+
+        // The window then stays silent while the Host is awake.
+        await vi.advanceTimersByTimeAsync(RUN_LEASE_TTL_MS + 30_000);
+        const acquired = await acquire(s, sessionId, "desktop:win2");
+        expect(acquired.value.error).toBeUndefined();
+        const other = acquired.value.result.lease;
         expect(other.holder).toBe("desktop:win2");
         expect((await beat(s, sessionId, "win1", mine.epoch))[sessionId]).toBeNull();
         expect((await beat(s, sessionId, "win2", other.epoch))[sessionId]).toMatchObject({
@@ -6339,7 +6369,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         sessionId: s.sessionId,
         text: "mac turn",
       } as never);
-      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), { timeout: 10_000 });
       await s.call("sessions.queue.change", {
         sessionId: s.sessionId,
         clientId: "desktop:win1",
@@ -6355,10 +6385,13 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         })
       ).result.drain;
       s.finish();
-      await vi.waitFor(async () => {
-        await vi.advanceTimersByTimeAsync(100);
-        expect(await s.store.sessionStatus(s.sessionId)).toBe("idle");
-      });
+      await vi.waitFor(
+        async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          expect(await s.store.sessionStatus(s.sessionId)).toBe("idle");
+        },
+        { timeout: 10_000 },
+      );
       s.send.mockClear();
       const beat = async (blocked: boolean) =>
         (
@@ -6383,7 +6416,13 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         released = (await beat(false)) === null;
       }
       expect(released).toBe(true);
-      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await vi.waitFor(
+        async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          expect(s.send).toHaveBeenCalledOnce();
+        },
+        { timeout: 10_000 },
+      );
     } finally {
       vi.useRealTimers();
     }

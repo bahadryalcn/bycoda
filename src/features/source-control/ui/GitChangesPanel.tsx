@@ -97,6 +97,7 @@ import { PrGenerationError } from "../model/prGenerationError";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { MOD } from "../../../platform/tauri/platform";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { shortSha } from "../../../shared/lib/shortSha";
 import {
   GIT_ACTIONS,
   GIT_CONFLICTS,
@@ -475,7 +476,7 @@ export function GitChangesPanel({
               <Text as="span" size="secondary" tone="primary" weight="medium" className="shrink-0">
                 {index?.repository === false || !index
                   ? t("Changes")
-                  : `${t("Detached HEAD")} · ${(index.head ?? "").slice(0, 7)}`}
+                  : `${t("Detached HEAD")} · ${shortSha(index.head ?? "")}`}
               </Text>
             )}
             {index?.upstream && detailsOpen ? <UpstreamLabel upstream={index.upstream} /> : null}
@@ -847,6 +848,9 @@ function ChangedFiles({
     toggleAmend: toggleAmendDraft,
     clearDraft,
   } = useCommitDraft({ cwd, index, textHarness, canGenerate, fail });
+  // Cancels a running PR description (provider call) when the list unmounts or moves to another repository (#1369).
+  const prGeneration = useRef<AbortController | null>(null);
+  useEffect(() => () => prGeneration.current?.abort(), [cwd]);
   // Nothing staged: Commit takes every change, as the header menu's Commit does.
   const canCommit =
     (staged.length > 0 || amend || unstaged.length > 0) &&
@@ -1207,11 +1211,19 @@ function ChangedFiles({
   // `commitSummary` is the owner's explicit choice after generation failed; it is never a silent fallback.
   async function openCreatedPr(commitSummary = false) {
     return withGitPanelRuntime(cwd, async () => {
-      const content = commitSummary
-        ? await prContentFromCommits(cwd)
-        : generationChoice
-          ? await generatePrContent(cwd, textHarness, generationChoice)
-          : await generatePrContent(cwd, textHarness);
+      let content;
+      if (commitSummary) content = await prContentFromCommits(cwd);
+      else {
+        const controller = new AbortController();
+        prGeneration.current = controller;
+        content = await generatePrContent(
+          cwd,
+          textHarness,
+          generationChoice,
+          undefined,
+          controller.signal,
+        );
+      }
       if (!content) throw new PrGenerationError(new Error("No text provider returned content"));
       const url = await gitPrCreate(cwd, content.title, content.body, content.base, content.head);
       const number = Number(/\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1]);

@@ -30,12 +30,12 @@ export async function generateCommitMessage(
 }
 
 export async function generatePrContent(
-  ...[cwd, preferred, choice, context]: Parameters<typeof generateSelectedPrContent>
+  ...[cwd, preferred, choice, context, signal]: Parameters<typeof generateSelectedPrContent>
 ) {
   const captured = captureTextInput({ operationContext: context }).operationContext;
   try {
     if (cwd.startsWith(REMOTE_PATH_PREFIX)) {
-      const result = await remoteGitTextGeneration(cwd, "pr", preferred, choice);
+      const result = await remoteGitTextGeneration(cwd, "pr", preferred, choice, signal);
       if (!("title" in result)) throw new Error("Host returned no pull request content");
       return result;
     }
@@ -44,6 +44,7 @@ export async function generatePrContent(
       preferred,
       await resolveGitGenerationChoice(choice, cwd, preferred),
       captured,
+      signal,
     );
   } catch (error) {
     // Connection state keeps its own classified message; anything else is a provider or

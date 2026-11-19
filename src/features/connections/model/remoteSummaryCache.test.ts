@@ -40,25 +40,25 @@ it("does not re-read cached values on later writes and evicts the least recently
 
 it("keeps byte accounting correct for entries written by other windows or outside the cache", () => {
   localStorage.clear();
-  const half = "x".repeat(REMOTE_SUMMARY_CACHE_BYTES / 8); // a quarter of the budget in bytes
+  const quarter = "x".repeat(REMOTE_SUMMARY_CACHE_BYTES / 8);
   writeRemoteSummaryCache(cacheKey("a"), "[]");
   // Another window stores a large entry; the storage event carries its new value.
-  localStorage.setItem(cacheKey("other"), half);
+  localStorage.setItem(cacheKey("other"), quarter + quarter);
   window.dispatchEvent(
     new StorageEvent("storage", {
       key: cacheKey("other"),
-      newValue: half,
+      newValue: quarter + quarter,
       storageArea: localStorage,
     }),
   );
   // A same-window foreign write (no event) is found through the length check.
-  localStorage.setItem(cacheKey("foreign"), half);
+  localStorage.setItem(cacheKey("foreign"), quarter);
   localStorage.setItem("draft", "keep");
-  writeRemoteSummaryCache(cacheKey("b"), half);
+  writeRemoteSummaryCache(cacheKey("b"), quarter);
   expect(localStorage.getItem(cacheKey("a"))).toBeNull();
-  expect(localStorage.getItem(cacheKey("other"))).toBe(half);
-  expect(localStorage.getItem(cacheKey("foreign"))).toBe(half);
-  expect(localStorage.getItem(cacheKey("b"))).toBe(half);
+  expect(localStorage.getItem(cacheKey("other"))).toBe(quarter + quarter);
+  expect(localStorage.getItem(cacheKey("foreign"))).toBe(quarter);
+  expect(localStorage.getItem(cacheKey("b"))).toBe(quarter);
   expect(localStorage.getItem("draft")).toBe("keep");
   // Removal in another window releases its bytes: the next write evicts nothing.
   localStorage.removeItem(cacheKey("other"));
@@ -69,10 +69,10 @@ it("keeps byte accounting correct for entries written by other windows or outsid
       storageArea: localStorage,
     }),
   );
-  writeRemoteSummaryCache(cacheKey("c"), half + half);
-  expect(localStorage.getItem(cacheKey("foreign"))).toBe(half);
-  expect(localStorage.getItem(cacheKey("b"))).toBe(half);
-  expect(localStorage.getItem(cacheKey("c"))).toBe(half + half);
+  writeRemoteSummaryCache(cacheKey("c"), quarter + quarter);
+  expect(localStorage.getItem(cacheKey("foreign"))).toBe(quarter);
+  expect(localStorage.getItem(cacheKey("b"))).toBe(quarter);
+  expect(localStorage.getItem(cacheKey("c"))).toBe(quarter + quarter);
 });
 
 it("coalesces pending summary writes and yields before storage", () => {

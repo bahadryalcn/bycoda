@@ -11,14 +11,33 @@ import {
   type Automation,
 } from "../model/automations";
 import { SUPPORTED_INBOX_TRIGGER_EVENTS } from "../model/automationEvents";
+import { AUTOMATION_TEMPLATES } from "../model/automationTemplates";
 import * as hostAutomationClient from "../model/hostAutomationClient";
 import { AutomationsView as RawAutomationsView } from "./AutomationsView";
+import { AutomationTemplateCard } from "./AutomationTemplateCard";
 import { EventTriggerSentence } from "./TriggerEditor";
 import { TRIGGER_EVENTS } from "../model/automationTriggerCatalog";
 import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { focusManager } from "@tanstack/react-query";
 const AutomationsView = withQueryClient(RawAutomationsView);
+
+it("shows each template description without repeating it in a tooltip", async () => {
+  const template = AUTOMATION_TEMPLATES[0];
+  const onPick = vi.fn();
+  await act(async () => root.render(createElement(AutomationTemplateCard, { template, onPick })));
+  const card = container.querySelector("button")!;
+  expect(card.textContent).toContain(template.description);
+  expect(card.querySelector("[title]")).toBeNull();
+  expect(card.getAttribute("aria-describedby")).toBeNull();
+  await act(async () => {
+    card.focus();
+    card.dispatchEvent(new MouseEvent("mouseenter"));
+  });
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  await act(async () => card.click());
+  expect(onPick).toHaveBeenCalledExactlyOnceWith(template);
+});
 
 it("keeps an unfocused assistant reveal paused, then opens its exact Host row when normal focus loading resumes", async () => {
   const row: Automation = {

@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+
 /** Pictures queued in the decoder beyond which the stream is waiting on it (about 0.3 s of video). */
 export const DECODE_QUEUE_LIMIT = 8;
 /** How long a full decode queue may stay full before its backlog is discarded. */
@@ -22,6 +24,6 @@ export function isFatalStreamFailure(error: unknown): boolean {
     error && typeof error === "object" && "code" in error && typeof error.code === "string"
       ? error.code
       : "";
-  const text = error instanceof Error ? error.message : String(error);
+  const text = errorText(error);
   return FATAL.test(`${code} ${text}`);
 }

@@ -41,7 +41,7 @@ export function shareStructure<T>(previous: unknown, next: T): T {
     let same = keys.length === Object.keys(previous).length;
     const merged: Record<string, unknown> = {};
     for (const key of keys) {
-      if (!Object.hasOwn(previous, key)) same = false;
+      if (!Object.prototype.hasOwnProperty.call(previous, key)) same = false;
       const kept = shareStructure(previous[key], next[key]);
       if (kept !== previous[key]) same = false;
       merged[key] = kept;

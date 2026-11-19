@@ -111,6 +111,31 @@ it("joins a current focus read but an explicit recheck always reads again", asyn
   act(() => root.unmount());
 });
 
+it("pauses the setup poll while the window is hidden and reads once when it shows again (#603)", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  native.read.mockResolvedValue(report("denied"));
+  const root = createRoot(document.createElement("div"));
+  function Probe() {
+    usePermissionStatus(["microphone"], true);
+    return null;
+  }
+  let hidden = false;
+  const visibility = vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    native.read.mockClear();
+    hidden = true;
+    await act(async () => vi.advanceTimersByTime(5000));
+    expect(native.read).not.toHaveBeenCalled();
+    hidden = false;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(native.read).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+  } finally {
+    visibility.mockRestore();
+  }
+});
 it("polls only during setup and ignores a late read after a newer event", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();

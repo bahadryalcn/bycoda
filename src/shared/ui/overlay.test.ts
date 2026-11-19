@@ -616,6 +616,8 @@ it("keeps focus inside the modal when Tab runs past either end of the toast cont
   );
   const { buttons } = toastCards(1);
   focusToastCard(".request-card");
+  await key(buttons[0], "Tab");
+  expect(document.activeElement).toBe(buttons[1]);
   await key(buttons[1], "Tab");
   const dialog = document.querySelector('[role="dialog"]')!;
   expect(dialog.contains(document.activeElement)).toBe(true);

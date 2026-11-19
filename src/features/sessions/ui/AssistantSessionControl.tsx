@@ -185,7 +185,9 @@ function LocalControl({
             ) : uncertain ? (
               <>
                 <p role="status">
-                  {t("Supervision removal is unconfirmed. Check its status before continuing.")}
+                  {t(
+                    "Supervision removal could not be confirmed. Check its status before continuing.",
+                  )}
                 </p>
                 <Button loading={busy} onClick={() => void inspect()}>
                   {t("Check status")}

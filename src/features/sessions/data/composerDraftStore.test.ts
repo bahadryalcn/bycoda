@@ -740,7 +740,9 @@ describe("actual composer persistence observation", () => {
     expect(writes().map((write) => write.sessionId)).toEqual(["target-draft"]);
   });
 
-  it("retains a timed-out hydrate producer until its actual attachment check and cache restore settle", async () => {
+  // Hydration has no time budget (boot keeps its loading shell), so a slow attachment check is
+  // waited for, never abandoned; an observation taken meanwhile waits for the same producer.
+  it("holds hydration and a concurrent observation until the actual attachment check and cache restore settle", async () => {
     const inspected = pending<unknown[]>();
     invoke.mockImplementation((command: string) => {
       if (command === "session_list_drafts")
@@ -763,9 +765,12 @@ describe("actual composer persistence observation", () => {
       if (command === "inspect_paths") return inspected.promise;
       return Promise.resolve(null);
     });
-    const hydrating = currentStore.hydrateComposerDrafts();
+    let hydrated = false;
+    const hydrating = currentStore.hydrateComposerDrafts().then(() => {
+      hydrated = true;
+    });
     await vi.advanceTimersByTimeAsync(2001);
-    await hydrating;
+    expect(hydrated).toBe(false);
     let settled = false;
     const observation = begin()
       .observe()
@@ -775,6 +780,7 @@ describe("actual composer persistence observation", () => {
     await Promise.resolve();
     expect(settled).toBe(false);
     inspected.resolve([{ path: "/owned/held.txt" }]);
+    await hydrating;
     await observation;
     expect(currentCache.getComposerDraft("drain-draft")).toBe("late restored");
     expect(currentCache.getComposerAttachments("drain-draft")[0].path).toBe("/owned/held.txt");

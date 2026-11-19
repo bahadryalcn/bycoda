@@ -26,6 +26,7 @@ import {
   refreshAssistant,
   refreshAssistantQuietly,
   useAssistantSnapshot,
+  watchAssistantSnapshot,
 } from "./assistantClient";
 
 it.each([
@@ -40,6 +41,44 @@ it.each([
   ["ALİ", "ALİ'nin"],
 ])("uses Turkish possessive for %s", (name, expected) => {
   expect(possessiveName(name)).toBe(expected);
+});
+
+it("shares one snapshot poll with background watchers and pauses hidden view-only polling", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  const root = createRoot(document.createElement("div"));
+  function Consumer() {
+    useAssistantSnapshot();
+    return null;
+  }
+  const listener = vi.fn();
+  let stop: (() => void) | undefined;
+  try {
+    const request = vi.mocked(hostToolRequest);
+    request.mockResolvedValue({ snapshot: { profile: { name: "Initial" } } } as never);
+    await act(async () => root.render(createElement(Consumer)));
+    const initialReads = request.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(request).toHaveBeenCalledTimes(initialReads);
+
+    stop = watchAssistantSnapshot(listener);
+    request.mockResolvedValue({ snapshot: { profile: { name: "Updated" } } } as never);
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(request).toHaveBeenCalledTimes(initialReads + 1);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    stop();
+    stop = undefined;
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(request).toHaveBeenCalledTimes(initialReads + 1);
+  } finally {
+    stop?.();
+    await act(async () => root.unmount());
+    visibility.mockRestore();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
 });
 it("uses setup navigation until a name exists, and keeps the chosen name unchanged", () => {
   expect(assistantIdentity(undefined, "en")).toMatchObject({

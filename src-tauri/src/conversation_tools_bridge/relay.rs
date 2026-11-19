@@ -137,11 +137,25 @@ fn take_delay(
     delay
 }
 
+static RELAY_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Tells the relay threads to leave their loops; called once from the exit teardown.
+pub(crate) fn stop_desktop_relay() {
+    RELAY_STOPPED.store(true, std::sync::atomic::Ordering::Release);
+}
+
+fn relay_stopped() -> bool {
+    RELAY_STOPPED.load(std::sync::atomic::Ordering::Acquire)
+}
+
 pub(crate) fn start_desktop_relay(app: AppHandle) {
     let mut failures = 0u32;
     let mut last_request = std::time::Instant::now();
     let observation_app = app.clone();
     std::thread::spawn(move || loop {
+        if relay_stopped() {
+            return;
+        }
         static OBSERVATION: OnceLock<Arc<PhysicalSlots>> = OnceLock::new();
         let slots = OBSERVATION.get_or_init(|| Arc::new(PhysicalSlots::new(1)));
         if let Some(permit) = slots.try_acquire() {
@@ -174,6 +188,9 @@ pub(crate) fn start_desktop_relay(app: AppHandle) {
             .clone();
         let mut channel: Option<Arc<crate::remote::NativeServiceChannel>> = None;
         loop {
+            if relay_stopped() {
+                return;
+            }
             if channel
                 .as_ref()
                 .is_some_and(|channel| !channel.is_current())
@@ -286,6 +303,12 @@ mod tests {
         // A failed take never re-arms, however long it ran.
         assert_eq!(take_delay(false, 3, Duration::ZERO, true), Duration::from_secs(8));
         assert!(Duration::from_millis(TAKE_WAIT_MS) < Duration::from_secs(45));
+    }
+
+    #[test]
+    fn stop_desktop_relay_ends_the_relay_loops() {
+        stop_desktop_relay();
+        assert!(relay_stopped());
     }
 
     #[test]

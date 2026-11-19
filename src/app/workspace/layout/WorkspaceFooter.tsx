@@ -87,7 +87,7 @@ function WorkspaceFooterComponent({
       data-workspace-footer
       {...surfaceAttributes(
         { frame: "pane", edge: "top" },
-        "flex h-8 min-w-0 shrink-0 items-center gap-1 px-1.5",
+        "@container/footer flex h-8 min-w-0 shrink-0 items-center gap-1 px-1.5",
       )}
     >
       {searchViewOpen ||

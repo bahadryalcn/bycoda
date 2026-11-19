@@ -20,7 +20,7 @@ function sortsBefore(a: InboxItem, b: InboxItem): boolean {
  */
 export function refreshInboxPages(data: InboxPages, fresh: InboxUnifiedResult): InboxPages {
   const first = data.pages[0];
-  const boundary = fresh.next ? fresh.items.at(-1) : undefined;
+  const boundary = fresh.next ? fresh.items[fresh.items.length - 1] : undefined;
   const newest = first?.items[0];
   const restart: InboxPages = { pages: [fresh], pageParams: [undefined] };
   if (!first || data.pages.length === 1 || !boundary || !newest) return restart;

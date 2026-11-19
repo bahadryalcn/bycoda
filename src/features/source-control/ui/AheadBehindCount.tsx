@@ -23,7 +23,10 @@ export function AheadBehindCount({
   const t = useT();
   const format = useFormat();
   if (hideZero && ahead <= 0 && behind <= 0) return null;
-  const label = `${t("Outgoing commits")}: ${format.formatNumber(ahead)} · ${t("Incoming commits")}: ${format.formatNumber(behind)}`;
+  const label = t("Outgoing commits: {p0} · Incoming commits: {p1}", {
+    p0: format.formatNumber(ahead),
+    p1: format.formatNumber(behind),
+  });
   return (
     <Tooltip label={label}>
       <Text

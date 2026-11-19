@@ -467,8 +467,10 @@ export class ExternalTunnels {
   ): Promise<ExternalTunnel> {
     // Stopped or closed during the download: the stopper already recorded the outcome.
     if (this.pending.get(record.id) !== install) return { ...record };
-    // close() is queued behind this turn and cancels the preparation itself.
-    if (this.closing) return { ...record };
+    if (this.closing) {
+      this.cancelPending(record, install);
+      return { ...record };
+    }
     this.pending.delete(record.id);
     return this.launchRecord(record, program);
   }
@@ -546,7 +548,7 @@ export class ExternalTunnels {
       // Release the lane: status and stop must not wait for the download.
       const install: PendingInstall = { abort: new AbortController() };
       this.pending.set(record.id, install);
-      return { record: { ...record }, install };
+      return { record, install };
     }
     return { record: await this.launchRecord(record, program) };
   }

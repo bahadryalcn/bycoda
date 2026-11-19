@@ -886,6 +886,6 @@ describe("settings search", () => {
     const all = searchSettings("e");
     expect(all.length).toBeGreaterThan(8);
     expect(all.length).toBeLessThanOrEqual(SETTINGS_SEARCH_LIMIT);
-    expect(searchSettings("e", SETTINGS_SEARCH_LIMIT + 1000).length).toBe(all.length);
+    expect(searchSettings("e", SETTINGS_SEARCH_LIMIT + 1000).length).toBeGreaterThan(all.length);
   });
 });

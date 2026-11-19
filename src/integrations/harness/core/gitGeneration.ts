@@ -61,9 +61,12 @@ export function createGitTextGeneration(options: GitTextOptions) {
   async function generatePrContent(
     cwd: string,
     operationContext?: HarnessOperationContext,
+    signal?: AbortSignal,
   ): Promise<(PrContent & { base: string; head: string }) | null> {
+    signal?.throwIfAborted();
     const captured = captureTextInput({ operationContext }).operationContext;
     const range = await gitRangeContext(cwd);
+    signal?.throwIfAborted();
     // A provider failure or an unusable reply rejects: the caller decides whether to offer the
     // commit summary, so a fallback is never presented as generated text.
     const output = await options.run({
@@ -77,6 +80,7 @@ export function createGitTextGeneration(options: GitTextOptions) {
         diffPatch: range.diffPatch,
       }),
       timeoutMs: options.timeoutMs,
+      signal,
     });
     const parsed = parsePrContent(output);
     if (!parsed)

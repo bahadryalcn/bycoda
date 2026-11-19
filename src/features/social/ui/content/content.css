@@ -94,23 +94,33 @@
   block-size: 1.5rem;
 }
 
-/* Week view in a narrow calendar (below 40rem): one day per row, an agenda, so post chips keep their
-   text and status word. Month and wide panes keep the seven-column grid. Day hairlines switch from
-   column rules to row rules. The container is the calendar root, not the window. */
-@container content-calendar (max-width: 40rem) {
-  .content-calendar[data-view="week"] .content-calendar-grid {
+.content-calendar[data-view="month"] .content-day-weekday {
+  display: none;
+}
+
+/* Each day needs room for its post chips. Stack both views before seven columns become too narrow. */
+@container content-calendar (max-width: 56rem) {
+  .content-calendar .content-calendar-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .content-calendar[data-view="week"] .content-day {
-    min-height: 0;
+  .content-calendar[data-view] .content-day {
+    min-block-size: 0;
   }
-  .content-calendar[data-view="week"] .content-day[data-surface-frame][data-surface-edge] {
+  .content-calendar .content-day[data-surface-frame][data-surface-edge] {
     border-width: 0;
     border-block-start-width: 1px;
   }
-  .content-calendar[data-view="week"] .content-day-title {
+  .content-calendar .content-day-title {
     flex-direction: row;
     align-items: baseline;
+  }
+  .content-calendar .content-calendar-weekdays,
+  .content-calendar[data-view="month"] .content-day-number {
+    display: none;
+  }
+  .content-calendar[data-view="month"] .content-day-weekday {
+    display: inline;
+    padding-inline: var(--space-1);
   }
 }
 

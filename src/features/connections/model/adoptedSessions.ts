@@ -982,7 +982,12 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
         const count = noteSyncFailure(deps.mirrored, entry, failure.error, "open");
         // A session held for a running host turn keeps its hold until the arrival limit; the
         // others get the Sync row now, as an unfinished sync (no divergence is claimed).
-        if (count >= ADOPTED_SYNC_FAILURE_FLAG_AFTER && after && !awaiting.has(entry.id))
+        if (
+          count === ADOPTED_SYNC_FAILURE_FLAG_AFTER &&
+          after &&
+          !awaitingAnswer(after) &&
+          !awaiting.has(entry.id)
+        )
           deps.conflict?.(after);
       }
     }

@@ -307,6 +307,31 @@ describe("manual check during a background flow", () => {
     expect(flowInstall).toHaveBeenCalledOnce();
     expect(newerInstall).not.toHaveBeenCalled();
   });
+
+  it("keeps the newest probe's update when an older probe from another channel settles last", async () => {
+    mocks.updaterEnabled = true;
+    const staleInstall = vi.fn().mockResolvedValue(undefined);
+    const freshInstall = vi.fn().mockResolvedValue(undefined);
+    let settleStale!: (update: unknown) => void;
+    mocks.check
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            settleStale = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ version: "0.2.0", downloadAndInstall: freshInstall });
+    const updater = await import("./updater");
+    const stale = updater.probeForUpdate();
+    await vi.waitFor(() => expect(mocks.check).toHaveBeenCalledOnce());
+    // The channel switch: a newer probe answers first, then the old feed's result arrives.
+    await expect(updater.probeForUpdate(true)).resolves.toMatchObject({ version: "0.2.0" });
+    settleStale({ version: "0.1.23", downloadAndInstall: staleInstall });
+    await stale;
+    await updater.installPendingUpdate();
+    expect(freshInstall).toHaveBeenCalledOnce();
+    expect(staleInstall).not.toHaveBeenCalled();
+  });
 });
 
 describe("background probe back-off", () => {

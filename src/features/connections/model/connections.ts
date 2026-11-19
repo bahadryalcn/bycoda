@@ -1241,27 +1241,32 @@ function watchMachineStatus(machineId: string): () => void {
     statusWatchers.set(machineId, watcher);
     let failures = 0;
     let polling = false;
-    watcher.wake = () => {
-      if (polling || !failures || statusWatchers.get(machineId) !== watcher) return;
+    const schedule = (delay: number) => {
       clearTimeout(watcher.timer);
-      void poll();
+      if (computerOnline() && statusWatchers.get(machineId) === watcher)
+        watcher.timer = setTimeout(() => void poll(), delay);
     };
     // Coming back online or to a visible window resumes a check that was held back.
-    const resume = () => {
-      if (polling || !computerOnline() || statusWatchers.get(machineId) !== watcher) return;
-      clearTimeout(watcher.timer);
-      void poll();
+    const resume = () => void poll();
+    watcher.wake = () => {
+      if (failures) resume();
     };
-    const resumeWhenVisible = () => {
+    const visibilityChanged = () => {
       if (!windowHidden()) resume();
+      else if (!polling) {
+        const environmentId = cachedMachines.find((entry) => entry.id === machineId)?.environmentId;
+        schedule(machineStatusPollDelay(failures, environmentId, true));
+      }
     };
     window.addEventListener("online", resume);
-    document.addEventListener("visibilitychange", resumeWhenVisible);
+    document.addEventListener("visibilitychange", visibilityChanged);
     watcher.dispose = () => {
       window.removeEventListener("online", resume);
-      document.removeEventListener("visibilitychange", resumeWhenVisible);
+      document.removeEventListener("visibilitychange", visibilityChanged);
     };
     const poll = async () => {
+      if (polling || !computerOnline() || statusWatchers.get(machineId) !== watcher) return;
+      clearTimeout(watcher.timer);
       polling = true;
       const machine = cachedMachines.find((entry) => entry.id === machineId);
       const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
@@ -1292,11 +1297,9 @@ function watchMachineStatus(machineId: string): () => void {
       polling = false;
       // Offline: no timer until `online` resumes the check, so nothing is sent to a machine
       // while the computer cannot reach it.
-      if (statusWatchers.get(machineId) === watcher && computerOnline())
-        watcher.timer = setTimeout(
-          () => void poll(),
-          !current() ? 0 : machineStatusPollDelay(failures, machine?.environmentId, windowHidden()),
-        );
+      schedule(
+        !current() ? 0 : machineStatusPollDelay(failures, machine?.environmentId, windowHidden()),
+      );
     };
     void poll();
   }

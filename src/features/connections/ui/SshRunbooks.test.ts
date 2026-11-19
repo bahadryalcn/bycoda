@@ -140,6 +140,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 const button = (name: string) =>
@@ -234,6 +235,19 @@ it("preserves revision-conflicted drafts and refuses expired approval", async ()
   vi.spyOn(Date, "now").mockReturnValue(Date.now() + 121000);
   await act(async () => button("Approve and run").click());
   expect(native.start).not.toHaveBeenCalled();
+});
+it("schedules only expiry for a hidden execution review and clears it at expiry", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  await render();
+  await selectSaved();
+  const interval = vi.spyOn(globalThis, "setInterval");
+  await act(async () => button("Review execution").click());
+  expect(button("Approve and run")).toBeDefined();
+  expect(interval).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  expect(button("Approve and run")).toBeUndefined();
+  expect(document.body.textContent).toContain("Execution review expired or changed.");
 });
 it("retains ambiguous dispatch identity and recovers/cancels by status without retry", async () => {
   await render();

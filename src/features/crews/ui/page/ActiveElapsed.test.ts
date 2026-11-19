@@ -56,7 +56,8 @@ describe("ActiveElapsed", () => {
     act(() => vi.advanceTimersByTime(5000));
     expect(host.textContent).toBe(formatDuration(5_000));
     act(() => setHidden(false));
-    expect(host.textContent).toBe(formatDuration(65_000));
+    // The clock was set to 160 s, then advanced 5 s: 165 s since start 95 s is 70 s.
+    expect(host.textContent).toBe(formatDuration(70_000));
     act(() => root.unmount());
   });
 

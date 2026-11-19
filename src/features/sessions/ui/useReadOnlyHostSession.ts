@@ -172,6 +172,8 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
       if (!current() || document.hidden) return;
       timer = setTimeout(
         () => {
+          // Hidden since this timer was armed: the visibility listener resumes with one poll.
+          if (document.hidden) return;
           void poll();
         },
         readOnlyPollDelay(snapshot?.status === "running", failures),

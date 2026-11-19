@@ -24,14 +24,20 @@ vi.mock("../../../../shared/ui/settings", () => ({
     label,
     children,
     onReset,
+    resetLabel,
   }: {
     label: ReactNode;
     children: ReactNode;
     onReset?: () => void;
+    resetLabel?: string;
   }) => (
     <div role="group" aria-label={String(label)}>
       {children}
-      {onReset ? <button onClick={onReset}>Reset {String(label)}</button> : null}
+      {onReset ? (
+        <button aria-label={resetLabel ?? "Restore default"} onClick={onReset}>
+          Reset
+        </button>
+      ) : null}
     </div>
   ),
 }));

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import de from "./locales/de.json";
 import en from "./locales/en.json";
@@ -21,7 +22,12 @@ const locales: Record<string, Record<string, string>> = {
   "zh-CN": zhCN,
 };
 
-const labelValueKeys = ["Last activity: {p0}", "Model: {p0}", "Checking Host {p0}…"];
+const labelValueKeys = [
+  "Last activity: {p0}",
+  "Model: {p0}",
+  "Request: {p0}",
+  "Checking Host {p0}…",
+];
 const indexLabelKeys = ["Job {p0}", "Position {p0}"];
 const retiredKeys = [
   "Last activity {p0}",
@@ -31,7 +37,25 @@ const retiredKeys = [
   "Checking Host {p1}…",
 ];
 
+const callSites = [
+  ["app/shell/SessionDetailTimes.tsx", "Last activity: {p0}"],
+  ["app/shell/SessionRecoveryPanel.tsx", "Last activity: {p0}"],
+  ["features/decision-models/ui/LocalInstallWizard.tsx", "Model: {p0}"],
+  ["features/settings/ui/appearance/controls/BackgroundGenerator.tsx", "Model: {p0}"],
+  ["features/model-routing/ui/order/ModelOrderRow.tsx", "Position {p0}"],
+  ["features/assistant/ui/room/JobReviewDialog.tsx", "Job {p0}"],
+  ["features/crews/ui/CrewWorkTimeline.tsx", "Request: {p0}"],
+] as const;
+
 describe("label/value and index placeholder strings", () => {
+  it.each(callSites)("%s uses %s", (file, label) => {
+    const source = readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
+    expect(source).toContain(`t("${label}", {`);
+    for (const retired of retiredKeys) {
+      expect(source).not.toContain(`t("${retired}", {`);
+    }
+  });
+
   it.each(Object.entries(locales))(
     "%s has the standardized keys with a {p0} slot",
     (_, catalog) => {

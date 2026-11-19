@@ -20,13 +20,14 @@ function taskContext(cutoffRow: { sequence: number } | undefined) {
 }
 
 describe("task history pruning on the scheduler tick", () => {
-  it("looks for history without opening a write transaction when nothing is due", async () => {
+  it("continues the scheduler tick without a write transaction when no history is due", async () => {
     const { context, transaction, scope } = taskContext(undefined);
 
     await work(context);
 
     expect(scope).toHaveBeenCalledTimes(1);
     expect(transaction).not.toHaveBeenCalled();
+    expect(context.schedulerSnapshot).toHaveBeenCalledOnce();
   });
 
   it("opens the write transaction and re-checks the cutoff when history is due", async () => {

@@ -456,12 +456,10 @@ export function conversationRowsFrom(
  * Never the wall clock, which would rebuild on every call and boost forever.
  */
 function liveActivityAt(session: Session): number {
-  return Math.max(
-    0,
-    session.turnStoppedAt ?? 0,
-    session.statusRunningSince ?? 0,
-    session.backgroundSince ?? 0,
-  );
+  let latest = Math.max(0, session.backgroundSince ?? 0);
+  for (const block of session.blocks)
+    latest = Math.max(latest, block.turnStoppedAt ?? 0, block.statusRunningSince ?? 0);
+  return latest;
 }
 
 export function mergeHits(...lists: AppSearchHit[][]): AppSearchHit[] {

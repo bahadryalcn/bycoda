@@ -286,6 +286,27 @@ it("sweeps stale stage and previous leftovers on the next install without touchi
   }
 });
 
+it("keeps the previous device cache if installing its replacement fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-device-lifecycle-"));
+  const host = setupFixture(directory);
+  const parent = join(directory, "tools", "expo-device-hub");
+  const previous = join(parent, `${DEVICE_HUB_VERSION}.previous-${randomUUID()}`);
+  try {
+    await mkdir(previous, { recursive: true });
+    await writeFile(join(previous, ".install-complete"), DEVICE_HUB_VERSION);
+    vi.spyOn(processes, "deviceCommand").mockRejectedValue(new Error("fixture install failed"));
+
+    await expect(host.setup(false, { authorized: () => true })).rejects.toThrow(
+      "fixture install failed",
+    );
+    expect(await readdir(parent)).toEqual([previous.slice(parent.length + 1)]);
+    expect(await readFile(join(previous, ".install-complete"), "utf8")).toBe(DEVICE_HUB_VERSION);
+  } finally {
+    await host.dispose();
+    await removeFixture(directory);
+  }
+});
+
 it("blocks a queued stop without losing its owned sessions", async () => {
   const { host, internal } = fixture();
   const owned = host as unknown as { agentSessions: Set<string> };

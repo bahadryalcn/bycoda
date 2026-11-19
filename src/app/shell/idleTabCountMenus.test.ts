@@ -70,8 +70,13 @@ describe("idle tab count is read only by open menus", () => {
         }),
       ),
     );
+    // The bar stays hidden until an Alt tap reveals it and focuses the first menu.
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Alt", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", bubbles: true }));
+    });
+    expect(countIdleTabs).not.toHaveBeenCalled();
     const fileButton = container.querySelector<HTMLElement>('[data-menubar-key="file"]')!;
-    act(() => fileButton.focus());
     keyOn(fileButton, "ArrowDown");
 
     const menu = document.querySelector<HTMLElement>('[role="menu"]')!;

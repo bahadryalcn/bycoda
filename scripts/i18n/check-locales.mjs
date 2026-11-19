@@ -100,7 +100,15 @@ if (process.argv.includes("--update-glossary-baseline")) {
   process.exit(0);
 }
 const slots = (text) => (text.match(/\{p\d+\}/g) ?? []).sort().join(",");
-const turkishEditorial = JSON.parse(fs.readFileSync("src/shared/i18n/tr-overrides.json", "utf8"));
+const editorial = new Map(
+  ["en", "tr"].map((locale) => [
+    locale,
+    JSON.parse(fs.readFileSync(`src/shared/i18n/${locale}-overrides.json`, "utf8")),
+  ]),
+);
+for (const [locale, overrides] of editorial)
+  for (const key of Object.keys(overrides))
+    if (!Object.hasOwn(source, key)) issues.push(`${locale}: unknown editorial source ${key}`);
 for (const locale of ["tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
   const catalog = JSON.parse(fs.readFileSync(`${root}/${locale}.json`, "utf8"));
   for (const key of Object.keys(source)) {
@@ -111,9 +119,8 @@ for (const locale of ["tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
   for (const key of Object.keys(catalog))
     if (!(key in source)) issues.push(`${locale}: unknown source ${key}`);
   if (locale === "tr") {
-    for (const [key, expected] of Object.entries(turkishEditorial)) {
-      // The translation helper also ignores historical entries no longer in use.
-      if (key in source && catalog[key] !== expected)
+    for (const [key, expected] of Object.entries(editorial.get(locale))) {
+      if (Object.hasOwn(source, key) && catalog[key] !== expected)
         issues.push(`tr: editorial correction lost ${key}`);
     }
   }

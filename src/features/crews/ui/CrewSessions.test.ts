@@ -124,10 +124,11 @@ it("shows the presented Host failure as visible text and keeps the raw message b
   expect(container.querySelector("[title]")).toBeNull();
   // The raw Host text is one disclosure away, and the retry stays a named button.
   const details = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Show details",
+    (button) => button.textContent === "Details",
   )!;
   await act(async () => details.click());
-  expect(container.textContent).toContain(raw);
+  // The details popover renders in a portal, outside the sidebar container.
+  expect(document.body.textContent).toContain(raw);
   const retry = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Try again",
   )!;

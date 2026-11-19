@@ -48,13 +48,21 @@ it("leaves a browser fixture without a native bridge alone", async () => {
   expect(start).not.toHaveBeenCalled();
 });
 
-it("starts native renderer polling once per module initialization", async () => {
-  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
-  await import("./rendererBootstrap");
+it("starts native renderer polling once, after the mounted surface has painted", async () => {
+  const frame = vi.fn<(callback: () => void) => number>(() => 1);
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {}, requestAnimationFrame: frame });
+  const { startRendererModelRoutingAfterPaint } = await import("./rendererBootstrap");
+  expect(start).not.toHaveBeenCalled();
+  expect(frame).not.toHaveBeenCalled();
+  startRendererModelRoutingAfterPaint();
+  frame.mock.calls[0][0]();
+  expect(start).not.toHaveBeenCalled();
+  expect(refreshFacts).not.toHaveBeenCalled();
+  frame.mock.calls[1][0]();
   await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
   await vi.waitFor(() => expect(refreshFacts).toHaveBeenCalledOnce());
-  await import("./rendererBootstrap");
-  expect(start).toHaveBeenCalledOnce();
+  startRendererModelRoutingAfterPaint();
+  expect(frame).toHaveBeenCalledTimes(2);
 });
 
 it("binds live enabled-model and default-account readers before startup", async () => {

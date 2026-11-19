@@ -78,7 +78,9 @@ it("keeps the parent idle while typing: only the first edit renders, later keyst
     await act(async () => current.change(text.slice(0, end)));
     expect(current.text()).toBe(text.slice(0, end));
   }
-  expect(renders).toBe(afterFirstEdit);
+  // React re-runs the component once before it bails out of the first no-op update; later
+  // keystrokes then render nothing, so 60 keystrokes cost at most that one extra render.
+  expect(renders).toBeLessThanOrEqual(afterFirstEdit + 1);
   expect(current.initialDraft).toBeUndefined();
 });
 

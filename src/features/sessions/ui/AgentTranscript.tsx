@@ -659,17 +659,14 @@ function AgentTranscriptComponent({
                 "pointer-events-auto absolute inset-bs-2 inset-ie-3 flex flex-wrap items-center justify-end gap-1 p-1 font-sans text-ui-caption text-(--ui-text-secondary)",
               )}
             >
+              <span className="px-1">{t("After applying: ↑ original, ↓ translation.")}</span>
               <SegmentedControl
                 size="sm"
-                label={t("Translation")}
+                label={t("Translation view")}
                 value={activeVersion.translatedVisible ? "translation" : "original"}
                 onValueChange={(next) => showTranslation(next === "translation")}
                 options={[
-                  {
-                    value: "original",
-                    label: t("Original text"),
-                    tooltip: t("After applying: ↑ original, ↓ translation."),
-                  },
+                  { value: "original", label: t("Original text") },
                   { value: "translation", label: t("Translation") },
                 ]}
               />

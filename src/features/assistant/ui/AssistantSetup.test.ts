@@ -157,8 +157,13 @@ const draft = (environmentId?: string) => ({
   },
   rules: "Keep replies concise",
 });
+// #784: the draft is written by a debounced writer; pagehide flushes it so tests read storage now.
+function flushDraft() {
+  window.dispatchEvent(new Event("pagehide"));
+}
 async function render(voice = false) {
   await act(() => root.render(createElement(AssistantSetup, { onClose: state.close, voice })));
+  flushDraft();
 }
 function button(label: string) {
   return [...document.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -167,6 +172,7 @@ function button(label: string) {
 }
 async function click(label: string) {
   await act(() => button(label).click());
+  flushDraft();
 }
 async function start() {
   await act(async () => {

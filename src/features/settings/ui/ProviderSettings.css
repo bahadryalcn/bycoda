@@ -62,13 +62,11 @@
    while the detail column scrolls, and scrolls on its own only when taller than the window. */
 .provider-cli-selector {
   position: sticky;
-  /* Below the sticky page bar (--settings-page-bar-height) plus a 12px gap, so rows never
-     slide under it. */
-  inset-block-start: calc(var(--settings-page-bar-height) + 12px);
+  inset-block-start: var(--settings-page-bar-height);
   display: grid;
   gap: 2px;
   min-inline-size: 0;
-  max-block-size: calc(100vh - var(--ui-control-height-compact) - 6rem);
+  max-block-size: calc(100vh - var(--settings-page-bar-height) - 6rem);
   overflow-y: auto;
   align-content: start;
 }

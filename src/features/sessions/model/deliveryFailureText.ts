@@ -3,6 +3,8 @@ import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 
 const STORAGE_FULL = /QuotaExceededError|Failed to execute 'setItem' on 'Storage'/i;
 const WS_INTERRUPTED = /RPC_WS_INTERRUPTED/;
+const WS_UNCONFIRMED =
+  /RPC_WS_REMOTE:.*(?:Host operation could not be confirmed|outcome is unknown)/i;
 /** A technical first line: an error code or exception name prefix. */
 const TECHNICAL = /^\s*(?:[A-Z][A-Z0-9_]{2,}|[A-Za-z]*Error|[A-Za-z]*Exception)\s*:/;
 
@@ -18,6 +20,7 @@ export function deliveryFailureSentence(raw: string, t: ReturnType<typeof useT>)
     return t(
       "The connection to the Host dropped before the result was known. The queue checks again automatically.",
     );
+  if (WS_UNCONFIRMED.test(raw)) return t("Delivery unconfirmed");
   // Reasons the queue or provider wrote as a sentence lead with it; the rest stays in details.
   const first = raw.split(/\r?\n/, 1)[0].trim();
   if (first && !TECHNICAL.test(first)) return truncateGraphemes(first, 200);

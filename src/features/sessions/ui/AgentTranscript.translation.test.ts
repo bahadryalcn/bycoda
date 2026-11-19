@@ -88,6 +88,10 @@ it.each([
       expect(stickyRow.className).toContain("h-0");
       expect(toolbar.className).not.toContain("bg-(--ui-surface)");
       expect(toolbar.className).toContain("absolute");
+      expect(toolbar.querySelector('[role="radiogroup"]')?.getAttribute("aria-label")).toBe(
+        "Translation view",
+      );
+      expect(toolbar.textContent).toContain("After applying: ↑ original, ↓ translation.");
       for (const [key, expected] of [
         ["ArrowUp", block.text],
         ["ArrowDown", "Before Hello after"],

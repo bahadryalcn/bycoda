@@ -110,7 +110,7 @@ it("retains failed exact choice and source for Retry and prevents changing inten
   await render();
   await open();
   await act(async () => choice("Away").click());
-  expect(document.body.textContent).toContain("Availability change was not confirmed.");
+  expect(document.body.textContent).toContain("Availability change could not be confirmed.");
   expect(choice("Do not disturb").disabled).toBe(true);
   await act(async () => choice("Retry").click());
   expect(port.set).toHaveBeenNthCalledWith(2, "host-a", "away");
@@ -219,7 +219,7 @@ it("announces a failed availability change once, without a duplicate tooltip", a
   await render();
   await open();
   await act(async () => choice("Away").click());
-  const message = "Availability change was not confirmed.";
+  const message = "Availability change could not be confirmed.";
   expect(document.body.textContent?.split(message)).toHaveLength(2);
   expect(container.querySelector("button")?.getAttribute("title")).toBeNull();
 });

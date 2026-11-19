@@ -1408,7 +1408,10 @@ it("uses a neutral folder example and error for a remote Host", async () => {
 it("names the Windows folder example for a local scan on Windows", async () => {
   const { mocks } = await renderSettings();
 
-  const folders = document.querySelector<HTMLTextAreaElement>('textarea[placeholder="D:\\Models"]');
+  // A CSS attribute selector would read the backslash as an escape, so match the value directly.
+  const folders = Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea")).find(
+    (field) => field.placeholder === "D:\\Models",
+  );
 
   if (!folders) throw new Error("folder field not found");
 

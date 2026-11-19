@@ -833,7 +833,8 @@ describe("model panel settings column", () => {
     await click(tabs[1]);
     expect(columnLabels()).toEqual(["Advisor", "Image models", "Subagents", "Subagent max effort"]);
     const rows = [...container.querySelectorAll("[data-model-settings] [data-setting-id]")];
-    expect(new Set(rows.map((row) => row.parentElement)).size).toBe(1);
+    // Every row is wrapped by its reason hint, so the shared list is the scroller they sit in.
+    expect(new Set(rows.map((row) => row.closest(".overflow-y-auto"))).size).toBe(1);
   });
 
   it("toggles Fast with its switch and shows it in the trigger", async () => {

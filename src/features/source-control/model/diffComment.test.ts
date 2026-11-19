@@ -23,6 +23,7 @@ describe("diff comment drafts", () => {
     expect(readDiffCommentDraft(line("add", 5))).toBe("first");
     expect(readDiffCommentDraft(line("del", 5))).toBe("second");
     expect(readDiffCommentDraft(line("add", 6))).toBe("");
+    expect(readDiffCommentDraft({ ...line("add", 5), path: "src/b.ts" })).toBe("");
 
     writeDiffCommentDraft(line("add", 5), "  ");
     writeDiffCommentDraft(line("del", 5), "");

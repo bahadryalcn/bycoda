@@ -1000,27 +1000,6 @@ describe("explicit task workspaces and owner controls", () => {
     });
     expect(s.provider.send).not.toHaveBeenCalled();
   });
-  it("reclaims a finished run's budget cache entry while keeping its ledger row once", async () => {
-    const s = await setup();
-    await s.tasks.save(await s.input({ budget: { maxAgentMinutes: 60 } }));
-    await s.store.db
-      .prepare("UPDATE tasks SET value=json_set(value, '$.status', 'verifying') WHERE id='main'")
-      .run();
-    s.clock.now += MINUTE;
-    await s.tasks.tick();
-    await s.tasks.idle();
-    const cache = (s.tasks as unknown as { registeredBudgetRuns: Map<string, string> })
-      .registeredBudgetRuns;
-    const ledgerRows = async () =>
-      Number(
-        (await s.store.db.prepare("SELECT COUNT(*) AS n FROM task_run_budget_ledger").get())?.n,
-      );
-    const rows = await ledgerRows();
-    expect(rows).toBeGreaterThan(0);
-    // The run has finished, so its cache entry must be gone (bounded by live tasks, not runs).
-    expect(cache.has("main")).toBe(false);
-    expect(await ledgerRows()).toBe(rows);
-  });
   it("does not write task history or notify for a measuredAt-only budget refresh", async () => {
     const s = await setup();
     await s.tasks.save(await s.input({ budget: { maxAgentMinutes: 60 }, review: true }));

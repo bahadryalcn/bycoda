@@ -108,23 +108,26 @@ export async function work(context: TaskContext): Promise<void> {
   // Idle Hosts have nothing to prune on most ticks: look without BEGIN IMMEDIATE, keeping the
   // read in the same SQL FIFO as writers, and open the write transaction only when a row is due.
   const due = await context.store.db.scope(async () => Boolean(await historyCutoff(context)));
-  if (!due) return;
-  await context.store.transaction(async () => {
-    // Re-check inside the transaction: another writer may have pruned or shrunk history since.
-    const cutoff = await historyCutoff(context);
-    if (!cutoff) return;
-    const sequence = Number(cutoff.sequence);
-    const removed = await context.store.db
-      .prepare("SELECT coalesce(max(effective_at),0) AS latest FROM task_history WHERE sequence<=?")
-      .get(sequence);
-    await context.store.db
-      .prepare("UPDATE task_history_floor SET sequence=max(sequence, ?) WHERE id=1")
-      .run(sequence);
-    await context.store.db
-      .prepare("UPDATE task_history_meta SET available_from=max(available_from, ?) WHERE id=1")
-      .run(Math.max(now, Number(removed!.latest)));
-    await context.store.db.prepare("DELETE FROM task_history WHERE sequence<=?").run(sequence);
-  });
+  if (due) {
+    await context.store.transaction(async () => {
+      // Re-check inside the transaction: another writer may have pruned or shrunk history since.
+      const cutoff = await historyCutoff(context);
+      if (!cutoff) return;
+      const sequence = Number(cutoff.sequence);
+      const removed = await context.store.db
+        .prepare(
+          "SELECT coalesce(max(effective_at),0) AS latest FROM task_history WHERE sequence<=?",
+        )
+        .get(sequence);
+      await context.store.db
+        .prepare("UPDATE task_history_floor SET sequence=max(sequence, ?) WHERE id=1")
+        .run(sequence);
+      await context.store.db
+        .prepare("UPDATE task_history_meta SET available_from=max(available_from, ?) WHERE id=1")
+        .run(Math.max(now, Number(removed!.latest)));
+      await context.store.db.prepare("DELETE FROM task_history WHERE sequence<=?").run(sequence);
+    });
+  }
   // Refresh once per tick, including persisted recovery edits made outside
   // this board. All later reads in this pass use the live index below.
   const maintenanceRows = new Map<string, string>();

@@ -123,7 +123,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                     if (scopeKey !== visibility.current.privacy.key) return;
                     if (!response.snapshot)
                       throw new Error(
-                        "Daily summary was not confirmed. Retry on its original computer.",
+                        "Daily summary could not be confirmed. Retry on its original computer.",
                       );
                     setDailySummary({
                       snapshot: response.snapshot,

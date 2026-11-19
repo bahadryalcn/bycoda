@@ -270,6 +270,30 @@ it("copies a message with multiple attachments and preserves names and bytes on 
   ).toEqual([97, 98, 99]);
 });
 
+it("pastes attachment bytes and names copied by an older Bycoda build", async () => {
+  const name = 'Quarterly "Özet".pdf';
+  const payload = encodeURIComponent(
+    JSON.stringify([{ name, mimeType: "application/pdf", data: "+/8=" }]),
+  );
+  const html = `<div data-bycoda-files="${payload}"><pre>Report</pre></div>`;
+
+  const files = messageFilesFromClipboard({ getData: () => html });
+
+  expect(files?.map((file) => [file.name, file.type])).toEqual([[name, "application/pdf"]]);
+  expect(new Uint8Array(await files![0].arrayBuffer())).toEqual(Uint8Array.of(251, 255));
+});
+
+it.each([
+  "%",
+  encodeURIComponent(
+    JSON.stringify([{ name: "local.txt", mimeType: "text/plain", path: "/local.txt" }]),
+  ),
+  encodeURIComponent(JSON.stringify([{ name: "bad.txt", mimeType: "text/plain", data: "!!!!" }])),
+])("rejects malformed or path-only legacy clipboard data", (payload) => {
+  const html = `<div data-bycoda-files="${payload}"></div>`;
+  expect(messageFilesFromClipboard({ getData: () => html })).toBeNull();
+});
+
 it("rejects clipboard files whose decoded bytes exceed the attachment limit", () => {
   const base64Length = Math.ceil((MAX_EMBED_BYTES + 1) / 3) * 4;
   const html =

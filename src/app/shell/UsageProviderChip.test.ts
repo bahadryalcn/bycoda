@@ -392,10 +392,30 @@ describe("UsageProviderChip", () => {
       reason: "signedOut",
     };
     const onReconnect = vi.fn(async () => undefined);
-    act(() => root.render(createElement(UsageProviderChip, { limits, now, onReconnect })));
+    act(() =>
+      root.render(
+        createElement(UsageProviderChip, {
+          limits,
+          now,
+          onReconnect,
+          accountId: "default",
+          accounts: [
+            { id: "default", provider: "claude", label: "Default account", isDefault: true },
+          ],
+          onSelectAccount: vi.fn(),
+          onAddAccount: vi.fn(),
+        }),
+      ),
+    );
 
     await act(async () => button("Claude Code usage details").click());
     expect(document.querySelector(".size-9")).not.toBeNull();
+    const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const signInClasses = dialog().className;
+    await act(async () => button("Switch account from Default account").click());
+    expect(dialog().textContent).toContain("Claude Code accounts");
+    expect(dialog().className).toBe(signInClasses);
+    await act(async () => button("Back to usage").click());
     await act(async () => button("Sign in to Claude Code").click());
 
     expect(onReconnect).toHaveBeenCalledOnce();
@@ -545,11 +565,13 @@ describe("UsageProviderChip", () => {
     );
 
     await act(async () => button("Codex usage details").click());
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
-    expect(dialog.style.width).toBe("340px");
+    // The Popover pins its width on the frame around the dialog surface.
+    const frameWidth = () =>
+      document.querySelector<HTMLElement>('[role="dialog"]')!.parentElement!.style.width;
+    expect(frameWidth()).toBe("340px");
     await act(async () => button("Switch Codex account").click());
     expect(document.body.textContent).toContain("Codex accounts");
-    expect(document.querySelector<HTMLElement>('[role="dialog"]')!.style.width).toBe("340px");
+    expect(frameWidth()).toBe("340px");
   });
 
   it("reveals emails independently of account switching and hides them on reopening", async () => {

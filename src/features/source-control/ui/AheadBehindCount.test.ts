@@ -31,10 +31,18 @@ describe("AheadBehindCount", () => {
     render({ ahead: 2, behind: 1 });
     const img = host.querySelector('[role="img"]');
     expect(img?.getAttribute("aria-label")).toBe(
-      `${t("Outgoing commits")}: 2 · ${t("Incoming commits")}: 1`,
+      t("Outgoing commits: {p0} · Incoming commits: {p1}", { p0: "2", p1: "1" }),
     );
     expect(img?.textContent).toBe("↑2↓1");
     expect(host.querySelectorAll('[aria-hidden="true"]')).toHaveLength(2);
+  });
+
+  // #755: one interpolated key, not concatenated nouns, so word order can be translated.
+  it("builds the label from one interpolated key", () => {
+    render({ ahead: 2, behind: 1 });
+    expect(host.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
+      "Outgoing commits: 2 · Incoming commits: 1",
+    );
   });
 
   it("drops zero sides in collapsed headers while the label keeps both counts", () => {
@@ -42,7 +50,7 @@ describe("AheadBehindCount", () => {
     const img = host.querySelector('[role="img"]');
     expect(img?.textContent).toBe("↑3");
     expect(img?.getAttribute("aria-label")).toBe(
-      `${t("Outgoing commits")}: 3 · ${t("Incoming commits")}: 0`,
+      t("Outgoing commits: {p0} · Incoming commits: {p1}", { p0: "3", p1: "0" }),
     );
   });
 

@@ -10,14 +10,12 @@ import type { Sequence } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
 import { DisabledReason } from "../common/DisabledReason";
 import { LabeledSelect } from "./LabeledSelect";
+import { AudienceReportList } from "./AudienceReportList";
 import { addTag, addToList, addToSequence, type BulkResult } from "./audienceBulk";
 import { errorMessage } from "./audienceModel";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type BulkAction = "list" | "tag" | "sequence";
-
-/** Failure rows shown before the "and N more" line, as in the import report. */
-const RESULT_LIMIT = 20;
 
 export type BulkDialogProps = {
   client: SocialClient;
@@ -186,33 +184,18 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
             <InlineMessage tone={result.failed.length ? "warning" : "success"}>
               {summaryOf(result)}
             </InlineMessage>
-            {result.failed.length ? (
-              <>
-                <ul className="audience-list">
-                  {result.failed.slice(0, RESULT_LIMIT).map((item) => {
-                    const name = people.find((person) => person.id === item.personId)?.name;
-                    return (
-                      <li key={item.personId}>
-                        {name ? t("{p0}: {p1}", { p0: name, p1: item.reason }) : item.reason}
-                      </li>
-                    );
-                  })}
-                </ul>
-                {result.failed.length > RESULT_LIMIT ? (
-                  <Text
-                    as="p"
-                    size="caption"
-                    tone="muted"
-                    leading="inherit"
-                    className="audience-muted"
-                  >
-                    {t("And {p0} more could not be updated.", {
-                      p0: formatNumber(result.failed.length - RESULT_LIMIT),
-                    })}
-                  </Text>
-                ) : null}
-              </>
-            ) : null}
+            <AudienceReportList
+              items={result.failed}
+              renderRow={(item) => {
+                const name = people.find((person) => person.id === item.personId)?.name;
+                return (
+                  <li key={item.personId}>
+                    {name ? t("{p0}: {p1}", { p0: name, p1: item.reason }) : item.reason}
+                  </li>
+                );
+              }}
+              overflowLabel={(p0) => t("And {p0} more could not be updated.", { p0 })}
+            />
           </section>
         ) : null}
       </div>

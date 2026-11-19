@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createServer, type Server } from "node:http";
+import { ClientRequest, createServer, type Server } from "node:http";
 import {
   createCipheriv,
   createDecipheriv,
@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { connect, type Socket } from "node:net";
 import { GATEWAY_ADMISSION } from "../security/gateway-admission";
+import { ownerRpcDeadlineMs } from "../server/owner-rpc";
 import { createLanIdentity } from "./mobile-lan-crypto";
 import { createLanGateway, MobileLanAccess, stablePortCandidates } from "./mobile-lan";
 import { lanContext } from "../../src/integrations/mobile-lan";
@@ -175,6 +176,39 @@ describe("encrypted mobile LAN access", () => {
     expect(calls).toBe(1);
     await pairing.close();
   });
+  it.each(["projects.clone", "git.switch", "devices.setup", "workspace.run"])(
+    "preserves the upstream deadline policy for %s",
+    async (method) => {
+      const deadline = ownerRpcDeadlineMs(method, {});
+      const reply = Number.isFinite(deadline)
+        ? { error: "Host stopped waiting.", code: "HOST_RPC_DEADLINE", delivery: "unknown" }
+        : { result: "completed" };
+      const status = Number.isFinite(deadline) ? 504 : 200;
+      const port = await listen(
+        createServer((_request, response) => response.writeHead(status).end(JSON.stringify(reply))),
+      );
+      const identity = createLanIdentity();
+      const gateway = createLanGateway(identity, "pc", () => port);
+      const endpoint = `http://127.0.0.1:${await listen(gateway)}`;
+      const encrypted = encryptedLanFetch(fetch, "pc", identity.publicKey, random);
+      const setTimeout = vi.spyOn(ClientRequest.prototype, "setTimeout");
+      try {
+        const response = await encrypted(`${endpoint}/rpc`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${"b".repeat(43)}` },
+          body: JSON.stringify({ method }),
+        });
+        expect(response.status).toBe(status);
+        expect(await response.json()).toEqual(reply);
+        expect(setTimeout.mock.calls.map(([budget]) => budget)).toEqual(
+          Number.isFinite(deadline) ? [deadline + 30_000] : [],
+        );
+      } finally {
+        setTimeout.mockRestore();
+      }
+    },
+  );
+
   it("rejects raw bearer RPC, browser origins, wrong pins and modified replies", async () => {
     let calls = 0;
     const upstream = createServer((_request, response) => {

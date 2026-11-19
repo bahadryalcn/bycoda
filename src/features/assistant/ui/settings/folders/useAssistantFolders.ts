@@ -94,12 +94,12 @@ export function useAssistantFolders(
         allowChangesWithoutAsking: draft.allowChangesWithoutAsking,
       });
       if (!result.assistantFolders)
-        throw new Error(t("The folder list save was not confirmed. Check before retrying."));
+        throw new Error(t("The folder list save could not be confirmed. Check before retrying."));
       if (
         draft.allowChangesWithoutAsking &&
         result.assistantFolders.allowChangesWithoutAsking !== true
       )
-        throw new Error(t("The folder list save was not confirmed. Check before retrying."));
+        throw new Error(t("The folder list save could not be confirmed. Check before retrying."));
       setSaved(result.assistantFolders);
       setDraft(fromSaved(result.assistantFolders));
       setConflict(false);

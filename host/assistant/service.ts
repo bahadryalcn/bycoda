@@ -3980,7 +3980,7 @@ export class HostAssistant {
               (await this.ports.roomAccountProofsValid(thread.id, summarySources.accountProofs))));
         const replySummaryProof = summaryValid ? rawSummaryProof : undefined;
         const key = `reply:${thread.id}:${input.idempotencyKey}`;
-        const existing = await this.runtime<{
+        const stored = await this.runtime<{
           status: string;
           text: string;
           via?: "text" | "voice";
@@ -3991,6 +3991,9 @@ export class HostAssistant {
           tokenCap?: number;
           day?: string;
         } | null>(key, null);
+        // A refusal before admission (setup incomplete) saved no owner message, so the same key
+        // may start a fresh attempt once the Assistant is configured.
+        const existing = stored?.status === "refused" && !stored.userMessageId ? null : stored;
         if (existing) {
           if (existing.text !== input.text) throw new Error("Conversation retry payload changed.");
           if (existing.via && existing.via !== input.via)

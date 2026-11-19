@@ -1,4 +1,5 @@
 import { redactDiagnosticText } from "@bycoda/account-contracts";
+import { errorText } from "../../../shared/lib/errors";
 import { recordUiLog } from "../../diagnostics/public/uiLog";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
@@ -57,7 +58,7 @@ export function noteSyncFailure(
     delay: remoteBackoffDelay(count),
   });
   if (count === ADOPTED_SYNC_FAILURE_FLAG_AFTER) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorText(error);
     recordUiLog("warn", "ui.adopted", "adopted session could not sync", {
       scope,
       failures: count,

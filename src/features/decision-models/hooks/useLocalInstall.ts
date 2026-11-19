@@ -109,7 +109,7 @@ export function useLocalInstall(options: {
 
   const install = () => {
     if (!modelId || installing) return;
-    const input = { modelId, confirm: DECISION_INSTALL_CONFIRMATION };
+    const input = { modelId, confirm: DECISION_INSTALL_CONFIRMATION } as const;
     setError(null);
     setCancelled(false);
     setProgress(null);

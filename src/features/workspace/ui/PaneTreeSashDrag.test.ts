@@ -179,18 +179,21 @@ describe("pane sash drag", () => {
     expect(onRatio).toHaveBeenCalledExactlyOnceWith(tree.id, 0, 0.85);
   });
 
-  it("keeps keyboard resizing inside the pixel minimum", () => {
+  it.each([
+    { width: 1600, minimum: 0.15 },
+    { width: 600, minimum: 0.4 },
+  ])("keeps keyboard resizing inside the pixel minimum at $width px", ({ width, minimum }) => {
     const onRatio = vi.fn();
     render(tree, onRatio);
-    measureTree(1600);
+    measureTree(width);
     const press = (key: string) =>
       act(() => sashElement().dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
     press("Home");
     press("End");
     press("ArrowRight");
     expect(onRatio.mock.calls).toEqual([
-      [tree.id, 0, 0.15],
-      [tree.id, 0, 0.85],
+      [tree.id, 0, minimum],
+      [tree.id, 0, 1 - minimum],
       [tree.id, 0, 0.52],
     ]);
   });

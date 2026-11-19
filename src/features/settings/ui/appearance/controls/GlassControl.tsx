@@ -1,6 +1,8 @@
 import { t } from "../../../../../shared/i18n";
 import { IS_LINUX, IS_MAC } from "../../../../../platform/tauri/platform";
 import {
+  applyMainOpacity,
+  applySidebarOpacity,
   BODY_GLASS_DEFAULT,
   WINDOW_GLASS_DEFAULT,
   SIDEBAR_OPACITY_DEFAULT,
@@ -86,6 +88,7 @@ export function GlassControl({
           format={(next) => `${next}%`}
           min={Math.round(SIDEBAR_OPACITY_MIN * 100)}
           max={Math.round(SIDEBAR_OPACITY_MAX * 100)}
+          apply={(next) => applySidebarOpacity(next / 100)}
           commit={appearance.onOpacity}
           disabled={!active}
         />
@@ -117,6 +120,7 @@ export function GlassControl({
             format={(next) => `${next}%`}
             min={Math.round(MAIN_OPACITY_MIN * 100)}
             max={Math.round(MAIN_OPACITY_MAX * 100)}
+            apply={(next) => applyMainOpacity(next / 100)}
             commit={appearance.onMainOpacity}
             disabled={!active}
           />

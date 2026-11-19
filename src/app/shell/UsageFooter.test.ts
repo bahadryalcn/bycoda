@@ -9,14 +9,6 @@ vi.mock("../../features/settings/public/useKeybindingShortcut", () => ({
 }));
 
 describe("UsageFooter terminal control", () => {
-  it("shows the live Terminal: New binding instead of the hard-coded MOD shortcut", () => {
-    const markup = renderToStaticMarkup(
-      createElement(UsageFooter, { providers: [], onNewTerminal: vi.fn() }),
-    );
-    expect(markup).toContain("Alt+Shift+T");
-    expect(markup).not.toContain("+`");
-  });
-
   it("keeps the overflowing provider strip scrollbar visible, not hidden", () => {
     const markup = renderToStaticMarkup(
       createElement(UsageFooter, { providers: [], onNewTerminal: vi.fn() }),

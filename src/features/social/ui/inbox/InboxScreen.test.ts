@@ -123,7 +123,8 @@ async function mount(client: SocialClient, overrides: Partial<SocialScreenProps>
   await flush();
 }
 
-const rows = () => Array.from(element.querySelectorAll<HTMLButtonElement>(".inbox-rows li button"));
+// #670 renders virtual rows with a separate tag overflow action.
+const rows = () => Array.from(element.querySelectorAll<HTMLButtonElement>("button.inbox-row"));
 const button = (label: string) =>
   Array.from(element.querySelectorAll<HTMLButtonElement>("button")).find(
     (candidate) => candidate.textContent?.trim() === label,

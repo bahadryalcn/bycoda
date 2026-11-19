@@ -141,6 +141,16 @@ struct State {
     stop: Mutex<()>,
     wake: Condvar,
 }
+
+impl State {
+    fn stop_heartbeat(&self) {
+        {
+            let _guard = self.stop.lock().unwrap_or_else(|error| error.into_inner());
+            self.running.store(false, Ordering::Release);
+        }
+        self.wake.notify_all();
+    }
+}
 fn publish(app: &AppHandle) {
     let Some(state) = app.try_state::<State>() else {
         return;
@@ -289,11 +299,7 @@ fn wait_heartbeat(app: &AppHandle) -> bool {
 }
 pub(crate) fn shutdown(app: &AppHandle) {
     if let Some(state) = app.try_state::<State>() {
-        {
-            let _guard = state.stop.lock().unwrap_or_else(|error| error.into_inner());
-            state.running.store(false, Ordering::Release);
-        }
-        state.wake.notify_all();
+        state.stop_heartbeat();
     }
 }
 fn viewer(window: &WebviewWindow) -> Result<(), String> {
@@ -530,6 +536,29 @@ mod tests {
         assert!(heartbeat_reconnects(false, RECONNECT_EVERY));
         assert!(!heartbeat_reconnects(false, Duration::from_secs(5)));
         assert!(!heartbeat_reconnects(true, Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn shutdown_wakes_a_waiting_heartbeat() {
+        let state = State::default();
+        state.running.store(true, Ordering::Release);
+        std::thread::scope(|scope| {
+            let (waiting, ready) = std::sync::mpsc::channel();
+            let state = &state;
+            let waiter = scope.spawn(move || {
+                let guard = state.stop.lock().unwrap();
+                waiting.send(()).unwrap();
+                let (_guard, result) = state
+                    .wake
+                    .wait_timeout_while(guard, HEARTBEAT, |_| state.running.load(Ordering::Acquire))
+                    .unwrap();
+                assert!(!result.timed_out());
+                assert!(!state.running.load(Ordering::Acquire));
+            });
+            ready.recv().unwrap();
+            state.stop_heartbeat();
+            waiter.join().unwrap();
+        });
     }
     #[test]
     fn strict_status_and_finite_choices() {

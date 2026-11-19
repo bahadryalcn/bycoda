@@ -118,8 +118,8 @@ it("explains Undo while another queue action is pending", async () => {
   expect(undo()).toHaveLength(2);
   for (const node of undo()) expect(node.getAttribute("aria-description")).toBeNull();
   await act(async () => undo()[0].click());
-  for (const node of undo()) {
-    expect(node.getAttribute("aria-disabled")).toBe("true");
-    expect(node.getAttribute("aria-description")).toBe(SENDING);
-  }
+  for (const node of undo()) expect(node.getAttribute("aria-disabled")).toBe("true");
+  // The clicked Undo shows its own pending state instead of a reason; the other one says why.
+  expect(undo()[0].getAttribute("aria-busy")).toBe("true");
+  expect(undo()[1].getAttribute("aria-description")).toBe(SENDING);
 });

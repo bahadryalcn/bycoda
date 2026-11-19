@@ -66,6 +66,21 @@ it("reads at once when active and then at the normal cadence", async () => {
   expect(load).toHaveBeenCalledTimes(2);
 });
 
+it("skips Host reads while the window is hidden and refreshes on return (#663)", async () => {
+  const load = vi.fn<Load>(async () => undefined);
+  const visibility = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  try {
+    await render({ active: true, scope: "a", load });
+    await advance(120_000);
+    expect(load).not.toHaveBeenCalled();
+    visibility.mockReturnValue(false);
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(load).toHaveBeenCalledTimes(1);
+  } finally {
+    visibility.mockRestore();
+  }
+});
+
 it("waits longer after each failed read and returns to the normal cadence on success", async () => {
   let fail = true;
   const load = vi.fn<Load>(async () => {

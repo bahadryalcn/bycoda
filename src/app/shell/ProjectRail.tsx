@@ -2277,7 +2277,11 @@ function ProjectCard({
     muteStatus,
   ];
   const cardAriaLabel = [
-    machine ? `${name} on ${hostLabel}` : context ? `${name} (${context})` : name,
+    machine
+      ? t("{p0} on {p1}", { p0: name, p1: hostLabel })
+      : context
+        ? `${name} (${context})`
+        : name,
     busy ? t("Working") : "",
     change ? projectGitChangeSpoken(change, t, format.formatNumber) : "",
     muteStatus,

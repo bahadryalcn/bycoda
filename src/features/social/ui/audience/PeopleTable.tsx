@@ -243,13 +243,18 @@ export function PeopleTable({
       activeKey={activePersonId}
       footer={
         hasMore ? (
-          <CollectionFooter
-            standalone
-            hasMore
-            onLoadMore={onLoadMore}
-            loadMoreLabel={t("Load more people")}
-            loadMoreButtonProps={{ variant: "secondary", loading: loadingMore }}
-          />
+          <>
+            <Text size="caption" tone="muted">
+              {t("Load all people to sort.")}
+            </Text>
+            <CollectionFooter
+              standalone
+              hasMore
+              onLoadMore={onLoadMore}
+              loadMoreLabel={t("Load more people")}
+              loadMoreButtonProps={{ variant: "secondary", loading: loadingMore }}
+            />
+          </>
         ) : null
       }
     />

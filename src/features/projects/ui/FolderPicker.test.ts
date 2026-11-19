@@ -321,7 +321,8 @@ describe("project folder browser", () => {
     const list = container.querySelector('[role="listbox"]')!;
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(2);
     expect(list.textContent).not.toContain("Loading folders");
-    expect(container.textContent).toContain("Loading folders");
+    // The status line waits a short delay before it shows (LoadingText), so poll for it.
+    await vi.waitFor(() => expect(container.textContent).toContain("Loading folders"));
     await act(async () => resolveNext([]));
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(0);
     expect(container.textContent).toContain("No subfolders");
@@ -335,6 +336,23 @@ describe("project folder browser", () => {
   });
 
   it("mounts only a window of a long folder listing", async () => {
+    // happy-dom has no layout: give the list a viewport and each row a height so the window measures.
+    const sized = (element: HTMLElement) => (element.getAttribute("role") === "listbox" ? 320 : 32);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return sized(this);
+    });
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return sized(this);
+    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return new DOMRect(0, 0, 280, sized(this));
+    });
     fs.listDir.mockImplementation(async (path) =>
       path === "C:/Users/me"
         ? Array.from({ length: 500 }, (_, index) => ({

@@ -2717,7 +2717,7 @@ input,
   width: 1.2rem;
   height: 100%;
   padding: 0;
-  color: color-mix(in srgb, var(--color-content) 55%, transparent);
+  color: var(--ui-text-secondary);
   border-radius: 4px;
 }
 
@@ -3078,6 +3078,11 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
    shows where it will land by opening a gap, so only the states that need words carry a label,
    attached to the copy. Attribute selectors keep these above the copied utility classes. */
 .pointer-drag-preview[data-drag-preview] {
+  position: fixed;
+  width: var(--drag-preview-width);
+  height: var(--drag-preview-height);
+  margin: 0;
+  opacity: 1;
   z-index: var(--layer-drag);
   pointer-events: none;
   background: var(--ui-surface-raised);
@@ -3091,6 +3096,13 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 .pointer-drag-preview[data-drag-preview][data-lifted] {
   scale: 1.02;
   box-shadow: var(--ui-elevation-floating);
+}
+.pointer-drag-preview[data-drag-preview][data-bounded] {
+  overflow: hidden;
+  scale: 1;
+}
+.pointer-drag-preview[data-bounded] > .pointer-drag-preview-label {
+  translate: 0;
 }
 .pointer-drag-preview[data-drag-preview][data-action="blocked"] {
   border-color: var(--ui-drop-blocked);

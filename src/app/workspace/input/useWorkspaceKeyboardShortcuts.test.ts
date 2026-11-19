@@ -65,6 +65,7 @@ beforeEach(async () => {
   deps = {
     actions: ref({
       onArrangeActiveTab: vi.fn(),
+      onMovePaneDir: vi.fn(),
       onOpenInbox: vi.fn(),
       onOpenNotes: vi.fn(),
       onOpenTasks: vi.fn(),
@@ -305,6 +306,29 @@ it("keeps workspace layout and editor find shortcuts out of Servers", () => {
   editorFind.mockClear();
   press({ key: "f", code: "KeyF", ctrlKey: true });
   expect(editorFind).not.toHaveBeenCalled();
+});
+
+it("docks the focused pane by keyboard while preserving ordinary composer navigation", () => {
+  const composer = document.createElement("textarea");
+  container.append(composer);
+  composer.focus();
+  const send = (init: KeyboardEventInit) => {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    composer.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  const arrow = { key: "ArrowLeft", code: "ArrowLeft" };
+  const dock = { ...arrow, ctrlKey: true, altKey: true, shiftKey: true };
+  expect(send({ ...arrow, altKey: true })).toBe(false);
+  expect(send(dock)).toBe(true);
+  expect(send({ ...dock, repeat: true })).toBe(true);
+  expect(send({ ...dock, isComposing: true })).toBe(false);
+  expect(deps.actions.current.onMovePaneDir).toHaveBeenCalledExactlyOnceWith("left");
+
+  saveKeybindingOverride("Pane: Move Left", { shortcut: "Option+KeyQ" });
+  expect(send(dock)).toBe(false);
+  expect(send({ key: "q", code: "KeyQ", altKey: true })).toBe(true);
+  expect(deps.actions.current.onMovePaneDir).toHaveBeenCalledTimes(2);
 });
 
 it.each([

@@ -118,11 +118,13 @@ export function AccountSupport() {
     const found = issues.find((name) => names.includes(name));
     return found ? issueText(found) : undefined;
   };
-  // Any edit makes the last outcome stale. A send still in flight sets `result` when it settles,
-  // so its outcome is shown even if the user typed meanwhile.
+  // Any edit makes the last outcome stale, except a rejection of the fields: its errors follow
+  // the draft through `issues`, so fixing one field leaves the other field's error in place.
+  // A send still in flight sets `result` when it settles, so its outcome is shown even if the
+  // user typed meanwhile.
   const edit = (next: SupportDraft) => {
     setDraft(next);
-    setResult(null);
+    setResult((current) => (current?.status === "invalid" ? current : null));
   };
 
   const send = async () => {

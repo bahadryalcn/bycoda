@@ -9,7 +9,7 @@ import {
   inspectHarnessBinary,
   updateHarnessCli,
 } from "../../../integrations/harness/core/child";
-import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
+import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 import { t } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
 import {
@@ -203,8 +203,9 @@ function markCurrent(update: HarnessUpdate, version: string) {
  */
 async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
   let stage: HarnessUpdateStage = "updater";
+  let updaterDetail: string | undefined;
   try {
-    await updateHarnessCli(update.harness, update.latest);
+    updaterDetail = await updateHarnessCli(update.harness, update.latest);
     stage = "version check";
     const after = await inspectHarnessBinary(update.harness);
     const version = parseHarnessVersion(update.harness, after.version ?? "");
@@ -231,7 +232,10 @@ async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
     console.warn(
       `[bycoda] Harness update failed: ${update.harness} version check: still on ${version}`,
     );
-    return { status: "failed", failure: { kind: "stillOn", version } };
+    return {
+      status: "failed",
+      failure: { kind: "stillOn", version, ...(updaterDetail ? { detail: updaterDetail } : {}) },
+    };
   } catch (error) {
     const detail = errorText(error);
     if (stage === "updater" && detail === HARNESS_UPDATE_BUSY_ERROR) {
@@ -242,6 +246,13 @@ async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
       return { status: "failed", failure: { kind: "cancelled" } };
     }
     console.warn(`[bycoda] Harness update failed: ${update.harness} ${stage}: ${detail}`);
-    return { status: "failed", failure: { kind: "stage", stage, detail } };
+    return {
+      status: "failed",
+      failure: {
+        kind: "stage",
+        stage,
+        detail: updaterDetail ? detail + "\n" + updaterDetail : detail,
+      },
+    };
   }
 }

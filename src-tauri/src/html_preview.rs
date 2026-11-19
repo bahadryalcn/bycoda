@@ -528,7 +528,7 @@ impl PreviewAdmission {
         }
         let slot = self
             .queued
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
                 (count < self.max_queued).then_some(count + 1)
             })
             .map(|_| QueueSlot(&self.queued))
@@ -744,7 +744,7 @@ mod tests {
             registry.close(&owner, &token).unwrap();
             Ok(Served::full(b"late private bytes".to_vec(), "text/css"))
         });
-        assert_eq!(result.unwrap_err(), "Preview has closed");
+        assert_eq!(result.err().as_deref(), Some("Preview has closed"));
         std::fs::remove_dir_all(folder).unwrap();
     }
 

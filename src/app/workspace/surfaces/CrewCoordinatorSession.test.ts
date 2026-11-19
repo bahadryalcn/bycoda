@@ -7,6 +7,7 @@ import { resetSessionsStore } from "../../../features/sessions/model/sessionsSto
 import { CrewCoordinatorSession } from "./CrewCoordinatorSession";
 import type { WorkspaceSessionPaneProps } from "../layout/WorkspaceMainArea";
 import { setLanguagePreference } from "../../../shared/i18n";
+import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 
 const { pane, stopRequest, managed, confirmStop } = vi.hoisted(() => ({
   pane: vi.fn((_props: Record<string, unknown>) => null),
@@ -76,6 +77,8 @@ it("re-renders its loading label when the app language changes", async () => {
       }),
     ),
   );
+  // The shared loading line stays hidden for its first moments so fast opens never flash it.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 50)));
   expect(container.textContent).toContain("Loading session…");
   await act(async () => setLanguagePreference("de"));
   expect(container.textContent).toContain("Sitzung wird geladen…");

@@ -104,12 +104,16 @@ mod tests {
         let (tx, rx) = mpsc::sync_channel::<TcpStream>(QUEUE_CAPACITY);
         let (client, server) = connected_pair();
         assert!(enqueue(&tx, server));
-        assert!(rx.try_recv().is_ok());
+        let _worker_socket = rx.try_recv().unwrap();
         client
             .set_read_timeout(Some(Duration::from_millis(50)))
             .unwrap();
         let mut line = String::new();
-        assert!(BufReader::new(&client).read_line(&mut line).is_err());
+        let error = BufReader::new(&client).read_line(&mut line).unwrap_err();
+        assert!(matches!(
+            error.kind(),
+            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+        ));
     }
 
     #[test]

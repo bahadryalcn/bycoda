@@ -1028,7 +1028,7 @@ mod tests {
             },
             Vec::new,
         );
-        assert!(result.unwrap_err().contains("changed during recovery"));
+        assert!(matches!(result, Err(error) if error.contains("changed during recovery")));
         assert_eq!(attempts.get(), 4);
         assert_eq!(std::fs::read(&path).unwrap(), b"broken-4");
     }

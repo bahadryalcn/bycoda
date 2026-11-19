@@ -1,5 +1,6 @@
 import { safeErrorDetail } from "../../integrations/harness/core/errorDetail";
 import { t } from "../../shared/i18n";
+import { errorText } from "../../shared/lib/errors";
 
 /** What a workspace hook refused or failed at; the presenter picks the sentence from this. */
 export type WorkspaceActionErrorCode =
@@ -57,6 +58,6 @@ export function workspaceActionErrorSentence(error: unknown): string | undefined
 export function presentWorkspaceActionError(error: unknown, fallback: string): string {
   const sentence = workspaceActionErrorSentence(error);
   if (sentence) return sentence;
-  const detail = safeErrorDetail(error instanceof Error ? error.message : String(error ?? ""));
+  const detail = safeErrorDetail(errorText(error ?? ""));
   return detail ? `${fallback} ${detail}` : fallback;
 }

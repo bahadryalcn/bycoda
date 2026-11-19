@@ -22,7 +22,13 @@ vi.mock("../../../tasks/public/hostSettings", async (original) => ({
   saveMachineLimits: vi.fn(),
 }));
 vi.mock("../../../sessions/public/modelSource", () => ({
-  useModelSource: () => ({ resolve: () => ({ harness: "codex", id: "test" }) }),
+  useModelSource: () => ({
+    id: "host",
+    resolve: () => ({ harness: "codex", id: "test" }),
+    available: () => false,
+    probed: () => true,
+    modelsFor: () => [],
+  }),
 }));
 vi.mock("../../../sessions/public/ModelPicker", () => ({ ModelPicker: () => null }));
 vi.mock("../../../sessions/public/ModelLabel", () => ({ ModelLabel: () => null }));

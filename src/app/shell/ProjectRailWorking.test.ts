@@ -132,7 +132,7 @@ it("shows project activity even without the Working preview and clears it on com
     expect(
       project.querySelector("[data-project-working-indicator]")?.getAttribute("aria-label"),
     ).toBe("Working");
-    expect(project.querySelector("button")?.getAttribute("aria-label")).toContain("working");
+    expect(project.querySelector("button")?.getAttribute("aria-label")).toContain("Working");
     expect(
       container
         .querySelector('[data-project-path="/work/bycoda"]')

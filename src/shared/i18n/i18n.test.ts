@@ -53,6 +53,19 @@ describe("application language", () => {
     expect(orphanKeys).toEqual([]);
   });
 
+  it.each(LANGUAGES.filter(({ value }) => value !== "en"))(
+    "translates the Inbox prompt, device empty state and session fallback in $value",
+    async ({ value }) => {
+      await setLanguagePreference(value);
+      // #276, #567 and #616 ship these messages without falling back to English.
+      expect(t("Explore this item with your agent.")).not.toBe(
+        "Explore this item with your agent.",
+      );
+      expect(t("No devices found")).not.toBe("No devices found");
+      expect(t("This session could not be loaded.")).not.toBe("This session could not be loaded.");
+    },
+  );
+
   it("invalidates memoized labels when app and Git languages change independently", async () => {
     await setLanguagePreference("en");
     const container = document.createElement("div");

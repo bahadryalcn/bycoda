@@ -477,7 +477,7 @@ export async function attachDeviceImageAcrossWindows(
   if (previous || retained) return reconcileDeviceImageTransfer(operation);
   if (outgoing.size >= 1024)
     throw new Error("Screenshot attachment receipt capacity reached. Keep the source draft open.");
-  const entry = { operation, result: "unknown" as DeviceImageTransferResult };
+  const entry: NonNullable<ReturnType<typeof outgoing.get>> = { operation, result: "unknown" };
   outgoing.set(operation.id, entry);
   const local = receivers.get(key(cwd, sessionId));
   if (destinationWindow === sourceWindow && local) {

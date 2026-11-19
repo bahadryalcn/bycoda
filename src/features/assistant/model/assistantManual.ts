@@ -14,6 +14,7 @@ import type {
 import { isProjectLocked } from "../../group-lock/model/groupLock";
 import { assistantRequest } from "./assistantClient";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { unconfirmedError } from "./unconfirmedOutcome";
 
 export type ManualProject = { id?: string; path: string; name: string };
 export type ManualState = NonNullable<AssistantResponse["manual"]>;
@@ -162,7 +163,7 @@ export function useManualSupervision(
       )
         return;
       if (!response.manual)
-        throw new Error("Manual supervision was not confirmed. Refresh before retrying.");
+        throw unconfirmedError("Manual supervision", "Refresh before retrying.");
       adopt(response.manual);
       return true;
     } catch (cause) {

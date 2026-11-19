@@ -108,16 +108,24 @@ export function ContentCalendar({
                   {formatDate(day, { weekday: "long", day: "numeric", month: "long" })}
                 </span>
                 <span className="content-day-title" aria-hidden="true">
-                  {view === "week" ? (
-                    <Text
-                      size="caption"
-                      tone="muted"
-                      leading="inherit"
-                      className="content-day-weekday"
-                    >
-                      {formatDate(day, { weekday: "short" })}
-                    </Text>
-                  ) : null}
+                  <Text
+                    size="caption"
+                    tone={view === "month" && today ? "accent-on-solid" : "muted"}
+                    leading="inherit"
+                    {...surfaceAttributes(
+                      view === "month" && today
+                        ? { radius: "pill", tone: "accent", toneFill: "solid" }
+                        : {},
+                      "content-day-weekday",
+                    )}
+                  >
+                    {formatDate(
+                      day,
+                      view === "month"
+                        ? { weekday: "short", day: "numeric", month: "short" }
+                        : { weekday: "short" },
+                    )}
+                  </Text>
                   <Text
                     as="span"
                     size={view === "month" ? "secondary" : "title"}

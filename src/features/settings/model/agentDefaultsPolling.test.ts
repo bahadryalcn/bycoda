@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: async () => ({ id: "local" }),
 }));
 vi.mock("../../connections/public/connections", () => ({ remoteRequest: mocks.request }));
-vi.mock("../../automations/model/machineSnapshot", () => ({
+vi.mock("../../automations/public/hostMachines", () => ({
   machineCapabilities: async () => ["host.settings.behavior.v1"],
 }));
 vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: mocks.toast } }));

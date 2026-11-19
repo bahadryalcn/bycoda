@@ -23,7 +23,7 @@ export type PollingRefreshOptions = {
 
 /**
  * Polls a Social read through the shared refresh scheduler: normal cadence while the window is
- * visible, a slower one while hidden, an immediate read when shown again, and exponential backoff
+ * visible, no new Host reads while hidden, an immediate read when shown again, and exponential backoff
  * after failures. Returns an explicit refresh that runs now, or right after a read in flight, and
  * resets the backoff once it succeeds.
  */
@@ -43,7 +43,7 @@ export function usePollingRefresh({
   useEffect(() => {
     if (!active) return;
     const scheduler = createRefreshScheduler({
-      run: (isCurrent) => loadRef.current(isCurrent),
+      run: (isCurrent) => (document.hidden ? Promise.resolve() : loadRef.current(isCurrent)),
       intervalMs,
       hiddenIntervalMs: HIDDEN_REFRESH_MS,
       maxBackoffMs: MAX_BACKOFF_MS,

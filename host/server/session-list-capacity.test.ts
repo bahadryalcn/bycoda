@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 /** A machine with over a hundred projects, read in turn by a polling phone. */
-it("serves a second pass over many projects from cache with one project-table read per list", async () => {
+it("serves a second pass over many projects from cache without rereading the registry (#1300)", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-session-list-"));
   const store = new HostStore(join(directory, "host.db"));
   cleanups.push(async () => {
@@ -42,9 +42,9 @@ it("serves a second pass over many projects from cache with one project-table re
   const summaries = vi.spyOn(store, "summaries");
   const project = vi.spyOn(store, "project");
   for (const id of ids) await runtime.projectSessionList(id);
-  // Warm pass: nothing is rebuilt, and each list reads the project table once.
+  // Warm pass: reuse the registered folders and rows, while checking project identity.
   expect(summaries).not.toHaveBeenCalled();
-  expect(projects).toHaveBeenCalledTimes(ids.length);
+  expect(projects).not.toHaveBeenCalled();
   expect(project).toHaveBeenCalledTimes(ids.length * 2);
 }, 60_000);
 

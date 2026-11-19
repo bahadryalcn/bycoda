@@ -720,7 +720,7 @@ function SearchableSelectMenu({
             framed
               ? `bycoda-arc-select text-left ${variant === "transparent" ? "bg-transparent" : ""}`
               : variant === "panel"
-                ? "flex h-[var(--ui-control-height-panel)] w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-ui-body font-medium hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.995]"
+                ? "flex h-[max(var(--ui-control-height-panel),calc(var(--ui-control-height-lg)+var(--space-5)))] w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-ui-body font-medium hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.995]"
                 : COMPACT_TRIGGER_CLASS,
           ]
             .filter(Boolean)

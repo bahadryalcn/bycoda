@@ -2561,6 +2561,10 @@ mod tests {
         let result = f.store.files_revert("session", "message-two").unwrap();
         assert_eq!(result.reverted, ["a.txt"]);
         assert_eq!(f.read("a.txt"), "one\n");
+        // After the conversation rewind persists, retire its file history before the next rewind.
+        f.store
+            .forget_files_from_message("session", "message-two")
+            .unwrap();
         let result = f.store.files_revert("session", "message-one").unwrap();
         assert_eq!(result.reverted, ["a.txt"]);
         assert_eq!(f.read("a.txt"), "dirty before first send\n");

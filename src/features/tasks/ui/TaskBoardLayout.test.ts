@@ -1,9 +1,12 @@
 import { expect, it } from "vitest";
-import goalsCss from "./task-goals.css?raw";
-import opsCss from "./task-ops.css?raw";
-import shellCss from "./tasks-shell.css?raw";
-import boardCss from "./task-board.css?raw";
-import columnsSource from "./TaskBoardColumns.tsx?raw";
+import { readFileSync } from "node:fs";
+
+const read = (file: string) => readFileSync(new URL(file, import.meta.url), "utf8");
+const goalsCss = read("./task-goals.css");
+const opsCss = read("./task-ops.css");
+const shellCss = read("./tasks-shell.css");
+const boardCss = read("./task-board.css");
+const columnsSource = read("./TaskBoardColumns.tsx");
 
 /** The declarations of the first rule whose selector text is exactly `selector`. */
 function block(css: string, selector: string): string {
@@ -55,20 +58,20 @@ it("gives empty lanes the same width as lanes with cards", () => {
 
 // #1158: in the narrow board every status stays reachable as a drop target while dragging.
 it("keeps every lane full-width in the narrow board so a drop never reflows the others", () => {
-  const lane = block(boardCss, ".task-board-columns > section {");
+  const lane = block(boardCss, ".task-board-columns > section");
   expect(lane).toMatch(/grid-column:\s*1\s*\/\s*-1/);
 });
 
 it("shows the other statuses as header strips while a card is dragged", () => {
   const strip = block(
     boardCss,
-    ".task-board-columns[data-dragging] > section:not([data-compact-selected]) {",
+    ".task-board-columns[data-dragging] > section:not([data-compact-selected])",
   );
   expect(strip).toMatch(/display:\s*flex/);
   expect(strip).toMatch(/order:\s*-1/);
   const hiddenNote = block(
     boardCss,
-    ".task-board-columns[data-dragging] > section:not([data-compact-selected]) > ul {",
+    ".task-board-columns[data-dragging] > section:not([data-compact-selected]) > ul",
   );
   expect(hiddenNote).toMatch(/display:\s*none/);
 });

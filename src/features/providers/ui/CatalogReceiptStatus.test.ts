@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { formatNumber } from "../../../shared/i18n";
 import type { CatalogReceipt } from "../model/catalogReceipts";
 const state = vi.hoisted(() => ({
   receipt: undefined as CatalogReceipt | undefined,
@@ -32,7 +33,7 @@ it("keeps usable unchanged catalogs quiet, retains real errors and exposes refre
       state.receipt = {
         status: "error",
         at: 100,
-        count: 13,
+        count: 1300,
         error: "CLI discovery failed: Bearer fake-token-12345",
         retained,
       };
@@ -44,6 +45,7 @@ it("keeps usable unchanged catalogs quiet, retains real errors and exposes refre
         detail: "CLI discovery failed: Bearer <redacted>",
       });
       expect(node.textContent).toContain(retained ? "earlier list" : "built-in list");
+      expect(node.textContent).toContain(formatNumber(1300));
       expect(node.textContent).toContain("Retry");
     }
     await act(async () => root.render(createElement(CatalogRefreshButton, { harness: "claude" })));

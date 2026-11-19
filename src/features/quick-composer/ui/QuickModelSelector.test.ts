@@ -116,6 +116,20 @@ it("updates effort inline and closes with Escape", () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 
+// #1248: Escape that dismisses an IME candidate must not close the selector.
+it("ignores Escape during IME composition", () => {
+  const reasoning = container.querySelector<HTMLSelectElement>('[aria-label="Reasoning"]')!;
+  act(() => {
+    reasoning.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true }),
+    );
+    reasoning.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", keyCode: 229, bubbles: true }),
+    );
+  });
+  expect(onClose).not.toHaveBeenCalled();
+});
+
 it("shows saved favorites across provider tabs", () => {
   act(() =>
     container

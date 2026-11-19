@@ -83,4 +83,20 @@ describe("deleted session checkpoint cleanup", () => {
       true,
     );
   });
+
+  it("retires committed paths together while preserving pending paths", async () => {
+    const f = await fixture();
+    await f.checkpoints.begin("mixed", f.cwd, "one");
+    await writeFile(join(f.cwd, "a.txt"), "committed\n");
+    await writeFile(join(f.cwd, "[literal].txt"), "committed\n");
+    await writeFile(join(f.cwd, "pending.txt"), "pending\n");
+    await f.checkpoints.finish("mixed", f.cwd, "one");
+    expect((await f.checkpoints.status("mixed", f.cwd)).files).toHaveLength(3);
+
+    await f.git("--literal-pathspecs", "add", "--", "a.txt", "[literal].txt");
+    await f.git("commit", "-qm", "commit two checkpoint paths");
+
+    const status = await f.checkpoints.status("mixed", f.cwd);
+    expect(status.files.map((file) => file.relative)).toEqual(["pending.txt"]);
+  });
 });

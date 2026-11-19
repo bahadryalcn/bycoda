@@ -87,7 +87,7 @@ pub(crate) fn device_finish_payload(
 mod relay;
 #[cfg(test)]
 use relay::next_poll_delay;
-pub(crate) use relay::start_desktop_relay;
+pub(crate) use relay::{start_desktop_relay, stop_desktop_relay};
 
 fn execute_desktop_request(
     app: &AppHandle,

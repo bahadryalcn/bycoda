@@ -95,14 +95,18 @@ it("reuses identical scoped content, expires snapshots and bounds retained/admit
 it("keeps a transfer alive past its first deadline while chunks are read, within the hard cap", () => {
   const { pool, retain, advance } = fixture({ ttlMs: 100, maxLifetimeMs: 250 });
   const descriptor = retain("owner", "one", { text: "a".repeat(60) });
+  expect(descriptor.expiresAt).toBe(1250);
   expect(descriptor.totalBytes).toBeGreaterThan(descriptor.chunkBytes * 4);
-  // Each read lands before the idle window closes, so the 100 ms descriptor deadline is outlived.
-  for (const offset of [0, 1, 2, 3].map((index) => index * descriptor.chunkBytes)) {
+  // A client checking the descriptor before every read can keep reading past the initial idle window.
+  for (let index = 0; index < 4; index++) {
     advance(60);
-    expect(pool.chunk("owner", descriptor.transferId, offset).length).toBeGreaterThan(0);
+    expect(1060 + index * 60).toBeLessThan(descriptor.expiresAt);
+    expect(
+      pool.chunk("owner", descriptor.transferId, index * descriptor.chunkBytes).length,
+    ).toBeGreaterThan(0);
   }
-  // Reads at 60-240 ms outlived the descriptor's 100 ms expiresAt; 300 ms is past the 250 ms cap.
-  advance(60);
+  // At the advertised hard deadline, the last read is still within the idle window.
+  advance(10);
   expect(() => pool.chunk("owner", descriptor.transferId, 4 * descriptor.chunkBytes)).toThrow(
     "unavailable",
   );

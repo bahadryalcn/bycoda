@@ -6,15 +6,23 @@ import { countMinutes, decodeMinutes } from "@bycoda/account-contracts/activity"
 import { TICK_MS } from "../model/activityTracker";
 import { useActivityTracker } from "./useActivityTracker";
 
-const mocks = vi.hoisted(() => ({ record: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  record: vi.fn(),
+  /** Reports a Host acknowledged; a rejected attempt is not a delivery. */
+  delivered: [] as [string, unknown][],
+}));
 vi.mock("../model/activityClient", () => ({
   activityClient: (machineId: string) => ({
-    record: (report: unknown) => mocks.record(machineId, report),
+    record: async (report: unknown) => {
+      const result = await mocks.record(machineId, report);
+      mocks.delivered.push([machineId, report]);
+      return result;
+    },
   }),
 }));
 
 const sent = (machineId: string) =>
-  mocks.record.mock.calls
+  mocks.delivered
     .filter(([id]) => id === machineId)
     .reduce(
       (sum, [, report]) =>
@@ -34,6 +42,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   mocks.record.mockReset();
+  mocks.delivered.length = 0;
 });
 
 async function mount(machineId: string | undefined) {
@@ -74,8 +83,9 @@ it("keeps a failed Host's minutes for that Host and never sends them to another"
   const { root, render } = await mount("pc");
   await activeMinute();
 
-  mocks.record.mockResolvedValue({ changed: true });
+  // Leaving "pc" runs its final flush, which still fails and keeps the minutes for "pc".
   await render("other");
+  mocks.record.mockResolvedValue({ changed: true });
   expect(sent("other")).toBe(0);
   expect(localStorage.getItem("bycoda.activity.outbox.v1")).toContain("pc");
 

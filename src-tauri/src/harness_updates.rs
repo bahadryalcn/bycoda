@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -7,7 +7,9 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::harness::process_lifecycle::ProcessOwner;
-use crate::harness::{exec_output_with_env_observed, is_resolved_harness_binary};
+use crate::harness::{
+    exec_output_with_env_observed, is_resolved_harness_binary, resolve_gui_binary,
+};
 
 /// Returned when another update of the same binary is already running, in any window.
 pub(crate) const ALREADY_UPDATING: &str = "harness_update: already updating";
@@ -56,8 +58,7 @@ fn version_feed_for_installed(
     version_feed(provider)
 }
 
-/// Each CLI's own updater, which knows how it was installed (native, npm,
-/// Homebrew) better than Bycoda could guess from the binary path.
+/// The default updater for installations without a known package manager.
 fn update_args(provider: &str) -> Option<&'static [&'static str]> {
     match provider {
         "claude" => Some(&["update"]),
@@ -86,23 +87,74 @@ fn update_args_for_command(provider: &str, command: &str) -> Option<&'static [&'
 
 /// npm's Unix global layout identifies both the package manager and its prefix.
 /// A ~/.local/bin symlink alone is ambiguous: OpenCode V1 mistakes it for curl.
-fn opencode_npm_prefix(binary: &std::path::Path) -> Option<&std::path::Path> {
+fn unix_npm_prefix<'a>(binary: &'a Path, provider: &str) -> Option<&'a Path> {
     let bin = binary.parent()?;
     if bin.file_name()? != "bin" {
         return None;
     }
     let package = bin.parent()?;
-    let modules = if package.file_name()? == "opencode-ai" {
-        package.parent()?
-    } else if package.file_name()? == "cli" && package.parent()?.file_name()? == "@opencode" {
-        package.parent()?.parent()?
-    } else {
-        return None;
+    let modules = match provider {
+        "codex" if package.ends_with("@openai/codex") && binary.file_name()? == "codex.js" => {
+            package.parent()?.parent()?
+        }
+        "opencode" if package.file_name()? == "opencode-ai" => package.parent()?,
+        "opencode" if package.ends_with("@opencode/cli") => package.parent()?.parent()?,
+        _ => return None,
     };
     if modules.file_name()? != "node_modules" || modules.parent()?.file_name()? != "lib" {
         return None;
     }
     modules.parent()?.parent()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum CodexPackage<'a> {
+    Npm(&'a Path),
+    Homebrew(&'a Path),
+}
+
+fn codex_package<'a>(command: &'a Path, resolved: &'a Path) -> Option<CodexPackage<'a>> {
+    if let Some(prefix) = unix_npm_prefix(resolved, "codex") {
+        return Some(CodexPackage::Npm(prefix));
+    }
+    // npm installs its Windows launcher beside node_modules, without a symlink.
+    if command.file_name()?.eq_ignore_ascii_case("codex.cmd") {
+        let prefix = command.parent()?;
+        let entry = "node_modules/@openai/codex/bin/codex.js";
+        if prefix.join(entry).is_file()
+            && std::fs::read_to_string(command)
+                .is_ok_and(|shim| shim.replace('\\', "/").contains(entry))
+        {
+            return Some(CodexPackage::Npm(prefix));
+        }
+    }
+    let cask = resolved
+        .ancestors()
+        .find(|path| path.ends_with("Caskroom/codex"))?;
+    Some(CodexPackage::Homebrew(cask.parent()?.parent()?))
+}
+
+impl CodexPackage<'_> {
+    fn updater(&self) -> Result<(PathBuf, &'static [&'static str]), String> {
+        match self {
+            Self::Npm(_) => {
+                let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
+                let path = resolve_gui_binary(npm)
+                    .filter(|path| path.is_absolute())
+                    .ok_or(
+                    "npm was not found. Update Codex with the npm installation that owns this CLI.",
+                )?;
+                Ok((path, &["install", "--global", "@openai/codex@latest"]))
+            }
+            Self::Homebrew(prefix) => {
+                let brew = prefix.join("bin/brew");
+                if !brew.is_file() {
+                    return Err("Homebrew was not found for this Codex installation. Update the Codex cask from your terminal.".into());
+                }
+                Ok((brew, &["upgrade", "--cask", "codex"]))
+            }
+        }
+    }
 }
 
 /// A download plus, for npm installs, a full dependency install.
@@ -250,16 +302,14 @@ pub fn harness_update_cancel(command: String) -> bool {
     true
 }
 
-/// Runs the harness's self-update against the binary Bycoda resolved for
-/// it. stdin is closed, so an updater that stops to ask fails instead of
-/// hanging.
+/// Updates the installation containing the resolved binary with stdin closed.
 #[tauri::command]
 pub async fn harness_update(
     command: String,
     binary_provider: String,
     binary_path: Option<String>,
     target_version: Option<String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let args: Vec<String> = update_args_for_command(&binary_provider, &command)
         .ok_or_else(|| format!("No updater for harness: {binary_provider}"))?
         .iter()
@@ -271,8 +321,11 @@ pub async fn harness_update(
         }
         let claim = claim_update(&command)?;
         let resolved = std::fs::canonicalize(&command).ok();
+        let codex = (binary_provider == "codex")
+            .then(|| codex_package(Path::new(&command), resolved.as_deref()?))
+            .flatten();
         let npm_prefix = (binary_provider == "opencode")
-            .then(|| resolved.as_deref().and_then(opencode_npm_prefix))
+            .then(|| unix_npm_prefix(resolved.as_deref()?, "opencode"))
             .flatten()
             .map(|prefix| prefix.to_string_lossy().into_owned());
         let args = if npm_prefix.is_some() {
@@ -286,30 +339,49 @@ pub async fn harness_update(
         };
         // Updating with the machine's default prefix can install a second copy
         // while leaving the binary Bycoda actually uses unchanged.
-        let env: Vec<_> = npm_prefix
-            .as_deref()
-            .map(|prefix| vec![("NPM_CONFIG_PREFIX", prefix)])
-            .unwrap_or_default();
-        let execute = |args: &[String]| {
-            // OpenCode runs several updater stages; a cancel stops the next one from starting.
+        let execute = |program: &str, args: &[String], prefix: Option<&str>, cwd: Option<&Path>| {
             if claim.slot.cancelled.load(Ordering::SeqCst) {
                 return Err(CANCELLED.to_string());
             }
-            let output = exec_output_with_env_observed(&command, args, UPDATE_TIMEOUT, &env, |owner| {
-                claim.slot.attach(owner)
-            })?;
-            if output.status.success() {
+            let env = prefix.map(|prefix| [("NPM_CONFIG_PREFIX", prefix)]);
+            let output = exec_output_with_env_observed(
+                program,
+                args,
+                UPDATE_TIMEOUT,
+                env.as_slice().as_flattened(),
+                cwd,
+                |owner| claim.slot.attach(owner),
+            );
+            if claim.slot.cancelled.load(Ordering::SeqCst) {
+                return Err(CANCELLED.to_string());
+            }
+            let output = output?;
+            if output.status.success() && args == ["--version"] {
                 return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
             }
-            if claim.slot.cancelled.load(Ordering::SeqCst) {
-                return Err(CANCELLED.to_string());
+            let detail = update_detail(&output.stdout, &output.stderr);
+            if output.status.success() {
+                return Ok(detail);
             }
+            let detail = if detail.is_empty() { "Update failed" } else { &detail };
+            let guidance = update_guidance(&binary_provider, codex.is_some(), &detail);
             Err(format!(
-                "{binary_provider} update failed ({}):\n{}",
-                output.status,
-                update_failure(&output.stdout, &output.stderr)
+                "{binary_provider} update failed ({}):\n{detail}{guidance}",
+                output.status
             ))
         };
+        if let Some(package) = &codex {
+            let (program, args) = package.updater()?;
+            let prefix = match package {
+                CodexPackage::Npm(prefix) => Some(prefix.to_string_lossy()),
+                CodexPackage::Homebrew(_) => None,
+            };
+            // Package managers can read config from the working directory.
+            let cwd = program.ancestors().last().filter(|path| path.has_root());
+            let args = args.iter().map(ToString::to_string).collect::<Vec<_>>();
+            return execute(&program.to_string_lossy(), &args, prefix.as_deref(), cwd);
+        }
+        let execute = |args: &[String]| execute(&command, args, npm_prefix.as_deref(), None);
         if binary_provider == "opencode" {
             if let Some(target) = target_version.as_deref() {
                 validate_update_target(target)?;
@@ -329,7 +401,7 @@ pub async fn harness_update(
                 }, execute);
             }
         }
-        execute(&args).map(|_| ())
+        execute(&args)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -357,12 +429,12 @@ fn update_opencode(
     installed: &str,
     legacy_release: impl FnOnce() -> Result<String, String>,
     mut execute: impl FnMut(&[String]) -> Result<String, String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let target_version = numeric_version(target)?;
     let mut version = numeric_version(installed)?;
     // Another window may already have updated this CLI since the check.
     if version >= target_version {
-        return Ok(());
+        return Ok(String::new());
     }
     let with_target = |target: &str| {
         let mut args = base_args.to_vec();
@@ -377,26 +449,26 @@ fn update_opencode(
             if expected.0 != 1 || expected < (1, 19, 0) {
                 return Err("No OpenCode V1 release supporting migration is available".into());
             }
-            execute(&with_target(&bootstrap))?;
+            let detail = execute(&with_target(&bootstrap))?;
             version = numeric_version(&execute(&["--version".into()])?)?;
             if version.0 != 1 || version < (1, 19, 0) {
-                return Err("OpenCode V1 bootstrap did not install a migration-capable version. Retry the update.".into());
+                return Err(format!("OpenCode V1 bootstrap did not install a migration-capable version. Retry the update.\n{detail}"));
             }
         }
         let mut args = base_args.to_vec();
         args.push("--major".into());
-        execute(&args)?;
+        let detail = execute(&args)?;
         version = numeric_version(&execute(&["--version".into()])?)?;
         if version.0 < 2 {
-            return Err("OpenCode migration did not install V2. Check the installation permissions and retry.".into());
+            return Err(format!("OpenCode migration did not install V2. Check the installation permissions and retry.\n{detail}"));
         }
         // --major installs latest and ignores target. Keep a newer V2; otherwise
         // finish with the displayed target through V2's own updater.
         if version >= target_version {
-            return Ok(());
+            return Ok(detail);
         }
     }
-    execute(&with_target(target)).map(|_| ())
+    execute(&with_target(target))
 }
 
 fn validate_update_target(target: &str) -> Result<(), String> {
@@ -414,7 +486,7 @@ fn validate_update_target(target: &str) -> Result<(), String> {
 
 /// Keep both streams: OpenCode ends with a generic "Failed" after printing the
 /// actual package-manager error. Bound the tail sent to the UI.
-fn update_failure(stdout: &[u8], stderr: &[u8]) -> String {
+fn update_detail(stdout: &[u8], stderr: &[u8]) -> String {
     let detail = [stdout, stderr]
         .iter()
         .map(|bytes| {
@@ -428,11 +500,20 @@ fn update_failure(stdout: &[u8], stderr: &[u8]) -> String {
         .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
-    if detail.is_empty() {
-        return "Update failed".to_string();
-    }
     let skip = detail.chars().count().saturating_sub(4000);
     detail.chars().skip(skip).collect()
+}
+
+fn update_guidance(provider: &str, codex_package: bool, detail: &str) -> &'static str {
+    match provider {
+        "codex" if !codex_package => {
+            "\nUpdate the Codex CLI using the method that installed it, then check its version in Bycoda."
+        }
+        "cursor" if matches!(detail, "Checking for updates..." | "Update failed") => {
+            "\nCursor CLI did not report a cause. Run agent update (or cursor-agent update) in a terminal for this installation, then check its version in Bycoda."
+        }
+        _ => "",
+    }
 }
 
 fn latest_version(body: &Value) -> Option<String> {
@@ -638,12 +719,58 @@ mod tests {
     }
 
     #[test]
-    fn updates_only_through_each_cli_own_updater() {
+    fn default_cli_updater_arguments() {
         assert_eq!(update_args("pi"), Some(&["update", "--self"][..]));
         assert_eq!(update_args("opencode"), Some(&["upgrade"][..]));
         assert_eq!(update_args("fx"), Some(&["upgrade"][..]));
         assert_eq!(update_args("cursor"), Some(&["update"][..]));
         assert_eq!(update_args("hermes"), None);
+    }
+
+    #[test]
+    fn detects_the_installers_that_can_update_legacy_codex_without_loading_its_config() {
+        let npm = Path::new("/opt/node/lib/node_modules/@openai/codex/bin/codex.js");
+        let brew = Path::new("/opt/homebrew/Caskroom/codex/0.36.0/codex-aarch64-apple-darwin");
+        assert_eq!(
+            codex_package(npm, npm),
+            Some(CodexPackage::Npm(Path::new("/opt/node")))
+        );
+        assert_eq!(
+            codex_package(Path::new("/opt/homebrew/bin/codex"), brew),
+            Some(CodexPackage::Homebrew(Path::new("/opt/homebrew")))
+        );
+        let project = Path::new("/repo/node_modules/@openai/codex/bin/codex.js");
+        assert_eq!(codex_package(project, project), None);
+        let standalone = Path::new("/opt/bin/codex");
+        assert_eq!(codex_package(standalone, standalone), None);
+    }
+
+    #[test]
+    fn identifies_windows_npm_install_by_its_launcher_and_package() {
+        let prefix = tempfile::tempdir().unwrap();
+        let bin = prefix.path().join("node_modules/@openai/codex/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("codex.js"), "").unwrap();
+        let shim = prefix.path().join("codex.cmd");
+        std::fs::write(&shim, "@echo off").unwrap();
+        assert_eq!(codex_package(&shim, &shim), None);
+        std::fs::write(
+            &shim,
+            r#""%dp0%\node_modules\@openai\codex\bin\codex.js" %*"#,
+        )
+        .unwrap();
+        assert_eq!(
+            codex_package(&shim, &shim),
+            Some(CodexPackage::Npm(prefix.path()))
+        );
+    }
+
+    #[test]
+    fn cursor_failure_without_a_cause_suggests_a_terminal_retry() {
+        let only_progress = update_detail(b"Checking for updates...\n", b"");
+        assert!(update_guidance("cursor", false, &only_progress).contains("agent update"));
+        let actionable = update_detail(b"Checking for updates...\n", b"Permission denied");
+        assert_eq!(update_guidance("cursor", false, &actionable), "");
     }
 
     #[test]
@@ -670,23 +797,23 @@ mod tests {
     #[test]
     fn preserves_updater_diagnostics_before_the_generic_footer() {
         assert_eq!(
-            update_failure(
+            update_detail(
                 b"checking\n",
                 b"npm ERR! code EACCES\nnpm ERR! permission denied\n\n"
             ),
             "checking\nnpm ERR! code EACCES\nnpm ERR! permission denied"
         );
-        assert_eq!(update_failure(b"no write access\n", b""), "no write access");
-        assert_eq!(update_failure(b"", b""), "Update failed");
+        assert_eq!(update_detail(b"no write access\n", b""), "no write access");
+        assert!(update_detail(b"", b"").is_empty());
         assert_eq!(
-            update_failure(
+            update_detail(
                 b"Upgrade failed for bun\nAccess denied: opencode.exe\nFailed\n",
                 b""
             ),
             "Upgrade failed for bun\nAccess denied: opencode.exe\nFailed"
         );
         let long = "é".repeat(5000);
-        assert_eq!(update_failure(long.as_bytes(), b"").chars().count(), 4000);
+        assert_eq!(update_detail(long.as_bytes(), b"").chars().count(), 4000);
     }
 
     #[test]
@@ -697,7 +824,7 @@ mod tests {
             "/Users/owner/.local/lib/node_modules/@opencode/cli/bin/opencode",
         ] {
             assert_eq!(
-                opencode_npm_prefix(Path::new(binary)),
+                unix_npm_prefix(Path::new(binary), "opencode"),
                 Some(Path::new("/Users/owner/.local"))
             );
         }
@@ -707,7 +834,7 @@ mod tests {
             "/project/node_modules/opencode-ai/bin/opencode",
             "/opt/lib/node_modules/other-cli/bin/opencode",
         ] {
-            assert_eq!(opencode_npm_prefix(Path::new(binary)), None);
+            assert_eq!(unix_npm_prefix(Path::new(binary), "opencode"), None);
         }
     }
 
@@ -743,7 +870,10 @@ mod tests {
     fn a_second_update_of_the_same_binary_is_refused_until_the_first_ends() {
         let binary = "harness-updates-test/single-flight/opencode";
         let first = claim_update(binary).unwrap();
-        assert_eq!(claim_update(binary).err().as_deref(), Some(ALREADY_UPDATING));
+        assert_eq!(
+            claim_update(binary).err().as_deref(),
+            Some(ALREADY_UPDATING)
+        );
         drop(first);
         assert!(claim_update(binary).is_ok());
     }

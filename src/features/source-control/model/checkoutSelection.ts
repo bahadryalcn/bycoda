@@ -1,5 +1,6 @@
 import { t } from "../../../shared/i18n/git";
 import { isEqualOrInside, pathKey, projectKey } from "../../../shared/lib/paths";
+import { shortSha } from "../../../shared/lib/shortSha";
 import type { Worktree } from "./worktrees";
 
 const KEY = "bycoda.sourceControl.checkout.v1:";
@@ -139,7 +140,7 @@ export function checkoutTitle(tree: Worktree): string {
 
 /** Checkout title using the caller's reactive translator. */
 export function checkoutTitleWith(tree: Worktree, translate: (message: string) => string): string {
-  return tree.branch ?? `${translate("Detached HEAD")} · ${tree.head.slice(0, 7)}`;
+  return tree.branch ?? `${translate("Detached HEAD")} · ${shortSha(tree.head)}`;
 }
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -152,7 +153,7 @@ const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 export function checkoutRowLabels(tree: Worktree): { title: string; detail?: string } {
   const folder = folderName(tree.path);
   if (!tree.branch)
-    return { title: folder, detail: t("Detached {p0}", { p0: tree.head.slice(0, 7) }) };
+    return { title: folder, detail: t("Detached {p0}", { p0: shortSha(tree.head) }) };
   const leaf = slug(tree.branch.split("/").pop() ?? tree.branch);
   const name = slug(folder);
   const redundant = !!name && !!leaf && (leaf.endsWith(name) || name.endsWith(leaf));

@@ -62,7 +62,7 @@ it("keeps the repair step after the original failure when cleanup fails", () => 
   const cause = new HarnessLoginError("timedOut", "claude", "raw timeout");
   const error = new ProviderAccountError("cleanupFailed", "raw", { cause });
   expect(presentProviderAccountError(error, "save").summary).toBe(
-    "Claude sign-in timed out. Please try again. Temporary profile cleanup failed; retry before adding another account.",
+    "Claude Code sign-in timed out. Please try again. Temporary profile cleanup failed; retry before adding another account.",
   );
   const unknown = new ProviderAccountError("cleanupFailed", "raw", {
     cause: new Error("Disk locked"),
@@ -79,7 +79,7 @@ it("maps each login code and keeps only redacted provider text as detail", () =>
     detail: "Bearer abcdefghijklmnop failed at https://auth.example.com/cb?code=SECRET",
   });
   const shown = presentProviderAccountError(spawn, "signIn");
-  expect(shown.summary).toBe("Could not start Grok sign-in.");
+  expect(shown.summary).toBe("Could not start Grok Build sign-in.");
   expect(shown.detail).not.toContain("abcdefghijklmnop");
   expect(shown.detail).not.toContain("SECRET");
   expect(shown.detail).not.toContain("https://");

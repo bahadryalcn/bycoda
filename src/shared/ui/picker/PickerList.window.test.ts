@@ -28,6 +28,17 @@ beforeEach(() => {
     return sized(this);
   });
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(280);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return sized(this);
+  });
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(280);
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.getAttribute("role") === "listbox" ? 2000 * ROW + 2 * 24 : sized(this);
+  });
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {

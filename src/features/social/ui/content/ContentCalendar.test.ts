@@ -41,6 +41,7 @@ it("exposes each day as a list item named by its full date, with no region landm
     // Month cells start on Monday 26 October 2026; 13 November is index 18.
     expect(items[18]!.getAttribute("aria-current")).toBe("date");
     expect(items[18]!.querySelector(".sr-only")!.textContent).toContain("13");
+    expect(items[18]!.querySelector(".content-day-weekday")?.textContent).toContain("Nov 13");
     expect(items[17]!.hasAttribute("aria-current")).toBe(false);
     // The "New post" action keeps its date label.
     expect(items[18]!.querySelector(".content-day-add")!.getAttribute("aria-label")).toContain(

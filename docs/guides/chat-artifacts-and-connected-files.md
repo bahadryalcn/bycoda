@@ -77,7 +77,7 @@ Use **Add citation** to attach the excerpt to your next message, with an optiona
 
 Hover or focus a reference to briefly highlight its exact source without scrolling. Click it to return to the source in the current conversation. If the source has changed or is unavailable, the saved quote remains readable; an equal phrase in another message is never substituted. The information control on a sent reference shows its full excerpt and comment.
 
-Translation previews keep model selection, cancellation and retry. After applying a translation, the compact **Original text / Translation** control switches the displayed version. **Copy** copies that version. **Close translation** dismisses the control without deleting the translation or changing saved message text.
+Translation previews keep model selection, cancellation and retry. After applying a translation, the **Translation view** control switches between **Original text** and **Translation**. With the transcript focused, press **↑** for the original or **↓** for the translation. **Copy** copies the displayed version. **Close translation** dismisses the control and keeps the applied translation and saved message text.
 
 These details describe the tool call at that point in the conversation. They do not reread the current file and present it as historical output. New code details are bounded to keep long conversations responsive; subagent history has a shared retention budget. When only an older shortened preview remains, the viewer says so.
 
@@ -203,7 +203,11 @@ On desktop, use **Open in this computer's browser** in Development servers, or c
 
 HTTP requests and WebSocket connections use the paired host connection. No public tunnel is created. Remote HTTPS sites open in the owning host's browser preview. Ordinary public URLs continue to open normally.
 
-On mobile, tap a `localhost` link in the original conversation or its composer. The conversation's Browser opens with that address. Use the browser's existing control action and **Go** to load the page on the owning computer. The phone displays that browser's view through the paired connection.
+On mobile, tap a `localhost` link in the original conversation or its composer. When the computer supports phone tunnels and the phone does (iOS 17 or later, or an Android WebView with proxy support), the page opens on the phone itself. It runs in a private in-app browser, and only its bytes travel to the computer's development server over the paired connection. The address bar still shows `localhost`. The server must be an HTTP development server that this project started. The toolbar offers **Open in Host Browser** for anything else.
+
+Otherwise, the conversation's Browser opens with that address. Use the browser's existing control action and **Go** to load the page on the owning computer. The phone then displays that browser's view through the paired connection.
+
+**Data saver** (Settings, default **Auto**: on over mobile data) loads chat images only on tap. It streams the Host Browser at lower quality and blocks images and media in the phone browser.
 
 The HTTP bridge accepts fixed-length request bodies; streaming/chunked request bodies are rejected. Custom private DNS names are not automatically classified from arbitrary chat links; choose the registered endpoint in Development servers. Opening a file or server never silently falls back to a different machine.
 

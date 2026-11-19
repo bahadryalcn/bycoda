@@ -16,6 +16,7 @@ Choose **Sign in with browser** on the Account page. bycoda opens your default b
 the sign-in page; pick Google, Facebook, Apple, GitHub or an emailed code. When the browser
 says you are signed in, return to bycoda. Sign-in finishes within five minutes; press
 **Cancel** to stop waiting.
+If bycoda cannot open the browser, it ends that attempt and shows the error. You can retry from the same screen.
 
 - Your sign-in secret is kept in the system credential store (Windows Credential Manager,
   macOS Keychain or the Linux Secret Service), never in a file.

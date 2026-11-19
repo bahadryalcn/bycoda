@@ -81,6 +81,26 @@ describe("popup choice surfaces", () => {
 
 const read = (file: string) =>
   readFileSync(join(__dirname, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+
+it("shares the root spacing and radius scale with Arc surfaces", () => {
+  const root = read("../../styles/index.css");
+  const arc = read("../../styles/arc.css");
+  const arcRoot = [...arc.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, selector]) => selector.trim() === ".bycoda-arc")
+    .map(([, , body]) => body)
+    .join("\n");
+  expect(arcRoot).toContain("--control-height-lg:");
+  const names = [
+    ...[1, 2, 3, 4, 5, 6, 8, 10, 12, 16].map((step) => `space-${step}`),
+    ...["control", "panel", "surface", "pill"].map((role) => `radius-${role}`),
+  ];
+  for (const name of names) {
+    const declaration = new RegExp(`--${name}\\s*:`, "g");
+    expect(root.match(declaration), name).toHaveLength(1);
+    expect(arcRoot, name).not.toMatch(declaration);
+  }
+});
+
 const rule = (css: string, selector: string) => {
   const start = css.search(new RegExp(String.raw`(^|\})\s*\.${selector.slice(1)}\s*\{`));
   if (start < 0) return "";

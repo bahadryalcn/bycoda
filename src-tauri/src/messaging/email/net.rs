@@ -15,31 +15,31 @@ static PENDING_RESOLVES: AtomicUsize = AtomicUsize::new(0);
 const READ_CHUNK: usize = 16 * 1024;
 
 /// One slot of the pending-lookup cap, released when the lookup thread finishes.
-struct PendingResolve;
+struct PendingResolve<'a>(&'a AtomicUsize);
 
-impl PendingResolve {
-    fn acquire() -> Option<Self> {
-        let mut current = PENDING_RESOLVES.load(Ordering::Acquire);
+impl<'a> PendingResolve<'a> {
+    fn acquire(count: &'a AtomicUsize) -> Option<Self> {
+        let mut current = count.load(Ordering::Acquire);
         loop {
             if current >= MAX_PENDING_RESOLVES {
                 return None;
             }
-            match PENDING_RESOLVES.compare_exchange_weak(
+            match count.compare_exchange_weak(
                 current,
                 current + 1,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_) => return Some(Self),
+                Ok(_) => return Some(Self(count)),
                 Err(actual) => current = actual,
             }
         }
     }
 }
 
-impl Drop for PendingResolve {
+impl Drop for PendingResolve<'_> {
     fn drop(&mut self) {
-        PENDING_RESOLVES.fetch_sub(1, Ordering::AcqRel);
+        self.0.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -82,7 +82,7 @@ fn tls_config() -> Arc<ClientConfig> {
 }
 
 fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
-    let Some(pending) = PendingResolve::acquire() else {
+    let Some(pending) = PendingResolve::acquire(&PENDING_RESOLVES) else {
         return Err(format!(
             "Too many mail server lookups are still pending. Try {host} again shortly."
         ));
@@ -103,6 +103,38 @@ fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
             "Could not find the mail server {host}. Check the server name."
         )),
         Err(_) => Err(format!("Looking up the mail server {host} timed out.")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn abandoned_lookup_keeps_its_slot_until_the_worker_finishes() {
+        let count = AtomicUsize::new(0);
+        let other_lookups: Vec<_> = (1..MAX_PENDING_RESOLVES)
+            .map(|_| PendingResolve::acquire(&count).unwrap())
+            .collect();
+        let pending = PendingResolve::acquire(&count).unwrap();
+        let (result, abandoned_receiver) = mpsc::channel();
+        let (finish, blocked_worker) = mpsc::channel();
+
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(move || {
+                let _ = blocked_worker.recv();
+                assert!(result.send(()).is_err());
+                drop(pending);
+            });
+            drop(abandoned_receiver);
+            let rejected_while_blocked = PendingResolve::acquire(&count).is_none();
+            finish.send(()).unwrap();
+            worker.join().unwrap();
+            assert!(rejected_while_blocked);
+        });
+
+        assert!(PendingResolve::acquire(&count).is_some());
+        drop(other_lookups);
     }
 }
 

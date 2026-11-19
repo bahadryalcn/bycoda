@@ -6,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { t, useLocale } from "../../../shared/i18n";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { RotateCcw, Star } from "../../../shared/ui/icons";
 import {
@@ -150,7 +151,7 @@ export function QuickModelSelector({
       aria-label={t("Model selector")}
       className="flex min-h-0 flex-col"
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        if (event.key === "Escape" && !isImeComposition(event.nativeEvent)) {
           event.preventDefault();
           event.stopPropagation();
           onClose();

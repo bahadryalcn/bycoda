@@ -353,6 +353,9 @@ it("exposes bounded content continuation and warns that the calendar/list is par
     loadMore,
   };
   render();
+  // The calendar reads by schedule, so older pages are offered only in the list.
+  expect(text()).not.toContain("More posts are available");
+  act(() => buttonWith("List")!.click());
   expect(text()).toContain(
     "More posts are available. Load more to include older posts in this view.",
   );

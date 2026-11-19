@@ -162,7 +162,7 @@ function McpConnections({
     "all",
   );
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState<McpCatalogEntry | null>(null);
   const [actionError, setActionError] = useState("");
   const [loading, setLoading] = useState(!cached);
   const [busy, setBusy] = useState("");
@@ -346,7 +346,8 @@ function McpConnections({
     return row ? () => void actions.providerSignIn(row) : undefined;
   }
 
-  const open = catalog.find((entry) => entry.name === selected);
+  const current = selected && catalog.find((entry) => entry.name === selected.name);
+  const open = current ?? selected;
   const policy = hub.loading?.policy;
   return (
     <div
@@ -546,7 +547,7 @@ function McpConnections({
                         </InlineTextAction>
                       ) : undefined
                     }
-                    onOpen={() => setSelected(entry.name)}
+                    onOpen={() => setSelected(entry)}
                     primary={{ "aria-label": t("Open {p0}", { p0: entry.name }) }}
                   />
                 );
@@ -615,7 +616,8 @@ function McpConnections({
           globalOnly={globalOnly}
           hub={hub}
           actions={actions}
-          onClose={() => setSelected("")}
+          stale={!current}
+          onClose={() => setSelected(null)}
         />
       ) : null}
       {removeTarget ? (

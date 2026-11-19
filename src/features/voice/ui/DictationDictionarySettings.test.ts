@@ -273,6 +273,13 @@ it("keeps legacy duplicates in different scopes as separate rows", async () => {
 });
 
 it("mounts a bounded window of a long dictionary instead of every row", async () => {
+  // happy-dom has no layout: give the virtualized list a viewport and row heights.
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 64 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
   saveVoiceSettings({
     ...loadVoiceSettings(),
     dictationDictionary: Array.from({ length: 200 }, (_, index) => ({

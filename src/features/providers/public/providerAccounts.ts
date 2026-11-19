@@ -2,6 +2,7 @@ export {
   DEFAULT_PROVIDER_ACCOUNT_ID,
   PROVIDER_ACCOUNT_PROVIDERS,
   providerAccounts,
+  providerAccountsStorageRevision,
   supportsProviderAccounts,
   defaultProviderAccountId,
   providerAccountLabel,

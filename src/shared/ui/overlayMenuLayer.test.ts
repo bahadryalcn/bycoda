@@ -35,7 +35,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-/** Stacking order of every popover frame (the body-level children), in opening order. */
+/** Stacking layers of every popover frame in document order. */
 const popoverLayers = () =>
   [...document.body.querySelectorAll<HTMLElement>(":scope > [data-popover-side]")].map((frame) =>
     Number(frame.style.zIndex),
@@ -49,7 +49,12 @@ it("stacks a popover opened from inside another popover above its parent", async
   await render(
     createElement(Popover, { anchor }, createElement(Popover, { anchor: inner }, "Inner")),
   );
-  expect(popoverLayers()).toEqual([LAYER.popover, LAYER.popover + 1]);
+  // #638 compares each frame with its owner regardless of portal insertion order.
+  const child = [
+    ...document.body.querySelectorAll<HTMLElement>(":scope > [data-popover-side]"),
+  ].find((frame) => frame.textContent === "Inner");
+  expect(Number(child?.style.zIndex)).toBe(LAYER.popover + 1);
+  expect(popoverLayers()).toContain(LAYER.popover);
 });
 
 it("lifts a popover inside a toast-layer viewport sheet above it without a manual layer", async () => {

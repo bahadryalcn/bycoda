@@ -49,7 +49,8 @@ describe("fuzzy best alignment", () => {
 
   it("ranks a contiguous match above a scattered one", () => {
     const contiguous = fuzzyMatch("ab", "a_x_ab");
-    const scattered = fuzzyMatch("ab", "a_x_x_b");
+    // Give both alignments the same word-boundary bonus and text length.
+    const scattered = fuzzyMatch("ab", "a_xxxb");
     expect(contiguous && scattered && contiguous.score > scattered.score).toBe(true);
   });
 

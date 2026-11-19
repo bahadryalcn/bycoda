@@ -37,6 +37,7 @@ export function ModelOrderLimitsTab({
   draft,
   usage,
   onChange,
+  hostProviders,
   onFieldInvalid,
 }: {
   machineId: string;

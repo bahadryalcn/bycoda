@@ -31,6 +31,7 @@ import { useProjectWorktrees } from "../../source-control/hooks/useProjectWorktr
 import type { Worktree } from "../../source-control/model/worktrees";
 import { MOD, SHIFT } from "../../../platform/tauri/platform";
 import { prettyCwd } from "../../../shared/lib/paths";
+import { shortSha } from "../../../shared/lib/shortSha";
 import type { WorkspaceMode } from "../../sessions/model/session";
 import { ChevronRight, Folder, FolderTree, GitBranch, Settings } from "../../../shared/ui/icons";
 import { GitPickerTrigger } from "../../source-control/ui/GitPickerTrigger";
@@ -307,7 +308,7 @@ function WorkspaceModePicker({
   ];
   const worktreeOptions: PickerOption[] = worktrees.map((tree) => ({
     value: tree.path,
-    title: tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) }),
+    title: tree.branch ?? t("Detached {p0}", { p0: shortSha(tree.head) }),
     description: prettyCwd(tree.path),
     icon: busyPath === tree.path ? <Spinner size="md" /> : <FolderTree className="icon-md" />,
   }));

@@ -425,12 +425,17 @@ export function InboxView({
     boardIssue !== null && !messagesOpen && source === "jira" && jiraView === "board";
 
   useEffect(() => {
-    // Bubble phase on purpose: a Jira drag cancel (window, capture) and any control that
-    // consumed Escape (a field) have already marked the event handled, so this only acts
-    // on an Escape nothing deeper wanted: close a menu, then the open board detail, then
-    // leave the Inbox.
+    // Jira drag cancellation and controls that consume Escape run first. An
+    // unhandled Escape in an editable field still belongs to that field.
     const onKey = (event: KeyboardEvent) => {
       if (!shouldHandleGlobalEscape(event)) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          "input, textarea, select, [contenteditable]:not([contenteditable=false])",
+        )
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
       if (filterMenu) {

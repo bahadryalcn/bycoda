@@ -1328,6 +1328,20 @@ mod tests {
             assert!(j.reason.is_some());
         }
     }
+    /// #500: IO threads report completion on a channel instead of being polled.
+    #[test]
+    fn io_completion_wait_counts_reports_and_gives_up_at_its_budget() {
+        let (done, reports) = std::sync::mpsc::channel();
+        done.send(()).unwrap();
+        done.send(()).unwrap();
+        assert_eq!(wait_for_io(&reports, 2, Duration::from_secs(1)), 0);
+        done.send(()).unwrap();
+        // One report of three arrives; the budget ends with two still open.
+        assert_eq!(wait_for_io(&reports, 3, Duration::from_millis(30)), 2);
+        // Every sender gone means no thread can still report.
+        drop(done);
+        assert_eq!(wait_for_io(&reports, 3, Duration::from_secs(1)), 0);
+    }
     #[test]
     fn strict_request_and_bounds() {
         assert!(request_id(&json!({"requestId":"safe_123-X"})).is_ok());

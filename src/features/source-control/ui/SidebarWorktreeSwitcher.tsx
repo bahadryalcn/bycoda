@@ -13,6 +13,7 @@ import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
 import { createWorktree } from "../model/worktrees";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { FolderTree, GitBranch, Plus } from "../../../shared/ui/icons";
 
@@ -315,7 +316,7 @@ export function SidebarWorktreeSwitcher({
 
 /** Detached HEAD wording shared by picker rows and the sidebar title. */
 function detachedLabel(head?: string) {
-  return head ? t("Detached {p0}", { p0: head.slice(0, 7) }) : t("Detached HEAD");
+  return head ? t("Detached {p0}", { p0: shortSha(head) }) : t("Detached HEAD");
 }
 
 /** Tabs a worktree keeps open while another one is shown. */

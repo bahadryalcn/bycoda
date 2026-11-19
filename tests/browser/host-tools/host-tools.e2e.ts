@@ -610,14 +610,26 @@ test("keeps the log workspace within narrow and wide layouts", async ({ page }) 
   }
 });
 
-test("selects local and remote tool machines while clearing the previous browser controls", async ({
-  page,
-}) => {
+for (const theme of ["light", "dark"]) {
+  test(`lists the local tool machine once in ${theme} mode`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${fixture}?theme=${theme}`);
+    await selectTool(page, "Host browser");
+    await page.getByRole("button", { name: /^Tool machine:/ }).click();
+    const picker = page.getByRole("listbox", { name: "Tool machine" });
+    const local = picker.getByRole("option", { name: /This computer/ });
+    await expect(local).toHaveCount(1);
+    await expect(local).toHaveAttribute("aria-selected", "true");
+    await expect(picker.getByRole("option", { name: "Fixture MacBook" })).toBeVisible();
+    await page.screenshot({ path: `temp/verification/local-machine-picker/${theme}.png` });
+  });
+}
+
+test("switching from the project host clears the previous browser controls", async ({ page }) => {
   await page.goto(fixture);
   await selectTool(page, "Host browser");
   const machine = page.getByRole("button", { name: /^Tool machine:/ });
   await expect(machine).toHaveAccessibleName("Tool machine: This computer");
-  await selectOption(page, page, "Tool machine", "This computer Local app");
   await page.getByRole("button", { name: "Open website", exact: true }).click();
   await expect(
     page.getByRole("img", {
@@ -651,22 +663,18 @@ test("selects local and remote tool machines while clearing the previous browser
           params: Record<string, unknown>;
         }[];
       }
-    ).hostToolCalls
-      .filter((call) => call.target)
-      .map(({ method, target, params }) => ({ method, target, params })),
+    ).hostToolCalls.map(({ method, target, params }) => ({ method, target, params })),
   );
-  expect(
-    routing.some((call) => call.method === "browser.open" && call.target?.kind === "local"),
-  ).toBe(true);
+  expect(routing.some((call) => call.method === "browser.open" && !call.target)).toBe(true);
   expect(
     routing.some(
       (call) => call.method === "resources.read" && call.target?.machineId === "fixture-mac",
     ),
   ).toBe(true);
-  expect(routing.every((call) => !("projectId" in call.params))).toBe(true);
+  expect(routing.every(({ target, params }) => !target || !("projectId" in params))).toBe(true);
   expect(
     routing
-      .filter((call) => call.method.startsWith("browser."))
+      .filter((call) => call.target && call.method.startsWith("browser."))
       .every(
         (call) =>
           call.params.sessionId === "fixture-session" &&

@@ -143,6 +143,8 @@ describe("McpStdioCallTracker", () => {
     for (let id = 0; id < MCP_STDIO_MAX_IN_FLIGHT; id++)
       tracker.start(id, () => new Promise<void>((resolve) => releases.push(resolve)));
     expect(tracker.full).toBe(true);
+    // `start` runs the work on a microtask, so the release callbacks appear a tick later.
+    await vi.waitFor(() => expect(releases).toHaveLength(MCP_STDIO_MAX_IN_FLIGHT));
     releases[0]();
     await vi.waitFor(() => expect(tracker.full).toBe(false));
     for (const release of releases) release();

@@ -58,8 +58,16 @@ function budgetStore(budget = new Map<string, number>()) {
 function setup(
   bytes: Buffer = png(),
   available = true,
-  options: { selected?: string[]; antigravity?: string; budget?: Map<string, number> } = {},
+  options: {
+    selected?: string[];
+    antigravity?: string;
+    budget?: Map<string, number>;
+    /** Reuse one conversation id, as a restarted Host sees the same persisted session. */
+    sessionId?: string;
+  } = {},
 ) {
+  // One store per setup: the budget must persist across calls of the same conversation.
+  const store = budgetStore(options.budget);
   const root = mkdtempSync(join(tmpdir(), "image-tools-"));
   roots.push(root);
   const generate = vi.fn(async () => ({ bytes, model: "native-default" }));
@@ -80,7 +88,7 @@ function setup(
     return { bytes: png(64, 64), model: input.model, sessionId: "child" };
   });
   const session = {
-    id: randomUUID(),
+    id: options.sessionId ?? randomUUID(),
     modelSettings: options.selected
       ? { [IMAGE_MODELS_KEY]: encodeImageModels(options.selected)! }
       : {},
@@ -91,7 +99,7 @@ function setup(
       session,
       projectId: "project",
       engine: {
-        store: { attachmentDir: join(root, "attachments"), ...budgetStore(options.budget) },
+        store: { attachmentDir: join(root, "attachments"), ...store },
       } as never,
       adapters,
       antigravity: async () => options.antigravity,
@@ -187,11 +195,12 @@ it("stops generating after the per-conversation budget", async () => {
 
 it("keeps the spent budget across a Host restart", async () => {
   const budget = new Map<string, number>();
-  const first = setup(png(), true, { budget });
+  const sessionId = randomUUID();
+  const first = setup(png(), true, { budget, sessionId });
   for (let index = 0; index < MAX_IMAGES_PER_SESSION; index++)
     await first.call("images.generate", { prompt: "x", path: `a/${index}.png` });
   // A restarted Host has no in-process state; only the durable budget carries over.
-  const restarted = setup(png(), true, { budget });
+  const restarted = setup(png(), true, { budget, sessionId });
   const status = (await restarted.call("images.status")) as { remaining: number };
   expect(status.remaining).toBe(0);
   await expect(
@@ -202,7 +211,7 @@ it("keeps the spent budget across a Host restart", async () => {
 
 it("does not reserve budget for refused requests", async () => {
   const budget = new Map<string, number>();
-  const { call, session } = setup(png(), true, { budget });
+  const { call, session } = setup(png(), true, { budget, selected: ["codex"] });
   await expect(call("images.generate", { prompt: "x", path: "art/icon.svg" })).rejects.toThrow(
     ".png",
   );

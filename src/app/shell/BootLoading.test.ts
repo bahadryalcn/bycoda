@@ -2,8 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import bycodaCss from "../../styles/bycoda.css?raw";
-import indexCss from "../../styles/index.css?raw";
+import { readFileSync } from "node:fs";
 import { getLanguagePreference, languageReady, setLanguagePreference } from "../../shared/i18n";
 import { BOOT_SLOW_AFTER_MS, BootLoading } from "./BootLoading";
 
@@ -94,6 +93,9 @@ it("updates the mounted restore shell when the language catalog changes", async 
 });
 
 it("lets the themed ground show through instead of a dark startup surface", () => {
+  // Read from disk: the Vite `?raw` CSS import is transformed to an empty module under Vitest.
+  const indexCss = readFileSync("src/styles/index.css", "utf8");
+  const bycodaCss = readFileSync("src/styles/bycoda.css", "utf8");
   expect(indexCss).not.toContain("--ui-startup-");
   const rule = /\.bycoda-boot-loading\s*\{[^}]*\}/.exec(bycodaCss)?.[0] ?? "";
   expect(rule).not.toBe("");

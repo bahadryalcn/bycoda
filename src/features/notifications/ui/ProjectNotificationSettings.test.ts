@@ -370,7 +370,11 @@ it("shows unreadable saved choices as unavailable, pauses edits and recovers on 
 it("names each category switch by its category and the list region without repeating the project", async () => {
   await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "" })));
   act(() => categoriesButton("me/private").click());
-  expect(checkbox("Issues and Linear tasks for me/private").hasAttribute("aria-label")).toBe(false);
+  // Arc names a switch by its visible label, so the name is the category alone, never the project.
+  const control = checkbox("Issues and Linear tasks for me/private");
+  expect(control.getAttribute("aria-label") ?? control.textContent?.trim()).toBe(
+    "Issues and Linear tasks",
+  );
   expect(container.querySelector('[role="region"]')?.getAttribute("aria-label")).toBe("Projects");
 });
 

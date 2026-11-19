@@ -1,4 +1,5 @@
 use super::*;
+use std::thread;
 
 // Regression for #503: each route used to get its own OS thread and current-thread
 // runtime, multiplied across five brokers. Route workers must stay tasks on the

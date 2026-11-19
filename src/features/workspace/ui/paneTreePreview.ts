@@ -7,13 +7,16 @@ import {
   type LayoutSash,
 } from "../model/layout";
 
+/** CSS percent of a 0–1 fraction, rounded so float noise (15.000000000000002%) never reaches the style. */
+const percent = (fraction: number) => `${Number((fraction * 100).toFixed(6))}%`;
+
 /** Percent box of a pane; React renders it and a sash drag writes it directly. */
 export function paneRectStyle(rect: LayoutRect) {
   return {
-    left: `${rect.x * 100}%`,
-    top: `${rect.y * 100}%`,
-    width: `${rect.w * 100}%`,
-    height: `${rect.h * 100}%`,
+    left: percent(rect.x),
+    top: percent(rect.y),
+    width: percent(rect.w),
+    height: percent(rect.h),
   };
 }
 
@@ -22,14 +25,14 @@ export function sashStyle(sash: LayoutSash) {
   const boundary = sizes.slice(0, index + 1).reduce((sum, size) => sum + size, 0);
   return sash.dir === "right"
     ? {
-        left: `${(group.x + boundary * group.w) * 100}%`,
-        top: `${group.y * 100}%`,
-        height: `${group.h * 100}%`,
+        left: percent(group.x + boundary * group.w),
+        top: percent(group.y),
+        height: percent(group.h),
       }
     : {
-        left: `${group.x * 100}%`,
-        top: `${(group.y + boundary * group.h) * 100}%`,
-        width: `${group.w * 100}%`,
+        left: percent(group.x),
+        top: percent(group.y + boundary * group.h),
+        width: percent(group.w),
       };
 }
 

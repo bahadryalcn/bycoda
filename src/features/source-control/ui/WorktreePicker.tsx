@@ -14,6 +14,7 @@ import { NO_BRANCH_LABEL, type Worktree } from "../model/worktrees";
 import { BranchPicker } from "./BranchPicker";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { GitPickerTrigger } from "./GitPickerTrigger";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { Popover } from "../../../shared/ui/Popover";
 import { FolderTree, GitBranch, Plus, Settings } from "../../../shared/ui/icons";
 
@@ -96,7 +97,7 @@ export function WorktreePicker({
   const list = usePickerList({
     options: rows.map((tree) => ({
       value: pathKey(tree.path),
-      title: tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) }),
+      title: tree.branch ?? t("Detached {p0}", { p0: shortSha(tree.head) }),
       description: `${tree.isMain ? `${t("Project folder")} · ` : ""}${prettyCwd(tree.path)}${tree.missing ? t(" · Missing") : ""}`,
       icon: tree.isMain ? (
         <GitBranch className="icon-sm shrink-0" tone="secondary" />

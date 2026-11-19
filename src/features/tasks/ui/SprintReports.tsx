@@ -150,7 +150,6 @@ export function SprintReports({
   const history = current?.history ?? NO_REPORTS;
   const error = current?.error ?? null;
   const loading = board.supported && !current;
-  const staleCheck = !!report && !report.frozen;
   const visibleKey = (key: string) =>
     allowed.has(key) && (!projectKey || key === projectKey) && matchesEnvironment(key);
   const totalsFor = (value: SprintReport) =>

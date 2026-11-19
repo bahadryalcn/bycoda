@@ -350,6 +350,34 @@ const chooseMachine = async (value: string) => {
   );
 };
 
+it.each(["project", "local"])(
+  "shows one local machine with the %s target selected",
+  async (initialMachine) => {
+    const onViewChange = vi.fn();
+    await toolAct(() =>
+      root.render(
+        createElement(SessionHostTools, {
+          cwd: "/local/project",
+          sessionId: "session",
+          title: "Local project",
+          initialTab: "browser",
+          initialMachine,
+          onViewChange,
+        }),
+      ),
+    );
+    await openMachineOptions();
+    const options = [
+      ...document.querySelectorAll('[role="listbox"][aria-label="Tool machine"] [role="option"]'),
+    ];
+    const localOptions = options.filter((option) => option.textContent?.includes("This computer"));
+    expect(localOptions).toHaveLength(1);
+    expect(localOptions[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(options.find((option) => option.textContent === "MacBook")).toBeDefined();
+    expect(onViewChange).toHaveBeenLastCalledWith({ tab: "browser", machine: initialMachine });
+  },
+);
+
 it("switches Devices from a local project to the paired Mac from Setup and access", async () => {
   const cwd = "/local/project";
   vi.mocked(hostToolRequest).mockResolvedValue({

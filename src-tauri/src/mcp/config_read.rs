@@ -79,7 +79,10 @@ fn parse(path: &Path, reduce: Option<Reduce>) -> Parsed {
     if !value.is_object() {
         return Err("The top level must be a JSON object".into());
     }
-    Ok(Arc::new(reduce.map_or(value, |reduce| reduce(value))))
+    Ok(Arc::new(match reduce {
+        Some(reduce) => reduce(value),
+        None => value,
+    }))
 }
 
 /// `~/.claude.json` also holds every project's history and can be many megabytes;

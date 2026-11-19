@@ -798,6 +798,9 @@ export class SocialService implements SocialServiceApi {
         ON social_records(kind,json_extract(value,'$.accountId'),json_extract(value,'$.projectId'));
       CREATE INDEX IF NOT EXISTS social_records_inbound_order
         ON social_records(kind,json_extract(value,'$.lastInboundAt') DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS social_drafts_generation_rule_created
+        ON social_records(json_extract(value,'$.generation.ruleId'),json_extract(value,'$.createdAt'))
+        WHERE kind='draft';
       CREATE INDEX IF NOT EXISTS social_jobs_created_order
         ON social_jobs(json_extract(value,'$.createdAt') DESC,scheduled_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS social_jobs_campaign_status

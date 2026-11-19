@@ -90,7 +90,12 @@ it.each([
 ] satisfies [RateLimitStatus, string][])(
   "shows Grok %s cache state in header and rail",
   (status, label) => {
-    setCachedRateLimits("grok", "default", { ...idleRateLimits("grok"), status });
+    // Only the fetch layer's structured reason proves a sign-out; an unavailable status alone does not.
+    setCachedRateLimits("grok", "default", {
+      ...idleRateLimits("grok"),
+      status,
+      ...(status === "unavailable" ? { reason: "signedOut" as const } : {}),
+    });
     try {
       const header = renderToStaticMarkup(
         createElement(ProviderDetailHeader, {

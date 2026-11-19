@@ -780,8 +780,9 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   });
   expect(
     await call("crews.agent.group.update", {
+      projectId: project.id,
       group: "Interface",
-      rename: "UI",
+      rename: "Interface design",
       members: [{ agentId: grouped.id, expectedUpdatedAt: grouped.updatedAt }],
     }),
   ).toStrictEqual({ updated: 1 });

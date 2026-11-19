@@ -6,7 +6,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import type { AddressInfo } from "node:net";
-import { connect as connectTcp } from "node:net";
+import { connect as connectTcp, createServer as createNetServer } from "node:net";
+import { attachDevServerTunnel, TUNNEL_SUBPROTOCOL } from "../dev-servers/dev-server-tunnel";
 import { WebSocket, type ClientOptions } from "ws";
 import { MobileTlsAuthority } from "./mobile-tls";
 import { createMobileWssGateway, type MobileWssOptions } from "./mobile-wss";
@@ -83,9 +84,29 @@ async function fixture(maxSocketsPerDevice = 4, limits?: MobileWssOptions["limit
     dispatch: async () => [],
     limits: { maxSocketsPerDevice },
   });
+  // A raw HTTP dev server stub behind the tunnel route.
+  const dev = createNetServer((socket) => {
+    socket.on("error", () => {});
+    socket.once("data", () => socket.end("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"));
+  });
+  await new Promise<void>((done) => dev.listen(0, "127.0.0.1", done));
+  const devPort = (dev.address() as AddressInfo).port;
+  const tunnel = attachDevServerTunnel({
+    server: core,
+    authenticate: async (token) =>
+      token === TOKEN && !revoked.value
+        ? { id: "paired.device", authorized: async () => !revoked.value }
+        : null,
+    endpoint: async (params) => {
+      if (params.port !== devPort) throw new Error("unavailable");
+      return { connectAddress: "127.0.0.1", port: devPort };
+    },
+  });
   await new Promise<void>((done) => core.listen(0, "127.0.0.1", done));
   const internalPort = (core.address() as AddressInfo).port;
   cleanups.push(async () => {
+    await tunnel.close();
+    await new Promise<void>((done) => dev.close(() => done()));
     await transport.close();
     core.closeAllConnections();
     await new Promise<void>((done) => core.close(() => done()));
@@ -153,7 +174,32 @@ async function fixture(maxSocketsPerDevice = 4, limits?: MobileWssOptions["limit
       call.on("error", reject);
       call.end();
     });
+  const tunnelSocket = (port: number, extra: ClientOptions = {}, protocol = TUNNEL_SUBPROTOCOL) => {
+    const query = new URLSearchParams({
+      projectId: "p",
+      id: "dev",
+      pid: "42",
+      startedAt: "birth",
+      port: String(port),
+      address: "127.0.0.1",
+      alias: "b0123456789abcdef0123456789abcdef.test",
+    });
+    const client = new WebSocket(`wss://127.0.0.1:${gatewayPort()}/ws-tunnel?${query}`, protocol, {
+      ca: material.caCertificatePem,
+      rejectUnauthorized: true,
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      ...extra,
+    });
+    client.on("error", () => {});
+    cleanups.push(async () => {
+      client.terminate();
+    });
+    return client;
+  };
+  const gatewayPort = () => port;
   return {
+    tunnelSocket,
+    devPort,
     authority,
     material,
     gateway,
@@ -200,6 +246,56 @@ it("proxies real verified TLS WS through the existing authenticated Host and rew
     origin: undefined,
     cookie: undefined,
   });
+});
+
+it("forwards /ws-tunnel with its own subprotocol, pipes bytes and propagates the error code", async () => {
+  const input = await fixture();
+  const client = input.tunnelSocket(input.devPort);
+  await once(client, "open");
+  expect(client.protocol).toBe(TUNNEL_SUBPROTOCOL);
+  const alias = "b0123456789abcdef0123456789abcdef.test";
+  const reply = new Promise<string>((done) => {
+    const chunks: Buffer[] = [];
+    client.on("message", (data) => chunks.push(data as Buffer));
+    client.once("close", () => done(Buffer.concat(chunks).toString("latin1")));
+  });
+  client.send(Buffer.from(`GET / HTTP/1.1\r\nHost: ${alias}:${input.devPort}\r\n\r\n`));
+  expect(await reply).toContain("200 OK");
+  expect(input.requests.some((entry) => entry.url?.startsWith("/ws-tunnel?"))).toBe(true);
+
+  const refused = input.tunnelSocket(input.devPort + 1);
+  const failure = await new Promise<{ status: number; code?: string }>((done) =>
+    refused.once("unexpected-response", (_request, response) => {
+      response.resume();
+      done({
+        status: response.statusCode!,
+        code: response.headers["x-bycoda-tunnel-error"] as string | undefined,
+      });
+    }),
+  );
+  expect(failure).toEqual({ status: 403, code: "identity" });
+});
+
+it("refuses /ws-tunnel with the RPC subprotocol, an Origin or a malformed query", async () => {
+  const input = await fixture();
+  const status = (client: WebSocket) =>
+    new Promise<number>((done) => {
+      client.once("unexpected-response", (_request, response) => {
+        response.resume();
+        done(response.statusCode!);
+      });
+      client.once("error", () => done(0));
+    });
+  expect(await status(input.tunnelSocket(input.devPort, {}, WS_SUBPROTOCOL))).toBe(403);
+  expect(await status(input.tunnelSocket(input.devPort, { origin: "https://evil.invalid" }))).toBe(
+    403,
+  );
+  const bare = new WebSocket(`wss://127.0.0.1:${input.port}/ws-tunnel?x=%00`, TUNNEL_SUBPROTOCOL, {
+    ca: input.material.caCertificatePem,
+    headers: { Authorization: `Bearer ${TOKEN}` },
+  });
+  bare.on("error", () => {});
+  expect(await status(bare)).toBe(403);
 });
 
 it("uses the same core device socket quota as a direct desktop connection", async () => {

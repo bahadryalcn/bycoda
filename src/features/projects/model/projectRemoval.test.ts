@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("../../sessions/data/sessionStore", () => ({
   listSessionsByProject: vi.fn(),

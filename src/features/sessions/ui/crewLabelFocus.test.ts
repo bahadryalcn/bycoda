@@ -80,7 +80,8 @@ it("follows resizes and text changes, and cleans up on release", async () => {
   expect(label.hasAttribute("tabindex")).toBe(false);
   expect(label.hasAttribute("data-clipped")).toBe(false);
   scrollWidth = 400;
-  act(() => resize([], {} as ResizeObserver));
+  // The window-wide observer delivers by target element.
+  act(() => resize([{ target: label } as ResizeObserverEntry], {} as ResizeObserver));
   expect(label.dataset.clipped).toBe("true");
   stop?.();
   expect(label.hasAttribute("tabindex")).toBe(false);

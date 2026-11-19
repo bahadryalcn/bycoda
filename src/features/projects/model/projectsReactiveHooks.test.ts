@@ -36,19 +36,26 @@ function probe<T>(read: () => T) {
 }
 
 describe("useSessionAdditionalDirs snapshot", () => {
-  it("does not parse the stored folders again while nothing changes", () => {
+  it("does not parse the stored folders or serialize their snapshot again while nothing changes", () => {
     saveAdditionalDirs("/work/web", ["/work/api"]);
     const { seen, rerender } = probe(() => useSessionAdditionalDirs("s1", "/work/web"));
     expect(seen.at(-1)?.dirs).toEqual(["/work/api"]);
 
     const parse = vi.spyOn(JSON, "parse");
+    const stringify = vi.spyOn(JSON, "stringify");
     try {
       rerender();
       rerender();
+      act(() => saveAdditionalDirs("/work/web", ["/work/api"]));
       expect(parse).not.toHaveBeenCalled();
+      const serializedSnapshots = stringify.mock.calls.filter(
+        ([value]) => value && "projectDirs" in Object(value),
+      );
+      expect(serializedSnapshots).toHaveLength(0);
       expect(seen.at(-1)).toBe(seen.at(-3));
     } finally {
       parse.mockRestore();
+      stringify.mockRestore();
     }
   });
 

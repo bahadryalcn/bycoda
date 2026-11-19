@@ -537,7 +537,8 @@ it("keeps local controls usable during discovery and prevents overlapping scans"
     }),
   );
   await act(async () => vi.advanceTimersByTimeAsync(15_000));
-  expect(button("Refresh").disabled).toBe(true);
+  // #1172 keeps background scans quiet after the initial result.
+  expect(button("Refresh").disabled).toBe(false);
   expect(button("Open in preview").disabled).toBe(false);
   expect(container.querySelector(".dev-servers-panel")!.getAttribute("aria-busy")).toBe("false");
   await act(async () => {
@@ -547,10 +548,17 @@ it("keeps local controls usable during discovery and prevents overlapping scans"
   });
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
+  await act(async () => button("Refresh").click());
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
   await act(async () => finish({ status: "ok", servers: [server], scannedAt: 2 }));
   expect(container.querySelector<HTMLInputElement>('[type="search"]')!.value).toBe("4100");
-  await act(async () => vi.advanceTimersByTimeAsync(15_000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(hostFeatureRequest).mock.calls[2]).toEqual([
+    "/repo",
+    "dev.servers",
+    "devServers.list",
+    { refresh: true },
+  ]);
 });
 
 it("backs off after failures and pauses after three failed scans until explicit recovery", async () => {

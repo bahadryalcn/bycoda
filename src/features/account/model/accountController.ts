@@ -268,7 +268,10 @@ export function createAccountController(deps: AccountControllerDeps) {
           if (flow.cancelled) return;
           const poll = await deps.native.signInPoll(started.handle);
           if (poll.status === "pending") continue;
-          if (poll.status === "done") break;
+          if (poll.status === "done") {
+            flow.handle = null;
+            break;
+          }
           if (poll.status === "denied") dispatch({ type: "sign-in-declined" });
           else if (poll.status === "cancelled") dispatch({ type: "sign-in-cancelled" });
           else dispatch({ type: "sign-in-failed", message: poll.error?.message ?? null });
@@ -280,6 +283,9 @@ export function createAccountController(deps: AccountControllerDeps) {
         if (flow.cancelled) return;
         await verify(true);
       } catch (error) {
+        if (flow.handle && !flow.cancelled) {
+          await deps.native.signInCancel(flow.handle).catch(() => undefined); // -- keep the original sign-in error.
+        }
         if (flow.cancelled) return;
         const native = toNativeError(error);
         dispatch({

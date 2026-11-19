@@ -21,6 +21,7 @@ export function OnboardingStatistics() {
           <SegmentedControl
             label={t("Statistics")}
             value={choice ?? ""}
+            selectionRole="pressed"
             onValueChange={(value) => setStatsChoice(value as "on" | "off")}
             options={[
               { value: "on", label: t("Share anonymous statistics") },

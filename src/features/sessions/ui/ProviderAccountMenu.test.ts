@@ -96,7 +96,8 @@ async function renderAccountMenu(accountId: string | undefined) {
       ),
     ),
   );
-  await act(async () => element.querySelector<HTMLButtonElement>("button")!.click());
+  const open = () => act(async () => element.querySelector<HTMLButtonElement>("button")!.click());
+  await open();
   const rows = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
   const pick = (label: string) =>
     act(async () =>
@@ -109,7 +110,7 @@ async function renderAccountMenu(accountId: string | undefined) {
     element.remove();
     vi.unstubAllGlobals();
   };
-  return { rows, pick, selected, cleanup };
+  return { rows, pick, open, selected, cleanup };
 }
 
 it("marks the effective default account when the session has no explicit account", async () => {
@@ -129,6 +130,8 @@ it("marks the effective default account when the session has no explicit account
     ).toBe("false");
     await menu.pick("Host Alpha");
     expect(menu.selected).not.toHaveBeenCalled();
+    // Choosing a row closes the menu, so open it again for the next choice.
+    await menu.open();
     await menu.pick("Host Beta");
     expect(menu.selected).toHaveBeenCalledTimes(1);
     expect(menu.selected).toHaveBeenCalledWith("host-b");

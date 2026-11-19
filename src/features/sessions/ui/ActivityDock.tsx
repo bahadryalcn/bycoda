@@ -314,11 +314,11 @@ function DockBody({
               tooltip={
                 stop.failed.has(STOP_ALL) ? t("Could not stop it. Try again.") : stopAll.title
               }
-              reserveLabels={[t("Stopping…"), t("Retry stop")]}
+              startIcon={<Square className="icon-xs" strokeWidth={1.75} />}
+              reserveLabels={[stopAll.label, t("Stopping…"), t("Retry stop")]}
               disabled={stop.stopping.has(STOP_ALL)}
               onClick={() => stop.request(STOP_ALL, () => stop.onAll!())}
             >
-              <Square className="icon-xs" strokeWidth={1.75} />
               {stop.stopping.has(STOP_ALL)
                 ? t("Stopping…")
                 : stop.failed.has(STOP_ALL)
@@ -553,7 +553,8 @@ function DockAgentRow({
           variant="ghost"
           type="button"
           disabled={stopping}
-          reserveLabels={[t("Stopping…"), t("Retry stop")]}
+          startIcon={<Square className="icon-xs" strokeWidth={1.75} />}
+          reserveLabels={[t("Stop"), t("Stopping…"), t("Retry stop")]}
           aria-label={t(stopping ? "Stopping {p0}" : "Stop {p0}", { p0: agent.name })}
           tooltip={
             stop.failed.has(key)
@@ -566,7 +567,6 @@ function DockAgentRow({
           }
           onClick={() => stop.request(key, () => stop.onAgent!(agent))}
         >
-          <Square className="icon-xs" strokeWidth={1.75} />
           {stopping ? t("Stopping…") : stop.failed.has(key) ? t("Retry stop") : t("Stop")}
         </Button>
       ) : null}

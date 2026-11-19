@@ -126,7 +126,8 @@ export const MIN_PANE_HEIGHT_PX = 120;
  */
 export function minPaneRatio(spanPx: number, minPx: number): number {
   if (!(spanPx > 0)) return MIN_PANE_RATIO;
-  return Math.max(MIN_PANE_RATIO, Math.min(minPx / spanPx, 1 / 3));
+  const ratio = minPx / spanPx;
+  return Math.max(MIN_PANE_RATIO, ratio > 0.5 ? 1 / 3 : ratio);
 }
 
 /**

@@ -285,6 +285,8 @@ function ConversationHostTools({
         request("action", { deviceId, action, leaseId, requestId: crypto.randomUUID() }),
     };
   }, [cwd, target]);
+  // Keep an explicitly opened local view on its original target.
+  const explicitLocalProjectView = !remote && target.kind === "local";
   const renderMachinePicker = (inSetup = false) => (
     <SearchableSelect
       hideLabel
@@ -327,12 +329,12 @@ function ConversationHostTools({
         </Button>
       }
       options={[
-        { value: "project", label: ownerLabel, description: t("Project host") },
         {
-          value: "local",
-          label: t("This computer"),
-          description: remote ? undefined : t("Local app"),
+          value: explicitLocalProjectView ? "local" : "project",
+          label: ownerLabel,
+          description: explicitLocalProjectView ? undefined : t("Project host"),
         },
+        ...(remote ? [{ value: "local", label: t("This computer") }] : []),
         ...machines
           .filter((machine) => !isLocalSyncMachine(machine))
           .map((machine) => ({

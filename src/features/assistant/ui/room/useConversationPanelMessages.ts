@@ -146,7 +146,7 @@ export function useConversationPanelMessages(
       if (current())
         setSummaryError({
           threadId: target.threadId,
-          text: t("Summary refresh was not confirmed."),
+          text: t("Summary refresh could not be confirmed."),
         });
     } finally {
       summaryPending.current = false;

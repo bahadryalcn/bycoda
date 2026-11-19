@@ -204,3 +204,26 @@ export function assistantPresenceState(
       : (snapshot.effectivePresence ?? (detected === "locked" ? "away" : detected));
   return { detected, effective, automaticUpdatedAt: fresh ? automatic?.updatedAt : undefined };
 }
+
+/**
+ * Milliseconds until the automatic reading's freshness changes (#315): it becomes fresh at its
+ * own timestamp and stale `ASSISTANT_PRESENCE_FRESH_MS` later. `undefined` when no boundary is
+ * ahead, so an idle chip needs no timer at all.
+ */
+export function assistantPresenceRecheckDelay(
+  automatic: AssistantSnapshot["automaticPresence"],
+  now: number,
+) {
+  if (!automatic?.supported) return undefined;
+  if (automatic.updatedAt > now) return automatic.updatedAt - now;
+  const staleIn = automatic.updatedAt + ASSISTANT_PRESENCE_FRESH_MS - now;
+  return staleIn >= 0 ? staleIn + 1 : undefined;
+}
+
+/** Milliseconds from `now` to the next local `HH:MM` (today if still ahead, otherwise tomorrow). */
+export function msUntilClockTime(time: string, now: Date) {
+  const target = new Date(now);
+  target.setHours(Number(time.slice(0, 2)), Number(time.slice(3, 5)), 0, 0);
+  if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1);
+  return target.getTime() - now.getTime();
+}

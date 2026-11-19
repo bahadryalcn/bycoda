@@ -141,6 +141,9 @@ describe("drag preview", () => {
     const source = row();
     source.id = "source";
     source.dataset.sessionCard = "one";
+    source.style.width = "200px";
+    source.style.margin = "12px";
+    source.style.opacity = "0.4";
     source.innerHTML = '<span id="inner">Title</span>';
     const preview = createDragPreview(source, { clientX: 10, clientY: 10 });
     const copy = document.querySelector<HTMLElement>(".pointer-drag-preview")!;
@@ -148,6 +151,10 @@ describe("drag preview", () => {
     expect(copy.querySelector("#inner")).toBeNull();
     expect(copy.dataset.sessionCard).toBeUndefined();
     expect(copy.getAttribute("aria-hidden")).toBe("true");
+    expect(copy.style.width).toBe("");
+    expect(copy.style.height).toBe("");
+    expect(copy.style.margin).toBe("");
+    expect(copy.style.opacity).toBe("");
     preview.move({ clientX: 30, clientY: 50 }, { label: "Release to group" });
     expect(copy.style.transform).toBe("translate3d(20px, 40px, 0)");
     expect(copy.querySelector(".pointer-drag-preview-label")?.textContent).toBe("Release to group");

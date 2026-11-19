@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
+import { getLanguagePreference, setLanguagePreference } from "../../../i18n";
+import { ActivityHeatmap as AppActivityHeatmap } from "../../Charts";
 import { ActivityHeatmap } from "./activity-heatmap";
 
 const days = [{ date: "2025-01-01", count: 2 }];
@@ -18,6 +20,17 @@ it("names the level buttons group with the supplied localized label", () => {
 it("keeps the English legend name when no label is supplied", () => {
   const html = renderToStaticMarkup(createElement(ActivityHeatmap, base));
   expect(html).toContain('aria-label="Highlight days by level"');
+});
+
+it("uses the current app language for the wrapped legend group", async () => {
+  const previous = getLanguagePreference();
+  try {
+    await setLanguagePreference("tr");
+    const html = renderToStaticMarkup(createElement(AppActivityHeatmap, base));
+    expect(html).toContain('aria-label="Günleri seviyeye göre vurgula"');
+  } finally {
+    await setLanguagePreference(previous);
+  }
 });
 
 it("ships the legend name in every app locale", () => {

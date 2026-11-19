@@ -12,9 +12,9 @@ import { Check, RefreshCw, Server } from "../../../shared/ui/icons";
 import type { RemoteDataState } from "../model/remoteDataState";
 import {
   classifyRemoteError,
+  describeRemoteError,
   isConnectionFailure,
   isTransientTransportError,
-  presentRemoteError,
 } from "../model/remoteFailure";
 import { useQuietRetry } from "../model/useQuietRetry";
 import { useRemoteConnectionFeedback } from "./RemoteConnectionFeedback";
@@ -70,7 +70,8 @@ export function RemoteDataStatus({
   const dataLabel = label ?? t("conversation");
   // The classified, localized reason; the raw transport text stays behind Details.
   const replacedError = !!state.error && isTransientTransportError(state.error);
-  const shownError = state.error ? presentRemoteError(state.error, { explicit: true }) : undefined;
+  const errorView = state.error ? describeRemoteError(state.error) : undefined;
+  const shownError = errorView?.message;
   const busy = retrying || state.phase === "loading" || state.phase === "refreshing";
   const needsAttention = !retrying && (state.phase === "error" || state.phase === "stale");
   const message =
@@ -185,7 +186,7 @@ export function RemoteDataStatus({
         durationMs={null}
         extra={
           shownError && (!fitsOneLine(shownError) || replacedError) ? (
-            <ErrorDetails title={message} detail={state.error ?? shownError} />
+            <ErrorDetails title={message} detail={errorView?.details ?? shownError} />
           ) : null
         }
         action={
@@ -237,7 +238,7 @@ export function RemoteDataStatus({
               )}
               {replacedError && fitsOneLine(shownError) ? (
                 <p className="mt-1">
-                  <ErrorDetails title={message} detail={state.error ?? shownError} />
+                  <ErrorDetails title={message} detail={errorView?.details ?? shownError} />
                 </p>
               ) : null}
             </>

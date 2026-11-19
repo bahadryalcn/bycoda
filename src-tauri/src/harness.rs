@@ -2731,6 +2731,26 @@ mod text_workspace_tests {
     }
 }
 
+#[cfg(test)]
+mod http_bound_tests {
+    use super::{harness_http_permits, HARNESS_HTTP_MAX_CONCURRENT, HARNESS_HTTP_MAX_TIMEOUT_MS};
+
+    /// #511: blocking-pool use by `harness_http` is capped, and the renderer-chosen
+    /// timeout has an upper bound of 30 minutes.
+    #[test]
+    fn harness_http_caps_concurrent_blocking_calls_and_timeout() {
+        let permits = harness_http_permits();
+        let held: Vec<_> = (0..HARNESS_HTTP_MAX_CONCURRENT)
+            .map(|_| permits.clone().try_acquire_owned().expect("permit within the cap"))
+            .collect();
+        assert!(permits.clone().try_acquire_owned().is_err());
+        drop(held);
+        assert!(permits.try_acquire_owned().is_ok());
+        assert_eq!(HARNESS_HTTP_MAX_TIMEOUT_MS, 30 * 60_000);
+        assert_eq!(u64::MAX.clamp(1, HARNESS_HTTP_MAX_TIMEOUT_MS), HARNESS_HTTP_MAX_TIMEOUT_MS);
+    }
+}
+
 /// Bind an ephemeral loopback port for `opencode serve`.
 #[tauri::command]
 pub fn harness_free_port() -> Result<u16, String> {
@@ -5163,14 +5183,6 @@ fn is_poll_timeout(error: &std::io::Error) -> bool {
     )
 }
 
-/// Only a response-header read timeout (`ErrorKind::Io`); connect failures keep failing.
-fn sse_poll_timeout(error: &ureq::Transport) -> bool {
-    error.kind() == ureq::ErrorKind::Io
-        && std::error::Error::source(error)
-            .and_then(|source| source.downcast_ref::<std::io::Error>())
-            .is_some_and(is_poll_timeout)
-}
-
 fn read_sse_batches<R: BufRead, F: FnMut(Vec<String>) + Send + 'static>(
     reader: R,
     stop: &AtomicBool,
@@ -5637,14 +5649,14 @@ pub(crate) fn exec_output_with_env_observed(
     args: &[String],
     timeout: Duration,
     env: &[(&str, &str)],
+    cwd: Option<&Path>,
     observe: impl FnOnce(Arc<process_lifecycle::ProcessOwner>),
 ) -> Result<std::process::Output, String> {
-    exec_command_observed(
-        configured_exec_command(command, args, None, env),
-        command,
-        timeout,
-        observe,
-    )
+    let mut child = configured_exec_command(command, args, None, env);
+    if let Some(cwd) = cwd {
+        child.current_dir(cwd);
+    }
+    exec_command_observed(child, command, timeout, observe)
 }
 
 fn exec_command_observed(

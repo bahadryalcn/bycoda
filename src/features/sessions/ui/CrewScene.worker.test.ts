@@ -190,12 +190,15 @@ it("keeps one worker and transferred canvas across focus, visibility and seat pe
   state.focused = false;
   await show({ crew: seats(0.2) });
   expect(container.querySelector(".crew-scene")?.getAttribute("data-motion")).toBe("still");
+  // The last frame may still await its acknowledgement; once it is replied nothing keeps a timer.
+  acknowledge(worker);
   expect(vi.getTimerCount()).toBe(0);
   state.focused = true;
   await show({ crew: seats(0.2) });
 
   vi.spyOn(document, "hidden", "get").mockReturnValue(true);
   act(() => document.dispatchEvent(new Event("visibilitychange")));
+  acknowledge(worker);
   expect(vi.getTimerCount()).toBe(0);
   vi.spyOn(document, "hidden", "get").mockReturnValue(false);
   act(() => document.dispatchEvent(new Event("visibilitychange")));
@@ -237,8 +240,9 @@ it("keeps the main painter across focus, visibility and seat percent when the wo
   saveCrewGrowthEnabled(false);
   await show({ crew: seats(0.2) });
   advance(1_000);
-  const [painter] = state.painters;
-  expect(state.painters).toHaveLength(1);
+  // The art finishing its load rebuilds the painter once; what follows must keep that one.
+  const painter = state.painters.at(-1)!;
+  const creations = state.painters.length;
 
   state.focused = false;
   await show({ crew: seats(0.2) });
@@ -256,7 +260,7 @@ it("keeps the main painter across focus, visibility and seat percent when the wo
   expect(
     painter.draw.mock.calls.at(-1)?.[1].map((seat: { charge?: number }) => seat.charge),
   ).toEqual(seats(0.6).map((seat) => seat.context));
-  expect(state.painters).toHaveLength(1);
+  expect(state.painters).toHaveLength(creations);
   expect(painter.draw.dispose).not.toHaveBeenCalled();
 });
 

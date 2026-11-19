@@ -122,8 +122,9 @@ it("keeps the GitHub CLI Installing state steady while it silently polls", async
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command !== "git_github_status") throw new Error(`Unexpected command: ${command}`);
       reads += 1;
+      // A fresh object per read, as `invoke` returns: an identical one would not re-render.
       return reads < 4
-        ? installingStatus
+        ? { ...installingStatus }
         : { connected: true, installed: true, authenticated: true, installing: false };
     });
     await act(async () => root.render(createElement(GithubSettings)));
@@ -145,16 +146,24 @@ it("keeps the GitHub CLI Installing state steady while it silently polls", async
 });
 
 it("stops watching a stuck GitHub CLI install and resumes only on an explicit check", async () => {
-  vi.useFakeTimers();
+  // The watch deadline reads the monotonic clock; drive it from the fake clock.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const monotonic = vi.spyOn(performance, "now").mockImplementation(() => Date.now());
   try {
     let reads = 0;
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command !== "git_github_status") throw new Error(`Unexpected command: ${command}`);
       reads += 1;
-      return installingStatus;
+      return { ...installingStatus };
     });
     await act(async () => root.render(createElement(GithubSettings)));
-    await act(async () => vi.advanceTimersByTimeAsync(GITHUB_CLI_INSTALL_WATCH_MS + 4000));
+    // One act per poll: React flushes the state change that schedules the next read on exit.
+    for (
+      let elapsed = 0;
+      elapsed < GITHUB_CLI_INSTALL_WATCH_MS + 4000;
+      elapsed += GITHUB_CLI_POLL_MS
+    )
+      await act(async () => vi.advanceTimersByTimeAsync(GITHUB_CLI_POLL_MS));
     expect(badgeText()).toBe("Taking longer");
     const stopped = reads;
     expect(stopped).toBeLessThanOrEqual(GITHUB_CLI_INSTALL_WATCH_MS / GITHUB_CLI_POLL_MS + 2);
@@ -166,6 +175,7 @@ it("stops watching a stuck GitHub CLI install and resumes only on an explicit ch
     await act(async () => vi.advanceTimersByTimeAsync(GITHUB_CLI_POLL_MS));
     expect(reads).toBe(stopped + 2);
   } finally {
+    monotonic.mockRestore();
     vi.useRealTimers();
   }
 });

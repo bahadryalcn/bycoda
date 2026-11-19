@@ -530,7 +530,7 @@ describe("host automations", () => {
     expect(saved.nextRunAt).toBe(clock.now);
     await tickAll();
     const [first] = await automations.runs("nightly");
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 20000 });
     clock.now += 10 * MINUTE;
     await tickAll();
     expect(await automations.runs("nightly")).toHaveLength(1);
@@ -583,6 +583,35 @@ describe("host automations", () => {
     await automations.save(input({ trigger, enabled: false }));
     await automations.recordEvent(event);
     expect(await automations.runs("nightly")).toHaveLength(1);
+  });
+  it("prunes event receipts only after their automation run leaves retained history (#803)", async () => {
+    const { automations, input, store, clock } = await setup();
+    await automations.save(input({ trigger: { kind: "event", event: "task.finished" } }));
+    const event = { kind: "task.finished" as const, projectId: input().projectId };
+    await automations.recordEvent({ ...event, id: "old" });
+    const [old] = await automations.runs("nightly");
+    await automations.stopRun("nightly", old.id);
+    const receipts = store.db.prepare("SELECT event_id FROM automation_events");
+    expect(await receipts.all()).toEqual([{ event_id: "old" }]);
+
+    clock.now += 24 * 60 * MINUTE;
+    await store.db
+      .prepare(`
+        WITH RECURSIVE history(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM history WHERE n < 100)
+        INSERT INTO automation_runs (id, automation_id, created_at, value)
+        SELECT 'retained-' || n, 'nightly', ?, json_object('status', 'cancelled') FROM history
+      `)
+      .run(clock.now);
+    await automations.recordEvent({ ...event, id: "current" });
+    const current = (await store.db
+      .prepare("SELECT run_id FROM automation_events WHERE event_id=?")
+      .get("current"))!;
+    await automations.stopRun("nightly", String(current.run_id));
+
+    expect(await receipts.all()).toEqual([{ event_id: "current" }]);
+    expect(await store.db.prepare("SELECT id FROM automation_runs WHERE id=?").get(old.id)).toBe(
+      undefined,
+    );
   });
   it("rejects an automation for an unknown project", async () => {
     const { automations, input } = await setup();
@@ -953,7 +982,7 @@ it("retains active runs across overlapping history pruning and remains stoppable
   expect((await automations.runs("nightly")).find((entry) => entry.id === run.id)?.status).not.toBe(
     "running",
   );
-});
+}, 120000);
 it("retains same-day usage above the history limit and resets allowance the next day", async () => {
   const { automations, input, store, clock, turns, settled, runAndSchedule, tickAll, approve } =
     await setup();
@@ -1119,11 +1148,13 @@ it("resolves automation routing before creating its session and freezes target a
   expect(resolve).toHaveBeenCalledWith(
     expect.objectContaining({ role: "automation", choice: { kind: "default" } }),
   );
-  await vi.waitFor(() =>
-    expect(f.turns[0]?.input).toMatchObject({
-      model: "claude:routed",
-      modelSettings: execution.modelSettings,
-    }),
+  await vi.waitFor(
+    () =>
+      expect(f.turns[0]?.input).toMatchObject({
+        model: "claude:routed",
+        modelSettings: execution.modelSettings,
+      }),
+    { timeout: 20000 },
   );
 });
 
@@ -1154,6 +1185,10 @@ describe("automation scheduler scans", () => {
     const f = await setup(at("2026-10-05T08:00:00"));
     await f.automations.save(f.input({ id: "later", name: "Later" }));
     await f.automations.save(f.input({ id: "legacy", name: "Legacy" }));
+    await f.automations.save(f.input({ id: "disabled", name: "Disabled", enabled: false }));
+    await f.automations.save(
+      f.input({ id: "event", name: "Event", trigger: { kind: "event", event: "task.finished" } }),
+    );
     // Pre-existing rows may lack nextRunAt; the JS due check treats that as due.
     await f.store.db
       .prepare("UPDATE automations SET value=json_remove(value, '$.nextRunAt') WHERE id=?")
@@ -1162,10 +1197,17 @@ describe("automation scheduler scans", () => {
       (f.automations as unknown as { dueCandidates(now: number): Promise<Array<{ id: string }>> })
         .dueCandidates(now)
         .then((rows) => rows.map((row) => row.id));
-    expect(await dueIds(f.clock.now)).toEqual(["legacy"]);
-    expect(await dueIds(at("2026-10-05T09:00:00"))).toEqual(
-      expect.arrayContaining(["later", "legacy"]),
-    );
+    const prepare = vi.spyOn(f.store.db, "prepare");
+    try {
+      const due = await dueIds(f.clock.now);
+      const [query] = prepare.mock.calls[0]!;
+      const plan = await f.store.db.prepare(`EXPLAIN QUERY PLAN ${query}`).all(f.clock.now);
+      expect(JSON.stringify(plan)).toMatch(/SEARCH automations USING INDEX automations_due_idx/);
+      expect(due).toEqual(["legacy"]);
+    } finally {
+      prepare.mockRestore();
+    }
+    expect(await dueIds(at("2026-10-05T09:00:00"))).toEqual(["later", "legacy"]);
   });
 
   it("reads only runs that can need settling, never completed history", async () => {

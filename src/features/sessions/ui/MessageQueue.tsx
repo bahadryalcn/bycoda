@@ -437,7 +437,11 @@ export function MessageQueue({
                   ? t("Delivery is not confirmed. Automatic resend is held.")
                   : hasMissingAttachment(messages[0])
                     ? t("Attachment missing")
-                    : undefined)
+                    : !onResume
+                      ? t(
+                          "This queue action is unavailable. Reopen the conversation and try again.",
+                        )
+                      : undefined)
               }
               loading={pendingAction === "resume"}
               loadingLabel={t("Resuming…")}
@@ -523,7 +527,9 @@ export function MessageQueue({
                   ? t("Delivery is not confirmed. Automatic resend is held.")
                   : hasMissingAttachment(messages[0])
                     ? t("Attachment missing")
-                    : undefined)
+                    : !onResume && !canSend(messages[0])
+                      ? (busyReason ?? t("Queue is waiting for the current turn to finish."))
+                      : undefined)
               }
               loading={pendingAction === "resume"}
               loadingLabel={t("Resuming…")}
@@ -744,7 +750,11 @@ export function MessageQueue({
                               ? t(
                                   "New messages wait until this turn finishes. Stop pauses the queue.",
                                 )
-                              : undefined)
+                              : busy && !steerSupported && route === "join"
+                                ? t(
+                                    "This host cannot steer the active turn. The message remains queued.",
+                                  )
+                                : undefined)
                       }
                       tooltip={
                         busy && (message.intent === "plan" || message.intent === "orchestrate")

@@ -68,13 +68,13 @@ it("polls only crews.list and never requests the model catalog from the run quer
   fixture.request.mockReset();
   fixture.request.mockImplementation(async () => ({
     definitions: [],
-    runs: [{ id: "running-work" }],
+    runs: [{ id: "running-work", tasks: [] }],
     agents: [],
   }));
   projectCrews("C:/project");
   const data = await fixture.options.queryFn();
   expect(fixture.request.mock.calls.map((call) => call[1])).toEqual(["crews.list"]);
-  expect(data.runs).toEqual([{ id: "running-work" }]);
+  expect(data.runs).toEqual([{ id: "running-work", tasks: [] }]);
   expect(data).not.toHaveProperty("catalog");
   // A catalog that is still pending no longer speeds up the run poll.
   expect(fixture.options.refetchInterval({ state: { data } })).toBe(15000);

@@ -670,6 +670,7 @@ impl NativeProfileGuard {
 #[cfg(test)]
 mod commit_tests {
     use super::*;
+    use std::thread;
 
     #[test]
     fn guarded_delivery_cleanup_cannot_cross_private_scopes_or_admit_other_effects() {

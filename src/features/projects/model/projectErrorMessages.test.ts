@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLanguagePreference } from "../../../shared/i18n";
 import { projectFolderName } from "./newProjectFolder";

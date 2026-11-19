@@ -26,11 +26,16 @@ vi.mock("./SubagentSheet", () => ({
     return null;
   },
 }));
-vi.mock("../model/sessionsStore", () => ({
+vi.mock("../model/sessionsStore", async (original) => ({
+  // Pure selectors (selectSessionById, ...) stay real; only the store reads are faked.
+  ...(await original<object>()),
   useSession: (id: string | undefined) => (id ? fake.sessions.get(id) : undefined),
   getSessions: () => [...fake.sessions.values()],
+  getShellSessions: () => [...fake.sessions.values()],
   subscribeSessionCommits: () => () => undefined,
   useSessionsSelector: (select: (sessions: unknown[]) => unknown) =>
+    select([...fake.sessions.values()]),
+  useShellSessionsSelector: (select: (sessions: unknown[]) => unknown) =>
     select([...fake.sessions.values()]),
 }));
 vi.mock("../../connections/public/DelegatedSessionRequests", () => ({

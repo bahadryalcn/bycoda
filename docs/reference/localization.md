@@ -74,6 +74,9 @@ content. Operating-system dialogs use the OS language.
 - `pnpm exec playwright test tests/browser/settings/localization.spec.ts --project=chromium`
   checks the actual selector in all languages, Turkish search and narrow CJK UI.
 
+Use “computer” for the computer that runs the app or stores its data and “bycoda
+Host” for the service. Use “device” when the wording also covers phones or tablets.
+
 Add explicit translations when authoring components and review catalog changes
 before committing.
 

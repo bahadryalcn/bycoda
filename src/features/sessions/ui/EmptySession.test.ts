@@ -13,6 +13,17 @@ describe("empty session heading", () => {
     expect(markup).toContain('<p class="bycoda-task-path">/work/demo</p>');
   });
 
+  it("distinguishes projects that share the same folder name", () => {
+    for (const cwd of ["/work/client-a/demo", "/work/client-b/demo"]) {
+      const markup = renderToStaticMarkup(
+        createElement(EmptySession, { cwd, composer: createElement("textarea") }),
+      );
+
+      expect(markup).toMatch(/<h2[^>]*>demo<\/h2>/);
+      expect(markup).toContain(`<p class="bycoda-task-path">${cwd}</p>`);
+    }
+  });
+
   it("names the wordmark with a role assistive technology reads", () => {
     const markup = renderToStaticMarkup(
       createElement(EmptySession, { cwd: "/work/demo", composer: createElement("textarea") }),

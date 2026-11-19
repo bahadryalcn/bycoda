@@ -342,8 +342,8 @@ export async function createSessionListRuntime(
     const branches = await Promise.all(paths.map(async (cwd) => await branchCache.get(cwd)));
     // Watches live outside the store: their wake sources key the cached list too.
     const wakeSources = dependencies.pullRequestWatch.wakeSources(projectId);
-    // One project-table read per list, shared with the build. Every store call is a
-    // turn in the single database queue that approvals and authorization also wait in.
+    // Reuse the registered folder list until its version changes. Every store call
+    // shares the database queue with approvals and authorization.
     const siblingIds = await siblingProjectIds(project);
     const prefix = [
       dependencies.engine.store.projectVersion(projectId),

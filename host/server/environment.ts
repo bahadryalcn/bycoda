@@ -314,6 +314,7 @@ export function createEnvironmentRuntime(
         "browser.annotation",
         "dev.servers",
         "dev.servers.private-access",
+        "dev.servers.tunnel.v1",
         "voice.realtime.v1",
         "voice.realtime.v2",
         "voice.tools.v1",

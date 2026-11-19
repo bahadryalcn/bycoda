@@ -4,6 +4,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useMemo } from "react";
 import { GitBranch, Globe } from "../../../shared/ui/icons";
 import { historyItemGraph, type HistoryItemViewModel } from "../model/gitGraph";
@@ -235,7 +236,7 @@ export function GraphSearchInput({
       onKeyDown={
         onEscape
           ? (event) => {
-              if (event.key !== "Escape") return;
+              if (event.key !== "Escape" || isImeComposition(event.nativeEvent)) return;
               event.stopPropagation();
               onEscape();
             }

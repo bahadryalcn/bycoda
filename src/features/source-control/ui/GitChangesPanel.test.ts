@@ -27,12 +27,13 @@ const { invalidateWatchedFiles } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../platform/tauri/fs", () => ({
+  githubReadScope: (cwd: string) => (cwd.startsWith("remote://") ? cwd.split("/")[2] : "local"),
   saveGeneratedImage: vi.fn(),
   deleteGeneratedImages: vi.fn(),
   gitDiffIndex: vi.fn(),
   gitTrustRepository: vi.fn(async () => {}),
   gitInit: vi.fn(async () => {}),
-  gitHistory: vi.fn(async () => []),
+  gitHistory: vi.fn(async () => ({ head: null, commits: [] })),
   gitOperationState: vi.fn(async () => null),
   gitConflicts: vi.fn(async () => []),
   gitOperationStatus: vi.fn(async () => ({ operation: null, conflicts: [] })),
@@ -173,8 +174,8 @@ function folderToggle(path: string): HTMLButtonElement | null {
       .querySelector(
         `[aria-label="Stage Changes in ${path}"], [aria-label="Unstage Changes in ${path}"]`,
       )
-      ?.closest("[data-action-host]")
-      ?.querySelector<HTMLButtonElement>(":scope > button[aria-expanded]") ?? null
+      ?.closest('[role="row"]')
+      ?.querySelector<HTMLButtonElement>("button[aria-expanded]:not([aria-haspopup])") ?? null
   );
 }
 
@@ -2019,7 +2020,13 @@ describe("GitChangesPanel remote pull request", () => {
 
     expect(gitPush).toHaveBeenCalledWith(cwd);
     expect(gitRangeContext).not.toHaveBeenCalled();
-    expect(generatePrContent).toHaveBeenCalledWith(cwd, undefined);
+    expect(generatePrContent).toHaveBeenCalledWith(
+      cwd,
+      undefined,
+      undefined,
+      undefined,
+      expect.any(AbortSignal),
+    );
     expect(gitPrCreate).toHaveBeenCalledWith(
       cwd,
       "Fix remote flow",
@@ -2028,6 +2035,36 @@ describe("GitChangesPanel remote pull request", () => {
       "feature/pull",
     );
     expect(openUrl).toHaveBeenCalledWith("https://example.test/pull/42");
+  });
+
+  // Issue #1369: leaving the panel stops the provider call instead of letting it run on.
+  it("aborts a running PR description when the panel unmounts", async () => {
+    const cwd = "remote://machine/home/user/pr-abort";
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({ remote: "origin", upstream: "origin/feature/pull", aheadOfDefault: 1 }),
+    );
+    let signal: AbortSignal | undefined;
+    vi.mocked(generatePrContent).mockImplementationOnce(
+      (...args: Parameters<typeof generatePrContent>) =>
+        new Promise((_resolve, reject) => {
+          signal = args[4];
+          signal?.addEventListener("abort", () => reject(signal?.reason));
+        }),
+    );
+    vi.mocked(gitPrCreate).mockClear();
+    await renderPanel(cwd);
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent?.trim() === "Create PR")!
+        .click();
+    });
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
+
+    await act(async () => root.unmount());
+
+    expect(signal?.aborted).toBe(true);
+    expect(gitPrCreate).not.toHaveBeenCalled();
   });
 });
 
@@ -2050,7 +2087,7 @@ async function showTree() {
   let collapsed: HTMLButtonElement | null;
   while (
     (collapsed = container.querySelector<HTMLButtonElement>(
-      '[data-action-host] > button[aria-expanded="false"]:not([aria-haspopup])',
+      '[role="grid"] [role="row"] button[aria-expanded="false"]:not([aria-haspopup])',
     ))
   ) {
     const folder = collapsed;
@@ -2278,6 +2315,14 @@ describe("Git changed file multiple selection", () => {
       expect(onOpenFile).toHaveBeenLastCalledWith("/repo/src/c.ts", "staged");
       await press("src/c.ts", { key: "ArrowUp" });
       await press("src/b.ts", { key: "Home" });
+      if (view === "tree") {
+        const folder = folderToggle("src")!;
+        expect(document.activeElement).toBe(folder);
+        expect(onOpenFile).toHaveBeenLastCalledWith("/repo/src/b.ts", "staged");
+        await act(async () =>
+          folder.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
+        );
+      }
       expect(document.activeElement).toBe(fileRow("src/a.ts"));
       expect(onOpenFile).toHaveBeenLastCalledWith("/repo/src/a.ts", "staged");
       onOpenFile.mockClear();

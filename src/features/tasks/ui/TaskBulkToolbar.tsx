@@ -278,7 +278,7 @@ export function TaskBulkToolbar({
           disabled={busy || disabled}
           onClick={() => run(lastAction, true).catch(report)}
         >
-          {t("Retry failed tasks")}
+          {t("Repeat on failed tasks")}
           {failures.length ? (
             <Badge size="xs" variant="count">
               {failures.length}
