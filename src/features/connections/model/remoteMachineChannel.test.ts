@@ -534,6 +534,8 @@ function nativeFixture(machineId: string) {
     data: unknown,
     sequence = 1,
     eventKind: "snapshot" | "delta" = "snapshot",
+    /** Event revisions, when the data is not a session delta. */
+    revisions?: { revision?: number; baseRevision?: number },
   ) => {
     const open = calls("subscriptions.open").findLast(([, params]) => {
       const target = (
@@ -543,7 +545,9 @@ function nativeFixture(machineId: string) {
     });
     const subscriptionId = (open?.[1] as { subscriptionId: string })?.subscriptionId ?? "missing";
     const delta =
-      eventKind === "delta" ? (data as { base: number; value: { revision: number } }) : undefined;
+      eventKind === "delta" && !revisions
+        ? (data as { base: number; value: { revision: number } })
+        : undefined;
     listener?.({
       kind: "subscription",
       environmentId,
@@ -556,7 +560,7 @@ function nativeFixture(machineId: string) {
           streamId: `stream-${subscriptionId}`,
           cursor: { epoch: "epoch", sequence },
           kind: eventKind,
-          ...(delta ? { baseRevision: delta.base, revision: delta.value.revision } : {}),
+          ...(delta ? { baseRevision: delta.base, revision: delta.value.revision } : revisions),
           data,
         },
       },
@@ -1072,5 +1076,82 @@ it("keeps the other WebSocket streams when one consumer fails with a non-transpo
   await flushNative();
   expect(calls("subscriptions.ack").length).toBeGreaterThan(0);
   expect(port.detach).not.toHaveBeenCalled();
+  stop();
+});
+
+it("opens a project delta stream only on a capable host and rebuilds the full list", async () => {
+  const { emit, calls } = nativeFixture("ws-project-delta");
+  vi.mocked(cachedRemoteCapabilities).mockReturnValue([
+    "transport.ws.sessions.v2",
+    "transport.ws.bulk.v2",
+    "transport.ws.projects.delta.v1",
+  ]);
+  const row = (id: string, updatedAt: number, title = id) => ({
+    id,
+    projectId: "p",
+    revision: 1,
+    status: "idle" as const,
+    updatedAt,
+    title,
+    harness: "codex" as const,
+  });
+  const listener = vi.fn();
+  const errors = vi.fn();
+  const stop = subscribeRemoteMachineChannel(
+    "ws-project-delta",
+    { projects: [{ projectId: "p" }] },
+    listener,
+    errors,
+  );
+  await flushNative();
+  expect(calls("subscriptions.open")[0]?.[1]).toMatchObject({
+    target: { kind: "project", projectId: "p", delta: true },
+  });
+  emit(
+    "project",
+    "p",
+    { etag: "e1", sessions: [row("a", 3), row("b", 2), row("c", 1)] },
+    1,
+    "snapshot",
+    {
+      revision: 7,
+    },
+  );
+  await flushNative();
+  // "c" streams to the front, "b" is deleted.
+  emit(
+    "project",
+    "p",
+    { etag: "e2", sessions: [row("c", 9, "streaming")], removed: ["b"], head: ["c"] },
+    2,
+    "delta",
+    { baseRevision: 7, revision: 8 },
+  );
+  await flushNative();
+  expect(errors).not.toHaveBeenCalled();
+  expect(calls("subscriptions.ack")).toHaveLength(2);
+  expect(listener.mock.calls[1]![0].projects).toEqual([
+    { projectId: "p", etag: "e2", sessions: [row("c", 9, "streaming"), row("a", 3)] },
+  ]);
+  // A delta against a list this receiver does not hold asks for a fresh snapshot instead of guessing.
+  emit("project", "p", { etag: "e3", sessions: [] }, 3, "delta", { baseRevision: 5, revision: 9 });
+  await flushNative();
+  expect(listener).toHaveBeenCalledTimes(2);
+  expect(calls("subscriptions.ack")).toHaveLength(2);
+  expect(calls("subscriptions.open").length).toBeGreaterThan(1);
+  stop();
+});
+
+it("keeps the plain project snapshot stream on a host without project deltas", async () => {
+  const { calls } = nativeFixture("ws-project-plain");
+  const stop = subscribeRemoteMachineChannel(
+    "ws-project-plain",
+    { projects: [{ projectId: "p" }] },
+    vi.fn(),
+  );
+  await flushNative();
+  const open = calls("subscriptions.open")[0]?.[1];
+  expect(open).toMatchObject({ target: { kind: "project", projectId: "p" } });
+  expect(open).not.toMatchObject({ target: { delta: true } });
   stop();
 });

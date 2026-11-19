@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import type { HostStreamTarget } from "../transport/ws/subscriptions";
 import { createSubscriptionsRuntime } from "./subscriptions";
 
 it("does not refresh sibling session streams when another session of the project changes", () => {
@@ -65,6 +66,7 @@ function environmentRuntime() {
   const state = {
     projects: [{ id: "a", cwd: "/a", name: "A", registered: true }] as DirectoryProject[],
     privacyReady: true,
+    sessions: [] as { id: string; title: string }[],
   };
   const live: {
     onChange?: () => void;
@@ -104,11 +106,22 @@ function environmentRuntime() {
     projectsService: {
       list: async () => state.projects.map((p) => ({ id: p.id, cwd: p.cwd, name: p.name })),
     },
+    projectSessionList: async () => ({
+      etag: state.sessions.map((session) => session.title).join(),
+      list: state.sessions,
+    }),
     desktop: { live },
     signal: { notify: () => undefined },
     catalogs: noop,
   } as never);
-  const events: { kind: string; data?: any; cursor: { epoch: string; sequence: number } }[] = [];
+  const events: {
+    subscriptionId: string;
+    kind: string;
+    data?: any;
+    revision?: number;
+    baseRevision?: number;
+    cursor: { epoch: string; sequence: number };
+  }[] = [];
   const owner = {
     connectionId: "connection",
     principalId: "principal",
@@ -118,10 +131,14 @@ function environmentRuntime() {
       return true;
     },
   };
-  const open = (subscriptionId = "s", cursor?: { epoch: string; sequence: number }) => {
+  const open = (
+    subscriptionId = "s",
+    cursor?: { epoch: string; sequence: number },
+    target: HostStreamTarget = { kind: "environment" },
+  ) => {
     const opened = runtime.subscriptionHub.open(owner, {
       subscriptionId,
-      target: { kind: "environment" },
+      target,
       ...(cursor ? { cursor } : {}),
     });
     opened.activate();
@@ -205,6 +222,53 @@ it("replays a missed directory change to a reconnecting cursor", async () => {
     open("second", cursor);
     await vi.advanceTimersByTimeAsync(500);
     expect(events.at(-1)!.data.directory.projects).toEqual([]);
+    runtime.subscriptionHub.close();
+    runtime.unsubscribeChanges();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("streams a delta project target as changed rows and keeps the plain target a full snapshot", async () => {
+  vi.useFakeTimers();
+  try {
+    const { runtime, state, events, open } = environmentRuntime();
+    state.sessions = [
+      { id: "a", title: "a" },
+      { id: "b", title: "b" },
+      { id: "c", title: "c" },
+    ];
+    open("delta", undefined, { kind: "project", projectId: "p", delta: true });
+    open("plain", undefined, { kind: "project", projectId: "p" });
+    await vi.advanceTimersByTimeAsync(500);
+    const delta = () => events.filter((event) => event.subscriptionId === "delta");
+    const plain = () => events.filter((event) => event.subscriptionId === "plain");
+    expect(delta()).toHaveLength(1);
+    expect(delta()[0]).toMatchObject({ kind: "snapshot", data: { sessions: state.sessions } });
+    expect(plain()[0]).toMatchObject({ kind: "snapshot", data: { sessions: state.sessions } });
+    for (const [id, event] of [
+      ["delta", delta()[0]!],
+      ["plain", plain()[0]!],
+    ] as const)
+      runtime.subscriptionHub.acknowledge("connection", id, event.cursor);
+
+    // "c" streams: it changes and moves to the front.
+    state.sessions = [{ id: "c", title: "c streaming" }, state.sessions[0]!, state.sessions[1]!];
+    runtime.subscriptionHub.invalidate({ kind: "project", projectId: "p" });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(delta()).toHaveLength(2);
+    expect(delta()[1]).toMatchObject({
+      kind: "delta",
+      baseRevision: delta()[0]!.revision,
+      data: { etag: "c streaming,a,b", sessions: [{ id: "c", title: "c streaming" }], head: ["c"] },
+    });
+    expect(plain().at(-1)).toMatchObject({ kind: "snapshot", data: { sessions: state.sessions } });
+
+    // A commit that leaves the list as it was sends nothing.
+    runtime.subscriptionHub.acknowledge("connection", "delta", delta()[1]!.cursor);
+    runtime.subscriptionHub.invalidate({ kind: "project", projectId: "p" });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(delta()).toHaveLength(2);
     runtime.subscriptionHub.close();
     runtime.unsubscribeChanges();
   } finally {

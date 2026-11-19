@@ -13,6 +13,11 @@ import {
   taskBulkDeleteKeys,
 } from "../transport/http/bulk";
 import { StreamDeltaEncoder, tailStreamKey, tailStreamSessionId } from "../sync/stream-delta";
+import {
+  ProjectDeltaEncoder,
+  projectStreamKey,
+  projectStreamProjectId,
+} from "../sync/project-delta";
 import { HostSubscriptionHub } from "../transport/ws/subscriptions";
 import type { ServerBindings } from "./bindings";
 import { onProviderAccountStatusChange } from "./native";
@@ -102,6 +107,8 @@ export function createSubscriptionsRuntime(
   });
   // Sender state of tail streams (newest page first, compact deltas), per principal and session.
   const streamDeltas = new StreamDeltaEncoder();
+  // Sender state of project list streams opened with `delta`, per principal and project.
+  const projectDeltas = new ProjectDeltaEncoder();
   const subscriptionHub = new HostSubscriptionHub({
     environmentId: dependencies.engine.store.environmentId,
     load: async (target, principalId, signal, context) =>
@@ -148,7 +155,23 @@ export function createSubscriptionsRuntime(
               dependencies.engine.store.projectVersion(target.projectId),
             );
             const current = await dependencies.projectSessionList(target.projectId);
-            value = { etag: current.etag, sessions: current.list };
+            if (target.delta !== true) value = { etag: current.etag, sessions: current.list };
+            else {
+              signal.throwIfAborted();
+              const read = projectDeltas.encode(
+                projectStreamKey(principalId, target.projectId),
+                current,
+                context.revision,
+                context.forceSnapshot,
+              );
+              revision = read.revision;
+              if (read.kind === "unchanged") return read;
+              value = read.value;
+              if (read.kind === "delta") {
+                kind = "delta";
+                baseRevision = read.base;
+              }
+            }
           } else {
             if (
               !(await dependencies.engine.store.withReadCancellation(signal, () =>
@@ -243,6 +266,12 @@ export function createSubscriptionsRuntime(
       targets.flatMap((target) => (target.kind === "session" ? [target.sessionId] : [])),
     );
     streamDeltas.retain((key) => sessions.has(tailStreamSessionId(key)));
+    const deltaProjects = new Set(
+      targets.flatMap((target) =>
+        target.kind === "project" && target.delta === true ? [target.projectId] : [],
+      ),
+    );
+    projectDeltas.retain((key) => deltaProjects.has(projectStreamProjectId(key)));
     for (const id of streamProjects.keys()) if (!sessions.has(id)) streamProjects.delete(id);
     for (const id of streamSessionVersions.keys())
       if (!sessions.has(id)) streamSessionVersions.delete(id);

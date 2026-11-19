@@ -47095,6 +47095,7 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "delta": { "const": true, "type": "boolean" },
                   "kind": { "const": "project", "type": "string" },
                   "projectId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -69958,6 +69959,7 @@
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "delta": { "const": true, "type": "boolean" },
                         "kind": { "const": "project", "type": "string" },
                         "projectId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -81010,5 +81012,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "702f1a85c0f295f47cfc9cb287189a5fa0dc5c23d18bc4e3edbed9db527eb7bf"
+  "schemaHash": "574753083c792204fbf7cce7e6c404359784af48e2a4f4d74c6087396959e79c"
 }

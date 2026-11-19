@@ -38,6 +38,12 @@ import {
   rememberStreamSnapshot,
   type StreamDeltaState,
 } from "./sessionStreamDelta";
+import {
+  PROJECT_DELTA_CAPABILITY,
+  applyProjectDelta,
+  projectStreamList,
+  type ProjectStreamState,
+} from "./projectSessionDelta";
 import { z } from "zod";
 
 export type MachineChannelDemand = {
@@ -538,6 +544,11 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
         !!environmentId &&
         !!cachedRemoteCapabilities(environmentId)?.includes(STREAM_TAIL_CAPABILITY);
       const tailState = tail ? createStreamDeltaState() : undefined;
+      const projectDelta =
+        kind === "project" &&
+        !!environmentId &&
+        !!cachedRemoteCapabilities(environmentId)?.includes(PROJECT_DELTA_CAPABILITY);
+      let projectState: ProjectStreamState<HostSessionSummary> | undefined;
       const onError = (error: unknown) =>
         nativeConnectionFailureCode(error)
           ? failWs(machineId, channel, error)
@@ -654,9 +665,39 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                 },
               )
             : route.runtime.retain(
-                { kind: "project", projectId: id },
                 {
-                  parse: (data) => projectSnapshotSchema.parse(data),
+                  kind: "project",
+                  projectId: id,
+                  ...(projectDelta ? { delta: true as const } : {}),
+                },
+                {
+                  parse: (data, metadata) => {
+                    if (metadata.kind === "snapshot") {
+                      const value = projectSnapshotSchema.parse(data);
+                      const sessions = value.sessions as HostSessionSummary[];
+                      return {
+                        etag: value.etag,
+                        sessions,
+                        next:
+                          projectDelta && metadata.revision !== undefined
+                            ? {
+                                revision: metadata.revision,
+                                rows: new Map(sessions.map((row) => [row.id, row])),
+                                ids: sessions.map((row) => row.id),
+                              }
+                            : undefined,
+                      };
+                    }
+                    if (!projectDelta) throw new Error("Host sent an unrequested project delta");
+                    const { etag, next } = applyProjectDelta(
+                      projectState,
+                      data,
+                      metadata.baseRevision,
+                      metadata.revision,
+                      (row) => SessionSummarySchema.parse(row) as HostSessionSummary,
+                    );
+                    return { etag, sessions: projectStreamList(next), next };
+                  },
                   commit: async (value, input) => {
                     const subscribers = [...channel.subscribers];
                     for (const subscriber of subscribers) {
@@ -684,6 +725,9 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                       if (!input.isCurrent())
                         throw new Error("Host subscription changed during application");
                     }
+                    // Remember the list only once it is applied, so a rejected event
+                    // never becomes the baseline of the next delta.
+                    projectState = value.next;
                   },
                   onError,
                 },

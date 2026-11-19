@@ -55,6 +55,21 @@ const streamRetryBaseMs = 500;
 const streamRetryMaxMs = 30_000;
 /** Data no retry can fix; consumers resync at once. */
 class StreamResyncRequired extends Error {}
+/**
+ * The resource a target reads, without its wire-form options (`tail`, `delta`), so an
+ * invalidation of the plain target also reaches the compact-form streams of it.
+ */
+function streamResource(target: HostStreamTarget): string {
+  const {
+    tail: _tail,
+    delta: _delta,
+    ...resource
+  } = target as HostStreamTarget & {
+    tail?: true;
+    delta?: true;
+  };
+  return JSON.stringify(resource);
+}
 type Consumer = {
   owner: HostStreamConsumer;
   id: string;
@@ -271,7 +286,7 @@ export class HostSubscriptionHub {
 
   invalidate(target?: HostStreamTarget): void {
     for (const stream of this.streams.values())
-      if (!target || JSON.stringify(stream.target) === JSON.stringify(target)) {
+      if (!target || streamResource(stream.target) === streamResource(target)) {
         // Ordinary commits only wake a new read. Discarding every in-flight read
         // under unrelated token traffic would starve otherwise healthy streams.
         if (!stream.deleted) stream.dirty = true;
@@ -282,13 +297,13 @@ export class HostSubscriptionHub {
   /** Call only after a committed deletion/privacy invalidation; late loads cannot republish. */
   forget(target: HostStreamTarget): void {
     for (const stream of this.streams.values())
-      if (JSON.stringify(stream.target) === JSON.stringify(target)) this.tombstone(stream);
+      if (streamResource(stream.target) === streamResource(target)) this.tombstone(stream);
   }
 
   /** Privacy/deletion within a collection invalidates its replay without deleting the collection. */
   resnapshot(target: HostStreamTarget): void {
     for (const stream of this.streams.values()) {
-      if (stream.deleted || JSON.stringify(stream.target) !== JSON.stringify(target)) continue;
+      if (stream.deleted || streamResource(stream.target) !== streamResource(target)) continue;
       stream.generation++;
       stream.reading?.abort();
       this.bytes -= stream.bytes;

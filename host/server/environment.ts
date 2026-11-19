@@ -75,6 +75,7 @@ export function createEnvironmentRuntime(
         HOST_WS_READ_CAPABILITY,
         "transport.ws.sessions.v2",
         "transport.ws.sessions.tail.v1",
+        "transport.ws.projects.delta.v1",
         "sessions.approvalOccurrence.v1",
         "sessions.desktopControlReceipts.v1",
         "transport.ws.queue.v2",

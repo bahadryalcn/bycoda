@@ -689,3 +689,27 @@ it("encodes one data snapshot across consumers and keeps legacy consumer mutatio
     stringify.mockRestore();
   }
 });
+
+it("reaches compact-form streams (tail, delta) from an invalidation of the plain target", async () => {
+  let revision = 1;
+  const load = vi.fn(async () => ({ revision, data: { revision } }));
+  const { hub } = fixture({ load });
+  const watcher = client("one");
+  const tail = { kind: "session", sessionId: "session", tail: true } as const;
+  const delta = { kind: "project", projectId: "p", delta: true } as const;
+  subscribe(hub, watcher.owner, "tail", tail);
+  subscribe(hub, watcher.owner, "delta", delta);
+  await expectSnapshots(watcher.events, 2);
+  for (const event of snapshots(watcher.events))
+    hub.acknowledge("one", event.params.subscriptionId, cursor(event));
+  revision = 2;
+  hub.invalidate({ kind: "session", sessionId: "session" });
+  hub.invalidate({ kind: "project", projectId: "p" });
+  await expectSnapshots(watcher.events, 4);
+  hub.resnapshot({ kind: "project", projectId: "p" });
+  expect(
+    watcher.events.some(
+      (event) => event.params.subscriptionId === "delta" && event.params.kind === "resync-required",
+    ),
+  ).toBe(true);
+});
