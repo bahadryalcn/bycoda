@@ -88,7 +88,7 @@ import { HostBulkTransfers } from "../transport/http/bulk";
 import { HostSubscriptionHub } from "../transport/ws/subscriptions";
 import { ExternalTunnels } from "../tunnels/tunnels";
 import { VoiceCloudCredentials } from "../voice/voice-cloud-credentials";
-import type { LiveGamesService } from "../live-games/service";
+import type { LiveStreamService } from "../live-stream/service";
 import { LocalVoiceService } from "../voice/voice-local";
 import { VoiceSetupService } from "../voice/voice-setup";
 import type { ApprovalRegistry } from "../approvals/approval-registry";
@@ -349,7 +349,7 @@ export interface ServerBindings {
   pushNotifications: PushNotifications;
   approvals: ApprovalRegistry;
   decisionModels: DecisionModelsService;
-  liveGames: LiveGamesService;
+  liveStream: LiveStreamService;
   accountPlatform: AccountPlatformRuntime;
   catalogs: ModelCatalogCache;
   handoffHistory: HandoffHistoryStore;

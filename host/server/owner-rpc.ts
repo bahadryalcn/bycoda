@@ -30,7 +30,7 @@ import { handlePullRequestsRpc } from "./rpc-pull-requests";
 import { handleUsageRpc } from "./rpc-usage";
 import { handleActivityOwnerRpc, handleSessionLifecycleRpc } from "./rpc-account-platform";
 import { handleDecisionModelsRpc } from "./rpc-decision-models";
-import { handleLiveGamesRpc } from "./rpc-live-games";
+import { handleLiveStreamRpc } from "./rpc-live-stream";
 import { handleSecretsOwnerRpc, handleSecretInputRpc } from "./rpc-secrets";
 import { handleVoiceRpc } from "./rpc-voice";
 import { handlePushRpc } from "./rpc-push";
@@ -216,7 +216,7 @@ type Dependencies = Pick<
   | "gitService"
   | "fileService"
   | "decisionModels"
-  | "liveGames"
+  | "liveStream"
   | "conversationSecrets"
   | "accountPlatform"
 >;
@@ -507,22 +507,19 @@ const handlers: Record<
   "sessions.taskLink.unlink": handleSessionLifecycleRpc,
   "sessions.taskLink.listForTask": handleSessionLifecycleRpc,
   "decisionModels.sources.list": handleDecisionModelsRpc,
-  "liveGames.status": handleLiveGamesRpc,
-  "liveGames.start": handleLiveGamesRpc,
-  "liveGames.stop": handleLiveGamesRpc,
-  "liveGames.demo": handleLiveGamesRpc,
-  "liveGames.setRules": handleLiveGamesRpc,
-  "liveGames.setConfig": handleLiveGamesRpc,
-  "liveGames.report": handleLiveGamesRpc,
-  "liveGames.obsSetup": handleLiveGamesRpc,
-  "liveGames.obsStream": handleLiveGamesRpc,
-  "liveGames.obsScene": handleLiveGamesRpc,
-  "liveGames.obsCredentials": handleLiveGamesRpc,
-  "liveGames.eulerKey": handleLiveGamesRpc,
-  "liveGames.live.accounts": handleLiveGamesRpc,
-  "liveGames.live.status": handleLiveGamesRpc,
-  "liveGames.live.start": handleLiveGamesRpc,
-  "liveGames.live.stop": handleLiveGamesRpc,
+  "liveStream.status": handleLiveStreamRpc,
+  "liveStream.start": handleLiveStreamRpc,
+  "liveStream.stop": handleLiveStreamRpc,
+  "liveStream.demo": handleLiveStreamRpc,
+  "liveStream.report": handleLiveStreamRpc,
+  "liveStream.obsSetup": handleLiveStreamRpc,
+  "liveStream.obsStream": handleLiveStreamRpc,
+  "liveStream.obsCredentials": handleLiveStreamRpc,
+  "liveStream.eulerKey": handleLiveStreamRpc,
+  "liveStream.live.accounts": handleLiveStreamRpc,
+  "liveStream.live.status": handleLiveStreamRpc,
+  "liveStream.live.start": handleLiveStreamRpc,
+  "liveStream.live.stop": handleLiveStreamRpc,
   "decisionModels.sources.add": handleDecisionModelsRpc,
   "decisionModels.sources.update": handleDecisionModelsRpc,
   "decisionModels.sources.remove": handleDecisionModelsRpc,

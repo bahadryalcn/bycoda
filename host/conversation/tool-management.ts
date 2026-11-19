@@ -12,7 +12,7 @@ import {
 import { SOCIAL_TOOLS } from "../../src/features/social/model/social";
 import { socialAuthorizationScope } from "../social/social-tools";
 import { AGENT_TOOL_SCHEMAS } from "../delegation/tools";
-import { LIVE_GAMES_CONVERSATION_TOOLS } from "../live-games/tools";
+import { LIVE_STREAM_CONVERSATION_TOOLS } from "../live-stream/tools";
 import { PULL_REQUEST_WATCH_TOOLS } from "../pull-request-watch/pull-request-watch-tools";
 import { EXTERNAL_MCP_TOOLS } from "./conversation-external-mcp-tools";
 
@@ -106,7 +106,7 @@ for (const action of [
   CONVERSATION_ACTIONS.add(action);
 CONVERSATION_ACTIONS.add("browser.resize");
 for (const action of Object.keys(AGENT_TOOL_SCHEMAS)) CONVERSATION_ACTIONS.add(action);
-for (const action of Object.keys(LIVE_GAMES_CONVERSATION_TOOLS)) CONVERSATION_ACTIONS.add(action);
+for (const action of Object.keys(LIVE_STREAM_CONVERSATION_TOOLS)) CONVERSATION_ACTIONS.add(action);
 for (const action of ["servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"])
   CONVERSATION_ACTIONS.add(action);
 for (const action of [
@@ -155,7 +155,7 @@ const READBACKS: Record<string, string[]> = {
   machines: ["machines.list"],
   devices: ["devices.status"],
   logs: ["logs.read", "logs.wait"],
-  liveGames: ["liveGames.status", "liveGames.report"],
+  liveStream: ["liveStream.status", "liveStream.report"],
   resources: ["resources.read"],
 };
 const CANCELLATIONS: Record<string, string[]> = {
@@ -187,10 +187,10 @@ const CANCELLATIONS: Record<string, string[]> = {
   "browser.preview": ["browser.release"],
   "browser.annotation.start": ["browser.annotation.cancel"],
   "logs.monitors.start": ["logs.monitors.stop"],
-  "liveGames.start": ["liveGames.stop"],
-  "liveGames.demo": ["liveGames.stop"],
-  "liveGames.obsStream": ["liveGames.obsStream"],
-  "liveGames.goLive": ["liveGames.endLive"],
+  "liveStream.start": ["liveStream.stop"],
+  "liveStream.demo": ["liveStream.stop"],
+  "liveStream.obsStream": ["liveStream.obsStream"],
+  "liveStream.goLive": ["liveStream.endLive"],
 };
 const SOCIAL_READBACKS: Record<string, string[]> = {
   policy: ["policy.get"],
@@ -285,10 +285,9 @@ function effectFor(group: ManagedToolGroup, action: string, read: boolean): Tool
   if (action === "servers.ssh.cancel") return ["execution", "local-state"];
   if (action === "commands.run") return ["execution", "local-state", "external-write"];
   if (action === "commands.run.cancel") return ["execution", "local-state"];
-  if (["liveGames.obsStream", "liveGames.goLive", "liveGames.endLive"].includes(action))
+  if (["liveStream.obsStream", "liveStream.goLive", "liveStream.endLive"].includes(action))
     return ["execution", "external-write"];
-  if (/^liveGames\.(start|stop|demo|obsSetup|obsScene)$/.test(action))
-    return ["execution", "local-state"];
+  if (/^liveStream\.(start|stop|demo|obsSetup)$/.test(action)) return ["execution", "local-state"];
   if (/^inbox\.(comment|review|prAction)$/.test(action)) return ["external-write"];
   if (
     /^(agents\.(delegate|consult|reply|cancel)|devServers\.(start|stop|restart|kill)|images\.generate|terminals\.(write|interrupt|close|create)|devices\.(start|boot|action|preview)|tasks\.(start|retry|stop|review\.recheck)|crews\.(start|assign|member\.ask|respond|answer|stop)|automations\.(runNow|stopRun)|stewards\.(runNow|stopRun)|logs\.monitors\.(start|stop)|goals\.(create|replan|cancel)|browser\.recording\.(start|stop))$/.test(
@@ -404,8 +403,8 @@ export function createManagedToolCatalog(
         readback = [`${family}.list`];
       if (action === "crews.save") readback = ["crews.definition.get"];
       if (action === "crews.agent.save") readback = ["crews.agent.get"];
-      if (action === "liveGames.goLive" || action === "liveGames.endLive")
-        readback = ["liveGames.liveStatus"];
+      if (action === "liveStream.goLive" || action === "liveStream.endLive")
+        readback = ["liveStream.liveStatus"];
       const effects = supported ? effectFor(group, action, read) : [];
       const requirement: ManagedTool["authorization"]["requirement"] =
         group === "social" &&
@@ -417,8 +416,8 @@ export function createManagedToolCatalog(
                   "tasks.delete",
                   "tasks.transfer",
                   "tasks.notes.resolve",
-                  "liveGames.obsStream",
-                  "liveGames.goLive",
+                  "liveStream.obsStream",
+                  "liveStream.goLive",
                 ].includes(action))
             ? "native-owner-approval"
             : group === "conversation" && action === "secrets.request"
@@ -484,8 +483,8 @@ export function createManagedToolCatalog(
                 ? "Reuse requestId only with identical input. Receipt lookup is in-process, not durable; after restart or an uncertain result inspect browser and panel state before retrying."
                 : mode === "same-request"
                   ? "Reuse the same identity and exact payload; inspect the existing result before retrying an uncertain operation."
-                  : action === "liveGames.goLive"
-                    ? "Read liveGames.liveStatus. Never automatically retry an uncertain start."
+                  : action === "liveStream.goLive"
+                    ? "Read liveStream.liveStatus. Never automatically retry an uncertain start."
                     : mode === "safe-read"
                       ? "Repeat the read; preserve pagination and scope identity."
                       : mode === "unsupported"

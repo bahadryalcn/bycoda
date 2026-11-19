@@ -10,17 +10,17 @@ import { assistantRoomMutationAllowed } from "../management/assistant-permission
 const catalog = voiceToolCatalog();
 
 describe("Room management capability contract", () => {
-  it("discovers Live games but reserves Host-wide changes for full Room access", () => {
-    expect(roomManagementToolAllowed("conversation", "liveGames.status")).toBe(true);
-    expect(roomManagementToolAllowed("conversation", "liveGames.obsStream")).toBe(true);
-    expect(roomManagementToolAllowed("conversation", "liveGames.obsCredentials")).toBe(false);
-    expect(roomManagementToolAllowed("conversation", "liveGames.goLive")).toBe(false);
-    expect(roomManagementToolAllowed("conversation", "liveGames.goLive", "project")).toBe(true);
+  it("discovers Live streaming but reserves Host-wide changes for full Room access", () => {
+    expect(roomManagementToolAllowed("conversation", "liveStream.status")).toBe(true);
+    expect(roomManagementToolAllowed("conversation", "liveStream.obsStream")).toBe(true);
+    expect(roomManagementToolAllowed("conversation", "liveStream.obsCredentials")).toBe(false);
+    expect(roomManagementToolAllowed("conversation", "liveStream.goLive")).toBe(false);
+    expect(roomManagementToolAllowed("conversation", "liveStream.goLive", "project")).toBe(true);
     const call = {
       threadId: "thread",
       requestId: "request",
       family: "conversation" as const,
-      action: "liveGames.stop",
+      action: "liveStream.stop",
       projectId: "project",
       input: {},
     };
@@ -34,7 +34,7 @@ describe("Room management capability contract", () => {
     expect(
       assistantRoomMutationAllowed(
         { permissionLevel: "watch" },
-        { ...call, action: "liveGames.status" },
+        { ...call, action: "liveStream.status" },
       ),
     ).toBe(true);
   });

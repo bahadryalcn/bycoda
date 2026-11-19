@@ -5107,7 +5107,7 @@ export class SocialService implements SocialServiceApi {
       `${this.store.environmentId}.x-live`,
     ));
   }
-  /** Private encoder handoff for Live games. Neither this API nor its secrets enter Social RPC. */
+  /** Private encoder handoff for Live streaming. Neither this API nor its secrets enter Social RPC. */
   get live(): SocialLiveService {
     const environmentId = this.store.environmentId;
     return (this.socialLiveService ??= createSocialLiveService({
@@ -5130,7 +5130,7 @@ export class SocialService implements SocialServiceApi {
         service: this,
         store: this.audience,
         now: this.now,
-        operationId: "live-games",
+        operationId: "live-stream",
         emailSecrets: osSecretValues(this.directory, environmentId),
         youtube: {
           environmentId,

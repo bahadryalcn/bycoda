@@ -54,7 +54,6 @@ async function fixture(t) {
     "dist/quick-composer.html": "quick",
     "dist/voice-overlay.html": "voice",
     "dist/build-info.json": JSON.stringify(identity),
-    "build/host/live-games-overlay.js": "// live games overlay\n",
   };
   for (const name of [
     "host",
@@ -91,10 +90,7 @@ test("portable artifact transfers exact embedded identity across normalized inde
     JSON.parse(readFileSync(path.join(destination, "build/build-info.json"), "utf8")),
     f.identity,
   );
-  assert.equal(
-    readFileSync(path.join(destination, "build/host/live-games-overlay.js"), "utf8"),
-    "// live games overlay\n",
-  );
+  assert.equal(readFileSync(path.join(destination, "build/host/host.mjs"), "utf8"), "// host\n");
   await consumeCommonArtifact(f.candidate, destination, f.artifact);
   writeFileSync(path.join(destination, "dist/index.html"), "tampered");
   await assert.rejects(

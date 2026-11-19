@@ -44,7 +44,7 @@ Read references relative to the path returned by `skills.read`:
 - `references/workspace.md`: read when using projects, groups, files, Git, terminals, settings, or panels.
 - `references/runtime.md`: read when using dev servers, Servers, machines, devices, browser, or logs.
 - `references/inbox-social.md`: read when using Inbox, PR reviews, or social.
-- `references/live-games.md`: use `liveGames.*` for TikTok Halay, gift rules, demo and OBS.
+- `references/live-stream.md`: use `liveStream.*` for TikTok LIVE reading, the demo, OBS and going live.
 
 ## Rules
 

@@ -11,10 +11,10 @@ export function conversationToolMetadata(action: string, authorizationScope: "re
       idempotentHint: readOnly,
       openWorldHint:
         (action.startsWith("inbox.") && action !== "inbox.list") ||
-        action === "liveGames.start" ||
-        action === "liveGames.obsStream" ||
-        action === "liveGames.goLive" ||
-        action === "liveGames.endLive",
+        action === "liveStream.start" ||
+        action === "liveStream.obsStream" ||
+        action === "liveStream.goLive" ||
+        action === "liveStream.endLive",
     },
   };
 }

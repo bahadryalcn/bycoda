@@ -4,7 +4,7 @@ export const TOOL_IDS = [
   "tasks",
   "automations",
   "crews",
-  "live-games",
+  "live-stream",
   "inbox",
   "notes",
   "conversation-tools",
@@ -21,8 +21,8 @@ export function readToolWindow(
 ): ToolWindow | null {
   const params = new URLSearchParams(search);
   const active = params.get("tool");
-  // Crews and Live games stay in the main window.
-  if (active === "crews" || active === "live-games" || !TOOL_IDS.some((id) => id === active))
+  // Crews and Live streaming stay in the main window.
+  if (active === "crews" || active === "live-stream" || !TOOL_IDS.some((id) => id === active))
     return null;
   return {
     active: active as ToolId,

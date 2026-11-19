@@ -372,9 +372,9 @@ import { parseRemotePath, remotePath } from "../../features/connections/model/re
 import { newRequestId } from "../../shared/lib/id/requestId";
 import { requestOpenCrewsPage } from "../../features/crews/model/crewsPage";
 import {
-  requestOpenLiveGamesPage,
-  useLiveGamesPageOpen,
-} from "../../features/live-games/public/liveGamesPage";
+  requestOpenLiveStreamPage,
+  useLiveStreamPageOpen,
+} from "../../features/live-stream/public/liveStreamPage";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 const EMPTY_REMINDERS: SessionReminder[] = [];
@@ -4765,7 +4765,7 @@ function CompactProjectRail({
   const inboxTrigger = useRef<HTMLElement | null>(null);
   const action = (active: boolean, open?: () => void) =>
     active && onLeaveActive ? onLeaveActive : open;
-  const liveGamesOpen = useLiveGamesPageOpen();
+  const liveStreamOpen = useLiveStreamPageOpen();
   const workspaceActive =
     !searchActive &&
     !inboxActive &&
@@ -4829,17 +4829,17 @@ function CompactProjectRail({
           <CompactRailAction label={t("Crews")} icon={Bot} onClick={onOpenCrews} />
         ) : null}
         <CompactRailAction
-          label={t("Live games")}
+          label={t("Live streaming")}
           icon={CircleDot}
-          active={liveGamesOpen}
-          onClick={action(liveGamesOpen, requestOpenLiveGamesPage)}
+          active={liveStreamOpen}
+          onClick={action(liveStreamOpen, requestOpenLiveStreamPage)}
         />
         {onOpenServers ? (
           <CompactRailAction
             label={t("Servers")}
             icon={Server}
-            active={serversActive && !liveGamesOpen}
-            onClick={action(serversActive && !liveGamesOpen, onOpenServers)}
+            active={serversActive && !liveStreamOpen}
+            onClick={action(serversActive && !liveStreamOpen, onOpenServers)}
           />
         ) : null}
         {onOpenNotes ? (

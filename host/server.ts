@@ -42,7 +42,7 @@ import { HostPrivateControl, HostPrivateControlHandler } from "./server/support"
 import { createTasksRuntime } from "./server/tasks";
 import { createAccountPlatformRuntime } from "./server/account-platform";
 import { createDecisionModelsRuntime } from "./server/decision-models";
-import { createLiveGamesRuntime } from "./server/live-games";
+import { createLiveStreamRuntime } from "./server/live-stream";
 import { createVoiceRuntime } from "./server/voice";
 import { createPushRuntime } from "./server/push";
 import { createWebsocketRuntime } from "./server/websocket";
@@ -272,7 +272,7 @@ export async function createHostServer(
       pushNotifications: () => pushRuntime.pushNotifications,
       approvals: () => pushRuntime.approvals,
       decisionModels: () => decisionRuntime.decisionModels,
-      liveGames: () => liveGames,
+      liveStream: () => liveStream,
       accountPlatform: () => accountPlatformRuntime,
       catalogs: () => projectsRuntime.catalogs,
       handoffHistory: () => devicesRuntime.handoffHistory,
@@ -355,16 +355,7 @@ export async function createHostServer(
   // Before Social so the decision service can be handed to it (see phase3-p35b-done.md).
   const decisionRuntime = createDecisionModelsRuntime(dependencies);
   const socialRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSocialRuntime>>>();
-  const liveGames = createLiveGamesRuntime(
-    dependencies,
-    (): number => {
-      const address = httpRuntime.server.address();
-      if (!address || typeof address === "string")
-        throw new Error("Live games requires a TCP Host listener.");
-      return address.port;
-    },
-    () => socialRuntime.current.social.live,
-  );
+  const liveStream = createLiveStreamRuntime(dependencies, () => socialRuntime.current.social.live);
   const developmentRuntime = createDevelopmentRuntime(dependencies);
   const sessionsRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSessionsRuntime>>>();
   await bootPhase("runtime-sessions", () =>

@@ -173,8 +173,8 @@ pub(crate) fn decision(
         return Ok(Some(false));
     }
     if request["input"]["requireOwnerApproval"] == true
-        || request["input"]["operation"]["action"] == "liveGames.obsStream"
-        || request["input"]["operation"]["action"] == "liveGames.goLive"
+        || request["input"]["operation"]["action"] == "liveStream.obsStream"
+        || request["input"]["operation"]["action"] == "liveStream.goLive"
     {
         return Ok(None);
     }

@@ -14,9 +14,9 @@ import { Sash } from "../../shared/ui/Sash";
 import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
 import {
-  requestOpenLiveGamesPage,
-  useLiveGamesPageOpen,
-} from "../../features/live-games/public/liveGamesPage";
+  requestOpenLiveStreamPage,
+  useLiveStreamPageOpen,
+} from "../../features/live-stream/public/liveStreamPage";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import {
@@ -359,7 +359,7 @@ export function ProjectRail({
       : undefined;
   const t = useT();
   const navigator = presentation === "navigator";
-  const liveGamesOpen = useLiveGamesPageOpen();
+  const liveStreamOpen = useLiveStreamPageOpen();
   const workspaceFeatures = useWorkspaceFeatures();
   const inboxShortcut = useKeybindingShortcut("App: Open Inbox");
   const notesShortcut = useKeybindingShortcut("App: Open Notes");
@@ -1130,15 +1130,15 @@ export function ProjectRail({
                         id: "servers",
                         label: t("Servers"),
                         icon: <Server className="icon-sm" />,
-                        active: serversActive && !liveGamesOpen,
+                        active: serversActive && !liveStreamOpen,
                         onSelect: onOpenServers,
                       },
                       {
-                        id: "live-games",
-                        label: t("Live games"),
+                        id: "live-stream",
+                        label: t("Live streaming"),
                         icon: <CircleDot className="icon-sm" />,
-                        active: liveGamesOpen,
-                        onSelect: requestOpenLiveGamesPage,
+                        active: liveStreamOpen,
+                        onSelect: requestOpenLiveStreamPage,
                       },
                       ...(workspaceFeatures.inbox || inboxActive
                         ? [

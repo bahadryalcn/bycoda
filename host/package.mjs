@@ -290,7 +290,6 @@ for (const target of targets) {
     ]);
   await copyFile("build/host/host.mjs", join(folder, "host.mjs"));
   await copyFile("build/host/bycoda-host.mjs", join(folder, "bycoda-host.mjs"));
-  await copyFile("build/host/live-games-overlay.js", join(folder, "live-games-overlay.js"));
   await copyFile("build/host/host-notes-worker.mjs", join(folder, "host-notes-worker.mjs"));
   await copyFile("build/host/store-worker.mjs", join(folder, "store-worker.mjs"));
   await copyFile("build/host/session-read-helper.mjs", join(folder, "session-read-helper.mjs"));

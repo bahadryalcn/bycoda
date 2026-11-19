@@ -27,7 +27,7 @@ const session: SocialPrincipal = {
   projectId: "project",
 };
 const key = "test-only-ingest-key_1234";
-const title = "Bycoda Halay";
+const title = "Studio";
 const youtubeId = "UCabcdefghijklmnopqrstuv";
 const broadcastId = "abcdefghijk";
 const streamId = "stream-fixture";

@@ -31668,7 +31668,7 @@
       "retry": "never",
       "scope": "device"
     },
-    "liveGames.demo": {
+    "liveStream.demo": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
       "controlTypes": [],
@@ -31680,79 +31680,12 @@
         "properties": {},
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
           "connection": {
             "additionalProperties": false,
             "properties": {
@@ -31802,50 +31735,16 @@
           "obs": {
             "additionalProperties": false,
             "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
               "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
               "scene": { "type": "string" },
               "streaming": { "type": "boolean" }
             },
             "required": ["configured"],
             "type": "object"
           },
-          "overlayUrl": { "type": "string" },
           "snapshot": {
             "additionalProperties": false,
             "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
               "topGifters": {
                 "items": {
                   "additionalProperties": false,
@@ -31867,42 +31766,25 @@
                   "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
+                "required": ["diamonds", "gifts", "comments", "likes", "follows", "peakViewers"],
                 "type": "object"
               },
               "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
+            "required": ["viewers", "totals", "topGifters"],
             "type": "object"
           }
         },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
+        "required": ["connection", "snapshot", "obs", "eulerKeyConfigured", "events"],
         "type": "object"
       },
       "retry": "never",
       "scope": "device"
     },
-    "liveGames.eulerKey": {
+    "liveStream.eulerKey": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
       "controlTypes": [],
@@ -31915,79 +31797,12 @@
         "required": ["key"],
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
           "connection": {
             "additionalProperties": false,
             "properties": {
@@ -32037,50 +31852,16 @@
           "obs": {
             "additionalProperties": false,
             "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
               "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
               "scene": { "type": "string" },
               "streaming": { "type": "boolean" }
             },
             "required": ["configured"],
             "type": "object"
           },
-          "overlayUrl": { "type": "string" },
           "snapshot": {
             "additionalProperties": false,
             "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
               "topGifters": {
                 "items": {
                   "additionalProperties": false,
@@ -32102,42 +31883,25 @@
                   "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
+                "required": ["diamonds", "gifts", "comments", "likes", "follows", "peakViewers"],
                 "type": "object"
               },
               "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
+            "required": ["viewers", "totals", "topGifters"],
             "type": "object"
           }
         },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
+        "required": ["connection", "snapshot", "obs", "eulerKeyConfigured", "events"],
         "type": "object"
       },
       "retry": "never",
       "scope": "device"
     },
-    "liveGames.live.accounts": {
+    "liveStream.live.accounts": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
       "controlTypes": [],
@@ -32149,7 +31913,7 @@
         "properties": {},
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -32178,7 +31942,7 @@
       "retry": "safe-query",
       "scope": "device"
     },
-    "liveGames.live.start": {
+    "liveStream.live.start": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
       "controlTypes": [],
@@ -32194,7 +31958,7 @@
         "required": ["accountId"],
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 120000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -32246,7 +32010,7 @@
       "retry": "never",
       "scope": "device"
     },
-    "liveGames.live.status": {
+    "liveStream.live.status": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
       "controlTypes": [],
@@ -32258,7 +32022,7 @@
         "properties": {},
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -32310,7 +32074,7 @@
       "retry": "safe-query",
       "scope": "device"
     },
-    "liveGames.live.stop": {
+    "liveStream.live.stop": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
       "controlTypes": [],
@@ -32322,7 +32086,7 @@
         "properties": { "platformEnded": { "const": true, "type": "boolean" } },
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 120000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -32374,7 +32138,7 @@
       "retry": "never",
       "scope": "device"
     },
-    "liveGames.obsCredentials": {
+    "liveStream.obsCredentials": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
       "controlTypes": [],
@@ -32390,79 +32154,12 @@
         "required": ["server", "key"],
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
           "connection": {
             "additionalProperties": false,
             "properties": {
@@ -32512,50 +32209,16 @@
           "obs": {
             "additionalProperties": false,
             "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
               "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
               "scene": { "type": "string" },
               "streaming": { "type": "boolean" }
             },
             "required": ["configured"],
             "type": "object"
           },
-          "overlayUrl": { "type": "string" },
           "snapshot": {
             "additionalProperties": false,
             "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
               "topGifters": {
                 "items": {
                   "additionalProperties": false,
@@ -32577,42 +32240,25 @@
                   "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
+                "required": ["diamonds", "gifts", "comments", "likes", "follows", "peakViewers"],
                 "type": "object"
               },
               "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
+            "required": ["viewers", "totals", "topGifters"],
             "type": "object"
           }
         },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
+        "required": ["connection", "snapshot", "obs", "eulerKeyConfigured", "events"],
         "type": "object"
       },
       "retry": "never",
       "scope": "device"
     },
-    "liveGames.obsScene": {
+    "liveStream.obsSetup": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
       "controlTypes": [],
@@ -32624,317 +32270,12 @@
         "properties": {},
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
-      "responseTimeoutMs": 12000,
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
-          "connection": {
-            "additionalProperties": false,
-            "properties": {
-              "attempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-              "channel": { "type": "string" },
-              "connectedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-              "detail": { "type": "string" },
-              "platform": { "enum": ["tiktok", "demo"], "type": "string" },
-              "roomId": { "type": "string" },
-              "status": {
-                "enum": ["idle", "connecting", "connected", "reconnecting", "offline", "error"],
-                "type": "string"
-              }
-            },
-            "required": ["platform", "channel", "attempts", "status"],
-            "type": "object"
-          },
-          "eulerKeyConfigured": { "type": "boolean" },
-          "events": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                "count": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                "id": { "type": "string" },
-                "kind": {
-                  "enum": [
-                    "comment",
-                    "gift",
-                    "like",
-                    "join",
-                    "follow",
-                    "share",
-                    "viewers",
-                    "stream-end"
-                  ],
-                  "type": "string"
-                },
-                "name": { "type": "string" },
-                "text": { "type": "string" }
-              },
-              "required": ["id", "at", "kind"],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "obs": {
-            "additionalProperties": false,
-            "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
-              "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
-              "scene": { "type": "string" },
-              "streaming": { "type": "boolean" }
-            },
-            "required": ["configured"],
-            "type": "object"
-          },
-          "overlayUrl": { "type": "string" },
-          "snapshot": {
-            "additionalProperties": false,
-            "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
-              "topGifters": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "totals": {
-                "additionalProperties": false,
-                "properties": {
-                  "comments": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
-                },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
-                "type": "object"
-              },
-              "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
-            },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
-            "type": "object"
-          }
-        },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
-        "type": "object"
-      },
-      "retry": "never",
-      "scope": "device"
-    },
-    "liveGames.obsSetup": {
-      "admissionTimeoutMs": 5000,
-      "cancellation": "wait-only",
-      "controlTypes": [],
-      "cost": "read",
-      "kind": "control",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "properties": {
-          "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-          "clean": { "type": "boolean" },
-          "mute": { "type": "boolean" }
-        },
-        "type": "object"
-      },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 60000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
           "connection": {
             "additionalProperties": false,
             "properties": {
@@ -32984,50 +32325,16 @@
           "obs": {
             "additionalProperties": false,
             "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
               "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
               "scene": { "type": "string" },
               "streaming": { "type": "boolean" }
             },
             "required": ["configured"],
             "type": "object"
           },
-          "overlayUrl": { "type": "string" },
           "snapshot": {
             "additionalProperties": false,
             "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
               "topGifters": {
                 "items": {
                   "additionalProperties": false,
@@ -33049,42 +32356,25 @@
                   "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
+                "required": ["diamonds", "gifts", "comments", "likes", "follows", "peakViewers"],
                 "type": "object"
               },
               "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
+            "required": ["viewers", "totals", "topGifters"],
             "type": "object"
           }
         },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
+        "required": ["connection", "snapshot", "obs", "eulerKeyConfigured", "events"],
         "type": "object"
       },
       "retry": "never",
       "scope": "device"
     },
-    "liveGames.obsStream": {
+    "liveStream.obsStream": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
       "controlTypes": [],
@@ -33097,79 +32387,12 @@
         "required": ["action"],
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
           "connection": {
             "additionalProperties": false,
             "properties": {
@@ -33219,50 +32442,16 @@
           "obs": {
             "additionalProperties": false,
             "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
               "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
               "scene": { "type": "string" },
               "streaming": { "type": "boolean" }
             },
             "required": ["configured"],
             "type": "object"
           },
-          "overlayUrl": { "type": "string" },
           "snapshot": {
             "additionalProperties": false,
             "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
               "topGifters": {
                 "items": {
                   "additionalProperties": false,
@@ -33284,42 +32473,25 @@
                   "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
+                "required": ["diamonds", "gifts", "comments", "likes", "follows", "peakViewers"],
                 "type": "object"
               },
               "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
+            "required": ["viewers", "totals", "topGifters"],
             "type": "object"
           }
         },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
+        "required": ["connection", "snapshot", "obs", "eulerKeyConfigured", "events"],
         "type": "object"
       },
       "retry": "never",
       "scope": "device"
     },
-    "liveGames.report": {
+    "liveStream.report": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
       "controlTypes": [],
@@ -33331,7 +32503,7 @@
         "properties": {},
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -33364,19 +32536,10 @@
                   "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
+                "required": ["diamonds", "gifts", "comments", "likes", "follows", "peakViewers"],
                 "type": "object"
               }
             },
@@ -33389,534 +32552,7 @@
       "retry": "safe-query",
       "scope": "device"
     },
-    "liveGames.setConfig": {
-      "admissionTimeoutMs": 5000,
-      "cancellation": "wait-only",
-      "controlTypes": [],
-      "cost": "read",
-      "kind": "control",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "properties": {
-          "patch": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "type": "object"
-          }
-        },
-        "required": ["patch"],
-        "type": "object"
-      },
-      "requiredCapability": "liveGames.v1",
-      "responseTimeoutMs": 12000,
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
-          "connection": {
-            "additionalProperties": false,
-            "properties": {
-              "attempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-              "channel": { "type": "string" },
-              "connectedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-              "detail": { "type": "string" },
-              "platform": { "enum": ["tiktok", "demo"], "type": "string" },
-              "roomId": { "type": "string" },
-              "status": {
-                "enum": ["idle", "connecting", "connected", "reconnecting", "offline", "error"],
-                "type": "string"
-              }
-            },
-            "required": ["platform", "channel", "attempts", "status"],
-            "type": "object"
-          },
-          "eulerKeyConfigured": { "type": "boolean" },
-          "events": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                "count": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                "id": { "type": "string" },
-                "kind": {
-                  "enum": [
-                    "comment",
-                    "gift",
-                    "like",
-                    "join",
-                    "follow",
-                    "share",
-                    "viewers",
-                    "stream-end"
-                  ],
-                  "type": "string"
-                },
-                "name": { "type": "string" },
-                "text": { "type": "string" }
-              },
-              "required": ["id", "at", "kind"],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "obs": {
-            "additionalProperties": false,
-            "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
-              "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
-              "scene": { "type": "string" },
-              "streaming": { "type": "boolean" }
-            },
-            "required": ["configured"],
-            "type": "object"
-          },
-          "overlayUrl": { "type": "string" },
-          "snapshot": {
-            "additionalProperties": false,
-            "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
-              "topGifters": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "totals": {
-                "additionalProperties": false,
-                "properties": {
-                  "comments": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
-                },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
-                "type": "object"
-              },
-              "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
-            },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
-            "type": "object"
-          }
-        },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
-        "type": "object"
-      },
-      "retry": "never",
-      "scope": "device"
-    },
-    "liveGames.setRules": {
-      "admissionTimeoutMs": 5000,
-      "cancellation": "wait-only",
-      "controlTypes": [],
-      "cost": "read",
-      "kind": "control",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "properties": {
-          "rules": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "actions": {
-                  "items": {
-                    "enum": [
-                      "join",
-                      "front",
-                      "leader",
-                      "tempo",
-                      "confetti",
-                      "drum",
-                      "fireworks",
-                      "money-rain",
-                      "handkerchief"
-                    ],
-                    "type": "string"
-                  },
-                  "maxItems": 9,
-                  "minItems": 1,
-                  "type": "array"
-                },
-                "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-              },
-              "required": ["minDiamonds", "actions"],
-              "type": "object"
-            },
-            "maxItems": 100,
-            "type": "array"
-          }
-        },
-        "required": ["rules"],
-        "type": "object"
-      },
-      "requiredCapability": "liveGames.v1",
-      "responseTimeoutMs": 12000,
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
-          "connection": {
-            "additionalProperties": false,
-            "properties": {
-              "attempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-              "channel": { "type": "string" },
-              "connectedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-              "detail": { "type": "string" },
-              "platform": { "enum": ["tiktok", "demo"], "type": "string" },
-              "roomId": { "type": "string" },
-              "status": {
-                "enum": ["idle", "connecting", "connected", "reconnecting", "offline", "error"],
-                "type": "string"
-              }
-            },
-            "required": ["platform", "channel", "attempts", "status"],
-            "type": "object"
-          },
-          "eulerKeyConfigured": { "type": "boolean" },
-          "events": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                "count": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                "id": { "type": "string" },
-                "kind": {
-                  "enum": [
-                    "comment",
-                    "gift",
-                    "like",
-                    "join",
-                    "follow",
-                    "share",
-                    "viewers",
-                    "stream-end"
-                  ],
-                  "type": "string"
-                },
-                "name": { "type": "string" },
-                "text": { "type": "string" }
-              },
-              "required": ["id", "at", "kind"],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "obs": {
-            "additionalProperties": false,
-            "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
-              "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
-              "scene": { "type": "string" },
-              "streaming": { "type": "boolean" }
-            },
-            "required": ["configured"],
-            "type": "object"
-          },
-          "overlayUrl": { "type": "string" },
-          "snapshot": {
-            "additionalProperties": false,
-            "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
-              "topGifters": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "totals": {
-                "additionalProperties": false,
-                "properties": {
-                  "comments": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
-                },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
-                "type": "object"
-              },
-              "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
-            },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
-            "type": "object"
-          }
-        },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
-        "type": "object"
-      },
-      "retry": "never",
-      "scope": "device"
-    },
-    "liveGames.start": {
+    "liveStream.start": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
       "controlTypes": [],
@@ -33929,79 +32565,12 @@
         "required": ["channel"],
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
           "connection": {
             "additionalProperties": false,
             "properties": {
@@ -34051,50 +32620,16 @@
           "obs": {
             "additionalProperties": false,
             "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
               "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
               "scene": { "type": "string" },
               "streaming": { "type": "boolean" }
             },
             "required": ["configured"],
             "type": "object"
           },
-          "overlayUrl": { "type": "string" },
           "snapshot": {
             "additionalProperties": false,
             "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
               "topGifters": {
                 "items": {
                   "additionalProperties": false,
@@ -34116,42 +32651,25 @@
                   "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
+                "required": ["diamonds", "gifts", "comments", "likes", "follows", "peakViewers"],
                 "type": "object"
               },
               "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
+            "required": ["viewers", "totals", "topGifters"],
             "type": "object"
           }
         },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
+        "required": ["connection", "snapshot", "obs", "eulerKeyConfigured", "events"],
         "type": "object"
       },
       "retry": "never",
       "scope": "device"
     },
-    "liveGames.status": {
+    "liveStream.status": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
       "controlTypes": [],
@@ -34163,79 +32681,12 @@
         "properties": {},
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
           "connection": {
             "additionalProperties": false,
             "properties": {
@@ -34285,50 +32736,16 @@
           "obs": {
             "additionalProperties": false,
             "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
               "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
               "scene": { "type": "string" },
               "streaming": { "type": "boolean" }
             },
             "required": ["configured"],
             "type": "object"
           },
-          "overlayUrl": { "type": "string" },
           "snapshot": {
             "additionalProperties": false,
             "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
               "topGifters": {
                 "items": {
                   "additionalProperties": false,
@@ -34350,42 +32767,25 @@
                   "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
+                "required": ["diamonds", "gifts", "comments", "likes", "follows", "peakViewers"],
                 "type": "object"
               },
               "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
+            "required": ["viewers", "totals", "topGifters"],
             "type": "object"
           }
         },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
+        "required": ["connection", "snapshot", "obs", "eulerKeyConfigured", "events"],
         "type": "object"
       },
       "retry": "safe-query",
       "scope": "device"
     },
-    "liveGames.stop": {
+    "liveStream.stop": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
       "controlTypes": [],
@@ -34397,79 +32797,12 @@
         "properties": {},
         "type": "object"
       },
-      "requiredCapability": "liveGames.v1",
+      "requiredCapability": "liveStream.v1",
       "responseTimeoutMs": 12000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "config": {
-            "additionalProperties": false,
-            "properties": {
-              "blocked": {
-                "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                "maxItems": 500,
-                "type": "array"
-              },
-              "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-              "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "giftRules": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actions": {
-                      "items": {
-                        "enum": [
-                          "join",
-                          "front",
-                          "leader",
-                          "tempo",
-                          "confetti",
-                          "drum",
-                          "fireworks",
-                          "money-rain",
-                          "handkerchief"
-                        ],
-                        "type": "string"
-                      },
-                      "maxItems": 9,
-                      "minItems": 1,
-                      "type": "array"
-                    },
-                    "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                    "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                  },
-                  "required": ["minDiamonds", "actions"],
-                  "type": "object"
-                },
-                "maxItems": 100,
-                "type": "array"
-              },
-              "joinKeywords": {
-                "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                "maxItems": 32,
-                "type": "array"
-              },
-              "joinOnAnyComment": { "type": "boolean" },
-              "joinOnFollow": { "type": "boolean" },
-              "joinOnLike": { "type": "boolean" },
-              "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-              "shortNames": { "type": "boolean" }
-            },
-            "required": [
-              "joinKeywords",
-              "joinOnAnyComment",
-              "joinOnLike",
-              "joinOnFollow",
-              "capacity",
-              "leaderHoldSeconds",
-              "frontHoldSeconds",
-              "giftRules",
-              "blocked",
-              "shortNames"
-            ],
-            "type": "object"
-          },
           "connection": {
             "additionalProperties": false,
             "properties": {
@@ -34519,50 +32852,16 @@
           "obs": {
             "additionalProperties": false,
             "properties": {
-              "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-              "clean": { "type": "boolean" },
               "configured": { "type": "boolean" },
-              "mute": { "type": "boolean" },
               "scene": { "type": "string" },
               "streaming": { "type": "boolean" }
             },
             "required": ["configured"],
             "type": "object"
           },
-          "overlayUrl": { "type": "string" },
           "snapshot": {
             "additionalProperties": false,
             "properties": {
-              "dancers": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "avatarUrl": { "type": "string" },
-                    "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "handle": { "type": "string" },
-                    "id": { "type": "string" },
-                    "name": { "type": "string" },
-                    "role": { "enum": ["leader", "front", "dancer"], "type": "string" }
-                  },
-                  "required": ["id", "name", "diamonds", "handle", "role"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "feed": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                    "id": { "type": "string" },
-                    "text": { "type": "string" }
-                  },
-                  "required": ["id", "at", "text"],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "tempo": { "type": "number" },
               "topGifters": {
                 "items": {
                   "additionalProperties": false,
@@ -34584,36 +32883,19 @@
                   "diamonds": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "follows": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "gifts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-                  "joins": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "likes": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "peakViewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
-                "required": [
-                  "diamonds",
-                  "gifts",
-                  "comments",
-                  "likes",
-                  "joins",
-                  "follows",
-                  "peakViewers"
-                ],
+                "required": ["diamonds", "gifts", "comments", "likes", "follows", "peakViewers"],
                 "type": "object"
               },
               "viewers": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
-            "required": ["dancers", "tempo", "viewers", "totals", "topGifters", "feed"],
+            "required": ["viewers", "totals", "topGifters"],
             "type": "object"
           }
         },
-        "required": [
-          "connection",
-          "config",
-          "snapshot",
-          "overlayUrl",
-          "obs",
-          "eulerKeyConfigured",
-          "events"
-        ],
+        "required": ["connection", "snapshot", "obs", "eulerKeyConfigured", "events"],
         "type": "object"
       },
       "retry": "never",
@@ -66946,7 +65228,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.status", "type": "string" },
+            "method": { "const": "liveStream.status", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
           "required": ["jsonrpc", "id", "method", "params"],
@@ -66960,7 +65242,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.start", "type": "string" },
+            "method": { "const": "liveStream.start", "type": "string" },
             "params": {
               "additionalProperties": false,
               "properties": { "channel": { "maxLength": 2048, "minLength": 1, "type": "string" } },
@@ -66979,7 +65261,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.stop", "type": "string" },
+            "method": { "const": "liveStream.stop", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
           "required": ["jsonrpc", "id", "method", "params"],
@@ -66993,7 +65275,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.demo", "type": "string" },
+            "method": { "const": "liveStream.demo", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
           "required": ["jsonrpc", "id", "method", "params"],
@@ -67007,102 +65289,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.setRules", "type": "string" },
-            "params": {
-              "additionalProperties": false,
-              "properties": {
-                "rules": {
-                  "items": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "actions": {
-                        "items": {
-                          "enum": [
-                            "join",
-                            "front",
-                            "leader",
-                            "tempo",
-                            "confetti",
-                            "drum",
-                            "fireworks",
-                            "money-rain",
-                            "handkerchief"
-                          ],
-                          "type": "string"
-                        },
-                        "maxItems": 9,
-                        "minItems": 1,
-                        "type": "array"
-                      },
-                      "giftName": { "maxLength": 60, "minLength": 1, "type": "string" },
-                      "minDiamonds": { "maximum": 100000000, "minimum": 0, "type": "integer" }
-                    },
-                    "required": ["minDiamonds", "actions"],
-                    "type": "object"
-                  },
-                  "maxItems": 100,
-                  "type": "array"
-                }
-              },
-              "required": ["rules"],
-              "type": "object"
-            }
-          },
-          "required": ["jsonrpc", "id", "method", "params"],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
-              "type": "string"
-            },
-            "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.setConfig", "type": "string" },
-            "params": {
-              "additionalProperties": false,
-              "properties": {
-                "patch": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "blocked": {
-                      "items": { "maxLength": 64, "minLength": 1, "type": "string" },
-                      "maxItems": 500,
-                      "type": "array"
-                    },
-                    "capacity": { "maximum": 120, "minimum": 1, "type": "integer" },
-                    "frontHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-                    "joinKeywords": {
-                      "items": { "maxLength": 40, "minLength": 1, "type": "string" },
-                      "maxItems": 32,
-                      "type": "array"
-                    },
-                    "joinOnAnyComment": { "type": "boolean" },
-                    "joinOnFollow": { "type": "boolean" },
-                    "joinOnLike": { "type": "boolean" },
-                    "leaderHoldSeconds": { "maximum": 3600, "minimum": 0, "type": "integer" },
-                    "shortNames": { "type": "boolean" }
-                  },
-                  "type": "object"
-                }
-              },
-              "required": ["patch"],
-              "type": "object"
-            }
-          },
-          "required": ["jsonrpc", "id", "method", "params"],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
-              "type": "string"
-            },
-            "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.report", "type": "string" },
+            "method": { "const": "liveStream.report", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
           "required": ["jsonrpc", "id", "method", "params"],
@@ -67116,16 +65303,8 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.obsSetup", "type": "string" },
-            "params": {
-              "additionalProperties": false,
-              "properties": {
-                "aspect": { "enum": ["9:16", "16:9"], "type": "string" },
-                "clean": { "type": "boolean" },
-                "mute": { "type": "boolean" }
-              },
-              "type": "object"
-            }
+            "method": { "const": "liveStream.obsSetup", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
           "required": ["jsonrpc", "id", "method", "params"],
           "type": "object"
@@ -67138,7 +65317,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.obsStream", "type": "string" },
+            "method": { "const": "liveStream.obsStream", "type": "string" },
             "params": {
               "additionalProperties": false,
               "properties": { "action": { "enum": ["start", "stop"], "type": "string" } },
@@ -67157,21 +65336,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.obsScene", "type": "string" },
-            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
-          },
-          "required": ["jsonrpc", "id", "method", "params"],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
-              "type": "string"
-            },
-            "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.obsCredentials", "type": "string" },
+            "method": { "const": "liveStream.obsCredentials", "type": "string" },
             "params": {
               "additionalProperties": false,
               "properties": {
@@ -67193,7 +65358,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.eulerKey", "type": "string" },
+            "method": { "const": "liveStream.eulerKey", "type": "string" },
             "params": {
               "additionalProperties": false,
               "properties": { "key": { "maxLength": 512, "type": "string" } },
@@ -67212,7 +65377,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.live.accounts", "type": "string" },
+            "method": { "const": "liveStream.live.accounts", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
           "required": ["jsonrpc", "id", "method", "params"],
@@ -67226,7 +65391,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.live.status", "type": "string" },
+            "method": { "const": "liveStream.live.status", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
           "required": ["jsonrpc", "id", "method", "params"],
@@ -67240,7 +65405,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.live.start", "type": "string" },
+            "method": { "const": "liveStream.live.start", "type": "string" },
             "params": {
               "additionalProperties": false,
               "properties": {
@@ -67262,7 +65427,7 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
-            "method": { "const": "liveGames.live.stop", "type": "string" },
+            "method": { "const": "liveStream.live.stop", "type": "string" },
             "params": {
               "additionalProperties": false,
               "properties": { "platformEnded": { "const": true, "type": "boolean" } },
@@ -84295,5 +82460,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "ec7971572d4194e8436677bcd23ce2f40323fc7a72c3e1b101c919700f655603"
+  "schemaHash": "c74878e0c285e61a08c83aa19f706b9e9dc30df5132fc81d14142f6fcbdaa048"
 }

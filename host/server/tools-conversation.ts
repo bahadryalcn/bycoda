@@ -62,10 +62,10 @@ import {
 import { scrubRuntimeLogText } from "../execution/runtime-logs";
 import { resolveHostWorktreeAsync } from "../git/git-worktrees";
 import {
-  callLiveGamesConversationTool,
-  isLiveGamesConversationTool,
-  requestLiveGamesStreamApproval,
-} from "../live-games/tools";
+  callLiveStreamConversationTool,
+  isLiveStreamConversationTool,
+  requestLiveStreamStreamApproval,
+} from "../live-stream/tools";
 import { HubExternalMcpTools } from "../mcp/hub/external-tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { readHarnessSkill, searchHarnessSkills } from "../skills/harness-skills";
@@ -90,7 +90,7 @@ export async function dispatchConversationTools(
     | "conversationDesktopControl"
     | "conversationWorkspace"
     | "conversationRuntimeReads"
-    | "liveGames"
+    | "liveStream"
     | "featureMeta"
     | "inHost"
     | "conversationDesktop"
@@ -154,14 +154,14 @@ export async function dispatchConversationTools(
       const scopedDeviceEffect = { authorized: scopedDeviceAuthorized };
       const projectId = boundPrincipal.projectId;
       const project = await dependencies.engine.store.project(projectId);
-      if (isLiveGamesConversationTool(action)) {
-        request.result = await callLiveGamesConversationTool(
-          dependencies.liveGames,
+      if (isLiveStreamConversationTool(action)) {
+        request.result = await callLiveStreamConversationTool(
+          dependencies.liveStream,
           action,
           args,
           scopedDeviceAuthorized,
           (operation, authorized) =>
-            requestLiveGamesStreamApproval(
+            requestLiveStreamStreamApproval(
               dependencies.conversationDesktop,
               project.cwd,
               boundPrincipal,

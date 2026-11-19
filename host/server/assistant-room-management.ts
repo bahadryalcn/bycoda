@@ -55,10 +55,10 @@ import { THREAD_WORK_ACTIONS } from "../conversation/conversation-thread-work-to
 import type { ConversationTool } from "../conversation/conversation-tools";
 import { runtimeLogToolQuery } from "../execution/runtime-log-tools";
 import {
-  callLiveGamesConversationTool,
-  isLiveGamesConversationTool,
-  requestLiveGamesStreamApproval,
-} from "../live-games/tools";
+  callLiveStreamConversationTool,
+  isLiveStreamConversationTool,
+  requestLiveStreamStreamApproval,
+} from "../live-stream/tools";
 import { hostInbox } from "../notes/host-notes";
 import { prepareVoiceToolDispatch } from "../voice/voice-tools";
 import type { createAssistantRoomRuntime } from "./assistant-room";
@@ -73,7 +73,7 @@ export function registerRoomManagement(
     ServerBindings,
     | "engine"
     | "conversationDesktop"
-    | "liveGames"
+    | "liveStream"
     | "conversationDesktopControl"
     | "roomResourceReceipts"
     | "social"
@@ -272,14 +272,14 @@ export function registerRoomManagement(
             threadId: call.threadId,
             environmentId: dependencies.engine.store.environmentId,
           };
-          if (isLiveGamesConversationTool(call.action))
-            return await callLiveGamesConversationTool(
-              dependencies.liveGames,
+          if (isLiveStreamConversationTool(call.action))
+            return await callLiveStreamConversationTool(
+              dependencies.liveStream,
               call.action,
               call.input,
               authorized,
               (operation, current) =>
-                requestLiveGamesStreamApproval(
+                requestLiveStreamStreamApproval(
                   dependencies.conversationDesktop,
                   undefined,
                   principal,
@@ -392,17 +392,17 @@ export function registerRoomManagement(
               effectValid = () => true;
             }
           });
-        if (isLiveGamesConversationTool(call.action)) {
+        if (isLiveStreamConversationTool(call.action)) {
           const action = call.action;
           return dependencies.withRoomProjectScope(call, authorized, async (valid, captured) => {
             const current = async () => valid() && (await authorized()) && valid();
-            return await callLiveGamesConversationTool(
-              dependencies.liveGames,
+            return await callLiveStreamConversationTool(
+              dependencies.liveStream,
               action,
               call.input,
               current,
               (operation, approvalAuthority) =>
-                requestLiveGamesStreamApproval(
+                requestLiveStreamStreamApproval(
                   dependencies.conversationDesktop,
                   captured.projectCwd,
                   principal,

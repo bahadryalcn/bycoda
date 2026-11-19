@@ -2,9 +2,9 @@ import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction }
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import {
-  setLiveGamesPageOpen,
-  useLiveGamesPageOpen,
-} from "../../../features/live-games/public/liveGamesPage";
+  setLiveStreamPageOpen,
+  useLiveStreamPageOpen,
+} from "../../../features/live-stream/public/liveStreamPage";
 import type { AuxiliaryToolId } from "../../model/toolWindows";
 
 export interface SettingsReturnView {
@@ -21,7 +21,7 @@ type View =
   | "search"
   | "servers"
   | "crews"
-  | "live-games"
+  | "live-stream"
   | "inbox"
   | "notes"
   | "social"
@@ -66,7 +66,7 @@ const sameVisit = (a: Visit, b: Visit) =>
 /** One chronological history per mounted window. Never share or persist this stack. */
 export function useRailNavigation(d: RailNavigationDeps) {
   const crewsOpen = useCrewsPageOpen();
-  const liveGamesOpen = useLiveGamesPageOpen();
+  const liveStreamOpen = useLiveStreamPageOpen();
   const view: View = d.settingsOpen
     ? "settings"
     : d.searchViewOpen
@@ -74,8 +74,8 @@ export function useRailNavigation(d: RailNavigationDeps) {
       : d.serversViewOpen
         ? crewsOpen
           ? "crews"
-          : liveGamesOpen
-            ? "live-games"
+          : liveStreamOpen
+            ? "live-stream"
             : "servers"
         : d.inboxViewOpen
           ? "inbox"
@@ -143,7 +143,7 @@ export function useRailNavigation(d: RailNavigationDeps) {
     d.setServersViewOpen(visit.view === "servers");
     // Closing Servers closed Crews; reopen it only for a Crews visit.
     setCrewsPageOpen(visit.view === "crews");
-    setLiveGamesPageOpen(visit.view === "live-games");
+    setLiveStreamPageOpen(visit.view === "live-stream");
     d.setInboxViewOpen(visit.view === "inbox");
     d.setNotesViewOpen(visit.view === "notes");
     d.setAutomationsViewOpen(

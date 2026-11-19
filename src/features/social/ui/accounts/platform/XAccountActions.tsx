@@ -142,7 +142,7 @@ export function XAccountActions({ account, client, disabled }: Props) {
             <TextField
               label={t("Stream server")}
               description={t(
-                "Copy the server and key from X Live Studio. If you saved only a key before, save both again for Live games.",
+                "Copy the server and key from X Live Studio. If you saved only a key before, save both again for Live streaming.",
               )}
               value={streamServer}
               placeholder="rtmps://"

@@ -51,13 +51,3 @@ await build({
   entryPoints: ["host/session-read-helper.mjs"],
   outfile: "build/host/session-read-helper.mjs",
 });
-// The browser overlay stays last: the first plan must remain the Node ESM Host bundle.
-await build({
-  bundle: true,
-  platform: "browser",
-  format: "iife",
-  target: "es2020",
-  minify: true,
-  entryPoints: ["host/live-games/overlay/browser.ts"],
-  outfile: "build/host/live-games-overlay.js",
-});

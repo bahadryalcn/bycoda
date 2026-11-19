@@ -24,9 +24,9 @@ import { useAssistantRoomRequests } from "./useAssistantRoomRequests";
 import { workspaceActiveTool } from "./workspaceActiveTool";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import {
-  setLiveGamesPageOpen,
-  useLiveGamesPageOpen,
-} from "../../../features/live-games/public/liveGamesPage";
+  setLiveStreamPageOpen,
+  useLiveStreamPageOpen,
+} from "../../../features/live-stream/public/liveStreamPage";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { ConversationTools } from "../../../features/host-tools/SessionHostTools";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -43,7 +43,7 @@ import {
   TasksView,
   ServersView,
   CrewsView,
-  LiveGamesView,
+  LiveStreamView,
 } from "../surfaces/lazySurfaces";
 
 const SessionHostTools = lazySurface(
@@ -186,7 +186,7 @@ function WorkspaceToolPanelsComponent({
   onLaunchAutomationAssistant,
 }: WorkspaceToolPanelsProps) {
   const crewsOpen = useCrewsPageOpen();
-  const liveGamesOpen = useLiveGamesPageOpen();
+  const liveStreamOpen = useLiveStreamPageOpen();
   const [terminalId] = useState(() => `tools-terminal-${crypto.randomUUID()}`);
   const [goalReveal, setGoalReveal] = useState<{
     machineId: string;
@@ -241,7 +241,7 @@ function WorkspaceToolPanelsComponent({
   );
   const activeTool = workspaceActiveTool({
     crewsOpen,
-    liveGamesOpen,
+    liveStreamOpen,
     auxiliaryTool,
     automationsViewOpen,
     serversViewOpen,
@@ -277,7 +277,7 @@ function WorkspaceToolPanelsComponent({
     );
     // Leaving Servers above closed Crews; open it last.
     if (tool === "crews") setCrewsPageOpen(true);
-    if (tool === "live-games") setLiveGamesPageOpen(true);
+    if (tool === "live-stream") setLiveStreamPageOpen(true);
     setSocialBoardShown(tool === "social");
     setTaskBoardShown(tool === "tasks");
   });
@@ -569,9 +569,9 @@ function WorkspaceToolPanelsComponent({
           />
         </NavigationBoundary>
       </ToolPanel>
-      <ToolPanel active={liveGamesOpen}>
-        <NavigationBoundary name="Live games" onBack={onLeaveServers}>
-          <LiveGamesView
+      <ToolPanel active={liveStreamOpen}>
+        <NavigationBoundary name="Live streaming" onBack={onLeaveServers}>
+          <LiveStreamView
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
             compactRail={compactRailActive}
             onClose={onLeaveServers}
@@ -579,7 +579,7 @@ function WorkspaceToolPanelsComponent({
           />
         </NavigationBoundary>
       </ToolPanel>
-      <ToolPanel active={serversViewOpen && !crewsOpen && !liveGamesOpen} keepEffects>
+      <ToolPanel active={serversViewOpen && !crewsOpen && !liveStreamOpen} keepEffects>
         <NavigationBoundary name="Servers" onBack={onLeaveServers}>
           <ServersView
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}

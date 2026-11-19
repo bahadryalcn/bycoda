@@ -74,7 +74,7 @@ verification always stay with you.
 | X         | Plan posts, read mentions, comments and insights.                                                                                                 | Profile, earnings and sign-up open the X page for you. X API use needs your billing opt-in.                       |
 | LinkedIn  | Plan posts, polls and articles, read analytics, prepare profile and Live work.                                                                    | Newsletters, Page messaging and profile edits open LinkedIn for you.                                              |
 
-Say "go live on YouTube with this scene" in a Live Games chat to start a broadcast on
+Say "go live on YouTube with this scene" in a chat to start a broadcast on
 YouTube, Facebook, Instagram, TikTok, LinkedIn or X. You approve each go-live request.
 Everything the AI can do is limited by what the platform allows. See
 [Social integrations](../integrations/social.md) for exact operations per platform.

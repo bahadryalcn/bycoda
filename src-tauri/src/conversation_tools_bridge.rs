@@ -758,7 +758,7 @@ This publishes the listed local commits to the listed remote branch. It never fo
 This merges the listed source branch into the current branch (fast-forward or merge commit only). A conflict aborts the merge and restores the checkout."
     } else if action == "social.send" {
         "\nThis sends the exact reviewed draft to an external recipient. Review the account, recipient, complete message and media above. Approval applies only to this operation; a queued job is not proof of delivery."
-    } else if action == "liveGames.obsStream" {
+    } else if action == "liveStream.obsStream" {
         if review_input
             .as_object()
             .is_none_or(|input| input.len() != 2)
@@ -770,7 +770,7 @@ This merges the listed source branch into the current branch (fast-forward or me
             return Err("Invalid OBS broadcast approval".into());
         }
         "\nThis starts broadcasting the active OBS scene to the destination configured in OBS. It can disclose video and audio outside bycoda."
-    } else if action == "liveGames.goLive" {
+    } else if action == "liveStream.goLive" {
         if review_input
             .as_object()
             .is_none_or(|input| input.len() != 4)
@@ -2051,20 +2051,20 @@ mod tests {
         assert!(message.contains("Commit reviewed changes"));
         assert_eq!(hash, "a".repeat(64));
         let mut stream = request.clone();
-        stream["input"]["operation"]["action"] = json!("liveGames.obsStream");
-        stream["input"]["operation"]["input"] = json!({"action":"start", "scene":"Bycoda Halay"});
+        stream["input"]["operation"]["action"] = json!("liveStream.obsStream");
+        stream["input"]["operation"]["input"] = json!({"action":"start", "scene":"Studio"});
         let (message, _) = management_approval_message(&stream).unwrap();
-        assert!(message.contains("starts broadcasting") && message.contains("Bycoda Halay"));
+        assert!(message.contains("starts broadcasting") && message.contains("Studio"));
         stream["input"]["operation"]["input"]["streamKey"] = json!("not for approval");
         assert!(management_approval_message(&stream).is_err());
-        stream["input"]["operation"]["action"] = json!("liveGames.goLive");
+        stream["input"]["operation"]["action"] = json!("liveStream.goLive");
         stream["input"]["operation"]["input"] = json!({
             "accountId": "youtube-one", "label": "Studio channel",
-            "platform": "youtube", "scene": "Bycoda Halay"
+            "platform": "youtube", "scene": "Studio"
         });
         let (message, _) = management_approval_message(&stream).unwrap();
         assert!(message.contains("public broadcast") && message.contains("Studio channel"));
-        assert!(message.contains("youtube-one") && message.contains("Bycoda Halay"));
+        assert!(message.contains("youtube-one") && message.contains("Studio"));
         stream["input"]["operation"]["input"]["streamKey"] = json!("not for approval");
         assert!(management_approval_message(&stream).is_err());
         let mut note = request.clone();

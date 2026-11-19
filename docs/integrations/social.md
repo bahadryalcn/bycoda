@@ -125,7 +125,7 @@ continue to apply.
 
 See [current Snapchat coverage](#snapchat) for the updated Snapchat operation list.
 
-Live Games can go live on YouTube, Facebook, Instagram, TikTok, LinkedIn and X (Snapchat has no ingest). The AI `liveGames.goLive` tool needs exact owner approval. X and LinkedIn website actions (profile, earnings, newsletters) are owner handoffs.
+Live streaming can go live on YouTube, Facebook, Instagram, TikTok, LinkedIn and X (Snapchat has no ingest). The AI `liveStream.goLive` tool needs exact owner approval. X and LinkedIn website actions (profile, earnings, newsletters) are owner handoffs.
 
 Which operations are free depends on each platform's current pricing, which this document
 does not verify. The rule is fixed in the Host: the free official API is the default driver,
@@ -178,7 +178,7 @@ Hosting Spaces requires the X mobile app. [X Spaces](https://help.x.com/en/using
 
 X prohibits scripting its website. Save the exact ingest server URL and stream
 key from the same Live Studio source on the executor Host. Older key-only entries
-need the server URL before they can be used in **Live games**. Both values stay in
+need the server URL before they can be used in **Live streaming**. Both values stay in
 the Host credential store. Finish starting or ending the public broadcast in X.
 [X Producer setup](https://help.x.com/en/using-x/how-to-use-live-producer)
 [X automation rules](https://help.x.com/en/rules-and-policies/x-automation)
@@ -286,7 +286,7 @@ permission grants still determine availability.
   video**, and capture the URL and key when Instagram displays the two fields.
   The Host saves both in its OS-backed vault. The private window is excluded
   from browser tracking and live view. The owner can start or end the broadcast
-  on a recognized Producer screen. Select the account in **Live games** to send
+  on a recognized Producer screen. Select the account in **Live streaming** to send
   the feed from OBS. Inbox receives signed Live comments, and eligible comment replies
   follow the existing review queue. Meta permits private replies to Live
   comments during the broadcast.
@@ -336,7 +336,7 @@ permission grants still determine availability.
 - LinkedIn Live credentials come from the owner's scheduled event in Live Studio.
   The Host stores the destination in credential storage. `linkedin.live.status` returns
   the event ID and custody state to authorized callers. Select the account in
-  **Live games** to send the feed from OBS, then use Live Studio to put the event
+  **Live streaming** to send the feed from OBS, then use Live Studio to put the event
   on air or end it.
 - With an approved OAuth Page connection, the owner can load Live event comments by event
   ID. Enable **LinkedIn Live comments** in the OAuth permissions to request `r_events`
@@ -409,7 +409,7 @@ reconciliation. The credential store holds the ingestion key and endpoint under
 the channel account and stream identity. RPC and tools return the endpoint and
 an opaque reference. Encoder handoff consumes the reference inside the Host.
 
-The **Live games** start operation can reuse a matching public broadcast with
+The **Live streaming** start operation can reuse a matching public broadcast with
 stored encoder credentials. To create a new public broadcast, it uses the
 channel owner's explicit made-for-kids setting. Set that preference on YouTube
 or prepare the broadcast in Social if the channel has no setting. OBS supplies
