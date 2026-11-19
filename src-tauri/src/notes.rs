@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 use crate::fs::expand_home;
 use crate::native_window_lifecycle::{
@@ -188,31 +188,45 @@ fn ensure_notes_table_inner(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn notes_list(store: State<'_, SessionStore>) -> Result<Vec<Note>, String> {
-    store.with_read_conn(|conn| list_notes(conn).map_err(|e| e.to_string()))
+/// SQLite reads can wait behind the writer connection; keep them off the
+/// tokio workers that every other IPC command needs.
+async fn read_notes<T: Send + 'static>(
+    app: AppHandle,
+    label: &'static str,
+    work: impl FnOnce(&Connection) -> rusqlite::Result<T> + Send + 'static,
+) -> Result<T, String> {
+    crate::harness::run_blocking(label, move || {
+        app.state::<SessionStore>()
+            .with_read_conn(|conn| work(conn).map_err(|error| error.to_string()))
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn notes_list_summaries(store: State<'_, SessionStore>) -> Result<Vec<NoteSummary>, String> {
-    store.with_read_conn(|conn| list_note_summaries(conn).map_err(|error| error.to_string()))
+#[tauri::command]
+pub async fn notes_list(app: AppHandle) -> Result<Vec<Note>, String> {
+    read_notes(app, "notes_list", list_notes).await
 }
 
-#[tauri::command(async)]
-pub fn notes_search(store: State<'_, SessionStore>, query: String) -> Result<Vec<String>, String> {
-    store.with_read_conn(|conn| search_notes(conn, &query).map_err(|error| error.to_string()))
+#[tauri::command]
+pub async fn notes_list_summaries(app: AppHandle) -> Result<Vec<NoteSummary>, String> {
+    read_notes(app, "notes_list_summaries", list_note_summaries).await
 }
 
-#[tauri::command(async)]
-pub fn notes_get(store: State<'_, SessionStore>, id: String) -> Result<Option<Note>, String> {
+#[tauri::command]
+pub async fn notes_search(app: AppHandle, query: String) -> Result<Vec<String>, String> {
+    read_notes(app, "notes_search", move |conn| search_notes(conn, &query)).await
+}
+
+#[tauri::command]
+pub async fn notes_get(app: AppHandle, id: String) -> Result<Option<Note>, String> {
     validate_id(&id, "note")?;
-    store.with_read_conn(|conn| get_note(conn, &id).map_err(|e| e.to_string()))
+    read_notes(app, "notes_get", move |conn| get_note(conn, &id)).await
 }
 
-#[tauri::command(async)]
-pub fn notes_upsert(
+#[tauri::command]
+pub async fn notes_upsert(
     window: tauri::Window,
-    store: State<'_, SessionStore>,
+    app: AppHandle,
     note: NoteUpsert,
 ) -> Result<Note, String> {
     validate_id(&note.id, "note")?;
@@ -225,22 +239,30 @@ pub fn notes_upsert(
         return Err("Note is too large".into());
     }
     let admission = admit_window_buffers(&window)?;
-    with_admitted_note_connection(admission, &store, |conn| checked_upsert_note(conn, &note))
+    crate::harness::run_blocking("notes_upsert", move || {
+        let store = app.state::<SessionStore>();
+        with_admitted_note_connection(admission, &store, |conn| checked_upsert_note(conn, &note))
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn notes_link_session(
+#[tauri::command]
+pub async fn notes_link_session(
     window: tauri::Window,
-    store: State<'_, SessionStore>,
+    app: AppHandle,
     id: String,
     session_id: String,
 ) -> Result<Note, String> {
     validate_id(&id, "note")?;
     validate_id(&session_id, "session")?;
     let admission = admit_window_buffers(&window)?;
-    with_admitted_note_connection(admission, &store, |conn| {
-        link_note_session(conn, &id, &session_id).map_err(|error| error.to_string())
+    crate::harness::run_blocking("notes_link_session", move || {
+        let store = app.state::<SessionStore>();
+        with_admitted_note_connection(admission, &store, |conn| {
+            link_note_session(conn, &id, &session_id).map_err(|error| error.to_string())
+        })
     })
+    .await
 }
 
 fn link_note_session(conn: &Connection, id: &str, session_id: &str) -> rusqlite::Result<Note> {
@@ -251,33 +273,39 @@ fn link_note_session(conn: &Connection, id: &str, session_id: &str) -> rusqlite:
     get_note(conn, id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
 }
 
-#[tauri::command(async)]
-pub fn notes_delete(
+#[tauri::command]
+pub async fn notes_delete(
     window: tauri::Window,
     app: AppHandle,
-    store: State<'_, SessionStore>,
     id: String,
     expected_updated_at: i64,
 ) -> Result<(), String> {
     validate_id(&id, "note")?;
     let admission = admit_window_buffers(&window)?;
-    delete_admitted_note(admission, &store, &id, expected_updated_at, || {
-        remove_note_assets(&app, &id)
+    crate::harness::run_blocking("notes_delete", move || {
+        let store = app.state::<SessionStore>();
+        delete_admitted_note(admission, &store, &id, expected_updated_at, || {
+            remove_note_assets(&app, &id)
+        })
     })
+    .await
 }
 
 /// Roll back only an abandoned recovery attempt, never a persisted note's assets.
-#[tauri::command(async)]
-pub fn notes_discard_recovery_assets(
+#[tauri::command]
+pub async fn notes_discard_recovery_assets(
     window: tauri::Window,
     app: AppHandle,
-    store: State<'_, SessionStore>,
     id: String,
 ) -> Result<bool, String> {
     let admission = admit_window_buffers(&window)?;
-    with_admitted_note_connection(admission, &store, |conn| {
-        checked_discard_recovery_assets(conn, &id, || remove_note_assets(&app, &id))
+    crate::harness::run_blocking("notes_discard_recovery_assets", move || {
+        let store = app.state::<SessionStore>();
+        with_admitted_note_connection(admission, &store, |conn| {
+            checked_discard_recovery_assets(conn, &id, || remove_note_assets(&app, &id))
+        })
     })
+    .await
 }
 
 #[tauri::command]
@@ -295,14 +323,14 @@ pub async fn notes_save_image(
     .await
 }
 
-#[tauri::command(async)]
-pub fn notes_image_path(
+#[tauri::command]
+pub async fn notes_image_path(
     window: tauri::Window,
     app: AppHandle,
     asset: String,
 ) -> Result<String, String> {
     let admission = admit_window_buffers(&window)?;
-    admission.finish(resolve_note_image_path(&app, &asset))
+    run_admitted_blocking(admission, move || resolve_note_image_path(&app, &asset)).await
 }
 
 fn resolve_note_image_path(app: &AppHandle, asset: &str) -> Result<String, String> {

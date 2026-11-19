@@ -469,34 +469,52 @@ pub struct OmpAssistantText {
 /// from their persisted transcript. The provider id is already stored with the
 /// session; matching the original JSONL keeps the repair deterministic instead
 /// of guessing from neighbouring reasoning text.
-#[tauri::command(async)]
-pub fn omp_session_interjections(
+#[tauri::command]
+pub async fn omp_session_interjections(
     provider_session_id: String,
 ) -> Result<Vec<OmpInterjectionAnchor>, String> {
-    let Some(path) = omp_session_path(&provider_session_id)? else {
-        return Ok(Vec::new());
-    };
-    parse_omp_interjections(&path)
+    crate::harness::run_blocking("omp_session_interjections", move || {
+        let Some(path) = omp_session_path(&provider_session_id)? else {
+            return Ok(Vec::new());
+        };
+        parse_omp_interjections(&path)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn omp_active_assistant_texts(
+#[tauri::command]
+pub async fn omp_active_assistant_texts(
     provider_session_id: String,
 ) -> Result<Vec<OmpAssistantText>, String> {
-    let Some(path) = omp_session_path(&provider_session_id)? else {
-        return Ok(Vec::new());
-    };
-    active_omp_assistant_texts(&path)
+    crate::harness::run_blocking("omp_active_assistant_texts", move || {
+        let Some(path) = omp_session_path(&provider_session_id)? else {
+            return Ok(Vec::new());
+        };
+        active_omp_assistant_texts(&path)
+    })
+    .await
 }
 
 /// Recover Bash commands that older UI builds saved as a bare "Shell" row.
 /// Claude's own transcript retains the complete tool input by tool-use id.
-#[tauri::command(async)]
-pub fn claude_shell_commands(
+#[tauri::command]
+pub async fn claude_shell_commands(
     app: AppHandle,
     provider_session_id: String,
     provider_account_id: Option<String>,
     tool_ids: Vec<String>,
+) -> Result<HashMap<String, String>, String> {
+    crate::harness::run_blocking("claude_shell_commands", move || {
+        claude_shell_commands_sync(&app, &provider_session_id, provider_account_id, &tool_ids)
+    })
+    .await
+}
+
+fn claude_shell_commands_sync(
+    app: &AppHandle,
+    provider_session_id: &str,
+    provider_account_id: Option<String>,
+    tool_ids: &[String],
 ) -> Result<HashMap<String, String>, String> {
     if provider_session_id.is_empty()
         || !provider_session_id
@@ -508,7 +526,7 @@ pub fn claude_shell_commands(
     if tool_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let config_dir = claude_config_dir(&app, provider_account_id.as_deref())?;
+    let config_dir = claude_config_dir(app, provider_account_id.as_deref())?;
     let transcript_name = format!("{provider_session_id}.jsonl");
     let root = config_dir.join("projects");
     let Some(path) = std::fs::read_dir(root).ok().and_then(|projects| {
@@ -519,7 +537,7 @@ pub fn claude_shell_commands(
     }) else {
         return Ok(HashMap::new());
     };
-    claude_shell_commands_from_file(&path, &tool_ids)
+    claude_shell_commands_from_file(&path, tool_ids)
 }
 
 fn claude_shell_commands_from_file(
@@ -824,9 +842,11 @@ fn parse_omp_interjections(path: &Path) -> Result<Vec<OmpInterjectionAnchor>, St
 }
 
 /// Immediate children of `path` (project tree). Folders first, then files.
-#[tauri::command(async)]
-pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
-    list_dir_sync(&expand_home(&path))
+/// Runs on the blocking pool: `read_dir` plus a `git check-ignore` spawn queued
+/// behind the Windows spawn gate must not pin a tokio worker.
+#[tauri::command]
+pub async fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
+    crate::harness::run_blocking("list_dir", move || list_dir_sync(&expand_home(&path))).await
 }
 
 pub(crate) fn list_dir_sync(dir: &Path) -> Result<Vec<DirEntry>, String> {
@@ -9324,9 +9344,13 @@ pub async fn move_path(
     .await
 }
 
-#[tauri::command(async)]
-pub fn reveal_path(path: String) -> Result<(), String> {
-    let requested = expand_home(&path);
+#[tauri::command]
+pub async fn reveal_path(path: String) -> Result<(), String> {
+    crate::harness::run_blocking("reveal_path", move || reveal_path_sync(&path)).await
+}
+
+fn reveal_path_sync(path: &str) -> Result<(), String> {
+    let requested = expand_home(path);
     // A reference to a file that was moved or not written yet still opens the
     // closest folder that exists, so the action never silently does nothing.
     let path = nearest_existing_path(&requested)

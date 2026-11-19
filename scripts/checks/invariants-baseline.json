@@ -174,6 +174,12 @@
     "host/workspaces/workspace-commands.ts": {
       "bycoda/grapheme-safe-truncate": 1
     },
+    "src-tauri/src/automations.rs": {
+      "rust-sync-command-blocking-work": 2
+    },
+    "src-tauri/src/automations/host_migration.rs": {
+      "rust-sync-command-blocking-work": 3
+    },
     "src-tauri/src/azure_devops.rs": {
       "rust-command-output-without-timeout": 2
     },
@@ -212,7 +218,8 @@
       "rust-command-output-without-timeout": 1
     },
     "src-tauri/src/handoff_history.rs": {
-      "rust-rename-without-fsync": 1
+      "rust-rename-without-fsync": 1,
+      "rust-sync-command-blocking-work": 2
     },
     "src-tauri/src/harness.rs": {
       "rust-command-output-without-timeout": 2,
@@ -232,7 +239,8 @@
       "rust-emit-broadcast": 1
     },
     "src-tauri/src/pasteboard.rs": {
-      "rust-rename-without-fsync": 1
+      "rust-rename-without-fsync": 1,
+      "rust-sync-command-blocking-work": 1
     },
     "src-tauri/src/project_logo.rs": {
       "rust-rename-without-fsync": 1
@@ -248,7 +256,8 @@
       "rust-command-output-without-timeout": 1
     },
     "src-tauri/src/reminders.rs": {
-      "rust-emit-broadcast": 3
+      "rust-emit-broadcast": 3,
+      "rust-sync-command-blocking-work": 1
     },
     "src-tauri/src/remote.rs": {
       "rust-emit-broadcast": 1
@@ -258,6 +267,9 @@
     },
     "src-tauri/src/server_inventory.rs": {
       "rust-emit-broadcast": 4
+    },
+    "src-tauri/src/session_folder.rs": {
+      "rust-sync-command-blocking-work": 1
     },
     "src-tauri/src/session_store.rs": {
       "rust-command-output-without-timeout": 1,
@@ -275,17 +287,26 @@
     "src-tauri/src/skills.rs": {
       "rust-rename-without-fsync": 4
     },
+    "src-tauri/src/ssh_certificate.rs": {
+      "rust-sync-command-blocking-work": 1
+    },
     "src-tauri/src/ssh_configuration.rs": {
-      "rust-emit-broadcast": 3
+      "rust-emit-broadcast": 3,
+      "rust-sync-command-blocking-work": 1
     },
     "src-tauri/src/ssh_jump_config.rs": {
       "rust-command-output-without-timeout": 2
     },
     "src-tauri/src/ssh_runbooks.rs": {
-      "rust-emit-broadcast": 5
+      "rust-emit-broadcast": 5,
+      "rust-sync-command-blocking-work": 3
+    },
+    "src-tauri/src/ssh_security.rs": {
+      "rust-sync-command-blocking-work": 2
     },
     "src-tauri/src/terminal_profiles.rs": {
-      "rust-command-output-without-timeout": 2
+      "rust-command-output-without-timeout": 2,
+      "rust-sync-command-blocking-work": 1
     },
     "src-tauri/src/termius_import.rs": {
       "rust-emit-broadcast": 1

@@ -557,23 +557,31 @@ pub(crate) fn require(app: &AppHandle, path: &Path, mutation: bool) -> Result<Pa
     check(app, path, mutation)
 }
 
-#[tauri::command(async)]
-pub fn authorize_project_path(app: AppHandle, path: String) -> Result<(), String> {
-    let path = crate::fs::expand_home(&path);
-    if !path.is_dir() {
-        return Err("Selected folder does not exist".into());
-    }
-    app.state::<FileAccess>()
-        .denied
-        .lock()
-        .map_err(|_| "File approval is unavailable")?
-        .remove(&normalized(&canonical_target(&path)?));
-    authorize(&app, &path, true)
+// The approval mutex, consent dialogs and registry writes block, so these
+// commands run on the blocking pool instead of pinning a tokio worker.
+#[tauri::command]
+pub async fn authorize_project_path(app: AppHandle, path: String) -> Result<(), String> {
+    crate::harness::run_blocking("authorize_project_path", move || {
+        let path = crate::fs::expand_home(&path);
+        if !path.is_dir() {
+            return Err("Selected folder does not exist".into());
+        }
+        app.state::<FileAccess>()
+            .denied
+            .lock()
+            .map_err(|_| "File approval is unavailable")?
+            .remove(&normalized(&canonical_target(&path)?));
+        authorize(&app, &path, true)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn revoke_file_access(app: AppHandle, path: String) -> Result<(), String> {
-    revoke_native(&app, &crate::fs::expand_home(&path))
+#[tauri::command]
+pub async fn revoke_file_access(app: AppHandle, path: String) -> Result<(), String> {
+    crate::harness::run_blocking("revoke_file_access", move || {
+        revoke_native(&app, &crate::fs::expand_home(&path))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -587,11 +595,23 @@ pub fn get_file_access_mode(app: AppHandle) -> Result<FileAccessMode, String> {
 }
 
 // Native retains the fixed-text consent request; the owning application window answers it.
-#[tauri::command(async)]
-pub fn configure_file_access(
+// The modal waits for the user, so it occupies a blocking-pool thread, never a tokio worker.
+#[tauri::command]
+pub async fn configure_file_access(
     app: AppHandle,
     review: bool,
     language: String,
+) -> Result<FileAccessMode, String> {
+    crate::harness::run_blocking("configure_file_access", move || {
+        configure_file_access_sync(&app, review, &language)
+    })
+    .await
+}
+
+fn configure_file_access_sync(
+    app: &AppHandle,
+    review: bool,
+    language: &str,
 ) -> Result<FileAccessMode, String> {
     let state = app.state::<FileAccess>();
     let _approval = state
@@ -608,7 +628,7 @@ pub fn configure_file_access(
     }
     let turkish = language == "tr";
     let approved = crate::control::owner_approval::ask_focused_result(
-        &app,
+        app,
         crate::control::owner_approval::Prompt {
             title: if turkish {
                 "Dosya erişimi"

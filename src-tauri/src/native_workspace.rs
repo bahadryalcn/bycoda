@@ -366,16 +366,33 @@ fn report_owners(
     Ok(owners)
 }
 
-#[tauri::command(async)]
-pub fn managed_workspace_buffers(
+#[tauri::command]
+pub async fn managed_workspace_buffers(
     app: AppHandle,
     window: tauri::Window,
-    store: tauri::State<'_, crate::session_store::SessionStore>,
     buffers: Vec<BufferState>,
 ) -> Result<(), String> {
-    crate::native_window_lifecycle::workspace_buffer_report(&window, &store, |owner| {
-        report_buffers(&app, &window, &store, buffers, owner)
+    crate::harness::run_blocking("managed_workspace_buffers", move || {
+        let store = app.state::<crate::session_store::SessionStore>();
+        crate::native_window_lifecycle::workspace_buffer_report(&window, &store, |owner| {
+            report_buffers(&app, &window, &store, buffers, owner)
+        })
     })
+    .await
+}
+
+/// Buffer recovery reads lock the writer connection; run them off the tokio workers.
+async fn with_store<T: Send + 'static>(
+    app: AppHandle,
+    label: &'static str,
+    work: impl FnOnce(&AppHandle, &crate::session_store::SessionStore) -> Result<T, String>
+        + Send
+        + 'static,
+) -> Result<T, String> {
+    crate::harness::run_blocking(label, move || {
+        work(&app, &app.state::<crate::session_store::SessionStore>())
+    })
+    .await
 }
 
 /// Stable identity of this profile and app run, shared by full reports and heartbeats.
@@ -545,59 +562,71 @@ fn report_buffers(
     delivered
 }
 
-#[tauri::command(async)]
-pub fn managed_workspace_buffer_recovery_list(
-    store: tauri::State<'_, crate::session_store::SessionStore>,
+#[tauri::command]
+pub async fn managed_workspace_buffer_recovery_list(
+    app: AppHandle,
     request: buffer_reports::ListRequest,
 ) -> Result<buffer_reports::ReportPage, String> {
-    let conn = store.lock_conn()?;
-    buffer_reports::list(&conn, request)
+    with_store(app, "buffer_recovery_list", move |_, store| {
+        buffer_reports::list(&*store.lock_conn()?, request)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn managed_workspace_host_buffer_recovery_list(
+#[tauri::command]
+pub async fn managed_workspace_host_buffer_recovery_list(
     app: AppHandle,
-    store: tauri::State<'_, crate::session_store::SessionStore>,
     request: recovery_bridge::ListRequest,
     expected_context: Option<recovery_bridge::RecoveryContext>,
 ) -> Result<recovery_bridge::RecoveryPage, String> {
-    recovery_bridge::list(&app, &store, request, expected_context)
+    with_store(app, "host_buffer_recovery_list", move |app, store| {
+        recovery_bridge::list(app, store, request, expected_context)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn managed_workspace_host_buffer_recovery_read(
+#[tauri::command]
+pub async fn managed_workspace_host_buffer_recovery_read(
     app: AppHandle,
-    store: tauri::State<'_, crate::session_store::SessionStore>,
     source: recovery_bridge::RecoverySource,
     expected_context: recovery_bridge::RecoveryContext,
 ) -> Result<serde_json::Value, String> {
-    recovery_bridge::read(&app, &store, source, expected_context)
+    with_store(app, "host_buffer_recovery_read", move |app, store| {
+        recovery_bridge::read(app, store, source, expected_context)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn managed_workspace_host_buffer_recovery_status(
+#[tauri::command]
+pub async fn managed_workspace_host_buffer_recovery_status(
     app: AppHandle,
-    store: tauri::State<'_, crate::session_store::SessionStore>,
     source: recovery_bridge::RecoverySource,
     expected_context: recovery_bridge::RecoveryContext,
 ) -> Result<serde_json::Value, String> {
-    recovery_bridge::status(&app, &store, source, expected_context)
+    with_store(app, "host_buffer_recovery_status", move |app, store| {
+        recovery_bridge::status(app, store, source, expected_context)
+    })
+    .await
 }
-#[tauri::command(async)]
-pub fn managed_workspace_buffer_recovery_read(
-    store: tauri::State<'_, crate::session_store::SessionStore>,
+#[tauri::command]
+pub async fn managed_workspace_buffer_recovery_read(
+    app: AppHandle,
     source: buffer_reports::ReportSource,
 ) -> Result<buffer_reports::RetainedReport, String> {
-    let conn = store.lock_conn()?;
-    buffer_reports::read(&conn, source)
+    with_store(app, "buffer_recovery_read", move |_, store| {
+        buffer_reports::read(&*store.lock_conn()?, source)
+    })
+    .await
 }
-#[tauri::command(async)]
-pub fn managed_workspace_buffer_recovery_status(
-    store: tauri::State<'_, crate::session_store::SessionStore>,
+#[tauri::command]
+pub async fn managed_workspace_buffer_recovery_status(
+    app: AppHandle,
     source: buffer_reports::ReportSource,
 ) -> Result<buffer_reports::ReportStatus, String> {
-    let conn = store.lock_conn()?;
-    buffer_reports::status(&conn, source)
+    with_store(app, "buffer_recovery_status", move |_, store| {
+        buffer_reports::status(&*store.lock_conn()?, source)
+    })
+    .await
 }
 
 /// Called before the local transport shuts down. Failure preserves the report;

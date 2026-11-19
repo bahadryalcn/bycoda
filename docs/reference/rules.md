@@ -302,3 +302,5 @@ fall. Suppress one line only, always with a reason.
   - `app.emit` / `window.emit` broadcasts to every webview (Tauri v2), and a plain JS `listen()` receives even `emit_to` events. For a window-targeted event use `app.emit_to(label, ...)` or `emit_to_focused`, and listen with the window-scoped helper in src/platform/tauri/listenWindow.ts.
 - `rust-rename-without-fsync` (`src-tauri/src/**, packages/**/src/**`)
   - A temp-file + `rename` replacement is only crash-safe when the temp file is `sync_all()`ed before the rename (APFS and NTFS can otherwise leave an empty file after power loss). Write the bytes, call `file.sync_all()`, then rename; on startup, treat an unparsable state file as absent and move it aside instead of failing.
+- `rust-sync-command-blocking-work` (`src-tauri/src/**`)
+  - A sync fn under `#[tauri::command(async)]` runs on a tokio worker (one per core); SQLite under the store lock, a spawned process or `std::fs` work there can stall every other IPC command. Make it `#[tauri::command] pub async fn` and move the body into `crate::harness::run_blocking` (or `run_admitted_blocking` for admitted writes).
