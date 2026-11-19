@@ -7,7 +7,7 @@ export type IndexAction = "stage" | "unstage" | "discard";
  * change when the commit staged `all` of them first. A file that also has
  * unstaged edits stays under Changes; its line counts wait for the reload.
  */
-export function applyCommit(index: GitDiffIndex, all: boolean): GitDiffIndex {
+export function applyCommit(index: GitDiffIndex, all: boolean, amend = false): GitDiffIndex {
   let additions = index.additions;
   let deletions = index.deletions;
   const files: GitChangedFile[] = [];
@@ -21,7 +21,10 @@ export function applyCommit(index: GitDiffIndex, all: boolean): GitDiffIndex {
       deletions -= file.deletions;
     }
   }
-  return { ...index, files, additions, deletions };
+  // A normal commit adds one descendant. Merge and amend can change both
+  // sides of the comparison, so leave their counts to the Git read.
+  const ahead = index.upstream && !amend && !index.operation ? index.ahead + 1 : index.ahead;
+  return { ...index, files, additions, deletions, ahead };
 }
 
 /**

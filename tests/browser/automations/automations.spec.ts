@@ -39,7 +39,7 @@ for (const width of [800, 1280])
       await setTheme();
       const proposal = page.getByRole("dialog", { name: "Automation", exact: true });
       await expect(
-        proposal.getByRole("combobox", { name: "Instructions", exact: true }),
+        proposal.getByRole("textbox", { name: "Instructions", exact: true }),
       ).toHaveValue("Review fixture activity and report findings");
       await capture("proposal");
       await proposal.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -66,7 +66,7 @@ for (const width of [1280, 800]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/tests/browser/automations/automations.html?host=offline");
     const warning = page.getByText(/tailm.*reachable right now/);
-    const retry = page.getByRole("button", { name: "Try again", exact: true });
+    const retry = page.getByRole("button", { name: "Retry", exact: true });
     await expect(warning).toBeVisible();
     await expect(page.getByText("Automations unavailable", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Create your first automation", { exact: true })).toHaveCount(0);
@@ -315,7 +315,7 @@ test("automation gallery, event picker, focus mode and scoped AI", async ({ page
   await expect(page.getByRole("textbox", { name: "Automation name", exact: true })).toHaveValue(
     "Triage incoming messages",
   );
-  await page.getByRole("button", { name: "Add Trigger: Add Trigger", exact: true }).click();
+  await page.getByRole("button", { name: /^Add trigger/ }).click();
   await page.getByRole("combobox", { name: "Search triggers", exact: true }).fill("tasks");
   const option = page.getByRole("option", { name: /^Task blocked/ });
   await expect(option).toBeVisible();

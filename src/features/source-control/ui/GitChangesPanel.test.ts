@@ -994,6 +994,27 @@ describe("GitChangesPanel action feedback", () => {
     expect(container.querySelector('header [role="status"]')).toBeNull();
   });
 
+  it("shows the new push count as soon as the commit succeeds while status reloads", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        remote: "origin",
+        upstream: "origin/main",
+        files: [changedFile("file.ts", { staged: true, unstaged: false })],
+      }),
+    );
+    vi.mocked(gitCommit).mockResolvedValueOnce(undefined);
+    await renderPanel("/repo-commit-push-count");
+    await fillCommitMessage("Update push count");
+    let finishReload!: (value: GitDiffIndex) => void;
+    vi.mocked(gitDiffIndex).mockImplementation(
+      () => new Promise((resolve) => (finishReload = resolve)),
+    );
+    await act(async () => primaryAction().click());
+    expect(primaryAction().textContent?.trim()).toMatch(/^Push\s*1$/);
+    await act(async () => finishReload(index({ remote: "origin", upstream: "origin/main", ahead: 1 })));
+    expect(primaryAction().textContent?.trim()).toMatch(/^Push\s*1$/);
+  });
+
   const changed = (staged: boolean) => ({
     path: "/repo-feedback/change.ts",
     relative: "change.ts",
