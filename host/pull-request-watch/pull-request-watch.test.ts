@@ -2,12 +2,19 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeFileAtomic } from "../storage/atomic-write";
 import {
   MAX_PULL_REQUEST_WATCHES_PER_SESSION,
   PullRequestWatches,
   type PullRequestWatchEngine,
   type PullRequestWatchStore,
 } from "./pull-request-watch";
+
+// Counts state-file writes without changing them; the real atomic write still runs.
+vi.mock("../storage/atomic-write", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../storage/atomic-write")>();
+  return { ...actual, writeFileAtomic: vi.fn(actual.writeFileAtomic) };
+});
 
 type Pr = Record<string, unknown>;
 
@@ -220,6 +227,53 @@ describe("PullRequestWatches", () => {
     const [listed] = await watches.list("s1");
     expect(listed.lastError).toBe("gh auth login required");
     expect(listed.url).toBe(url);
+  });
+
+  it("does not rewrite the state file for a repeated identical gh failure", async () => {
+    const url = "https://github.com/acme/app/pull/12";
+    prs.set(url, pr(url));
+    const watches = service();
+    await watches.watch(scope(), { url });
+    vi.mocked(writeFileAtomic).mockClear();
+    let now = 1_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      gh.mockRejectedValue(new Error("gh rate limit exceeded"));
+      await watches.poll();
+      expect(writeFileAtomic).toHaveBeenCalledTimes(1);
+      now += 10 * 60_000;
+      await watches.poll();
+      expect(writeFileAtomic).toHaveBeenCalledTimes(1);
+      expect((await watches.list("s1"))[0].lastError).toBe("gh rate limit exceeded");
+    } finally {
+      clock.mockRestore();
+      gh.mockReset();
+    }
+  });
+
+  it("backs off a failing watch and retries it once the delay has passed", async () => {
+    const url = "https://github.com/acme/app/pull/12";
+    prs.set(url, pr(url));
+    const watches = service();
+    await watches.watch(scope(), { url });
+    let now = 1_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      prs.delete(url);
+      await watches.poll();
+      const callsAfterFailure = gh.mock.calls.length;
+      await watches.poll();
+      expect(gh.mock.calls.length).toBe(callsAfterFailure);
+      now += 60_000;
+      await watches.poll();
+      expect(gh.mock.calls.length).toBe(callsAfterFailure + 1);
+      prs.set(url, pr(url));
+      now += 2 * 60_000;
+      await watches.poll();
+      expect((await watches.list("s1"))[0].lastError).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("keeps the watches of each session private", async () => {
