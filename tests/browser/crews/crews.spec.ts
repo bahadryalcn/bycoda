@@ -436,9 +436,13 @@ test("work stays selected when a poll moves it to finished history", async ({ pa
   await page.evaluate(() =>
     (window as unknown as { simulateRunFinish: (id: string) => void }).simulateRunFinish("run"),
   );
-  await expect(management.getByRole("radio", { name: "Finished", exact: true })).toBeChecked({
-    timeout: 12000,
-  });
+  // The tab is the owner's choice: the finished work stays open, a notice says why, and the
+  // Ongoing tab is not switched.
+  await expect(
+    management.getByText("This work finished. It stays open here until you choose other work."),
+  ).toBeVisible({ timeout: 12000 });
+  await expect(management.getByRole("radio", { name: /^Ongoing/ })).toBeChecked();
+  await expect(management.getByRole("radio", { name: "Finished", exact: true })).not.toBeChecked();
   await expect(management.locator('[data-crew-run="run"]')).toBeVisible();
   await expect(management.locator('[data-crew-run="second-run"]')).toHaveCount(0);
 });
@@ -1688,8 +1692,8 @@ for (const theme of ["light", "dark"] as const) {
       await shot("member-form");
       const performance = dialog.locator("summary").filter({ hasText: /^Performance$/ });
       await performance.click();
-      await expect(dialog.getByText("Could not load performance", { exact: true })).toBeVisible();
-      const error = dialog.getByRole("alert").filter({ hasText: "Could not load performance" });
+      await expect(dialog.getByText("Unsupported fixture operation remote_request", { exact: true })).toBeVisible();
+      const error = dialog.getByRole("alert").filter({ hasText: "Unsupported fixture operation remote_request" });
       await expect(error).toHaveCount(1);
       await expect(error.locator("svg")).toHaveCount(1);
       await error.getByRole("button", { name: "Try again", exact: true }).click();
