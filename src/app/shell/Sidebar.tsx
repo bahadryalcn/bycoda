@@ -878,6 +878,7 @@ function SidebarComponent({
           tone="accent"
           appearance="subtle"
           icon={<TerminalSpinner />}
+          aria-hidden="true"
           data-workspace-working-count
           className="ms-1 shrink-0"
         >

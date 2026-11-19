@@ -1,16 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  rmdir,
-  stat,
-  utimes,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, rm, rmdir, stat, utimes } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { Catalog, CatalogModel } from "./catalog";
 import { catalogFileMatches, type InstallFile, verifiedInstallFiles } from "./catalog-files";
@@ -238,7 +227,7 @@ export function createLocalInstaller(options: LocalInstallerOptions) {
     try {
       await mkdir(staging, { recursive: true });
       const lease = join(staging, LEASE_NAME);
-      await writeFile(lease, `${process.pid}\n`);
+      await writeFileAtomic(lease, `${process.pid}\n`);
       // The lease tells every other installer on this root that this staging folder has a live writer.
       beat = setInterval(() => {
         const now = new Date();
@@ -467,6 +456,7 @@ async function downloadVerified(
   signal: AbortSignal,
   onBytes: (bytes: number) => void,
 ): Promise<{ sha256: string; sizeBytes: number }> {
+  signal.throwIfAborted();
   const response = await fetchImpl(file.url, {
     redirect: "follow",
     signal: AbortSignal.any([signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)]),

@@ -24,6 +24,12 @@ describe("fixed-height rows with controls", () => {
     const usage = source("app/shell/UsageProviderChip.tsx");
     expect(usage.match(/min-h-\(--ui-control-height-compact\) items-center/g)).toHaveLength(2);
     const queue = source("features/sessions/ui/MessageQueue.tsx");
-    expect(queue.match(/min-h-\(--ui-control-height-compact\) items-center/g)).toHaveLength(3);
+    const queueRows = [...queue.matchAll(/className="([^"]*)"/g)].filter(([, value]) => {
+      const classes = value!.split(/\s+/);
+      return (
+        classes.includes("min-h-(--ui-control-height-compact)") && classes.includes("items-center")
+      );
+    });
+    expect(queueRows).toHaveLength(3);
   });
 });

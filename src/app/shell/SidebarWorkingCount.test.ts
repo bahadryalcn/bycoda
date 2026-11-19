@@ -168,7 +168,7 @@ it("caps the displayed working count without losing the real accessible total or
   await render();
   expect(badge()?.textContent).toBe("99+");
   expect(badge()?.hasAttribute("aria-live")).toBe(false);
-  expect(badge()?.hasAttribute("aria-label")).toBe(false);
+  expect(badge()?.getAttribute("aria-hidden")).toBe("true");
   expect(liveCount()?.getAttribute("role")).toBe("status");
   expect(liveCount()?.textContent).toBe("128 working sessions");
   expect(badge()?.querySelector('[data-size="xs"][aria-hidden="true"]')).not.toBeNull();
