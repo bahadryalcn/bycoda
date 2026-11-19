@@ -1,5 +1,6 @@
-import { lstat } from "node:fs/promises";
-import { lstatSync, readdirSync, readlinkSync } from "node:fs";
+import { lstat, opendir } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { lstatSync, readlinkSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
 import {
@@ -89,22 +90,87 @@ export async function inventoryWorkspaceLinks(target: string): Promise<Link[]> {
             : "unsafe",
     }));
   }
+  return walkPosixWorkspaceLinks(target);
+}
+
+const WALK_CONCURRENCY = 8;
+type EntryKind = "directory" | "file" | "link" | "other";
+async function entryKind(entry: Dirent, path: string): Promise<EntryKind> {
+  // Dirent types come from the same no-follow directory read; filesystems that
+  // report an unknown type fall back to lstat, never to stat.
+  const info =
+    entry.isSymbolicLink() || entry.isDirectory() || entry.isFile() ? entry : await lstat(path);
+  if (info.isSymbolicLink()) return "link";
+  if (info.isDirectory()) return "directory";
+  return info.isFile() ? "file" : "other";
+}
+
+/**
+ * Non-Windows inventory: an asynchronous, bounded-concurrency, no-follow walk so a
+ * large dependency tree never blocks the Host event loop. Every directory read is
+ * awaited, so RPC, websockets and session streams keep running between entries.
+ * Symbolic links are recorded and never entered; read errors fail the inventory.
+ * `firstOnly` stops at the first link for "no links may remain" checks.
+ * @internal Exported for the platform-independent regression test.
+ */
+export async function walkPosixWorkspaceLinks(
+  target: string,
+  options: { firstOnly?: boolean } = {},
+): Promise<Link[]> {
   const links: Link[] = [];
-  const walk = (path: string) => {
-    for (const name of readdirSync(path)) {
-      const child = join(path, name);
-      const info = lstatSync(child);
-      if (info.isSymbolicLink())
-        links.push({
-          path: child,
-          kind: dependency(child, target) ? "dependencySymlink" : "unsafe",
-        });
-      else if (info.isDirectory()) walk(child);
-      else if (!info.isFile()) links.push({ path: child, kind: "unsafe" });
-    }
-  };
-  walk(target);
-  return links;
+  const pending = [target];
+  let active = 0;
+  let failure: unknown = null;
+  const done = () => failure !== null || (!!options.firstOnly && links.length > 0);
+  await new Promise<void>((resolveWalk, rejectWalk) => {
+    const pump = () => {
+      if (failure !== null) {
+        if (active === 0) rejectWalk(failure);
+        return;
+      }
+      if (done() || (pending.length === 0 && active === 0)) {
+        if (active === 0) resolveWalk();
+        return;
+      }
+      while (active < WALK_CONCURRENCY && pending.length > 0) {
+        const directory = pending.pop()!;
+        active += 1;
+        void readDirectory(directory)
+          .catch((error: unknown) => {
+            failure ??= error;
+          })
+          .finally(() => {
+            active -= 1;
+            pump();
+          });
+      }
+    };
+    const readDirectory = async (directory: string) => {
+      const handle = await opendir(directory);
+      for await (const entry of handle) {
+        if (done()) break;
+        const child = join(directory, entry.name);
+        const kind = await entryKind(entry, child);
+        if (kind === "link")
+          links.push({
+            path: child,
+            kind: dependency(child, target) ? "dependencySymlink" : "unsafe",
+          });
+        else if (kind === "directory") pending.push(child);
+        else if (kind === "other") links.push({ path: child, kind: "unsafe" });
+      }
+    };
+    pump();
+  });
+  // Concurrent reads finish in any order; keep the inventory deterministic.
+  return links.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/** True when any link or special entry remains; stops at the first one off Windows. */
+export async function workspaceHasLinks(target: string): Promise<boolean> {
+  if (!exists(target)) return false;
+  if (process.platform === "win32") return (await inventoryWorkspaceLinks(target)).length > 0;
+  return (await walkPosixWorkspaceLinks(target, { firstOnly: true })).length > 0;
 }
 
 /** Reject unknown reparse ancestors on Windows (Node only identifies known symlink tags). */
