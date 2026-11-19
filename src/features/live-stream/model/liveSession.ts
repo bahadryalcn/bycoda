@@ -2,6 +2,8 @@ import type { LiveEvent, LiveViewer } from "./liveEvents";
 
 const SEEN_SIZE = 600;
 const TOP_GIFTERS = 5;
+const GIFTERS_MAX = 1000;
+const GIFTERS_KEEP = 500;
 
 export interface LiveTotals {
   diamonds: number;
@@ -31,6 +33,14 @@ export function emptyLiveSession(): LiveSessionState {
   };
 }
 
+/** Keeps the persisted gifter map bounded on long streams by dropping the smallest gifters. */
+function capGifters(gifters: LiveSessionState["gifters"]): LiveSessionState["gifters"] {
+  const entries = Object.entries(gifters);
+  if (entries.length <= GIFTERS_MAX) return gifters;
+  entries.sort((a, b) => b[1].diamonds - a[1].diamonds);
+  return Object.fromEntries(entries.slice(0, GIFTERS_KEEP));
+}
+
 /** Returns the same state object when the event was already counted. */
 export function reduceLiveSession(state: LiveSessionState, event: LiveEvent): LiveSessionState {
   if (state.seen.includes(event.id)) return state;
@@ -54,10 +64,10 @@ export function reduceLiveSession(state: LiveSessionState, event: LiveEvent): Li
           diamonds: next.totals.diamonds + total,
           gifts: next.totals.gifts + event.count,
         },
-        gifters: {
+        gifters: capGifters({
           ...next.gifters,
           [event.viewer.id]: { viewer: event.viewer, diamonds: previous + total },
-        },
+        }),
       };
     }
     case "viewers":

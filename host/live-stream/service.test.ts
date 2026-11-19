@@ -75,3 +75,68 @@ it("fences a cancelled TikTok attachment and rejects a revoked mutation", async 
     await test.close();
   }
 });
+
+const giftViewer = { id: "7", handle: "ayse", name: "Ayse" };
+const gift = (id: string, count: number) => ({
+  id,
+  at: 1,
+  kind: "gift" as const,
+  viewer: giftViewer,
+  giftId: 1,
+  giftName: "Rose",
+  diamonds: 10,
+  count,
+});
+
+it("keeps totals and top gifters across a reconnect and does not recount a replayed streak end", async () => {
+  vi.useFakeTimers();
+  const tiktok = vi.fn<typeof connectTikTok>(() => () => {});
+  const test = await fixture(tiktok);
+  try {
+    await test.service().start("kanal");
+    const first = tiktok.mock.calls[0][2];
+    first.connected("1");
+    first.event(gift("gift:1", 3));
+    first.event(gift("gift:1", 3));
+    first.disconnected(new Error("socket closed"));
+    expect((await test.service().status()).connection.status).toBe("reconnecting");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(tiktok).toHaveBeenCalledTimes(2);
+    const second = tiktok.mock.calls[1][2];
+    second.connected("1");
+    second.event(gift("gift:1", 3));
+    second.event(gift("gift:2", 2));
+    const status = await test.service().status();
+    expect(status.connection).toMatchObject({ status: "connected", attempts: 0 });
+    expect(status.snapshot.totals).toMatchObject({ diamonds: 50, gifts: 5 });
+    expect(status.snapshot.topGifters).toMatchObject([{ id: "7", diamonds: 50 }]);
+    await test.service().stop();
+    expect(await test.service().report()).toMatchObject({
+      totals: { diamonds: 50, gifts: 5 },
+      endedAt: expect.any(Number),
+    });
+  } finally {
+    await test.close();
+    vi.useRealTimers();
+  }
+});
+
+it("stops generating demo events once stopped", async () => {
+  vi.useFakeTimers();
+  const test = await fixture();
+  try {
+    await test.service().demo();
+    await vi.advanceTimersByTimeAsync(2_100);
+    const running = (await test.service().status()).snapshot.totals;
+    await test.service().stop();
+    const stopped = (await test.service().status()).snapshot.totals;
+    await vi.advanceTimersByTimeAsync(5_000);
+    const later = (await test.service().status()).snapshot.totals;
+    expect(stopped).toEqual(later);
+    expect(running.comments + running.likes).toBeGreaterThan(24);
+    expect((await test.service().status()).connection.status).toBe("idle");
+  } finally {
+    await test.close();
+    vi.useRealTimers();
+  }
+});

@@ -194,6 +194,13 @@ export function LiveStreamControls({
           {t("Set up a LIVE destination in Social to stream to a connected account.")}
         </InlineMessage>
       ) : null}
+      {!managed && (account?.platform === "tiktok" || account?.platform === "instagram") ? (
+        <InlineMessage>
+          {t("{p0} shows vertical video. Set the OBS canvas to 1080×1920 before you go live.", {
+            p0: platformNames[account.platform],
+          })}
+        </InlineMessage>
+      ) : null}
       {requiresManualCredentials ? (
         <InlineMessage>
           {t(

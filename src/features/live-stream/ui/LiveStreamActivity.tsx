@@ -52,7 +52,10 @@ export function LiveStreamActivity({
                 </Text>
                 {event.text || event.count !== undefined ? (
                   <Text size="caption" tone="secondary" className="break-words">
-                    {event.text ?? formatNumber(event.count ?? 0)}
+                    {event.text ??
+                      (event.kind === "gift"
+                        ? t("{p0} gifts", { p0: formatNumber(event.count ?? 0) })
+                        : formatNumber(event.count ?? 0))}
                   </Text>
                 ) : null}
               </li>

@@ -65,6 +65,10 @@ export function connectDemo(emit: (event: LiveEvent) => void) {
       });
     } else if (index % 6 === 0) {
       emit({ ...base, kind: "viewers", count: 40 + (index % 150) });
+    } else if (index % 9 === 0) {
+      emit({ ...base, kind: "follow", viewer: viewer(index % 120) });
+    } else if (index % 5 === 0) {
+      emit({ ...base, kind: "join", viewer: viewer(index % 120) });
     } else {
       emit({ ...base, kind: "like", viewer: viewer(index % 24), count: 12 + (index % 64) });
     }

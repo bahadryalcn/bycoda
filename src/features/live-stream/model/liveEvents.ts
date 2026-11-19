@@ -17,7 +17,7 @@ interface LiveEventBase {
 
 /**
  * One normalized live-stream event. Connectors translate platform messages into this union so the
- * game, the overlay and the AI tools never depend on a platform's wire format.
+ * session report, the activity feed and the AI tools never depend on a platform's wire format.
  */
 export type LiveEvent =
   | (LiveEventBase & { kind: "comment"; viewer: LiveViewer; text: string })

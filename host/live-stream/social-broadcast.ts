@@ -80,7 +80,7 @@ export class LiveStreamSocialBroadcast {
     directory: string,
     private readonly obs: Pick<
       LiveStreamObs,
-      "socialPreflight" | "startSocial" | "socialStreamStatus" | "stopSocial"
+      "socialPreflight" | "startSocial" | "socialStreamStatus" | "stopSocial" | "restoreDestination"
     >,
     private readonly social?: () => SocialLiveService,
   ) {
@@ -176,6 +176,12 @@ export class LiveStreamSocialBroadcast {
         obsStreaming,
       };
     return { ...visibleStatus, obsStreaming };
+  }
+
+  /** Puts the owner's previous OBS stream service back once no managed stream uses it. */
+  private async restoreDestination() {
+    if (!this.journal.managedDestination) return;
+    if (await this.obs.restoreDestination()) await this.update({ managedDestination: false });
   }
 
   async assertManual(action: "start" | "stop" | "credentials" | "setup") {
@@ -329,6 +335,8 @@ export class LiveStreamSocialBroadcast {
         canStop,
         reason: startDispatched && reason === "OBS_UNAVAILABLE" ? "START_UNCERTAIN" : reason,
       };
+      // OBS never started for this attempt, so the owner's own destination can go back now.
+      if (!startDispatched) await this.restoreDestination().catch(() => {});
       await this.update({ status, broadcast: canStop ? broadcast : undefined, providerPending });
     } finally {
       this.starting = undefined;
@@ -368,6 +376,7 @@ export class LiveStreamSocialBroadcast {
         obsStreaming = false;
         await this.update({ obsStarting: false });
       }
+      await this.restoreDestination();
       if (providerPending) {
         const next = {
           ...status,

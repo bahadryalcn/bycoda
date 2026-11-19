@@ -12,6 +12,11 @@ import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
 
 const PASSWORD = "live-stream-obs-websocket";
 const STREAM_KEY = "live-stream-obs-stream-key";
+const PREVIOUS_DESTINATION = "live-stream-obs-previous-destination";
+const previousDestinationSchema = z.object({
+  streamServiceType: z.string().min(1),
+  streamServiceSettings: z.record(z.string(), z.json()),
+});
 const exec = promisify(execFile);
 const configSchema = z.looseObject({
   server_port: z.number().int().min(1).max(65535).default(4455),
@@ -222,8 +227,44 @@ export class LiveStreamObs {
         );
       await this.secrets.set(STREAM_KEY, key);
       await this.setDestination(client, server, key);
+      // The owner chose this destination, so the pre-Social snapshot is obsolete.
+      await this.secrets.delete(PREVIOUS_DESTINATION);
       await this.readBack(client);
     });
+  }
+
+  /** Keeps the owner's own OBS stream service, key included, in the credential store only. */
+  private async snapshotDestination(client: OBSWebSocket) {
+    // An existing snapshot is the owner's original: a retry must not replace it with a managed key.
+    if (await this.secrets.get(PREVIOUS_DESTINATION)) return;
+    const current = await client.call("GetStreamServiceSettings");
+    await this.secrets.set(PREVIOUS_DESTINATION, JSON.stringify(current));
+  }
+
+  /** Puts the owner's previous OBS stream service back. False when it could not be restored. */
+  async restoreDestination() {
+    const raw = await this.secrets.get(PREVIOUS_DESTINATION);
+    if (!raw) return true;
+    const previous = previousDestinationSchema.safeParse(
+      (() => {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return undefined;
+        }
+      })(),
+    );
+    if (!previous.success) {
+      await this.secrets.delete(PREVIOUS_DESTINATION);
+      return true;
+    }
+    return this.withObs(async (client) => {
+      const { outputActive, outputReconnecting } = await client.call("GetStreamStatus");
+      if (outputActive || outputReconnecting) return false;
+      await client.call("SetStreamServiceSettings", previous.data);
+      await this.secrets.delete(PREVIOUS_DESTINATION);
+      return true;
+    }).catch(() => false);
   }
 
   private validateDestination(server: string) {
@@ -271,6 +312,8 @@ export class LiveStreamObs {
     return this.withObs(async (client, assertConnected) => {
       await this.checkSocialScene(client, scene);
       await beforeSettings();
+      assertConnected();
+      await this.snapshotDestination(client);
       assertConnected();
       await this.setDestination(client, server, key);
       assertConnected();

@@ -71,7 +71,7 @@ export function LiveStreamConnection({
         <div className="min-w-48 flex-1">
           <TextField
             label={t("TikTok channel")}
-            placeholder="@kanal"
+            placeholder="@channel"
             value={channel}
             disabled={connected || feedback.busy}
             onChange={(event) => {

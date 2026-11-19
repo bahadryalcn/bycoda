@@ -95,6 +95,7 @@ async function fixture() {
       },
     ),
     socialStreamStatus: vi.fn(async () => true),
+    restoreDestination: vi.fn(async () => true),
     stopSocial: vi.fn(async (guard: () => Promise<void>) => {
       await guard();
       calls.push("obs stop");
@@ -140,9 +141,36 @@ it("sends only the ingest to OBS, recovers the exact provider ID, and guards man
     "obs stop",
     "platform stop",
   ]);
-  await expect(reopened.assertManual("start")).rejects.toThrow("set a manual OBS destination");
-  await reopened.manualDestinationSaved();
+  expect(obs.restoreDestination).toHaveBeenCalledTimes(1);
   await expect(reopened.assertManual("start")).resolves.toBeUndefined();
+});
+
+it("keeps the manual-destination guard when the previous OBS destination cannot be restored", async () => {
+  const { broadcast, obs } = await fixture();
+  obs.restoreDestination.mockResolvedValueOnce(false);
+  await broadcast.start({ accountId: account.accountId, scene: "Studio" }, session, allow, target);
+  await broadcast.stop(session, allow);
+  await expect(broadcast.assertManual("start")).rejects.toThrow("set a manual OBS destination");
+  await broadcast.manualDestinationSaved();
+  await expect(broadcast.assertManual("start")).resolves.toBeUndefined();
+});
+
+it("restores the previous OBS destination when OBS start never dispatched", async () => {
+  const { broadcast, obs, file } = await fixture();
+  obs.startSocial.mockImplementationOnce(async (_s, _k, _scene, beforeSettings) => {
+    await beforeSettings();
+    throw new Error("OBS refused");
+  });
+  const result = await broadcast.start(
+    { accountId: account.accountId, scene: "Studio" },
+    session,
+    allow,
+    target,
+  );
+  expect(result.state).not.toBe("streaming");
+  expect(obs.restoreDestination).toHaveBeenCalledTimes(1);
+  // The provider broadcast still needs stopping, but OBS no longer holds the managed key.
+  expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ managedDestination: false });
 });
 
 it("requires exact approval and current Social permission before provisioning", async () => {

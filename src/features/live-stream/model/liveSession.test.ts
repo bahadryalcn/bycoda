@@ -59,4 +59,21 @@ describe("live session", () => {
     const state = fold([gift("1", "a", 5), gift("2", "b", 30), gift("3", "a", 40)]);
     expect(liveSessionSnapshot(state).topGifters.map((gifter) => gifter.name)).toEqual(["A", "B"]);
   });
+
+  it("caps the gifter map but keeps the biggest gifters", () => {
+    const events: LiveEvent[] = Array.from({ length: 1001 }, (_, index) => ({
+      id: `g${index}`,
+      at,
+      kind: "gift",
+      viewer: viewer(`v${index}`),
+      giftId: 1,
+      giftName: "Rose",
+      diamonds: index + 1,
+      count: 1,
+    }));
+    const state = fold(events);
+    expect(Object.keys(state.gifters).length).toBe(500);
+    expect(liveSessionSnapshot(state).topGifters[0].id).toBe("v1000");
+    expect(state.totals.gifts).toBe(1001);
+  });
 });
