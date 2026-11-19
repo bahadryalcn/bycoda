@@ -13301,6 +13301,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -13377,6 +13378,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -13453,6 +13455,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -13529,6 +13532,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -13605,6 +13609,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -13681,6 +13686,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -13757,6 +13763,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -13833,6 +13840,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -13909,6 +13917,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -13985,6 +13994,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -14061,6 +14071,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -14649,6 +14660,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -14725,6 +14737,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -14801,6 +14814,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -14877,6 +14891,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -14953,6 +14968,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -15029,6 +15045,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -15105,6 +15122,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -15181,6 +15199,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -15257,6 +15276,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -15333,6 +15353,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -15409,6 +15430,7 @@
                               "required": ["id", "nativeId"],
                               "type": "object"
                             },
+                            "free": { "type": "boolean" },
                             "harness": {
                               "enum": [
                                 "codex",
@@ -81647,5 +81669,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "c528cc2b2dfdeb7bcebe2d69d2e51e41037f15ed295e069c3789da0ae2a6d8ff"
+  "schemaHash": "2cab4eba050709f058c60d297f55773a24098c0dc41083b3fc935d769e13075b"
 }
