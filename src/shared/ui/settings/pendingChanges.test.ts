@@ -88,7 +88,12 @@ it("notifies listeners only when what the owner sees changes, not on every rende
 it("publishes only when a visible change field or the change order differs, not for rebuilt equal changes", async () => {
   const listener = vi.fn();
   const stop = subscribePendingSources(listener);
-  const base: PendingChange = { id: "one", label: "Effort", scope: "Claude Code", detail: "Low → High" };
+  const base: PendingChange = {
+    id: "one",
+    label: "Effort",
+    scope: "Claude Code",
+    detail: "Low → High",
+  };
   await mount(source({ changes: [{ ...base }] }));
   expect(listener).toHaveBeenCalledTimes(1);
   await mount(source({ changes: [{ ...base }], save: vi.fn() }));

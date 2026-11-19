@@ -81,15 +81,21 @@ export function actionableUnreachableReason(text: string): string | undefined {
   if (/Host is not running on the machine/i.test(text))
     return localizeConnectionReason(connectionReason("host-not-running", text));
   if (
-    /no longer connected|isn.t connected on this computer|Connect this project.s machine/i.test(text)
+    /no longer connected|isn.t connected on this computer|Connect this project.s machine/i.test(
+      text,
+    )
   )
     return localizeConnectionReason(connectionReason("unreachable", text));
   const start = parseSshStartFailure(text);
   if (!start) return undefined;
   const { kind } = classifySshFailure(start);
   if (kind === "needs-auth")
-    return t("SSH could not sign in to this machine. Sign in or check the SSH key, then reconnect.");
+    return t(
+      "SSH could not sign in to this machine. Sign in or check the SSH key, then reconnect.",
+    );
   if (kind === "host-key")
-    return t("SSH does not trust this machine’s host key. Review it in Connections, then reconnect.");
+    return t(
+      "SSH does not trust this machine’s host key. Review it in Connections, then reconnect.",
+    );
   return undefined;
 }

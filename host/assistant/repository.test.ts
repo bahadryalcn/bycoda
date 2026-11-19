@@ -142,9 +142,8 @@ it("clears only live activity of the requested job in one pass, leaving other jo
   await activity("none");
   await f.repository.trash("activity", a2.id, a2.version, 500);
   const deletedAt = (id: string) =>
-    f.repository.store.db
-      .prepare("SELECT deleted_at FROM assistant_activity WHERE id=?")
-      .get(id).deleted_at;
+    f.repository.store.db.prepare("SELECT deleted_at FROM assistant_activity WHERE id=?").get(id)
+      .deleted_at;
 
   await f.repository.trashActivity("job-a", 2000);
   expect((await f.repository.list<{ id: string }>("activity")).map((row) => row.id).sort()).toEqual(

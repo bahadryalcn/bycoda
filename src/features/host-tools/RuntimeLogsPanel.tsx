@@ -538,8 +538,7 @@ function ScopedRuntimeLogsPanel({
       await writeTextFile(path, content);
       if (alive.current && revision === generation.current) setNotice(t("Logs exported."));
     } catch (cause) {
-      if (alive.current && revision === generation.current)
-        setActionError(errorText(cause));
+      if (alive.current && revision === generation.current) setActionError(errorText(cause));
     } finally {
       exportingRef.current = false;
       if (alive.current) setExporting(false);

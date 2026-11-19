@@ -92,9 +92,7 @@ export function useExternalFileDrop(onOpenFile: EditorFileOpen["onOpenFile"]): v
         )
           .then((results) => {
             if (!cancelled) {
-              reportIgnoredDrops(
-                new Set(results.filter((r): r is IgnoredDrop => r !== null)),
-              );
+              reportIgnoredDrops(new Set(results.filter((r): r is IgnoredDrop => r !== null)));
             }
           })
           .catch((error: unknown) => console.error("Failed to open dropped files:", error));

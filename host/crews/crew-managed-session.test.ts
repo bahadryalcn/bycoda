@@ -62,7 +62,8 @@ it("resolves unfinished runs for member and reviewer sessions without decoding r
   await f.task("t4", { sessionId: "plain" });
   await f.store.db.prepare("INSERT INTO tasks(id,value) VALUES('broken','{')").run();
   expect(await crewMemberRunIds(f.store, "worker")).toEqual(["a", "b"]);
-  for (const id of ["lead-a", "plain", "nobody", ""]) expect(await crewMemberRunIds(f.store, id)).toEqual([]);
+  for (const id of ["lead-a", "plain", "nobody", ""])
+    expect(await crewMemberRunIds(f.store, id)).toEqual([]);
   const bare = new HostStore(":memory:");
   stores.push(bare);
   expect(await crewMemberRunIds(bare, "worker")).toEqual([]);

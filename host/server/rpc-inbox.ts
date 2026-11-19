@@ -108,7 +108,9 @@ type InboxHostState = {
 const inboxStates = new WeakMap<object, InboxHostState>();
 
 function storeStamp(store: InboxDependencies["engine"]["store"]): string {
-  return [store.changeVersion, store.db.dataMutationVersion, store.projectRegistryVersion].join(":");
+  return [store.changeVersion, store.db.dataMutationVersion, store.projectRegistryVersion].join(
+    ":",
+  );
 }
 
 function sharedInboxSources(

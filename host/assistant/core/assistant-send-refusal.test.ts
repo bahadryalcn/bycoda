@@ -28,9 +28,16 @@ it("settles the receipt of a message refused because the assistant is not set up
   const request = (input: unknown) => service.request(input, "owner");
   const thread = (await request({ op: "threads.open" })).thread!;
   const instance = (await request({ op: "threads.sendIdentity" })).sendIdentity!.instanceId;
-  const send = { threadId: thread.id, text: "Hello", idempotencyKey: "refused-send", expectedHostInstance: instance };
+  const send = {
+    threadId: thread.id,
+    text: "Hello",
+    idempotencyKey: "refused-send",
+    expectedHostInstance: instance,
+  };
   // Before the fix the phone's receipt check stayed "unknown" forever and the message could never be cleared.
-  await expect(request({ op: "threads.send", via: "text", ...send })).rejects.toThrow("Configure and enable the assistant");
+  await expect(request({ op: "threads.send", via: "text", ...send })).rejects.toThrow(
+    "Configure and enable the assistant",
+  );
   const status = await request({ op: "threads.sendStatus", ...send });
   expect(status.sendReceipt).toEqual({ status: "refused" });
   // A key that never reached the Host still reads as unknown: absence never permits a resend.

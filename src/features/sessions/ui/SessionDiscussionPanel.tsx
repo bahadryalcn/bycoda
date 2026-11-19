@@ -109,8 +109,7 @@ export function SessionDiscussionPanel({
           mount({ sessionId, host: host.current });
       })
       .catch((cause: unknown) => {
-        if (active && generation === request.current)
-          setError(errorText(cause));
+        if (active && generation === request.current) setError(errorText(cause));
       })
       .finally(() => {
         if (active && generation === request.current) setLoading(false);

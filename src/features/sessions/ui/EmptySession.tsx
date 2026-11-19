@@ -58,11 +58,7 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
         // z-10: in-pane stacking above sibling layers; no in-pane layer scale exists, so the literal stays.
         <div className="bycoda-entry-workbench pointer-events-none relative z-(--layer-pane-sheet) mx-auto flex w-full flex-1 flex-col">
           <div className="bycoda-entry-heading">
-            <div
-              className="bycoda-wordmark"
-              role="img"
-              aria-label={PRODUCT_IDENTITY.displayName}
-            >
+            <div className="bycoda-wordmark" role="img" aria-label={PRODUCT_IDENTITY.displayName}>
               <BrandMark />
               <BrandMark variant="wordmark" className="bycoda-brand-lettering" />
             </div>

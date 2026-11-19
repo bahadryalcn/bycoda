@@ -34,10 +34,12 @@ function recordingHub() {
   const effects: string[] = [];
   const hub = {
     open: vi.fn(),
-    acknowledge: vi.fn((_connection: string, subscriptionId: string, cursor: { sequence: number }) => {
-      effects.push(`ack:${subscriptionId}:${cursor.sequence}`);
-      return true;
-    }),
+    acknowledge: vi.fn(
+      (_connection: string, subscriptionId: string, cursor: { sequence: number }) => {
+        effects.push(`ack:${subscriptionId}:${cursor.sequence}`);
+        return true;
+      },
+    ),
     closeSubscription: vi.fn((_connection: string, subscriptionId: string) => {
       effects.push(`close:${subscriptionId}`);
       return true;
@@ -131,12 +133,14 @@ describe("subscription control lane", () => {
       client.request("close-b", "subscriptions.close", { subscriptionId: "stream-b" }),
     ];
     // Two slots and four queue places are full: the next control is refused before it runs.
-    expect(await client.request("ack-over", "subscriptions.ack", ack("stream-c", 1))).toMatchObject({
-      error: {
-        code: RPC_ERROR_CODES.overloaded,
-        data: { category: "overload", retryable: true, delivery: "not-sent" },
+    expect(await client.request("ack-over", "subscriptions.ack", ack("stream-c", 1))).toMatchObject(
+      {
+        error: {
+          code: RPC_ERROR_CODES.overloaded,
+          data: { category: "overload", retryable: true, delivery: "not-sent" },
+        },
       },
-    });
+    );
     expect(host.effects).toEqual([]);
     hold = false;
     gate.resolve(true);

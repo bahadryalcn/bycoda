@@ -592,7 +592,12 @@ describe("sprint planning authority", () => {
             sprints: [],
             planning: [],
             sources: [
-              { environmentId: "windows", cursor: 5, syncedAt: Date.now(), visibleProjectIds: ["a"] },
+              {
+                environmentId: "windows",
+                cursor: 5,
+                syncedAt: Date.now(),
+                visibleProjectIds: ["a"],
+              },
               { environmentId: "mac", cursor: 3, syncedAt: Date.now(), visibleProjectIds: ["b"] },
             ],
           };

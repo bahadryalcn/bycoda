@@ -475,29 +475,25 @@ it("drops a reader whose authorization was revoked without charging the other co
   expect(other.events.map((event) => event.params.kind)).toEqual(["snapshot"]);
 });
 
-it(
-  "gives consumers that subscribe after a resync a fresh failure allowance",
-  async () => {
-    let failures = 3;
-    const load = vi.fn(async () => {
-      if (failures-- > 0) throw new Error("store stalled");
-      return { revision: 1, data: { revision: 1 } };
-    });
-    const { hub } = fixture({ load });
-    const first = client("first");
-    subscribe(hub, first.owner);
-    await vi.waitFor(() => expect(first.events.at(-1)?.params.kind).toBe("resync-required"), {
-      timeout: 8_000,
-    });
-    hub.closeSubscription("first", "subscription");
-    failures = 1;
-    const late = client("late");
-    subscribe(hub, late.owner);
-    await vi.waitFor(() => expect(snapshots(late.events)).toHaveLength(1), { timeout: 8_000 });
-    expect(late.events.map((event) => event.params.kind)).toEqual(["snapshot"]);
-  },
-  20_000,
-);
+it("gives consumers that subscribe after a resync a fresh failure allowance", async () => {
+  let failures = 3;
+  const load = vi.fn(async () => {
+    if (failures-- > 0) throw new Error("store stalled");
+    return { revision: 1, data: { revision: 1 } };
+  });
+  const { hub } = fixture({ load });
+  const first = client("first");
+  subscribe(hub, first.owner);
+  await vi.waitFor(() => expect(first.events.at(-1)?.params.kind).toBe("resync-required"), {
+    timeout: 8_000,
+  });
+  hub.closeSubscription("first", "subscription");
+  failures = 1;
+  const late = client("late");
+  subscribe(hub, late.owner);
+  await vi.waitFor(() => expect(snapshots(late.events)).toHaveLength(1), { timeout: 8_000 });
+  expect(late.events.map((event) => event.params.kind)).toEqual(["snapshot"]);
+}, 20_000);
 
 it("sends explicit resync instead of unbounded oversize snapshot data", async () => {
   const load = vi.fn(async () => ({ data: { text: "x".repeat(65_536) } }));

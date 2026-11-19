@@ -44,11 +44,7 @@ import { HostCheckpoints } from "../checkpoints/checkpoints";
 import { fileRevertGeneration } from "../sessions/session-file-revert";
 import { browseHostFolder } from "../browser/browse";
 import { formatWorkspaceText } from "../files/editor-format";
-import {
-  parseTextSliceRequest,
-  readTextSlice,
-  type TextSlice,
-} from "./workspace-text-slice";
+import { parseTextSliceRequest, readTextSlice, type TextSlice } from "./workspace-text-slice";
 import { listHostClaudeCommands } from "../providers/claude-commands";
 import {
   deleteHostSkill,

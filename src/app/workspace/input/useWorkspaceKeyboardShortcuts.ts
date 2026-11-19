@@ -32,7 +32,10 @@ import {
 } from "../../../features/workspace/model/tabKeys";
 import { handleEditorFindKey } from "../../../features/files/editor/editorFindBridge";
 import { COMPOSER_PICKER_SELECTOR } from "../../../features/sessions/model/composerPickerSelector";
-import { isTerminalControlKey, terminalToolShortcut } from "../../../features/terminal/model/terminalKeys";
+import {
+  isTerminalControlKey,
+  terminalToolShortcut,
+} from "../../../features/terminal/model/terminalKeys";
 import { focusToastCard, hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import type { WorkspaceActions, WorkspaceRun } from "./useWorkspaceActions";

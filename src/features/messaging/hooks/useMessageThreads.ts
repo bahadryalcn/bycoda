@@ -84,7 +84,11 @@ export function useMessageThreads(accounts: readonly MessagingAccount[], active:
    * limits the load to those accounts; the others keep their current result.
    */
   const refresh = useCallback((queueIfBusy = false, accountIds?: readonly string[]) => {
-    const settle = (account: MessagingAccount, generation: number, result: AccountThreadsResult) => {
+    const settle = (
+      account: MessagingAccount,
+      generation: number,
+      result: AccountThreadsResult,
+    ) => {
       // The account was removed, disconnected or re-identified while this read was in flight.
       if (accountGeneration(account.id) !== generation) return;
       const previous = threadListCache.get(account.id);

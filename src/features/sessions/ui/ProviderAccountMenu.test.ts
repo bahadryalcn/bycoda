@@ -99,7 +99,11 @@ async function renderAccountMenu(accountId: string | undefined) {
   await act(async () => element.querySelector<HTMLButtonElement>("button")!.click());
   const rows = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
   const pick = (label: string) =>
-    act(async () => rows().find((row) => row.textContent?.includes(label))!.click());
+    act(async () =>
+      rows()
+        .find((row) => row.textContent?.includes(label))!
+        .click(),
+    );
   const cleanup = async () => {
     await act(async () => root.unmount());
     element.remove();
@@ -111,8 +115,18 @@ async function renderAccountMenu(accountId: string | undefined) {
 it("marks the effective default account when the session has no explicit account", async () => {
   const menu = await renderAccountMenu(undefined);
   try {
-    expect(menu.rows().find((row) => row.textContent?.includes("Host Alpha"))?.getAttribute("aria-checked")).toBe("true");
-    expect(menu.rows().find((row) => row.textContent?.includes("Host Beta"))?.getAttribute("aria-checked")).toBe("false");
+    expect(
+      menu
+        .rows()
+        .find((row) => row.textContent?.includes("Host Alpha"))
+        ?.getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      menu
+        .rows()
+        .find((row) => row.textContent?.includes("Host Beta"))
+        ?.getAttribute("aria-checked"),
+    ).toBe("false");
     await menu.pick("Host Alpha");
     expect(menu.selected).not.toHaveBeenCalled();
     await menu.pick("Host Beta");

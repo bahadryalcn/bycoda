@@ -13,8 +13,16 @@ function Harness() {
   return createElement(
     "div",
     null,
-    createElement("section", { "data-row": "a", "data-pending": String(api.pending("a")) }, api.feedback("a")),
-    createElement("section", { "data-row": "b", "data-pending": String(api.pending("b")) }, api.feedback("b")),
+    createElement(
+      "section",
+      { "data-row": "a", "data-pending": String(api.pending("a")) },
+      api.feedback("a"),
+    ),
+    createElement(
+      "section",
+      { "data-row": "b", "data-pending": String(api.pending("b")) },
+      api.feedback("b"),
+    ),
   );
 }
 
@@ -72,8 +80,12 @@ it("serializes a quick second change and never reports the first one as a failed
   const second = deferred<boolean>();
   const confirmed = vi.fn();
 
-  await act(async () => api.commit("a", { ...request("on", first), onConfirmed: () => confirmed("on") }));
-  await act(async () => api.commit("a", { ...request("off", second), onConfirmed: () => confirmed("off") }));
+  await act(async () =>
+    api.commit("a", { ...request("on", first), onConfirmed: () => confirmed("on") }),
+  );
+  await act(async () =>
+    api.commit("a", { ...request("off", second), onConfirmed: () => confirmed("off") }),
+  );
 
   // The second change waits for the first write instead of overlapping it.
   expect(writes).toEqual(["on"]);

@@ -320,7 +320,12 @@ export class GitTurnHistory implements TurnGitHistory {
     if (entries.some((entry) => entry.startsWith("160000 ")))
       throw new Error("Submodules are not supported by exact capture");
     // Intent-to-add is not represented by write-tree. Refuse rather than silently normalize it.
-    const visible = await turnGitDigest(cwd, ["diff", "--cached", "--raw", "--ita-visible-in-index"]);
+    const visible = await turnGitDigest(cwd, [
+      "diff",
+      "--cached",
+      "--raw",
+      "--ita-visible-in-index",
+    ]);
     const invisible = await turnGitDigest(cwd, [
       "diff",
       "--cached",

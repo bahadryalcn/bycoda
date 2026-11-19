@@ -157,8 +157,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       setStatus(next);
       if (next.connected) await loadProjects();
     } catch (err: unknown) {
-      if (generation === request.current)
-        setStatusError(errorText(err));
+      if (generation === request.current) setStatusError(errorText(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }

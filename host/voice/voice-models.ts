@@ -72,7 +72,7 @@ const run: Run = (python, args, signal, timeout) =>
 
 // eslint-disable-next-line no-control-regex -- matching terminal control characters in subprocess output
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]+/g;
-const DISK_FULL ="Not enough disk space for the model download. Free space and try again.";
+const DISK_FULL = "Not enough disk space for the model download. Free space and try again.";
 const NO_PERMISSION =
   "The model download could not write to the bycoda voice folder. Check its permissions and try again.";
 const STALLED =
@@ -111,7 +111,11 @@ function downloadFailure(error: unknown): string {
     return NO_PERMISSION;
   if (/checksum|hash mismatch|size mismatch|consistency check failed|corrupt/i.test(stderr))
     return "A downloaded model file failed verification. Delete the partial model and download it again.";
-  if (/RepositoryNotFoundError|RevisionNotFoundError|GatedRepoError|\b40[134] Client Error/i.test(stderr))
+  if (
+    /RepositoryNotFoundError|RevisionNotFoundError|GatedRepoError|\b40[134] Client Error/i.test(
+      stderr,
+    )
+  )
     return "The model repository is not available from the download service. Try again later.";
   if (
     /ConnectionError|ConnectTimeout|ReadTimeout|MaxRetryError|NameResolutionError|ProxyError|SSLError|ChunkedEncodingError|IncompleteRead|getaddrinfo|name or service not known|temporary failure in name resolution|connection (?:reset|aborted|refused)|network is unreachable|timed out|\b5\d\d Server Error/i.test(

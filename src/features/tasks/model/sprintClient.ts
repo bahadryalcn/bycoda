@@ -138,7 +138,9 @@ export function useSprintBoard(
   const syncRead = useRef<{ epoch: number; poll: boolean; promise: Promise<void> } | null>(null);
   // A failing source machine waits out its own backoff during polls only, so the
   // others keep their cadence; a user-requested read always tries every source.
-  const sourceBackoff = useRef(new Map<string, { failures: number; until: number; message: string }>());
+  const sourceBackoff = useRef(
+    new Map<string, { failures: number; until: number; message: string }>(),
+  );
   const pollSkipped = useRef(false);
   const scheduler = useRef<RefreshScheduler | null>(null);
   const listRead = useRef<{

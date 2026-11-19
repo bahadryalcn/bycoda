@@ -112,11 +112,15 @@ const MemoMenuBar = memo(function MenuBar({
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement;
-    const returnTo = previous instanceof HTMLElement && previous !== document.body ? previous : null;
+    const returnTo =
+      previous instanceof HTMLElement && previous !== document.body ? previous : null;
     focusMenuButton("file");
     return () => {
       const current = document.activeElement;
-      if ((!current || current === document.body || !current.isConnected) && returnTo?.isConnected) {
+      if (
+        (!current || current === document.body || !current.isConnected) &&
+        returnTo?.isConnected
+      ) {
         returnTo.focus({ preventScroll: true });
       }
     };
@@ -583,9 +587,7 @@ const MemoMenuBar = memo(function MenuBar({
           ? MENUS[MENUS.length - 1]
           : MENUS[(index + (to === "next" ? 1 : -1) + MENUS.length) % MENUS.length];
     if (!target) return;
-    const button = barRef.current?.querySelector<HTMLElement>(
-      `[data-menubar-key="${target.key}"]`,
-    );
+    const button = barRef.current?.querySelector<HTMLElement>(`[data-menubar-key="${target.key}"]`);
     if (!button) return;
     // Focus first so the new menu's overlay records the button as its focus return.
     button.focus({ preventScroll: true });

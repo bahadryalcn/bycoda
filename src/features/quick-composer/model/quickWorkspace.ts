@@ -28,8 +28,7 @@ export async function quickWorkspaceLaunch(
     const tree = listed.worktrees.find(
       (tree) => !tree.missing && pathKey(tree.path) === pathKey(choice.tree!.path),
     );
-    if (!tree)
-      throw new Error("This worktree is no longer available. Select another worktree.");
+    if (!tree) throw new Error("This worktree is no longer available. Select another worktree.");
     return pathKey(tree.path) === pathKey(choice.cwd)
       ? { workspaceMode: "current" }
       : { worktreeCwd: tree.path };

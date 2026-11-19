@@ -176,7 +176,11 @@ function DeviceNoDevicesState({
         <Button loading={refreshing} disabled={refreshDisabled} onClick={onRefresh}>
           {t("Refresh devices")}
         </Button>
-        <Button variant="ghost" aria-haspopup="dialog" onClick={(event) => onSetup(event.currentTarget)}>
+        <Button
+          variant="ghost"
+          aria-haspopup="dialog"
+          onClick={(event) => onSetup(event.currentTarget)}
+        >
           {t("Setup and access")}
         </Button>
       </div>
@@ -236,7 +240,13 @@ export function DeviceWaitingState({
     );
   if (device && !device.booted)
     return (
-      <Text as="div" size="caption" tone="secondary" leading="inherit" className="device-panel-waiting">
+      <Text
+        as="div"
+        size="caption"
+        tone="secondary"
+        leading="inherit"
+        className="device-panel-waiting"
+      >
         <DeviceRow
           framed
           item={device}
@@ -313,7 +323,13 @@ export function DeviceWaitingState({
       />
     );
   return (
-    <Text as="div" size="caption" tone="secondary" leading="inherit" className="device-panel-waiting">
+    <Text
+      as="div"
+      size="caption"
+      tone="secondary"
+      leading="inherit"
+      className="device-panel-waiting"
+    >
       <p className="device-panel-waiting-text" role="status">
         {t("Select a device to view its screen.")}
       </p>

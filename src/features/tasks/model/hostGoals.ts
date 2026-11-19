@@ -448,9 +448,7 @@ export function parseGoalPlan(text: string, allowedProjects: readonly string[]):
   try {
     raw = JSON.parse(block);
   } catch (error) {
-    throw new Error(
-      `The plan is not valid JSON: ${errorText(error)}`,
-    );
+    throw new Error(`The plan is not valid JSON: ${errorText(error)}`);
   }
   const list =
     raw && typeof raw === "object" && !Array.isArray(raw)

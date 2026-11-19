@@ -60,7 +60,9 @@
   }
 }
 /* The launcher pulse stops its clock while the window is behind another app or decorative motion is off; the dot stays on screen. */
-:global(html:is([data-decorative-motion="off"], [data-window-focus="off"])) .launcherAvatar .launcherDot {
+:global(html:is([data-decorative-motion="off"], [data-window-focus="off"]))
+  .launcherAvatar
+  .launcherDot {
   animation-play-state: paused;
 }
 .panel {

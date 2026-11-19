@@ -171,8 +171,7 @@ export function useSessionStop(deps: SessionStopDeps) {
           }
           const failure = cancellations.find((result) => result.status === "rejected");
           if (failure?.status === "rejected") {
-            const detail =
-              errorText(failure.reason);
+            const detail = errorText(failure.reason);
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === sessionId

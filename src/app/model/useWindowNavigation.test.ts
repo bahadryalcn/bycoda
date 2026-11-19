@@ -5,7 +5,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ listen: vi.fn(), emitTo: vi.fn(), emit: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/api/event", () => ({ emit: api.emit, listen: api.listen, emitTo: api.emitTo }));
+vi.mock("@tauri-apps/api/event", () => ({
+  emit: api.emit,
+  listen: api.listen,
+  emitTo: api.emitTo,
+}));
 vi.mock("@tauri-apps/api/window", () => ({
   getAllWindows: vi.fn(),
   getCurrentWindow: () => ({ label: "tools", listen: api.listen }),

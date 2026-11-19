@@ -147,12 +147,7 @@ export async function linkedInSendConnectionRequest(
     }
   }
   await click(ctx, connect, "connect");
-  await click(
-    ctx,
-    'dialog[open] button,[role="dialog"] button',
-    "invite-note",
-    ADD_NOTE_LABELS,
-  );
+  await click(ctx, 'dialog[open] button,[role="dialog"] button', "invite-note", ADD_NOTE_LABELS);
   const field = await control(
     ctx,
     'dialog[open] textarea,[role="dialog"] textarea',

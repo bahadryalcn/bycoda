@@ -258,8 +258,7 @@ it("keeps the sandbox attributes of the frame in every view", async () => {
       await press(inlineAction(action));
       record();
       await escape();
-      if (action === "expanded")
-        await press(dialog()!.querySelector("[data-modal-close]"));
+      if (action === "expanded") await press(dialog()!.querySelector("[data-modal-close]"));
     }
     expect(seen).toHaveLength(3);
     for (const frame of seen) {
@@ -274,36 +273,39 @@ it("keeps the sandbox attributes of the frame in every view", async () => {
 it.each([
   ["supports", false],
   ["refuses", true],
-])("moves the frame host with the state-keeping move when the platform %s it", async (_name, refuse) => {
-  const moves: Element[] = [];
-  Object.defineProperty(HTMLElement.prototype, "moveBefore", {
-    configurable: true,
-    writable: true,
-    value(this: HTMLElement, node: Node, child: Node | null) {
-      moves.push(node as Element);
-      if (refuse) throw new DOMException("refused", "HierarchyRequestError");
-      this.insertBefore(node, child);
-    },
-  });
-  const snapshot = { version: 1 as const, title: "Counter", html: "<p>Count</p>", height: 240 };
-  try {
-    await mountCard(snapshot, async (card) => {
-      const frame = card.frames()[0];
-      await card.press(card.inlineAction("panel"));
-      expect(card.panel()!.querySelector("iframe")).toBe(frame);
-      await card.press(card.labelled(card.panel(), "Expand"));
-      expect(card.dialog()!.querySelector("iframe")).toBe(frame);
-      await card.press(card.labelled(card.row(), "Close"));
-      expect(card.host.querySelector("iframe")).toBe(frame);
-      // Supported or refused, the move never gives up the one frame, token or preview.
-      expect(moves.length).toBeGreaterThan(0);
-      for (const node of moves) expect(node.matches(HOST)).toBe(true);
-      expect(card.frames()).toHaveLength(1);
-      expect(card.created).toHaveLength(1);
-      expect(card.closed).toEqual([]);
-      expect(card.live.size).toBe(1);
+])(
+  "moves the frame host with the state-keeping move when the platform %s it",
+  async (_name, refuse) => {
+    const moves: Element[] = [];
+    Object.defineProperty(HTMLElement.prototype, "moveBefore", {
+      configurable: true,
+      writable: true,
+      value(this: HTMLElement, node: Node, child: Node | null) {
+        moves.push(node as Element);
+        if (refuse) throw new DOMException("refused", "HierarchyRequestError");
+        this.insertBefore(node, child);
+      },
     });
-  } finally {
-    Reflect.deleteProperty(HTMLElement.prototype, "moveBefore");
-  }
-});
+    const snapshot = { version: 1 as const, title: "Counter", html: "<p>Count</p>", height: 240 };
+    try {
+      await mountCard(snapshot, async (card) => {
+        const frame = card.frames()[0];
+        await card.press(card.inlineAction("panel"));
+        expect(card.panel()!.querySelector("iframe")).toBe(frame);
+        await card.press(card.labelled(card.panel(), "Expand"));
+        expect(card.dialog()!.querySelector("iframe")).toBe(frame);
+        await card.press(card.labelled(card.row(), "Close"));
+        expect(card.host.querySelector("iframe")).toBe(frame);
+        // Supported or refused, the move never gives up the one frame, token or preview.
+        expect(moves.length).toBeGreaterThan(0);
+        for (const node of moves) expect(node.matches(HOST)).toBe(true);
+        expect(card.frames()).toHaveLength(1);
+        expect(card.created).toHaveLength(1);
+        expect(card.closed).toEqual([]);
+        expect(card.live.size).toBe(1);
+      });
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, "moveBefore");
+    }
+  },
+);

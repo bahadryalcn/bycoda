@@ -80,7 +80,15 @@ it("reads fresh inside the TTL when an account expiry is near", async () => {
   const machine = nextMachine();
   const expiresAt = Date.now() + MINUTE;
   const client = fakeClient(machine.id, [
-    { id: "a", platform: "x", connected: true, paused: false, connection: "api", expiresAt, grants: {} },
+    {
+      id: "a",
+      platform: "x",
+      connected: true,
+      paused: false,
+      connection: "api",
+      expiresAt,
+      grants: {},
+    },
   ]);
   await readSocialWaiting(machine);
   vi.advanceTimersByTime(MINUTE);
@@ -92,7 +100,15 @@ it("still counts a sign-in that is due, with the project read it needs", async (
   const machine = nextMachine();
   const expiresAt = Date.now() - 1_000;
   fakeClient(machine.id, [
-    { id: "a", platform: "x", connected: true, paused: false, connection: "browser", expiresAt, grants: {} },
+    {
+      id: "a",
+      platform: "x",
+      connected: true,
+      paused: false,
+      connection: "browser",
+      expiresAt,
+      grants: {},
+    },
   ]);
   const items = await readSocialWaiting(machine);
   expect(items?.map((item) => item.id)).toEqual([`signin:a:${expiresAt}`]);
@@ -102,9 +118,11 @@ it("still counts a sign-in that is due, with the project read it needs", async (
 it("still reports a pending account request with its project path", async () => {
   const machine = nextMachine();
   mocks.projects.mockResolvedValue([{ id: "p1" }]);
-  fakeClient(machine.id, [], [
-    { id: "r1", status: "pending", projectId: "p1", platform: "x", createdAt: 5 },
-  ]);
+  fakeClient(
+    machine.id,
+    [],
+    [{ id: "r1", status: "pending", projectId: "p1", platform: "x", createdAt: 5 }],
+  );
   const items = await readSocialWaiting(machine);
   expect(items).toEqual([
     { id: "request:r1", kind: "accountRequest", platform: "x", paths: ["/p1"], at: 5 },

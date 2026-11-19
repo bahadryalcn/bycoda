@@ -106,7 +106,9 @@ export function MessagesPanel({
   const retryFailed = () => refreshAccounts(failures.map(({ account }) => account.id));
   const failureHeadline =
     failures.length === 1
-      ? t("Could not refresh {p0}.", { p0: failures[0].account.label || failures[0].account.identity })
+      ? t("Could not refresh {p0}.", {
+          p0: failures[0].account.label || failures[0].account.identity,
+        })
       : t("Could not refresh {p0} accounts.", { p0: String(failures.length) });
 
   const selectThread = useStableCallback((thread: MessageThread) => {

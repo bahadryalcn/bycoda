@@ -19,18 +19,52 @@ describe("browser recipe button labels", () => {
       expect.arrayContaining(["Send", "Gönder", "Senden", "Envoyer", "Enviar", "发送", "送信"]),
     );
     expect(POST_LABELS).toEqual(
-      expect.arrayContaining(["Post", "Yayınla", "Posten", "Publier", "Publicar", "发布", "投稿する"]),
+      expect.arrayContaining([
+        "Post",
+        "Yayınla",
+        "Posten",
+        "Publier",
+        "Publicar",
+        "发布",
+        "投稿する",
+      ]),
     );
     expect(SHARE_LABELS).toEqual(
-      expect.arrayContaining(["Share", "Paylaş", "Teilen", "Partager", "Compartir", "分享", "シェア"]),
+      expect.arrayContaining([
+        "Share",
+        "Paylaş",
+        "Teilen",
+        "Partager",
+        "Compartir",
+        "分享",
+        "シェア",
+      ]),
     );
     expect(NEXT_LABELS).toEqual(
-      expect.arrayContaining(["Next", "İleri", "Weiter", "Suivant", "Siguiente", "Avançar", "下一步", "次へ"]),
+      expect.arrayContaining([
+        "Next",
+        "İleri",
+        "Weiter",
+        "Suivant",
+        "Siguiente",
+        "Avançar",
+        "下一步",
+        "次へ",
+      ]),
     );
-    expect(NEXT_OR_DONE_LABELS).toEqual(expect.arrayContaining([...NEXT_LABELS, "Done", "Bitti", "Fertig"]));
-    expect(ADD_NOTE_LABELS).toEqual(expect.arrayContaining(["Add a note", "Not ekle", "Notiz hinzufügen"]));
+    expect(NEXT_OR_DONE_LABELS).toEqual(
+      expect.arrayContaining([...NEXT_LABELS, "Done", "Bitti", "Fertig"]),
+    );
+    expect(ADD_NOTE_LABELS).toEqual(
+      expect.arrayContaining(["Add a note", "Not ekle", "Notiz hinzufügen"]),
+    );
     expect(INVITATION_SEND_LABELS).toEqual(
-      expect.arrayContaining([...SEND_LABELS, "Send invitation", "Davet gönder", "Einladung senden"]),
+      expect.arrayContaining([
+        ...SEND_LABELS,
+        "Send invitation",
+        "Davet gönder",
+        "Einladung senden",
+      ]),
     );
   });
 
@@ -40,12 +74,18 @@ describe("browser recipe button labels", () => {
       expect.arrayContaining(["Post", "Paylaş", "Gönderi paylaş", "Gönder"]),
     );
     expect(FACEBOOK_MESSAGE_SEND_LABELS).toEqual(
-      expect.arrayContaining(["Send", "Gönder", "Press Enter to send", "Göndermek için Enter tuşuna bas"]),
+      expect.arrayContaining([
+        "Send",
+        "Gönder",
+        "Press Enter to send",
+        "Göndermek için Enter tuşuna bas",
+      ]),
     );
   });
 
   it("does not let one action's label name another action's button", () => {
-    const overlap = (a: readonly string[], b: readonly string[]) => a.filter((label) => b.includes(label));
+    const overlap = (a: readonly string[], b: readonly string[]) =>
+      a.filter((label) => b.includes(label));
     expect(overlap(SEND_LABELS, SHARE_LABELS)).toEqual([]);
     expect(overlap(POST_LABELS, SHARE_LABELS)).toEqual([]);
     expect(overlap(NEXT_LABELS, SEND_LABELS)).toEqual([]);

@@ -24,7 +24,10 @@ const store = vi.hoisted(() => ({
   invoke: vi.fn(async (command: string, args: { name?: string; data?: string; path?: string }) => {
     if (command === "write_attachment") {
       const path = `/tmp/bycoda-attachments/${++store.counter}-${store.counter}-${args.name}`;
-      store.files.set(path, Uint8Array.from(atob(args.data!), (char) => char.charCodeAt(0)));
+      store.files.set(
+        path,
+        Uint8Array.from(atob(args.data!), (char) => char.charCodeAt(0)),
+      );
       return path;
     }
     if (command === "delete_path") {
@@ -84,7 +87,10 @@ export const image: DeviceImageDraft = {
   comment: "Adjust the marked area",
 };
 const event = "bycoda:device-image-draft";
-Object.assign(URL, { createObjectURL: vi.fn(() => "blob:device-preview"), revokeObjectURL: vi.fn() });
+Object.assign(URL, {
+  createObjectURL: vi.fn(() => "blob:device-preview"),
+  revokeObjectURL: vi.fn(),
+});
 const stops: (() => void)[] = [];
 afterEach(async () => {
   stops.splice(0).forEach((stop) => stop());
@@ -230,7 +236,10 @@ it("ignores another conversation and rejects malformed events at the receiving b
     { ...request.image, file: { ...file, size: file.size + 1 } },
     { ...request.image, comment: "edited" },
     { ...request.image, file: { ...file, path: "/etc/passwd" } },
-    { ...request.image, file: { ...file, path: "/tmp/bycoda-attachments/../1-1-device-screen.png" } },
+    {
+      ...request.image,
+      file: { ...file, path: "/tmp/bycoda-attachments/../1-1-device-screen.png" },
+    },
     { ...request.image, file: { ...file, path: "/tmp/other/1-1-device-screen.png" } },
   ]) {
     transport.emit.mockClear();

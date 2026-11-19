@@ -34,8 +34,11 @@ export function budgetUsageChanged(
   const { measuredAt: _measuredAt, ...material } = current;
   if (previous && current.runningRuns > 0 && previous.runningRuns === current.runningRuns) {
     const { agentMinutes: _minutes, ...stable } = material;
-    const { agentMinutes: _previousMinutes, measuredAt: _previousMeasuredAt, ...stableBefore } =
-      previous;
+    const {
+      agentMinutes: _previousMinutes,
+      measuredAt: _previousMeasuredAt,
+      ...stableBefore
+    } = previous;
     return !isDeepStrictEqual(stable, stableBefore);
   }
   const { measuredAt: _previousMeasuredAt, ...before } = previous ?? {};

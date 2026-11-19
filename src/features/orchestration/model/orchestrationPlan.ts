@@ -258,9 +258,7 @@ export function completeOrchestrationProposal(
       ...draft,
       status: "invalid",
       response: response.slice(-200_000),
-      error:
-        error ??
-        `Could not prepare the assignment card: ${errorText(reason)}`,
+      error: error ?? `Could not prepare the assignment card: ${errorText(reason)}`,
     };
   }
 }

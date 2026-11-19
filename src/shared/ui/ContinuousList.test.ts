@@ -114,7 +114,9 @@ it("keeps focused record mounted when selection changes", async () => {
 
 it("keeps focus out of list state so moving focus between mounted rows renders no row", async () => {
   const renderItem = vi.fn((item: string) => createElement("button", null, `Row ${item}`));
-  await act(async () => root.render(createElement(ContinuousList<string>, { ...props, renderItem })));
+  await act(async () =>
+    root.render(createElement(ContinuousList<string>, { ...props, renderItem })),
+  );
   const first = container.querySelector<HTMLButtonElement>('[data-collection-key="0"] button')!;
   const second = container.querySelector<HTMLButtonElement>('[data-collection-key="1"] button')!;
   await act(async () => first.focus());

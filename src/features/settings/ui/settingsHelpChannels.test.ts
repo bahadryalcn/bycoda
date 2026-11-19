@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
-const read = (file: string) => readFileSync(join("src", "features", "settings", "ui", file), "utf8");
+const read = (file: string) =>
+  readFileSync(join("src", "features", "settings", "ui", file), "utf8");
 
 // A settings row keeps one help channel: a description (behind ⓘ) or an info popover, never both
 // saying the same thing. These rows used to pass a description and a separate info popover.

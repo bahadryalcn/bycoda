@@ -1095,9 +1095,11 @@ function ConnectedRemoteSession({
                 snapshotRef.current = undefined;
                 forceTailRead.current = true;
                 historyGeneration.failed();
-                setError(t("History loading failed: {p0}. Retrying.", {
+                setError(
+                  t("History loading failed: {p0}. Retrying.", {
                     p0: describeRemoteError(reason).message,
-                  }));
+                  }),
+                );
               },
               onPreviews: (preview) => {
                 const current = snapshotRef.current;
@@ -2685,9 +2687,7 @@ function ConnectedRemoteSession({
         } catch (reason) {
           if (alive.current && version === bindingGen.version) {
             if (await holdFollowUp(undefined, errorText(reason)))
-              setError(
-                t("Could not deliver the follow-up: {p0}", { p0: errorText(reason) }),
-              );
+              setError(t("Could not deliver the follow-up: {p0}", { p0: errorText(reason) }));
           }
         } finally {
           onAcceptance?.(accepted);
@@ -3109,7 +3109,8 @@ function ConnectedRemoteSession({
           online,
           pendingNeedsConfirmation,
           error,
-          () => void retryPending().catch((reason) => setError(describeRemoteError(reason).message)),
+          () =>
+            void retryPending().catch((reason) => setError(describeRemoteError(reason).message)),
         )
       : starting?.failed
         ? {
@@ -3456,10 +3457,7 @@ function ConnectedRemoteSession({
         );
       })
       .catch((error: unknown) => {
-        updateDelivery(
-          dispatched ? "unknown" : "failed",
-          describeRemoteError(error).message,
-        );
+        updateDelivery(dispatched ? "unknown" : "failed", describeRemoteError(error).message);
       })
       .finally(() => ownership?.finishJob(`question:${commandId}`));
   };

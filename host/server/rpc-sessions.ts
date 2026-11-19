@@ -1,9 +1,6 @@
 import { dirname } from "node:path";
 import { sessionWorkCwd, type LinkedWorkItem } from "../../src/features/sessions/model/session";
-import {
-  SYNC_PUSH_MAX_OPS,
-  type SyncOp,
-} from "../../src/features/sync/model/syncProtocol";
+import { SYNC_PUSH_MAX_OPS, type SyncOp } from "../../src/features/sync/model/syncProtocol";
 import { parseGithubWorkItemUrl } from "../../src/shared/lib/githubWorkItem";
 import { SafeCounterSchema } from "../../src/shared/model/host-contracts/schemas";
 import {

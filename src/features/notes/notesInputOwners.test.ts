@@ -758,10 +758,12 @@ it("bounds original private generations upfront without evicting any retained da
 it("admits a tracked editor size at exactly the limits canRetainText enforces, without the text", () => {
   const input = owner();
   const controls = { canClose: () => true, close: () => {} };
-  const port = input.observer("source").attach(
-    () => ({ snapshot: { inputKind: "codemirror", text: "", canonicalValue: "" } }),
-    controls,
-  );
+  const port = input
+    .observer("source")
+    .attach(
+      () => ({ snapshot: { inputKind: "codemirror", text: "", canonicalValue: "" } }),
+      controls,
+    );
   const limit = 8 * 1024 * 1024;
   expect(input.canRetainBytes("source", limit)).toBe(true);
   expect(input.canRetainBytes("source", limit + 1)).toBe(false);

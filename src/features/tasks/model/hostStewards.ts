@@ -182,9 +182,7 @@ export function parseStewardProposals(text: string, max: number): StewardProposa
   try {
     raw = JSON.parse(block);
   } catch (error) {
-    throw new Error(
-      `The proposals are not valid JSON: ${errorText(error)}`,
-    );
+    throw new Error(`The proposals are not valid JSON: ${errorText(error)}`);
   }
   const list = Array.isArray(raw)
     ? raw

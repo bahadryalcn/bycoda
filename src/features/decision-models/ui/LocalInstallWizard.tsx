@@ -31,9 +31,7 @@ type Loaded = { hardware: HardwareInfo; recommendation: LocalRecommendation };
 function InstallProgress({ progress }: { progress: InstallState["progress"] | null }) {
   if (!progress) return <Progress label={t("Installing…")} />;
   if (progress.bytesTotal <= 0)
-    return (
-      <Progress label={t("Downloading {p1}…", { p1: formatBytes(progress.bytesDone) })} />
-    );
+    return <Progress label={t("Downloading {p1}…", { p1: formatBytes(progress.bytesDone) })} />;
   return (
     <Progress
       value={Math.min(progress.bytesDone, progress.bytesTotal)}
@@ -228,7 +226,9 @@ export function LocalInstallWizard({
                 {plan === null && planError === null ? (
                   <Progress
                     label={
-                      target ? t("Checking Host {p0}…", { p0: target }) : t("Checking this computer…")
+                      target
+                        ? t("Checking Host {p0}…", { p0: target })
+                        : t("Checking this computer…")
                     }
                   />
                 ) : null}
@@ -280,13 +280,20 @@ export function LocalInstallWizard({
             {installing ? <InstallProgress progress={local.progress} /> : null}
             {installing && local.canCancel ? (
               <div className="flex">
-                <Button variant="secondary" size="sm" loading={local.cancelling} onClick={local.cancel}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={local.cancelling}
+                  onClick={local.cancel}
+                >
                   {local.cancelling ? t("Cancelling…") : t("Cancel install")}
                 </Button>
               </div>
             ) : null}
             {local.cancelled ? (
-              <InlineMessage tone="neutral">{t("Install cancelled. Nothing was kept.")}</InlineMessage>
+              <InlineMessage tone="neutral">
+                {t("Install cancelled. Nothing was kept.")}
+              </InlineMessage>
             ) : null}
             {installed ? (
               <InlineMessage tone="success">

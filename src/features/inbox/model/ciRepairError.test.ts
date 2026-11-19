@@ -11,7 +11,9 @@ afterEach(async () => {
 
 it("presents each refusal as a translated sentence, not the stored English message", async () => {
   const busy = new CiRepairStartError("chatBusy", "raw english text");
-  expect(presentCiRepairError(busy)).toBe("This chat is busy. Choose another chat or start a new one.");
+  expect(presentCiRepairError(busy)).toBe(
+    "This chat is busy. Choose another chat or start a new one.",
+  );
   expect(presentCiRepairError(new CiRepairStartError("projectRequired", "raw"))).toBe(
     "Choose a local project for this PR first.",
   );

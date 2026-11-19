@@ -152,7 +152,9 @@ it("slows down while the window is hidden and refreshes when it is shown", async
 });
 
 it("shows one loading indicator while the session has not loaded", async () => {
-  vi.mocked(remoteRequest).mockReset().mockReturnValue(new Promise(() => {}));
+  vi.mocked(remoteRequest)
+    .mockReset()
+    .mockReturnValue(new Promise(() => {}));
   const unmount = await mountSheet();
   try {
     await advance(LOADING_DELAY_MS + 1);

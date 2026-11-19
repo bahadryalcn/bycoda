@@ -153,9 +153,7 @@ it("names the failing field and its rule on each failed save, and keeps the draf
 
   await type("Template trigger", "review");
   await save();
-  expect(fieldError("Template trigger")).toBe(
-    "This trigger is already used by another template.",
-  );
+  expect(fieldError("Template trigger")).toBe("This trigger is already used by another template.");
   // Every failed save leaves the draft in place and writes nothing.
   expect(field("Template name").value).toBe("Second");
   expect(field("Template text").value).toBe("Second body");

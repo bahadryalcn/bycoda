@@ -17,7 +17,8 @@ const sent = (machineId: string) =>
   mocks.record.mock.calls
     .filter(([id]) => id === machineId)
     .reduce(
-      (sum, [, report]) => sum + countMinutes(decodeMinutes((report as { minutes: string }).minutes)),
+      (sum, [, report]) =>
+        sum + countMinutes(decodeMinutes((report as { minutes: string }).minutes)),
       0,
     );
 

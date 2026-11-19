@@ -324,7 +324,8 @@ it("reports a screen-recording block as a recoverable notice and keeps the draft
   });
   expect(api.files).toEqual(kept);
   expect(onError).toHaveBeenLastCalledWith({
-    message: "Screenshots need Screen Recording access. Review access to set it up, then try again.",
+    message:
+      "Screenshots need Screen Recording access. Review access to set it up, then try again.",
     recovery: "screen-recording",
   });
 });

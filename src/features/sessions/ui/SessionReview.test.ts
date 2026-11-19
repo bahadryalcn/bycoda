@@ -241,9 +241,7 @@ function refreshButton() {
 it("treats the typed recording code as a wait, not an error", async () => {
   vi.useFakeTimers();
   try {
-    mocks.status.mockRejectedValueOnce(
-      new Error("Checkpoint reworded [CHECKPOINT_RECORDING]"),
-    );
+    mocks.status.mockRejectedValueOnce(new Error("Checkpoint reworded [CHECKPOINT_RECORDING]"));
     await renderRecording("typed");
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).toContain("Loading changes");
@@ -324,7 +322,9 @@ it("recovers from a stalled wait when the checkpoint settles", async () => {
 it("surfaces a different failure while waiting instead of polling on", async () => {
   vi.useFakeTimers();
   try {
-    mocks.status.mockRejectedValueOnce(new Error("Workspace checkpoint is still recording this turn"));
+    mocks.status.mockRejectedValueOnce(
+      new Error("Workspace checkpoint is still recording this turn"),
+    );
     mocks.status.mockRejectedValueOnce(new Error("Status unavailable"));
     await renderRecording("changes-mind");
     const calls = mocks.status.mock.calls.length;
@@ -342,7 +342,9 @@ it("does not poll while the page is hidden and resumes when it is visible", asyn
   let hidden = true;
   Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
   try {
-    mocks.status.mockRejectedValueOnce(new Error("Workspace checkpoint is still recording this turn"));
+    mocks.status.mockRejectedValueOnce(
+      new Error("Workspace checkpoint is still recording this turn"),
+    );
     await renderRecording("hidden");
     const calls = mocks.status.mock.calls.length;
     await act(async () => vi.advanceTimersByTimeAsync(30_000));

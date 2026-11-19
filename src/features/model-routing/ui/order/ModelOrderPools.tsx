@@ -11,11 +11,7 @@ import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { TextField } from "../../../../shared/ui/TextField";
 import { Trash2 } from "../../../../shared/ui/icons";
 import { Group } from "../../../../shared/ui/settings";
-import {
-  nextOrderPoolName,
-  removeOrderPool,
-  type OrderDraft,
-} from "../../model/modelRoutingDraft";
+import { nextOrderPoolName, removeOrderPool, type OrderDraft } from "../../model/modelRoutingDraft";
 import { PoolMembers } from "./PoolMembers";
 
 export function ModelOrderPools({

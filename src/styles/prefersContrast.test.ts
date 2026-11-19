@@ -1,10 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-const css = [
-  "src/styles/index.css",
-  "src/features/files/editor/editorBlame.css",
-]
+const css = ["src/styles/index.css", "src/features/files/editor/editorBlame.css"]
   .map((file) => readFileSync(file, "utf8"))
   .join("\n");
 

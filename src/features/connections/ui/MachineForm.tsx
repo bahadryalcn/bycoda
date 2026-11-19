@@ -40,7 +40,9 @@ function SshHelp({ editing }: { editing: boolean }) {
     <InfoPopover label={t("Connection help")} width={360}>
       <p>
         {editing
-          ? t("Changes apply to this computer. To connect a different computer, choose Add a computer.")
+          ? t(
+              "Changes apply to this computer. To connect a different computer, choose Add a computer.",
+            )
           : t(
               "Connect a different computer with its own SSH address. Existing computers stay saved.",
             )}

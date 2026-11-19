@@ -18,9 +18,7 @@ describe("empty session heading", () => {
       createElement(EmptySession, { cwd: "/work/demo", composer: createElement("textarea") }),
     );
 
-    expect(markup).toContain(
-      `role="img" aria-label="${PRODUCT_IDENTITY.displayName}"`,
-    );
+    expect(markup).toContain(`role="img" aria-label="${PRODUCT_IDENTITY.displayName}"`);
   });
 });
 

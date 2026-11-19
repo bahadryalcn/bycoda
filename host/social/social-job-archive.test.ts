@@ -103,13 +103,15 @@ it("indexes the per-rule daily limit counts on cold history and keeps the counts
     "id!=? AND json_extract(value,'$.ruleId')=? AND json_extract(value,'$.dispatchedAt')>0 AND json_extract(value,'$.dispatchedAt')>=? AND json_extract(value,'$.dispatchedAt')<?";
   await f.insert("today", "succeeded", { ruleId: "r1", createdAt: day + 5, dispatchedAt: day + 6 });
   await f.insert("yesterday", "succeeded", { ruleId: "r1", createdAt: 5, dispatchedAt: 6 });
-  await f.insert("other-rule", "succeeded", { ruleId: "r2", createdAt: day + 5, dispatchedAt: day + 6 });
+  await f.insert("other-rule", "succeeded", {
+    ruleId: "r2",
+    createdAt: day + 5,
+    dispatchedAt: day + 6,
+  });
   await f.insert("cancelled", "cancelled", { ruleId: "r1", createdAt: day + 7 });
   await f.archive.archive(["today", "yesterday", "other-rule", "cancelled"]);
   const plan = async (sql: string, values: (string | number)[]) =>
-    (
-      await f.store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...values)
-    )
+    (await f.store.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...values))
       .map((row) => String(row.detail))
       .join("\n");
   expect(

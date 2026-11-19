@@ -39,7 +39,10 @@ it("keeps loaded pages and their cursors when the newest page only gained a thre
     data,
     page([item("t10", 100), item("t9", 90), item("t8", 80)], "80|t8"),
   );
-  expect(ids(next)).toEqual([["t10", "t9", "t8", "t7"], ["t6", "t5", "t4"]]);
+  expect(ids(next)).toEqual([
+    ["t10", "t9", "t8", "t7"],
+    ["t6", "t5", "t4"],
+  ]);
   expect(next.pageParams).toEqual([undefined, "70|t7"]);
   expect(next.pages[1]?.next).toBe("40|t4");
 });
@@ -51,7 +54,10 @@ it("applies updates and drops threads the newest page no longer lists", () => {
     data,
     page([item("t8", 120, "new"), item("t7", 70), item("t6", 60)], "60|t6"),
   );
-  expect(ids(next)).toEqual([["t8", "t7", "t6"], ["t5", "t4"]]);
+  expect(ids(next)).toEqual([
+    ["t8", "t7", "t6"],
+    ["t5", "t4"],
+  ]);
   expect(next.pages[0]?.items[0]?.preview).toBe("new");
 });
 
@@ -86,7 +92,10 @@ it("takes the unreadable accounts from the newest page", () => {
 
 it("lists a thread once when a cursor shift repeats it on two pages", () => {
   const data: InboxPages = {
-    pages: [page([item("t3", 30), item("t2", 20)], "20|t2"), page([item("t2", 20), item("t1", 10)])],
+    pages: [
+      page([item("t3", 30), item("t2", 20)], "20|t2"),
+      page([item("t2", 20), item("t1", 10)]),
+    ],
     pageParams: [undefined, "20|t2"],
   };
   const deduped = dedupeInboxPages(data);

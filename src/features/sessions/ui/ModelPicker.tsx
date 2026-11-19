@@ -766,7 +766,11 @@ export function ModelPicker({
     if (event.nativeEvent.isComposing) return;
     const opensRecent =
       event.key === "ContextMenu" ||
-      (event.key === "F10" && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) ||
+      (event.key === "F10" &&
+        event.shiftKey &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey) ||
       (event.key === "ArrowDown" &&
         event.altKey &&
         !event.shiftKey &&
@@ -972,9 +976,7 @@ export function ModelPicker({
                 >
                   {inherit.label}
                 </Text>
-                {inheritSelected ? (
-                  <Check className="icon-sm shrink-0" tone="neutral" />
-                ) : null}
+                {inheritSelected ? <Check className="icon-sm shrink-0" tone="neutral" /> : null}
               </Button>
             ) : undefined
           }
@@ -1044,9 +1046,7 @@ export function ModelPicker({
                   {item.provider ? ` · ${item.provider.name}` : ""}
                 </Text>
 
-                {selected ? (
-                  <Check className="icon-sm shrink-0" tone="secondary" />
-                ) : null}
+                {selected ? <Check className="icon-sm shrink-0" tone="secondary" /> : null}
               </MenuRow>
             );
           })}

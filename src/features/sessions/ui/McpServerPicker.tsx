@@ -63,7 +63,9 @@ export function McpServerPicker({
                 truncate
                 className="max-w-32"
               >
-                {server.availability === "authentication" ? t("Needs authentication") : server.detail}
+                {server.availability === "authentication"
+                  ? t("Needs authentication")
+                  : server.detail}
               </Text>
             ),
           disabled: server.availability !== "available",

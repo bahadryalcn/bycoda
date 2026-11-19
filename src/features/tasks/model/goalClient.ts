@@ -324,8 +324,7 @@ export async function createGoal(
       }
       // Absence cannot settle an in-flight server request. Keep its identity and
       // payload; expectedAbsent makes a retry race safe on the Host.
-      if (fingerprint !== pending.fingerprint)
-        throw new Error(taskClientErrors.epicUnresolved());
+      if (fingerprint !== pending.fingerprint) throw new Error(taskClientErrors.epicUnresolved());
       const created = await writeGoal(original.id, () =>
         remoteRequest<HostGoal>(
           original.id,

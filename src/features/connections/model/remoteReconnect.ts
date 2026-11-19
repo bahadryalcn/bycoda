@@ -296,7 +296,10 @@ function schedule() {
     // label always names the moment the attempt actually runs.
     const delay = autoRetryDelay(count);
     setConnectionRetry(environmentId, now + delay);
-    retries.set(environmentId, setTimeout(() => void retry(environmentId, false), delay));
+    retries.set(
+      environmentId,
+      setTimeout(() => void retry(environmentId, false), delay),
+    );
   }
 }
 

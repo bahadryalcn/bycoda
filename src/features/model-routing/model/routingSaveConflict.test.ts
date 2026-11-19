@@ -4,13 +4,13 @@ import { isRoutingSaveConflict, routingSaveMessage } from "./routingSaveConflict
 const legacy = "Model routing changed; reload before saving.";
 
 it("accepts the Host's machine code, as an error code or as the message prefix", () => {
-  expect(isRoutingSaveConflict(Object.assign(new Error("anything"), { code: "MODEL_ROUTING_CONFLICT" }))).toBe(
-    true,
-  );
+  expect(
+    isRoutingSaveConflict(Object.assign(new Error("anything"), { code: "MODEL_ROUTING_CONFLICT" })),
+  ).toBe(true);
   expect(isRoutingSaveConflict(new Error(`MODEL_ROUTING_CONFLICT: ${legacy}`))).toBe(true);
-  expect(isRoutingSaveConflict(new Error(`Host rejected request: MODEL_ROUTING_CONFLICT: ${legacy}`))).toBe(
-    true,
-  );
+  expect(
+    isRoutingSaveConflict(new Error(`Host rejected request: MODEL_ROUTING_CONFLICT: ${legacy}`)),
+  ).toBe(true);
 });
 
 it("accepts the exact legacy message of a Host without the code", () => {
@@ -28,7 +28,9 @@ it("treats other failures that merely mention version, changed or conflict as or
     "NOT_MODEL_ROUTING_CONFLICT: other",
   ])
     expect(isRoutingSaveConflict(new Error(text))).toBe(false);
-  expect(isRoutingSaveConflict(Object.assign(new Error("x"), { code: "RPC_WS_DEADLINE" }))).toBe(false);
+  expect(isRoutingSaveConflict(Object.assign(new Error("x"), { code: "RPC_WS_DEADLINE" }))).toBe(
+    false,
+  );
   expect(isRoutingSaveConflict(undefined)).toBe(false);
 });
 

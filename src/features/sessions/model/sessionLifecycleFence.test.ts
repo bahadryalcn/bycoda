@@ -80,7 +80,9 @@ it("ignores a list requested before a confirmed settle that does not know the se
 it("ignores a stale list that still shows the session in an older record", async () => {
   await act(async () =>
     setSessionLifecycleList({
-      records: [{ sessionId: "fence-2", state: "settling", participants: owner, settleRequestedAt: 5 }],
+      records: [
+        { sessionId: "fence-2", state: "settling", participants: owner, settleRequestedAt: 5 },
+      ],
       autoSettle,
     }),
   );
@@ -175,7 +177,9 @@ it("ignores a single-session read begun before the confirmed settle and applies 
 it("fences a read begun while the settle request was still in flight", async () => {
   await act(async () => setSessionLifecycle(active("fence-11")));
   let answer: (view: SessionLifecycleView) => void = () => undefined;
-  remoteRequest.mockReturnValueOnce(new Promise<SessionLifecycleView>((resolve) => (answer = resolve)));
+  remoteRequest.mockReturnValueOnce(
+    new Promise<SessionLifecycleView>((resolve) => (answer = resolve)),
+  );
   const settling = sessionLifecycleClient("local").settle("fence-11");
   const readAt = beginLifecycleRead();
 
@@ -190,7 +194,9 @@ it("does not fence reads when the settle request failed", async () => {
   await act(async () => setSessionLifecycle(settled("fence-12")));
   const readAt = beginLifecycleRead();
   remoteRequest.mockRejectedValueOnce(new Error("Host refused"));
-  await expect(sessionLifecycleClient("local").unsettle("fence-12")).rejects.toThrow("Host refused");
+  await expect(sessionLifecycleClient("local").unsettle("fence-12")).rejects.toThrow(
+    "Host refused",
+  );
 
   await act(async () => applyLifecycleListRead({ records: [], autoSettle }, readAt));
 

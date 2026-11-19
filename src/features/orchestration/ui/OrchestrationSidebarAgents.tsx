@@ -9,7 +9,10 @@ import { useContext, useRef, useState, useSyncExternalStore } from "react";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { orchestrator } from "../model/orchestration";
-import { orchestrationTaskLabelCode, type OrchestrationSummary } from "../model/orchestrationSummary";
+import {
+  orchestrationTaskLabelCode,
+  type OrchestrationSummary,
+} from "../model/orchestrationSummary";
 import { orchestrationTaskLabelText } from "./orchestrationTaskLabelText";
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";

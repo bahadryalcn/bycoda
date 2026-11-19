@@ -102,8 +102,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Initializes the mounted picker's OS home/drive snapshot and cancels late native replies on unmount.
   useEffect(() => {
     mounted.current = true;
-    if (IS_WIN)
-      void probeWindowsDriveRoots(() => mounted.current, setRoots).catch(() => {});
+    if (IS_WIN) void probeWindowsDriveRoots(() => mounted.current, setRoots).catch(() => {});
     setLoading(true);
     setError(undefined);
     void homeDir().then(
@@ -157,7 +156,8 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the active keyboard option visible: windowed rows scroll through the virtualizer, mounted rows through the DOM.
   useEffect(() => {
     if (windowed) win.scrollToEntry(active);
-    else listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
+    else
+      listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
   function navigate(path: string) {
@@ -376,50 +376,54 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
             {loading ? (
               <LoadingText className="shrink-0 py-2">{t("Loading folders…")}</LoadingText>
             ) : visibleEntries.length === 0 && !error ? (
-              <EmptyState size="inline" className="shrink-0 py-2" description={t("No subfolders")} />
+              <EmptyState
+                size="inline"
+                className="shrink-0 py-2"
+                description={t("No subfolders")}
+              />
             ) : null}
-          <PickerListRoot
-            ref={listRef}
-            label={t("Folders")}
-            aria-describedby={keyboardHelpId}
-            aria-busy={loading || undefined}
-            multiple={multiple}
-            tabIndex={0}
-            aria-activedescendant={visibleEntries[active] ? `folder-picker-${active}` : undefined}
-            className={
-              loading
-                ? "min-h-0 flex-1 overflow-y-auto overscroll-none opacity-60"
-                : "min-h-0 flex-1 overflow-y-auto overscroll-none"
-            }
-            onKeyDown={(event) => {
-              if (busy || loading) return;
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                event.preventDefault();
-                setActive((index) =>
-                  Math.max(
-                    0,
-                    Math.min(
-                      visibleEntries.length - 1,
-                      index + (event.key === "ArrowDown" ? 1 : -1),
-                    ),
-                  ),
-                );
-              } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
-                event.preventDefault();
-                if (visibleEntries[active]) navigate(visibleEntries[active].path);
-              } else if (event.key === "Backspace") {
-                event.preventDefault();
-                navigate(parent);
-              } else if (event.key === " " && multiple && visibleEntries[active]) {
-                event.preventDefault();
-                toggleSelected(visibleEntries[active].path);
+            <PickerListRoot
+              ref={listRef}
+              label={t("Folders")}
+              aria-describedby={keyboardHelpId}
+              aria-busy={loading || undefined}
+              multiple={multiple}
+              tabIndex={0}
+              aria-activedescendant={visibleEntries[active] ? `folder-picker-${active}` : undefined}
+              className={
+                loading
+                  ? "min-h-0 flex-1 overflow-y-auto overscroll-none opacity-60"
+                  : "min-h-0 flex-1 overflow-y-auto overscroll-none"
               }
-            }}
-          >
-            {lead > 0 ? <div aria-hidden style={{ blockSize: lead }} /> : null}
-            {rows}
-            {tail > 0 ? <div aria-hidden style={{ blockSize: tail }} /> : null}
-          </PickerListRoot>
+              onKeyDown={(event) => {
+                if (busy || loading) return;
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setActive((index) =>
+                    Math.max(
+                      0,
+                      Math.min(
+                        visibleEntries.length - 1,
+                        index + (event.key === "ArrowDown" ? 1 : -1),
+                      ),
+                    ),
+                  );
+                } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+                  event.preventDefault();
+                  if (visibleEntries[active]) navigate(visibleEntries[active].path);
+                } else if (event.key === "Backspace") {
+                  event.preventDefault();
+                  navigate(parent);
+                } else if (event.key === " " && multiple && visibleEntries[active]) {
+                  event.preventDefault();
+                  toggleSelected(visibleEntries[active].path);
+                }
+              }}
+            >
+              {lead > 0 ? <div aria-hidden style={{ blockSize: lead }} /> : null}
+              {rows}
+              {tail > 0 ? <div aria-hidden style={{ blockSize: tail }} /> : null}
+            </PickerListRoot>
           </div>
           {newName !== null ? (
             <form

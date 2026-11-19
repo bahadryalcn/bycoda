@@ -166,7 +166,7 @@ export function useSessionPaneProps({
     onRemoteSnapshot,
     onRefreshAdoptedSession,
     onRetrySessionHistory,
-    onWorkspaceModeChange:useKeepSessionAction(onWorkspaceModeChange, onKeepSession)!,
+    onWorkspaceModeChange: useKeepSessionAction(onWorkspaceModeChange, onKeepSession)!,
     onWorktreeBaseChange,
     onManageWorktrees,
     onModelChange: useKeepSessionAction(onModelChange, onKeepSession)!,

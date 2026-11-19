@@ -253,9 +253,9 @@ it("keeps the main painter across focus, visibility and seat percent when the wo
   advance(1_000);
 
   expect(painter.draw.mock.calls.length).toBeGreaterThan(paints);
-  expect(painter.draw.mock.calls.at(-1)?.[1].map((seat: { charge?: number }) => seat.charge)).toEqual(
-    seats(0.6).map((seat) => seat.context),
-  );
+  expect(
+    painter.draw.mock.calls.at(-1)?.[1].map((seat: { charge?: number }) => seat.charge),
+  ).toEqual(seats(0.6).map((seat) => seat.context));
   expect(state.painters).toHaveLength(1);
   expect(painter.draw.dispose).not.toHaveBeenCalled();
 });

@@ -104,8 +104,7 @@ async function payloadFor(sessionId: string, snapshot: ComposerDraft): Promise<s
     spilled.delete(sessionId);
     return null;
   }
-  const files =
-    spilled.get(sessionId) ?? new Map<string, { fingerprint: string; path: string }>();
+  const files = spilled.get(sessionId) ?? new Map<string, { fingerprint: string; path: string }>();
   for (const id of files.keys()) {
     if (!snapshot.attachments.some((file) => file.id === id)) files.delete(id);
   }

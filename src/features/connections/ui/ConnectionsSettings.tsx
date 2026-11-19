@@ -463,7 +463,10 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 type="button"
                 className="self-start"
                 onClick={() => {
-                  if (jobId) void cancel(jobId).catch((reason) => setError(sanitizeConnectionError(errorText(reason))));
+                  if (jobId)
+                    void cancel(jobId).catch((reason) =>
+                      setError(sanitizeConnectionError(errorText(reason))),
+                    );
                 }}
                 variant="ghost"
               >

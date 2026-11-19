@@ -13,7 +13,10 @@ const CATALOGS = readdirSync(LOCALES_DIR)
   .filter((file) => file.endsWith(".json"))
   .map((file) => ({
     file,
-    messages: JSON.parse(readFileSync(resolve(LOCALES_DIR, file), "utf8")) as Record<string, string>,
+    messages: JSON.parse(readFileSync(resolve(LOCALES_DIR, file), "utf8")) as Record<
+      string,
+      string
+    >,
   }));
 
 const NEW_KEYS = [
@@ -36,7 +39,9 @@ describe("user long text card copy (#1003)", () => {
   });
 
   it("interpolates the character count through a named slot", () => {
-    expect(PREVIEW).toContain('t("{p0} characters", { p0: part.text.length.toLocaleString(locale) })');
+    expect(PREVIEW).toContain(
+      't("{p0} characters", { p0: part.text.length.toLocaleString(locale) })',
+    );
   });
 });
 

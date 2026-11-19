@@ -94,8 +94,11 @@ export function useWorkspaceAutomationActivity({
               const results = await Promise.allSettled(
                 reach.capable.map((machine) =>
                   withTimeout(
-                    Promise.all([socialClient(machine.id).snapshot(), machineProjects(machine)]).then(
-                      ([snapshot, projects]) => socialAutomationEvents(snapshot, machine, projects),
+                    Promise.all([
+                      socialClient(machine.id).snapshot(),
+                      machineProjects(machine),
+                    ]).then(([snapshot, projects]) =>
+                      socialAutomationEvents(snapshot, machine, projects),
                     ),
                     AUTOMATION_POLL_DEADLINES.remoteReadMs,
                     `Social automation read (${machine.id})`,

@@ -235,7 +235,7 @@ export function codexSkillStatesFromList(
 }
 
 export function isRecoverableThreadResumeError(error: unknown): boolean {
-  const message = (errorText(error)).toLowerCase();
+  const message = errorText(error).toLowerCase();
   if (!message.includes("thread")) return false;
   return [
     "not found",

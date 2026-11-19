@@ -139,7 +139,14 @@ it("sends the same head once, with its id, when the refusal clears", () => {
     advance(250);
     advance(500);
     expect(submit).toHaveBeenCalledTimes(3);
-    expect(submit).toHaveBeenLastCalledWith(head.text, head.attachments, { intent: undefined }, false, undefined, head.id);
+    expect(submit).toHaveBeenLastCalledWith(
+      head.text,
+      head.attachments,
+      { intent: undefined },
+      false,
+      undefined,
+      head.id,
+    );
     expect(sent).toHaveBeenCalledTimes(1);
     expect(sent).toHaveBeenCalledWith(head.id);
     advance(20_000);

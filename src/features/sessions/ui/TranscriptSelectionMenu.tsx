@@ -23,10 +23,7 @@ import {
   FloatingButtonGroup,
   type FloatingButtonGroupAction,
 } from "../../../shared/ui/FloatingButtonGroup";
-import {
-  resolveTranscriptSelection,
-  type TranscriptSelection,
-} from "../model/transcriptSelection";
+import { resolveTranscriptSelection, type TranscriptSelection } from "../model/transcriptSelection";
 import { sameRect } from "../model/selectionGeometry";
 import {
   translationTargets,

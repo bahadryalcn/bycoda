@@ -201,8 +201,12 @@ describe("file attachment preparation", () => {
     });
 
     it("reports a blob the webview cannot read as unreadable, not as too large", async () => {
-      vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader) {
-        queueMicrotask(() => this.onerror?.(new ProgressEvent("error") as ProgressEvent<FileReader>));
+      vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (
+        this: FileReader,
+      ) {
+        queueMicrotask(() =>
+          this.onerror?.(new ProgressEvent("error") as ProgressEvent<FileReader>),
+        );
       });
       const onSkipped = vi.fn();
       expect(
@@ -333,7 +337,9 @@ describe("aggregate inline image budget", () => {
 
   it("saves an over-budget pasted blob but embeds no bytes for it", async () => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:pasted");
-    invoke.mockImplementation(async (_command: string, args: { name: string }) => `/owned/${args.name}`);
+    invoke.mockImplementation(
+      async (_command: string, args: { name: string }) => `/owned/${args.name}`,
+    );
     const blobs = Array.from({ length: fitting + 1 }, (_, index) => {
       const file = new File(["x"], `shot${index}.png`, { type: "image/png" });
       Object.defineProperty(file, "size", { value: FILE_BYTES });
@@ -342,7 +348,10 @@ describe("aggregate inline image budget", () => {
     const files = await attachmentsFromFiles(blobs);
     expect(files).toHaveLength(fitting + 1);
     expect(files.slice(0, fitting).every((file) => file.data !== undefined)).toBe(true);
-    expect(files[fitting]).toMatchObject({ path: `/owned/shot${fitting}.png`, previewUrl: "blob:pasted" });
+    expect(files[fitting]).toMatchObject({
+      path: `/owned/shot${fitting}.png`,
+      previewUrl: "blob:pasted",
+    });
     expect(files[fitting].data).toBeUndefined();
   });
 });

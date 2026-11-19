@@ -1,8 +1,7 @@
 import { useLayoutEffect, type RefObject } from "react";
 import { deferDuringResize, resizeGestureActive } from "../../../shared/lib/resizeGesture";
 
-const classTokens = (value: string | null) =>
-  new Set((value ?? "").split(/\s+/).filter(Boolean));
+const classTokens = (value: string | null) => new Set((value ?? "").split(/\s+/).filter(Boolean));
 
 // React rewrites `class` with the same names in a different order or with no
 // change at all. Such a write cannot move content, so it keeps the turn contained.

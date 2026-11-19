@@ -236,9 +236,7 @@ export async function importAudience(
       const reason = error instanceof Error ? error.message : "Unknown error.";
       throw new Error(
         `The import stopped at rows ${rowRange(rows)}: ${reason} ${
-          imported
-            ? `${imported} contacts from earlier rows were saved.`
-            : "Nothing was imported."
+          imported ? `${imported} contacts from earlier rows were saved.` : "Nothing was imported."
         } Import the file again to continue; people already saved are updated, not duplicated.`,
         { cause: error },
       );

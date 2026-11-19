@@ -515,8 +515,7 @@ async function awaitSubmission(run: SubmissionRun): Promise<void> {
       rawAction.apply(() => run.submitContinuationRef.current?.(run.value, run.queue, admitted)),
     );
   } catch (error) {
-    if (parentChanged.identity() === originalIdentity)
-      run.setPasteError(errorText(error));
+    if (parentChanged.identity() === originalIdentity) run.setPasteError(errorText(error));
   } finally {
     rawAction.finish();
     if (parentChanged.identity() === originalIdentity && run.submitLockRef.current === token) {

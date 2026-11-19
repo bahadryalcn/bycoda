@@ -125,7 +125,12 @@ it("never evicts a transfer that is still being downloaded for another device", 
 it("reports busy instead of evicting an active download to fit the byte budget", () => {
   const clock = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
   try {
-    const transfers = new SyncTransfers({ inline: 64, chunk: 256, maxUnits: 4096, cacheBytes: 4096 });
+    const transfers = new SyncTransfers({
+      inline: 64,
+      chunk: 256,
+      maxUnits: 4096,
+      cacheBytes: 4096,
+    });
     const first = transfers.respond("session", sync("x".repeat(1000)));
     if (first.kind !== "chunked") throw new Error("Expected a transfer");
     transfers.chunk("session", first.transfer, 0);

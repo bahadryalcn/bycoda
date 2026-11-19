@@ -67,9 +67,7 @@ export function DictationDictionarySettings({
   const hasTerm = term.trim() !== "";
   // A conflict re-saves as a new term, so the entry being edited no longer counts as its own copy.
   const duplicateError =
-    editing !== null &&
-    hasTerm &&
-    hasDuplicate(entries, candidate, conflict ? null : editingIndex);
+    editing !== null && hasTerm && hasDuplicate(entries, candidate, conflict ? null : editingIndex);
   const duplicateAnywhere = hasTerm && hasDuplicate(entries, candidate, null);
   const begin = (index: number | "new") => {
     const entry = index === "new" ? undefined : entries[index];
@@ -188,9 +186,7 @@ export function DictationDictionarySettings({
                         disabled={editing !== null}
                         label={t("Remove {p0}", { p0: entry.term })}
                         onClick={() => {
-                          const dictationDictionary = entries.filter(
-                            (_, item) => item !== index,
-                          );
+                          const dictationDictionary = entries.filter((_, item) => item !== index);
                           try {
                             change({ dictationDictionary });
                             setRemoveError(

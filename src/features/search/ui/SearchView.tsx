@@ -543,9 +543,12 @@ export function SearchView({
           ? t("Application-wide indexing: Indexing {p0} conversation. Results may be incomplete.", {
               p0: pendingIndex,
             })
-          : t("Application-wide indexing: Indexing {p0} conversations. Results may be incomplete.", {
-              p0: pendingIndex,
-            })}
+          : t(
+              "Application-wide indexing: Indexing {p0} conversations. Results may be incomplete.",
+              {
+                p0: pendingIndex,
+              },
+            )}
       </Text>
     ) : null;
 

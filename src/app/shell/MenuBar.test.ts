@@ -10,7 +10,9 @@ let input: HTMLInputElement;
 
 function keyOn(target: EventTarget, type: "keydown" | "keyup", key: string, init = {}) {
   act(() => {
-    target.dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true, ...init }));
+    target.dispatchEvent(
+      new KeyboardEvent(type, { key, bubbles: true, cancelable: true, ...init }),
+    );
   });
 }
 

@@ -349,7 +349,11 @@ describe("tool diff popovers", () => {
   it.each([
     ["accepted", "Change preview", "Değişiklik önizlemesi"],
     ["pending", "Proposed changes", "Önerilen değişiklikler"],
-    ["rejected", "Attempted changes · tool did not complete", "Denenen değişiklikler · araç tamamlanmadı"],
+    [
+      "rejected",
+      "Attempted changes · tool did not complete",
+      "Denenen değişiklikler · araç tamamlanmadı",
+    ],
   ] as const)(
     "translates the %s header in the popover title and dialog name (%s)",
     async (status, english, turkish) => {

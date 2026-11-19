@@ -13,7 +13,9 @@ it("renders a short column whole and a long one up to the window", () => {
 
 it("widens the window to keep the open and the focused card rendered", () => {
   const long = column(COLUMN_WINDOW + 30);
-  expect(columnWindowSize(long, COLUMN_WINDOW, [`m:t${COLUMN_WINDOW + 4}`])).toBe(COLUMN_WINDOW + 5);
+  expect(columnWindowSize(long, COLUMN_WINDOW, [`m:t${COLUMN_WINDOW + 4}`])).toBe(
+    COLUMN_WINDOW + 5,
+  );
   expect(columnWindowSize(long, COLUMN_WINDOW, ["m:t1", null, "m:missing"])).toBe(COLUMN_WINDOW);
 });
 

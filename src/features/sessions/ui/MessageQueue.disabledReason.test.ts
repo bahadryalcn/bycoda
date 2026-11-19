@@ -33,8 +33,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const buttons = (label: string) =>
-  [...container.querySelectorAll<HTMLButtonElement>(`button[aria-label="${label}"]`)];
+const buttons = (label: string) => [
+  ...container.querySelectorAll<HTMLButtonElement>(`button[aria-label="${label}"]`),
+];
 
 it("names why every row action is off while a queued send is pending", async () => {
   await act(async () =>

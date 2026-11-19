@@ -536,7 +536,11 @@ function GroupDialog({
       // moves every member in one transaction, so a failure leaves the group untouched.
       await state.call(
         "crews.agent.group.update",
-        groupUpdateParams((refreshed.data ?? data).agents, group, kind === "rename" ? next : undefined),
+        groupUpdateParams(
+          (refreshed.data ?? data).agents,
+          group,
+          kind === "rename" ? next : undefined,
+        ),
       );
       onDone(kind === "rename" ? next : undefined);
     } catch (reason) {

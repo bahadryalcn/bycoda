@@ -195,11 +195,7 @@ export async function resolveOpenCodeV2ServiceUrl(path: string, cwd: string): Pr
     undefined,
     "management",
   ).catch((error: unknown) => {
-    throw new Error(
-      `Could not start the OpenCode background service: ${
-        errorText(error)
-      }`,
-    );
+    throw new Error(`Could not start the OpenCode background service: ${errorText(error)}`);
   });
   const fromStart = parseOpenCodeServiceUrl(started);
   if (fromStart) return fromStart;

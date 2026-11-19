@@ -226,34 +226,33 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
 
   // Saturation and brightness are two sliders over one plane. Arrows move along their own axis (Shift for 10),
   // PageUp/PageDown move 10 and Home/End jump to the ends. The plane stays the pointer surface.
-  const onAxisKeyDown =
-    (axis: "s" | "v") => (event: ReactKeyboardEvent<HTMLSpanElement>) => {
-      if (isImeComposition(event.nativeEvent)) return;
-      const step = event.shiftKey ? 10 : 1;
-      const [increaseKey, decreaseKey] =
-        axis === "s" ? ["ArrowRight", "ArrowLeft"] : ["ArrowUp", "ArrowDown"];
-      const delta =
-        event.key === increaseKey
-          ? step
-          : event.key === decreaseKey
-            ? -step
-            : event.key === "PageUp"
-              ? 10
-              : event.key === "PageDown"
-                ? -10
-                : null;
-      if (delta === null && event.key !== "Home" && event.key !== "End") return;
-      event.preventDefault();
-      applyHsv((previous) => ({
-        ...previous,
-        [axis]:
-          event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? 100
-              : Math.min(100, Math.max(0, previous[axis] + (delta ?? 0))),
-      }));
-    };
+  const onAxisKeyDown = (axis: "s" | "v") => (event: ReactKeyboardEvent<HTMLSpanElement>) => {
+    if (isImeComposition(event.nativeEvent)) return;
+    const step = event.shiftKey ? 10 : 1;
+    const [increaseKey, decreaseKey] =
+      axis === "s" ? ["ArrowRight", "ArrowLeft"] : ["ArrowUp", "ArrowDown"];
+    const delta =
+      event.key === increaseKey
+        ? step
+        : event.key === decreaseKey
+          ? -step
+          : event.key === "PageUp"
+            ? 10
+            : event.key === "PageDown"
+              ? -10
+              : null;
+    if (delta === null && event.key !== "Home" && event.key !== "End") return;
+    event.preventDefault();
+    applyHsv((previous) => ({
+      ...previous,
+      [axis]:
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? 100
+            : Math.min(100, Math.max(0, previous[axis] + (delta ?? 0))),
+    }));
+  };
 
   const preview = hsvToHex(hsv.h, hsv.s, hsv.v);
   const hueColor = hsvToHex(hsv.h, 100, 100);

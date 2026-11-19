@@ -434,9 +434,7 @@ function Projects({
         />
         <div className="onboarding-scroll">
           {error ? (
-            <Alert tone="danger">
-              {t("Could not complete this action: {p0}", { p0: error })}
-            </Alert>
+            <Alert tone="danger">{t("Could not complete this action: {p0}", { p0: error })}</Alert>
           ) : null}
           {loading ? (
             <div className="onboarding-scan">
@@ -696,16 +694,11 @@ function Projects({
           disabled={busy || (!summary && !selected.size)}
           loading={importing}
           onClick={summary ? onFinish : () => void start()}
-          reserveLabels={[
-            t("Finish setup"),
-            t("Import {p0} projects", { p0: folders.length }),
-          ]}
+          reserveLabels={[t("Finish setup"), t("Import {p0} projects", { p0: folders.length })]}
           variant="primary"
           type="button"
         >
-          {summary
-            ? t("Finish setup")
-            : t("Import {p0} projects", { p0: selected.size })}
+          {summary ? t("Finish setup") : t("Import {p0} projects", { p0: selected.size })}
         </Button>
       </OnboardingFooter>
     </>

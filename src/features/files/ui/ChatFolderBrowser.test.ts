@@ -150,7 +150,10 @@ it("sorts a large listing once and windows rows behind a show-more control", asy
   })).reverse();
   native.list.mockResolvedValueOnce({
     ...listing,
-    entries: [...files, { name: "zz-folder", path: "/fixture/zz-folder", isDir: true, ignored: false }],
+    entries: [
+      ...files,
+      { name: "zz-folder", path: "/fixture/zz-folder", isDir: true, ignored: false },
+    ],
   });
   await render();
   const rows = () => [...document.querySelectorAll('[aria-label="Folder contents"] li')];

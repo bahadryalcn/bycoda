@@ -16,10 +16,7 @@ afterEach(() => vi.useRealTimers());
 it("shares one request between concurrent readers of the same connection", async () => {
   const reads = sharedMachineListReads<string>();
   const load = vi.fn(async () => ["row"]);
-  const [first, second] = await Promise.all([
-    reads.read(machine, load),
-    reads.read(machine, load),
-  ]);
+  const [first, second] = await Promise.all([reads.read(machine, load), reads.read(machine, load)]);
   expect(load).toHaveBeenCalledOnce();
   expect(first).toBe(second);
 });

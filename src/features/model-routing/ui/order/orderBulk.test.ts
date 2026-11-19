@@ -104,7 +104,8 @@ it("adds the account's catalog models the order does not list yet", () => {
 });
 
 it("adds from the last provider when offered, else the first offered choice, else nothing", () => {
-  const choice = (harness: string) => ({ target: { harness, model: "m" } }) as unknown as SetupCandidate;
+  const choice = (harness: string) =>
+    ({ target: { harness, model: "m" } }) as unknown as SetupCandidate;
   const offered = [choice("codex"), choice("claude")];
   expect(addChoiceFor(offered, "claude")?.target.harness).toBe("claude");
   expect(addChoiceFor(offered, "grok")?.target.harness).toBe("codex");

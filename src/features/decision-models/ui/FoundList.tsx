@@ -56,9 +56,7 @@ export function FoundList({
       {scanning ? (
         <div className="px-4 py-2.5">
           <Progress
-            label={
-              target ? t("Scanning Host {p1}…", { p1: target }) : t("Scanning this computer…")
-            }
+            label={target ? t("Scanning Host {p1}…", { p1: target }) : t("Scanning this computer…")}
           />
         </div>
       ) : null}

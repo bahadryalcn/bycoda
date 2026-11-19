@@ -22,7 +22,8 @@ const cacheKey = (name: string | number) => `bycoda.remote-history.v2:${name}`;
 
 it("does not re-read cached values on later writes and evicts the least recently written", () => {
   localStorage.clear();
-  for (let index = 0; index < REMOTE_SUMMARY_CACHE_ENTRIES; index++) writeRemoteSummaryCache(cacheKey(index), "[]");
+  for (let index = 0; index < REMOTE_SUMMARY_CACHE_ENTRIES; index++)
+    writeRemoteSummaryCache(cacheKey(index), "[]");
   const getItem = vi.spyOn(Storage.prototype, "getItem");
   try {
     writeRemoteSummaryCache(cacheKey(0), "[1]"); // refresh the oldest entry
@@ -43,7 +44,13 @@ it("keeps byte accounting correct for entries written by other windows or outsid
   writeRemoteSummaryCache(cacheKey("a"), "[]");
   // Another window stores a large entry; the storage event carries its new value.
   localStorage.setItem(cacheKey("other"), half);
-  window.dispatchEvent(new StorageEvent("storage", { key: cacheKey("other"), newValue: half, storageArea: localStorage }));
+  window.dispatchEvent(
+    new StorageEvent("storage", {
+      key: cacheKey("other"),
+      newValue: half,
+      storageArea: localStorage,
+    }),
+  );
   // A same-window foreign write (no event) is found through the length check.
   localStorage.setItem(cacheKey("foreign"), half);
   localStorage.setItem("draft", "keep");
@@ -55,7 +62,13 @@ it("keeps byte accounting correct for entries written by other windows or outsid
   expect(localStorage.getItem("draft")).toBe("keep");
   // Removal in another window releases its bytes: the next write evicts nothing.
   localStorage.removeItem(cacheKey("other"));
-  window.dispatchEvent(new StorageEvent("storage", { key: cacheKey("other"), newValue: null, storageArea: localStorage }));
+  window.dispatchEvent(
+    new StorageEvent("storage", {
+      key: cacheKey("other"),
+      newValue: null,
+      storageArea: localStorage,
+    }),
+  );
   writeRemoteSummaryCache(cacheKey("c"), half + half);
   expect(localStorage.getItem(cacheKey("foreign"))).toBe(half);
   expect(localStorage.getItem(cacheKey("b"))).toBe(half);

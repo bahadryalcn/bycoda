@@ -8,11 +8,9 @@ import { describe, expect, it } from "vitest";
 // font tokens, so they could not be retuned centrally. Both now read the micro token, and no
 // global stylesheet declares a literal `font-size` under that floor.
 const here = dirname(fileURLToPath(import.meta.url));
-const stylesheets = [
-  "index.css",
-  "bycoda.css",
-  "../features/sessions/ui/PlanStepsBurst.css",
-].map((file) => readFileSync(resolve(here, file), "utf8"));
+const stylesheets = ["index.css", "bycoda.css", "../features/sessions/ui/PlanStepsBurst.css"].map(
+  (file) => readFileSync(resolve(here, file), "utf8"),
+);
 const css = stylesheets.join("\n");
 
 function declarations(selector: string): string[] {

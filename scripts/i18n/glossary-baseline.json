@@ -1,7 +1,3 @@
 {
-  "keys": [
-    "Confirm force terminate",
-    "Force terminate",
-    "Tool preferences"
-  ]
+  "keys": ["Confirm force terminate", "Force terminate", "Tool preferences"]
 }

@@ -19,8 +19,7 @@ export function useMenuError(menuPath: string | undefined, menuOpen: boolean) {
     if (message !== null && !openRef.current) toast.show({ tone: "danger", message });
     else setState(message === null ? null : { path: menuPath, message });
   };
-  const handleFailMenuError = (error: unknown) =>
-    handleMenuError(errorText(error));
+  const handleFailMenuError = (error: unknown) => handleMenuError(errorText(error));
   return {
     menuError: state ? state.message : null,
     setMenuError: handleMenuError,

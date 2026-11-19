@@ -537,7 +537,11 @@ describe("native pairing redemption HTTP boundary", () => {
   });
 });
 
-function fakeRequest(source: string, body: unknown, options: { method?: string; contentType?: string } = {}) {
+function fakeRequest(
+  source: string,
+  body: unknown,
+  options: { method?: string; contentType?: string } = {},
+) {
   return Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
     method: options.method ?? "POST",
     url: "/mobile/pairing/redeem",
@@ -572,9 +576,9 @@ describe("pairing redemption HTTP rate accounting", () => {
     const input = redeem(await manager.create(owner));
     for (let index = 0; index < 130; index++) {
       expect((await send(manager, "192.0.2.10", input, { method: "GET" })).status).toBe(403);
-      expect(
-        (await send(manager, "192.0.2.10", input, { contentType: "text/plain" })).status,
-      ).toBe(415);
+      expect((await send(manager, "192.0.2.10", input, { contentType: "text/plain" })).status).toBe(
+        415,
+      );
     }
     expect((await send(manager, "192.0.2.10", input)).status).toBe(200);
     expect(issueDevice).toHaveBeenCalledTimes(1);

@@ -15,7 +15,13 @@ const base = (id: string): CrewAgent => ({
   instructions: `${id} instructions`,
   selection: "fixed",
   candidates: [
-    { id: `${id}-model`, harness: "codex", model: "codex:fixture", modelSettings: {}, capabilities: {} },
+    {
+      id: `${id}-model`,
+      harness: "codex",
+      model: "codex:fixture",
+      modelSettings: {},
+      capabilities: {},
+    },
   ],
 });
 const saved = (id: string, groups: string[] | undefined, projectId?: string): SavedCrewAgent => ({
@@ -54,7 +60,11 @@ describe("updateLibraryGroup", () => {
 
   it("removes the label on delete, drops an emptied list and keeps the members", () => {
     const current = state([saved("ui", ["UI"]), saved("web", ["UI", "Web"])]);
-    updateLibraryGroup(current, { projectId: "p1", group: "UI", members: members("ui", "web") }, now);
+    updateLibraryGroup(
+      current,
+      { projectId: "p1", group: "UI", members: members("ui", "web") },
+      now,
+    );
     expect(current.agents!.map((a) => [a.id, a.groups])).toEqual([
       ["ui", undefined],
       ["web", ["Web"]],
@@ -87,7 +97,11 @@ describe("updateLibraryGroup", () => {
     const before = structuredClone(current);
     for (const ids of [["ui"], ["ui", "web", "api"], ["ui", "ui"]])
       expect(() =>
-        updateLibraryGroup(current, { projectId: "p1", group: "UI", members: members(...ids) }, now),
+        updateLibraryGroup(
+          current,
+          { projectId: "p1", group: "UI", members: members(...ids) },
+          now,
+        ),
       ).toThrow("Group changed");
     expect(current).toEqual(before);
   });
@@ -144,11 +158,19 @@ describe("updateLibraryGroup", () => {
     const current = state([saved("ui", ["UI"])]);
     const before = structuredClone(current);
     expect(
-      updateLibraryGroup(current, { projectId: "p1", group: "UI", rename: "UI", members: members("ui") }, now),
+      updateLibraryGroup(
+        current,
+        { projectId: "p1", group: "UI", rename: "UI", members: members("ui") },
+        now,
+      ),
     ).toBe(0);
     for (const rename of ["  ", "x".repeat(41)])
       expect(() =>
-        updateLibraryGroup(current, { projectId: "p1", group: "UI", rename, members: members("ui") }, now),
+        updateLibraryGroup(
+          current,
+          { projectId: "p1", group: "UI", rename, members: members("ui") },
+          now,
+        ),
       ).toThrow("Invalid group name");
     expect(current).toEqual(before);
   });

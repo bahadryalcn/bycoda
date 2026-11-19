@@ -626,10 +626,9 @@ export function SkillsPage({
     } catch (error) {
       setPolicyErrors((current) => ({
         ...current,
-        [machine?.environmentId ?? "local"]:
-          t("Could not save the skill preference. {p0}", {
-            p0: presentRemoteError(error, { explicit: true }),
-          }),
+        [machine?.environmentId ?? "local"]: t("Could not save the skill preference. {p0}", {
+          p0: presentRemoteError(error, { explicit: true }),
+        }),
       }));
     } finally {
       policyPending.current = false;
@@ -641,9 +640,7 @@ export function SkillsPage({
     setActionResult("");
     setActionError(null);
     void revealItemInDir(path).catch((err: unknown) => {
-      setActionError(
-        t("Could not open the folder: {p0}", { p0: errorText(err) }),
-      );
+      setActionError(t("Could not open the folder: {p0}", { p0: errorText(err) }));
     });
   };
 
@@ -1223,7 +1220,7 @@ export function SkillsPage({
                         label: t("Retry"),
                         onClick: () => setPreviewRead((value) => value + 1),
                       }}
-                    details={previewError.details || undefined}
+                      details={previewError.details || undefined}
                     >
                       {t("Could not read SKILL.md.")}
                     </InlineError>

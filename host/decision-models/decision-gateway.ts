@@ -315,7 +315,10 @@ export function createDecisionGateway(deps: DecisionGatewayDeps): DecisionGatewa
       // nothing is routed from default settings, so personal-data rules cannot be bypassed.
       return {
         answers: Object.fromEntries(
-          Object.keys(request.questions).map((name) => [name, { error: "config_damaged" as const }]),
+          Object.keys(request.questions).map((name) => [
+            name,
+            { error: "config_damaged" as const },
+          ]),
         ),
         sourceChain: [],
         durationMs: elapsedSince(started),

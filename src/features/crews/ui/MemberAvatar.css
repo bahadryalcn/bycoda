@@ -1,8 +1,14 @@
 /* Shared once for every member portrait, instead of a <style> element inside each active avatar.
    The class is specific to the eye rects, so the rule cannot reach other SVG content. */
 @keyframes member-avatar-blink {
-  0%, 94%, 100% { transform: scaleY(1); }
-  97% { transform: scaleY(0.2); }
+  0%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+  97% {
+    transform: scaleY(0.2);
+  }
 }
 
 .member-avatar-eye {

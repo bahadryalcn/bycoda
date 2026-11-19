@@ -2031,9 +2031,9 @@ it("recovers unconfirmed provider cleanup with fresh credentials while retaining
     text: "Keep my accepted request",
   });
   expect(mock.mute).toHaveBeenLastCalledWith(true);
-  expect(container.querySelector('[aria-label="Mute microphone"]')?.getAttribute("aria-pressed")).toBe(
-    "true",
-  );
+  expect(
+    container.querySelector('[aria-label="Mute microphone"]')?.getAttribute("aria-pressed"),
+  ).toBe("true");
   expect(mock.toolCall).not.toHaveBeenCalled();
   await act(() => retired.reply("Retired provider reply"));
   expect(container.textContent).not.toContain("Retired provider reply");

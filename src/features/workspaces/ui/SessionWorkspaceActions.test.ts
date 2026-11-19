@@ -180,7 +180,9 @@ it("leaves shared connection recovery to the conversation and reloads only for i
 
 it("keeps the workspace actions while the same session reloads, and drops them for another one", async () => {
   const render = (cwd: string) =>
-    act(async () => root.render(createElement(SessionWorkspaceActions, { sessionId: "session", cwd })));
+    act(async () =>
+      root.render(createElement(SessionWorkspaceActions, { sessionId: "session", cwd })),
+    );
   await render(remotePath("env", "/project"));
   expect(container.textContent).toContain("Resume");
   vi.mocked(workspaceRequest).mockImplementation(() => new Promise(() => {}));
@@ -195,7 +197,10 @@ it("does not save the session again when a reload finds the same workspace", asy
   try {
     await act(async () =>
       root.render(
-        createElement(SessionWorkspaceActions, { sessionId: "session", cwd: remotePath("env", "/project") }),
+        createElement(SessionWorkspaceActions, {
+          sessionId: "session",
+          cwd: remotePath("env", "/project"),
+        }),
       ),
     );
     expect(upsertSession).toHaveBeenCalledTimes(1);
@@ -227,7 +232,9 @@ it("backs off temporary read failures and stops after a bounded number of attemp
     await act(async () => vi.advanceTimersByTime(TEMPORARY_RELOAD_MS));
     expect(vi.mocked(getWorkspaceCapabilities)).toHaveBeenCalledTimes(2);
     await act(async () => vi.advanceTimersByTime(TEMPORARY_RELOAD_MAX_MS * 10));
-    expect(vi.mocked(getWorkspaceCapabilities)).toHaveBeenCalledTimes(TEMPORARY_RELOAD_ATTEMPTS + 1);
+    expect(vi.mocked(getWorkspaceCapabilities)).toHaveBeenCalledTimes(
+      TEMPORARY_RELOAD_ATTEMPTS + 1,
+    );
     expect(container.textContent).toContain("Retry workspace");
   } finally {
     vi.useRealTimers();

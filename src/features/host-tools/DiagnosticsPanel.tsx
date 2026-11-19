@@ -141,15 +141,9 @@ function ResourceChart({
         onOpenChange={setTableOpen}
       >
         {tableOpen ? (
-          <DataTable
-            caption={label}
-            headers={[{ label: t("Time") }, { label: t("Value") }]}
-          >
+          <DataTable caption={label} headers={[{ label: t("Time") }, { label: t("Value") }]}>
             {samples.map((sample, index) => (
-              <DataTableRow
-                key={index}
-                cells={[time(sample.at), formatValue(values[index])]}
-              />
+              <DataTableRow key={index} cells={[time(sample.at), formatValue(values[index])]} />
             ))}
           </DataTable>
         ) : null}
@@ -271,12 +265,7 @@ function ProjectDiagnosticsPanel({
         >
           <RefreshCw className="icon-sm" aria-hidden />
         </Button>
-        <Text
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className="resource-sample-status"
-        >
+        <Text size="caption" tone="secondary" leading="inherit" className="resource-sample-status">
           {busy ? t("Measuring…") : sample ? time(sample.at) : t("No samples yet")}
         </Text>
         {/* Sample timestamps change on every measurement; only the start of a measurement is announced. */}
@@ -318,9 +307,7 @@ function ProjectDiagnosticsPanel({
             <Surface as="article" variant="page" className="resource-card">
               <SectionLabel as="h3">{t("bycoda host CPU")}</SectionLabel>
               <strong className="resource-value">
-                {sample?.process.cpuPercent != null
-                  ? percent(sample.process.cpuPercent)
-                  : "—"}
+                {sample?.process.cpuPercent != null ? percent(sample.process.cpuPercent) : "—"}
               </strong>
               <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
             </Surface>
@@ -341,9 +328,7 @@ function ProjectDiagnosticsPanel({
               className="resource-memory-heading"
             >
               <SectionLabel as="h3">{t("Computer memory")}</SectionLabel>
-              <strong>
-                {memoryUsed !== null ? `${percent(memoryUsed)} ${t("Used")}` : "—"}
-              </strong>
+              <strong>{memoryUsed !== null ? `${percent(memoryUsed)} ${t("Used")}` : "—"}</strong>
             </Text>
             <Meter label={t("Computer memory")} value={memoryUsed} warning={75} danger={90} />
             <Text
@@ -378,7 +363,9 @@ function ProjectDiagnosticsPanel({
           className="resource-history-caption"
         >
           <span>{t("Sample history")}</span>
-          <span>{samples.length} / {RESOURCE_SAMPLE_LIMIT}</span>
+          <span>
+            {samples.length} / {RESOURCE_SAMPLE_LIMIT}
+          </span>
         </Text>
       ) : null}
     </section>

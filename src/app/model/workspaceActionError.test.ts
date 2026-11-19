@@ -67,9 +67,9 @@ it("shows an untyped transfer reason only as redacted, bounded text", () => {
 });
 
 it("keeps an untyped cause as redacted detail under the translated fallback", () => {
-  expect(presentWorkspaceActionError(new Error("socket closed"), "Could not open this conversation.")).toBe(
-    "Could not open this conversation. socket closed",
-  );
+  expect(
+    presentWorkspaceActionError(new Error("socket closed"), "Could not open this conversation."),
+  ).toBe("Could not open this conversation. socket closed");
   expect(presentWorkspaceActionError("", "Could not open this conversation.")).toBe(
     "Could not open this conversation.",
   );

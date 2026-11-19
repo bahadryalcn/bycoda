@@ -32,9 +32,7 @@ export class NoteImageApplicationError extends Error {
     readonly asset: Readonly<NoteImageAsset>,
     cause: unknown,
   ) {
-    super(
-      `Image saved; display preparation failed: ${errorText(cause)}`,
-    );
+    super(`Image saved; display preparation failed: ${errorText(cause)}`);
     this.name = "NoteImageApplicationError";
   }
 }

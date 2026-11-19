@@ -545,9 +545,12 @@ export function ProviderAccountsSettings({
                             className="provider-account-note"
                             role="note"
                           >
-                            {t("Same sign-in as {p0}. Remove this account if you do not need it separately.", {
-                              p0: duplicateOf.label,
-                            })}
+                            {t(
+                              "Same sign-in as {p0}. Remove this account if you do not need it separately.",
+                              {
+                                p0: duplicateOf.label,
+                              },
+                            )}
                           </Text>
                         ) : null}
                       </div>

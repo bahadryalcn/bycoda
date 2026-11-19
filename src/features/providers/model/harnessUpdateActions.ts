@@ -228,7 +228,9 @@ async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
       return { status: "updated", version, catalogRefresh };
     }
     // Still on the old version: report it as its own failure, not a verified update.
-    console.warn(`[bycoda] Harness update failed: ${update.harness} version check: still on ${version}`);
+    console.warn(
+      `[bycoda] Harness update failed: ${update.harness} version check: still on ${version}`,
+    );
     return { status: "failed", failure: { kind: "stillOn", version } };
   } catch (error) {
     const detail = errorText(error);

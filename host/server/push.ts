@@ -36,7 +36,8 @@ export function createPushRuntime(
   const approvals = new ApprovalRegistry(Date.now, new ApprovalStore(dependencies.engine.store.db));
   // Project lists are re-read only after a store/desktop change or the safety interval.
   const sessionInventory = createPushSessionInventory({
-    projectIds: async () => (await dependencies.engine.store.projects()).map((project) => project.id),
+    projectIds: async () =>
+      (await dependencies.engine.store.projects()).map((project) => project.id),
     list: async (projectId) => (await dependencies.projectSessionList(projectId)).list,
     watch: (changed) => {
       const unsubscribe = dependencies.engine.store.subscribeChanges(changed);

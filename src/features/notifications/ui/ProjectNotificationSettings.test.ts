@@ -148,9 +148,7 @@ it("offers only issue notifications for a Linear project", async () => {
   await act(async () => root.render(createElement(ProjectNotificationSettings, { cwd: "" })));
   act(() => categoriesButton("Roadmap").click());
   const issue = checkbox("Issues and Linear tasks for Roadmap");
-  expect(
-    issue.closest("fieldset")?.querySelectorAll('[role="switch"]'),
-  ).toHaveLength(1);
+  expect(issue.closest("fieldset")?.querySelectorAll('[role="switch"]')).toHaveLength(1);
   act(() => issue.click());
   expect(loadNotificationPreferences()["linear:project:roadmap"]?.disabled).toEqual(["issues"]);
 });
@@ -397,9 +395,17 @@ it("select-all under a search selects only the projects on screen", async () => 
     search.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(
-    checked(container.querySelector<HTMLInputElement>('input[aria-label="Select me/private (github.com)"]')!),
+    checked(
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="Select me/private (github.com)"]',
+      )!,
+    ),
   ).toBe(true);
   expect(
-    checked(container.querySelector<HTMLInputElement>('input[aria-label="Select work/app (github.com)"]')!),
+    checked(
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="Select work/app (github.com)"]',
+      )!,
+    ),
   ).toBe(false);
 });

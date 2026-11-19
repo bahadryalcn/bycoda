@@ -28,7 +28,11 @@ export function FileTransferProgress({
         className="w-full"
         value={sized ? (received ?? 0) : undefined}
         max={sized ? (total ?? 1) : 1}
-        label={sized ? `${label} ${formatFileSize(received ?? 0)} / ${formatFileSize(total ?? 0)}` : label}
+        label={
+          sized
+            ? `${label} ${formatFileSize(received ?? 0)} / ${formatFileSize(total ?? 0)}`
+            : label
+        }
       />
       {onCancel ? (
         <Button size="sm" variant="ghost" motion="none" type="button" onClick={onCancel}>

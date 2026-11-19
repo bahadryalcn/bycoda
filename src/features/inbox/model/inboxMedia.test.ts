@@ -257,9 +257,7 @@ describe("fetchInboxMedia", () => {
     invoke.mockImplementation((command: string) => {
       if (command === "cancel_inbox_media") return Promise.resolve();
       calls += 1;
-      return calls === 1
-        ? new Promise<ArrayBuffer>(() => {})
-        : Promise.resolve(new ArrayBuffer(2));
+      return calls === 1 ? new Promise<ArrayBuffer>(() => {}) : Promise.resolve(new ArrayBuffer(2));
     });
     const controller = new AbortController();
     const cancelled = fetchInboxMedia(url(302), controller.signal);

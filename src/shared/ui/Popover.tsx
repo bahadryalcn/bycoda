@@ -450,7 +450,8 @@ function WebPopover({
         align,
         gap,
         padding,
-        width: fixedWidth ?? (minWidth == null ? naturalWidth : popupListWidth(naturalWidth, minWidth)),
+        width:
+          fixedWidth ?? (minWidth == null ? naturalWidth : popupListWidth(naturalWidth, minWidth)),
         minHeight,
         maxHeight,
       },

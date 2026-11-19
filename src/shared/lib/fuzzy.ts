@@ -127,7 +127,9 @@ function matchBest(
       let score = baseScore;
       for (
         let length = 1;
-        start + length <= m && matched + length <= n && hay[start + length - 1] === needle[matched + length - 1];
+        start + length <= m &&
+        matched + length <= n &&
+        hay[start + length - 1] === needle[matched + length - 1];
         length++
       ) {
         const end = start + length - 1;
@@ -154,7 +156,7 @@ function matchBest(
   if (end < 0) return null;
 
   const folded: number[] = [];
-  for (let matched = n; matched > 0; ) {
+  for (let matched = n; matched > 0;) {
     const cell = (matched - 1) * m + end;
     const length = runLength[cell];
     for (let i = end; i > end - length; i--) folded.push(i);

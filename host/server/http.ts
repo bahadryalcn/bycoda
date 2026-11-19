@@ -802,7 +802,8 @@ export function createHttpRuntime(
               )
               .end(
                 JSON.stringify({
-                  error: !internal && error instanceof Error ? error.message : "Host request failed",
+                  error:
+                    !internal && error instanceof Error ? error.message : "Host request failed",
                   ...(deviceEffectAdmitted
                     ? { code: "HOST_DEVICE_OPERATION_UNCONFIRMED", delivery: "unknown" }
                     : error instanceof OwnerRpcDeadlineError || error instanceof HostStoppingError
@@ -810,9 +811,7 @@ export function createHttpRuntime(
                       : error instanceof HostDomainOutcomeError
                         ? { delivery: error.delivery }
                         : {}),
-                  ...(error instanceof HostIdentityMismatchError
-                    ? { code: error.code }
-                    : {}),
+                  ...(error instanceof HostIdentityMismatchError ? { code: error.code } : {}),
                   // An admitted device effect keeps its own unconfirmed code above.
                   ...(error instanceof HostResultTooLargeError && !deviceEffectAdmitted
                     ? {

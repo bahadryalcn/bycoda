@@ -216,7 +216,9 @@ const metadataFields = {
       runtimeRetryNotice: z
         .strictObject({
           id: z.string(),
-          kind: z.enum(["remaining_finding", "external_check", "auto_continued", "info"]).optional(),
+          kind: z
+            .enum(["remaining_finding", "external_check", "auto_continued", "info"])
+            .optional(),
           message: z.string(),
           at: z.number(),
         })

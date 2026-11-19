@@ -178,8 +178,10 @@ describe("sendExpoPush", () => {
   });
 
   const many = Array.from({ length: 101 }, (_, index) => ({ ...message, to: `token-${index}` }));
-  const accepted = () => Response.json({ data: Array.from({ length: 100 }, () => ({ status: "ok" })) });
-  const failure = (run: Promise<unknown>) => run.catch((caught: unknown) => caught as ExpoPushError);
+  const accepted = () =>
+    Response.json({ data: Array.from({ length: 100 }, () => ({ status: "ok" })) });
+  const failure = (run: Promise<unknown>) =>
+    run.catch((caught: unknown) => caught as ExpoPushError);
 
   it("keeps an ambiguous 5xx batch out of retry and lists only the later unsent batch", async () => {
     const fetchImpl = vi
@@ -195,7 +197,9 @@ describe("sendExpoPush", () => {
       .fn()
       .mockResolvedValueOnce(new Response("down", { status: 502 }))
       .mockResolvedValueOnce(accepted());
-    const unsent = await failure(sendExpoPush([...many, ...many], later as unknown as typeof fetch));
+    const unsent = await failure(
+      sendExpoPush([...many, ...many], later as unknown as typeof fetch),
+    );
     // Batch one is ambiguous; the batches never sent are still owed, and only they.
     expect((unsent as ExpoPushError).partial.retry).toEqual([...many, ...many].slice(100));
     expect(later).toHaveBeenCalledTimes(1);
@@ -230,18 +234,34 @@ describe("sendExpoPush", () => {
 
   it("flags outages as unreachable, but not a request Expo called invalid", async () => {
     const down = await failure(
-      sendExpoPush([message], vi.fn().mockRejectedValue(new TypeError("fetch failed")) as unknown as typeof fetch),
+      sendExpoPush(
+        [message],
+        vi.fn().mockRejectedValue(new TypeError("fetch failed")) as unknown as typeof fetch,
+      ),
     );
     const serverError = await failure(
-      sendExpoPush([message], vi.fn().mockResolvedValue(new Response("down", { status: 503 })) as unknown as typeof fetch),
+      sendExpoPush(
+        [message],
+        vi.fn().mockResolvedValue(new Response("down", { status: 503 })) as unknown as typeof fetch,
+      ),
     );
     const throttled = await failure(
-      sendExpoPush([message], vi.fn().mockResolvedValue(new Response("slow", { status: 429 })) as unknown as typeof fetch),
+      sendExpoPush(
+        [message],
+        vi.fn().mockResolvedValue(new Response("slow", { status: 429 })) as unknown as typeof fetch,
+      ),
     );
     const invalid = await failure(
-      sendExpoPush([message], vi.fn().mockResolvedValue(new Response("bad", { status: 400 })) as unknown as typeof fetch),
+      sendExpoPush(
+        [message],
+        vi.fn().mockResolvedValue(new Response("bad", { status: 400 })) as unknown as typeof fetch,
+      ),
     );
-    expect([down, serverError, throttled].map((error) => error.unreachable)).toEqual([true, true, true]);
+    expect([down, serverError, throttled].map((error) => error.unreachable)).toEqual([
+      true,
+      true,
+      true,
+    ]);
     expect(invalid.unreachable).toBe(false);
   });
 });
@@ -355,7 +375,9 @@ describe("PushNotifications", () => {
       });
 
     async function finishing(
-      send: (messages: readonly ExpoPushMessage[]) => Promise<{ unregistered: string[]; failed: number; retry?: ExpoPushMessage[] }>,
+      send: (
+        messages: readonly ExpoPushMessage[],
+      ) => Promise<{ unregistered: string[]; failed: number; retry?: ExpoPushMessage[] }>,
       tokens: string[] = [TOKEN],
     ) {
       const { db, store } = await storeWithDevices(...tokens.map((_, index) => `phone${index}`));
@@ -403,13 +425,16 @@ describe("PushNotifications", () => {
     it("retries only the phone Expo refused, not the one that already got the push", async () => {
       const other = "ExponentPushToken[zzzzzzzzzz789]";
       const calls: ExpoPushMessage[][] = [];
-      const { service } = await finishing(async (messages) => {
-        calls.push([...messages]);
-        // First request: the second phone is throttled; later requests succeed.
-        if (calls.length === 1)
-          return { unregistered: [], failed: 1, retry: messages.filter((m) => m.to === other) };
-        return { unregistered: [], failed: 0 };
-      }, [TOKEN, other]);
+      const { service } = await finishing(
+        async (messages) => {
+          calls.push([...messages]);
+          // First request: the second phone is throttled; later requests succeed.
+          if (calls.length === 1)
+            return { unregistered: [], failed: 1, retry: messages.filter((m) => m.to === other) };
+          return { unregistered: [], failed: 0 };
+        },
+        [TOKEN, other],
+      );
       calls.length = 0;
       await service.tick();
       await service.tick();
@@ -422,18 +447,21 @@ describe("PushNotifications", () => {
     it("never replays an ambiguous outcome, but sends the later batch that was never sent", async () => {
       const other = "ExponentPushToken[zzzzzzzzzz789]";
       const calls: string[][] = [];
-      const { service } = await finishing(async (messages) => {
-        calls.push(messages.map((message) => message.to));
-        // First request: the first phone's batch has an unknown outcome (network failure); the other
-        // phone sits in a later batch that was never sent.
-        if (calls.length === 1)
-          throw new ExpoPushError("fetch failed", {
-            unregistered: [],
-            failed: 0,
-            retry: messages.filter((message) => message.to === other),
-          });
-        return { unregistered: [], failed: 0 };
-      }, [TOKEN, other]);
+      const { service } = await finishing(
+        async (messages) => {
+          calls.push(messages.map((message) => message.to));
+          // First request: the first phone's batch has an unknown outcome (network failure); the other
+          // phone sits in a later batch that was never sent.
+          if (calls.length === 1)
+            throw new ExpoPushError("fetch failed", {
+              unregistered: [],
+              failed: 0,
+              retry: messages.filter((message) => message.to === other),
+            });
+          return { unregistered: [], failed: 0 };
+        },
+        [TOKEN, other],
+      );
       calls.length = 0;
       await service.tick();
       await service.tick();

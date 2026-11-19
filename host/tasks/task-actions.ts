@@ -610,7 +610,9 @@ export async function reorder(
         throw new Error("Only queued or to-do tasks can be reordered");
       if (tasks.some((task) => task!.status !== tasks[0]!.status))
         throw new Error("Reorder tasks within one status");
-      if (tasks.some((task) => expectedUpdatedAt && task!.updatedAt !== expectedUpdatedAt[task!.id]))
+      if (
+        tasks.some((task) => expectedUpdatedAt && task!.updatedAt !== expectedUpdatedAt[task!.id])
+      )
         throw new Error("The task queue changed. Refresh it before reordering.");
       if (!tasks.length) return [];
 

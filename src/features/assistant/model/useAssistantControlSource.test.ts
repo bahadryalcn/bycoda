@@ -254,7 +254,9 @@ it("does not let a hung Host delay another Room, queue duplicate heartbeats or p
     return null;
   };
   const calls = (thread: string) =>
-    invoke.mock.calls.filter(([, payload]) => (payload as { threadId: string }).threadId === thread);
+    invoke.mock.calls.filter(
+      ([, payload]) => (payload as { threadId: string }).threadId === thread,
+    );
   let hidden = false;
   const visibility = vi.spyOn(document, "visibilityState", "get");
   visibility.mockImplementation(() => (hidden ? "hidden" : "visible"));

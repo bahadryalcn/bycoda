@@ -184,9 +184,7 @@ describe("pane sash drag", () => {
     render(tree, onRatio);
     measureTree(1600);
     const press = (key: string) =>
-      act(() =>
-        sashElement().dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })),
-      );
+      act(() => sashElement().dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
     press("Home");
     press("End");
     press("ArrowRight");

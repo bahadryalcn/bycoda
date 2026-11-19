@@ -157,7 +157,8 @@ function useContainerFocusReturn(sheet: RefObject<HTMLElement | null>, active: b
         const current = document.activeElement;
         const lost = !current || current === document.body || current === document.documentElement;
         if (!lost && !node.contains(current)) return;
-        if (hasActiveOverlay() || !opener.isConnected || opener.closest("[inert], [hidden]")) return;
+        if (hasActiveOverlay() || !opener.isConnected || opener.closest("[inert], [hidden]"))
+          return;
         opener.focus({ preventScroll: true });
       });
     };

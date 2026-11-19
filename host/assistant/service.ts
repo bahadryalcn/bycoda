@@ -2518,9 +2518,7 @@ export class HostAssistant {
   }
   private async clearOwnerQuestionNotifications(id: string, supersededBy: string): Promise<void> {
     const rows = await this.store.db
-      .prepare(
-        "SELECT id,value FROM assistant_runtime WHERE id>=? AND id<? AND deleted_at IS NULL",
-      )
+      .prepare("SELECT id,value FROM assistant_runtime WHERE id>=? AND id<? AND deleted_at IS NULL")
       // Range over the PK index; the last code point bounds every key sharing the prefix.
       .all(`notification:decision:${id}`, `notification:decision:${id}\u{10FFFF}`);
     for (const row of rows) {
@@ -3173,7 +3171,8 @@ export class HostAssistant {
         if (response.messages) {
           response.messages = await this.messageProjectScopes(response.messages);
           const safe: AssistantMessage[] = [];
-          for (const message of response.messages) safe.push(await this.accountSafeMessage(message));
+          for (const message of response.messages)
+            safe.push(await this.accountSafeMessage(message));
           const known = await this.annotationRuntimes(safe);
           for (let index = 0; index < safe.length; index++)
             response.messages[index] = await this.messageAnnotations(safe[index], known);
@@ -3950,12 +3949,20 @@ export class HostAssistant {
         if (!this.ports.reply)
           throw new Error("Conversation replies are unavailable on this Host.");
         const profile = await this.profile();
-        if (!profile.setupComplete || !profile.enabled || !assistantRoleExecution(profile, "reply")) {
+        if (
+          !profile.setupComplete ||
+          !profile.enabled ||
+          !assistantRoleExecution(profile, "reply")
+        ) {
           // Nothing was admitted. Record the refusal so a client's receipt check settles instead of
           // reporting an unknown outcome forever; an existing receipt (a retry) is never replaced.
           const refusedKey = `reply:${input.threadId}:${input.idempotencyKey}`;
           if (!(await this.runtime<unknown>(refusedKey, null)))
-            await this.setRuntime(refusedKey, { status: "refused", text: input.text, via: input.via });
+            await this.setRuntime(refusedKey, {
+              status: "refused",
+              text: input.text,
+              via: input.via,
+            });
           throw new Error("Configure and enable the assistant before starting a conversation.");
         }
         const thread = await this.require<AssistantThread>("threads", input.threadId);

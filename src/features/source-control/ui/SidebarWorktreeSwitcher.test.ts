@@ -42,8 +42,7 @@ const render = async (pending = false, switchError?: string) => {
     ),
   );
 };
-const trigger = () =>
-  container.querySelector<HTMLButtonElement>('[aria-label="Switch worktree"]')!;
+const trigger = () => container.querySelector<HTMLButtonElement>('[aria-label="Switch worktree"]')!;
 const option = (name: string) =>
   [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((button) =>
     button.textContent?.includes(name),

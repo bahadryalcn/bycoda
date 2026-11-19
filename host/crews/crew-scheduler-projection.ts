@@ -213,7 +213,9 @@ async function writeChangedRuns(store: HostStore, runs: CrewRun[], snapshot: Rea
     const payload = JSON.stringify(run);
     if (snapshot.payloads.get(run.id) === payload) continue;
     // Another writer moved or added a row since this read: never overwrite a different run.
-    const row = await store.db.prepare("SELECT run_id FROM crew_runs_v2 WHERE ordinal=?").get(ordinal);
+    const row = await store.db
+      .prepare("SELECT run_id FROM crew_runs_v2 WHERE ordinal=?")
+      .get(ordinal);
     if (row ? row.run_id !== run.id : ordinal < snapshot.total)
       throw new Error("Crew run changed; retry");
     await saveRun(store, ordinal, run);

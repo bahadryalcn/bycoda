@@ -126,10 +126,13 @@ describe("quick composer shortcut", () => {
     ["other", "Command+Option+Comma", "alt+meta+,"],
     ["other", "Control+Enter", "mod+enter"],
     ["other", "Control+F5", "mod+f5"],
-  ] as const)("converts between stored and recorder spellings on %s: %s <-> %s", (platform, stored, shared) => {
-    expect(recorderShortcutFromStored(stored, platform)).toBe(shared);
-    expect(storedShortcutFromRecorder(shared, platform)).toBe(stored);
-  });
+  ] as const)(
+    "converts between stored and recorder spellings on %s: %s <-> %s",
+    (platform, stored, shared) => {
+      expect(recorderShortcutFromStored(stored, platform)).toBe(shared);
+      expect(storedShortcutFromRecorder(shared, platform)).toBe(stored);
+    },
+  );
 
   it("refuses recorder chords that have no stored form", () => {
     // A function key alone is a valid recording but not a valid stored chord.

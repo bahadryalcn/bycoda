@@ -21,6 +21,6 @@ it("clears only the displayed notice, not the remembered revert result", () => {
 });
 
 it("keeps the reverted and skipped output in the notice body", () => {
-  expect(pane).toContain("{t(\"Reverted files: {p0}\", {");
-  expect(pane).toContain("{t(\"Skipped files: {p0}\", {");
+  expect(pane).toContain('{t("Reverted files: {p0}", {');
+  expect(pane).toContain('{t("Skipped files: {p0}", {');
 });

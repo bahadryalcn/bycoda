@@ -11,8 +11,7 @@ import {
 
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 10, 19, 12, 0, 0);
-const dayOf = (offsetDays: number) =>
-  new Date(NOW + offsetDays * DAY).toISOString().slice(0, 10);
+const dayOf = (offsetDays: number) => new Date(NOW + offsetDays * DAY).toISOString().slice(0, 10);
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {

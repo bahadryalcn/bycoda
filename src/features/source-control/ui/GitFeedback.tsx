@@ -114,8 +114,7 @@ function GitFeedbackContent({
                     await createNote({ title, body: context, sourceCwd: cwd });
                     if (alive.current) setSaved(true);
                   } catch (error) {
-                    if (alive.current)
-                      setCopyError(errorText(error));
+                    if (alive.current) setCopyError(errorText(error));
                   } finally {
                     notePending.current = false;
                     if (alive.current) setSaving(false);

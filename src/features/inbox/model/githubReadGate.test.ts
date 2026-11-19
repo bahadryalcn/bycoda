@@ -114,9 +114,9 @@ it("reads stated reset times from retry-after, reset epoch, UTC date and relativ
   const now = Date.UTC(2026, 10, 19, 12, 0, 0);
   expect(githubRateLimitResetAt("retry-after: 30", now)).toBe(now + 30_000);
   expect(githubRateLimitResetAt("x-ratelimit-reset: 1795000000", now)).toBe(1_795_000_000_000);
-  expect(githubRateLimitResetAt("retry your request again after 2026-11-19 12:30:00 UTC", now)).toBe(
-    Date.UTC(2026, 10, 19, 12, 30, 0),
-  );
+  expect(
+    githubRateLimitResetAt("retry your request again after 2026-11-19 12:30:00 UTC", now),
+  ).toBe(Date.UTC(2026, 10, 19, 12, 30, 0));
   expect(githubRateLimitResetAt("please try again in 5 minutes", now)).toBe(now + 300_000);
   expect(githubRateLimitResetAt("wait a few minutes before you try again", now)).toBeNull();
 });

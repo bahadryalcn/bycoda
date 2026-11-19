@@ -81,11 +81,19 @@ async function renderRow(props: Record<string, unknown>) {
 it.each([
   ["option, active", { role: "option", active: true }, "true"],
   ["option, inactive", { role: "option", active: false }, "false"],
-  ["option, active, explicit false wins", { role: "option", active: true, "aria-selected": false }, "false"],
+  [
+    "option, active, explicit false wins",
+    { role: "option", active: true, "aria-selected": false },
+    "false",
+  ],
   ["option, inactive, explicit true wins", { role: "option", "aria-selected": true }, "true"],
   ["menuitem, active: no aria-selected", { role: "menuitem", active: true }, null],
   ["no role, active: no aria-selected", { active: true }, null],
-  ["treeitem, explicit aria-selected passes through", { role: "treeitem", "aria-selected": true }, "true"],
+  [
+    "treeitem, explicit aria-selected passes through",
+    { role: "treeitem", "aria-selected": true },
+    "true",
+  ],
 ])("aria-selected for %s is %s", async (_name, props, expected) => {
   const row = await renderRow(props);
   try {

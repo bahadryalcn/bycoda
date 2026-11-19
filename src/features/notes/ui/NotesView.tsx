@@ -695,9 +695,7 @@ export function NotesView({
         } catch (reason) {
           const draft = drafts.get(note.id);
           if (draft) draft.skipSave.current = false;
-          failures.push(
-            `${note.title}: ${errorText(reason)}`,
-          );
+          failures.push(`${note.title}: ${errorText(reason)}`);
           failedNotes.push(note);
         }
       }
@@ -2303,25 +2301,25 @@ function NoteEditor({
                 split={visibleMode === "split"}
               >
                 {sourceMounted ? (
-                <NoteMarkdownEditor
-                  inputObserver={inputOwner.observer("source")}
-                  inputPublication={
-                    bodyPublication?.value === body
-                      ? bodyPublication.proof
-                      : inputOwner.resultControlPublication(note, "source", body)
-                  }
-                  viewRef={editorViewRef}
-                  minHeight={0}
-                  autoFocus={blank && visibleMode === "source"}
-                  value={body}
-                  onChange={(next) => {
-                    editNote({ body: next });
-                    scheduleSave();
-                  }}
-                  onSave={() => void saveNow()}
-                  onPasteImages={pasteImages}
-                  onFocus={() => setToolbarTarget("source")}
-                />
+                  <NoteMarkdownEditor
+                    inputObserver={inputOwner.observer("source")}
+                    inputPublication={
+                      bodyPublication?.value === body
+                        ? bodyPublication.proof
+                        : inputOwner.resultControlPublication(note, "source", body)
+                    }
+                    viewRef={editorViewRef}
+                    minHeight={0}
+                    autoFocus={blank && visibleMode === "source"}
+                    value={body}
+                    onChange={(next) => {
+                      editNote({ body: next });
+                      scheduleSave();
+                    }}
+                    onSave={() => void saveNow()}
+                    onPasteImages={pasteImages}
+                    onFocus={() => setToolbarTarget("source")}
+                  />
                 ) : null}
               </NoteEditorPane>
               <NoteEditorPane

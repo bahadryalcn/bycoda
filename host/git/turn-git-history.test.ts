@@ -69,7 +69,9 @@ describe("managed turn Git history", () => {
     await turnGit(repo, ["add", "streamed.txt"]);
     const args = ["diff", "--cached", "--raw", "--ita-visible-in-index"];
     const buffered = await turnGit(repo, args);
-    expect(await turnGitDigest(repo, args)).toBe(createHash("sha256").update(buffered).digest("hex"));
+    expect(await turnGitDigest(repo, args)).toBe(
+      createHash("sha256").update(buffered).digest("hex"),
+    );
     await expect(turnGitDigest(repo, ["no-such-subcommand"])).rejects.toThrow(
       "Git no-such-subcommand failed",
     );

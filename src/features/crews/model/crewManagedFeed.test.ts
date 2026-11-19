@@ -25,7 +25,9 @@ afterEach(() => {
 });
 
 it("backs off only projects that confirmed no managed session", () => {
-  const managed = [{ sessionId: "coord", runId: "run" }] as Parameters<typeof feedRefetchInterval>[0];
+  const managed = [{ sessionId: "coord", runId: "run" }] as Parameters<
+    typeof feedRefetchInterval
+  >[0];
   expect(feedRefetchInterval(undefined)).toBe(10_000); // not answered yet: discover quickly
   expect(feedRefetchInterval(managed)).toBe(10_000);
   expect(feedRefetchInterval([])).toBe(30_000);

@@ -35,10 +35,7 @@ import {
 } from "../model/translationHistory";
 import { TranslationResultDialog } from "./TranslationResultDialog";
 import { useTranscriptImageOpen } from "./TranscriptImagePreview";
-import {
-  resolveTranscriptSelection,
-  type TranscriptSelection,
-} from "../model/transcriptSelection";
+import { resolveTranscriptSelection, type TranscriptSelection } from "../model/transcriptSelection";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
@@ -656,53 +653,53 @@ function AgentTranscriptComponent({
       >
         {activeVersionValid ? (
           <div className="pointer-events-none sticky inset-bs-0 z-(--layer-pane-sheet) h-0">
-          <div
-            {...surfaceAttributes(
-              { variant: "floating", frame: "card", radius: "card", elevation: "floating" },
-              "pointer-events-auto absolute inset-bs-2 inset-ie-3 flex flex-wrap items-center justify-end gap-1 p-1 font-sans text-ui-caption text-(--ui-text-secondary)",
-            )}
-          >
-            <SegmentedControl
-              size="sm"
-              label={t("Translation")}
-              value={activeVersion.translatedVisible ? "translation" : "original"}
-              onValueChange={(next) => showTranslation(next === "translation")}
-              options={[
-                {
-                  value: "original",
-                  label: t("Original text"),
-                  tooltip: t("After applying: ↑ original, ↓ translation."),
-                },
-                { value: "translation", label: t("Translation") },
-              ]}
-            />
-            <CopyButton
-              motion="none"
-              size="sm"
-              variant="ghost"
-              iconOnly
-              label={t("Copy")}
-              resetKeys={[activeTranslation, activeVersion.translatedVisible]}
-              errorDetail
-              onCopy={() =>
-                copyMessage(
-                  activeVersion.translatedVisible
-                    ? activeVersion.translated
-                    : activeVersion.original,
-                )
-              }
-            />
-            <Button
-              motion="none"
-              size="sm"
-              variant="ghost"
-              iconOnly
-              label={t("Close translation")}
-              onClick={() => setActiveTranslation(null)}
+            <div
+              {...surfaceAttributes(
+                { variant: "floating", frame: "card", radius: "card", elevation: "floating" },
+                "pointer-events-auto absolute inset-bs-2 inset-ie-3 flex flex-wrap items-center justify-end gap-1 p-1 font-sans text-ui-caption text-(--ui-text-secondary)",
+              )}
             >
-              <X />
-            </Button>
-          </div>
+              <SegmentedControl
+                size="sm"
+                label={t("Translation")}
+                value={activeVersion.translatedVisible ? "translation" : "original"}
+                onValueChange={(next) => showTranslation(next === "translation")}
+                options={[
+                  {
+                    value: "original",
+                    label: t("Original text"),
+                    tooltip: t("After applying: ↑ original, ↓ translation."),
+                  },
+                  { value: "translation", label: t("Translation") },
+                ]}
+              />
+              <CopyButton
+                motion="none"
+                size="sm"
+                variant="ghost"
+                iconOnly
+                label={t("Copy")}
+                resetKeys={[activeTranslation, activeVersion.translatedVisible]}
+                errorDetail
+                onCopy={() =>
+                  copyMessage(
+                    activeVersion.translatedVisible
+                      ? activeVersion.translated
+                      : activeVersion.original,
+                  )
+                }
+              />
+              <Button
+                motion="none"
+                size="sm"
+                variant="ghost"
+                iconOnly
+                label={t("Close translation")}
+                onClick={() => setActiveTranslation(null)}
+              >
+                <X />
+              </Button>
+            </div>
           </div>
         ) : null}
         <div

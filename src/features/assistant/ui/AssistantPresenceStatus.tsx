@@ -44,7 +44,10 @@ export function AssistantPresenceStatus({
   const state = assistantPresenceState(snapshot, Date.now());
   const effective = offline ? "offline" : state.effective;
   const announcement = (
-    <LiveText className="sr-only" text={t("Current availability: {p0}", { p0: label(effective) })} />
+    <LiveText
+      className="sr-only"
+      text={t("Current availability: {p0}", { p0: label(effective) })}
+    />
   );
   if (compact)
     return (

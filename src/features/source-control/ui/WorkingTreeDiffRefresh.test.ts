@@ -295,9 +295,9 @@ it("keeps the last good review after a failed refresh, blocks actions on it, and
   expect(models().length).toBe(200);
   models().forEach((model, i) => expect(model.id).toBe(before[i].id));
   // Nothing may be staged or discarded from rows the latest read did not confirm.
-  expect(models().every((model) => !model.canStage && !model.canDiscard && !model.canStageHunk)).toBe(
-    true,
-  );
+  expect(
+    models().every((model) => !model.canStage && !model.canDiscard && !model.canStageHunk),
+  ).toBe(true);
   const props = api.view.mock.calls.at(-1)![0];
   await act(async () => {
     await props.onStageFile(models()[0].id);

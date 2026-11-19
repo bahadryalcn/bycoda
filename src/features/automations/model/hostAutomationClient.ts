@@ -307,7 +307,10 @@ async function readHostAutomations(machine: RemoteMachine): Promise<Automation[]
 
 /** Sends an automation write and drops the shared reads of its machine, even when the
  * outcome is unknown, so no later reader joins a read that began before it. */
-export async function writeHostAutomation<T>(machineId: string, write: () => Promise<T>): Promise<T> {
+export async function writeHostAutomation<T>(
+  machineId: string,
+  write: () => Promise<T>,
+): Promise<T> {
   try {
     return await write();
   } finally {

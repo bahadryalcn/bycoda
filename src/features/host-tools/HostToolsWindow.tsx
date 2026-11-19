@@ -67,9 +67,7 @@ function sessionStatusBadge(status: string | undefined) {
 const paneKey = (pane: ToolsSession) => `${toolsSessionKey(pane)}:${pane.onlyTab ?? "all"}`;
 const FOLLOW_KEY = "bycoda.tools-hub.follow.v1";
 function sameWindowSet(previous: ReadonlySet<string> | null, next: ReadonlySet<string>) {
-  return (
-    !!previous && previous.size === next.size && [...next].every((id) => previous.has(id))
-  );
+  return !!previous && previous.size === next.size && [...next].every((id) => previous.has(id));
 }
 function initialFollow() {
   try {
@@ -349,7 +347,9 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       void requestToolsSources()
         .then((windows) => {
           if (disposed) return;
-          setAvailableWindows((previous) => (sameWindowSet(previous, windows) ? previous : windows));
+          setAvailableWindows((previous) =>
+            sameWindowSet(previous, windows) ? previous : windows,
+          );
           setSources((previous) => {
             const kept = [...previous].filter(([owner]) => windows.has(owner));
             return kept.length === previous.size ? previous : new Map(kept);

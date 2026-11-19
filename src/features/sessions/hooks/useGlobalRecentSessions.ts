@@ -76,9 +76,7 @@ export function useGlobalRecentSessions(
   // transcript. Opening builds from the current inputs in the same render.
   const merged = useMemo(
     () =>
-      enabled
-        ? mergeGlobalRecentSessions(stored, history, sessions, allowedProjectKeys)
-        : NO_ROWS,
+      enabled ? mergeGlobalRecentSessions(stored, history, sessions, allowedProjectKeys) : NO_ROWS,
     [enabled, stored, history, sessions, allowedProjectKeys],
   );
   const projectedRows = useMemo(() => withinGlobalRecentWindow(merged, clock), [merged, clock]);

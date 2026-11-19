@@ -185,9 +185,7 @@ describe("providerAccountSignedOut", () => {
         }),
       ),
     ).toBe(false);
-    expect(providerAccountSignedOut(limits(window(40), null, { reason: "signedOut" }))).toBe(
-      false,
-    );
+    expect(providerAccountSignedOut(limits(window(40), null, { reason: "signedOut" }))).toBe(false);
   });
 });
 

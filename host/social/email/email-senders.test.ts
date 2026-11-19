@@ -270,9 +270,7 @@ describe("SMTP sender", () => {
       port: 587,
     };
     const pool = createSmtpPool(() => transport);
-    const error = await failure(
-      sendSmtp(smtpAccount, { user: "u", pass: "p" }, message, pool),
-    );
+    const error = await failure(sendSmtp(smtpAccount, { user: "u", pass: "p" }, message, pool));
     expect((error as SocialPlatformError).code).toBe("unknown");
     expect(transport.sendMail).toHaveBeenCalledTimes(1);
     expect(transport.close).not.toHaveBeenCalled();

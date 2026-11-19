@@ -30,7 +30,9 @@ export function NavigationBoundary({
         {label}
       </Heading>
       <RecoveryBoundary key={name} onBack={onBack}>
-        <Suspense fallback={<NavigationLoading label={label} onBack={onBack} />}>{children}</Suspense>
+        <Suspense fallback={<NavigationLoading label={label} onBack={onBack} />}>
+          {children}
+        </Suspense>
       </RecoveryBoundary>
     </>
   );

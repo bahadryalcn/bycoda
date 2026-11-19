@@ -85,16 +85,14 @@ it("renders every hour detail row up to six with the remainder and a sorted orde
       return [`m${rank}`, { sample: entry, value: rank }] as const;
     }),
   );
-  const markup = renderToStaticMarkup(
-    createElement(HourDetails, { entries, metric: "cost" }),
-  );
+  const markup = renderToStaticMarkup(createElement(HourDetails, { entries, metric: "cost" }));
   expect(markup.indexOf("model-8")).toBeLessThan(markup.indexOf("model-3"));
   expect(markup).not.toContain("model-2<");
   expect(markup).toContain("+2");
 });
 
 it("keeps the empty-hour message as the lazy detail body", () => {
-  expect(renderToStaticMarkup(createElement(HourDetails, { entries: undefined, metric: "cost" }))).toBe(
-    "No usage recorded in this period.",
-  );
+  expect(
+    renderToStaticMarkup(createElement(HourDetails, { entries: undefined, metric: "cost" })),
+  ).toBe("No usage recorded in this period.");
 });

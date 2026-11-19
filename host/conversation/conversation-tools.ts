@@ -1223,61 +1223,63 @@ export async function runConversationMcp(
         });
       else
         calls.start(request.id, async (signal) => {
-      // A cancelled call gets no response (MCP cancellation), even if the Host finished it.
-      const reply = (result: unknown) => {
-        if (!signal.aborted) respond(result);
-      };
-      try {
-        const tool = sessionConversationToolCatalog().find(
-          (tool) => tool.name === request.params?.name,
-        );
-        if (!tool) throw new Error("Unsupported conversation tool.");
-        const args = request.params.arguments ?? {};
-        validateConversationTool(tool.action, args);
-        const result: any = await call(tool.action, args, undefined, undefined, signal);
-        const annotationImage = result?.selection?.screenshot;
-        const previewFrame = result?.evidence?.frame;
-        const desktopImage = tool.action === "desktop.screenshot" ? result?.screenshot : undefined;
-        const frame = annotationImage ?? previewFrame ?? desktopImage ?? result?.frame ?? result;
-        const data = frame?.base64 ?? frame?.data;
-        const mime = frame?.mime ?? frame?.mimeType;
-        const { base64: _base64, data: _data, ...imageMetadata } = frame ?? {};
-        const metadata = annotationImage
-          ? { ...result, selection: { ...result.selection, screenshot: imageMetadata } }
-          : previewFrame
-            ? { ...result, evidence: { ...result.evidence, frame: imageMetadata } }
-            : desktopImage
-              ? { ...result, screenshot: imageMetadata }
-              : result?.frame
-                ? { ...result, frame: imageMetadata }
-                : undefined;
-        reply({
-          content:
-            data && ["image/png", "image/jpeg"].includes(mime)
-              ? [
-                  ...(metadata
-                    ? [
-                        {
-                          type: "text",
-                          text: JSON.stringify(metadata),
-                        },
-                      ]
-                    : []),
-                  { type: "image", data, mimeType: mime },
-                ]
-              : [{ type: "text", text: JSON.stringify(result) }],
-        });
-      } catch (error) {
-        reply({
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: error instanceof Error ? error.message : "Conversation tool failed.",
-            },
-          ],
-        });
-      }
+          // A cancelled call gets no response (MCP cancellation), even if the Host finished it.
+          const reply = (result: unknown) => {
+            if (!signal.aborted) respond(result);
+          };
+          try {
+            const tool = sessionConversationToolCatalog().find(
+              (tool) => tool.name === request.params?.name,
+            );
+            if (!tool) throw new Error("Unsupported conversation tool.");
+            const args = request.params.arguments ?? {};
+            validateConversationTool(tool.action, args);
+            const result: any = await call(tool.action, args, undefined, undefined, signal);
+            const annotationImage = result?.selection?.screenshot;
+            const previewFrame = result?.evidence?.frame;
+            const desktopImage =
+              tool.action === "desktop.screenshot" ? result?.screenshot : undefined;
+            const frame =
+              annotationImage ?? previewFrame ?? desktopImage ?? result?.frame ?? result;
+            const data = frame?.base64 ?? frame?.data;
+            const mime = frame?.mime ?? frame?.mimeType;
+            const { base64: _base64, data: _data, ...imageMetadata } = frame ?? {};
+            const metadata = annotationImage
+              ? { ...result, selection: { ...result.selection, screenshot: imageMetadata } }
+              : previewFrame
+                ? { ...result, evidence: { ...result.evidence, frame: imageMetadata } }
+                : desktopImage
+                  ? { ...result, screenshot: imageMetadata }
+                  : result?.frame
+                    ? { ...result, frame: imageMetadata }
+                    : undefined;
+            reply({
+              content:
+                data && ["image/png", "image/jpeg"].includes(mime)
+                  ? [
+                      ...(metadata
+                        ? [
+                            {
+                              type: "text",
+                              text: JSON.stringify(metadata),
+                            },
+                          ]
+                        : []),
+                      { type: "image", data, mimeType: mime },
+                    ]
+                  : [{ type: "text", text: JSON.stringify(result) }],
+            });
+          } catch (error) {
+            reply({
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: error instanceof Error ? error.message : "Conversation tool failed.",
+                },
+              ],
+            });
+          }
         });
     } else
       output.write(

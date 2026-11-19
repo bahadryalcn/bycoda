@@ -90,10 +90,14 @@ it("leaves Escape to a capturing shortcut recorder and gives it back to the dial
   const escape = () =>
     document
       .getElementById("capture")!
-      .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
   await act(async () => escape());
   expect(onClose).not.toHaveBeenCalled();
-  document.getElementById("capture")!.parentElement!.removeAttribute("data-shortcut-recorder-active");
+  document
+    .getElementById("capture")!
+    .parentElement!.removeAttribute("data-shortcut-recorder-active");
   await act(async () => escape());
   expect(onClose).toHaveBeenCalledOnce();
 });

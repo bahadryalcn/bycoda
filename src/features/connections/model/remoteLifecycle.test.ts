@@ -51,7 +51,10 @@ it("publishes recovery after a failure or stale mark even within the refresh win
   expect(countPublications(() => recordFeatureHealth("env", "git", false))).toBe(1);
   expect(readRemoteLifecycle("env").features.git?.status).toBe("failed");
   expect(countPublications(() => recordFeatureHealth("env", "git", true))).toBe(1);
-  expect(readRemoteLifecycle("env").features.git).toEqual({ status: "ready", verifiedAt: 1_000_000 });
+  expect(readRemoteLifecycle("env").features.git).toEqual({
+    status: "ready",
+    verifiedAt: 1_000_000,
+  });
 
   markRemoteFeaturesStale("env");
   expect(readRemoteLifecycle("env").features.git?.status).toBe("stale");

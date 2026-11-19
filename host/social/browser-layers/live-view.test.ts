@@ -74,7 +74,9 @@ describe("LiveViewRegistry", () => {
     emit("Page.screencastFrame", frameEvent("QUFB"));
     const first = (await registry.frame("acc")) as { seq: number };
     expect(await registry.frame("acc", first.seq)).toEqual({ unchanged: true });
-    expect(await registry.frame("acc", first.seq - 1)).toEqual(expect.objectContaining({ seq: first.seq }));
+    expect(await registry.frame("acc", first.seq - 1)).toEqual(
+      expect.objectContaining({ seq: first.seq }),
+    );
     clock = 2000;
     emit("Page.screencastFrame", frameEvent("QkJC"));
     const second = await registry.frame("acc", first.seq);

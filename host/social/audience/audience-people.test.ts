@@ -172,7 +172,9 @@ describe("delete, merge and matching", () => {
     const address = { address: "ada@example.com", source: "import" as const, verified: false };
     await f.store.putPerson(person("p-1", { emails: [address] }));
     await f.store.putPerson(person("p-2"));
-    await f.store.putPerson(person("p-3", { emails: [{ ...address, address: "other@example.com" }] }));
+    await f.store.putPerson(
+      person("p-3", { emails: [{ ...address, address: "other@example.com" }] }),
+    );
     await saveList(f.ctx(OWNER), { id: "team", name: "Team", kind: "static" });
     await saveList(f.ctx(OWNER), { id: "other", name: "Other", kind: "static" });
     await f.store.addMembers("team", ["p-1"], { source: "test", at: NOW });

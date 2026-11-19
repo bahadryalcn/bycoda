@@ -2,11 +2,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import type { SocialClient } from "../../model/socialClient";
 import { socialQueryScope } from "../../model/socialQuery";
 import { appendSocialWorkspacePage, socialRows } from "../../model/socialWorkspace";
-import type {
-  SocialCampaign,
-  SocialJob,
-  SocialSnapshot,
-} from "../../model/social";
+import type { SocialCampaign, SocialJob, SocialSnapshot } from "../../model/social";
 import type { SocialProgram } from "../../model/socialProgram";
 import { useFirstPageRefresh } from "../../hooks/useFirstPageRefresh";
 import { refreshContentPages, type ContentPage, type Offsets } from "./contentRefresh";

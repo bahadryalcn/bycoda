@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { describeDocumentProblem } from "./documentProblemText";
 import type { DocumentProblem } from "./documentViewer";
-import {
-  getDomainLanguagePreference,
-  setDomainLanguagePreference,
-} from "../../../shared/i18n";
+import { getDomainLanguagePreference, setDomainLanguagePreference } from "../../../shared/i18n";
 
 const REASONS: DocumentProblem[] = [
   { reason: "unreadable", detail: "Invalid PDF structure." },

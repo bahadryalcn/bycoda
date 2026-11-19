@@ -315,12 +315,14 @@ it("names the background refresh setting, not Inbox scope, when its save fails a
       : base(command, args),
   );
   const original = Storage.prototype.setItem;
-  const setItem = vi
-    .spyOn(Storage.prototype, "setItem")
-    .mockImplementation(function (this: Storage, key: string, value: string) {
-      if (key === "bycoda.jiraBackgroundSync") throw new Error("Storage is full");
-      return original.call(this, key, value);
-    });
+  const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+    this: Storage,
+    key: string,
+    value: string,
+  ) {
+    if (key === "bycoda.jiraBackgroundSync") throw new Error("Storage is full");
+    return original.call(this, key, value);
+  });
   await act(async () => root.render(createElement(JiraSettings)));
   for (let round = 0; round < 3; round += 1)
     await act(async () => {

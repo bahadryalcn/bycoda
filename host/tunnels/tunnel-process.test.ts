@@ -190,7 +190,11 @@ describe("tunnel provider adapters", () => {
     it("still reports rejected credentials after ready", () => {
       let clock = 0;
       const events: TunnelEvent[] = [];
-      const stream = tunnelOutput("ngrok", (event) => events.push(event), () => clock).stream();
+      const stream = tunnelOutput(
+        "ngrok",
+        (event) => events.push(event),
+        () => clock,
+      ).stream();
       stream.write(Buffer.from('{"msg":"started tunnel","url":"https://a.ngrok.app"}\n'));
       stream.write(Buffer.from("ERR_NGROK_4018 private-secret\n"));
       expect(events.at(-1)).toEqual({ type: "error", issue: "credential-missing" });
@@ -199,7 +203,11 @@ describe("tunnel provider adapters", () => {
     it("treats ngrok origin errors as isolated and a lost session as an outage", () => {
       let clock = 0;
       const events: TunnelEvent[] = [];
-      const stream = tunnelOutput("ngrok", (event) => events.push(event), () => clock).stream();
+      const stream = tunnelOutput(
+        "ngrok",
+        (event) => events.push(event),
+        () => clock,
+      ).stream();
       stream.write(Buffer.from('{"msg":"started tunnel","url":"https://a.ngrok.app"}\n'));
       expect(events).toEqual([{ type: "ready", publicUrl: "https://a.ngrok.app" }]);
       stream.write(Buffer.from("ERR_NGROK_8012 failed to connect to upstream\n"));

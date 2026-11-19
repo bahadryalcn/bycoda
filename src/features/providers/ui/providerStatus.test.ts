@@ -28,9 +28,10 @@ it("derives Grok sign-in from the cached authenticated usage result", () => {
   const signedIn = { ...idleRateLimits("grok"), status: "ok" as const };
   expect(grokSignInState(signedIn)).toEqual({ tone: "ready", label: "Signed in" });
   expect(providerAuthState(signedIn, 0)).toEqual({ tone: "ready", label: "Signed in" });
-  expect(
-    grokSignInState(unavailableRateLimits("grok", "no cached token", "signedOut")),
-  ).toEqual({ tone: "signedOut", label: "Signed out" });
+  expect(grokSignInState(unavailableRateLimits("grok", "no cached token", "signedOut"))).toEqual({
+    tone: "signedOut",
+    label: "Signed out",
+  });
 });
 
 it("shows a missing CLI or an unclassified failure as not checked, never as signed out", () => {

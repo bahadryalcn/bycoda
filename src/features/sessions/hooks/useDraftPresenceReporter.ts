@@ -58,7 +58,10 @@ export function useDraftPresenceReporter(): void {
           loaded = true;
         }
         const sessionIds = [...known].filter(hasUnsentComposerDraft).sort();
-        if (!draftPresenceChanged(previous, sessionIds) && Date.now() - lastReport < REPORT_INTERVAL_MS)
+        if (
+          !draftPresenceChanged(previous, sessionIds) &&
+          Date.now() - lastReport < REPORT_INTERVAL_MS
+        )
           return;
         const target = await invoke<RemoteMachine | null>("local_host_connect");
         if (!target || stopped) {

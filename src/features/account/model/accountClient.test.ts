@@ -22,10 +22,12 @@ describe("account API deadline", () => {
     });
 
   it("rejects a request that never answers after the default deadline", async () => {
-    const outcome = api(neverAnswers).listDevices().then(
-      () => "answered",
-      (error: unknown) => error,
-    );
+    const outcome = api(neverAnswers)
+      .listDevices()
+      .then(
+        () => "answered",
+        (error: unknown) => error,
+      );
     await vi.advanceTimersByTimeAsync(DEFAULT_ACCOUNT_TIMEOUT_MS - 1);
     expect(vi.getTimerCount()).toBe(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -43,7 +45,9 @@ describe("account API deadline", () => {
       seen.headers = init?.headers;
       return new Promise<Response>(() => undefined);
     }) as typeof fetch;
-    const outcome = api(fetchImpl, 500).listDevices().catch((error: unknown) => error);
+    const outcome = api(fetchImpl, 500)
+      .listDevices()
+      .catch((error: unknown) => error);
     await vi.advanceTimersByTimeAsync(500);
     expect(await outcome).toBeInstanceOf(AccountRequestTimeoutError);
     expect(seen.signal?.aborted).toBe(true);

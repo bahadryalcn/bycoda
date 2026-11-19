@@ -175,8 +175,7 @@ export function ChatFolderBrowser({
     setLimit(TREE_WINDOW_CHUNK);
     void browseDirectory(directory).then(
       (folder) => {
-        if (!cancelled)
-          setListing({ ...folder, entries: sortFolderEntries(folder.entries) });
+        if (!cancelled) setListing({ ...folder, entries: sortFolderEntries(folder.entries) });
       },
       (reason) => {
         if (!cancelled) setError(String(reason));
@@ -364,51 +363,51 @@ export function ChatFolderBrowser({
             ) : null}
             <ul aria-label={t("Folder contents")} className="max-h-80 overflow-auto py-2">
               {shown.map((entry) => (
-                  <li key={entry.path} className="flex min-w-0 items-center gap-1">
+                <li key={entry.path} className="flex min-w-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    motion="none"
+                    type="button"
+                    disabled={busy || (!entry.isDir && (!listing?.canOpenFiles || !onOpenFile))}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-not-allowed"
+                    onClick={() => {
+                      if (entry.isDir) setDirectory(entry.path);
+                      else {
+                        onOpenFile?.(entry.path, undefined, { exact: true });
+                        onClose();
+                      }
+                    }}
+                  >
+                    {entry.isDir ? (
+                      <FolderOpen className="icon-md shrink-0" />
+                    ) : (
+                      <FileTypeIcon name={entry.name} isDir={false} size="md" />
+                    )}
+                    <Tooltip label={displayPath(entry.path, directory)} asChild>
+                      <Text truncate size="body" tone="inherit" className="min-w-0">
+                        {entry.name}
+                      </Text>
+                    </Tooltip>
+                  </Button>
+                  {!entry.isDir && listing?.canOpenFiles ? (
                     <Button
+                      iconOnly
+                      label={`${t("Open local copy")}: ${entry.name}`}
                       variant="ghost"
                       motion="none"
                       type="button"
-                      disabled={busy || (!entry.isDir && (!listing?.canOpenFiles || !onOpenFile))}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-not-allowed"
-                      onClick={() => {
-                        if (entry.isDir) setDirectory(entry.path);
-                        else {
-                          onOpenFile?.(entry.path, undefined, { exact: true });
-                          onClose();
-                        }
-                      }}
-                    >
-                      {entry.isDir ? (
-                        <FolderOpen className="icon-md shrink-0" />
-                      ) : (
-                        <FileTypeIcon name={entry.name} isDir={false} size="md" />
-                      )}
-                      <Tooltip label={displayPath(entry.path, directory)} asChild>
-                        <Text truncate size="body" tone="inherit" className="min-w-0">
-                          {entry.name}
-                        </Text>
-                      </Tooltip>
-                    </Button>
-                    {!entry.isDir && listing?.canOpenFiles ? (
-                      <Button
-                        iconOnly
-                        label={`${t("Open local copy")}: ${entry.name}`}
-                        variant="ghost"
-                        motion="none"
-                        type="button"
-                        disabled={busy}
-                        loading={pendingAction === `copy:${entry.path}`}
-                        tooltip={t("Open local copy")}
-                        aria-label={`${t("Open local copy")}: ${entry.name}`}
+                      disabled={busy}
+                      loading={pendingAction === `copy:${entry.path}`}
+                      tooltip={t("Open local copy")}
+                      aria-label={`${t("Open local copy")}: ${entry.name}`}
 
-                        onClick={() => void openLocalCopy(entry.path)}
-                      >
-                        <ExternalLink className="icon-md" />
-                      </Button>
-                    ) : null}
-                  </li>
-                ))}
+                      onClick={() => void openLocalCopy(entry.path)}
+                    >
+                      <ExternalLink className="icon-md" />
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
             </ul>
             {hidden > 0 ? (
               <Button

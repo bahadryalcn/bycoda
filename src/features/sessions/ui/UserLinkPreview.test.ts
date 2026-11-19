@@ -309,7 +309,9 @@ describe("GitHub work item link preview", () => {
       githubWorkItem: { kind: "issue", repo: "acme/widgets", number: 9 },
     };
     act(() => root.render(createElement(UserLinkPreview, { link: issueLink })));
-    const chip = container.querySelector<HTMLAnchorElement>('[data-github-work-item-chip="issue"]')!;
+    const chip = container.querySelector<HTMLAnchorElement>(
+      '[data-github-work-item-chip="issue"]',
+    )!;
 
     expect(chip.textContent).toBe("Issue #9");
     expect(chip.getAttribute("aria-label")).toBe("Open issue #9 in acme/widgets");

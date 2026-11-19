@@ -172,7 +172,9 @@ it("never shows the old account's picture after a switch, even when its read fin
 
 it("asks for frames after the picture it holds and keeps it when the Host answers unchanged", async () => {
   const answers: BrowserViewRead[] = [frameOf(7), { unchanged: true }];
-  const { client, browserViewFrame } = clientWith(async () => answers.shift() ?? { unchanged: true });
+  const { client, browserViewFrame } = clientWith(
+    async () => answers.shift() ?? { unchanged: true },
+  );
   await mount(client);
   await advance(700);
   expect(browserViewFrame.mock.calls.map((call) => call[1])).toEqual([undefined, 7]);

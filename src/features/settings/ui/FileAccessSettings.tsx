@@ -32,10 +32,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
     operation.current = true;
     setPending("read");
     try {
-      const [value, notices] = await Promise.all([
-        getFileAccessMode(),
-        getFileAccessRecoveries(),
-      ]);
+      const [value, notices] = await Promise.all([getFileAccessMode(), getFileAccessRecoveries()]);
       if (active.current) {
         setMode(value);
         setRecoveries(notices);

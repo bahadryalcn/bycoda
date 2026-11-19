@@ -5,8 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { UsageFooter as QueryComponent } from "./UsageFooter";
 
 vi.mock("../../features/settings/public/useKeybindingShortcut", () => ({
-  useKeybindingShortcut: (command: string) =>
-    command === "Terminal: New" ? "Alt+Shift+T" : null,
+  useKeybindingShortcut: (command: string) => (command === "Terminal: New" ? "Alt+Shift+T" : null),
 }));
 
 describe("UsageFooter terminal control", () => {

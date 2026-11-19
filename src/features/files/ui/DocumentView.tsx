@@ -142,9 +142,7 @@ export function DocumentView({
       (bytes) => {
         if (cancelled) return;
         const problem = documentSizeProblem(bytes.byteLength);
-        setState(
-          problem ? { status: "error", problem } : { status: "ready", path, bytes },
-        );
+        setState(problem ? { status: "error", problem } : { status: "ready", path, bytes });
       },
       (cause: unknown) => {
         // The Cancel button already showed its own state.

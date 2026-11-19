@@ -33,7 +33,8 @@ function sameMessage(a: ThreadMessage, b: ThreadMessage): boolean {
     a.attachments.length === b.attachments.length &&
     a.attachments.every(
       (attachment, index) =>
-        attachment.name === b.attachments[index].name && attachment.size === b.attachments[index].size,
+        attachment.name === b.attachments[index].name &&
+        attachment.size === b.attachments[index].size,
     )
   );
 }

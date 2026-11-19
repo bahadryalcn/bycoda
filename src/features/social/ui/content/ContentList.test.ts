@@ -97,7 +97,11 @@ describe("campaignState", () => {
   it("is the status of the newest publish job of that campaign", () => {
     const state = campaignState(
       queuedPost,
-      latestPublishJobs([job("c2", "failed", 5), job("c2", "queued", 9), job("c3", "succeeded", 99)]),
+      latestPublishJobs([
+        job("c2", "failed", 5),
+        job("c2", "queued", 9),
+        job("c3", "succeeded", 99),
+      ]),
     );
     expect(state).toBe("queued");
   });

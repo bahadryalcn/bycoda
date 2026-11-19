@@ -56,6 +56,8 @@ describe("crew scene label legibility", () => {
   });
 
   it("applies one idle caption colour to every theme, with no light-only override", () => {
-    expect(readFileSync(resolve(UI_DIR, "crewClassicColor.css"), "utf8")).not.toMatch(/theme-light/);
+    expect(readFileSync(resolve(UI_DIR, "crewClassicColor.css"), "utf8")).not.toMatch(
+      /theme-light/,
+    );
   });
 });

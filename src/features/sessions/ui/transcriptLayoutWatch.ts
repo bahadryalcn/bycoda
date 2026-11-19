@@ -57,7 +57,8 @@ export class TranscriptLayoutWatch {
     const owned = entry;
     if (kind === "mutate" && !owned.mutate.size && typeof MutationObserver !== "undefined") {
       this.mutations ??= new MutationObserver((records) => {
-        for (const record of records) this.mark(this.entries.get(record.target)?.mutate ?? [], false);
+        for (const record of records)
+          this.mark(this.entries.get(record.target)?.mutate ?? [], false);
       });
       this.mutations.observe(node, CLASS_OR_STYLE);
     }

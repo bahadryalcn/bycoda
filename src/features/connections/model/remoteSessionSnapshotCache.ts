@@ -17,7 +17,7 @@ export const cachedDescriptors = new Map<string, HostDescriptor>();
 /** False while the machine's descriptor is not cached yet, so callers use the safe full read. */
 export const machineSupportsLazyHistory = (machineId: string) =>
   !!cachedDescriptors.get(machineId)?.capabilities.includes("sessions.lazyHistory");
-export const snapshotKey =(machineId: string, sessionId: string) => `${machineId}:${sessionId}`;
+export const snapshotKey = (machineId: string, sessionId: string) => `${machineId}:${sessionId}`;
 export function rememberSessionSnapshot(
   key: string,
   snapshot: HostSession,

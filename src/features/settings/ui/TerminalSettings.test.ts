@@ -14,7 +14,9 @@ it("keeps Default shell by machine help in one info popover, not a visible subli
 });
 
 it("states the open-terminal rule once in the shell popover", () => {
-  expect(source.match(/A terminal already open keeps the shell it started with\./g)).toHaveLength(1);
+  expect(source.match(/A terminal already open keeps the shell it started with\./g)).toHaveLength(
+    1,
+  );
   expect(source).not.toMatch(/Applies to new commands on this host/);
   expect(source).not.toMatch(/in this computer's synced sessions/);
 });

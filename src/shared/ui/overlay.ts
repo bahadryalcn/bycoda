@@ -332,9 +332,9 @@ function beginToastTracking(origin: HTMLElement | null) {
  */
 export function focusToastCard(card: string): boolean {
   if (typeof document === "undefined") return false;
-  const cards = [
-    ...document.querySelectorAll<HTMLElement>(`[data-toast-region] ${card}`),
-  ].filter((item) => focusable(item).length > 0);
+  const cards = [...document.querySelectorAll<HTMLElement>(`[data-toast-region] ${card}`)].filter(
+    (item) => focusable(item).length > 0,
+  );
   if (!cards.length) return false;
   const active = document.activeElement;
   const current = cards.findIndex((item) => item.contains(active));

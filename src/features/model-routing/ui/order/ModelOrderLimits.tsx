@@ -107,9 +107,7 @@ export function ModelOrderLimits({
           p1: formatAgentMinutes(usage.dailyAgentMinutes),
         })
       : formatAgentMinutes(usage.usedMinutes);
-  const used = usage.stale
-    ? t("{p0} · {p1}", { p0: t("Out of date"), p1: usedText })
-    : usedText;
+  const used = usage.stale ? t("{p0} · {p1}", { p0: t("Out of date"), p1: usedText }) : usedText;
   return (
     <Group
       title={t("Work limits")}
@@ -206,9 +204,7 @@ export function ModelOrderLimits({
             {t("Token and cost limits")}
           </Text>
           <InfoPopover>
-            <p>
-              {t("Limits apply before new turns and may be exceeded by a running turn.")}
-            </p>
+            <p>{t("Limits apply before new turns and may be exceeded by a running turn.")}</p>
           </InfoPopover>
           <Button
             variant="ghost"

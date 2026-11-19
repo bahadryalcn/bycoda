@@ -1,6 +1,9 @@
 import { errorText } from "../../../shared/lib/errors";
 import { t } from "../../../shared/i18n";
-import { AttachmentFailureError, type AttachmentFailure } from "../../sessions/model/attachmentFailure";
+import {
+  AttachmentFailureError,
+  type AttachmentFailure,
+} from "../../sessions/model/attachmentFailure";
 
 /** Stable code returned by `quick_composer_capture` when macOS withholds Screen Recording. */
 const SCREEN_RECORDING_DENIED = "screen-recording-permission-required";
@@ -15,7 +18,9 @@ function attachmentFailureMessage(failure: AttachmentFailure): string {
     case "image-too-large":
       return t("That image is too large to attach.");
     case "provider-changed":
-      return t("The provider changed before these files were attached. Your selection is kept; try again.");
+      return t(
+        "The provider changed before these files were attached. Your selection is kept; try again.",
+      );
   }
 }
 
@@ -30,7 +35,9 @@ export function captureNotice(reason: unknown): QuickNotice {
   const code = errorText(reason);
   if (code === SCREEN_RECORDING_DENIED) {
     return {
-      message: t("Screenshots need Screen Recording access. Review access to set it up, then try again."),
+      message: t(
+        "Screenshots need Screen Recording access. Review access to set it up, then try again.",
+      ),
       recovery: "screen-recording",
     };
   }

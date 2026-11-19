@@ -718,10 +718,7 @@ function VirtualRows({
     );
     const pin = pinnedRows.current;
     const start = Math.min(windowed.start, pin?.start ?? windowed.start);
-    const end = Math.min(
-      sizedRows.length,
-      Math.max(windowed.end, pin?.end ?? windowed.end),
-    );
+    const end = Math.min(sizedRows.length, Math.max(windowed.end, pin?.end ?? windowed.end));
     const next =
       start === windowed.start && end === windowed.end
         ? windowed
@@ -981,7 +978,9 @@ function VirtualRows({
             commenting={commentTarget?.key === key}
             tokens={row.type === "line" ? tokens?.get(row.line) : undefined}
             onReveal={revealFold}
-            onStage={row.type === "line" && row.stage && row.line.pos != null ? stageHunk : undefined}
+            onStage={
+              row.type === "line" && row.stage && row.line.pos != null ? stageHunk : undefined
+            }
             onComment={
               lane === "gutter" && row.type === "line" && row.line.kind !== "hunk"
                 ? commentOnLine
@@ -1021,7 +1020,9 @@ function VirtualRows({
             onStage={
               stageHere && row.type === "pair" && row.stagePos !== undefined ? stageHunk : undefined
             }
-            onComment={lane === "gutter" && line && line.kind !== "hunk" ? commentOnLine : undefined}
+            onComment={
+              lane === "gutter" && line && line.kind !== "hunk" ? commentOnLine : undefined
+            }
           />
         </div>
       );

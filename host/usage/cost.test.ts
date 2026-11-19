@@ -177,9 +177,10 @@ it("bounds the retained scan cache by request count without losing exactness or 
   const write = (name: string, output: number) =>
     writeFile(
       join(dir as string, `${name}.jsonl`),
-      [entry(`${name}-a`, output, `/work/${name}`), entry(`${name}-b`, output + 1, `/work/${name}`)].join(
-        "\n",
-      ),
+      [
+        entry(`${name}-a`, output, `/work/${name}`),
+        entry(`${name}-b`, output + 1, `/work/${name}`),
+      ].join("\n"),
     );
   for (const [index, name] of ["a", "b", "c"].entries()) await write(name, (index + 1) * 10);
 
@@ -187,7 +188,14 @@ it("bounds the retained scan cache by request count without losing exactness or 
     (await scanLogs([dir as string], "claude", 0)).requests
       .map((request) => `${request.project}:${request.output}`)
       .sort();
-  const expected = ["/work/a:10", "/work/a:11", "/work/b:20", "/work/b:21", "/work/c:30", "/work/c:31"];
+  const expected = [
+    "/work/a:10",
+    "/work/a:11",
+    "/work/b:20",
+    "/work/b:21",
+    "/work/c:30",
+    "/work/c:31",
+  ];
 
   expect(await outputs()).toEqual(expected);
   // Over budget: some files stay cached, none of the scan's data is lost, the cache is never wiped.

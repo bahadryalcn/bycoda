@@ -203,7 +203,10 @@ describe("bounded discovery and birth-safe signals", () => {
   it("shares one PowerShell snapshot between listener and process scans without the native helper", async () => {
     const command = vi.fn<DiscoveryCommand>().mockResolvedValue(windowsSnapshot());
     const discovery = new DevServerDiscovery({ platform: "win32", command });
-    const [listeners, processes] = await Promise.all([discovery.listeners(), discovery.processes()]);
+    const [listeners, processes] = await Promise.all([
+      discovery.listeners(),
+      discovery.processes(),
+    ]);
     expect(command).toHaveBeenCalledOnce();
     expect(listeners[0].process.startedAt).toBe(birth);
     expect(processes.map((item) => item.pid)).toEqual([1234]);

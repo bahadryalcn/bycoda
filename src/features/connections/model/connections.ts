@@ -530,7 +530,9 @@ function sharedRead<T>(
   // The text carries the Host's busy marker (remoteFailure.ts): retry later, not a host error.
   if ((reads?.size ?? 0) >= REMOTE_READS_PER_MACHINE)
     return Promise.reject(
-      new Error("Host read capacity is busy: too many remote reads are in progress for this machine"),
+      new Error(
+        "Host read capacity is busy: too many remote reads are in progress for this machine",
+      ),
     );
   if (!reads) {
     reads = new Map();
@@ -1293,9 +1295,7 @@ function watchMachineStatus(machineId: string): () => void {
       if (statusWatchers.get(machineId) === watcher && computerOnline())
         watcher.timer = setTimeout(
           () => void poll(),
-          !current()
-            ? 0
-            : machineStatusPollDelay(failures, machine?.environmentId, windowHidden()),
+          !current() ? 0 : machineStatusPollDelay(failures, machine?.environmentId, windowHidden()),
         );
     };
     void poll();
@@ -1610,7 +1610,9 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
   const { machines: inventory } = useRemoteMachines(projects.length > 0);
   // Pollers and machine channels restart only when a machine they reach changes its identity
   // or route, not when the inventory is re-read, renamed or gains an unrelated machine.
-  const railEnvironments = new Set(projects.map((project) => remoteProjectFor(project)?.environmentId));
+  const railEnvironments = new Set(
+    projects.map((project) => remoteProjectFor(project)?.environmentId),
+  );
   const machines = useRouteStableMachines(
     inventory.filter((entry) => railEnvironments.has(entry.environmentId)),
   );

@@ -161,9 +161,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         if (event.target instanceof Element && event.target.closest(interactive)) return;
         dragCleanup.current?.();
         setWindowError(null);
-        void toggleWindowMaximize().catch((error) =>
-          setWindowError(errorText(error)),
-        );
+        void toggleWindowMaximize().catch((error) => setWindowError(errorText(error)));
       }}
       {...surfaceAttributes(
         { frame: "pane", edge: "bottom" },

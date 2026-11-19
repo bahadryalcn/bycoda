@@ -59,7 +59,9 @@ it("handles several frames in one chunk and a multi-byte character split across 
   const one = Buffer.from(
     `${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { structuredContent: { text: "€uro" } } })}\n`,
   );
-  const two = Buffer.from(`${JSON.stringify({ jsonrpc: "2.0", id: 3, result: { isError: true } })}\n`);
+  const two = Buffer.from(
+    `${JSON.stringify({ jsonrpc: "2.0", id: 3, result: { isError: true } })}\n`,
+  );
   const euro = one.indexOf(0xe2) + 1;
   stdout.write(one.subarray(0, euro));
   stdout.write(Buffer.concat([one.subarray(euro), two]));

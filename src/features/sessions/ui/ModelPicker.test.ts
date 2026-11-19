@@ -1190,7 +1190,9 @@ describe("model picker", () => {
       trigger.focus();
       expect(recentMenu()).toBeNull();
       await act(async () => {
-        trigger.dispatchEvent(new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true }));
+        trigger.dispatchEvent(
+          new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true }),
+        );
       });
       expect(recentMenu()).not.toBeNull();
       expect(

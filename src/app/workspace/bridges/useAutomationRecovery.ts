@@ -108,7 +108,11 @@ export function useAutomationRecovery({ launchAutomation }: AutomationRecoveryDe
         const call = (dueClaim ??= claimDueAutomations());
         let due: Awaited<typeof call>;
         try {
-          due = await withTimeout(call, AUTOMATION_POLL_DEADLINES.dueClaimMs, "Due automation claim");
+          due = await withTimeout(
+            call,
+            AUTOMATION_POLL_DEADLINES.dueClaimMs,
+            "Due automation claim",
+          );
         } catch (error) {
           if (!(error instanceof TimeoutError)) dueClaim = undefined;
           throw error;

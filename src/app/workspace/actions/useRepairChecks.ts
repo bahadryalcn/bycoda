@@ -48,7 +48,10 @@ export function useRepairChecks(deps: RepairChecksDeps): {
     async (item: InboxItem, request: CiRepairRequest, sessionId?: string) => {
       const cwd = item.projectPath;
       if (!cwd)
-        throw new CiRepairStartError("projectRequired", "Choose a local project for this PR first.");
+        throw new CiRepairStartError(
+          "projectRequired",
+          "Choose a local project for this PR first.",
+        );
       let session = sessionId ? await ensureOpenSession(sessionId) : undefined;
       if (
         sessionId &&

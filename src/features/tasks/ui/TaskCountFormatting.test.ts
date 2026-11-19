@@ -53,9 +53,7 @@ it("formats budget usage counts and tokens with the app locale", async () => {
     root.render(createElement(TaskBudgetUsage, { usage: usage(), budget: undefined })),
   );
   const text = container.textContent ?? "";
-  expect(text).toContain(
-    formatNumber(2, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
-  );
+  expect(text).toContain(formatNumber(2, { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
   expect(text).toContain(formatNumber(1234567));
   expect(text).not.toContain("1234567");
 });

@@ -129,7 +129,8 @@ export function GitGraphCommitInspector({
           {commit.subject}
         </Heading>
         <Text as="p" size="caption" tone="secondary" className="mt-1">
-          {commit.author} · {format.formatDate(commit.timestamp * 1000, {
+          {commit.author} ·{" "}
+          {format.formatDate(commit.timestamp * 1000, {
             dateStyle: "medium",
             timeStyle: "short",
           })}

@@ -20,7 +20,10 @@ import {
   subscribeHarnessUpdates,
   type HarnessUpdateRun,
 } from "../model/harnessUpdateActions";
-import { describeHarnessUpdateFailure, type HarnessUpdateFailure } from "../model/harnessUpdateFailure";
+import {
+  describeHarnessUpdateFailure,
+  type HarnessUpdateFailure,
+} from "../model/harnessUpdateFailure";
 import {
   claimLaunchHarnessUpdateCheck,
   onHarnessUpdated,
@@ -213,13 +216,7 @@ function HarnessUpdateRow({
   );
 }
 
-function FailedUpdate({
-  harness,
-  failure,
-}: {
-  harness: HarnessId;
-  failure: HarnessUpdateFailure;
-}) {
+function FailedUpdate({ harness, failure }: { harness: HarnessId; failure: HarnessUpdateFailure }) {
   useLocale();
   const { headline, detail } = describeHarnessUpdateFailure(harness, failure);
   return (

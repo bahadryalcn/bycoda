@@ -84,7 +84,9 @@ export function dropAllMessagingCaches(): void {
  */
 export function syncMessagingAccounts(accounts: readonly MessagingAccount[]): void {
   const live = new Map(
-    accounts.filter((account) => account.connected).map((account) => [account.id, accountIdentity(account)]),
+    accounts
+      .filter((account) => account.connected)
+      .map((account) => [account.id, accountIdentity(account)]),
   );
   const known = new Set<string>([
     ...identities.keys(),

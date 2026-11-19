@@ -21,7 +21,10 @@ for (const theme of ["light", "dark"])
         path: `${out}/${theme}-${width}-document.png`,
         animations: "disabled",
       });
-      await page.getByRole("button", { name: /^Edit block: / }).first().click();
+      await page
+        .getByRole("button", { name: /^Edit block: / })
+        .first()
+        .click();
       await expect(editor.locator("[data-note-preview] .cm-content")).toBeVisible();
       await page.screenshot({
         path: `${out}/${theme}-${width}-block-edit.png`,

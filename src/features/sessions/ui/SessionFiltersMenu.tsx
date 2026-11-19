@@ -142,10 +142,7 @@ export function SessionFiltersMenu({
     (option) => !allowedTimeFilters || allowedTimeFilters.includes(option.id),
   );
   const items: DropdownMenuItem[] = [
-    toggle(
-      check("archived", t("Archived"), filters.showArchived),
-      toggleArchived,
-    ),
+    toggle(check("archived", t("Archived"), filters.showArchived), toggleArchived),
     ...(settled
       ? [
           toggle(check("settled", t("Settled"), filters.showSettled), () =>

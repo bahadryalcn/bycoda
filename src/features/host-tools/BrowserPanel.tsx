@@ -503,8 +503,7 @@ function ProjectBrowserPanel({
           }
         })
         .catch((cause) => {
-          if (alive.current && mode.current)
-            setLimitation(errorText(cause));
+          if (alive.current && mode.current) setLimitation(errorText(cause));
         })
         .finally(() => {
           hoverReading.current = false;

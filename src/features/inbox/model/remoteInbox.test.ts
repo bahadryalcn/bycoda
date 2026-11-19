@@ -26,7 +26,9 @@ describe("pure remote provider inbox contract", () => {
       cwd: `/repo-${index}`,
     }));
     const operation = parseRemoteInboxOperation({ action: "list" }, many);
-    expect(operation.action === "list" && operation.projects).toHaveLength(REMOTE_INBOX_PROJECT_LIMIT);
+    expect(operation.action === "list" && operation.projects).toHaveLength(
+      REMOTE_INBOX_PROJECT_LIMIT,
+    );
     expect(operation.action === "list" && operation.omittedProjects).toEqual([
       { id: "p40", path: "/repo-40" },
       { id: "p41", path: "/repo-41" },
@@ -37,10 +39,7 @@ describe("pure remote provider inbox contract", () => {
   it("omits the field when every project fits, and scoping by project reaches an omitted one", () => {
     const operation = parseRemoteInboxOperation({ action: "list" }, projects);
     expect(operation).not.toHaveProperty("omittedProjects");
-    const scoped = parseRemoteInboxOperation(
-      { action: "list", projectId: "project-2" },
-      projects,
-    );
+    const scoped = parseRemoteInboxOperation({ action: "list", projectId: "project-2" }, projects);
     expect(scoped.action === "list" && scoped.projects).toEqual([{ path: "/other" }]);
   });
 

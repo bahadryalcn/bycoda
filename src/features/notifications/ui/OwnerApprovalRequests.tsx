@@ -181,7 +181,9 @@ function InboxApprovalDialog({
               ? {
                   label: t("Details"),
                   defaultOpen: true,
-                  content: <InboxApprovalPreview details={request.inbox} message={request.message} />,
+                  content: (
+                    <InboxApprovalPreview details={request.inbox} message={request.message} />
+                  ),
                 }
               : undefined
           }

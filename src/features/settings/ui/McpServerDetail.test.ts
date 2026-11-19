@@ -159,9 +159,9 @@ it("never puts the draft text in the leave prompt", async () => {
   await type(EDITED);
   await press("Close");
   const prompts = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')];
-  expect(prompts.some((dialog) => dialog.textContent?.includes("Save changes before leaving?"))).toBe(
-    true,
-  );
+  expect(
+    prompts.some((dialog) => dialog.textContent?.includes("Save changes before leaving?")),
+  ).toBe(true);
   for (const dialog of prompts) {
     if (dialog.textContent?.includes("Save changes before leaving?"))
       expect(dialog.textContent).not.toContain(SECRET);

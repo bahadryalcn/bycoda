@@ -1727,7 +1727,9 @@ export class HostStore {
             const stored = row.summary == null ? undefined : String(row.summary);
             // An unchanged stored summary reuses the parsed copy the cache already holds.
             const reused =
-              stored !== undefined && entry?.raw.get(id) === stored ? entry?.rows.get(id) : undefined;
+              stored !== undefined && entry?.raw.get(id) === stored
+                ? entry?.rows.get(id)
+                : undefined;
             const cached =
               reused ?? (stored ? (JSON.parse(stored) as HostSessionSummary) : undefined);
             // `model` is "" for the provider default; only its absence marks a summary
@@ -1789,10 +1791,7 @@ export class HostStore {
           raw: raws,
           sorted: list,
         });
-        while (
-          this.summaryRows.size > SUMMARY_PROJECTS ||
-          this.summaryRowCount > SUMMARY_ROWS
-        )
+        while (this.summaryRows.size > SUMMARY_PROJECTS || this.summaryRowCount > SUMMARY_ROWS)
           this.dropSummaryRows(this.summaryRows.keys().next().value!);
       }
       return list.slice();

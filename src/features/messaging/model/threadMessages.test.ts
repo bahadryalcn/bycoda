@@ -87,9 +87,7 @@ describe("thread messages", () => {
     });
     expect(extended?.messages.map((entry) => entry.id)).toEqual(["a", "b", "c", "d"]);
     expect(extended?.earlier).toBe("before-a");
-    expect(
-      extendThreadPage(loaded, "something-else", { messages: [message("a", 1)] }),
-    ).toBeNull();
+    expect(extendThreadPage(loaded, "something-else", { messages: [message("a", 1)] })).toBeNull();
     const last = extendThreadPage(loaded, "before-c", { messages: [message("b", 2)] });
     expect(last?.earlier).toBeNull();
   });

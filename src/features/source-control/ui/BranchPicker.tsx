@@ -468,9 +468,7 @@ export function BranchPicker({
               <PopoverSearchHeader
                 ref={search}
                 label={checkoutTab ? t("Search worktrees") : t("Search or create a branch")}
-                placeholder={
-                  checkoutTab ? t("Search worktrees") : t("Search or create a branch…")
-                }
+                placeholder={checkoutTab ? t("Search worktrees") : t("Search or create a branch…")}
                 value={query}
                 onValueChange={(value) => {
                   setQuery(value);

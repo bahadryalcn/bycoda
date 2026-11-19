@@ -330,7 +330,7 @@ function captureNativeSessionClaim(
   return claim;
 }
 function isClaimHeld(error: unknown): boolean {
-  return (errorText(error)) === "CANONICAL_CLAIM_HELD";
+  return errorText(error) === "CANONICAL_CLAIM_HELD";
 }
 /** Another window asked for this window's writer; only an idle one is handed over. */
 async function releaseWriterForHandoff(sessionId: string): Promise<boolean> {

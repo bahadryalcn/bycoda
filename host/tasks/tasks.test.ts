@@ -1012,7 +1012,9 @@ describe("explicit task workspaces and owner controls", () => {
     const cache = (s.tasks as unknown as { registeredBudgetRuns: Map<string, string> })
       .registeredBudgetRuns;
     const ledgerRows = async () =>
-      Number((await s.store.db.prepare("SELECT COUNT(*) AS n FROM task_run_budget_ledger").get())?.n);
+      Number(
+        (await s.store.db.prepare("SELECT COUNT(*) AS n FROM task_run_budget_ledger").get())?.n,
+      );
     const rows = await ledgerRows();
     expect(rows).toBeGreaterThan(0);
     // The run has finished, so its cache entry must be gone (bounded by live tasks, not runs).
@@ -1848,9 +1850,9 @@ describe("explicit task workspaces and owner controls", () => {
     clock.now += 1000;
     await tasks.reorder(["two", "one"]);
     clock.now += 1000;
-    await expect(
-      (async () => await tasks.reorder(["one", "two"], seen))(),
-    ).rejects.toThrow("changed");
+    await expect((async () => await tasks.reorder(["one", "two"], seen))()).rejects.toThrow(
+      "changed",
+    );
     expect((await tasks.get("two"))?.position).toBe(0);
     expect((await tasks.get("one"))?.position).toBe(1);
     await expect(

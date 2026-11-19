@@ -132,9 +132,7 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
     const open = file.mimeType.startsWith("image/")
       ? `<img ${FILE_ATTRIBUTE}${name}" src="${uri}`
       : `<a ${FILE_ATTRIBUTE}${name}" href="${uri}`;
-    const close = file.mimeType.startsWith("image/")
-      ? `">`
-      : `" download="${name}">${name}</a>`;
+    const close = file.mimeType.startsWith("image/") ? `">` : `" download="${name}">${name}</a>`;
     parts.push(open, file.data, close);
     htmlLength += open.length + file.data.length + close.length;
   }

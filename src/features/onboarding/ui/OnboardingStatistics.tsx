@@ -2,7 +2,12 @@ import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { OnboardingHeading } from "./OnboardingHeading";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { getStatsChoice, setStatsChoice, statsDisclosure, subscribeAnonymousStats } from "../../account";
+import {
+  getStatsChoice,
+  setStatsChoice,
+  statsDisclosure,
+  subscribeAnonymousStats,
+} from "../../account";
 
 /** Optional statistics question. Both answers are equal; skipping leaves it off and asks later. */
 export function OnboardingStatistics() {

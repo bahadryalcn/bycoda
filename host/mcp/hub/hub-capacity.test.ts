@@ -139,7 +139,13 @@ describe("MCP hub capacity", () => {
     await until(async () => ((await hub.status()).children[0]?.pending ?? 0) >= 1);
 
     const cancel = new AbortController();
-    const waiting = hub.serve("fake-b", "s2", tool("echo", { text: "b" }), undefined, cancel.signal);
+    const waiting = hub.serve(
+      "fake-b",
+      "s2",
+      tool("echo", { text: "b" }),
+      undefined,
+      cancel.signal,
+    );
     setTimeout(() => cancel.abort(), 50);
 
     const began = Date.now();
@@ -176,10 +182,7 @@ describe("MCP hub capacity", () => {
 
   it("evicts a child stuck in its handshake only after the startup grace", async () => {
     const dir = tempDir();
-    const defs = [
-      definition("fake-a", dir, { FAKE_MCP_NO_INIT: "1" }),
-      definition("fake-b", dir),
-    ];
+    const defs = [definition("fake-a", dir, { FAKE_MCP_NO_INIT: "1" }), definition("fake-b", dir)];
 
     // Inside the grace period the starting child is not evictable, so the waiter gives up.
     const patient = hubWith(dir, defs, {

@@ -274,8 +274,7 @@ it("sweeps stale stage and previous leftovers on the next install without touchi
   const staleStage = join(parent, `${DEVICE_HUB_VERSION}.stage-${randomUUID()}`);
   const stalePrevious = join(parent, `${DEVICE_HUB_VERSION}.previous-${randomUUID()}`);
   const unrelated = join(parent, "notes");
-  for (const dir of [staleStage, stalePrevious, unrelated])
-    await mkdir(dir, { recursive: true });
+  for (const dir of [staleStage, stalePrevious, unrelated]) await mkdir(dir, { recursive: true });
   const command = fakeInstaller(directory);
   try {
     await host.setup(false, { authorized: () => true });

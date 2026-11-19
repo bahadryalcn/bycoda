@@ -739,7 +739,8 @@ export function MessageQueue({
                           ? t("Delivery is not confirmed. Automatic resend is held.")
                           : attachmentGone
                             ? t("Attachment missing")
-                            : busy && (message.intent === "plan" || message.intent === "orchestrate")
+                            : busy &&
+                                (message.intent === "plan" || message.intent === "orchestrate")
                               ? t(
                                   "New messages wait until this turn finishes. Stop pauses the queue.",
                                 )

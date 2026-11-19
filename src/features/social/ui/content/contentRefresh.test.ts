@@ -27,7 +27,11 @@ function snapshot(
     ...extra,
   } as unknown as SocialSnapshot;
 }
-const first = (campaigns: string[], total: number, extra?: Record<string, unknown>): ContentPage => ({
+const first = (
+  campaigns: string[],
+  total: number,
+  extra?: Record<string, unknown>,
+): ContentPage => ({
   snapshot: snapshot(campaigns, total, 0, extra),
   offsets: {},
 });

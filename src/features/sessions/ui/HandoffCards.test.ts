@@ -59,7 +59,9 @@ function parse(markup: string) {
 function iconClasses(markup: string) {
   const node = parse(markup);
   return {
-    harness: [...node.querySelectorAll("[data-harness-icon]")].map((el) => el.getAttribute("class")),
+    harness: [...node.querySelectorAll("[data-harness-icon]")].map((el) =>
+      el.getAttribute("class"),
+    ),
     chevron: [...node.querySelectorAll("[data-chevron]")].map((el) => el.getAttribute("class")),
   };
 }
@@ -73,7 +75,9 @@ describe("handoff card parity (#1015)", () => {
     const mini = iconClasses(
       renderToStaticMarkup(createElement(HandoffMiniCard, { card: handoff })),
     );
-    const second = iconClasses(renderToStaticMarkup(createElement(SecondOpinionCard, { card: handoff })));
+    const second = iconClasses(
+      renderToStaticMarkup(createElement(SecondOpinionCard, { card: handoff })),
+    );
 
     expect(mini.harness).toHaveLength(2);
     expect(second.harness).toHaveLength(2);

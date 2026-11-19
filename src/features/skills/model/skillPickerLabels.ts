@@ -12,10 +12,7 @@ const BUILT_IN_DESCRIPTIONS = new Map<string, () => string>([
     "Set a persistent Codex goal, show its progress, pause or clear it",
     () => t("Set a persistent Codex goal, show its progress, pause or clear it"),
   ],
-  [
-    "Set a goal Claude checks before stopping",
-    () => t("Set a goal Claude checks before stopping"),
-  ],
+  ["Set a goal Claude checks before stopping", () => t("Set a goal Claude checks before stopping")],
   [
     "Initialize a new CLAUDE.md file with codebase documentation",
     () => t("Initialize a new CLAUDE.md file with codebase documentation"),

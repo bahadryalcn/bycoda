@@ -935,83 +935,83 @@ export class SessionFileRevert {
     // One guard helper serves every file of this revert (one process start on Windows).
     const guards = createRevertGuardSession(cwd);
     try {
-    for (const [path, revision] of selection.files) {
-      let rescue: string | undefined;
-      let staged: string | undefined;
-      let guard: RevertFileGuard | undefined;
-      try {
-        const conflict = await this.conflict(cwd, path, revision);
-        if (conflict) throw new Error(conflict);
-        let abs = await filePath(cwd, path);
-        await assertFileRevertAuthority(this.authority, session, generation);
-        await mkdir(dirname(abs), { recursive: true });
-        guard = await guards.acquire(abs);
-        guard.check();
-        if (revision.before) {
+      for (const [path, revision] of selection.files) {
+        let rescue: string | undefined;
+        let staged: string | undefined;
+        let guard: RevertFileGuard | undefined;
+        try {
+          const conflict = await this.conflict(cwd, path, revision);
+          if (conflict) throw new Error(conflict);
+          let abs = await filePath(cwd, path);
           await assertFileRevertAuthority(this.authority, session, generation);
-          staged = join(dirname(abs), `.bycoda-restore-${randomUUID()}`);
-          await writeFile(staged, Buffer.from(revision.before.raw, "base64"), { flag: "wx" });
-          if (process.platform !== "win32") await chmod(staged, revision.before.mode);
-        }
-        // Revalidate after asynchronous preparation. Atomically take possession of
-        // the current directory entry, then validate the captured contents again.
-        abs = await filePath(cwd, path);
-        const again = await this.conflict(cwd, path, revision);
-        if (again) throw new Error(again);
-        guard.check();
-        if (revision.after) {
-          const rescuePath = join(dirname(abs), `.bycoda-rescue-${randomUUID()}`);
+          await mkdir(dirname(abs), { recursive: true });
+          guard = await guards.acquire(abs);
+          guard.check();
+          if (revision.before) {
+            await assertFileRevertAuthority(this.authority, session, generation);
+            staged = join(dirname(abs), `.bycoda-restore-${randomUUID()}`);
+            await writeFile(staged, Buffer.from(revision.before.raw, "base64"), { flag: "wx" });
+            if (process.platform !== "win32") await chmod(staged, revision.before.mode);
+          }
+          // Revalidate after asynchronous preparation. Atomically take possession of
+          // the current directory entry, then validate the captured contents again.
+          abs = await filePath(cwd, path);
+          const again = await this.conflict(cwd, path, revision);
+          if (again) throw new Error(again);
+          guard.check();
+          if (revision.after) {
+            const rescuePath = join(dirname(abs), `.bycoda-rescue-${randomUUID()}`);
+            await assertFileRevertAuthority(this.authority, session, generation);
+            await rename(abs, rescuePath);
+            rescue = rescuePath;
+            const held = await image(cwd, relative(cwd, rescue));
+            if (!same(held, revision.after)) throw new Error("File changed during revert");
+          }
+          // link is exclusive: never replace a new file written during this window.
+          guard.check();
+          await filePath(cwd, path);
           await assertFileRevertAuthority(this.authority, session, generation);
-          await rename(abs, rescuePath);
-          rescue = rescuePath;
-          const held = await image(cwd, relative(cwd, rescue));
-          if (!same(held, revision.after)) throw new Error("File changed during revert");
-        }
-        // link is exclusive: never replace a new file written during this window.
-        guard.check();
-        await filePath(cwd, path);
-        await assertFileRevertAuthority(this.authority, session, generation);
-        if (staged) await link(staged, abs);
-        else if (
-          await lstat(abs).then(
-            () => true,
-            (e: NodeJS.ErrnoException) => {
-              if (e.code === "ENOENT") return false;
-              throw e;
-            },
+          if (staged) await link(staged, abs);
+          else if (
+            await lstat(abs).then(
+              () => true,
+              (e: NodeJS.ErrnoException) => {
+                if (e.code === "ENOENT") return false;
+                throw e;
+              },
+            )
           )
-        )
-          throw new Error("File changed during revert");
-        if (rescue) {
-          await rm(rescue);
-          rescue = undefined;
-        }
-        result.reverted.push(path);
-        onReverted?.(path, revision.before);
-      } catch (error) {
-        let reason = message(error);
-        if (rescue) {
-          try {
-            await link(rescue, await filePath(cwd, path));
+            throw new Error("File changed during revert");
+          if (rescue) {
             await rm(rescue);
-          } catch {
-            reason += `; original preserved at ${rescue}`;
+            rescue = undefined;
+          }
+          result.reverted.push(path);
+          onReverted?.(path, revision.before);
+        } catch (error) {
+          let reason = message(error);
+          if (rescue) {
+            try {
+              await link(rescue, await filePath(cwd, path));
+              await rm(rescue);
+            } catch {
+              reason += `; original preserved at ${rescue}`;
+            }
+          }
+          if (error instanceof FileRevertAuthorityError) {
+            authorityFailure = new FileRevertAuthorityError(reason);
+            result.skipped.push({ path, reason });
+            break;
+          }
+          result.skipped.push({ path, reason });
+        } finally {
+          try {
+            if (staged) await rm(staged, { force: true });
+          } finally {
+            await guard?.release();
           }
         }
-        if (error instanceof FileRevertAuthorityError) {
-          authorityFailure = new FileRevertAuthorityError(reason);
-          result.skipped.push({ path, reason });
-          break;
-        }
-        result.skipped.push({ path, reason });
-      } finally {
-        try {
-          if (staged) await rm(staged, { force: true });
-        } finally {
-          await guard?.release();
-        }
       }
-    }
     } finally {
       await guards.close();
     }

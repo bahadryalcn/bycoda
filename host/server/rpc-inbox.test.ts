@@ -1,9 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  handleInboxRpc,
-  INBOX_PROJECT_LIST_TIMEOUT_MS,
-  INBOX_READ_TTL_MS,
-} from "./rpc-inbox";
+import { handleInboxRpc, INBOX_PROJECT_LIST_TIMEOUT_MS, INBOX_READ_TTL_MS } from "./rpc-inbox";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 
 afterEach(() => {

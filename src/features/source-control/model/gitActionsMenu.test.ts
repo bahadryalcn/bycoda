@@ -122,7 +122,9 @@ describe("gitActionsMenuItems layout", () => {
     expect(labels["branch-rename"]).toBe("Rename branch…");
     expect(labels["stage-all"]).toBe("Stage all changes");
     const all = Object.values(labels);
-    expect(all.some((label) => /Create Branch|New Branch|Rename Branch|Stage All Changes/.test(label))).toBe(false);
+    expect(
+      all.some((label) => /Create Branch|New Branch|Rename Branch|Stage All Changes/.test(label)),
+    ).toBe(false);
   });
 
   it("offers no force push anywhere", () => {

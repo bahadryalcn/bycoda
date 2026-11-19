@@ -65,34 +65,39 @@ describe("runtime logs view", () => {
     ["ungrouped", {}, false],
     ["search", { search: "OTHER" }, true],
     ["errors from the server", { source: "server", levels: ["error", "warn"] }, true],
-  ] as const)("matches a full recomputation across polls and trimming: %s", (_name, filters, grouped) => {
-    const view = new RuntimeLogsView();
-    let buffer = createRuntimeLogsBuffer();
-    for (let from = 1; from <= 60; from += 7) {
-      const entries = Array.from({ length: 7 }, (_, index) =>
-        entry(from + index, variants(from + index)),
-      );
-      // Overlap the previous page like a host that replays its last events.
-      const overlap = buffer.entries.slice(-2);
-      buffer = mergeRuntimeLogs(buffer, page([...overlap, ...entries]), 25);
-      const state = view.update(buffer, filters as RuntimeLogFilters, grouped);
-      const expected = reference(buffer.entries, filters as RuntimeLogFilters, grouped);
-      expect(state.groups).toEqual(expected.groups);
-      expect(state.entries()).toEqual(filterRuntimeLogs(buffer.entries, filters as RuntimeLogFilters));
-      expect({
-        count: state.count,
-        errorCount: state.errorCount,
-        warningCount: state.warningCount,
-        typeCounts: state.typeCounts,
-      }).toEqual({
-        count: expected.count,
-        errorCount: expected.errorCount,
-        warningCount: expected.warningCount,
-        typeCounts: expected.typeCounts,
-      });
-    }
-    expect(buffer.entries).toHaveLength(25);
-  });
+  ] as const)(
+    "matches a full recomputation across polls and trimming: %s",
+    (_name, filters, grouped) => {
+      const view = new RuntimeLogsView();
+      let buffer = createRuntimeLogsBuffer();
+      for (let from = 1; from <= 60; from += 7) {
+        const entries = Array.from({ length: 7 }, (_, index) =>
+          entry(from + index, variants(from + index)),
+        );
+        // Overlap the previous page like a host that replays its last events.
+        const overlap = buffer.entries.slice(-2);
+        buffer = mergeRuntimeLogs(buffer, page([...overlap, ...entries]), 25);
+        const state = view.update(buffer, filters as RuntimeLogFilters, grouped);
+        const expected = reference(buffer.entries, filters as RuntimeLogFilters, grouped);
+        expect(state.groups).toEqual(expected.groups);
+        expect(state.entries()).toEqual(
+          filterRuntimeLogs(buffer.entries, filters as RuntimeLogFilters),
+        );
+        expect({
+          count: state.count,
+          errorCount: state.errorCount,
+          warningCount: state.warningCount,
+          typeCounts: state.typeCounts,
+        }).toEqual({
+          count: expected.count,
+          errorCount: expected.errorCount,
+          warningCount: expected.warningCount,
+          typeCounts: expected.typeCounts,
+        });
+      }
+      expect(buffer.entries).toHaveLength(25);
+    },
+  );
 
   it("does not re-read retained entries when a poll appends rows", () => {
     let reads = 0;
@@ -144,9 +149,12 @@ describe("runtime logs view", () => {
       page([entry(1), entry(2, { source: "server", sourceId: "server-one" })]),
     );
     expect(view.update(buffer, {}, true).count).toBe(2);
-    expect(view.update(buffer, { source: "server" }, true).entries().map((v) => v.cursor)).toEqual([
-      2,
-    ]);
+    expect(
+      view
+        .update(buffer, { source: "server" }, true)
+        .entries()
+        .map((v) => v.cursor),
+    ).toEqual([2]);
     expect(view.update(buffer, {}, true).count).toBe(2);
     buffer = clearRuntimeLogs(buffer);
     const cleared = view.update(buffer, {}, true);

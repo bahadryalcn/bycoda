@@ -129,11 +129,7 @@ export function NewProjectFolderGroup() {
           loading={busy}
           disabled={!chosen && homeLoading}
           loadingLabel={t("Choosing folder…")}
-          onClick={() =>
-            choose().catch((cause: unknown) =>
-              setError(errorText(cause)),
-            )
-          }
+          onClick={() => choose().catch((cause: unknown) => setError(errorText(cause)))}
         >
           {t("Choose folder…")}
         </Button>

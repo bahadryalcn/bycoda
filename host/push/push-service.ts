@@ -261,14 +261,17 @@ export class PushNotifications {
     // Rebuilt from the current recipients, so a removed phone's backlog is dropped with it.
     const plan = recipients.map((recipient) => {
       const owed = (this.backlog.get(recipient.deviceHash) ?? []).filter((event) => {
-        const fresh = event.failedSince === undefined || elapsedSince(event.failedSince, now) <= RETRY_TTL_MS;
+        const fresh =
+          event.failedSince === undefined || elapsedSince(event.failedSince, now) <= RETRY_TTL_MS;
         if (!fresh)
-          hostWarnDeduped("Push notifications: a push Expo could not take was dropped after retrying.");
+          hostWarnDeduped(
+            "Push notifications: a push Expo could not take was dropped after retrying.",
+          );
         return fresh;
       });
-      const queue = uniqueEvents<QueuedEvent>([...owed, ...events].filter(
-        (event) => recipient.events[event.kind],
-      ));
+      const queue = uniqueEvents<QueuedEvent>(
+        [...owed, ...events].filter((event) => recipient.events[event.kind]),
+      );
       return {
         recipient,
         sending: queue.slice(0, MAX_PER_TICK),
@@ -337,7 +340,8 @@ export class PushNotifications {
     const unpushed = registry.unpushed();
     // A resolved or expired approval no longer needs its delivery record.
     const live = new Set(unpushed.map((item) => item.id));
-    for (const id of this.approvalDelivery.keys()) if (!live.has(id)) this.approvalDelivery.delete(id);
+    for (const id of this.approvalDelivery.keys())
+      if (!live.has(id)) this.approvalDelivery.delete(id);
     // Only the first few go out this tick; the rest stay unpushed and are picked up by later ticks.
     const waiting = unpushed.slice(0, MAX_PER_TICK);
     if (waiting.length === 0) return;
@@ -376,8 +380,7 @@ export class PushNotifications {
       if (!state) continue;
       const owed = interested.some((recipient) => !state.done.has(recipient.deviceHash));
       if (owed && elapsedSince(state.since, now) <= RETRY_TTL_MS) continue;
-      if (owed)
-        hostWarnDeduped("Push notifications: an approval push was dropped after retrying.");
+      if (owed) hostWarnDeduped("Push notifications: an approval push was dropped after retrying.");
       registry.markPushed(item.id);
       this.approvalDelivery.delete(item.id);
     }
@@ -389,14 +392,16 @@ export class PushNotifications {
    */
   private async tickAssistant(recipients: PushRecipient[]): Promise<void> {
     const { assistant, assistantLedger: ledger } = this.deps;
-    if (!assistant || !ledger || !recipients.some((recipient) => recipient.events.assistant)) return;
+    if (!assistant || !ledger || !recipients.some((recipient) => recipient.events.assistant))
+      return;
     // One read of the pending items and the phones per tick; each send re-verifies against it.
     let view = await this.readAssistantView(assistant);
     const sends: { deviceHash: string; id: string }[] = [];
     for (const phone of view.phones.values()) {
       if (!phone.events.assistant) continue;
       for (const item of view.pending.values()) {
-        if (assistantPushAllowed(item, phone)) sends.push({ deviceHash: phone.deviceHash, id: item.id });
+        if (assistantPushAllowed(item, phone))
+          sends.push({ deviceHash: phone.deviceHash, id: item.id });
       }
     }
     if (sends.length === 0) return;
@@ -418,7 +423,9 @@ export class PushNotifications {
       if (occurrence === null) continue;
       let result: ExpoPushResult;
       try {
-        result = await this.send([assistantPushMessage(recipient, current, this.deps.environmentId)]);
+        result = await this.send([
+          assistantPushMessage(recipient, current, this.deps.environmentId),
+        ]);
       } catch (error) {
         // The outcome is unknown, so the reservation stays fenced (no replay); other reminders go on.
         if (error instanceof ExpoPushError) {
@@ -542,7 +549,9 @@ export class PushNotifications {
     for (const token of result.unregistered)
       await this.deps.store
         .forgetToken(token)
-        .catch(() => hostWarnDeduped("Push notifications: a dead push token could not be forgotten."));
+        .catch(() =>
+          hostWarnDeduped("Push notifications: a dead push token could not be forgotten."),
+        );
     if (result.failed > 0)
       hostWarnDeduped(`Push notifications: Expo refused ${result.failed} message(s)`);
   }

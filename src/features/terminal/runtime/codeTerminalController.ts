@@ -75,7 +75,10 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
     for (const listener of listeners) listener();
   };
   /** Appends in order; undefined when the read carries nothing new for the visible state. */
-  const outputPatch = (data: string, truncated: boolean): Partial<CodeTerminalState> | undefined => {
+  const outputPatch = (
+    data: string,
+    truncated: boolean,
+  ): Partial<CodeTerminalState> | undefined => {
     if (!data && (!truncated || state.truncated)) return undefined;
     const output = state.output + data;
     return {
@@ -191,7 +194,11 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
               : { phase: "running", error: undefined };
           const patch = { ...output, ...next };
           // One notification per read, and none when nothing visible changed.
-          if ((Object.keys(patch) as (keyof CodeTerminalState)[]).some((key) => state[key] !== patch[key]))
+          if (
+            (Object.keys(patch) as (keyof CodeTerminalState)[]).some(
+              (key) => state[key] !== patch[key],
+            )
+          )
             update(patch);
           return output || result.hasMore || patch.phase === "exited" ? "progress" : "idle";
         };

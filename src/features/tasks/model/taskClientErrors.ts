@@ -17,8 +17,7 @@ export const taskClientErrors = {
   preflightHost: () => t("Update the selected host to check preparation requirements."),
   registeredProject: () => t("Choose a registered project before checking preparation."),
   reorderSameMachine: () => t("Reorder tasks on the same machine"),
-  machine: () =>
-    t("This project’s machine isn’t connected, or its bycoda Host needs an update."),
+  machine: () => t("This project’s machine isn’t connected, or its bycoda Host needs an update."),
   agent: () => t("This agent cannot run tasks in the background."),
   todoHost: (machineName: string) =>
     t("Update bycoda Host on {p0} to add to-do items", { p0: machineName }),

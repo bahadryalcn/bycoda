@@ -204,7 +204,11 @@ async function deliverWindowDestination(
 
 async function route(target: WindowDestination, requireSessionWindow: boolean): Promise<boolean> {
   const source = getCurrentWindow().label;
-  let owner: NavigationWindow | undefined = chooseNavigationWindow(await discover(), target, source);
+  let owner: NavigationWindow | undefined = chooseNavigationWindow(
+    await discover(),
+    target,
+    source,
+  );
   if (
     target.kind === "session" &&
     !requireSessionWindow &&

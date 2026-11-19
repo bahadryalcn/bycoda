@@ -248,9 +248,7 @@ export function CrewMemberTable({
                 </Button>
               ) : null}
             </div>
-            {section.issue ? (
-              <InlineError>{section.issue}</InlineError>
-            ) : null}
+            {section.issue ? <InlineError>{section.issue}</InlineError> : null}
             {shown.length ? (
               <ul className="flex min-w-0 flex-col gap-0">
                 {shown.map((agent) => {

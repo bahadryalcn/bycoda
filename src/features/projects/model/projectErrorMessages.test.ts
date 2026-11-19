@@ -19,9 +19,7 @@ describe("project model error messages", () => {
   });
 
   it("localizes the folder naming error", () => {
-    expect(() => projectFolderName("???")).toThrow(
-      "Harf veya rakam içeren bir proje adı seçin.",
-    );
+    expect(() => projectFolderName("???")).toThrow("Harf veya rakam içeren bir proje adı seçin.");
   });
 
   it("localizes the group assignment save failure", () => {

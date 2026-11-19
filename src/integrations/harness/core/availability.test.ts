@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const resolvers = vi.hoisted(() => ({ claude: vi.fn(), codex: vi.fn() }));
-const missing = (name: string) => () => Promise.reject(new Error(`${name} CLI not found. Install.`));
+const missing = (name: string) => () =>
+  Promise.reject(new Error(`${name} CLI not found. Install.`));
 
 vi.mock("./child", () => ({
   resolveClaudeBinary: () => resolvers.claude(),

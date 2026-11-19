@@ -181,7 +181,8 @@ function windowRouter(label: string): WindowRouter {
     routes,
     ready: listenWindowAsync<unknown>("host-connection-event", ({ payload }) => {
       // Native batches one tick of events into an ordered array; a lone envelope is still valid.
-      if (Array.isArray(payload)) for (const envelope of payload) routeNativeEvent(routes, envelope);
+      if (Array.isArray(payload))
+        for (const envelope of payload) routeNativeEvent(routes, envelope);
       else routeNativeEvent(routes, payload);
     }),
   };

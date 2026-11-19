@@ -25,9 +25,7 @@ it("explains a Steer held for an unconfirmed delivery and keeps row action names
     { id: "q2", text: "second", attachments: [] },
   ];
   await act(async () =>
-    root.render(
-      createElement(MessageQueue, { messages, canAttach: true, onSteer: () => true }),
-    ),
+    root.render(createElement(MessageQueue, { messages, canAttach: true, onSteer: () => true })),
   );
   const steer = [...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Steer"]')];
   expect(steer).toHaveLength(2);

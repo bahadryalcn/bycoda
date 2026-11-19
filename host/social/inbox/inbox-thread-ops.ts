@@ -114,8 +114,7 @@ export async function inboxTimeline(
   // shortcut: every page re-reads the person's threads and filters in memory, output stays bounded at 200 events; upgrade to a SQL event window when one person's history is large.
   const older = cursor
     ? events.filter(
-        (event) =>
-          event.at < cursor.at || (event.at === cursor.at && event.id < cursor.id),
+        (event) => event.at < cursor.at || (event.at === cursor.at && event.id < cursor.id),
       )
     : events;
   const page = older.slice(-TIMELINE_LIMIT);

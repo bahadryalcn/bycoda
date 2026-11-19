@@ -121,7 +121,11 @@ describe("bulk session delete", () => {
     ).toBe("1 conversation could not be deleted.");
     expect(
       bulkDeleteNoticeText(
-        bulkDeleteNotice({ deleted: [], skipped: [], failed: [{ sessionId: "b" }, { sessionId: "c" }] }),
+        bulkDeleteNotice({
+          deleted: [],
+          skipped: [],
+          failed: [{ sessionId: "b" }, { sessionId: "c" }],
+        }),
       ),
     ).toBe("2 conversations could not be deleted.");
   });

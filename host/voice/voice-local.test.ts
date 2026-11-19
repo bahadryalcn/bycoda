@@ -343,9 +343,7 @@ async function connectedWorker() {
   const windowA = await first;
   const windowB = await service.start({ natural: false });
   const reply = async (id: string, text = "hello") => {
-    child.stdout.write(
-      JSON.stringify({ id, text, language: "en", inferenceMs: 1 }) + "\n",
-    );
+    child.stdout.write(JSON.stringify({ id, text, language: "en", inferenceMs: 1 }) + "\n");
     await flush();
   };
   const cleanup = () => {

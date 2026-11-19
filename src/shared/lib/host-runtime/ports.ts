@@ -23,10 +23,7 @@ export type ManagedHostRequestOptions = {
 /** Credential-free logical operations; the platform owns sockets and every reconnect attempt. */
 export interface ManagedHostConnectionPort {
   /** `onRejected` fires once per rejected native event for this machine; the payload is never exposed. */
-  listen(
-    listener: (event: ManagedHostEvent) => void,
-    onRejected?: () => void,
-  ): Promise<() => void>;
+  listen(listener: (event: ManagedHostEvent) => void, onRejected?: () => void): Promise<() => void>;
   attach(): Promise<boolean>;
   detach(): Promise<void>;
   request(

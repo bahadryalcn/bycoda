@@ -146,13 +146,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
         </Button>
       ) : null}
       {location === "panel" ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={t("Close")}
-          onClick={() => go("inline")}
-        >
+        <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={() => go("inline")}>
           <X className="icon-sm" />
         </Button>
       ) : null}

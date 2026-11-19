@@ -154,10 +154,7 @@ it("parses the registry only when its stored text changes", () => {
   try {
     for (let read = 0; read < 3; read += 1) expect(remoteProjectFor(key)).toEqual(project);
     expect(parse).not.toHaveBeenCalled();
-    localStorage.setItem(
-      REGISTRY_KEY,
-      JSON.stringify({ [key]: { ...project, projectId: "p2" } }),
-    );
+    localStorage.setItem(REGISTRY_KEY, JSON.stringify({ [key]: { ...project, projectId: "p2" } }));
     expect(remoteProjectFor(key)?.projectId).toBe("p2");
     expect(parse).toHaveBeenCalledTimes(1);
   } finally {

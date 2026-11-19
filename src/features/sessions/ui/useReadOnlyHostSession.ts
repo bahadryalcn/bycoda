@@ -170,9 +170,12 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
     // A hidden window is not read; the visibility listener resumes with one immediate poll.
     const schedule = () => {
       if (!current() || document.hidden) return;
-      timer = setTimeout(() => {
-        void poll();
-      }, readOnlyPollDelay(snapshot?.status === "running", failures));
+      timer = setTimeout(
+        () => {
+          void poll();
+        },
+        readOnlyPollDelay(snapshot?.status === "running", failures),
+      );
     };
     const poll = async () => {
       if (!current() || inFlight) return;

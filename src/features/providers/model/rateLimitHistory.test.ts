@@ -8,8 +8,8 @@ const key = "bycoda.quotaHistory.v1";
 const segmentPrefix = `${key}.segment.`;
 beforeEach(() => localStorage.clear());
 const segmentKeys = () =>
-  Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)!).filter((name) =>
-    name.startsWith(segmentPrefix),
+  Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)!).filter(
+    (name) => name.startsWith(segmentPrefix),
   );
 /** Every persisted reading: the legacy base array plus all window segments. */
 function stored(): { account: string; at: number }[] {
@@ -197,9 +197,7 @@ it("keeps ordered bounded history without reparsing on every publication", () =>
   const saved = stored();
   expect(saved).toHaveLength(16_005);
   expect(saved.at(-1)!.account).toBe("new-4");
-  expect(
-    saved.every((value, index) => !index || saved[index - 1].at <= value.at),
-  ).toBe(true);
+  expect(saved.every((value, index) => !index || saved[index - 1].at <= value.at)).toBe(true);
 });
 
 it("appends to a small segment and never rewrites the legacy array per reading", () => {
@@ -240,7 +238,9 @@ it("merges another window's segment without reparsing the base and folds it on c
   const now = Date.now();
   localStorage.setItem(
     key,
-    JSON.stringify(Array.from({ length: 1000 }, (_, index) => row(`legacy-${index}`, now - 50_000 + index))),
+    JSON.stringify(
+      Array.from({ length: 1000 }, (_, index) => row(`legacy-${index}`, now - 50_000 + index)),
+    ),
   );
   const { seen, unmount } = await mount();
   expect(seen.at(-1)).toBe(1000);

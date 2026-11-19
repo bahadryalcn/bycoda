@@ -328,12 +328,15 @@ describe("checkpoint review markers", () => {
   it("hides the typed marker of a rejected checkpoint review", () => {
     expect(
       classifyRemoteError(
-        new Error("Host rejected request: Workspace checkpoint failed: no space [CHECKPOINT_FAILED]"),
+        new Error(
+          "Host rejected request: Workspace checkpoint failed: no space [CHECKPOINT_FAILED]",
+        ),
       ).message,
     ).toBe("Workspace checkpoint failed: no space");
     expect(
-      classifyRemoteError("Workspace checkpoint is still recording this turn [CHECKPOINT_RECORDING]")
-        .message,
+      classifyRemoteError(
+        "Workspace checkpoint is still recording this turn [CHECKPOINT_RECORDING]",
+      ).message,
     ).toBe("Workspace checkpoint is still recording this turn");
   });
 });
@@ -356,7 +359,9 @@ describe("explicit actions on an unreachable machine (#923)", () => {
 
   it("names a stopped Host and a machine that is not connected here", () => {
     expect(
-      explicit(new Error("Host is not running on the machine. Start bycoda Host there, then reconnect.")),
+      explicit(
+        new Error("Host is not running on the machine. Start bycoda Host there, then reconnect."),
+      ),
     ).toBe(
       "The machine is reachable, but bycoda Host is not running there. Start it, then reconnect.",
     );
@@ -377,7 +382,9 @@ describe("explicit actions on an unreachable machine (#923)", () => {
     expect(auth).not.toContain("10.0.0.4");
     expect(
       explicit(
-        new Error("SSH connection failed (exit 255): Host key verification failed. Open Settings → Connections and reconnect."),
+        new Error(
+          "SSH connection failed (exit 255): Host key verification failed. Open Settings → Connections and reconnect.",
+        ),
       ),
     ).toBe("SSH does not trust this machine’s host key. Review it in Connections, then reconnect.");
   });

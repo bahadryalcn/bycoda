@@ -48,10 +48,9 @@ export function createGitWatchCoalescer(
       const now = Date.now();
       for (const report of reports) {
         // Nested folders of one checkout share their listeners: they join one pending report.
-        const entry: Pending =
-          [...pending].find((prior) =>
-            [...prior.reports.values()].some((source) => sameCheckout(source.cwd, report.cwd)),
-          ) ?? { cwd: report.cwd, firstAt: now, reports: new Map() };
+        const entry: Pending = [...pending].find((prior) =>
+          [...prior.reports.values()].some((source) => sameCheckout(source.cwd, report.cwd)),
+        ) ?? { cwd: report.cwd, firstAt: now, reports: new Map() };
         pending.add(entry);
         const source = keyOf(report.cwd);
         const prior = entry.reports.get(source);

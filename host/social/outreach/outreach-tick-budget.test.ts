@@ -103,7 +103,9 @@ describe("runOutreachTick: long ticks", () => {
     });
 
     expect(fake.drafts).toHaveLength(2);
-    const statuses = await Promise.all(ids.map(async (id) => (await audience.getEnrollment(id))?.status));
+    const statuses = await Promise.all(
+      ids.map(async (id) => (await audience.getEnrollment(id))?.status),
+    );
     expect(statuses.filter((status) => status === "active")).toHaveLength(1);
 
     await runOutreachTick({ service: fake.service, store: audience, now: NOW });
@@ -134,7 +136,9 @@ describe("runOutreachTick: long ticks", () => {
     await runOutreachTick({ service: fake.service, store: audience, now: NOW });
 
     expect(fake.drafts).toHaveLength(1);
-    const statuses = await Promise.all(ids.map(async (id) => (await audience.getEnrollment(id))?.status));
+    const statuses = await Promise.all(
+      ids.map(async (id) => (await audience.getEnrollment(id))?.status),
+    );
     expect(statuses.filter((status) => status === "active")).toHaveLength(2);
   });
 

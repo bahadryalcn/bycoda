@@ -228,37 +228,40 @@ export function UsageFooter({
     [],
   );
 
-  const reconnectProvider = useCallback(async (provider: RateLimitProvider, accountId: string) => {
-    while (inflight.current) await inflight.current;
-    setRefreshing(true);
-    const operation = (async () => {
-      try {
-        await (accountId === "default"
-          ? loginHarness(provider)
-          : loginHarness(provider, accountId));
-        const value = await loadRateLimits(provider, accountId, true);
-        if (value.status !== "ok") {
-          throw new Error(
-            value.error || `${HARNESS_TITLE[provider]} sign-in could not be verified`,
+  const reconnectProvider = useCallback(
+    async (provider: RateLimitProvider, accountId: string) => {
+      while (inflight.current) await inflight.current;
+      setRefreshing(true);
+      const operation = (async () => {
+        try {
+          await (accountId === "default"
+            ? loginHarness(provider)
+            : loginHarness(provider, accountId));
+          const value = await loadRateLimits(provider, accountId, true);
+          if (value.status !== "ok") {
+            throw new Error(
+              value.error || `${HARNESS_TITLE[provider]} sign-in could not be verified`,
+            );
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : t("Could not complete sign-in");
+          setCachedRateLimits(
+            provider,
+            accountId,
+            errorRateLimits(provider, message, getCachedRateLimits(provider, accountId)),
           );
+          throw error;
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : t("Could not complete sign-in");
-        setCachedRateLimits(
-          provider,
-          accountId,
-          errorRateLimits(provider, message, getCachedRateLimits(provider, accountId)),
-        );
-        throw error;
-      }
-    })();
-    const tracked = operation.finally(() => {
-      inflight.current = null;
-      setRefreshing(false);
-    });
-    inflight.current = tracked.catch(() => undefined);
-    await tracked;
-  }, [t]);
+      })();
+      const tracked = operation.finally(() => {
+        inflight.current = null;
+        setRefreshing(false);
+      });
+      inflight.current = tracked.catch(() => undefined);
+      await tracked;
+    },
+    [t],
+  );
 
   const reconnectClaude = useCallback(
     () => reconnectProvider("claude", claudeAccountId),

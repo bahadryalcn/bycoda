@@ -247,10 +247,7 @@ function DevicePanelSurface({
   );
   const annotationsRef = useRef(annotations);
   // Pins this scope while the panel is mounted so the bounded draft cache never evicts a draft the user is editing.
-  useEffect(
-    () => (draftScope ? annotationDraftCache.pin(draftScope) : undefined),
-    [draftScope],
-  );
+  useEffect(() => (draftScope ? annotationDraftCache.pin(draftScope) : undefined), [draftScope]);
   useEffect(() => {
     if (!transferScope) return;
     return subscribeToolsDraftTransfer(transferScope, ({ device }) => {

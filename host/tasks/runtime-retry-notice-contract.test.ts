@@ -12,10 +12,18 @@ it("lets tasks.list carry the runtime retry notice the scheduler actually writes
     feedback: "",
     error: "model unavailable",
     fingerprint: "fingerprint",
-    runtimeRetryNotice: ownerNotice("auto_continued", "Retried automatically after a runtime error (1/2).", 1, "notice"),
+    runtimeRetryNotice: ownerNotice(
+      "auto_continued",
+      "Retried automatically after a runtime error (1/2).",
+      1,
+      "notice",
+    ),
   };
   expect(HostTaskSchema.shape.repairAdvisor.safeParse(advisor).success).toBe(true);
   // Records written before the field existed stay readable.
   const { kind: _kind, ...legacy } = advisor.runtimeRetryNotice;
-  expect(HostTaskSchema.shape.repairAdvisor.safeParse({ ...advisor, runtimeRetryNotice: legacy }).success).toBe(true);
+  expect(
+    HostTaskSchema.shape.repairAdvisor.safeParse({ ...advisor, runtimeRetryNotice: legacy })
+      .success,
+  ).toBe(true);
 });

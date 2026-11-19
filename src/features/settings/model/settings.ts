@@ -1437,7 +1437,10 @@ function matchScore(needle: string, label: string, keywords?: string): number | 
 export const SETTINGS_SEARCH_LIMIT = 50;
 
 /** Individual settings first, then whole sections, so a row wins its own name. */
-export function searchSettings(query: string, limit = SETTINGS_SEARCH_LIMIT): SettingsSearchResult[] {
+export function searchSettings(
+  query: string,
+  limit = SETTINGS_SEARCH_LIMIT,
+): SettingsSearchResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
   const scored: { score: number; result: SettingsSearchResult }[] = [];

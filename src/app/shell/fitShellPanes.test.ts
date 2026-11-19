@@ -13,7 +13,11 @@ it("collapses the full rail before the sidebar when both no longer fit", () => {
 });
 
 it("leaves only the compact rail at 200% zoom on the smallest window", () => {
-  expect(fitShellPanes(400, both)).toEqual({ rail: false, sidebar: false, compactRailForced: true });
+  expect(fitShellPanes(400, both)).toEqual({
+    rail: false,
+    sidebar: false,
+    compactRailForced: true,
+  });
 });
 
 it("forces the compact rail when a sidebar is dropped with the rail already closed", () => {

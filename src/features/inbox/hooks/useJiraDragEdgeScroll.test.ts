@@ -22,7 +22,16 @@ function flush(limit = 200) {
 
 function place(element: HTMLElement, top: number, bottom: number, left: number, right: number) {
   element.getBoundingClientRect = () =>
-    ({ top, bottom, left, right, x: left, y: top, width: right - left, height: bottom - top }) as DOMRect;
+    ({
+      top,
+      bottom,
+      left,
+      right,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    }) as DOMRect;
 }
 
 beforeEach(() => {

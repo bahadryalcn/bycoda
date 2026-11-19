@@ -13,8 +13,7 @@ it("skips disabled hour cells when arrowing past them within the grid", () => {
   const day = new Date(2026, 2, 8);
   const window: UsageWindow = { start: atHour(day, 5), end: atHour(day, 20) };
   const dates = [day.getTime(), new Date(2026, 2, 9).getTime()];
-  const isSelectable = (row: number, column: number) =>
-    !isHourOutside(dates[column], row, window);
+  const isSelectable = (row: number, column: number) => !isHourOutside(dates[column], row, window);
   const size = { rows: 24, columns: dates.length };
 
   // Hour 0 is outside the window: moving down from an enabled hour 4 must jump to hour 5.
@@ -38,8 +37,7 @@ it("moves horizontally to the next selectable day without wrapping rows", () => 
   const day = new Date(2026, 2, 8);
   const window: UsageWindow = { start: atHour(day, 5), end: atHour(day, 20) };
   const dates = [day.getTime(), new Date(2026, 2, 9).getTime()];
-  const isSelectable = (row: number, column: number) =>
-    !isHourOutside(dates[column], row, window);
+  const isSelectable = (row: number, column: number) => !isHourOutside(dates[column], row, window);
   const size = { rows: 24, columns: dates.length };
 
   expect(nextSelectableCell({ row: 10, column: 0 }, 0, 1, size, isSelectable)).toEqual({

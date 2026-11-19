@@ -75,9 +75,7 @@ it("keeps the snapshot when a list refresh repeats the same records and windows"
 });
 
 it("keeps a session's view object when a list refresh only changes another record", async () => {
-  await act(async () =>
-    setSessionLifecycleList({ records: [settled("a")], autoSettle }),
-  );
+  await act(async () => setSessionLifecycleList({ records: [settled("a")], autoSettle }));
   await mount();
   const viewBefore = viewA.at(-1);
 
@@ -134,7 +132,10 @@ it("publishes when only the auto-settle windows change", async () => {
   const before = latest();
 
   await act(async () =>
-    setSessionLifecycleList({ records: [settled("a")], autoSettle: { afterDays: 3, archiveAfterDays: 30 } }),
+    setSessionLifecycleList({
+      records: [settled("a")],
+      autoSettle: { afterDays: 3, archiveAfterDays: 30 },
+    }),
   );
 
   expect(latest()).not.toBe(before);

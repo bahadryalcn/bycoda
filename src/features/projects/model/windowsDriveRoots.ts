@@ -19,11 +19,7 @@ export async function probeWindowsDriveRoots(
   await Promise.all(
     drives.map(async (root) => {
       try {
-        const [item] = await withTimeout(
-          statFiles([root]),
-          DRIVE_ROOT_TIMEOUT_MS,
-          `Stat ${root}`,
-        );
+        const [item] = await withTimeout(statFiles([root]), DRIVE_ROOT_TIMEOUT_MS, `Stat ${root}`);
         if (!item?.isDir || !isCurrent()) return;
         found.push(root);
         found.sort();

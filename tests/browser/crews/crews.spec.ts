@@ -280,9 +280,7 @@ type GroupSnapshot = {
 };
 const groupSnapshot = (page: Page) =>
   page.evaluate(() =>
-    (
-      window as unknown as { crewFixtureSnapshot: () => GroupSnapshot }
-    ).crewFixtureSnapshot(),
+    (window as unknown as { crewFixtureSnapshot: () => GroupSnapshot }).crewFixtureSnapshot(),
   );
 async function openGroupDialog(page: Page, group: string, action: "Rename group" | "Delete group") {
   await openCrewsTab(page, "Members");
@@ -1852,7 +1850,9 @@ for (const theme of ["light", "dark"])
       const dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
       const list = dialog.getByRole("list", { name: "Work list", exact: true });
       await expect(list).toBeVisible();
-      await expect(dialog.getByRole("navigation", { name: "Crew work", exact: true })).toHaveCount(0);
+      await expect(dialog.getByRole("navigation", { name: "Crew work", exact: true })).toHaveCount(
+        0,
+      );
       await expect(list.locator("xpath=..")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       expect(await list.getByRole("listitem").count()).toBeGreaterThan(2);
       await page.screenshot({

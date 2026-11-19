@@ -28,5 +28,7 @@ it("keeps the reduced-motion request for the eyes", () => {
 });
 
 it("keeps the activity marker on eyes only when active", () => {
-  expect(TSX).toContain('className={active && isAvatarEye(rect) ? "member-avatar-eye" : undefined}');
+  expect(TSX).toContain(
+    'className={active && isAvatarEye(rect) ? "member-avatar-eye" : undefined}',
+  );
 });

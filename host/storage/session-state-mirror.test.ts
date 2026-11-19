@@ -32,12 +32,16 @@ describe("session_state mirror of sessions", () => {
     const path = databasePath();
     const store = new HostStore(path);
     cleanups.push(async () => await store.close());
-    await store.db.prepare(
-      "INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status) VALUES ('s', 'p', ?, '{}', 1, 1, 100, 'idle')",
-    ).run(snapshot("p", 1));
-    await store.db.prepare(
-      "UPDATE sessions SET project_id='q', snapshot=?, summary='{}', has_desktop=1, revision=2, updated_at=200, status='idle' WHERE id='s'",
-    ).run(snapshot("q", 9));
+    await store.db
+      .prepare(
+        "INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status) VALUES ('s', 'p', ?, '{}', 1, 1, 100, 'idle')",
+      )
+      .run(snapshot("p", 1));
+    await store.db
+      .prepare(
+        "UPDATE sessions SET project_id='q', snapshot=?, summary='{}', has_desktop=1, revision=2, updated_at=200, status='idle' WHERE id='s'",
+      )
+      .run(snapshot("q", 9));
     const state = await store.db
       .prepare("SELECT project_id, desktop_updated_at, revision FROM session_state WHERE id='s'")
       .get();
@@ -47,9 +51,11 @@ describe("session_state mirror of sessions", () => {
   it("replaces an older session_state_update trigger on reopen and backfills its rows", async () => {
     const path = databasePath();
     const first = new HostStore(path);
-    await first.db.prepare(
-      "INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status) VALUES ('s', 'p', ?, '{}', 1, 1, 100, 'idle')",
-    ).run(snapshot("p", 1));
+    await first.db
+      .prepare(
+        "INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status) VALUES ('s', 'p', ?, '{}', 1, 1, 100, 'idle')",
+      )
+      .run(snapshot("p", 1));
     // Simulate the pre-#365 trigger and stale mirror rows left by it.
     await first.db.exec(`DROP TRIGGER session_state_update;
       CREATE TRIGGER session_state_update AFTER UPDATE OF summary, revision, updated_at, status, has_desktop, provider_session_id, harness, session_cwd, shell_running ON sessions BEGIN
@@ -76,11 +82,11 @@ describe("session_state mirror of sessions", () => {
   it("leaves an up-to-date trigger alone on reopen", async () => {
     const path = databasePath();
     const readTrigger = async (store: HostStore) =>
-      (
-        await store.db
-          .prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='session_state_update'")
-          .get()
-      )!.sql;
+      (await store.db
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='session_state_update'",
+        )
+        .get())!.sql;
     const first = new HostStore(path);
     const before = await readTrigger(first);
     await first.close();

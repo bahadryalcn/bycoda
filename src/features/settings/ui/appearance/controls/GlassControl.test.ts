@@ -84,9 +84,7 @@ it("commits a keyboard change once per key and never persists a drag preview", (
   vi.mocked(appearance.onOpacity).mockClear();
   vi.mocked(appearance.onBlur).mockClear();
   render({ light: false, covered: false });
-  const opacity = container.querySelector<HTMLElement>(
-    '#setting-sidebar-opacity [role="slider"]',
-  )!;
+  const opacity = container.querySelector<HTMLElement>('#setting-sidebar-opacity [role="slider"]')!;
   const blur = container.querySelector<HTMLElement>('#setting-blur [role="slider"]')!;
   // Home jumps to the minimum: arc reports the preview and the commit together for a key.
   act(() => {

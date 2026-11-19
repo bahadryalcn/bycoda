@@ -224,7 +224,9 @@ export class SocialAudienceStore {
             "INSERT INTO social_person_handles VALUES (?,?,?) ON CONFLICT(account_id,platform_id) DO UPDATE SET person_id=excluded.person_id",
           )
           .run(handle.accountId, handle.platformId, person.id);
-      await this.store.db.prepare("DELETE FROM social_person_emails WHERE person_id=?").run(person.id);
+      await this.store.db
+        .prepare("DELETE FROM social_person_emails WHERE person_id=?")
+        .run(person.id);
       for (const email of new Set(person.emails.map((item) => item.address)))
         await this.store.db
           .prepare("INSERT INTO social_person_emails VALUES (?,?)")
@@ -274,7 +276,9 @@ export class SocialAudienceStore {
     for (let start = 0; start < unique.length; start += LOOKUP_CHUNK) {
       const chunk = unique.slice(start, start + LOOKUP_CHUNK);
       const rows = await this.store.db
-        .prepare(`SELECT person_id FROM social_person_emails WHERE address IN (${marks(chunk.length)})`)
+        .prepare(
+          `SELECT person_id FROM social_person_emails WHERE address IN (${marks(chunk.length)})`,
+        )
         .all(...chunk);
       for (const row of rows) ids.add(String(row.person_id));
     }
@@ -724,10 +728,7 @@ export class SocialAudienceStore {
    * hour are never touched; rows inside the window keep their exact counts, so quotas stand.
    * Returns the number of rows removed.
    */
-  async pruneSpentCounters(
-    now: number,
-    limit = SPENT_COUNTER_PRUNE_BATCH,
-  ): Promise<number> {
+  async pruneSpentCounters(now: number, limit = SPENT_COUNTER_PRUNE_BATCH): Promise<number> {
     const cutoff = utcDay(now - SPENT_COUNTER_RETENTION_DAYS * 86_400_000);
     if (!cutoff || !Number.isInteger(limit) || limit < 1) return 0;
     const removed = await this.store.db
@@ -747,7 +748,8 @@ export class SocialAudienceStore {
     if (at < this.nextCounterPruneAt) return;
     this.nextCounterPruneAt = at + SPENT_COUNTER_IDLE_MS;
     const removed = await this.pruneSpentCounters(now);
-    if (removed >= SPENT_COUNTER_PRUNE_BATCH) this.nextCounterPruneAt = at + SPENT_COUNTER_BACKLOG_MS;
+    if (removed >= SPENT_COUNTER_PRUNE_BATCH)
+      this.nextCounterPruneAt = at + SPENT_COUNTER_BACKLOG_MS;
   }
 
   // Settings and legacy reads.

@@ -35,7 +35,9 @@ async function mount() {
 }
 
 const emit = (scope: string, at: number) =>
-  (native.listeners.get("canonical-store-changed") as Handler)({ payload: { scope, revision: at } });
+  (native.listeners.get("canonical-store-changed") as Handler)({
+    payload: { scope, revision: at },
+  });
 
 beforeEach(() => {
   vi.useFakeTimers();

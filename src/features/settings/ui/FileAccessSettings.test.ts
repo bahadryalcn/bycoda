@@ -18,9 +18,7 @@ vi.mock("../../../platform/tauri/fileAccess", () => ({
 }));
 vi.mock("../../../shared/i18n", () => ({
   t: (text: string, values?: Record<string, string>) =>
-    values
-      ? text.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match)
-      : text,
+    values ? text.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match) : text,
   useT: () => (text: string) => text,
   useLocale: () => "en",
 }));
@@ -149,7 +147,9 @@ it("shows a corrupt-file notice with the preserved copy until the owner dismisse
   expect(container.textContent).toContain(
     "Your saved file access choice could not be read, so access is off until you choose it again.",
   );
-  expect(container.textContent).toContain("Unreadable copy kept at C:/data/access-mode.json.corrupt-1");
+  expect(container.textContent).toContain(
+    "Unreadable copy kept at C:/data/access-mode.json.corrupt-1",
+  );
   // The notice is the only signal that prior access was lost, so it must not
   // be replaced by an automatic consent prompt.
   expect(configureFileAccess).not.toHaveBeenCalled();

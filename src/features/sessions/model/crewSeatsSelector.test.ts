@@ -40,7 +40,10 @@ it("ignores a session led by another crew", () => {
   const select = createCrewSeatsSelector();
   const crew = crewSession({ busy: true });
   const first = select("lead", [crew, worker("w", { orchestrationLeadId: "elsewhere" })]);
-  const second = select("lead", [crew, worker("w", { orchestrationLeadId: "elsewhere", busy: false })]);
+  const second = select("lead", [
+    crew,
+    worker("w", { orchestrationLeadId: "elsewhere", busy: false }),
+  ]);
   expect(second).toBe(first);
 });
 
@@ -56,7 +59,12 @@ it("compares seat tuples rather than identities", () => {
     { role: "lead", working: true, context: 0.2 },
     { role: "subagent", working: false, name: "Research" },
   ];
-  expect(sameCrewSeats(seats, seats.map((seat) => ({ ...seat })))).toBe(true);
+  expect(
+    sameCrewSeats(
+      seats,
+      seats.map((seat) => ({ ...seat })),
+    ),
+  ).toBe(true);
   expect(sameCrewSeats(seats, [seats[0], { ...seats[1], working: true }])).toBe(false);
   expect(sameCrewSeats(seats, [seats[0], { ...seats[1], name: "Review" }])).toBe(false);
   expect(sameCrewSeats(seats, [{ ...seats[0], context: 0.3 }, seats[1]])).toBe(false);

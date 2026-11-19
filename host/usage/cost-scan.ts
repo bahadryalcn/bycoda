@@ -222,8 +222,7 @@ async function collect(dir: string, sinceMs: number, depth: number, out: Found[]
     } else {
       const info = statOf.get(entry.name);
       // A transcript last written before the cutoff holds nothing newer.
-      if (info && info.mtimeMs >= sinceMs)
-        out.push({ path, mtime: info.mtimeMs, size: info.size });
+      if (info && info.mtimeMs >= sinceMs) out.push({ path, mtime: info.mtimeMs, size: info.size });
     }
   }
 }

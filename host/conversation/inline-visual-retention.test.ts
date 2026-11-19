@@ -14,7 +14,9 @@ const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })));
 
 const id = (text: string) => createHash("sha256").update(text).digest("hex");
-const ref = (text: string) => ({ inlineVisual: { version: 2, id: id(text), title: "t", height: 200 } });
+const ref = (text: string) => ({
+  inlineVisual: { version: 2, id: id(text), title: "t", height: 200 },
+});
 
 /** Writes a visual file and backdates it past the grace window unless `fresh`. */
 function store(files: string[], fresh = false) {

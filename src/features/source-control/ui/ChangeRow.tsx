@@ -257,11 +257,7 @@ export const ChangeRow = memo(function ChangeRow({
               <Minus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           ) : (
-            <InlineAction
-              label={t("Stage Changes")}
-              tabIndex={-1}
-              onClick={() => perform("stage")}
-            >
+            <InlineAction label={t("Stage Changes")} tabIndex={-1} onClick={() => perform("stage")}>
               <Plus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           )}

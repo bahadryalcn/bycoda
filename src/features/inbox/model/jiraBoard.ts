@@ -40,8 +40,7 @@ export type JiraMove = {
   afterKey?: string;
 };
 
-export const jiraErrorMessage = (reason: unknown) =>
-  errorText(reason);
+export const jiraErrorMessage = (reason: unknown) => errorText(reason);
 
 async function visibleProjectIds() {
   const hidden = requireHiddenJiraProjectIds();

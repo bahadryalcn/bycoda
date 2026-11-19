@@ -1077,7 +1077,11 @@ export function subscribeGitChanged(
   const onChange = (event: Event) => {
     const change = (event as CustomEvent<GitChange | null>).detail;
     // A machine's change skips views of another checkout owner; unscoped views still reload.
-    if (change?.environmentId && filter?.cwd && remoteEnvironmentOf(filter.cwd) !== change.environmentId)
+    if (
+      change?.environmentId &&
+      filter?.cwd &&
+      remoteEnvironmentOf(filter.cwd) !== change.environmentId
+    )
       return;
     if (change && change.scope !== "refs") {
       if (change.scope === "index" && filter?.refsOnly) return;
@@ -1216,10 +1220,13 @@ export async function prepareLocalFileCopy(
   checkCancelled();
   const isTransient = await transientRemoteFailure();
   const readInfo = () =>
-    retryTransient(() => invokeWorkspace<{ size: number; version: string }>("read_file_info", { path }), {
-      signal: options.signal,
-      isTransient,
-    });
+    retryTransient(
+      () => invokeWorkspace<{ size: number; version: string }>("read_file_info", { path }),
+      {
+        signal: options.signal,
+        isTransient,
+      },
+    );
   const info = await readInfo();
   if (
     !Number.isSafeInteger(info.size) ||
@@ -1257,8 +1264,7 @@ export async function prepareLocalFileCopy(
           offset,
           length,
         }),
-      append: (offset, data) =>
-        invokeLocal<void>("append_remote_file_copy", { id, offset, data }),
+      append: (offset, data) => invokeLocal<void>("append_remote_file_copy", { id, offset, data }),
       isTransient,
       onProgress: options.onProgress,
     });
@@ -1447,9 +1453,7 @@ export async function readBinaryFile(path: string): Promise<Uint8Array<ArrayBuff
     path,
   });
   // A connected machine sends the bytes as base64 inside its JSON reply.
-  return typeof buffer === "string"
-    ? decodeBase64(buffer)
-    : new Uint8Array(buffer);
+  return typeof buffer === "string" ? decodeBase64(buffer) : new Uint8Array(buffer);
 }
 
 export type { GeneratedImageAsset } from "./generatedImages";

@@ -260,8 +260,7 @@ const editors = {
     '#column-center .chat.active .input-message-input[contenteditable="true"], #column-center .chat.active .chat-input [contenteditable="true"][role="textbox"]',
 };
 const submitters = {
-  whatsapp:
-    `#main footer [data-testid="compose-btn-send"], #main footer [data-testid="send"], ${ariaLabelSelectors("#main footer button", SEND_LABELS)}`,
+  whatsapp: `#main footer [data-testid="compose-btn-send"], #main footer [data-testid="send"], ${ariaLabelSelectors("#main footer button", SEND_LABELS)}`,
   telegram: "#column-center .chat.active .btn-send:not(.is-hidden):not([disabled])",
 };
 

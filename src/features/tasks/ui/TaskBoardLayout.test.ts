@@ -14,7 +14,9 @@ function block(css: string, selector: string): string {
 
 /** The declarations of the first rule for `selector`. */
 function rule(css: string, selector: string): string {
-  const match = css.match(new RegExp(`(?<![\\w-])${selector.replace(".", "\\.")}\\s*\\{([^}]*)\\}`));
+  const match = css.match(
+    new RegExp(`(?<![\\w-])${selector.replace(".", "\\.")}\\s*\\{([^}]*)\\}`),
+  );
   if (!match) throw new Error(`Missing rule ${selector}`);
   return match[1]!;
 }
@@ -58,7 +60,10 @@ it("keeps every lane full-width in the narrow board so a drop never reflows the 
 });
 
 it("shows the other statuses as header strips while a card is dragged", () => {
-  const strip = block(boardCss, ".task-board-columns[data-dragging] > section:not([data-compact-selected]) {");
+  const strip = block(
+    boardCss,
+    ".task-board-columns[data-dragging] > section:not([data-compact-selected]) {",
+  );
   expect(strip).toMatch(/display:\s*flex/);
   expect(strip).toMatch(/order:\s*-1/);
   const hiddenNote = block(

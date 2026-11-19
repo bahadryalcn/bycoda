@@ -87,7 +87,12 @@ export function conversationMessageItem({
                 ) : (
                   <Tooltip key={id} label={id} asChild>
                     <span>
-                      <Text size="caption" tone="secondary" leading="inherit" className={styles.note}>
+                      <Text
+                        size="caption"
+                        tone="secondary"
+                        leading="inherit"
+                        className={styles.note}
+                      >
                         {t("Job unavailable")}
                       </Text>
                     </span>

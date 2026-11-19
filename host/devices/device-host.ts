@@ -461,9 +461,7 @@ export class DeviceHost {
       await Promise.all(
         names
           .filter((name) => TOOL_LEFTOVER.test(name))
-          .map((name) =>
-            rm(join(parent, name), { recursive: true, force: true }).catch(() => {}),
-          ),
+          .map((name) => rm(join(parent, name), { recursive: true, force: true }).catch(() => {})),
       );
     }
   }

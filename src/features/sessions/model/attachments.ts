@@ -186,7 +186,11 @@ export function mergeAttachments(existing: Attachment[], incoming: Attachment[])
     if (duplicate) continue;
     // shortcut: a file with bytes and no path cannot fall back to a path, so it stays inline
     // (still under the per-file limit); composer producers always save a path, upgrade if not.
-    if (inlineBytes(file) > 0 && embedded + inlineBytes(file) > MAX_TOTAL_EMBED_BYTES && file.path) {
+    if (
+      inlineBytes(file) > 0 &&
+      embedded + inlineBytes(file) > MAX_TOTAL_EMBED_BYTES &&
+      file.path
+    ) {
       next.push(withoutInlineData(file));
       continue;
     }

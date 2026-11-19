@@ -752,7 +752,7 @@ it("drops every summary row of a thread that no longer exists but never a runnin
     );
   await f.store.db
     .prepare(
-      "INSERT INTO assistant_summary_intents(id,value) VALUES('orphan-running','{\"threadId\":\"gone\",\"status\":\"running\"}'),('orphan-done','{\"threadId\":\"gone\",\"status\":\"complete\"}')",
+      'INSERT INTO assistant_summary_intents(id,value) VALUES(\'orphan-running\',\'{"threadId":"gone","status":"running"}\'),(\'orphan-done\',\'{"threadId":"gone","status":"complete"}\')',
     )
     .run();
   await f.store.db
@@ -769,6 +769,8 @@ it("drops every summary row of a thread that no longer exists but never a runnin
   expect(await count("artifacts")).toBe(live.artifacts);
   expect(await count("requests")).toBe(0);
   expect(
-    await f.store.db.prepare("SELECT id FROM assistant_summary_intents WHERE id LIKE 'orphan%'").all(),
+    await f.store.db
+      .prepare("SELECT id FROM assistant_summary_intents WHERE id LIKE 'orphan%'")
+      .all(),
   ).toEqual([{ id: "orphan-running" }]);
 });

@@ -225,9 +225,7 @@ export class HostTaskBudgets {
                   ...(!previous.parentTaskId && input.parentTaskId
                     ? [["task", input.parentTaskId] as const]
                     : []),
-                  ...(!previous.goalId && input.goalId
-                    ? [["goal", input.goalId] as const]
-                    : []),
+                  ...(!previous.goalId && input.goalId ? [["goal", input.goalId] as const] : []),
                 ];
           previous.workId ??= input.workId;
           previous.rootWorkId ??= input.rootWorkId;
@@ -417,9 +415,9 @@ export class HostTaskBudgets {
   private tokensFrozen(blocks: readonly Block[], run: LedgerRun): boolean {
     const index = blocks.findIndex((block) => block.id === run.blockId);
     if (index < 0) return true;
-    return blocks.slice(index + 1).some(
-      (block) => block.role === "user" && !block.draft && !block.continuationOf,
-    );
+    return blocks
+      .slice(index + 1)
+      .some((block) => block.role === "user" && !block.draft && !block.continuationOf);
   }
 
   /** Writes the run's value and, once final, seals it and counts it in its rollups exactly once. */
@@ -681,7 +679,11 @@ export class HostTaskBudgets {
           const id = String(row.goal_id);
           return [
             id,
-            this.summarize(runs.get(id) ?? [], row.complete !== 0, rollups.get(id) ?? emptyRollup()),
+            this.summarize(
+              runs.get(id) ?? [],
+              row.complete !== 0,
+              rollups.get(id) ?? emptyRollup(),
+            ),
           ];
         }),
       );

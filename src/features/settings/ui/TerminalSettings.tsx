@@ -195,10 +195,7 @@ function CodeBlockSettings() {
       resetLabel={t("Reset code blocks")}
       onReset={() => saveCodeRunReport(CODE_RUN_REPORT_DEFAULT)}
     >
-      <Row
-        id="terminal-code-result"
-        label={t("Add result to chat when finished")}
-      >
+      <Row id="terminal-code-result" label={t("Add result to chat when finished")}>
         <Toggle
           label={t("Add result to chat when finished")}
           on={report}

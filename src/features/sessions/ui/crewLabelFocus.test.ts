@@ -114,9 +114,7 @@ it("opens the shared tooltip with the full label from keyboard focus only when c
   expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
     "Designer · Subagent · Context: 70%",
   );
-  act(() =>
-    label.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
-  );
+  act(() => label.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(document.querySelector('[role="tooltip"]')).toBeNull();
 });
 

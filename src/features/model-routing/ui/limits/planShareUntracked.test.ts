@@ -4,9 +4,7 @@ import { untrackedCopy } from "./planShareUntracked";
 
 // Interpolates named slots only; the real catalog is exercised by the locale checks.
 const t = ((text: string, values?: Record<string, string>) =>
-  text.replace(/\{(\w+)\}/g, (_, slot: string) => values?.[slot] ?? "")) as ReturnType<
-  typeof useT
->;
+  text.replace(/\{(\w+)\}/g, (_, slot: string) => values?.[slot] ?? "")) as ReturnType<typeof useT>;
 
 it("names this computer only for the local Host", () => {
   const copy = untrackedCopy(t, { name: "This computer", local: true });

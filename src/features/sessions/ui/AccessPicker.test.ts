@@ -111,9 +111,7 @@ describe("AccessPicker next-turn explanation", () => {
       root.render(createElement(AccessPicker, { value: "supervised", onChange, busy: true })),
     );
     act(() => trigger().click());
-    act(() =>
-      document.querySelector<HTMLButtonElement>("[data-picker-footer] button")!.click(),
-    );
+    act(() => document.querySelector<HTMLButtonElement>("[data-picker-footer] button")!.click());
     act(() => option("Full access")?.click());
     expect(onChange).toHaveBeenCalledWith("full-access");
   });

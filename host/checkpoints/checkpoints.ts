@@ -215,7 +215,12 @@ async function dropCheckpointRefs(cwd: string, session: string, keep?: string) {
   // One transaction instead of one process per ref. Names come from for-each-ref, so
   // they hold no whitespace or control characters and the line format is unambiguous.
   if (names.length)
-    await git(cwd, ["update-ref", "--stdin"], undefined, names.map((n) => `delete ${n}\n`).join(""));
+    await git(
+      cwd,
+      ["update-ref", "--stdin"],
+      undefined,
+      names.map((n) => `delete ${n}\n`).join(""),
+    );
 }
 
 /**

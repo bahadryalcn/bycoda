@@ -63,7 +63,8 @@ export function UpdateImpact({ target }: { target: UpdateTarget }) {
           },
         );
         failures = 0;
-        if (!closed) setView({ rows: next, failed: !next.some((row) => row.affected), stale: false });
+        if (!closed)
+          setView({ rows: next, failed: !next.some((row) => row.affected), stale: false });
       } catch {
         failures += 1;
         // Keep the last reading (and its warning) when there is one; only a first failure is unknown.
@@ -99,24 +100,14 @@ export function UpdateImpact({ target }: { target: UpdateTarget }) {
   return target === "app" ? (
     <AppUpdateImpact rows={view.rows} stale={view.stale} />
   ) : (
-    <UpdateImpactDetails
-      rows={view.rows}
-      failed={view.failed}
-      stale={view.stale}
-      target={target}
-    />
+    <UpdateImpactDetails rows={view.rows} failed={view.failed} stale={view.stale} target={target} />
   );
 }
 
 function AppUpdateImpact({ rows, stale }: { rows?: UpdateMachineImpact[]; stale: boolean }) {
   const desktopSessions = useSyncExternalStore(subscribeDesktopActivity, readDesktopActivity);
   return (
-    <UpdateImpactDetails
-      rows={rows}
-      stale={stale}
-      target="app"
-      desktopSessions={desktopSessions}
-    />
+    <UpdateImpactDetails rows={rows} stale={stale} target="app" desktopSessions={desktopSessions} />
   );
 }
 

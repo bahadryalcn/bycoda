@@ -228,8 +228,7 @@ function AddRemoteProjectForm({
       );
       if (alive.current && version === requestVersion.current) onOpen(project.key);
     } catch (reason) {
-      if (alive.current && version === requestVersion.current)
-        setError(errorText(reason));
+      if (alive.current && version === requestVersion.current) setError(errorText(reason));
     } finally {
       mutation.current = false;
       if (alive.current && version === requestVersion.current) setOpening(false);
@@ -257,8 +256,7 @@ function AddRemoteProjectForm({
       setNewName(null);
       setVerifiedAt(Date.now());
     } catch (reason) {
-      if (alive.current && version === requestVersion.current)
-        setError(errorText(reason));
+      if (alive.current && version === requestVersion.current) setError(errorText(reason));
     } finally {
       mutation.current = false;
       if (alive.current && version === requestVersion.current) setCreating(false);

@@ -21,7 +21,9 @@ describe("describeHarnessUpdateFailure", () => {
     });
     expect(result.headline).toBe("OpenCode could not be updated.");
     expect(result.detail).toBe(detail);
-    expect(result.toastMessage).toBe("OpenCode could not be updated. error: EPERM at install (bun.js:1)");
+    expect(result.toastMessage).toBe(
+      "OpenCode could not be updated. error: EPERM at install (bun.js:1)",
+    );
   });
 
   it("does not put internal stage ids or English stage labels in the headline", () => {
@@ -41,11 +43,16 @@ describe("describeHarnessUpdateFailure", () => {
       detail: "\u001b[31mRequest rejected: Bearer fake-token-12345\u001b[0m",
     });
     expect(result.detail).toBe("Request rejected: Bearer <redacted>");
-    expect(result.toastMessage).toBe("OpenCode could not be updated. Request rejected: Bearer <redacted>");
+    expect(result.toastMessage).toBe(
+      "OpenCode could not be updated. Request rejected: Bearer <redacted>",
+    );
   });
 
   it("reports a still-on-old-version result with no raw detail", () => {
-    const result = describeHarnessUpdateFailure("opencode", { kind: "stillOn", version: "1.18.33" });
+    const result = describeHarnessUpdateFailure("opencode", {
+      kind: "stillOn",
+      version: "1.18.33",
+    });
     expect(result).toEqual({
       headline: "OpenCode is still on 1.18.33 after updating.",
       toastMessage: "OpenCode is still on 1.18.33 after updating.",

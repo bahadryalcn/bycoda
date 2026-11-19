@@ -107,10 +107,7 @@ describe("browser live frames", () => {
   });
 
   it("falls back to one read per second on a Host without frame sequences after a failure", async () => {
-    const read = vi
-      .fn<Probe["read"]>()
-      .mockRejectedValueOnce(timeout())
-      .mockResolvedValue({});
+    const read = vi.fn<Probe["read"]>().mockRejectedValueOnce(timeout()).mockResolvedValue({});
     const onError = vi.fn();
     show({ enabled: true, read, onError });
     await advance(250 + 500);

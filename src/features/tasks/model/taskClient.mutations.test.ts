@@ -402,10 +402,12 @@ it("sends the revisions it read with a reorder and ignores tasks the board does 
     machineName: "this computer",
     reorderGuardSupported,
   });
-  const { reorderGuardSupported: _guard, machineId: _id, machineName: _name, ...first } = queued(
-    "first",
-    5,
-  );
+  const {
+    reorderGuardSupported: _guard,
+    machineId: _id,
+    machineName: _name,
+    ...first
+  } = queued("first", 5);
   vi.mocked(remoteRequest).mockResolvedValue([
     { ...first, position: 0, updatedAt: 9 },
     // A task hidden from this board that the Host renumbered.

@@ -98,9 +98,7 @@ it("shows the PDF name and open action in the shared footer rather than a PDF to
 });
 
 it("shows the media name and open action in the shared footer and opens the owning path", async () => {
-  await act(async () =>
-    root.render(createElement(MediaView, { path: "C:/project/clip.mp4" })),
-  );
+  await act(async () => root.render(createElement(MediaView, { path: "C:/project/clip.mp4" })));
   const footer = container.querySelector("footer")!;
   expect(footer.textContent).toContain("clip.mp4");
   await act(async () => findButton(footer, "Open in default app").click());

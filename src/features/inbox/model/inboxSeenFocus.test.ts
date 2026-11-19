@@ -63,7 +63,11 @@ it("keeps each entry's own key, timestamp and seen record in a shared read", asy
   ]);
   expect(results).toEqual([false, true, true, false]);
   expect(readInboxSeenStorage).toHaveBeenCalledTimes(1);
-  expect(vi.mocked(readInboxSeenStorage).mock.calls[0]![0]).toEqual(["github:a#1", "github:b#1", ""]);
+  expect(vi.mocked(readInboxSeenStorage).mock.calls[0]![0]).toEqual([
+    "github:a#1",
+    "github:b#1",
+    "",
+  ]);
 });
 
 it("reads again after a batch finished, so a later change is never served stale", async () => {

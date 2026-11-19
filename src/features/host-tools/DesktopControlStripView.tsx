@@ -103,7 +103,7 @@ export function DesktopControlStripView({
         </Text>
       )}
       <LiveText className="sr-only" text={label} />
-      {error &&<InlineError className={styles.error}>{error}</InlineError>}
+      {error && <InlineError className={styles.error}>{error}</InlineError>}
       {inactive && onDismiss ? (
         <Button size="sm" onClick={onDismiss}>
           {t("Dismiss")}

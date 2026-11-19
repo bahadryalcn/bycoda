@@ -333,8 +333,7 @@ export class HostBulkTransfers {
     this.entries.delete(id);
   }
   private prune(): void {
-    for (const [id, entry] of this.entries)
-      if (entry.deadline <= this.now()) this.remove(id);
+    for (const [id, entry] of this.entries) if (entry.deadline <= this.now()) this.remove(id);
   }
 }
 

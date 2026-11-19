@@ -405,12 +405,7 @@ describe("one placement index per projection", () => {
     // A structural frame: new array and new tail, the call block is the same object.
     const second: Block[] = [first[0], call.block, reply("a2"), reply("a3")];
     const placed = placeDelegatedCards(second, [child]);
-    expect(placed.map((block) => block.id)).toEqual([
-      "u1",
-      delegatedBlockId("c1"),
-      "a2",
-      "a3",
-    ]);
+    expect(placed.map((block) => block.id)).toEqual(["u1", delegatedBlockId("c1"), "a2", "a3"]);
     expect(call.reads.count).toBe(reads);
   });
 

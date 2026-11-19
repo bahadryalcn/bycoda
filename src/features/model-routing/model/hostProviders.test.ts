@@ -14,7 +14,8 @@ describe("hostProvidersFrom", () => {
       },
     });
     expect(state.status).toBe("ready");
-    if (state.status === "ready") expect([...state.providers].sort()).toEqual(["codex", "cursor", "grok"]);
+    if (state.status === "ready")
+      expect([...state.providers].sort()).toEqual(["codex", "cursor", "grok"]);
   });
 
   it("reports loading while the catalog is unread and failed once the read gave up", () => {

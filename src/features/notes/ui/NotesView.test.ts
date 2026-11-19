@@ -322,7 +322,10 @@ it("does not rerun native body search when a list refresh brings the same notes"
   await render();
   const filter = container.querySelector<HTMLInputElement>('[aria-label="Filter notes"]')!;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(filter, "Needle");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      filter,
+      "Needle",
+    );
     filter.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => vi.advanceTimersByTimeAsync(150));

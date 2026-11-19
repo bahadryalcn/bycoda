@@ -6,9 +6,7 @@ export class CodexArchivedThreadError extends Error {
     readonly threadId: string,
     override readonly cause: unknown,
   ) {
-    super(
-      `Codex session ${threadId} is archived: ${errorText(cause)}`,
-    );
+    super(`Codex session ${threadId} is archived: ${errorText(cause)}`);
     this.name = "CodexArchivedThreadError";
   }
 }

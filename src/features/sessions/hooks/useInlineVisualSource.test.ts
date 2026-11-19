@@ -57,12 +57,7 @@ it("shares one native read between concurrent mounts of the same visual", async 
   );
   const value = reference(0xa1, "Chart");
   const view = await mount(
-    createElement(
-      Fragment,
-      null,
-      createElement(Probe, { value }),
-      createElement(Probe, { value }),
-    ),
+    createElement(Fragment, null, createElement(Probe, { value }), createElement(Probe, { value })),
   );
   try {
     expect(invoke).toHaveBeenCalledTimes(1);

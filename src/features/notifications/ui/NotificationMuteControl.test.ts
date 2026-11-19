@@ -39,7 +39,9 @@ function click(label: string) {
 }
 
 function buttonWithText(text: string) {
-  const button = [...container.querySelectorAll("button")].find((item) => item.textContent === text);
+  const button = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === text,
+  );
   expect(button, `Button ${text}`).toBeDefined();
   return button!;
 }
@@ -211,7 +213,11 @@ describe("NotificationMuteControl", () => {
   it("names text triggers by their visible label and keeps the icon-only trigger named", () => {
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
     expect(buttonWithText("Mute").hasAttribute("aria-label")).toBe(false);
-    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"], compact: true })));
+    act(() =>
+      root.render(
+        createElement(NotificationMuteControl, { projectIds: ["private"], compact: true }),
+      ),
+    );
     expect(container.querySelector('button[aria-label="Mute notifications"]')).not.toBeNull();
 
     updateNotificationPreferences(["private"], { mutedUntil: null });

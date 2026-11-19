@@ -260,12 +260,7 @@ export function PickerList({
     return actions == null ? (
       button
     ) : (
-      <ActionHost
-        key={option.value}
-        {...measure}
-        selected={selected}
-        className={styles.actionRow}
-      >
+      <ActionHost key={option.value} {...measure} selected={selected} className={styles.actionRow}>
         {button}
         <div data-picker-actions="" className={styles.actions}>
           {actions}
@@ -324,8 +319,10 @@ export function PickerList({
       }
       const option = list.options[entry.index]!;
       const last = blocks[blocks.length - 1];
-      if (option.group && last?.group === option.group) last.children.push(row(option, entry.index));
-      else blocks.push({ group: option.group, key: entry.key, children: [row(option, entry.index)] });
+      if (option.group && last?.group === option.group)
+        last.children.push(row(option, entry.index));
+      else
+        blocks.push({ group: option.group, key: entry.key, children: [row(option, entry.index)] });
     }
     const lead = win.items[0]?.start ?? 0;
     const tail = win.items.length ? win.totalSize - win.items[win.items.length - 1]!.end : 0;

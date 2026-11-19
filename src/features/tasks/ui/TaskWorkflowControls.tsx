@@ -303,55 +303,57 @@ function ScopedTaskWorkflowControls({
               ? truncateGraphemes(reference, 60)
               : t("No reference yet");
             return (
-            <div
-              key={rows.keys[index]}
-              role="group"
-              aria-label={t("{p1}: {p2}", { p1: kindName, p2: shownReference })}
-              className="flex min-w-0 flex-wrap items-end gap-2"
-            >
-              <SearchableSelect
-                label={t("Resource type")}
-                value={requirement.kind}
-                searchable={false}
-                disabled={blocked}
-                options={kindOptions}
-                onChange={(kind) =>
-                  void updateRequirement(index, { kind: kind as TaskPreflightRequirement["kind"] })
-                }
-              />
-              <div className="min-w-0 basis-full sm:basis-48 sm:flex-1">
-                <TextField
-                  label={t("Resource reference")}
-                  value={requirement.id}
-                  disabled={blocked}
-                  maxLength={2000}
-                  onChange={(event) => void updateRequirement(index, { id: event.target.value })}
-                />
-              </div>
-              <Checkbox
-                className="items-center gap-1"
-                size="caption"
-                label={t("Required")}
-                checked={requirement.required !== false}
-                disabled={blocked}
-                onChange={(event) =>
-                  void updateRequirement(index, { required: event.target.checked })
-                }
-              />
-              <Button
-                variant="ghost"
-                disabled={blocked}
-                onClick={() => {
-                  setRowKeys(removeRequirementRowKey(rowKeys, requirements.length, index));
-                  void onApply({
-                    ...draft,
-                    requirements: requirements.filter((_, at) => at !== index),
-                  });
-                }}
+              <div
+                key={rows.keys[index]}
+                role="group"
+                aria-label={t("{p1}: {p2}", { p1: kindName, p2: shownReference })}
+                className="flex min-w-0 flex-wrap items-end gap-2"
               >
-                {t("Remove {p1}: {p2}", { p1: kindName, p2: shownReference })}
-              </Button>
-            </div>
+                <SearchableSelect
+                  label={t("Resource type")}
+                  value={requirement.kind}
+                  searchable={false}
+                  disabled={blocked}
+                  options={kindOptions}
+                  onChange={(kind) =>
+                    void updateRequirement(index, {
+                      kind: kind as TaskPreflightRequirement["kind"],
+                    })
+                  }
+                />
+                <div className="min-w-0 basis-full sm:basis-48 sm:flex-1">
+                  <TextField
+                    label={t("Resource reference")}
+                    value={requirement.id}
+                    disabled={blocked}
+                    maxLength={2000}
+                    onChange={(event) => void updateRequirement(index, { id: event.target.value })}
+                  />
+                </div>
+                <Checkbox
+                  className="items-center gap-1"
+                  size="caption"
+                  label={t("Required")}
+                  checked={requirement.required !== false}
+                  disabled={blocked}
+                  onChange={(event) =>
+                    void updateRequirement(index, { required: event.target.checked })
+                  }
+                />
+                <Button
+                  variant="ghost"
+                  disabled={blocked}
+                  onClick={() => {
+                    setRowKeys(removeRequirementRowKey(rowKeys, requirements.length, index));
+                    void onApply({
+                      ...draft,
+                      requirements: requirements.filter((_, at) => at !== index),
+                    });
+                  }}
+                >
+                  {t("Remove {p1}: {p2}", { p1: kindName, p2: shownReference })}
+                </Button>
+              </div>
             );
           })}
           <Button

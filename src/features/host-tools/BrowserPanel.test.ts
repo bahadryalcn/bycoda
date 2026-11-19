@@ -526,7 +526,12 @@ it("keeps input available when the frame after an input fails only briefly", asy
   };
   vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method, params) => {
     if (method === "browser.input") inputSent = true;
-    if (method === "browser.frame" && params?.after === undefined && inputSent && failuresLeft-- > 0)
+    if (
+      method === "browser.frame" &&
+      params?.after === undefined &&
+      inputSent &&
+      failuresLeft-- > 0
+    )
       throw new Error("capture timed out");
     return {
       ...state,

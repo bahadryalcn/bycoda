@@ -219,9 +219,7 @@ describe("detached working header", () => {
       "Failed",
     );
     render([agent("one", { done: true })]);
-    expect(container.querySelector("[data-detached-working-bar] > span")!.textContent).toBe(
-      "Done",
-    );
+    expect(container.querySelector("[data-detached-working-bar] > span")!.textContent).toBe("Done");
   });
 
   it("composes each row description from one translated status template", () => {
@@ -275,7 +273,9 @@ describe("detachedBarStatus", () => {
     );
     expect(detachedBarStatus([agent("a", { waiting })])).toBe("waiting");
     expect(detachedBarStatus([agent("a", { done: true, issue: "failed" })])).toBe("failed");
-    expect(detachedBarStatus([agent("a", { done: true }), agent("b", { issue: "failed", done: true })])).toBe("failed");
+    expect(
+      detachedBarStatus([agent("a", { done: true }), agent("b", { issue: "failed", done: true })]),
+    ).toBe("failed");
     expect(detachedBarStatus([agent("a")])).toBe("working");
     expect(detachedBarStatus([agent("a", { issue: "retrying" })])).toBe("working");
   });
@@ -285,9 +285,11 @@ describe("detachedBarStatus", () => {
     expect(detachedBarStatus([agent("a", { done: true, issue: "failed" }), agent("b")])).toBe(
       "working",
     );
-    expect(detachedBarStatus([agent("a", { waiting }), agent("b", { done: true, issue: "failed" })])).toBe(
-      "failed",
+    expect(
+      detachedBarStatus([agent("a", { waiting }), agent("b", { done: true, issue: "failed" })]),
+    ).toBe("failed");
+    expect(detachedBarStatus([agent("a", { waiting }), agent("b", { done: true })])).toBe(
+      "waiting",
     );
-    expect(detachedBarStatus([agent("a", { waiting }), agent("b", { done: true })])).toBe("waiting");
   });
 });

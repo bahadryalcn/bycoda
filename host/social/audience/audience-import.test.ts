@@ -35,7 +35,10 @@ function archiveDeclaring(expandedBytes: number): string {
 
 /** Every stored person, read page by page (a page holds at most 200). */
 async function peopleCount(store: {
-  listPeople(input: { cursor?: string; limit?: number }): Promise<{ items: unknown[]; next?: string }>;
+  listPeople(input: {
+    cursor?: string;
+    limit?: number;
+  }): Promise<{ items: unknown[]; next?: string }>;
 }): Promise<number> {
   let total = 0;
   let cursor: string | undefined;
@@ -169,7 +172,9 @@ describe("audience.import", () => {
       index ? "Name" : "name",
     ]);
     await expect(run(tooTall)).rejects.toThrow("larger than");
-    const tooWide = [Array.from({ length: AUDIENCE_IMPORT_MAX_COLUMNS + 1 }, (_, index) => `c${index}`)];
+    const tooWide = [
+      Array.from({ length: AUDIENCE_IMPORT_MAX_COLUMNS + 1 }, (_, index) => `c${index}`),
+    ];
     await expect(run(tooWide)).rejects.toThrow("larger than");
     expect((await f.store.listRecords("person")).items).toEqual([]);
   });
@@ -178,7 +183,11 @@ describe("audience.import", () => {
     const f = await fixture();
     const rows = [
       ["platformId", "name", "projectIds"],
-      ...Array.from({ length: AUDIENCE_IMPORT_MAX_ROWS + 1 }, (_, index) => [`u${index}`, "N", "p1"]),
+      ...Array.from({ length: AUDIENCE_IMPORT_MAX_ROWS + 1 }, (_, index) => [
+        `u${index}`,
+        "N",
+        "p1",
+      ]),
     ];
     await expect(
       importAudience(f.ctx(OWNER), {

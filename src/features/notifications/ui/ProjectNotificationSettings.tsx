@@ -159,7 +159,8 @@ export function ProjectNotificationSettings({
   const visibleIdSet = new Set(visibleIds);
   const selectedIds = selected.filter((id) => projects.some((project) => project.id === id));
   const selectedVisibleIds = selectedIds.filter((id) => visibleIdSet.has(id));
-  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
+  const allVisibleSelected =
+    visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
   const targetCard = useRef<HTMLFieldSetElement>(null);
   const focusedRequest = useRef<{ path: string; request: number } | null>(null);
   const targetId = notificationProjectPath
@@ -480,55 +481,55 @@ export function ProjectNotificationSettings({
                       </div>
                     ) : null}
                     {isExpanded ? (
-                    <div
-                      id={panelId}
-                      {...surfaceAttributes(
-                        { radius: "control", variant: "page" },
-                        "project-notification-categories",
-                      )}
-                    >
-                      <Text
-                        as="p"
-                        size="caption"
-                        tone="secondary"
-                        leading="normal"
-                        className="project-notification-summary"
+                      <div
+                        id={panelId}
+                        {...surfaceAttributes(
+                          { radius: "control", variant: "page" },
+                          "project-notification-categories",
+                        )}
                       >
-                        <MiddleTruncate>{project.detail}</MiddleTruncate>
-                      </Text>
-                      <div className="project-notification-category-grid">
-                        {muted ? (
-                          <Text
-                            as="p"
-                            size="caption"
-                            tone="secondary"
-                            leading="inherit"
-                            id={muteHintId}
-                            role="status"
-                            className="project-notification-mute-hint"
-                          >
-                            {t(
-                              "Your category choices apply when notifications resume. You can edit them while muted.",
-                            )}
-                          </Text>
-                        ) : null}
-                        {categories.map((category) => (
-                          <Switch
-                            key={category.id}
-                            className="project-notification-category"
-                            labelText={{ size: "secondary", tone: "primary", leading: "inherit" }}
-                            label={t(category.label)}
-                            labelPosition="start"
-                            aria-describedby={muted ? muteHintId : undefined}
-                            checked={!preferences[project.id]?.disabled.includes(category.id)}
-                            disabled={preferencesUnavailable}
-                            onCheckedChange={(checked) =>
-                              setCategory(project.id, category.id, checked)
-                            }
-                          />
-                        ))}
+                        <Text
+                          as="p"
+                          size="caption"
+                          tone="secondary"
+                          leading="normal"
+                          className="project-notification-summary"
+                        >
+                          <MiddleTruncate>{project.detail}</MiddleTruncate>
+                        </Text>
+                        <div className="project-notification-category-grid">
+                          {muted ? (
+                            <Text
+                              as="p"
+                              size="caption"
+                              tone="secondary"
+                              leading="inherit"
+                              id={muteHintId}
+                              role="status"
+                              className="project-notification-mute-hint"
+                            >
+                              {t(
+                                "Your category choices apply when notifications resume. You can edit them while muted.",
+                              )}
+                            </Text>
+                          ) : null}
+                          {categories.map((category) => (
+                            <Switch
+                              key={category.id}
+                              className="project-notification-category"
+                              labelText={{ size: "secondary", tone: "primary", leading: "inherit" }}
+                              label={t(category.label)}
+                              labelPosition="start"
+                              aria-describedby={muted ? muteHintId : undefined}
+                              checked={!preferences[project.id]?.disabled.includes(category.id)}
+                              disabled={preferencesUnavailable}
+                              onCheckedChange={(checked) =>
+                                setCategory(project.id, category.id, checked)
+                              }
+                            />
+                          ))}
+                        </div>
                       </div>
-                    </div>
                     ) : null}
                   </FieldGroup>
                 );

@@ -11,12 +11,7 @@ import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { CooldownNotice } from "./CooldownNotice";
-import {
-  cooldownMessage,
-  pause,
-  useCooldown,
-  verifyFailureMessage,
-} from "./PasswordPromptDialog";
+import { cooldownMessage, pause, useCooldown, verifyFailureMessage } from "./PasswordPromptDialog";
 
 type Props = {
   /** `set` for the first password, `change` to replace the current one. */

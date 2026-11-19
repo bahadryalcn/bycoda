@@ -4,11 +4,7 @@ import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Surface } from "../../../shared/ui/Surface";
 import { Progress } from "../../../shared/ui/Progress";
 import { candidateKey } from "../import/importModel";
-import type {
-  ImportFailureReason,
-  ImportProgress,
-  ImportSummary,
-} from "../import/importRunner";
+import type { ImportFailureReason, ImportProgress, ImportSummary } from "../import/importRunner";
 
 /** Translated text for an import failure the app raised; provider errors stay raw. */
 export function importFailureMessage(

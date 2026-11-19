@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block, Session } from "../../sessions/model/session";
 import { recordUiLog } from "../../diagnostics";
-import { mirrorAdoptedSessions, type AdoptedEntry, type AdoptedMirrorDeps } from "./adoptedSessions";
+import {
+  mirrorAdoptedSessions,
+  type AdoptedEntry,
+  type AdoptedMirrorDeps,
+} from "./adoptedSessions";
 import { ADOPTED_SYNC_FAILURE_FLAG_AFTER, adoptedSyncFailing } from "./adoptedSyncFailures";
 import type { HostSession } from "./protocol";
 

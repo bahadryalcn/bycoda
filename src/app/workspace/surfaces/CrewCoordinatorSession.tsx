@@ -128,9 +128,7 @@ export function CrewCoordinatorSession({
       <SessionPane
         {...paneProps}
         onStop={(sessionId) => {
-          void stop(sessionId).catch((reason: unknown) =>
-            setError({ reason, action: "stop" }),
-          );
+          void stop(sessionId).catch((reason: unknown) => setError({ reason, action: "stop" }));
         }}
         session={session}
         embedded

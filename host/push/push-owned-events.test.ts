@@ -8,7 +8,14 @@ function recipient(patch: Partial<PushRecipient["events"]>): PushRecipient {
     platform: "android",
     title: "bycoda",
     texts: { finished: "Done", input: "Input", failed: "Failed", assistant: "A", approvals: "B" },
-    events: { finished: false, input: false, failed: false, assistant: true, approvals: true, ...patch },
+    events: {
+      finished: false,
+      input: false,
+      failed: false,
+      assistant: true,
+      approvals: true,
+      ...patch,
+    },
     assistantUrgentDuringQuiet: true,
     deviceHash: "device-a",
   } as PushRecipient;

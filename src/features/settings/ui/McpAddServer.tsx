@@ -120,7 +120,9 @@ export function AddServerModal({
       await onAdded();
       onClose();
     } catch (cause) {
-      setError(written ? t("Server added. Refresh failed. Retry to check status.") : errorText(cause));
+      setError(
+        written ? t("Server added. Refresh failed. Retry to check status.") : errorText(cause),
+      );
     } finally {
       adding.current = false;
       setBusy(false);

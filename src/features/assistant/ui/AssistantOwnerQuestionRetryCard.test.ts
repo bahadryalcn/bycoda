@@ -58,13 +58,17 @@ it("reports a failed retry distinctly while keeping the unanswered presentation 
     ),
   );
   const retry = () =>
-    [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Retry"));
+    [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Retry"),
+    );
   expect(container.textContent).toContain("Saving this question is unconfirmed");
 
   await act(async () => retry()?.click());
 
   expect(request).toHaveBeenCalledTimes(1);
-  expect(container.textContent).toContain("Still unconfirmed after retry. Check the Host connection.");
+  expect(container.textContent).toContain(
+    "Still unconfirmed after retry. Check the Host connection.",
+  );
   expect(container.textContent).not.toContain("Saving this question is unconfirmed");
   expect(container.textContent).toContain("Which result?");
   expect(pendingOwnerQuestionPresentations(localStorage, "host")).toHaveLength(1);

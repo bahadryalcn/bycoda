@@ -5,12 +5,7 @@ import {
   type SocialSendResult,
 } from "../../src/integrations/social/adapter";
 import type { BrowserRecipeContext, BrowserPollResult } from "./social-browser-recipe";
-import {
-  COMMENT_SUBMIT_LABELS,
-  NEXT_LABELS,
-  SEND_LABELS,
-  SHARE_LABELS,
-} from "./browser/ui-labels";
+import { COMMENT_SUBMIT_LABELS, NEXT_LABELS, SEND_LABELS, SHARE_LABELS } from "./browser/ui-labels";
 import {
   numeric,
   object,
@@ -253,11 +248,7 @@ export async function instagramPublish(context: BrowserRecipeContext, job: Socia
   );
   if (!phase) throw new SocialPlatformError("unsupported");
   if (!phase.caption && phase.filters)
-    await click(
-      context,
-      '[role="dialog"] button,[role="dialog"] [role="button"]',
-      NEXT_LABELS,
-    );
+    await click(context, '[role="dialog"] button,[role="dialog"] [role="button"]', NEXT_LABELS);
   else if (!phase.caption) throw new SocialPlatformError("unsupported");
   const editor = await mark(
     context,

@@ -438,7 +438,11 @@ it("keeps the loaded messages and offers a retry when an older page fails", asyn
           events: [timelineEvent("x2", 2000, "Recent reply")],
         };
       if (failing) throw new Error("offline");
-      return { personId: "pe1", truncated: false, events: [timelineEvent("x1", 1000, "Older email")] };
+      return {
+        personId: "pe1",
+        truncated: false,
+        events: [timelineEvent("x1", 1000, "Older email")],
+      };
     },
   });
   await mount(fake.client, { threadId: "t1", item: item({ person: { id: "pe1", name: "Ana" } }) });

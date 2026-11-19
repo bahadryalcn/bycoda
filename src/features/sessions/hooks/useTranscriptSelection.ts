@@ -6,11 +6,7 @@ import {
   type TranscriptSelection,
   type TranscriptSelectionSource,
 } from "../model/transcriptSelection";
-import {
-  firstRangeRect,
-  isRectVisible,
-  type SelectionGeometry,
-} from "../model/selectionGeometry";
+import { firstRangeRect, isRectVisible, type SelectionGeometry } from "../model/selectionGeometry";
 
 function responseIdForNode(node: Node | null, root: HTMLElement): string | null {
   const element = node instanceof Element ? node : node?.parentElement;

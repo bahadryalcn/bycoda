@@ -1,9 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  JsonValueSchema,
-  WS_LIMITS,
-  type JsonValue,
-} from "../../src/shared/model/host-contracts";
+import { JsonValueSchema, WS_LIMITS, type JsonValue } from "../../src/shared/model/host-contracts";
 import { normalizeJsonWire, readNormalizedJsonWire } from "../transport/normalized-wire";
 import {
   HostBulkTransfers,

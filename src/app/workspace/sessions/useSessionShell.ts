@@ -45,11 +45,7 @@ export function useSessionShell({ removingSessionIds, getSubmitSessionRef }: Ses
             t("This conversation is still loading. Send again in a moment."),
           );
           void flushHostSessionBindings().catch((error: unknown) => {
-            showSubmitNotice(
-              sessionId,
-              errorText(error),
-              "error",
-            );
+            showSubmitNotice(sessionId, errorText(error), "error");
           });
           return false;
         }

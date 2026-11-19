@@ -455,9 +455,7 @@ it.each(["/repo", tree.path])(
     expect(
       document.querySelector('[role="option"][aria-selected="true"]')?.hasAttribute("data-active"),
     ).toBe(true);
-    const search = document.querySelector<HTMLInputElement>(
-      '[aria-label="Search worktrees"]',
-    )!;
+    const search = document.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
     await act(async () =>
       search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
     );
@@ -1183,7 +1181,9 @@ it("keeps a Reveal failure on its worktree row with a local retry", async () => 
   // The failure is not hoisted into a page-level error above the collection.
   expect([...container.querySelectorAll('[role="alert"]')]).toHaveLength(1);
   await act(async () =>
-    [...failure.querySelectorAll("button")].find((node) => node.textContent === "Try again")!.click(),
+    [...failure.querySelectorAll("button")]
+      .find((node) => node.textContent === "Try again")!
+      .click(),
   );
   expect(revealPath).toHaveBeenCalledTimes(2);
   expect(row.querySelector('[role="alert"]')).toBeNull();

@@ -538,11 +538,7 @@ export function socialClient(machineId: string) {
           const bytes = new Uint8Array(
             await file.slice(offset, offset + 1024 * 1024).arrayBuffer(),
           );
-          const acknowledged = await sendChunk(
-            offset,
-            bytesToBase64(bytes),
-            offset + bytes.length,
-          );
+          const acknowledged = await sendChunk(offset, bytesToBase64(bytes), offset + bytes.length);
           if (acknowledged !== offset + bytes.length)
             throw new Error(t("Video upload order could not be verified."));
           progress?.(Math.round(((offset + bytes.length) / file.size) * 100));

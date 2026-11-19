@@ -119,10 +119,7 @@ export function SessionRecoveryPanel({
           results.set(id, await getSession(id));
         } catch (cause) {
           results.set(id, "error");
-          if (!cancelled)
-            setReadErrors((previous) =>
-              new Map(previous).set(id, errorText(cause)),
-            );
+          if (!cancelled) setReadErrors((previous) => new Map(previous).set(id, errorText(cause)));
         }
       }
     };
@@ -310,9 +307,7 @@ export function SessionRecoveryPanel({
       kind: "item",
       id: "clear-all",
       label: t("Clear recovery list ({p0})", { p0: rows.length }),
-      description: t(
-        "Removes every entry, including those not shown. Session history is kept.",
-      ),
+      description: t("Removes every entry, including those not shown. Session history is kept."),
       danger: true,
       disabled: rows.length === 0,
     },

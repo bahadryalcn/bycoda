@@ -62,7 +62,9 @@ function Probe({ id }: { id: string }) {
 }
 function render(id: string) {
   return act(async () => {
-    root.render(createElement(QueryClientProvider, { client: cache }, createElement(Probe, { id })));
+    root.render(
+      createElement(QueryClientProvider, { client: cache }, createElement(Probe, { id })),
+    );
   });
 }
 function advance(ms: number) {

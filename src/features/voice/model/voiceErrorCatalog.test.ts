@@ -30,7 +30,8 @@ it.each([["./realtimeVoice.ts"], ["./localVoice.ts"]])(
         const text = entries[message];
         if (typeof text !== "string" || !text.trim()) missing.push(`${locale}: ${message}`);
         // English is the source text; every other locale must actually translate it.
-        else if (locale !== "en" && text === message) missing.push(`${locale}: untranslated ${message}`);
+        else if (locale !== "en" && text === message)
+          missing.push(`${locale}: untranslated ${message}`);
       }
     }
     expect(missing).toEqual([]);

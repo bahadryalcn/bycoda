@@ -35,7 +35,9 @@ async function setup(settings: Record<string, unknown> = {}) {
   /** Tests replace `send` to simulate Expo failing; `sessions` feeds conversation events. */
   const control = {
     sessions: [] as HostSessionSummary[],
-    send: undefined as undefined | ((messages: readonly ExpoPushMessage[]) => Promise<ExpoPushResult>),
+    send: undefined as
+      | undefined
+      | ((messages: readonly ExpoPushMessage[]) => Promise<ExpoPushResult>),
   };
   const service = new PushNotifications({
     store,

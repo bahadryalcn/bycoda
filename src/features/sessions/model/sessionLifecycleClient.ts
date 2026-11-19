@@ -68,7 +68,9 @@ function sameView(a: SessionLifecycleView, b: SessionLifecycleView): boolean {
 }
 
 function sameAutoSettle(a: AutoSettleSettings | undefined, b: AutoSettleSettings): boolean {
-  return a !== undefined && a.afterDays === b.afterDays && a.archiveAfterDays === b.archiveAfterDays;
+  return (
+    a !== undefined && a.afterDays === b.afterDays && a.archiveAfterDays === b.archiveAfterDays
+  );
 }
 
 /** Repeated records keep the stored object, so their subscribers and the snapshot stay unchanged. */
@@ -85,7 +87,11 @@ export function setSessionLifecycle(view: SessionLifecycleView): void {
 export function setSessionLifecycleList(list: SessionLifecycleList): void {
   const views = new Map<string, SessionLifecycleView>();
   for (const [id, view] of snapshot.views) {
-    const active: SessionLifecycleView = { sessionId: id, state: "active", participants: view.participants };
+    const active: SessionLifecycleView = {
+      sessionId: id,
+      state: "active",
+      participants: view.participants,
+    };
     views.set(id, sameView(view, active) ? view : active);
   }
   for (const record of list.records) {

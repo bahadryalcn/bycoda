@@ -35,8 +35,7 @@ export function createTailnetServeHosts(read: () => Promise<MobileAccessStatus>)
     if (status.state === "ready") {
       const host = tailnetServeHost(status);
       hosts = host ? [host] : [];
-    } else if (status.state === "setup-required" || status.state === "install-required")
-      hosts = [];
+    } else if (status.state === "setup-required" || status.state === "install-required") hosts = [];
   };
   const refresh = () => {
     if (pending) {

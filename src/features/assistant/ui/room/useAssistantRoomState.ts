@@ -94,8 +94,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
           }
         },
         (cause: unknown) => {
-          if (epoch === projectReadEpoch.current)
-            setProjectReadError(errorText(cause));
+          if (epoch === projectReadEpoch.current) setProjectReadError(errorText(cause));
         },
       );
   }

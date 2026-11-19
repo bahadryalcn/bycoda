@@ -32,8 +32,12 @@ it.each(PAUSED_LOOPS)("$path pauses its decorative loop for window blur", ({ pat
 
 it("keeps the reduced-motion and decorative-off stops that the pause rules sit beside", () => {
   const voice = readFileSync("src/features/voice/ui/VoiceCompanion.module.css", "utf8");
-  expect(voice).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.launcherAvatar \.launcherDot\s*\{\s*animation: none;/);
+  expect(voice).toMatch(
+    /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.launcherAvatar \.launcherDot\s*\{\s*animation: none;/,
+  );
 
   const chart = readFileSync("src/shared/ui/arc/line-chart/line-chart.module.css", "utf8");
-  expect(chart).toMatch(/html\[data-decorative-motion="off"\]\) \.chart\[data-loading\] \.series,\s*:global\(html\[data-decorative-motion="off"\]\) \.skeleton\s*\{\s*animation: none;/);
+  expect(chart).toMatch(
+    /html\[data-decorative-motion="off"\]\) \.chart\[data-loading\] \.series,\s*:global\(html\[data-decorative-motion="off"\]\) \.skeleton\s*\{\s*animation: none;/,
+  );
 });

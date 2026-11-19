@@ -178,7 +178,9 @@ it("lists blocking limits as short bullets in the budget help popover", async ()
     await act(async () => help.click());
     const bullets = Array.from(document.querySelectorAll("li"), (item) => item.textContent);
     expect(bullets).toContain("Running turns can exceed a budget.");
-    expect(bullets).toContain("Missing or stale data blocks new turns only when blocking is enabled.");
+    expect(bullets).toContain(
+      "Missing or stale data blocks new turns only when blocking is enabled.",
+    );
     expect(document.body.textContent).not.toContain("Token budgets include input");
   } finally {
     await act(async () => root.unmount());

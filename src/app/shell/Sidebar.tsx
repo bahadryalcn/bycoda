@@ -886,10 +886,9 @@ function SidebarComponent({
         {/* The count alone is not announced with its meaning; the live region carries the localized total. */}
         <LiveText
           className="sr-only"
-          text={t(
-            workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions",
-            { p0: workingSessionCount },
-          )}
+          text={t(workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions", {
+            p0: workingSessionCount,
+          })}
         />
       </>
     ) : null;
@@ -6445,52 +6444,52 @@ const SessionCard = memo(function SessionCard({
       {orchestration
         ? orchestrationHover.card(
             <>
-          <div className="flex items-center justify-between gap-3">
-            <Text as="span" weight="medium" tone="primary">
-              {t("Subagents")}
-            </Text>
-            <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
-              {t("{p0} done", { p0: `${orchestrationDone}/${orchestration.tasks.length}` })}
-            </Text>
-          </div>
-          <div className="mt-1.5 flex flex-col gap-0.5">
-            {orchestration.tasks.map((task) => {
-              const labelCode = orchestrationTaskLabelCode(task, orchestration);
-              const label = orchestrationTaskLabelText(labelCode);
-              return (
-                <div
-                  key={task.sessionId}
-                  {...surfaceAttributes(
-                    { radius: "row" },
-                    "flex min-w-0 items-center gap-1.5 px-1 py-1",
-                  )}
-                >
-                  <HarnessIcon harness={task.harness} className="icon-sm shrink-0 opacity-75" />
-                  <Text as="span" truncate className="min-w-0 flex-1">
-                    {task.title}
-                  </Text>
-                  <Text
-                    size="caption"
-                    tone={
-                      task.needsInput ||
-                      task.status === "failed" ||
-                      task.status === "blocked" ||
-                      task.status === "interrupted"
-                        ? "warning"
-                        : labelCode === "working"
-                          ? "accent"
-                          : task.status === "completed"
-                            ? "success"
-                            : "secondary"
-                    }
-                    className="shrink-0"
-                  >
-                    {label}
-                  </Text>
-                </div>
-              );
-            })}
-          </div>
+              <div className="flex items-center justify-between gap-3">
+                <Text as="span" weight="medium" tone="primary">
+                  {t("Subagents")}
+                </Text>
+                <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
+                  {t("{p0} done", { p0: `${orchestrationDone}/${orchestration.tasks.length}` })}
+                </Text>
+              </div>
+              <div className="mt-1.5 flex flex-col gap-0.5">
+                {orchestration.tasks.map((task) => {
+                  const labelCode = orchestrationTaskLabelCode(task, orchestration);
+                  const label = orchestrationTaskLabelText(labelCode);
+                  return (
+                    <div
+                      key={task.sessionId}
+                      {...surfaceAttributes(
+                        { radius: "row" },
+                        "flex min-w-0 items-center gap-1.5 px-1 py-1",
+                      )}
+                    >
+                      <HarnessIcon harness={task.harness} className="icon-sm shrink-0 opacity-75" />
+                      <Text as="span" truncate className="min-w-0 flex-1">
+                        {task.title}
+                      </Text>
+                      <Text
+                        size="caption"
+                        tone={
+                          task.needsInput ||
+                          task.status === "failed" ||
+                          task.status === "blocked" ||
+                          task.status === "interrupted"
+                            ? "warning"
+                            : labelCode === "working"
+                              ? "accent"
+                              : task.status === "completed"
+                                ? "success"
+                                : "secondary"
+                        }
+                        className="shrink-0"
+                      >
+                        {label}
+                      </Text>
+                    </div>
+                  );
+                })}
+              </div>
             </>,
           )
         : null}

@@ -97,7 +97,9 @@ it("serializes state only while detached, then sends the initial sync and later 
   );
   expect(serialized).not.toHaveBeenCalled();
   expect(mocks.emit).not.toHaveBeenCalled();
-  await act(async () => root.render(createElement(Mirror, { detached: true, state: state("two") })));
+  await act(async () =>
+    root.render(createElement(Mirror, { detached: true, state: state("two") })),
+  );
   await act(async () => {});
   expect(serialized).toHaveBeenCalled();
   expect(mocks.emit).toHaveBeenCalledWith("voice_overlay_state", expect.anything());

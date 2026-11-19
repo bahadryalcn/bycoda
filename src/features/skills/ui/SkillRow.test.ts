@@ -46,7 +46,13 @@ function renderRow(state: { modified?: boolean; off?: boolean }) {
         nameRef: () => {},
         onOpen: () => {},
         onActions: () => {},
-        copy: { transferable: false, blocked: null, loading: false, disabled: false, onCopy: () => {} },
+        copy: {
+          transferable: false,
+          blocked: null,
+          loading: false,
+          disabled: false,
+          onCopy: () => {},
+        },
       }),
     );
   });

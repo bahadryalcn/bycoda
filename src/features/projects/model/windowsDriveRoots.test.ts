@@ -73,9 +73,7 @@ describe("probeWindowsDriveRoots", () => {
   it("rejects when the OS drive enumeration itself fails", async () => {
     fs.listWindowsDrives.mockRejectedValue(new Error("enumeration failed"));
 
-    await expect(probeWindowsDriveRoots(() => true, vi.fn())).rejects.toThrow(
-      "enumeration failed",
-    );
+    await expect(probeWindowsDriveRoots(() => true, vi.fn())).rejects.toThrow("enumeration failed");
     expect(fs.statFiles).not.toHaveBeenCalled();
   });
 });

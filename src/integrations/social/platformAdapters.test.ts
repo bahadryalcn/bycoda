@@ -941,23 +941,28 @@ describe("Published-ID list in adapter polls", () => {
     for (const platform of ["facebook", "instagram", "linkedin"] as const)
       expect(adapters[platform].ownedPostPages).toBe(true);
   });
-  it.each(ignoring)("%s polls identically whether or not published IDs are passed", async (platform) => {
-    const run = async (posts: string[]) => {
-      const fetcher = vi.fn(async () => Response.json({ ok: true, result: [], data: [] }));
-      const acct = {
-        ...account(platform),
-        scopes: ["tweet.read", "users.read", "dm.read", "mentions", "messages", "comments"],
+  it.each(ignoring)(
+    "%s polls identically whether or not published IDs are passed",
+    async (platform) => {
+      const run = async (posts: string[]) => {
+        const fetcher = vi.fn(async () => Response.json({ ok: true, result: [], data: [] }));
+        const acct = {
+          ...account(platform),
+          scopes: ["tweet.read", "users.read", "dm.read", "mentions", "messages", "comments"],
+        };
+        const adapter = createSocialAdapters(new SocialHttp(fetcher))[platform];
+        const outcome = await adapter.poll(acct, "123:synthetic", posts, "7").then(
+          (value) => ({ value }),
+          (error: unknown) => ({
+            error: error instanceof SocialPlatformError ? error.code : "other",
+          }),
+        );
+        return {
+          outcome,
+          requests: fetcher.mock.calls.map((call) => String((call as unknown[])[0])),
+        };
       };
-      const adapter = createSocialAdapters(new SocialHttp(fetcher))[platform];
-      const outcome = await adapter.poll(acct, "123:synthetic", posts, "7").then(
-        (value) => ({ value }),
-        (error: unknown) => ({ error: error instanceof SocialPlatformError ? error.code : "other" }),
-      );
-      return {
-        outcome,
-        requests: fetcher.mock.calls.map((call) => String((call as unknown[])[0])),
-      };
-    };
-    expect(await run(["post-1", "post-2"])).toEqual(await run([]));
-  });
+      expect(await run(["post-1", "post-2"])).toEqual(await run([]));
+    },
+  );
 });

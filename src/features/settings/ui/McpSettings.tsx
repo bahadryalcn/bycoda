@@ -53,12 +53,7 @@ import {
   type McpSettingsSnapshot,
 } from "../model/mcpSettingsCache";
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
-import {
-  AddServerModal,
-  PROVIDERS,
-  scopeDescription,
-  type Provider,
-} from "./McpAddServer";
+import { AddServerModal, PROVIDERS, scopeDescription, type Provider } from "./McpAddServer";
 import {
   McpServerDetail,
   sourceLabel,
@@ -590,7 +585,9 @@ function McpConnections({
           label={t("Start MCP servers")}
           info={
             <InfoPopover className="shrink-0">
-              <p>{t("When needed: a server starts the first time a session uses one of its tools.")}</p>
+              <p>
+                {t("When needed: a server starts the first time a session uses one of its tools.")}
+              </p>
               <p>{t("With every session: all servers start when a session opens.")}</p>
               <p>{t("Open a server to start just that one with every session.")}</p>
             </InfoPopover>

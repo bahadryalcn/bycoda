@@ -10,7 +10,16 @@ import zhCN from "./locales/zh-CN.json";
 
 // Regression for #303: label/value strings use "Label: {p0}" and index labels
 // use their own key, and every slot starts at {p0} in every locale.
-const locales: Record<string, Record<string, string>> = { de, en, es, fr, ja, pt, tr, "zh-CN": zhCN };
+const locales: Record<string, Record<string, string>> = {
+  de,
+  en,
+  es,
+  fr,
+  ja,
+  pt,
+  tr,
+  "zh-CN": zhCN,
+};
 
 const labelValueKeys = ["Last activity: {p0}", "Model: {p0}", "Checking Host {p0}…"];
 const indexLabelKeys = ["Job {p0}", "Position {p0}"];
@@ -23,13 +32,16 @@ const retiredKeys = [
 ];
 
 describe("label/value and index placeholder strings", () => {
-  it.each(Object.entries(locales))("%s has the standardized keys with a {p0} slot", (_, catalog) => {
-    for (const key of [...labelValueKeys, ...indexLabelKeys]) {
-      expect(catalog[key], key).toBeTypeOf("string");
-      expect(catalog[key], key).toContain("{p0}");
-      expect(catalog[key], key).not.toContain("{p1}");
-    }
-  });
+  it.each(Object.entries(locales))(
+    "%s has the standardized keys with a {p0} slot",
+    (_, catalog) => {
+      for (const key of [...labelValueKeys, ...indexLabelKeys]) {
+        expect(catalog[key], key).toBeTypeOf("string");
+        expect(catalog[key], key).toContain("{p0}");
+        expect(catalog[key], key).not.toContain("{p1}");
+      }
+    },
+  );
 
   it.each(Object.entries(locales))("%s no longer has the retired variants", (_, catalog) => {
     for (const key of retiredKeys) {

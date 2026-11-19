@@ -265,7 +265,15 @@ async function renderTrend(onSelect: (window: { start: number; end: number }) =>
     host.remove();
   };
   const series = [
-    { ...zeroUsage(), cost: 12, key: "codex", label: "codex", unpricedTokens: 0, logSamples: 1, timedSamples: 0 },
+    {
+      ...zeroUsage(),
+      cost: 12,
+      key: "codex",
+      label: "codex",
+      unpricedTokens: 0,
+      logSamples: 1,
+      timedSamples: 0,
+    },
   ];
   await act(async () =>
     root.render(

@@ -598,7 +598,9 @@ export function useSharedLocalQueues(
           return "failed";
         }
         console.warn(error.message);
-        entry.client.noteStalled("The Host did not answer in time. The queue waits for its answer.");
+        entry.client.noteStalled(
+          "The Host did not answer in time. The queue waits for its answer.",
+        );
         const late: Promise<void> = work
           .catch(() => {})
           .then(() => {

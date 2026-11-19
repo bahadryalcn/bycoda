@@ -93,9 +93,9 @@ describe("decision model local install contract", () => {
       error: "No space.",
     });
     expect(DecisionInstallStateSchema.safeParse({ state: "paused" }).success).toBe(false);
-    expect(
-      DecisionInstallStateSchema.safeParse({ state: "idle", path: "C:/models" }).success,
-    ).toBe(false);
+    expect(DecisionInstallStateSchema.safeParse({ state: "idle", path: "C:/models" }).success).toBe(
+      false,
+    );
   });
 
   it("binds the local.install RPC to that schema", () => {

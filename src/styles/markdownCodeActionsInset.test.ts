@@ -41,9 +41,9 @@ describe("code block header action inset", () => {
     expect(declarations(".agent-markdown .markdown-code-shell")[0]).toContain(
       "--markdown-code-actions-end: 68px;",
     );
-    expect(declarations(".agent-markdown .markdown-code-shell:has(.markdown-code-run)")[0]).toContain(
-      "--markdown-code-actions-end: 96px;",
-    );
+    expect(
+      declarations(".agent-markdown .markdown-code-shell:has(.markdown-code-run)")[0],
+    ).toContain("--markdown-code-actions-end: 96px;");
     // The coarse-pointer block indents its rules, so match without the line-start anchor.
     expect(css).toMatch(
       /html \.agent-markdown \.markdown-code-shell \{\s*--markdown-code-actions-end: 96px;/,
@@ -58,7 +58,9 @@ describe("code block header action inset", () => {
       "inset: 0 var(--markdown-code-actions-end) 0 10px;",
     );
     expect(
-      declarations('.agent-markdown .markdown-code-resizable [data-streamdown="code-block-header"]')[0],
+      declarations(
+        '.agent-markdown .markdown-code-resizable [data-streamdown="code-block-header"]',
+      )[0],
     ).toContain("padding-inline-end: var(--markdown-code-actions-end);");
   });
 });

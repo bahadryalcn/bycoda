@@ -21,9 +21,12 @@ it("refuses an oversized remote image from its metadata before any bytes are rea
     "Document image exceeds 20 MB",
   );
   expect(remote).toHaveBeenCalledTimes(1);
-  expect(remote).toHaveBeenCalledWith("read_file_info", expect.objectContaining({
-    path: expect.stringMatching(/hero\.png$/),
-  }));
+  expect(remote).toHaveBeenCalledWith(
+    "read_file_info",
+    expect.objectContaining({
+      path: expect.stringMatching(/hero\.png$/),
+    }),
+  );
   expect(remote).not.toHaveBeenCalledWith("read_binary_file", expect.anything());
 });
 
@@ -37,9 +40,7 @@ it("rejects a remote image whose size is unknown instead of reading it unbounded
 });
 
 it("reads a remote image at exactly the cap and decodes its base64 reply", async () => {
-  remote
-    .mockResolvedValueOnce({ size: MAX, version: "v1" })
-    .mockResolvedValueOnce("AQID");
+  remote.mockResolvedValueOnce({ size: MAX, version: "v1" }).mockResolvedValueOnce("AQID");
   const bytes = await readProjectImage(root, "a.png");
   expect(Array.from(bytes)).toEqual([1, 2, 3]);
   expect(remote).toHaveBeenNthCalledWith(2, "read_binary_file", expect.anything());

@@ -153,7 +153,11 @@ it("keeps each failure's own reason on the account it belongs to when old usage 
   await loadRateLimits("claude", "account-work");
   fetchClaude.mockResolvedValueOnce(errorRateLimits("claude", "Fake text", null, "signedOut"));
   const signedOut = await loadRateLimits("claude", "account-work", true);
-  expect(signedOut).toMatchObject({ status: "error", reason: "signedOut", session: { usedPercent: 40 } });
+  expect(signedOut).toMatchObject({
+    status: "error",
+    reason: "signedOut",
+    session: { usedPercent: 40 },
+  });
   expect(getCachedRateLimits("claude", "account-personal").reason).toBeUndefined();
   // A later unclassified failure never inherits the old cause.
   fetchClaude.mockResolvedValueOnce(rateLimited());

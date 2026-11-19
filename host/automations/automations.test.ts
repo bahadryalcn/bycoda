@@ -1159,9 +1159,7 @@ describe("automation scheduler scans", () => {
       .prepare("UPDATE automations SET value=json_remove(value, '$.nextRunAt') WHERE id=?")
       .run("legacy");
     const dueIds = (now: number) =>
-      (
-        f.automations as unknown as { dueCandidates(now: number): Promise<Array<{ id: string }>> }
-      )
+      (f.automations as unknown as { dueCandidates(now: number): Promise<Array<{ id: string }>> })
         .dueCandidates(now)
         .then((rows) => rows.map((row) => row.id));
     expect(await dueIds(f.clock.now)).toEqual(["legacy"]);
@@ -1176,7 +1174,12 @@ describe("automation scheduler scans", () => {
     const insert = (id: string, value: Record<string, unknown>) =>
       f.store.db
         .prepare("INSERT INTO automation_runs VALUES (?,?,?,?)")
-        .run(id, "nightly", 1, JSON.stringify({ id, automationId: "nightly", createdAt: 1, ...value }));
+        .run(
+          id,
+          "nightly",
+          1,
+          JSON.stringify({ id, automationId: "nightly", createdAt: 1, ...value }),
+        );
     await insert("running", { status: "running" });
     await insert("done", { status: "completed" });
     await insert("cleanup", { status: "failed", cleanupPending: true });

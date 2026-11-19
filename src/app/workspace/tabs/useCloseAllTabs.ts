@@ -92,7 +92,9 @@ export function useCloseAllTabs({
     const unsavedOf = (files: FilePaneTab[]) =>
       files.filter(
         (file) =>
-          isFilesystemTab(file) && dirtyFilesRef.current.has(file.id) && !approvedDirty.has(file.id),
+          isFilesystemTab(file) &&
+          dirtyFilesRef.current.has(file.id) &&
+          !approvedDirty.has(file.id),
       );
     const terminalsOf = (files: FilePaneTab[]) =>
       files.filter((file) => file.terminal && !approvedTerminals.has(file.id));

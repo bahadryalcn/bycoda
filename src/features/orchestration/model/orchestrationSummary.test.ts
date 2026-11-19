@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  orchestrationTaskLabelCode,
-  type OrchestrationSummary,
-} from "./orchestrationSummary";
+import { orchestrationTaskLabelCode, type OrchestrationSummary } from "./orchestrationSummary";
 
 type Task = OrchestrationSummary["tasks"][number];
 

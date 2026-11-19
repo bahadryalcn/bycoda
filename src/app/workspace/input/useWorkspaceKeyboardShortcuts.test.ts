@@ -167,7 +167,11 @@ it.each(["w", "d", "t", "n", "b", "p", "o", "j", "k"])(
       "onOpenSearch",
     ])
       actions[name] = vi.fn();
-    const event = pressInTerminal({ key: letter, code: `Key${letter.toUpperCase()}`, ctrlKey: true });
+    const event = pressInTerminal({
+      key: letter,
+      code: `Key${letter.toUpperCase()}`,
+      ctrlKey: true,
+    });
     expect(event.defaultPrevented).toBe(false);
     for (const action of Object.values(actions)) expect(action).not.toHaveBeenCalled();
   },
@@ -250,8 +254,7 @@ it.each([
   expect(press(init).defaultPrevented).toBe(true);
   expect(actions[handler]).toHaveBeenCalledOnce();
   // Auto-repeat keeps the browser/native default suppressed but never re-runs it.
-  for (let i = 0; i < 5; i++)
-    expect(press({ ...init, repeat: true }).defaultPrevented).toBe(true);
+  for (let i = 0; i < 5; i++) expect(press({ ...init, repeat: true }).defaultPrevented).toBe(true);
   expect(actions[handler]).toHaveBeenCalledOnce();
 });
 
@@ -349,7 +352,9 @@ it("reaches an approval popup from inside a Modal without deciding it or closing
   expect(decide).not.toHaveBeenCalled();
   expect(region.closest("[inert]")).toBeNull();
   // Escape hands focus back to the dialog's field without closing the dialog.
-  open.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  open.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+  );
   expect(document.activeElement).toBe(field);
   expect(close).not.toHaveBeenCalled();
   // A disabled chord does nothing.

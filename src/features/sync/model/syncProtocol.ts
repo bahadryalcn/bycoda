@@ -107,7 +107,10 @@ export function syncPushBatches(ops: readonly SyncOp[]): {
       invalid.push(op);
       continue;
     }
-    if (batch.length && (bytes + size > SYNC_PUSH_BATCH_BYTES || batch.length >= SYNC_PUSH_MAX_OPS)) {
+    if (
+      batch.length &&
+      (bytes + size > SYNC_PUSH_BATCH_BYTES || batch.length >= SYNC_PUSH_MAX_OPS)
+    ) {
       batches.push(batch);
       batch = [];
       bytes = 256;

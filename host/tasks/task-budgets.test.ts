@@ -737,9 +737,9 @@ describe("bounded ledger lookups with sealed runs", () => {
     await s.store.deleteSession("session");
     s.clock.now += 1000;
     expect(stable(await s.budgets.read({ goalId: "goal" }))).toEqual(before.goal);
-    expect(
-      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 0.5 })).blocked,
-    ).toBe(true);
+    expect((await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 0.5 })).blocked).toBe(
+      true,
+    );
   });
 
   it("never seals an active debit or a run still awaiting its finish checkpoint", async () => {

@@ -122,8 +122,7 @@ it("builds no search index until a query settles and keeps the search input elem
   const data = { hidden };
   const render = (query: string) =>
     act(async () => root.render(createElement(JsonViewer, { data, query, defaultExpandDepth: 0 })));
-  const input = () =>
-    container.querySelector<HTMLInputElement>('input[aria-label="Search JSON"]')!;
+  const input = () => container.querySelector<HTMLInputElement>('input[aria-label="Search JSON"]')!;
   await render("");
   const field = input();
   // A collapsed branch is never read while nobody searches.

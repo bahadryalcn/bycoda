@@ -14,9 +14,9 @@ it("ends live view at once for failures a retry cannot fix", () => {
     "Machine connection is disabled",
   ])
     expect(isFatalStreamFailure(new Error(message)), message).toBe(true);
-  expect(isFatalStreamFailure(Object.assign(new Error("closed"), { code: "RPC_WS_IDENTITY" }))).toBe(
-    true,
-  );
+  expect(
+    isFatalStreamFailure(Object.assign(new Error("closed"), { code: "RPC_WS_IDENTITY" })),
+  ).toBe(true);
   expect(isFatalStreamFailure("DEVICE_AUTHORITY_REVOKED")).toBe(true);
 });
 

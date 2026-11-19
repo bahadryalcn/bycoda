@@ -335,9 +335,9 @@ describe("local model installation", () => {
   it("refuses to start without confirmation or for an unverified model", async () => {
     const download = downloadingWith(MODEL_BYTES);
     const installer = makeInstaller({ catalog: catalogWith({}), download });
-    await expect(
-      installer.startInstall({ modelId: "test-model", confirm: "yes" }),
-    ).rejects.toThrow("explicit confirmation");
+    await expect(installer.startInstall({ modelId: "test-model", confirm: "yes" })).rejects.toThrow(
+      "explicit confirmation",
+    );
     const unverified = makeInstaller({ catalog: catalogWith({ verified: false }), download });
     await expect(
       unverified.startInstall({ modelId: "test-model", confirm: INSTALL_CONFIRMATION }),
@@ -352,7 +352,9 @@ describe("local model installation", () => {
     await hanging.startInstall(input);
     await vi.waitFor(() => expect(hanging.installProgress("test-model")?.bytesDone).toBe(4));
     expect(hanging.cancelInstall("test-model")).toBe(true);
-    await vi.waitFor(() => expect(hanging.installState("test-model")).toEqual({ state: "cancelled" }));
+    await vi.waitFor(() =>
+      expect(hanging.installState("test-model")).toEqual({ state: "cancelled" }),
+    );
 
     const tampered = makeInstaller({
       catalog: catalogWith({}),

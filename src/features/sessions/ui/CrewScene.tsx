@@ -540,7 +540,10 @@ function CrewStage({
           height={CODE_HEIGHT}
           aria-hidden="true"
         />
-        <div className="crew-scene__labels" aria-hidden={variant === "background" ? true : undefined}>
+        <div
+          className="crew-scene__labels"
+          aria-hidden={variant === "background" ? true : undefined}
+        >
           {labels.map((label) => {
             const character = rigged?.character(label.id, label.role);
             const charge = crewCharge(crew[label.id]?.context, rigged ? growthEnabled : true);

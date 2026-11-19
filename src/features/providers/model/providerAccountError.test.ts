@@ -64,7 +64,9 @@ it("keeps the repair step after the original failure when cleanup fails", () => 
   expect(presentProviderAccountError(error, "save").summary).toBe(
     "Claude sign-in timed out. Please try again. Temporary profile cleanup failed; retry before adding another account.",
   );
-  const unknown = new ProviderAccountError("cleanupFailed", "raw", { cause: new Error("Disk locked") });
+  const unknown = new ProviderAccountError("cleanupFailed", "raw", {
+    cause: new Error("Disk locked"),
+  });
   expect(presentProviderAccountError(unknown, "save")).toEqual({
     summary:
       "Could not save this account. Temporary profile cleanup failed; retry before adding another account.",
@@ -82,10 +84,14 @@ it("maps each login code and keeps only redacted provider text as detail", () =>
   expect(shown.detail).not.toContain("SECRET");
   expect(shown.detail).not.toContain("https://");
   expect(
-    presentProviderAccountError(new HarnessLoginError("exited", "codex", "raw", { exitCode: 2 }), "signIn"),
+    presentProviderAccountError(
+      new HarnessLoginError("exited", "codex", "raw", { exitCode: 2 }),
+      "signIn",
+    ),
   ).toEqual({ summary: "Codex sign-in did not finish." });
   expect(
-    presentProviderAccountError(new HarnessLoginError("stopFailed", "codex", "raw"), "signIn").summary,
+    presentProviderAccountError(new HarnessLoginError("stopFailed", "codex", "raw"), "signIn")
+      .summary,
   ).toBe("Could not stop sign-in. Please try again.");
 });
 

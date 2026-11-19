@@ -2023,9 +2023,9 @@ describe("social workspace performance and authorization", () => {
     expect(inWindow.snapshot!.filters!.jobs).toEqual(query.filters.jobs);
     expect(inWindow.snapshot!.related!.campaigns.map((row) => row.id)).toContain(campaign.id);
     // Counts describe the whole scope, not the window.
-    expect(Object.values(inWindow.snapshot!.jobCounts!).reduce((sum, count) => sum + count, 0)).toBe(
-      creationPage.snapshot!.pages!.jobs!.total,
-    );
+    expect(
+      Object.values(inWindow.snapshot!.jobCounts!).reduce((sum, count) => sum + count, 0),
+    ).toBe(creationPage.snapshot!.pages!.jobs!.total);
 
     // A different window is a different cursor, so a cached week is never reused for the next one.
     const next = await s.social.workspaceSnapshot(principal, {

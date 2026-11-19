@@ -35,7 +35,10 @@ it("backs off 250 ms, 500 ms, 1 s, then 2 s", () => {
 });
 
 it("completes once the owner lets go, without waiting past the first free attempt", async () => {
-  mocks.invoke.mockImplementationOnce(held).mockImplementationOnce(held).mockResolvedValue(undefined);
+  mocks.invoke
+    .mockImplementationOnce(held)
+    .mockImplementationOnce(held)
+    .mockResolvedValue(undefined);
   const done = completeNativeSyncCycle("pc", "op-1");
   await vi.advanceTimersByTimeAsync(250 + 500);
   await expect(done).resolves.toBeUndefined();

@@ -131,7 +131,9 @@ export class SessionLifecycleStore implements LifecycleStorePort {
   ): Promise<AutoSettleSettings> {
     const run = this.settingsChain.then(async () => {
       const result = await readStateFile(this.settingsFile, (text) => JSON.parse(text) as unknown);
-      const current = normalizeAutoSettleSettings(result.status === "ok" ? result.value : undefined);
+      const current = normalizeAutoSettleSettings(
+        result.status === "ok" ? result.value : undefined,
+      );
       const next = normalizeAutoSettleSettings(change(current));
       await writeFileAtomic(this.settingsFile, JSON.stringify(next), { mode: 0o600 });
       return next;

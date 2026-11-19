@@ -116,9 +116,9 @@ describe("describeCheckCounts", () => {
     expect(describeCheckCounts(countChecks([]))).toBeNull();
   });
   it("wraps the counts in a finished sentence and stays empty without checks", () => {
-    expect(describeCheckSummary(countChecks([check({ state: "pass" }), check({ state: "fail" })]))).toBe(
-      "1 failed, 1 passed.",
-    );
+    expect(
+      describeCheckSummary(countChecks([check({ state: "pass" }), check({ state: "fail" })])),
+    ).toBe("1 failed, 1 passed.");
     expect(describeCheckSummary(countChecks([]))).toBeNull();
   });
 });

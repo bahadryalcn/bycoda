@@ -39,7 +39,7 @@ async function render() {
 
 it("names each forget button after the note it removes", async () => {
   await render();
-  const names = [...document.querySelectorAll<HTMLButtonElement>('ul[aria-label] button')].map(
+  const names = [...document.querySelectorAll<HTMLButtonElement>("ul[aria-label] button")].map(
     (button) => button.getAttribute("aria-label"),
   );
   expect(names).toEqual(["Forget note: Morning tea", "Forget note: Short answers"]);

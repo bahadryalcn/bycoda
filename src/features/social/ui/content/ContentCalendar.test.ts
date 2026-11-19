@@ -12,7 +12,13 @@ function renderCalendar(view: "week" | "month", anchor: number) {
   const root = createRoot(element);
   act(() =>
     root.render(
-      createElement(ContentCalendar, { view, anchor, entries: [], onOpen: vi.fn(), onPickDay: vi.fn() }),
+      createElement(ContentCalendar, {
+        view,
+        anchor,
+        entries: [],
+        onOpen: vi.fn(),
+        onPickDay: vi.fn(),
+      }),
     ),
   );
   const cleanup = () => {
@@ -37,7 +43,9 @@ it("exposes each day as a list item named by its full date, with no region landm
     expect(items[18]!.querySelector(".sr-only")!.textContent).toContain("13");
     expect(items[17]!.hasAttribute("aria-current")).toBe(false);
     // The "New post" action keeps its date label.
-    expect(items[18]!.querySelector(".content-day-add")!.getAttribute("aria-label")).toContain("13");
+    expect(items[18]!.querySelector(".content-day-add")!.getAttribute("aria-label")).toContain(
+      "13",
+    );
   } finally {
     cleanup();
     vi.useRealTimers();

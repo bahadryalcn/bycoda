@@ -2975,8 +2975,7 @@ export class SocialService implements SocialServiceApi {
       );
       snapshot.pages![collection] = { offset, limit, total };
       if (!sections[section].includes(collection)) continue;
-      const scheduledWindow =
-        collection === "jobs" && filters.jobs?.scheduledFrom !== undefined;
+      const scheduledWindow = collection === "jobs" && filters.jobs?.scheduledFrom !== undefined;
       const order =
         collection === "jobs"
           ? scheduledWindow
@@ -5309,7 +5308,10 @@ export class SocialService implements SocialServiceApi {
           emailSecrets: osSecretValues(this.directory, this.store.environmentId),
         })
           .catch((error) =>
-            console.error("Social outreach tick failed; retrying later:", sanitizeSocialError(error)),
+            console.error(
+              "Social outreach tick failed; retrying later:",
+              sanitizeSocialError(error),
+            ),
           )
           .finally(() => {
             if (this.outreachPending === pending) this.outreachPending = undefined;
@@ -5342,7 +5344,9 @@ export class SocialService implements SocialServiceApi {
           ) {
             this.tickActive = true;
             background.push(
-              this.pollAccount(account.id).catch((error) => this.recordPollFailure(account.id, error)),
+              this.pollAccount(account.id).catch((error) =>
+                this.recordPollFailure(account.id, error),
+              ),
             );
           }
         }

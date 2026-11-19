@@ -4,9 +4,9 @@ import { liveAgentHint } from "./LiveAgentsPreview";
 
 describe("liveAgentHint", () => {
   it("adds nothing for a local row whose title, project and status are already visible", () => {
-    expect(liveAgentHint({ waitReason: "", remote: false, remoteLabel: "On another machine" })).toBe(
-      "",
-    );
+    expect(
+      liveAgentHint({ waitReason: "", remote: false, remoteLabel: "On another machine" }),
+    ).toBe("");
   });
 
   it("uses the translated remote label instead of a hard-coded English marker", () => {

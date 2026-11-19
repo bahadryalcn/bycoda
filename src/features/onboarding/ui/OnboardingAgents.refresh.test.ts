@@ -21,6 +21,8 @@ describe("onboarding agent refresh (#1193)", () => {
   });
 
   it("reports real status read failures instead of dropping them", () => {
-    expect(source).toMatch(/readHarnessAuthStatus\(provider, accountId\)\s*\.then\([\s\S]*?\.catch\(/);
+    expect(source).toMatch(
+      /readHarnessAuthStatus\(provider, accountId\)\s*\.then\([\s\S]*?\.catch\(/,
+    );
   });
 });

@@ -53,7 +53,10 @@ vi.mock("react-joyride", async (importOriginal) => {
             type: "button",
             className: "test-skip",
             onClick: () =>
-              onEvent({ type: actual.EVENTS.STEP_AFTER, action: actual.ACTIONS.CLOSE } as EventData),
+              onEvent({
+                type: actual.EVENTS.STEP_AFTER,
+                action: actual.ACTIONS.CLOSE,
+              } as EventData),
           },
           "skip",
         ),

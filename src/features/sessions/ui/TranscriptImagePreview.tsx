@@ -100,8 +100,7 @@ function TranscriptVideoPreview({
         if (!cancelled) setSource({ path: resolved });
       },
       (reason: unknown) => {
-        if (!cancelled)
-          setSource({ error: errorText(reason) });
+        if (!cancelled) setSource({ error: errorText(reason) });
       },
     );
     return () => {

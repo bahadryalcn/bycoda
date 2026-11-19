@@ -53,7 +53,10 @@ export class GithubRateLimitError extends Error {
 
 function formatMoment(at: number): string {
   const today = new Date().toDateString() === new Date(at).toDateString();
-  return formatDate(at, today ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" });
+  return formatDate(
+    at,
+    today ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" },
+  );
 }
 
 /** The reset time GitHub stated in an error, as epoch milliseconds, or null when it did not. */
@@ -62,14 +65,15 @@ export function githubRateLimitResetAt(message: string, now = Date.now()): numbe
   if (retryAfter) return now + Number(retryAfter[1]) * 1_000;
   const reset = /x-ratelimit-reset:\s*(\d+)/i.exec(message);
   if (reset) return Number(reset[1]) * 1_000;
-  const date = /(?:after|until|at)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})\s*(?:UTC|Z)\b/i.exec(
-    message,
-  );
+  const date =
+    /(?:after|until|at)\s+(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})\s*(?:UTC|Z)\b/i.exec(message);
   if (date) {
     const at = Date.parse(`${date[1]}T${date[2]}Z`);
     if (Number.isFinite(at)) return at;
   }
-  const relative = /(?:try again|retry|wait)\D{0,40}?(\d+)\s*(second|minute|hour)s?\b/i.exec(message);
+  const relative = /(?:try again|retry|wait)\D{0,40}?(\d+)\s*(second|minute|hour)s?\b/i.exec(
+    message,
+  );
   if (relative) {
     return now + Number(relative[1]) * UNIT_MS[relative[2]!.toLowerCase() as keyof typeof UNIT_MS];
   }

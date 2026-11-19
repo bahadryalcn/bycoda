@@ -120,7 +120,12 @@ const STDERR_DETAIL_BYTES = 2048;
 function streamGitInto(cwd: string, args: string[], digest: Hash): Promise<void> {
   const { timeout, env } = options(cwd);
   return new Promise((resolve, reject) => {
-    const child = spawn("git", args, { cwd, windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("git", args, {
+      cwd,
+      windowsHide: true,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     const decoder = new StringDecoder("utf8");
     let stderr = "";
     let timedOut = false;
@@ -137,7 +142,8 @@ function streamGitInto(cwd: string, args: string[], digest: Hash): Promise<void>
     child.stdout.on("data", (chunk: Buffer) => digest.update(decoder.write(chunk)));
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (text: string) => {
-      if (stderr.length < STDERR_DETAIL_BYTES) stderr += text.slice(0, STDERR_DETAIL_BYTES - stderr.length);
+      if (stderr.length < STDERR_DETAIL_BYTES)
+        stderr += text.slice(0, STDERR_DETAIL_BYTES - stderr.length);
     });
     child.once("error", (error) => {
       clearTimeout(timer);
@@ -148,7 +154,8 @@ function streamGitInto(cwd: string, args: string[], digest: Hash): Promise<void>
       if (code === 0 && !timedOut) {
         digest.update(decoder.end());
         resolve();
-      } else fail(timedOut ? `timed out after ${timeout / 1000} seconds` : `exited with code ${code}`);
+      } else
+        fail(timedOut ? `timed out after ${timeout / 1000} seconds` : `exited with code ${code}`);
     });
   });
 }

@@ -252,7 +252,9 @@ describe("e-mail index and membership lookups", () => {
     await audience.addMembers("s-1", ["p-1"], { source: "test", at: 1 });
     await audience.addMembers("s-2", ["p-1", "p-2"], { source: "test", at: 1 });
     await audience.addMembers("s-3", ["p-9"], { source: "test", at: 1 });
-    await store.db.prepare("INSERT INTO social_list_members VALUES (?,?,?,?)").run("d-1", "p-1", 1, "test");
+    await store.db
+      .prepare("INSERT INTO social_list_members VALUES (?,?,?,?)")
+      .run("d-1", "p-1", 1, "test");
     expect(await audience.staticListIdsHolding(["p-1", "p-2"])).toEqual(["s-1", "s-2"]);
     expect(await audience.staticListIdsHolding([])).toEqual([]);
   });

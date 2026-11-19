@@ -288,7 +288,12 @@ export type HostTask = HostTaskInput & {
     feedback: string;
     error: string;
     fingerprint: string;
-    runtimeRetryNotice?: { id: string; kind?: "remaining_finding" | "external_check" | "auto_continued" | "info"; message: string; at: number };
+    runtimeRetryNotice?: {
+      id: string;
+      kind?: "remaining_finding" | "external_check" | "auto_continued" | "info";
+      message: string;
+      at: number;
+    };
     takeover?: boolean;
   };
 

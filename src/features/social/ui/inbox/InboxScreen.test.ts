@@ -185,7 +185,10 @@ it("keeps the accounts read on a tag change but reloads the list and not on wind
   const listReads = fake.of("inbox.unified").length;
   const tagInput = element.querySelector<HTMLInputElement>('input[placeholder="Add tag"]')!;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(tagInput, "lead");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      tagInput,
+      "lead",
+    );
     tagInput.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => {

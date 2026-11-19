@@ -182,7 +182,13 @@ describe("LinkedIn free first-degree conversation initiation", () => {
         click: (el) => {
           if (el.textContent === label) {
             sent = true;
-            f.window.document.body.innerHTML = conversation(messageRow(), "friend", "", true, label);
+            f.window.document.body.innerHTML = conversation(
+              messageRow(),
+              "friend",
+              "",
+              true,
+              label,
+            );
           }
         },
       });
@@ -199,7 +205,8 @@ describe("LinkedIn free first-degree conversation initiation", () => {
     ["two matching send buttons", "Senden|Envoyer"],
   ])("refuses without any click for %s", async (_name, buttons) => {
     const f = fixture(profile(), {
-      render: (url) => (url.includes("/in/") ? profile() : conversation("", "friend", "", false, buttons)),
+      render: (url) =>
+        url.includes("/in/") ? profile() : conversation("", "friend", "", false, buttons),
     });
     await expect(linkedInStartMessage(f.ctx, job())).rejects.toMatchObject({ code: "unsupported" });
     expect(f.ctx.markSubmitted).not.toHaveBeenCalled();

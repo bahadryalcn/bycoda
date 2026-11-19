@@ -25,7 +25,8 @@ export function parseTextSliceRequest(
 ): { offset: number; expected: TextSliceStamp | null } {
   if (!Number.isSafeInteger(offset) || Number(offset) < 0)
     throw new Error("Invalid file slice request");
-  if (expected === undefined || expected === null) return { offset: Number(offset), expected: null };
+  if (expected === undefined || expected === null)
+    return { offset: Number(offset), expected: null };
   const stamp = expected as Partial<TextSliceStamp>;
   if (
     typeof expected !== "object" ||

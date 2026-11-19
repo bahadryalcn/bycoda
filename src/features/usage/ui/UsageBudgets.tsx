@@ -203,9 +203,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
               )}
             </p>
             <ul className="list-disc space-y-1 pl-4">
-              <li>
-                {t("Token budgets count input, output and cache tokens from local records.")}
-              </li>
+              <li>{t("Token budgets count input, output and cache tokens from local records.")}</li>
               <li>
                 {t(
                   "Project and workspace reports use 15-minute buckets, including boundary buckets.",
@@ -217,9 +215,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   "Percentage rules compare the account's weekly or 5-hour usage with your threshold. They do not reserve provider capacity.",
                 )}
               </li>
-              <li>
-                {t("Missing or stale data blocks new turns only when blocking is enabled.")}
-              </li>
+              <li>{t("Missing or stale data blocks new turns only when blocking is enabled.")}</li>
               <li>{t("Running turns can exceed a budget.")}</li>
             </ul>
           </InfoPopover>
@@ -258,9 +254,9 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           key={editor === "new" ? "new" : editor.id}
           budget={editor === "new" ? undefined : editor}
           sessions={sessions.filter((s) => !isProjectLockedIn(lock, s.cwd))}
-          projectPaths={[
-            ...new Set([...catalog.recents, ...sessions.map((s) => s.cwd)]),
-          ].filter((p) => !isProjectLockedIn(lock, p))}
+          projectPaths={[...new Set([...catalog.recents, ...sessions.map((s) => s.cwd)])].filter(
+            (p) => !isProjectLockedIn(lock, p),
+          )}
           groups={catalog.groups.filter((g) => !lock.lockedGroupIds.has(g.id))}
           onCancel={() => {
             setEditor(null);
@@ -314,10 +310,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 </Text>
               </div>
               <div className="flex gap-1">
-                <Button
-                  variant="ghost"
-                  onClick={() => openEditor(budget)}
-                >
+                <Button variant="ghost" onClick={() => openEditor(budget)}>
                   {t("Edit")}
                 </Button>
                 <ConfirmMorph

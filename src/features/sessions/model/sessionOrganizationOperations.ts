@@ -529,9 +529,7 @@ export async function executeOrganizationOperation(
   }
   retainGesture(
     gestureId,
-    result.state === "applied"
-      ? { signature, completed: structuredClone(result) }
-      : { signature },
+    result.state === "applied" ? { signature, completed: structuredClone(result) } : { signature },
   );
   return result;
 }

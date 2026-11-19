@@ -113,10 +113,9 @@ function accountSummary(error: ProviderAccountError, action: ProviderAccountActi
       // The original failure stays visible; the repair step is added after it.
       const inner = presentProviderAccountError(error.cause, action);
       return {
-        summary: t(
-          "{p0} Temporary profile cleanup failed; retry before adding another account.",
-          { p0: inner.summary },
-        ),
+        summary: t("{p0} Temporary profile cleanup failed; retry before adding another account.", {
+          p0: inner.summary,
+        }),
         ...(inner.detail ? { detail: inner.detail } : {}),
       };
     }
@@ -145,10 +144,7 @@ export function presentProviderAccountError(
 }
 
 /** One line for surfaces that hold a single string. */
-export function providerAccountErrorText(
-  error: unknown,
-  action: ProviderAccountAction,
-): string {
+export function providerAccountErrorText(error: unknown, action: ProviderAccountAction): string {
   const { summary, detail } = presentProviderAccountError(error, action);
   return detail ? `${summary} ${detail}` : summary;
 }

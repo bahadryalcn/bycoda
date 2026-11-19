@@ -93,7 +93,14 @@ it("shares one machine read between instances and does not re-render for an unch
   }
   try {
     await act(async () =>
-      root.render(createElement("div", null, createElement(Probe, { index: 0 }), createElement(Probe, { index: 1 }))),
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(Probe, { index: 0 }),
+          createElement(Probe, { index: 1 }),
+        ),
+      ),
     );
     expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
     expect(seen[0].machines).toEqual([machine]);

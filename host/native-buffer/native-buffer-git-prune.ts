@@ -98,8 +98,9 @@ export async function unreferencedSharedKeys(
         }
       } else throw new Skip("unknown manifest version");
     });
-    await visitAll([...templates].map((digest) => `${HISTORY}/templates/${digest}.json`), (value) =>
-      chunkDigests(value).forEach((digest) => chunks.add(digest)),
+    await visitAll(
+      [...templates].map((digest) => `${HISTORY}/templates/${digest}.json`),
+      (value) => chunkDigests(value).forEach((digest) => chunks.add(digest)),
     );
     const shared = base
       ? await git.listFiles(base, [`${HISTORY}/chunks/`, `${HISTORY}/templates/`])

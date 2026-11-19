@@ -18,7 +18,7 @@ export type FoldersDraft = {
   allowChangesWithoutAsking: boolean;
 };
 
-const message = (cause: unknown) => (errorText(cause));
+const message = (cause: unknown) => errorText(cause);
 const fromSaved = (saved: AssistantFoldersResponse): FoldersDraft => ({
   paths: saved.folders.map((folder) => folder.path),
   runWithoutAsking: saved.runWithoutAsking,

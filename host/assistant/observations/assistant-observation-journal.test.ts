@@ -333,8 +333,8 @@ it("indexes the expiry lookup used by retention and keeps retained rows when upg
   await upgraded.ready;
   expect(await plan(expiryLookup, Date.now())).toContain("assistant_observation_expiry");
   expect(
-    (await store.db.prepare("SELECT sequence FROM assistant_observation_events").all()).map(
-      (row) => Number(row.sequence),
+    (await store.db.prepare("SELECT sequence FROM assistant_observation_events").all()).map((row) =>
+      Number(row.sequence),
     ),
   ).toEqual([kept.sequence]);
 });

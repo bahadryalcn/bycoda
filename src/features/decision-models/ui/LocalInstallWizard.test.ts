@@ -279,7 +279,10 @@ describe("LocalInstallWizard", () => {
       recommendation: { tier: "strong", modelId: "clef-flash-9b" },
       tracked: true,
     });
-    mocks.installStart.mockResolvedValue({ state: "failed", error: "Model file verification failed." });
+    mocks.installStart.mockResolvedValue({
+      state: "failed",
+      error: "Model file verification failed.",
+    });
     await openInstallStep(client);
     clickButton("Install");
     await settleDecisionUi();

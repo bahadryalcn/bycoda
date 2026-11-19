@@ -25,7 +25,8 @@ export function updateLibraryGroup(
   const { projectId, group, rename } = update;
   if (rename === group) return 0;
   const target = rename?.trim();
-  if (rename !== undefined && (!target || target.length > 40)) throw new Error("Invalid group name");
+  if (rename !== undefined && (!target || target.length > 40))
+    throw new Error("Invalid group name");
   const visible = (state.agents ?? []).filter((a) => !a.projectId || a.projectId === projectId);
   const current = visible.filter((a) => a.groups?.includes(group));
   const expected = new Map(update.members.map((m) => [m.agentId, m.expectedUpdatedAt]));

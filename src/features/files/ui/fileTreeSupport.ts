@@ -29,7 +29,7 @@ export function treeTabStop(
 ): string | null {
   if (!active || active === cwd) return null;
   const chain: string[] = [];
-  for (let current = active; current !== cwd; ) {
+  for (let current = active; current !== cwd;) {
     const parent = parentPath(current);
     if (!parent || parent === current) return null;
     chain.unshift(current);

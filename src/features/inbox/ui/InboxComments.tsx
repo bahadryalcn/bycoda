@@ -743,7 +743,13 @@ function InboxCommitRun({
 }
 
 /** Comment age in the header meta; opens the comment on its provider when it has a URL. */
-function InboxCommentTime({ comment, provider }: { comment: InboxComment; provider: InboxProvider }) {
+function InboxCommentTime({
+  comment,
+  provider,
+}: {
+  comment: InboxComment;
+  provider: InboxProvider;
+}) {
   const age = <InboxRelativeTime at={comment.createdAt} />;
   return (
     <span className="flex min-w-0 items-center gap-2">

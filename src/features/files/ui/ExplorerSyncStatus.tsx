@@ -28,7 +28,8 @@ export function ExplorerSyncStatus({
     : undefined;
   // The failure is visible text in the row, so keyboard and screen-reader users reach it too;
   // a long or multi-line error keeps its full text behind Details.
-  const shownError = warn && state.error ? presentRemoteError(state.error, { explicit: true }) : undefined;
+  const shownError =
+    warn && state.error ? presentRemoteError(state.error, { explicit: true }) : undefined;
   const verified = state.updatedAt
     ? t("Last verified {p0}", {
         p0: formatDate(state.updatedAt, {

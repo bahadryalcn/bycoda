@@ -154,7 +154,7 @@ const activeTask = (task: OrchestrationTask) =>
   task.status === "running" || task.status === "cancelling";
 export const sameCheckout = (a: string, b: string) =>
   pathKey(a.replace(/\\/g, "/")) === pathKey(b.replace(/\\/g, "/"));
-const messageOf = (error: unknown) => (errorText(error));
+const messageOf = (error: unknown) => errorText(error);
 
 const recoveryTurn = (reason: string) =>
   `Continue the existing assignment from its retained worker checkout. The previous turn was stopped because the orchestration run was interrupted: ${reason}\n\nInspect the current files and prior conversation before acting. Preserve completed work, do not repeat destructive or external operations, remain inside the assigned write scope, run the remaining focused checks, and report what was already done versus what you completed now.`;

@@ -101,7 +101,11 @@ export function useThreadMessages(thread: MessageThread) {
         earlierPending.current = false;
         setLoading(false);
         setState({ key: threadKey({ accountId, id: threadId }), page: null, error: null });
-        setEarlierState({ key: threadKey({ accountId, id: threadId }), loading: false, error: null });
+        setEarlierState({
+          key: threadKey({ accountId, id: threadId }),
+          loading: false,
+          error: null,
+        });
       }),
     [accountId, threadId],
   );
@@ -124,7 +128,8 @@ export function useThreadMessages(thread: MessageThread) {
     [accountId, threadId],
   );
 
-  const view = state.key === key ? state : { key, page: threadPageCache.get(key) ?? null, error: null };
+  const view =
+    state.key === key ? state : { key, page: threadPageCache.get(key) ?? null, error: null };
   const cursor = view.page?.earlier ?? null;
 
   const loadEarlier = useCallback(() => {

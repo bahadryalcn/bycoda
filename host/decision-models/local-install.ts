@@ -472,7 +472,9 @@ async function downloadVerified(
     signal: AbortSignal.any([signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)]),
   });
   if (!response.ok || !response.body)
-    throw new InstallError("The model could not be downloaded. Check your connection and try again.");
+    throw new InstallError(
+      "The model could not be downloaded. Check your connection and try again.",
+    );
   const reader = response.body.getReader();
   const hash = createHash("sha256");
   const handle = await open(destination, "wx");
@@ -494,7 +496,9 @@ async function downloadVerified(
   const digest = hash.digest("hex");
   if (digest !== file.sha256 || (file.sizeBytes !== undefined && size !== file.sizeBytes)) {
     await rm(destination, { force: true });
-    throw new InstallError("Model file verification failed. The file was removed and not installed.");
+    throw new InstallError(
+      "Model file verification failed. The file was removed and not installed.",
+    );
   }
   return { sha256: digest, sizeBytes: size };
 }

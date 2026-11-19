@@ -317,9 +317,7 @@ export function RecommendedSkills({
                           label={t("Copy")}
                           text={() => officialSkillInstallCommand(skill)}
                           resetKeys={[skill]}
-                          onCopyError={(error) =>
-                            setLinkError(errorText(error))
-                          }
+                          onCopyError={(error) => setLinkError(errorText(error))}
                         />
                         <Button
                           variant="link"

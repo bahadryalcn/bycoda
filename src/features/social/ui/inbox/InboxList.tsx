@@ -141,11 +141,7 @@ export function InboxList({
         loading={loadingMore}
         onLoadMore={onMore}
         renderItem={(item) => (
-          <InboxRow
-            item={item}
-            selected={item.threadId === selectedId}
-            onSelect={onSelect}
-          />
+          <InboxRow item={item} selected={item.threadId === selectedId} onSelect={onSelect} />
         )}
       />
     </div>

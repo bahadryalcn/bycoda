@@ -144,10 +144,7 @@ describe("askSideQuestion concurrency", () => {
     expect(run).toHaveBeenCalledTimes(2);
     gates.get("/work/a")!.resolve("A");
     gates.get("/work/b")!.resolve("B");
-    await expect(Promise.all([first, second])).resolves.toEqual([
-      { answer: "A" },
-      { answer: "B" },
-    ]);
+    await expect(Promise.all([first, second])).resolves.toEqual([{ answer: "A" }, { answer: "B" }]);
   });
 
   it("releases the session and Host slot when a question fails", async () => {

@@ -412,7 +412,12 @@ export function useAdoptedSessions(
     const stopRecovered = subscribeRemoteRecovered((environmentId) => {
       // While the mirror is down, any recovered Host wakes it: the kept machine's identity
       // is not a filter for a Host that may have come back under another environment.
-      if (!environmentId || !known || !hostReachable.current || known.environmentId === environmentId)
+      if (
+        !environmentId ||
+        !known ||
+        !hostReachable.current ||
+        known.environmentId === environmentId
+      )
         onWake();
     });
     setAdoptedWaker(onBeat);

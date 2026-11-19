@@ -3,7 +3,16 @@ import { WorkspaceBootstrapReceipts } from "./workspace-bootstrap-receipts";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtemp, mkdir, readdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";

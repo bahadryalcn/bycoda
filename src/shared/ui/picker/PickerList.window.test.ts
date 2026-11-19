@@ -20,7 +20,8 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  const sized = (element: HTMLElement) => (element.getAttribute("role") === "listbox" ? VIEWPORT : ROW);
+  const sized = (element: HTMLElement) =>
+    element.getAttribute("role") === "listbox" ? VIEWPORT : ROW;
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
     this: HTMLElement,
   ) {

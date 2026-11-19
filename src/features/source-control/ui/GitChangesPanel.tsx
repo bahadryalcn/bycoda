@@ -512,11 +512,7 @@ export function GitChangesPanel({
                 </Text>
               ) : null}
               {!detailsOpen ? (
-                <AheadBehindCount
-                  ahead={index.ahead ?? 0}
-                  behind={index.behind ?? 0}
-                  hideZero
-                />
+                <AheadBehindCount ahead={index.ahead ?? 0} behind={index.behind ?? 0} hideZero />
               ) : null}
             </Text>
           ) : null}

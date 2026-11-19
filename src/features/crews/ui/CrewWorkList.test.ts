@@ -63,7 +63,8 @@ async function render({
   return onSelect;
 }
 
-const row = (id: string) => container.querySelector<HTMLButtonElement>(`[data-crew-work-choice="${id}"]`)!;
+const row = (id: string) =>
+  container.querySelector<HTMLButtonElement>(`[data-crew-work-choice="${id}"]`)!;
 
 it("uses a plain list with no navigation landmark or toggle state", async () => {
   await render();

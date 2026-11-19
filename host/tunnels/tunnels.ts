@@ -501,7 +501,11 @@ export class ExternalTunnels {
     }
     const host = tunnelLocalUrl(this.hostUrl());
     const localUrl = target === "host" ? host : tunnelLocalUrl(input.localUrl);
-    if (target === "host" && input.localUrl !== undefined && tunnelLocalUrl(input.localUrl) !== host)
+    if (
+      target === "host" &&
+      input.localUrl !== undefined &&
+      tunnelLocalUrl(input.localUrl) !== host
+    )
       throw new TunnelError("invalid-target");
     const hostPort = new URL(host).port || "80";
     const localPort = new URL(localUrl).port || (localUrl.startsWith("https:") ? "443" : "80");

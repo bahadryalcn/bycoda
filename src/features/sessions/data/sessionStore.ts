@@ -1296,8 +1296,7 @@ export function getSession(
     try {
       result = await loadStoredSession(sessionId, options, work);
     } catch (error) {
-      if ((errorText(error)) !== "Session was deleted")
-        throw error;
+      if (errorText(error) !== "Session was deleted") throw error;
       deletedSessionIds.add(sessionId);
       work.confirmRecovery();
       return null;
@@ -2318,11 +2317,7 @@ function sanitizeBtwThreads(value: unknown, hydrate: boolean): BtwThread[] | und
         ...(interrupted
           ? {
               error: error || "This by-the-way request was interrupted before reload.",
-              ...(errorCode
-                ? { errorCode }
-                : error
-                  ? {}
-                  : { errorCode: "interrupted" as const }),
+              ...(errorCode ? { errorCode } : error ? {} : { errorCode: "interrupted" as const }),
             }
           : {
               ...(error ? { error } : {}),

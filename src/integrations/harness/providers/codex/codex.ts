@@ -1767,9 +1767,7 @@ async function materializeGeneratedImage(
       }
       emitNative({
         type: "session.error",
-        message: `Could not save generated image: ${
-          errorText(cause)
-        }`,
+        message: `Could not save generated image: ${errorText(cause)}`,
       });
     }
   });

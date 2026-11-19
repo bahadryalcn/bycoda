@@ -214,7 +214,8 @@ export async function resolveAttachments(
   for (const ref of refs) {
     const path = attachmentPath(store, ref.id);
     touchAttachment(join(dirname(resolve(path)), basename(path).toLowerCase()));
-    if ((await stat(path)).size !== ref.size) throw new Error(`Attachment ${ref.name} is incomplete`);
+    if ((await stat(path)).size !== ref.size)
+      throw new Error(`Attachment ${ref.name} is incomplete`);
     resolved.push({ ...ref, path });
   }
   return resolved;

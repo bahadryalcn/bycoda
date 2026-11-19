@@ -76,8 +76,12 @@ it("stops the timer while the document is hidden and refreshes when it returns",
 });
 
 it("keeps no timer while streaming or while the panel is hidden", async () => {
-  await act(async () => root.render(createElement(DeviceFrameState, { ...baseProps, streaming: true })));
+  await act(async () =>
+    root.render(createElement(DeviceFrameState, { ...baseProps, streaming: true })),
+  );
   expect(vi.getTimerCount()).toBe(0);
-  await act(async () => root.render(createElement(DeviceFrameState, { ...baseProps, visible: false })));
+  await act(async () =>
+    root.render(createElement(DeviceFrameState, { ...baseProps, visible: false })),
+  );
   expect(vi.getTimerCount()).toBe(0);
 });

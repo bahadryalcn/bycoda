@@ -1206,12 +1206,7 @@ export function killChild(handle: ChildProcessHandle): Promise<void> {
   ).catch((error: unknown) => {
     // Do not cache a rejection; unknown/exited constructions are already gone.
     if (state.kill === run) state.kill = undefined;
-    if (
-      state.exited ||
-      /^NATIVE_PROCESS_CONSTRUCTION_STALE$/.test(
-        errorText(error),
-      )
-    ) {
+    if (state.exited || /^NATIVE_PROCESS_CONSTRUCTION_STALE$/.test(errorText(error))) {
       console.warn("[child] kill target already gone", error);
       return;
     }

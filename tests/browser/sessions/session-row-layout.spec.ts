@@ -71,9 +71,7 @@ for (const light of [false, true])
       ).toBeFocused();
       await page.keyboard.press("Escape");
       await header.getByRole("button", { name: "More actions", exact: true }).click();
-      await page
-        .getByRole("menuitemcheckbox", { name: "Select sessions", exact: true })
-        .click();
+      await page.getByRole("menuitemcheckbox", { name: "Select sessions", exact: true }).click();
       await expect(pane.getByRole("toolbar", { name: "Selected sessions" })).toBeVisible();
       await header.getByRole("button", { name: "More actions", exact: true }).click();
       await page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }).click();

@@ -193,7 +193,10 @@ it("keeps PEM redaction state when a carriage return redraws a marker line", () 
   const terminals = new RuntimeTerminalLogs(logs);
   terminals.append(
     "project",
-    packet("-----BEGIN PRIVATE KEY-----\rSYNTHETIC_BODY\n-----END PRIVATE KEY-----\nrecovered\n", 0),
+    packet(
+      "-----BEGIN PRIVATE KEY-----\rSYNTHETIC_BODY\n-----END PRIVATE KEY-----\nrecovered\n",
+      0,
+    ),
   );
   expect(JSON.stringify(logs.read())).not.toContain("SYNTHETIC");
   expect(logs.read().entries.map((entry) => entry.message)).toContain("recovered");

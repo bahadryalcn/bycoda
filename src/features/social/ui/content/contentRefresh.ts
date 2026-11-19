@@ -1,5 +1,9 @@
 import type { InfiniteData } from "@tanstack/react-query";
-import { SOCIAL_COLLECTIONS, type SocialSnapshot, type SocialWorkspaceQuery } from "../../model/social";
+import {
+  SOCIAL_COLLECTIONS,
+  type SocialSnapshot,
+  type SocialWorkspaceQuery,
+} from "../../model/social";
 
 export type Offsets = NonNullable<SocialWorkspaceQuery["offsets"]>;
 /** One bounded Host page of the content list and the offsets it was read with. */
@@ -26,7 +30,8 @@ const idsOf = (rows: Row[]) => new Set(rows.map((row) => row.id));
 function loadedRows(pages: ContentPage[], collection: (typeof PAGED)[number]): Row[] {
   const rows = new Map<string, Row>();
   for (const page of pages)
-    for (const row of page.snapshot?.[collection] ?? []) if (!rows.has(row.id)) rows.set(row.id, row);
+    for (const row of page.snapshot?.[collection] ?? [])
+      if (!rows.has(row.id)) rows.set(row.id, row);
   return [...rows.values()];
 }
 
@@ -83,7 +88,9 @@ export function refreshContentPages(data: ContentPages, fresh: ContentPage): Con
   const head = (collection: (typeof PAGED)[number]): Row[] => {
     const drop = dropped[collection];
     const old = (data.pages[0]!.snapshot![collection] ?? []) as Row[];
-    return drop ? [...latest[collection], ...old.filter((row) => !drop.has(row.id))] : latest[collection];
+    return drop
+      ? [...latest[collection], ...old.filter((row) => !drop.has(row.id))]
+      : latest[collection];
   };
   const last = data.pages.length - 1;
   const pages = data.pages.map((page, index): ContentPage => {
@@ -99,7 +106,8 @@ export function refreshContentPages(data: ContentPages, fresh: ContentPage): Con
     }
     next.related = relatedOf(old.related, latest.related, index === 0);
     if (index === last) {
-      for (const [key, value] of Object.entries(latest)) if (!PAGE_OWNED.has(key)) next[key] = value;
+      for (const [key, value] of Object.entries(latest))
+        if (!PAGE_OWNED.has(key)) next[key] = value;
       next.campaignStates = { ...old.campaignStates, ...latest.campaignStates };
       next.approvedCampaignIds = [
         ...new Set([...(old.approvedCampaignIds ?? []), ...(latest.approvedCampaignIds ?? [])]),

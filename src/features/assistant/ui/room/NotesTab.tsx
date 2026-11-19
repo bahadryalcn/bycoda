@@ -109,7 +109,9 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           expectedUpdatedAt: note.updatedAt,
         });
         if (result.ok !== true)
-          throw new Error(t("Note deletion could not be confirmed. Review the Room before retrying."));
+          throw new Error(
+            t("Note deletion could not be confirmed. Review the Room before retrying."),
+          );
         if (result.trashId?.startsWith("notetrash:")) {
           setDeletedNoteWithoutReceipt(null);
           setUndo({ id: result.trashId, label: note.title, environmentId });

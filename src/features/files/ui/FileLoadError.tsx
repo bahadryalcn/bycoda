@@ -204,12 +204,24 @@ function LargeTextFileView({
           {t("Next")}
         </Button>
         {local ? (
-          <Button size="sm" variant="ghost" motion="none" type="button" onClick={() => reveal(path)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
+            type="button"
+            onClick={() => reveal(path)}
+          >
             <Folder className="icon-xs" strokeWidth={1.75} />
             {t(REVEAL_LABEL)}
           </Button>
         ) : (
-          <CopyButton size="sm" variant="ghost" label={t("Copy path")} text={path} resetKeys={[path]} />
+          <CopyButton
+            size="sm"
+            variant="ghost"
+            label={t("Copy path")}
+            text={path}
+            resetKeys={[path]}
+          />
         )}
       </Text>
       <OutputBlock

@@ -269,7 +269,9 @@ export class McpHub {
       for (;;) {
         if (ticket.closed) throw new Error("MCP hub is shutting down.");
         if (signal.aborted)
-          throw signal.reason instanceof Error ? signal.reason : new Error("MCP request cancelled.");
+          throw signal.reason instanceof Error
+            ? signal.reason
+            : new Error("MCP request cancelled.");
         const head = this.slotQueue[0] === ticket;
         if (head && this.claim(starting))
           return {

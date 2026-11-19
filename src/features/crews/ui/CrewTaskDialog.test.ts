@@ -65,9 +65,7 @@ const click = async (label: string) => {
 };
 const render = (onClose = vi.fn()) => {
   act(() => {
-    root.render(
-      createElement(CrewTaskDialog, { cwd: "/repo", state: {} as never, onClose }),
-    );
+    root.render(createElement(CrewTaskDialog, { cwd: "/repo", state: {} as never, onClose }));
   });
   return onClose;
 };

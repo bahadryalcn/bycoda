@@ -457,4 +457,3 @@ function sectionOf(skill: Skill): PickerSection {
   if (skill.kind !== "template") return "commands";
   return isSkillGroupPickerItem(skill) ? "groups" : "templates";
 }
-

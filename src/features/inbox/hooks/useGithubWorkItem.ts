@@ -66,7 +66,7 @@ export function useGithubWorkItem(
   return {
     item: target ? (query.data ?? null) : null,
     loading: target != null && query.isPending,
-    error: error ? (errorText(error)) : null,
+    error: error ? errorText(error) : null,
     setItem,
   };
 }

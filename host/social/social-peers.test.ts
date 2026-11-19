@@ -380,9 +380,9 @@ it("answers a peer token miss without SQL and still honors device revocation", a
   );
   const prepare = vi.spyOn(authority.store.db, "prepare");
   expect(await authority.peers.authenticated("device-token-not-a-peer")).toBeUndefined();
-  expect(
-    prepare.mock.calls.some(([sql]) => String(sql).includes("social_peer_tokens")),
-  ).toBe(false);
+  expect(prepare.mock.calls.some(([sql]) => String(sql).includes("social_peer_tokens"))).toBe(
+    false,
+  );
   prepare.mockRestore();
   expect(await authority.peers.authenticated(enrollment.token)).toBe(source.store.environmentId);
   await authority.store.revokeDevice(authority.device.id);

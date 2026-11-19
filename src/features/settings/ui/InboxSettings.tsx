@@ -174,8 +174,7 @@ export function GitlabSettings() {
       setSavedUrl((previous) => status.url || previous);
       if (hydrate) setUrl(status.url);
     } catch (err: unknown) {
-      if (generation === request.current)
-        setStatusError(errorText(err));
+      if (generation === request.current) setStatusError(errorText(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -367,8 +366,7 @@ export function AzureDevOpsSettings() {
       setSavedUrl((previous) => status.url || previous);
       if (hydrate && status.url) setUrl(status.url);
     } catch (err: unknown) {
-      if (generation === request.current)
-        setStatusError(errorText(err));
+      if (generation === request.current) setStatusError(errorText(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -567,8 +565,7 @@ export function LinearSettings() {
       const next = await listLinearTeams();
       if (generation === teamRequest.current) setTeams(next);
     } catch (err: unknown) {
-      if (generation === teamRequest.current)
-        setTeamsError(errorText(err));
+      if (generation === teamRequest.current) setTeamsError(errorText(err));
     } finally {
       if (generation === teamRequest.current) setTeamsLoading(false);
     }
@@ -585,8 +582,7 @@ export function LinearSettings() {
       setConnected(status.connected);
       if (status.connected) await loadTeams();
     } catch (err: unknown) {
-      if (generation === request.current)
-        setStatusError(errorText(err));
+      if (generation === request.current) setStatusError(errorText(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }

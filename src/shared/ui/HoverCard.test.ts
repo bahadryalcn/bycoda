@@ -43,7 +43,9 @@ function Probe({ options }: { options: HoverCardOptions }) {
       createElement(
         "ul",
         null,
-        Array.from({ length: 30 }, (_, index) => createElement("li", { key: index }, `Task ${index}`)),
+        Array.from({ length: 30 }, (_, index) =>
+          createElement("li", { key: index }, `Task ${index}`),
+        ),
       ),
     ),
   );

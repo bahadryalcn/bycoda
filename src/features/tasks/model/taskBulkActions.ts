@@ -56,8 +56,7 @@ export async function runTaskBulkAction(
   perform: (task: BoardTask, action: TaskBulkAction) => Promise<void>,
   onResult?: (result: TaskBulkResult, completed: number, total: number) => void,
   // Injected so this shared model stays free of the desktop-only error presenter (mobile reuses it).
-  describeError: (error: unknown) => string = (error) =>
-    errorText(error),
+  describeError: (error: unknown) => string = (error) => errorText(error),
 ): Promise<TaskBulkResult[]> {
   const tasks = [...new Map(selected.map((task) => [bulkTaskKey(task), task])).values()];
   const results: TaskBulkResult[] = [];

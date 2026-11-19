@@ -8,10 +8,7 @@ import pt from "../../../../shared/i18n/locales/pt.json";
 import tr from "../../../../shared/i18n/locales/tr.json";
 import zhCN from "../../../../shared/i18n/locales/zh-CN.json";
 import { LANGUAGES, type Locale } from "../../../../shared/i18n/languages";
-import {
-  RECORDED_ACTION_FALLBACK_LABEL,
-  RECORDED_ACTION_LABELS,
-} from "./recordedActionLabels";
+import { RECORDED_ACTION_FALLBACK_LABEL, RECORDED_ACTION_LABELS } from "./recordedActionLabels";
 
 // Typed per locale, so adding a supported language without a catalog fails to compile.
 const catalogs: Record<Locale, Record<string, string>> = {

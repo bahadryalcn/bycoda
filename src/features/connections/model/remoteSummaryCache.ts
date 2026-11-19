@@ -120,7 +120,11 @@ export function writeRemoteSummaryCache(key: string, value: string): void {
     }
     track(key);
     for (const entry of entries.keys()) {
-      if (totalBytes + size <= REMOTE_SUMMARY_CACHE_BYTES && entries.size + 1 <= REMOTE_SUMMARY_CACHE_ENTRIES) break;
+      if (
+        totalBytes + size <= REMOTE_SUMMARY_CACHE_BYTES &&
+        entries.size + 1 <= REMOTE_SUMMARY_CACHE_ENTRIES
+      )
+        break;
       localStorage.removeItem(entry);
       track(entry);
     }

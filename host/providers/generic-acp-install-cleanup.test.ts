@@ -15,10 +15,42 @@ vi.mock("node:child_process", () => ({
 }));
 
 const registry = [
-  { id: "one", name: "One", version: "1.0.0", description: "", package: "agent-one@1.0.0", args: ["--acp"], supported: true },
-  { id: "one", name: "One", version: "2.0.0", description: "", package: "agent-one@2.0.0", args: ["--acp"], supported: true },
-  { id: "one", name: "One", version: "3.0.0", description: "", package: "agent-one@3.0.0", args: ["--acp"], supported: true },
-  { id: "two", name: "Two", version: "1.0.0", description: "", package: "agent-two@1.0.0", args: [], supported: true },
+  {
+    id: "one",
+    name: "One",
+    version: "1.0.0",
+    description: "",
+    package: "agent-one@1.0.0",
+    args: ["--acp"],
+    supported: true,
+  },
+  {
+    id: "one",
+    name: "One",
+    version: "2.0.0",
+    description: "",
+    package: "agent-one@2.0.0",
+    args: ["--acp"],
+    supported: true,
+  },
+  {
+    id: "one",
+    name: "One",
+    version: "3.0.0",
+    description: "",
+    package: "agent-one@3.0.0",
+    args: ["--acp"],
+    supported: true,
+  },
+  {
+    id: "two",
+    name: "Two",
+    version: "1.0.0",
+    description: "",
+    package: "agent-two@1.0.0",
+    args: [],
+    supported: true,
+  },
 ];
 
 /** Mirrors npm's `--prefix` layout closely enough for the script lookup in install(). */

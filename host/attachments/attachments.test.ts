@@ -451,7 +451,7 @@ it("resolves send references asynchronously and keeps the size and ID authority"
   await expect(resolveAttachments(store, [{ ...ref, size: 4 }])).rejects.toThrow(
     "Attachment note.txt is incomplete",
   );
-  await expect(
-    resolveAttachments(store, [{ ...ref, id: "not-a-uuid" }]),
-  ).rejects.toThrow("Invalid attachment ID");
+  await expect(resolveAttachments(store, [{ ...ref, id: "not-a-uuid" }])).rejects.toThrow(
+    "Invalid attachment ID",
+  );
 });

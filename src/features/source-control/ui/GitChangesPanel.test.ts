@@ -2176,7 +2176,9 @@ describe("GitChangesPanel folder actions", () => {
       "Stage Changes in src",
     ]);
     expect(actions.every((action) => action.disabled)).toBe(true);
-    const fileRows = [...container.querySelectorAll<HTMLElement>('[role="row"]:not([data-git-row^="dir:"])')];
+    const fileRows = [
+      ...container.querySelectorAll<HTMLElement>('[role="row"]:not([data-git-row^="dir:"])'),
+    ];
     expect(fileRows).toHaveLength(2);
     for (const row of fileRows) {
       expect(row.querySelector('[role="status"]')?.textContent).toBe("Working");
@@ -2367,9 +2369,9 @@ describe("Git changed file multiple selection", () => {
     expect(gitStageFiles).toHaveBeenCalledExactlyOnceWith("/repo", ["a.ts", "b.ts"]);
     const staged = container.querySelector('[role="grid"][aria-label="Staged Changes"]')!;
     expect(staged.querySelectorAll("[data-git-file]")).toHaveLength(2);
-    expect(
-      container.querySelector('[role="grid"][aria-label="Changes"]')!.textContent,
-    ).toContain("c.ts");
+    expect(container.querySelector('[role="grid"][aria-label="Changes"]')!.textContent).toContain(
+      "c.ts",
+    );
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
         files: files.map((file) =>
@@ -2423,7 +2425,9 @@ describe("Git changed file multiple selection", () => {
       await click("c.ts", { ctrlKey: true });
       const discard = async (relative: string) => {
         if (source === "menu") return menuAction(relative, "Discard Changes");
-        const row = container.querySelector(`[data-git-file="/repo/${relative}"]`)!.closest('[role="row"]')!;
+        const row = container
+          .querySelector(`[data-git-file="/repo/${relative}"]`)!
+          .closest('[role="row"]')!;
         await act(async () =>
           row.querySelector<HTMLButtonElement>('button[aria-label="Discard Changes"]')!.click(),
         );

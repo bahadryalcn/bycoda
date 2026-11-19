@@ -133,7 +133,11 @@ it("polls a session once for every row showing it and stops the timer when the r
   vi.useFakeTimers();
   mock.request.mockResolvedValue(record("shared"));
   function Row() {
-    return createElement("span", null, useAssistantSession("shared", "project-one").record?.session.id);
+    return createElement(
+      "span",
+      null,
+      useAssistantSession("shared", "project-one").record?.session.id,
+    );
   }
   const view = mountRoot();
   try {

@@ -37,9 +37,9 @@ it("keeps a scope whose upload job is still active", async () => {
   );
   scope.finishJob("submit:turn");
   await scope.retry();
-  expect(attachmentOwnershipScope("machine-active-job", "host", "owner-active-job", request)).not.toBe(
-    scope,
-  );
+  expect(
+    attachmentOwnershipScope("machine-active-job", "host", "owner-active-job", request),
+  ).not.toBe(scope);
 });
 it("keeps a scope that still holds references", async () => {
   const request = vi.fn(async () => ({ claims: [] }));

@@ -126,10 +126,7 @@ const viewProps = (panel: RefObject<HTMLElement | null>, noop = () => {}) =>
     onManualChange: noop,
   }) as VoiceCompanionViewProps;
 
-async function renderWithQuestion(
-  rect: DOMRect,
-  overrides: Partial<VoiceCompanionViewProps> = {},
-) {
+async function renderWithQuestion(rect: DOMRect, overrides: Partial<VoiceCompanionViewProps> = {}) {
   const panel = createRef<HTMLElement>();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
@@ -321,7 +318,10 @@ it("exposes the single-axis edges as focusable separators that resize from the k
 
   act(() => edge.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
   expect(node.getBoundingClientRect()).toMatchObject({ x: 300, y: 250, width: 416, height: 300 });
-  expect(JSON.parse(localStorage.getItem("bycoda:voice-size")!)).toEqual({ width: 416, height: 300 });
+  expect(JSON.parse(localStorage.getItem("bycoda:voice-size")!)).toEqual({
+    width: 416,
+    height: 300,
+  });
   expect(onPosition).toHaveBeenLastCalledWith({ x: 300, y: 250 });
 
   act(() => edge.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));

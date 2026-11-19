@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isDefaultQueueChord,
-  queueChordConsumesKey,
-  queueShortcutApplies,
-} from "./composerQueue";
+import { isDefaultQueueChord, queueChordConsumesKey, queueShortcutApplies } from "./composerQueue";
 
 const running = {
   busy: true,

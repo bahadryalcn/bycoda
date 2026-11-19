@@ -18,7 +18,10 @@ export function quotaPlotPoints(
   if (samples.length <= columns || width <= 0) return [...samples];
   const picked = new Map<string, QuotaSample>();
   for (const sample of samples) {
-    const column = Math.min(columns - 1, Math.floor(((sample.at - window.start) / width) * columns));
+    const column = Math.min(
+      columns - 1,
+      Math.floor(((sample.at - window.start) / width) * columns),
+    );
     const key = `${sample.account}:${column}`;
     if (sample.at >= (picked.get(key)?.at ?? -Infinity)) picked.set(key, sample);
   }

@@ -33,7 +33,10 @@ it("reads the full notification from the polled snapshot and only for an enabled
   expect(currentNotification(snapshot, "event-one")).toEqual(notification);
   expect(currentNotification(snapshot, "missing")).toBeUndefined();
   expect(
-    currentNotification({ ...snapshot, profile: { enabled: false, setupComplete: true } }, "event-one"),
+    currentNotification(
+      { ...snapshot, profile: { enabled: false, setupComplete: true } },
+      "event-one",
+    ),
   ).toBeUndefined();
   expect(currentNotification(null, "event-one")).toBeUndefined();
 });

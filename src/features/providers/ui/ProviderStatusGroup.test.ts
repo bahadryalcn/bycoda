@@ -21,7 +21,11 @@ vi.mock("../model/harnessUpdateActions", () => ({
         : updateState.failed
           ? {
               status: "failed",
-              failure: { kind: "stage", stage: "version check", detail: "Version verification failed" },
+              failure: {
+                kind: "stage",
+                stage: "version check",
+                detail: "Version verification failed",
+              },
             }
           : { status: "updated", version: "0.95.0", catalogRefresh: updateState.catalogRefresh },
     },

@@ -190,11 +190,7 @@ export async function fetchCodexRateLimits(accountId = "default"): Promise<Provi
 }
 
 /** Same account scope as the failed read: `account/read` reports a missing ChatGPT login. */
-async function codexRequiresSignIn(
-  path: string,
-  cwd: string,
-  accountId: string,
-): Promise<boolean> {
+async function codexRequiresSignIn(path: string, cwd: string, accountId: string): Promise<boolean> {
   try {
     const account = asRecord(
       await requestCodexAccount<unknown>(path, cwd, "account/read", {}, accountId),

@@ -564,10 +564,7 @@ function AutomationsContent({
                     ]}
                     onChange={setStatusFilter}
                   />
-                  <Button
-                    onClick={resetFilters}
-                    disabled={!query && statusFilter === "all"}
-                  >
+                  <Button onClick={resetFilters} disabled={!query && statusFilter === "all"}>
                     {t("Reset")}
                   </Button>
                 </Popover>
@@ -1539,10 +1536,7 @@ function AutomationEditor({
                     </SettingsRow>
                     {draft.runInBackground ? null : (
                       <>
-                        <SettingsRow
-                          label={t("Worktree")}
-                          hint="This repo, or a fresh worktree"
-                        >
+                        <SettingsRow label={t("Worktree")} hint="This repo, or a fresh worktree">
                           <SettingsSelect
                             label={t("Worktree")}
                             value={

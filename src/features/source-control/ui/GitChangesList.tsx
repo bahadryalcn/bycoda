@@ -189,7 +189,9 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     if (virtualized) virtual.scrollToIndex(visibleKeys.indexOf(key), { align: "auto" });
     const rowSelector = `[data-git-row="${CSS.escape(key)}"] [role="gridcell"] button`;
     const focus = () =>
-      listRef.current?.querySelector<HTMLButtonElement>(rowSelector)?.focus({ preventScroll: true });
+      listRef.current
+        ?.querySelector<HTMLButtonElement>(rowSelector)
+        ?.focus({ preventScroll: true });
     if (listRef.current?.querySelector(rowSelector)) focus();
     else requestAnimationFrame(focus);
   };
@@ -348,7 +350,8 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
                 ),
               ];
               const from = cells.indexOf(target.closest("button") as HTMLButtonElement);
-              const to = from >= 0 ? cells[from + (event.key === "ArrowRight" ? 1 : -1)] : undefined;
+              const to =
+                from >= 0 ? cells[from + (event.key === "ArrowRight" ? 1 : -1)] : undefined;
               if (to) {
                 event.preventDefault();
                 event.stopPropagation();

@@ -154,7 +154,7 @@ export function useProjectCrews(cwd: string, enabled = true) {
     enabled: !!machine && !!project,
     hostEnvironmentId: machine?.environmentId,
     // Pinned to the machine's environment, like every other read of this Host.
-    request: <T,>(method: string, params: unknown = {}) =>
+    request: <T>(method: string, params: unknown = {}) =>
       remoteRequest<T>(machine!.id, method, params, false, false, machine!.environmentId),
   });
   // A remembered catalog that could not be refreshed is not trusted for model choices.

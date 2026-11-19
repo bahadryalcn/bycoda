@@ -1,4 +1,8 @@
-import { WindowsBirthBatch, type WindowsBirth, type WindowsBirthLookup } from "./windows-birth-batch";
+import {
+  WindowsBirthBatch,
+  type WindowsBirth,
+  type WindowsBirthLookup,
+} from "./windows-birth-batch";
 import {
   loadBundledWindowsProcessBirths,
   loadBundledWindowsListeners,

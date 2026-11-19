@@ -62,7 +62,11 @@ it("shares one report, one focus read and one native subscription across consume
   }
   await act(async () =>
     root.render(
-      createElement("div", null, [0, 1, 2, 3, 4, 5, 6].map((i) => createElement(Probe, { key: i, index: i }))),
+      createElement(
+        "div",
+        null,
+        [0, 1, 2, 3, 4, 5, 6].map((i) => createElement(Probe, { key: i, index: i })),
+      ),
     ),
   );
   expect(native.read).toHaveBeenCalledTimes(1);

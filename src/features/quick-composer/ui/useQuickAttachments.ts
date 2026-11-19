@@ -208,9 +208,9 @@ export function useQuickAttachments(
         if ((!alive.current && !owner) || !isSupported()) {
           if (owner)
             throw new AttachmentFailureError(
-            "provider-changed",
-            "The attachment's provider changed; its accepted bytes are retained.",
-          );
+              "provider-changed",
+              "The attachment's provider changed; its accepted bytes are retained.",
+            );
           stored.forEach(revokeAttachment);
           return;
         }

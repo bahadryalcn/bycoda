@@ -16,7 +16,9 @@ afterEach(async () => {
   for (const store of stores.splice(0)) await store.close();
 });
 async function fixture() {
-  const store = new HostStore(join(mkdtempSync(join(tmpdir(), "bycoda-receipt-retention-")), "h.db"));
+  const store = new HostStore(
+    join(mkdtempSync(join(tmpdir(), "bycoda-receipt-retention-")), "h.db"),
+  );
   stores.push(store);
   await store.ready;
   return store;
@@ -38,13 +40,17 @@ async function voiceFixture() {
       .run(id, JSON.stringify({ id, version: head, updatedAt }));
     for (let version = 1; version <= head; version++)
       await store.db
-        .prepare("INSERT INTO assistant_voice_context_versions(context_id,version,value) VALUES(?,?,?)")
+        .prepare(
+          "INSERT INTO assistant_voice_context_versions(context_id,version,value) VALUES(?,?,?)",
+        )
         .run(id, version, JSON.stringify({ id, version, updatedAt }));
   };
   const versions = async (id: string) =>
     (
       await store.db
-        .prepare("SELECT version FROM assistant_voice_context_versions WHERE context_id=? ORDER BY version")
+        .prepare(
+          "SELECT version FROM assistant_voice_context_versions WHERE context_id=? ORDER BY version",
+        )
         .all(id)
     ).map((row) => Number(row.version));
   return { store, context, versions };
@@ -92,7 +98,9 @@ it("does not prune voice versions when a reference cannot be read", async () => 
 
 it("keeps the latest read, the newest receipt rows and the pending operation's rows", async () => {
   const store = await fixture();
-  await store.db.exec("CREATE TABLE assistant_chief_reads(id TEXT PRIMARY KEY,value TEXT NOT NULL);");
+  await store.db.exec(
+    "CREATE TABLE assistant_chief_reads(id TEXT PRIMARY KEY,value TEXT NOT NULL);",
+  );
   const put = (id: string) =>
     store.db.prepare("INSERT INTO assistant_chief_reads(id,value) VALUES(?,?)").run(id, "{}");
   await put("latest");
@@ -120,7 +128,9 @@ it("purges only the purged job's session receipts and nudge counters", async () 
      CREATE TABLE assistant_session_counts(id TEXT PRIMARY KEY,nudges INTEGER NOT NULL);`,
   );
   for (const id of ["job-1:s:r", "job-10:s:r", "manual:job-1:s:r"])
-    await store.db.prepare("INSERT INTO assistant_session_receipts(id,value) VALUES(?,?)").run(id, "{}");
+    await store.db
+      .prepare("INSERT INTO assistant_session_receipts(id,value) VALUES(?,?)")
+      .run(id, "{}");
   for (const id of ["job-1:s", "job-10:s"])
     await store.db.prepare("INSERT INTO assistant_session_counts(id,nudges) VALUES(?,1)").run(id);
 

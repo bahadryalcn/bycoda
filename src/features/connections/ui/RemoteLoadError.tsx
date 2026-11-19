@@ -109,9 +109,9 @@ export function RemoteLoadError({
       : failure.kind === "identity"
         ? // Reconnecting cannot clear a changed identity: only the owner re-pairs the machine.
           { label: t("Review in Connections"), onClick: openConnections }
-      : failure.kind === "other" && onRetry
-        ? { label: t("Retry"), onClick: onRetry }
-        : undefined;
+        : failure.kind === "other" && onRetry
+          ? { label: t("Retry"), onClick: onRetry }
+          : undefined;
   const reconnectFailed = reconnectError && reconnectError !== failure.message;
   if (compact) {
     // One stable row: the raw transport text stays behind Details, never in the bar.
@@ -173,9 +173,7 @@ export function RemoteLoadError({
     >
       <p className="break-words">{failure.message}</p>
       {reconnectFailed ? (
-        <p className="mt-1 break-words">
-          {t("Reconnecting failed: {p0}", { p0: reconnectError })}
-        </p>
+        <p className="mt-1 break-words">{t("Reconnecting failed: {p0}", { p0: reconnectError })}</p>
       ) : null}
       {stale ? <p className="mt-1">{t("Showing what was last loaded.")}</p> : null}
     </Alert>
