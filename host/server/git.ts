@@ -92,7 +92,13 @@ export function createGitRuntime(
     generateText: async (cwd, params, authorize) => {
       const routing = await readModelRouting(dependencies.engine.store);
       let choice = params.choice;
-      if (routing.roles["text.git"]) {
+      if (params.kind === "commit" && choice) {
+        if (
+          !dependencies.providers.includes(choice.harness) ||
+          !TEXT_HARNESSES.includes(choice.harness)
+        )
+          throw new Error("The selected text generation provider is unavailable on this Host");
+      } else if (routing.roles["text.git"]) {
         const resolution = await hostModelRoutingService(dependencies.engine.store).resolve({
           role: "text.git",
         });

@@ -486,13 +486,23 @@ describe("GitChangesPanel commit message generation", () => {
     expect(container.querySelector("textarea")?.value).toBe("feat: add app");
     expect(container.textContent).not.toContain("Draft or changes changed during generation");
   });
-  it("uses the saved project model and advisor for generation", async () => {
-    const choice = {
+  it.each([false, true])("uses saved model (commit override: %j)", async (override) => {
+    const legacy = {
       harness: "claude",
       model: "claude:sonnet-5",
       modelSettings: { advisor: "opus" },
     };
-    localStorage.setItem("bycoda.gitGeneration.v1:/repo", JSON.stringify(choice));
+    const choice = override
+      ? {
+          harness: "claude",
+          model: "claude:opus-5-5",
+          modelSettings: { effort: "high", fast: "true" },
+        }
+      : legacy;
+    localStorage.setItem("bycoda.gitGeneration.v1:/repo", JSON.stringify(legacy));
+    if (override) {
+      localStorage.setItem("bycoda.gitCommitGeneration.v1:/repo", JSON.stringify(choice));
+    }
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
         files: [
@@ -1011,7 +1021,9 @@ describe("GitChangesPanel action feedback", () => {
     );
     await act(async () => primaryAction().click());
     expect(primaryAction().textContent?.trim()).toMatch(/^Push\s*1$/);
-    await act(async () => finishReload(index({ remote: "origin", upstream: "origin/main", ahead: 1 })));
+    await act(async () =>
+      finishReload(index({ remote: "origin", upstream: "origin/main", ahead: 1 })),
+    );
     expect(primaryAction().textContent?.trim()).toMatch(/^Push\s*1$/);
   });
 

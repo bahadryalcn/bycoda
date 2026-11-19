@@ -22,6 +22,7 @@ const checkouts = new URLSearchParams(location.search).has("checkouts");
 const allRepositories = checkouts && new URLSearchParams(location.search).has("all-repositories");
 const diffUsability = new URLSearchParams(location.search).has("diff-usability");
 const actionFeedback = new URLSearchParams(location.search).has("action-feedback");
+const commitTransition = new URLSearchParams(location.search).has("commit-transition");
 const pendingActions = new Map<string, () => void>();
 const diffRepository = "/fixture/engineering/long-repository-name-for-working-tree-review";
 const diffRelative =
@@ -68,6 +69,7 @@ const file = (relative: string, staged = false) => ({
   unstaged: !staged,
 });
 let files = [file("src/workspace.tsx"), file("src/theme.css"), file("README.md", true)];
+if (commitTransition) files = [file("README.md", true)];
 if (new URLSearchParams(location.search).has("file-typography"))
   files = [
     file("audio-service/src/routes/clientTp.ts"),
@@ -115,6 +117,7 @@ let operation: string | null = conflicts.length ? "merge" : null;
 let disk =
   "<<<<<<< HEAD\nconst theme = 'dark';\n=======\nconst theme = 'light';\n>>>>>>> feature/theme\n";
 const calls: { command: string; args: Record<string, unknown> }[] = [];
+let committed = false;
 Object.assign(window, {
   gitFixtureCalls: calls,
   gitFixtureFinishAction: (command: string) => {
@@ -129,6 +132,11 @@ Object.assign(window, {
     transformCallback: () => 1,
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
+      if (commitTransition && command === "git_commit") {
+        committed = true;
+        files = [];
+        return;
+      }
       if (actionFeedback && ["git_sync", "git_stash", "git_stash_action"].includes(command))
         await new Promise<void>((resolve) => pendingActions.set(command, resolve));
       if (diffUsability && command === "git_stage_contents") {
@@ -182,7 +190,9 @@ Object.assign(window, {
           detached: false,
           branches,
         };
-      if (command === "git_diff_index" || command === "git_diff_files")
+      if (command === "git_diff_index" || command === "git_diff_files") {
+        if (commitTransition && committed)
+          await new Promise<void>((resolve) => pendingActions.set(command, resolve));
         return {
           repository: true,
           branch: checkouts
@@ -203,11 +213,12 @@ Object.assign(window, {
           remote: "origin",
           upstream: "origin/main",
           defaultBranch: "main",
-          ahead: 2,
-          behind: submodules ? 0 : 1,
+          ahead: commitTransition ? Number(committed) : 2,
+          behind: submodules || commitTransition ? 0 : 1,
           headPushed: false,
           aheadOfDefault: 2,
         };
+      }
       if (command === "git_commit_files") return [file("src/workspace.tsx"), file("src/theme.css")];
       if (command === "git_commit_message") return "Workspace change 39\n\nFull commit body.\n";
       if (command === "git_blame")
@@ -393,7 +404,7 @@ const renderFixture = () =>
           </div>
         ) : new URLSearchParams(location.search).has("visual-conflict") ? (
           <GitConflictCompare cwd="/fixture" relative="src/conflict.ts" onClose={() => {}} />
-        ) : actionFeedback ? (
+        ) : actionFeedback || commitTransition ? (
           <GitChangesPanel
             cwd="/fixture"
             enabled

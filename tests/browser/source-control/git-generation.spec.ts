@@ -1,7 +1,72 @@
 import { test, expect } from "@playwright/test";
+import { mkdirSync } from "node:fs";
 
 // Leave room for the cold Vite module graph before the interaction assertions.
 test.setTimeout(120_000);
+
+test("commit generation keeps model, effort and speed together beside the wand", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+  await page.goto("/tests/browser/source-control/git-generation.html?commit");
+  const draft = page.getByRole("textbox", { name: "Commit message" });
+  const group = page.getByRole("group", { name: "Commit message" });
+  const generate = group.getByRole("button", { name: "Generate commit message" });
+  const arrow = group.getByRole("button", { name: "Model and settings" });
+  const panel = page.getByRole("dialog", { name: "Model and settings" });
+  await expect(generate).toBeVisible();
+  await expect(arrow.locator("svg")).toHaveCount(1);
+  const wandBounds = await generate.boundingBox();
+  const arrowBounds = await arrow.boundingBox();
+  expect(Math.abs(wandBounds!.x + wandBounds!.width - arrowBounds!.x)).toBeLessThan(2);
+  await arrow.click();
+  await expect(panel).toBeVisible();
+  await panel.getByRole("option", { name: /^Claude Opus 5\.5\b/ }).click();
+  await expect(panel.getByRole("tab", { name: /^Agents/ })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Provider settings" })).toHaveCount(0);
+  const settings = panel.locator("[data-model-settings]");
+  await expect(settings.getByText(/Context window|Advisor|Subagents/i)).toHaveCount(0);
+  await settings.getByRole("radio", { name: "High", exact: true }).click();
+  await settings.getByRole("switch", { name: "Fast" }).click();
+  await expect(draft).toHaveValue("Keep this commit draft");
+  const evidence = "temp/verification/git-commit-controls";
+  mkdirSync(evidence, { recursive: true });
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 780 });
+      await expect(settings.getByRole("switch", { name: "Fast" })).toBeInViewport();
+      await page.screenshot({
+        path: `${evidence}/model-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    }
+  }
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(arrow).toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        JSON.parse(localStorage.getItem("bycoda.gitCommitGeneration.v1:/fixture") ?? "null"),
+      ),
+    )
+    .toMatchObject({
+      harness: "claude",
+      model: "claude:opus-5-5",
+      modelSettings: { effort: "high", fast: "true" },
+    });
+  await generate.click();
+  await expect(draft).toHaveValue("Fixture commit message");
+  await arrow.click();
+  await panel.getByRole("button", { name: "Automatic", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("bycoda.gitCommitGeneration.v1:/fixture")))
+    .toBeNull();
+});
 
 test("Git generation exposes advisor controls in a narrow panel and keeps the draft", async ({
   page,

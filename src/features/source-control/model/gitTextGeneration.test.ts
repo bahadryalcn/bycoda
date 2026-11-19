@@ -21,6 +21,7 @@ import {
   prContentFromCommits,
 } from "./gitTextGeneration";
 import { PrGenerationError } from "./prGenerationError";
+import { resolveGitGenerationChoice } from "./gitGenerationPreferences";
 import { gitRangeContext } from "../../../platform/tauri/fs";
 import {
   generateCommitMessage as localCommit,
@@ -32,6 +33,20 @@ beforeEach(() => {
   remote.machine.mockResolvedValue({ id: "machine" });
   remote.project.mockReturnValue({ projectId: "project" });
   remote.request.mockResolvedValue({ message: "Fix remote generation" });
+});
+
+it("uses the checkout's explicit commit model ahead of automatic routing", async () => {
+  const choice = {
+    harness: "claude" as const,
+    model: "claude:opus-5-5",
+    modelSettings: { effort: "high", fast: "true" },
+  };
+  vi.mocked(localCommit).mockResolvedValueOnce("Commit message");
+  await expect(generateCommitMessage("/repo", "codex", undefined, choice)).resolves.toBe(
+    "Commit message",
+  );
+  expect(resolveGitGenerationChoice).not.toHaveBeenCalled();
+  expect(localCommit).toHaveBeenCalledWith("/repo", "codex", undefined, choice, undefined);
 });
 
 it("generates on the repository Host without entering the desktop provider", async () => {

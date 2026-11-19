@@ -55,6 +55,7 @@ export function useCommitDraft({
   const [generating, setGenerating] = useGitPanelState(cwd, "generating");
   const [storedMessage, setStoredMessage] = useGitPanelState(cwd, "message");
   const [generationChoice] = useGitGenerationChoice(cwd);
+  const [commitGenerationChoice, setCommitGenerationChoice] = useGitGenerationChoice(cwd, "commit");
   const [storedAmendTarget, setStoredAmendTarget] = useGitPanelState(cwd, "amendTarget");
   // An amend belongs to the branch and HEAD it was started on. Once either
   // moves, it and its message no longer apply: they read as cleared here and
@@ -100,8 +101,9 @@ export function useCommitDraft({
     setGenerating(true);
     setGitFeedback(cwd, null);
     try {
-      const generated = generationChoice
-        ? await generateCommitMessage(cwd, textHarness, controller.signal, generationChoice)
+      const choice = commitGenerationChoice ?? generationChoice;
+      const generated = choice
+        ? await generateCommitMessage(cwd, textHarness, controller.signal, choice)
         : await generateCommitMessage(cwd, textHarness, controller.signal);
       if (!controller.signal.aborted && generateAbortRef.current === controller) {
         if (
@@ -176,6 +178,8 @@ export function useCommitDraft({
     generating,
     amend,
     generationChoice,
+    commitGenerationChoice,
+    setCommitGenerationChoice,
     generate,
     cancelGenerate,
     toggleAmend,

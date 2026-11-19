@@ -58,6 +58,7 @@ export function ModelPanel({
   onAccountListOpen,
   onSelectAccount,
   settings,
+  showProviderSettings = true,
   onDismiss,
 }: {
   anchor: { current: HTMLButtonElement | null };
@@ -75,6 +76,7 @@ export function ModelPanel({
   onSelectAccount: (accountId: string) => void;
   /** Absent while an inherited choice has no model to configure. */
   settings?: ModelPanelSettings;
+  showProviderSettings?: boolean;
   onDismiss: (reason: "outside" | "escape") => void;
 }) {
   const t = useT();
@@ -181,22 +183,24 @@ export function ModelPanel({
           setting={explained}
           settings={settings.settings}
           trailing={
-            <Button
-              iconOnly
-              variant="ghost"
-              size="sm"
-              type="button"
-              label={t("Provider settings")}
-              data-model-provider-settings
-              className="-my-1 -mr-1.5 shrink-0"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onDismiss("outside");
-                openProviderSettings();
-              }}
-            >
-              <Settings className="icon-sm" strokeWidth={1.75} />
-            </Button>
+            showProviderSettings ? (
+              <Button
+                iconOnly
+                variant="ghost"
+                size="sm"
+                type="button"
+                label={t("Provider settings")}
+                data-model-provider-settings
+                className="-my-1 -mr-1.5 shrink-0"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onDismiss("outside");
+                  openProviderSettings();
+                }}
+              >
+                <Settings className="icon-sm" strokeWidth={1.75} />
+              </Button>
+            ) : undefined
           }
         />
       ) : null}
