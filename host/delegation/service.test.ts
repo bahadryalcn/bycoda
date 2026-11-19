@@ -246,9 +246,10 @@ it("does not re-read a waiting child while nothing changes", async () => {
   setup({ subagents: [codexSix] });
   const started = await delegate("idle-wait");
   host.runIdReads = 0;
-  await call("agents.wait", { runId: started.runId, timeoutSeconds: 2 });
-  // The initial read only: no committed change and no safety re-read within 2 s.
-  expect(host.runIdReads).toBeLessThanOrEqual(1);
+  const result = await call("agents.wait", { runId: started.runId, timeoutSeconds: 2 });
+  expect(result).toMatchObject({ status: "running" });
+  // One initial read, plus the final description's freshness read.
+  expect(host.runIdReads).toBe(2);
 });
 
 it("resolves a waiting run on the child's committed change, not at the timeout", async () => {
