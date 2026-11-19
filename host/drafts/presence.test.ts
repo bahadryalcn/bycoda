@@ -105,7 +105,8 @@ it("archive tick integrates authority and archives only clean sessions reversibl
   const engine = {
     store: {
       projects: async () => [{ id: "p" }],
-      summaries: async () => ["draft", "clean"].map((id) => ({ id, status: "idle" })),
+      summaries: async () =>
+        ["draft", "clean"].map((id) => ({ id, status: "idle", lastActivityAt: 1 })),
       session: async (id: string) => ({
         id,
         status: "idle",

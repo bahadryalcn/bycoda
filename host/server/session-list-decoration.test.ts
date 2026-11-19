@@ -97,6 +97,8 @@ it("re-reads the registered folders only after a project is added", async () => 
   expect(registry).toHaveBeenCalledTimes(1);
 
   await store.addProject("/registry-other", "Other");
+  registry.mockClear();
   await build();
-  expect(registry).toHaveBeenCalledTimes(2);
+  await build();
+  expect(registry).toHaveBeenCalledTimes(1);
 });

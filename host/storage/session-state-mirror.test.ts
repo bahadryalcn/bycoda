@@ -32,32 +32,37 @@ describe("session_state mirror of sessions", () => {
     const path = databasePath();
     const store = new HostStore(path);
     cleanups.push(async () => await store.close());
+    const source = await store.addProject("/mirror-source", "Source");
+    const target = await store.addProject("/mirror-target", "Target");
     await store.db
       .prepare(
-        "INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status) VALUES ('s', 'p', ?, '{}', 1, 1, 100, 'idle')",
+        "INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status) VALUES ('s', ?, ?, '{}', 1, 1, 100, 'idle')",
       )
-      .run(snapshot("p", 1));
+      .run(source.id, snapshot(source.id, 1));
     await store.db
       .prepare(
-        "UPDATE sessions SET project_id='q', snapshot=?, summary='{}', has_desktop=1, revision=2, updated_at=200, status='idle' WHERE id='s'",
+        "UPDATE sessions SET project_id=?, snapshot=?, summary='{}', has_desktop=1, revision=2, updated_at=200, status='idle' WHERE id='s'",
       )
-      .run(snapshot("q", 9));
+      .run(target.id, snapshot(target.id, 9));
     const state = await store.db
       .prepare("SELECT project_id, desktop_updated_at, revision FROM session_state WHERE id='s'")
       .get();
-    expect(state).toMatchObject({ project_id: "q", desktop_updated_at: 9, revision: 2 });
+    expect(state).toMatchObject({ project_id: target.id, desktop_updated_at: 9, revision: 2 });
   });
 
   it("replaces an older session_state_update trigger on reopen and backfills its rows", async () => {
     const path = databasePath();
     const first = new HostStore(path);
-    await first.db
-      .prepare(
-        "INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status) VALUES ('s', 'p', ?, '{}', 1, 1, 100, 'idle')",
-      )
-      .run(snapshot("p", 1));
-    // Simulate the pre-#365 trigger and stale mirror rows left by it.
-    await first.db.exec(`DROP TRIGGER session_state_update;
+    let projectId: string;
+    try {
+      projectId = (await first.addProject("/mirror-source", "Source")).id;
+      await first.db
+        .prepare(
+          "INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status) VALUES ('s', ?, ?, '{}', 1, 1, 100, 'idle')",
+        )
+        .run(projectId, snapshot(projectId, 1));
+      // Simulate the pre-#365 trigger and stale mirror rows left by it.
+      await first.db.exec(`DROP TRIGGER session_state_update;
       CREATE TRIGGER session_state_update AFTER UPDATE OF summary, revision, updated_at, status, has_desktop, provider_session_id, harness, session_cwd, shell_running ON sessions BEGIN
         UPDATE session_state SET summary=NEW.summary, revision=NEW.revision, updated_at=NEW.updated_at, status=NEW.status,
           has_desktop=COALESCE(NEW.has_desktop, 0), provider_session_id=NEW.provider_session_id, harness=NEW.harness,
@@ -65,7 +70,9 @@ describe("session_state mirror of sessions", () => {
         WHERE id=NEW.id;
       END;
       UPDATE session_state SET project_id='stale', desktop_updated_at=NULL WHERE id='s';`);
-    await first.close();
+    } finally {
+      await first.close();
+    }
 
     const store = new HostStore(path);
     cleanups.push(async () => await store.close());
@@ -76,7 +83,7 @@ describe("session_state mirror of sessions", () => {
     const state = await store.db
       .prepare("SELECT project_id, desktop_updated_at FROM session_state WHERE id='s'")
       .get();
-    expect(state).toMatchObject({ project_id: "p", desktop_updated_at: 1 });
+    expect(state).toMatchObject({ project_id: projectId, desktop_updated_at: 1 });
   });
 
   it("leaves an up-to-date trigger alone on reopen", async () => {
@@ -88,8 +95,7 @@ describe("session_state mirror of sessions", () => {
         )
         .get())!.sql;
     const first = new HostStore(path);
-    const before = await readTrigger(first);
-    await first.close();
+    const before = await readTrigger(first).finally(() => first.close());
     const reopened = new HostStore(path);
     cleanups.push(async () => await reopened.close());
     expect(await readTrigger(reopened)).toBe(before);
