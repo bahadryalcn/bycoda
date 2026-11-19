@@ -633,23 +633,40 @@ async function applyModelSelection(
 
   try {
     await setConfigOption(live, live.modelConfigId, base, acp);
-  } catch {
-    await acp
-      .request(
+  } catch (error) {
+    // Transport failures (timeout, exited process) must fail the turn; only a
+    // JSON-RPC rejection may fall back to the legacy model call.
+    if (!(error instanceof JsonRpcResponseError)) throw error;
+    try {
+      await acp.request(
         "session/set_model",
         {
           sessionId: live.acpSessionId,
           modelId: base,
         },
         20_000,
-      )
-      .catch(() => undefined);
+      );
+    } catch (fallbackError) {
+      if (!(fallbackError instanceof JsonRpcResponseError)) throw fallbackError;
+      live.onEvent({
+        type: "status",
+        text: `Cursor could not apply the selected model (${base}); continuing with its current model.`,
+      });
+    }
   }
 
   for (const [settingId, value] of Object.entries(settings)) {
     const configId = resolveSettingConfigId(live.configOptions, settingId);
     if (!configId) continue;
-    await setConfigOption(live, configId, value, acp).catch(() => undefined);
+    try {
+      await setConfigOption(live, configId, value, acp);
+    } catch (error) {
+      if (!(error instanceof JsonRpcResponseError)) throw error;
+      live.onEvent({
+        type: "status",
+        text: `Cursor could not apply the selected ${settingId} setting; continuing with its current setting.`,
+      });
+    }
   }
 }
 

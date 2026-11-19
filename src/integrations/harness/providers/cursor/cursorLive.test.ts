@@ -1108,3 +1108,77 @@ it.each([true, false])(
     }
   },
 );
+
+describe("cursor model selection", () => {
+  function rejectRequest(id: number, message: string) {
+    onLine!(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32602, message } }));
+  }
+
+  function requestsFor(method: string) {
+    return parse().filter((message) => message.method === method && message.id != null);
+  }
+
+  async function startSelectionTurn(sessionId: string) {
+    const events: HarnessEvent[] = [];
+    const turn = sendCursorTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "cursor:gpt-5",
+      modelSettings: { effort: "high" },
+      runtimeMode: "supervised",
+      text: "hello",
+      attachments: [],
+      onEvent: (event) => events.push(event),
+    });
+    await waitFor(() => !!outboundRequest("initialize"), "initialize");
+    reply(outboundRequest("initialize")!.id as number, {});
+    await waitFor(() => !!outboundRequest("authenticate"), "authenticate");
+    reply(outboundRequest("authenticate")!.id as number, {});
+    await waitFor(() => !!outboundRequest("session/new"), "session/new");
+    reply(outboundRequest("session/new")!.id as number, {
+      sessionId: "cursor_1",
+      configOptions: [
+        { id: "model", category: "model", currentValue: "composer-2.5" },
+        { id: "effort", category: "thought_level", currentValue: "medium" },
+      ],
+    });
+    await waitFor(() => requestsFor("session/set_config_option").length === 1, "set model option");
+    return { events, turn };
+  }
+
+  it("reports rejected model and setting changes instead of hiding them", async () => {
+    const { events, turn } = await startSelectionTurn("cursor-selection-rejected");
+    rejectRequest(requestsFor("session/set_config_option")[0]!.id as number, "unknown model");
+    await waitFor(() => !!outboundRequest("session/set_model"), "session/set_model");
+    rejectRequest(outboundRequest("session/set_model")!.id as number, "unknown model");
+    await waitFor(() => requestsFor("session/set_config_option").length === 2, "set effort");
+    rejectRequest(requestsFor("session/set_config_option")[1]!.id as number, "bad effort");
+    await waitFor(() => !!outboundRequest("session/prompt"), "session/prompt");
+    reply(outboundRequest("session/prompt")!.id as number, { stopReason: "end_turn" });
+    await turn;
+
+    const statuses = events.flatMap((event) => (event.type === "status" ? [event.text] : []));
+    expect(statuses).toEqual([
+      "Cursor could not apply the selected model (gpt-5); continuing with its current model.",
+      "Cursor could not apply the selected effort setting; continuing with its current setting.",
+    ]);
+  });
+
+  it("fails the turn instead of prompting when a model change times out", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { turn } = await startSelectionTurn("cursor-selection-timeout");
+      const outcome = turn.then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(20_001);
+
+      expect(await outcome).toBeInstanceOf(Error);
+      expect(outboundRequest("session/set_model")).toBeUndefined();
+      expect(outboundRequest("session/prompt")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
