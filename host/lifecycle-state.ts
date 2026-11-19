@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { probeHostOwner } from "./owner";
 import { readStateFileSync } from "./storage/atomic-write";
@@ -35,7 +35,12 @@ export function readRunningHost(directory: string): RunningHost | undefined {
 /** True once running.json is gone or still names `pid` and that process has exited.
  * Unreadable state or another Host's record keeps a stopping caller waiting. */
 export function hostStateReleased(directory: string, pid: number): boolean {
-  if (!existsSync(join(directory, "running.json"))) return true;
+  // Only a confirmed missing file counts as gone; a denied or failed stat keeps waiting.
+  try {
+    if (!statSync(join(directory, "running.json"), { throwIfNoEntry: false })) return true;
+  } catch {
+    return false;
+  }
   return readHostRecord(directory)?.pid === pid && hostProcessExited(pid);
 }
 

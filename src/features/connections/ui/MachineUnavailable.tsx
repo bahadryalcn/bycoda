@@ -1,6 +1,8 @@
 import machineOffline from "../../../assets/connections/machine-offline.webp";
 import { t, useLocale } from "../../../shared/i18n";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { FailureState } from "../../../shared/ui/FailureState";
+import { CloudOff } from "../../../shared/ui/icons";
 import { knownRemoteMachine, OPEN_CONNECTIONS_EVENT } from "../model/connections";
 import type { ReactNode } from "react";
 import {
@@ -30,9 +32,9 @@ function reasonText(reason: MachineUnavailableReason): string {
 
 /**
  * What every view of a remote project shows instead of its content while the project's
- * machine cannot be asked: an illustration, one title, the reason and Manage connections.
- * Renders nothing while the machine is available. `size="compact"` drops the illustration
- * for a narrow list; `panel` shows it small.
+ * machine cannot be asked. `page` (the session pane) shows an illustration, one title, the reason
+ * and Manage connections; `panel` (side panels, the session list) shows one centered line.
+ * Renders nothing while the machine is available.
  */
 export function MachineUnavailable({
   cwd,
@@ -42,7 +44,7 @@ export function MachineUnavailable({
   cwd: string;
   /** A reason the caller already knows (a session pane that found no saved machine). */
   reason?: MachineUnavailableReason;
-  size?: "page" | "panel" | "compact";
+  size?: "page" | "panel";
 }) {
   useLocale();
   const availability = useMachineAvailability(cwd);
@@ -50,27 +52,39 @@ export function MachineUnavailable({
   if (!reason) return null;
   const environmentId = parseRemotePath(cwd)?.environmentId;
   const name = environmentId ? knownRemoteMachine(environmentId)?.name : undefined;
+  const title = name
+    ? t("{p0} isn’t available", { p0: name })
+    : t("This project’s machine isn’t available");
+  // A side panel only says so in one line; the page beside it carries the illustration, the
+  // reason and Manage connections, so the same notice is not repeated at its side.
+  if (size !== "page")
+    return (
+      <EmptyState
+        data-machine-unavailable={reason}
+        context="panel"
+        role="status"
+        className="h-full"
+        icon={<CloudOff />}
+        description={title}
+      />
+    );
   return (
     <FailureState
       data-machine-unavailable={reason}
-      context={size === "compact" ? "list" : size}
+      context="page"
       role="status"
-      className={size === "compact" ? undefined : "h-full"}
+      className="h-full"
       icon={
-        size === "compact" ? null : (
-          <img
-            src={machineOffline}
-            alt=""
-            width={320}
-            height={240}
-            draggable={false}
-            className={`h-auto w-full ${size === "page" ? "max-w-80" : "max-w-48"}`}
-          />
-        )
+        <img
+          src={machineOffline}
+          alt=""
+          width={320}
+          height={240}
+          draggable={false}
+          className="h-auto w-full max-w-80"
+        />
       }
-      title={
-        name ? t("{p0} isn’t available", { p0: name }) : t("This project’s machine isn’t available")
-      }
+      title={title}
       description={reasonText(reason)}
       action={{
         label: t("Manage machines"),
@@ -96,7 +110,7 @@ export function MachineGate({
   /** Whether the pane already holds something loaded for this project. Read each time the
    * machine's availability changes, so it sees what loaded since the pane last rendered. */
   hasData: () => boolean;
-  size?: "page" | "panel" | "compact";
+  size?: "page" | "panel";
   children: ReactNode;
 }) {
   const availability = useMachineAvailability(cwd);

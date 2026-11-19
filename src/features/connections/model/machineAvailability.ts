@@ -90,7 +90,8 @@ function availabilityOf(environmentId: string): MachineAvailability {
   }
 }
 
-function subscribeAvailability(listener: () => void): () => void {
+/** Calls `listener` whenever any machine's availability may have changed. */
+export function subscribeAvailability(listener: () => void): () => void {
   const stopHealth = subscribeChanges(listener);
   const stopList = subscribeRemoteMachineList(listener);
   const stopSwitch = subscribeMachineSwitch(listener);

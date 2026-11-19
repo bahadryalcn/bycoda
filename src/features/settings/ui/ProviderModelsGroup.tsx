@@ -1,7 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import "./ProviderDefaults.css";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
@@ -12,6 +12,7 @@ import {
   CatalogReceiptStatus,
   CatalogRefreshButton,
 } from "../../providers/public/CatalogReceiptStatus";
+import { refreshProviderCatalog } from "../../providers/public/catalogReceipts";
 import {
   catalogModelsFor,
   defaultModelId,
@@ -40,12 +41,26 @@ function modelMeta(model: AgentModel): string | undefined {
 /** Per-model switches: a model turned off is never offered or picked by default. Saves at once. */
 export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
   useLocale();
+  const available = isHarnessAvailable(harness);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Load the native OpenCode catalog when its mounted panel becomes available, independently of conversations.
+  useEffect(() => {
+    if (harness === "opencode" && available) {
+      refreshProviderCatalog(harness).catch(() => undefined);
+    }
+  }, [harness, available]);
   const models = catalogModelsFor(harness);
   const enabledCount = models.filter((model) => isModelEnabled(model.id)).length;
   const [query, setQuery] = useState("");
+  const [freeOnly, setFreeOnly] = useState(false);
   const needle = query.trim().toLocaleLowerCase();
-  const filtered = models.filter((model) =>
-    `${model.name} ${model.id}`.toLocaleLowerCase().includes(needle),
+  const freeLabel = t("Free");
+  const typedFree =
+    harness === "opencode" && (needle === "free" || needle === freeLabel.toLocaleLowerCase());
+  const freeModels = models.filter((model) => model.free === true);
+  const filterFree = harness === "opencode" && (freeOnly || typedFree);
+  const bulkModels = filterFree ? freeModels : models;
+  const filtered = bulkModels.filter(
+    (model) => typedFree || `${model.name} ${model.id}`.toLocaleLowerCase().includes(needle),
   );
   const defaultId = defaultModelId(harness);
   const keptModel = models.find((model) => model.id === defaultId) ?? models[0];
@@ -53,7 +68,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
 
   // Bulk actions keep at least one model on, the same guard each switch applies.
   const enableAll = () => {
-    for (const model of models) if (!isModelEnabled(model.id)) saveModelEnabled(model.id, true);
+    for (const model of bulkModels) if (!isModelEnabled(model.id)) saveModelEnabled(model.id, true);
   };
   const onlyDefault = () => {
     if (!keptModel) return;
@@ -80,30 +95,43 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
       action={
         <div className="provider-models-actions">
           <CatalogRefreshButton harness={harness} />
+          {harness === "opencode" && (freeModels.length > 0 || filterFree) ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              pressed={filterFree}
+              onClick={() => {
+                if (typedFree) setQuery("");
+                setFreeOnly(!filterFree);
+              }}
+            >
+              {freeLabel}
+            </Button>
+          ) : null}
+          {models.length > 1 || filterFree ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={enableAll}
+              disabled={bulkModels.every((model) => isModelEnabled(model.id))}
+            >
+              {filterFree ? t("Enable all free") : t("Enable all")}
+            </Button>
+          ) : null}
           {models.length > 1 ? (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={enableAll}
-                disabled={enabledCount === models.length}
-              >
-                {t("Enable all")}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={onlyDefault}
-                disabled={enabledCount === 1 && Boolean(keptModel && isModelEnabled(keptModel.id))}
-              >
-                {t("Only default")}
-              </Button>
-            </>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onlyDefault}
+              disabled={enabledCount === 1 && Boolean(keptModel && isModelEnabled(keptModel.id))}
+            >
+              {t("Only default")}
+            </Button>
           ) : null}
         </div>
       }
     >
-      {models.length > 5 || query.length > 0 ? (
+      {models.length > 5 || freeModels.length > 0 || query.length > 0 ? (
         <div
           {...surfaceAttributes(
             { variant: "canvas", frame: "pane", edge: "block-end" },
@@ -121,11 +149,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
       ) : null}
       <div {...surfaceAttributes({ frame: "pane", edge: "block" }, "provider-models-list")}>
         {models.length === 0 ? (
-          <Row
-            label={
-              isHarnessAvailable(harness) ? t("Loading models…") : t("Available after CLI setup")
-            }
-          />
+          <Row label={available ? t("Loading models…") : t("Available after CLI setup")} />
         ) : filtered.length === 0 ? (
           <Row label={t("No matching models")} />
         ) : (
@@ -141,6 +165,11 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
                     {model.id === defaultId ? (
                       <Badge size="sm" className="shrink-0">
                         {t("Default")}
+                      </Badge>
+                    ) : null}
+                    {model.free ? (
+                      <Badge size="sm" tone="success" className="shrink-0">
+                        {freeLabel}
                       </Badge>
                     ) : null}
                   </span>
@@ -162,7 +191,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
         )}
       </div>
       <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "provider-models-source")}>
-        <CatalogReceiptStatus harness={harness} available={isHarnessAvailable(harness)} />
+        <CatalogReceiptStatus harness={harness} available={available} />
       </div>
     </Group>
   );

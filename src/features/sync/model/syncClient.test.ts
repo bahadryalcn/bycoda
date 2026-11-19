@@ -1042,6 +1042,27 @@ describe("sync cycle deadline", () => {
     }
   });
 
+  it("describes a refused completion in words instead of its native owner code", async () => {
+    const loop = startSyncLoop(
+      () => ["dl-complete"],
+      () => () => Promise.resolve(ok),
+      undefined,
+      undefined,
+      undefined,
+      () => Promise.resolve(),
+      () => Promise.reject("SYNC_OWNER_UNKNOWN"),
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      const status = getSyncStatus("dl-complete");
+      expect(status.state).toBe("error");
+      expect(status.lastError).toMatch(/earlier run/);
+      expect(status.lastError).not.toMatch(/SYNC_OWNER_/);
+    } finally {
+      void loop.stop();
+    }
+  });
+
   it("drops a response that arrives after the deadline", async () => {
     const { request, settle } = hangingRequest();
     const loop = startSyncLoop(

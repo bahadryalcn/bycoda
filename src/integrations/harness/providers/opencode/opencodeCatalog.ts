@@ -31,6 +31,7 @@ type OpenCodeModelJson = {
   name?: string;
   variants?: Record<string, unknown>;
   limit?: { context?: number; input?: number; output?: number };
+  cost?: unknown;
 };
 
 type ParsedProvider = {
@@ -179,6 +180,7 @@ export function parseV2Catalog(
       id: modelID,
       name: stringField(model, "name"),
       variants,
+      cost: model.cost,
       limit: limit
         ? {
             context: typeof limit.context === "number" ? limit.context : undefined,
@@ -311,6 +313,9 @@ export function flattenOpenCodeModels(
       const name = model.name?.trim() || titleCaseSlug(modelId);
       const nativeId = `${provider.id}/${model.id ?? modelId}`;
       const contextWindow = model.limit?.context;
+      const free =
+        (provider.id === "opencode" || provider.id === "opencode-go") &&
+        hasZeroTokenPrices(model.cost);
       models.push({
         id: `opencode:${nativeId}`,
         harness: "opencode",
@@ -319,10 +324,27 @@ export function flattenOpenCodeModels(
         provider: { id: provider.id, name: provider.name },
         settings: openCodeModelSettings(provider.id, model, primaryAgents),
         ...(contextWindow && contextWindow > 0 ? { contextWindow } : {}),
+        ...(free ? { free } : {}),
       });
     }
   }
   return models.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function hasZeroTokenPrices(cost: unknown): boolean {
+  // V1 reports one price object; V2 reports a list of price tiers.
+  const tiers: unknown[] = Array.isArray(cost) ? cost : [cost];
+  return (
+    tiers.length > 0 &&
+    tiers.every((value) => {
+      const tier = asRecord(value);
+      if (tier?.input !== 0 || tier.output !== 0) return false;
+      const cache = asRecord(tier.cache);
+      return [tier.cache_read, tier.cache_write, cache?.read, cache?.write].every(
+        (price) => price === undefined || price === 0,
+      );
+    })
+  );
 }
 
 export function openCodeProviderName(providerID: string): string {

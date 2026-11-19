@@ -215,6 +215,10 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "generationId": {
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+            "type": "string"
+          },
           "prompt": { "maxLength": 600, "minLength": 1, "type": "string" },
           "provider": { "enum": ["codex", "gemini"], "type": "string" }
         },
@@ -300,6 +304,36 @@
       "retry": "never",
       "scope": "device"
     },
+    "appearance.cancelGeneration": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "generationId": {
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": ["generationId"],
+        "type": "object"
+      },
+      "requiredCapability": null,
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "cancelled": { "type": "boolean" } },
+        "required": ["cancelled"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "appearance.themeSuggestions": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -310,6 +344,10 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "generationId": {
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+            "type": "string"
+          },
           "harness": {
             "enum": [
               "codex",
@@ -33359,6 +33397,7 @@
                 "properties": {
                   "aliasTarget": { "type": "string" },
                   "contextWindow": { "type": "number" },
+                  "free": { "type": "boolean" },
                   "harness": {
                     "enum": [
                       "codex",
@@ -39481,6 +39520,487 @@
         "type": "object"
       },
       "retry": "never",
+      "scope": "device"
+    },
+    "ollama.opencode.save": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "items": { "maxLength": 200, "minLength": 1, "type": "string" },
+            "maxItems": 100,
+            "type": "array"
+          }
+        },
+        "required": ["models"],
+        "type": "object"
+      },
+      "requiredCapability": "ollama.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "chat": { "type": "boolean" },
+                "name": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "parameterSize": { "maxLength": 32, "type": "string" },
+                "size": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "tools": { "type": "boolean" }
+              },
+              "required": ["name", "size", "chat", "tools"],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "opencode": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "enum": ["ready", "comments", "invalid", "unreadable"],
+                "type": "string"
+              },
+              "models": {
+                "items": { "maxLength": 200, "type": "string" },
+                "maxItems": 1000,
+                "type": "array"
+              }
+            },
+            "required": ["config", "models"],
+            "type": "object"
+          },
+          "port": { "maximum": 65535, "minimum": 1, "type": "number" },
+          "portCustom": { "type": "boolean" },
+          "pull": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "completed": { "minimum": 0, "type": "number" },
+                  "error": { "maxLength": 300, "type": "string" },
+                  "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "state": { "enum": ["running", "done", "failed", "cancelled"], "type": "string" },
+                  "total": { "minimum": 0, "type": "number" }
+                },
+                "required": ["model", "state", "completed", "total"],
+                "type": "object"
+              },
+              { "type": "null" }
+            ]
+          },
+          "runtime": { "enum": ["missing", "stopped", "running"], "type": "string" },
+          "version": { "maxLength": 64, "type": "string" }
+        },
+        "required": ["port", "portCustom", "runtime", "models", "pull", "opencode"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "ollama.port.set": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "port": {
+            "anyOf": [{ "maximum": 65535, "minimum": 1, "type": "number" }, { "type": "null" }]
+          }
+        },
+        "required": ["port"],
+        "type": "object"
+      },
+      "requiredCapability": "ollama.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "chat": { "type": "boolean" },
+                "name": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "parameterSize": { "maxLength": 32, "type": "string" },
+                "size": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "tools": { "type": "boolean" }
+              },
+              "required": ["name", "size", "chat", "tools"],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "opencode": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "enum": ["ready", "comments", "invalid", "unreadable"],
+                "type": "string"
+              },
+              "models": {
+                "items": { "maxLength": 200, "type": "string" },
+                "maxItems": 1000,
+                "type": "array"
+              }
+            },
+            "required": ["config", "models"],
+            "type": "object"
+          },
+          "port": { "maximum": 65535, "minimum": 1, "type": "number" },
+          "portCustom": { "type": "boolean" },
+          "pull": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "completed": { "minimum": 0, "type": "number" },
+                  "error": { "maxLength": 300, "type": "string" },
+                  "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "state": { "enum": ["running", "done", "failed", "cancelled"], "type": "string" },
+                  "total": { "minimum": 0, "type": "number" }
+                },
+                "required": ["model", "state", "completed", "total"],
+                "type": "object"
+              },
+              { "type": "null" }
+            ]
+          },
+          "runtime": { "enum": ["missing", "stopped", "running"], "type": "string" },
+          "version": { "maxLength": 64, "type": "string" }
+        },
+        "required": ["port", "portCustom", "runtime", "models", "pull", "opencode"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "ollama.pull.cancel": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "ollama.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "chat": { "type": "boolean" },
+                "name": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "parameterSize": { "maxLength": 32, "type": "string" },
+                "size": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "tools": { "type": "boolean" }
+              },
+              "required": ["name", "size", "chat", "tools"],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "opencode": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "enum": ["ready", "comments", "invalid", "unreadable"],
+                "type": "string"
+              },
+              "models": {
+                "items": { "maxLength": 200, "type": "string" },
+                "maxItems": 1000,
+                "type": "array"
+              }
+            },
+            "required": ["config", "models"],
+            "type": "object"
+          },
+          "port": { "maximum": 65535, "minimum": 1, "type": "number" },
+          "portCustom": { "type": "boolean" },
+          "pull": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "completed": { "minimum": 0, "type": "number" },
+                  "error": { "maxLength": 300, "type": "string" },
+                  "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "state": { "enum": ["running", "done", "failed", "cancelled"], "type": "string" },
+                  "total": { "minimum": 0, "type": "number" }
+                },
+                "required": ["model", "state", "completed", "total"],
+                "type": "object"
+              },
+              { "type": "null" }
+            ]
+          },
+          "runtime": { "enum": ["missing", "stopped", "running"], "type": "string" },
+          "version": { "maxLength": 64, "type": "string" }
+        },
+        "required": ["port", "portCustom", "runtime", "models", "pull", "opencode"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "ollama.pull.start": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "model": { "maxLength": 200, "minLength": 1, "type": "string" } },
+        "required": ["model"],
+        "type": "object"
+      },
+      "requiredCapability": "ollama.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "chat": { "type": "boolean" },
+                "name": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "parameterSize": { "maxLength": 32, "type": "string" },
+                "size": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "tools": { "type": "boolean" }
+              },
+              "required": ["name", "size", "chat", "tools"],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "opencode": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "enum": ["ready", "comments", "invalid", "unreadable"],
+                "type": "string"
+              },
+              "models": {
+                "items": { "maxLength": 200, "type": "string" },
+                "maxItems": 1000,
+                "type": "array"
+              }
+            },
+            "required": ["config", "models"],
+            "type": "object"
+          },
+          "port": { "maximum": 65535, "minimum": 1, "type": "number" },
+          "portCustom": { "type": "boolean" },
+          "pull": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "completed": { "minimum": 0, "type": "number" },
+                  "error": { "maxLength": 300, "type": "string" },
+                  "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "state": { "enum": ["running", "done", "failed", "cancelled"], "type": "string" },
+                  "total": { "minimum": 0, "type": "number" }
+                },
+                "required": ["model", "state", "completed", "total"],
+                "type": "object"
+              },
+              { "type": "null" }
+            ]
+          },
+          "runtime": { "enum": ["missing", "stopped", "running"], "type": "string" },
+          "version": { "maxLength": 64, "type": "string" }
+        },
+        "required": ["port", "portCustom", "runtime", "models", "pull", "opencode"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "ollama.start": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "ollama.v1",
+      "responseTimeoutMs": 45000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "chat": { "type": "boolean" },
+                "name": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "parameterSize": { "maxLength": 32, "type": "string" },
+                "size": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "tools": { "type": "boolean" }
+              },
+              "required": ["name", "size", "chat", "tools"],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "opencode": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "enum": ["ready", "comments", "invalid", "unreadable"],
+                "type": "string"
+              },
+              "models": {
+                "items": { "maxLength": 200, "type": "string" },
+                "maxItems": 1000,
+                "type": "array"
+              }
+            },
+            "required": ["config", "models"],
+            "type": "object"
+          },
+          "port": { "maximum": 65535, "minimum": 1, "type": "number" },
+          "portCustom": { "type": "boolean" },
+          "pull": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "completed": { "minimum": 0, "type": "number" },
+                  "error": { "maxLength": 300, "type": "string" },
+                  "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "state": { "enum": ["running", "done", "failed", "cancelled"], "type": "string" },
+                  "total": { "minimum": 0, "type": "number" }
+                },
+                "required": ["model", "state", "completed", "total"],
+                "type": "object"
+              },
+              { "type": "null" }
+            ]
+          },
+          "runtime": { "enum": ["missing", "stopped", "running"], "type": "string" },
+          "version": { "maxLength": 64, "type": "string" }
+        },
+        "required": ["port", "portCustom", "runtime", "models", "pull", "opencode"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "ollama.status": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "ollama.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "chat": { "type": "boolean" },
+                "name": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "parameterSize": { "maxLength": 32, "type": "string" },
+                "size": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "tools": { "type": "boolean" }
+              },
+              "required": ["name", "size", "chat", "tools"],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "opencode": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "enum": ["ready", "comments", "invalid", "unreadable"],
+                "type": "string"
+              },
+              "models": {
+                "items": { "maxLength": 200, "type": "string" },
+                "maxItems": 1000,
+                "type": "array"
+              }
+            },
+            "required": ["config", "models"],
+            "type": "object"
+          },
+          "port": { "maximum": 65535, "minimum": 1, "type": "number" },
+          "portCustom": { "type": "boolean" },
+          "pull": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "completed": { "minimum": 0, "type": "number" },
+                  "error": { "maxLength": 300, "type": "string" },
+                  "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "state": { "enum": ["running", "done", "failed", "cancelled"], "type": "string" },
+                  "total": { "minimum": 0, "type": "number" }
+                },
+                "required": ["model", "state", "completed", "total"],
+                "type": "object"
+              },
+              { "type": "null" }
+            ]
+          },
+          "runtime": { "enum": ["missing", "stopped", "running"], "type": "string" },
+          "version": { "maxLength": 64, "type": "string" }
+        },
+        "required": ["port", "portCustom", "runtime", "models", "pull", "opencode"],
+        "type": "object"
+      },
+      "retry": "safe-query",
       "scope": "device"
     },
     "projects.browse": {
@@ -64533,6 +65053,118 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "ollama.status", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "ollama.start", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "ollama.pull.start", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "model": { "maxLength": 200, "minLength": 1, "type": "string" } },
+              "required": ["model"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "ollama.pull.cancel", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "ollama.port.set", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "port": {
+                  "anyOf": [
+                    { "maximum": 65535, "minimum": 1, "type": "number" },
+                    { "type": "null" }
+                  ]
+                }
+              },
+              "required": ["port"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "ollama.opencode.save", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "models": {
+                  "items": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "maxItems": 100,
+                  "type": "array"
+                }
+              },
+              "required": ["models"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "secrets.owner.list", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
@@ -66865,10 +67497,38 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "appearance.cancelGeneration", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "generationId": {
+                  "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": ["generationId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "appearance.themeSuggestions", "type": "string" },
             "params": {
               "additionalProperties": false,
               "properties": {
+                "generationId": {
+                  "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "harness": {
                   "enum": [
                     "codex",
@@ -66957,6 +67617,10 @@
             "params": {
               "additionalProperties": false,
               "properties": {
+                "generationId": {
+                  "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "prompt": { "maxLength": 600, "minLength": 1, "type": "string" },
                 "provider": { "enum": ["codex", "gemini"], "type": "string" }
               },
@@ -81669,5 +82333,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "2cab4eba050709f058c60d297f55773a24098c0dc41083b3fc935d769e13075b"
+  "schemaHash": "02b87cdc512b3c955d060c12be761dece744894b4ef102fd6187aec24acb4af6"
 }

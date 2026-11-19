@@ -473,6 +473,7 @@ export function useTranscriptFollow({
     setShowJump,
     restoreCheckpoint,
     restoringCheckpoint,
+    hasReaderInput: () => readerInput.current.held || readerInput.current.until > performance.now(),
     virtualization,
   };
 }

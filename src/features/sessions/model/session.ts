@@ -534,6 +534,8 @@ export type Session = {
   historyPartial?: boolean;
   /** Only a tail page is available; sending/editing/persistence must wait. */
   historyLoading?: boolean;
+  /** Cursor for a stored transcript opened without reading all of its history. */
+  storedHistory?: { before?: number; revision: number };
   historyLoadError?: string;
   /** Receipt for an acknowledged floating-composer handoff. */
   quickLaunchAccepted?: boolean;

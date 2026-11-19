@@ -1,6 +1,7 @@
 import {
   AppearanceBackgroundImageParamsSchema,
   AppearanceBackgroundSuggestionsParamsSchema,
+  AppearanceCancelGenerationParamsSchema,
   AppearanceThemeSuggestionsParamsSchema,
 } from "../../src/shared/model/host-contracts/appearance";
 import { generateAppearanceBackgroundImage } from "../appearance/background-image";
@@ -8,23 +9,57 @@ import { generateBackgroundSuggestion } from "../appearance/background-suggestio
 import { generateThemeSuggestions } from "../appearance/theme-suggestions";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 
+const activeGenerations = new Map<string, AbortController>();
+
+/** Correlate cancellation only within the credential that started the generation. */
+async function runGeneration<T>(
+  request: OwnerRpcRequest,
+  generationId: string | undefined,
+  run: (signal?: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const requestSignal = request.domainContext.signal;
+  if (!generationId) return run(requestSignal);
+  const key = `${request.tokenHash}:${generationId}`;
+  if (activeGenerations.has(key)) throw new Error("Appearance generation is already running.");
+  const controller = new AbortController();
+  activeGenerations.set(key, controller);
+  try {
+    return await run(
+      requestSignal ? AbortSignal.any([requestSignal, controller.signal]) : controller.signal,
+    );
+  } finally {
+    activeGenerations.delete(key);
+  }
+}
+
 export async function handleAppearanceRpc(_dependencies: unknown, request: OwnerRpcRequest) {
   switch (request.input.method) {
-    case "appearance.themeSuggestions":
-      request.result = await generateThemeSuggestions(
-        AppearanceThemeSuggestionsParamsSchema.parse(request.params),
+    case "appearance.themeSuggestions": {
+      const params = AppearanceThemeSuggestionsParamsSchema.parse(request.params);
+      request.result = await runGeneration(request, params.generationId, (signal) =>
+        generateThemeSuggestions(params, undefined, signal),
       );
       break;
+    }
     case "appearance.backgroundSuggestions":
       request.result = await generateBackgroundSuggestion(
         AppearanceBackgroundSuggestionsParamsSchema.parse(request.params),
       );
       break;
-    case "appearance.backgroundImage":
-      request.result = await generateAppearanceBackgroundImage(
-        AppearanceBackgroundImageParamsSchema.parse(request.params),
+    case "appearance.backgroundImage": {
+      const params = AppearanceBackgroundImageParamsSchema.parse(request.params);
+      request.result = await runGeneration(request, params.generationId, (signal) =>
+        generateAppearanceBackgroundImage(params, undefined, signal),
       );
       break;
+    }
+    case "appearance.cancelGeneration": {
+      const { generationId } = AppearanceCancelGenerationParamsSchema.parse(request.params);
+      const controller = activeGenerations.get(`${request.tokenHash}:${generationId}`);
+      controller?.abort();
+      request.result = { cancelled: Boolean(controller) };
+      break;
+    }
     default:
       throw new Error("Unsupported host method");
   }

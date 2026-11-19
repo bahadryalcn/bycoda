@@ -30,6 +30,7 @@ import {
   takeOutbox,
 } from "./syncPeerState";
 import { remoteErrorText } from "../../connections/model/remoteFailure";
+import { syncOwnerFailureText } from "./nativeSyncCompletion";
 import { ROOM_PRIVACY_NOT_CONFIRMED } from "../../connections/model/syncSummary";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { parseSyncRecord, syncPushBatches } from "./syncProtocol";
@@ -609,7 +610,7 @@ export function startSyncLoop(
         if (!began)
           recordSyncStatus(slot.id, {
             state: "error",
-            lastError: `Sync ownership is unavailable: ${String(error)}`,
+            lastError: syncOwnerFailureText(error),
           });
       }
     }
@@ -621,7 +622,7 @@ export function startSyncLoop(
         failed = true;
         recordSyncStatus(slot.id, {
           state: "error",
-          lastError: `Sync completion is unconfirmed: ${String(error)}`,
+          lastError: syncOwnerFailureText(error, "Sync completion is unconfirmed"),
         });
       }
     }

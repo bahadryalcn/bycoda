@@ -984,8 +984,11 @@ not read the OS answer, not that access is allowed.
 
 Choose **Allow** or **Open settings** to open the setup guide. Follow the exact OS
 path in the guide; it checks access while open and confirms the OS change. On macOS,
-the helper reveals bycoda in Finder so you can add the running app to the list. A
-screen recording change may still require restarting bycoda if capture fails.
+the helper reveals bycoda in Finder so you can add the running app to the list.
+macOS applies screen recording and Full Disk Access to a running app only after it
+restarts: when bycoda sees the switch is on (or after you open System Settings from
+the guide), the row shows **Restart to apply** with **Restart now**. Full Disk Access
+is read by opening a file macOS protects with it.
 Unsigned macOS builds can lose grants after updates.
 
 Windows microphone access requires both **Microphone access** and **Let desktop apps

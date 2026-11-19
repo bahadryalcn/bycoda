@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { remotePollDue } from "../../connections/public/remoteHealth";
+import { readMachineAvailability } from "../../connections/public/machineAvailability";
 import { notifyDirsChanged, subscribeDirsChanged } from "../model/fileTree";
 
 /** Keeps the root's directory listings fresh: resume refresh plus a focus-aware poll. */
@@ -8,7 +9,9 @@ export function useFileTreePolling(cwd: string, visible: boolean) {
   useEffect(() => {
     const unsub = subscribeDirsChanged(() => undefined, cwd);
     const onResume = () => {
-      if (!document.hidden) notifyDirsChanged(cwd, true, true);
+      // A retained tree of an unavailable machine stays as it is; recovery reloads it.
+      if (!document.hidden && readMachineAvailability(cwd).available)
+        notifyDirsChanged(cwd, true, true);
     };
     window.addEventListener("focus", onResume);
     document.addEventListener("visibilitychange", onResume);

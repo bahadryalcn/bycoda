@@ -462,6 +462,47 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
 
+    #[test]
+    fn sync_restart_reads_the_previous_lease_from_a_registry_of_an_older_file_identity() {
+        let directory =
+            std::env::temp_dir().join(format!("bycoda-sync-owner-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let store =
+            crate::session_store::SessionStore::open(directory.join("sync-owner.sqlite")).unwrap();
+        let own = store.native_instance_id().to_string();
+        // macOS renumbers a volume's st_dev at boot, so the same database file
+        // gets a new registry and the previous run's lease stays in the old one.
+        let stale = directory.join(format!(".bycoda-writers-{}-recovery", "0".repeat(64)));
+        std::fs::create_dir(&stale).unwrap();
+        let previous = uuid::Uuid::new_v4().to_string();
+        let lease = std::fs::File::create(stale.join(&previous)).unwrap();
+        lease.try_lock().unwrap();
+        let set_owner = |id: &str| {
+            store
+                .lock_conn()
+                .unwrap()
+                .execute(
+                    "INSERT INTO native_sync_owner_process(id,instance_id) VALUES(1,?1)
+                     ON CONFLICT(id) DO UPDATE SET instance_id=excluded.instance_id",
+                    [id],
+                )
+                .unwrap();
+        };
+        set_owner(&previous);
+        // A previous run that still holds its lease keeps ownership.
+        assert!(!prior_instance_retired(&store.lock_conn().unwrap(), &own).unwrap());
+        lease.unlock().unwrap();
+        drop(lease);
+        assert!(prior_instance_retired(&store.lock_conn().unwrap(), &own).unwrap());
+        // An entry under the lease name that is not a lease file is unknown.
+        let unusable = uuid::Uuid::new_v4().to_string();
+        std::fs::create_dir(stale.join(&unusable)).unwrap();
+        set_owner(&unusable);
+        assert!(!prior_instance_retired(&store.lock_conn().unwrap(), &own).unwrap());
+        drop(store);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()

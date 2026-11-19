@@ -3,6 +3,7 @@ import { gitHistory, type GitHistoryCommit } from "../../../platform/tauri/fs";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { reportRemoteLoad, useRemoteLoadFailure } from "../../connections/public/remoteHealth";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useMachineAvailability } from "../../connections/public/machineAvailability";
 import { useGitResource } from "./useGitResource";
 
 const HISTORY_PAGE = 200;
@@ -27,6 +28,7 @@ type Continuation = {
 export function useGitHistory(cwd: string, enabled: boolean, all: boolean) {
   const failure = useRemoteLoadFailure(cwd, "graph");
   const remote = isRemoteProjectPath(cwd);
+  const available = useMachineAvailability(cwd).available;
   const scope = `${cwd}:${all}`;
   // Commits shown for the scope, so a refresh keeps the depth the owner scrolled to.
   const loaded = useRef({ scope, count: HISTORY_PAGE });
@@ -57,7 +59,8 @@ export function useGitHistory(cwd: string, enabled: boolean, all: boolean) {
     !!base && (tail ? !tail.ended : base.length >= HISTORY_PAGE && ended.current !== base);
 
   const loadMore = () => {
-    if (!base || tail?.loading || !hasMore) return;
+    // Retained (offline) history stays shown, but its machine is not asked for more.
+    if (!available || !base || tail?.loading || !hasMore) return;
     const prior = tail?.commits ?? [];
     const skip = base.length + prior.length;
     setContinuation({ base, commits: prior, ended: false, loading: true, error: null });
@@ -90,9 +93,10 @@ export function useGitHistory(cwd: string, enabled: boolean, all: boolean) {
   };
 
   const error = resource.error ?? tail?.error ?? null;
+  // Hands each finished read's outcome to remote health; a cached or paused snapshot is none.
   useEffect(() => {
-    if (enabled && remote && !resource.loading) reportRemoteLoad(cwd, "graph", resource.cause);
-  }, [cwd, enabled, remote, resource.loading, resource.cause]);
+    if (enabled && remote && resource.settled) reportRemoteLoad(cwd, "graph", resource.cause);
+  }, [cwd, enabled, remote, resource.settled, resource.cause]);
   return {
     commits,
     hasMore,

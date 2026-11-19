@@ -245,7 +245,11 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         };
       }
       case "workspace.sessions.submit": {
-        if (target.historyLoading || target.historyLoadError || target.worktreeRemoved)
+        if (
+          (target.historyLoading && !target.storedHistory) ||
+          target.historyLoadError ||
+          target.worktreeRemoved
+        )
           throw new Error("The session is not ready for work.");
         const accepted = await (deps.onSubmit ?? unsupported)(id, clean(args.text, "text", 16000));
         return { ...base, status: accepted ? "accepted" : "rejected", accepted };

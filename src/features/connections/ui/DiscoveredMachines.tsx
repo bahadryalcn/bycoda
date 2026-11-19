@@ -71,7 +71,13 @@ function CandidateRow({
       <div className="flex shrink-0 items-center gap-1">
         {plan || pair ? null : (
           <InfoPopover label={t("Why Add is unavailable")} width={280}>
-            <p>{t("This computer has no SSH address to set it up from here yet.")}</p>
+            <p>
+              {machine.sources.includes("account")
+                ? t(
+                    "This computer has not published an address another computer can use. Turn on Tailscale or a tunnel there, or add it by its SSH address under Enter address.",
+                  )
+                : t("This computer has no SSH address to set it up from here yet.")}
+            </p>
           </InfoPopover>
         )}
         <Button

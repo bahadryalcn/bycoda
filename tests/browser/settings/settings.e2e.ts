@@ -1,5 +1,121 @@
 import { test, expect, type Page } from "@playwright/test";
 
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`appearance image review and replacement: ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en&appearanceImageReview`,
+      );
+      await page.getByRole("button", { name: "Generate with AI", exact: true }).click();
+      const card = page
+        .locator(".theme-suggestion-card")
+        .filter({ has: page.getByRole("button", { name: "Apply Meadow" }) });
+      const activeImage = () =>
+        page.evaluate(() => localStorage.getItem("bycoda.chatBackgroundLibraryId.v1"));
+      await card.getByRole("button", { name: "Generate image" }).click();
+      await card.getByRole("button", { name: "Preview Meadow" }).click();
+      const preview = page.getByRole("dialog", { name: "Image preview: Meadow" });
+      await expect(preview.getByRole("img")).toBeVisible();
+      expect(await activeImage()).toBeNull();
+      await page.screenshot({
+        path: info.outputPath(`appearance-image-preview-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await preview.getByRole("button", { name: "Change image" }).click();
+      await expect(preview).toHaveCount(0);
+      await page.getByRole("button", { name: "Recent activity", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Preview Meadow" })).toHaveCount(2);
+      expect(await activeImage()).toBeNull();
+      await page.screenshot({
+        path: info.outputPath(`appearance-image-cards-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await card.getByRole("button", { name: "Use image" }).click();
+      await expect.poll(activeImage).toBe("/fixture/image-2.png");
+      await expect(card.getByRole("button", { name: "In use" })).toBeVisible();
+    });
+  }
+
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`appearance generation tracks concurrent drawings: ${theme} ${width}`, async ({
+      page,
+    }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en&appearanceGeneration`,
+      );
+      const launcher = page.getByRole("button", { name: "Generate with AI", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Generate with AI", exact: true });
+      const colorScheme = page.getByText("Color scheme", { exact: true });
+      const schemeY = (await colorScheme.boundingBox())?.y;
+      expect(schemeY).toBeDefined();
+      await expect(page.getByRole("textbox", { name: "Describe a theme" })).toHaveCount(0);
+      await launcher.click();
+      await expect(dialog.getByRole("textbox", { name: "Describe a theme" })).toBeFocused();
+      await page.getByRole("button", { name: "Apply Meadow" }).click();
+      await page
+        .getByRole("textbox", { name: "Describe a theme" })
+        .fill("Midnight blue with mountain silhouettes");
+      const generate = page.getByRole("button", { name: "Generate themes", exact: true });
+      await expect(generate).toBeEnabled();
+      await generate.click();
+      await page.getByRole("button", { name: "Apply Alpine" }).click();
+      const activity = dialog.getByRole("group", { name: "Generation", exact: true });
+      await expect(activity.getByRole("button", { name: "Cancel Meadow" })).toBeVisible();
+      await expect(activity.getByRole("button", { name: "Cancel Alpine" })).toBeVisible();
+      await activity.getByRole("button", { name: "Cancel Meadow" }).click();
+      await expect(activity.getByText("Cancelled", { exact: true })).toBeVisible();
+      await expect(activity.getByRole("button", { name: "Cancel Alpine" })).toBeVisible();
+      await page.screenshot({
+        path: info.outputPath(`appearance-ai-dialog-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await dialog.getByRole("button", { name: "Minimize", exact: true }).click();
+      const dock = page.getByRole("group", { name: "Generation", exact: true });
+      await expect(dialog).toHaveCount(0);
+      await expect(dock.getByText("1 running", { exact: true })).toBeVisible();
+      expect((await dock.boundingBox())!.y).toBeGreaterThan(780);
+      expect((await colorScheme.boundingBox())!.y).toBeCloseTo(schemeY!, 0);
+      await openAppearanceTab(page, "Background");
+      await expect(dock.getByText("1 running", { exact: true })).toBeVisible();
+      await openAppearanceTab(page, "Theme");
+      await page.screenshot({
+        path: info.outputPath(`appearance-ai-minimized-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await dock.getByRole("button", { name: "Dismiss", exact: true }).click();
+      await expect(dock).toHaveCount(0);
+      await expect(launcher).toHaveAttribute("aria-description", "1 running");
+      await launcher.click();
+      await dialog.getByRole("button", { name: "Minimize", exact: true }).click();
+      await dock.getByRole("button", { name: "Restore" }).click();
+      await expect(dialog.getByRole("textbox", { name: "Describe a theme" })).toHaveValue(
+        "Midnight blue with mountain silhouettes",
+      );
+      await expect(activity.getByRole("button", { name: "Cancel Alpine" })).toBeVisible();
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(dock).toHaveCount(0);
+      await expect(launcher).toHaveAttribute("aria-description", "1 running");
+      await page.evaluate(() =>
+        window.dispatchEvent(new Event("fixture-complete-appearance-drawings")),
+      );
+      await expect(launcher).toHaveAttribute("aria-description", "Ready");
+      await expect(page.getByRole("tab", { name: "Motion", exact: true })).toBeInViewport({
+        ratio: 1,
+      });
+      await page.screenshot({
+        path: info.outputPath(`appearance-ai-closed-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await launcher.click();
+      await expect(dialog.getByRole("button", { name: "Preview Alpine" })).toBeVisible();
+    });
+  }
+
 /** Appearance is tabbed; every tab stays mounted but only the selected one is visible. */
 async function openAppearanceTab(page: Page, name: string) {
   await page.getByRole("tab", { name, exact: true }).click();

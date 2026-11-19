@@ -17,6 +17,26 @@ vi.mock("../../connections/public/remoteHealth", () => ({
   useRemoteLoadFailure: () => null,
 }));
 vi.mock("../../projects/public/recents", () => ({ isRemoteProjectPath: () => true }));
+const machine = vi.hoisted(() => ({
+  availability: { available: true, connecting: false } as
+    | { available: true; connecting: boolean }
+    | { available: false; reason: "offline" },
+  listeners: new Set<() => void>(),
+}));
+vi.mock("../../connections/public/machineAvailability", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const subscribe = (listener: () => void) => {
+    machine.listeners.add(listener);
+    return () => machine.listeners.delete(listener);
+  };
+  return {
+    useMachineAvailability: () => useSyncExternalStore(subscribe, () => machine.availability),
+  };
+});
+function setAvailability(next: typeof machine.availability) {
+  machine.availability = next;
+  machine.listeners.forEach((listener) => listener());
+}
 
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useGitHistory } from "./useGitHistory";
@@ -28,6 +48,7 @@ let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   resetGitResourceCache();
+  machine.availability = { available: true, connecting: false };
   gitHistory.mockReset();
   reportRemoteLoad.mockReset();
   container = document.createElement("div");
@@ -77,4 +98,41 @@ it("reports a successful read as recovered", async () => {
   await act(async () => root.render(createElement(View)));
 
   expect(reportRemoteLoad).toHaveBeenLastCalledWith(CWD, "graph", undefined);
+});
+
+// The machine went offline while a refresh ran: the paused resource stopped loading with the
+// cached success still on it, which reported "recovered" and cleared the outage it was in.
+it("reports nothing when the machine becomes unavailable during a refresh", async () => {
+  gitHistory.mockResolvedValue({ commits: [] });
+  let shown: ReturnType<typeof useGitHistory> | undefined;
+  const Probe = () => {
+    shown = useGitHistory(CWD, true, false);
+    return null;
+  };
+  await act(async () => root.render(createElement(Probe)));
+  reportRemoteLoad.mockReset();
+  gitHistory.mockReturnValue(new Promise(() => {}));
+
+  await act(async () => shown?.refresh());
+  await act(async () => setAvailability({ available: false, reason: "offline" }));
+
+  expect(reportRemoteLoad).not.toHaveBeenCalled();
+});
+
+it("loads no further history while the machine is unavailable", async () => {
+  const commits = Array.from({ length: 200 }, (_, index) => ({ sha: `c${index}` }));
+  gitHistory.mockResolvedValue({ commits });
+  let shown: ReturnType<typeof useGitHistory> | undefined;
+  const Probe = () => {
+    shown = useGitHistory(CWD, true, false);
+    return null;
+  };
+  await act(async () => root.render(createElement(Probe)));
+  expect(shown?.hasMore).toBe(true);
+  gitHistory.mockClear();
+
+  await act(async () => setAvailability({ available: false, reason: "offline" }));
+  await act(async () => shown?.loadMore());
+
+  expect(gitHistory).not.toHaveBeenCalled();
 });

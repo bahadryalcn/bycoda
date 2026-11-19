@@ -89,3 +89,27 @@ it("shows the content again once the machine answers", async () => {
   expect(content()).not.toBeNull();
   expect(notice()).toBeNull();
 });
+
+it("shows a side panel as one line and the page with its explanation", async () => {
+  await act(async () => adoptRemoteMachineInventory([]));
+  const render = (size: "page" | "panel") =>
+    act(async () =>
+      root.render(
+        createElement(MachineGate, {
+          cwd: CWD,
+          hasData: () => false,
+          size,
+          children: createElement("div"),
+        }),
+      ),
+    );
+
+  await render("panel");
+  expect(notice()?.querySelector("button, img")).toBeNull();
+  expect(notice()?.textContent).not.toContain("Add it in Connections");
+
+  await render("page");
+  expect(notice()?.querySelector("img")).not.toBeNull();
+  expect(notice()?.querySelector("button")).not.toBeNull();
+  expect(notice()?.textContent).toContain("Add it in Connections");
+});

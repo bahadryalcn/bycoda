@@ -3,7 +3,13 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ image: vi.fn(), themes: vi.fn(), apply: vi.fn(), add: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  image: vi.fn(),
+  themes: vi.fn(),
+  apply: vi.fn(),
+  add: vi.fn(),
+  cancel: vi.fn(),
+}));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   convertFileSrc: (path: string) => path,
@@ -11,7 +17,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("./themeSuggestionRequest", () => ({
   requestBackgroundImage: mocks.image,
   requestThemeSuggestions: mocks.themes,
-  themeSuggestionFailureDetail: (error: Error) => error.message,
+  createAppearanceGeneration: () => ({ cancel: mocks.cancel }),
+  themeSuggestionFailureDetail: (error: unknown) => (error instanceof Error ? error.message : ""),
 }));
 vi.mock("./applyThemeSuggestion", () => ({
   applyThemeSuggestion: mocks.apply,
@@ -20,6 +27,8 @@ vi.mock("./applyThemeSuggestion", () => ({
 vi.mock("../../../model/backgroundLibrary", () => ({
   addBackgroundLibraryImage: mocks.add,
   libraryImageSrc: (image: { path: string }) => image.path,
+  loadCurrentLibraryImageId: () => null,
+  subscribeBackgroundLibrary: () => () => {},
 }));
 vi.mock("./useThemeGeneratorModel", () => ({
   useThemeGeneratorModel: () => [{ harness: "codex", model: "test" }, vi.fn()],
@@ -107,7 +116,7 @@ afterEach(() => {
   host.remove();
   vi.unstubAllGlobals();
 });
-it("draws the chosen look's image once and applies it when it lands", async () => {
+it("draws once and waits for explicit use after preview", async () => {
   const pending = deferred<string>();
   mocks.image.mockReturnValue(pending.promise);
   await act(async () => {
@@ -121,14 +130,40 @@ it("draws the chosen look's image once and applies it when it lands", async () =
     pending.resolve("/source.png");
     await pending.promise;
   });
-  expect(chooseBackground).toHaveBeenCalledOnce();
+  expect(chooseBackground).not.toHaveBeenCalled();
   await act(async () => button("Preview Ocean").click());
   const preview = host.querySelector("[data-image-preview]");
   expect(preview?.getAttribute("data-image-preview")).toBe("/image.png");
   expect(preview?.getAttribute("aria-label")).toBe("Ocean");
   await act(async () => button("Close preview").click());
   expect(host.querySelector("[data-image-preview]")).toBeNull();
+  expect(chooseBackground).not.toHaveBeenCalled();
+  await act(async () => button("Use image").click());
+  expect(chooseBackground).toHaveBeenCalledOnce();
   expect(mocks.image).toHaveBeenCalledOnce();
+});
+
+it("keeps the first preview and installed background while drawing a replacement", async () => {
+  const replacement = deferred<string>();
+  chatBackgroundPath = "/installed.png";
+  await render();
+  mocks.image.mockResolvedValueOnce("/first.png").mockReturnValueOnce(replacement.promise);
+  await act(async () => button("Apply Ocean").click());
+  await act(async () => button("Change image").click());
+  await act(async () => button("Preview Ocean").click());
+  expect(host.querySelector("[data-image-preview]")?.getAttribute("data-image-preview")).toBe(
+    "/image.png",
+  );
+  await act(async () => button("Close preview").click());
+  expect(chooseBackground).not.toHaveBeenCalled();
+  expect(clearBackground).not.toHaveBeenCalled();
+  mocks.add.mockResolvedValueOnce({ id: "replacement", path: "/replacement.png" });
+  await act(async () => replacement.resolve("/source.png"));
+  await act(async () => button("Preview Ocean").click());
+  expect(host.querySelector("[data-image-preview]")?.getAttribute("data-image-preview")).toBe(
+    "/replacement.png",
+  );
+  expect(chooseBackground).not.toHaveBeenCalled();
 });
 it("does not apply a drawing after the owner moved to another look", async () => {
   const pending = deferred<string>();
@@ -143,7 +178,7 @@ it("does not apply a drawing after the owner moved to another look", async () =>
   expect(mocks.image).toHaveBeenCalledTimes(2);
 });
 it("removes the previous look's image when the new look has none", async () => {
-  writeGeneratorValue("withImage", false, false);
+  await act(async () => writeGeneratorValue("withImage", false, false));
   chatBackgroundPath = "/old.png";
   await render();
   await act(async () => button("Apply Ocean").click());
@@ -156,6 +191,63 @@ it("retains previous suggestions when refresh fails", async () => {
   await act(async () => button("Generate themes").click());
   expect(host.textContent).toContain("Ocean");
   expect(host.textContent).toContain("offline");
+});
+it("tracks an earlier drawing after new suggestions arrive and cancels it independently", async () => {
+  const ocean = deferred<string>();
+  const forest = deferred<string>();
+  mocks.image.mockReturnValueOnce(ocean.promise).mockReturnValueOnce(forest.promise);
+  mocks.themes.mockResolvedValue([{ ...suggestions[0], name: "Dawn" }]);
+  mocks.cancel.mockResolvedValue(true);
+  await act(async () => button("Apply Ocean").click());
+  await act(async () => button("Generate themes").click());
+  expect(button("Apply Dawn")).toBeTruthy();
+  expect(button("Cancel Ocean")).toBeTruthy();
+  await act(async () => button("Apply Dawn").click());
+  await act(async () => button("Cancel Ocean").click());
+  expect(host.textContent).toContain("Cancelled");
+  expect(button("Cancel Dawn")).toBeTruthy();
+  await act(async () => {
+    ocean.resolve("/cancelled.png");
+    forest.resolve("/dawn.png");
+  });
+  expect(mocks.add).toHaveBeenCalledExactlyOnceWith("/dawn.png", expect.anything());
+  expect(chooseBackground).not.toHaveBeenCalled();
+});
+it("keeps a drawing visible when cancellation is unconfirmed", async () => {
+  const pending = deferred<string>();
+  mocks.image.mockReturnValueOnce(pending.promise);
+  mocks.cancel.mockResolvedValueOnce(false);
+  await act(async () => button("Apply Ocean").click());
+  await act(async () => button("Cancel Ocean").click());
+  expect(host.textContent).toContain("Cancellation could not be confirmed.");
+  expect(button("Cancel Ocean")).toBeTruthy();
+  await act(async () => pending.resolve("/ocean.png"));
+  expect(chooseBackground).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Ready");
+});
+
+it("previews a finished earlier drawing without applying it to the new theme", async () => {
+  const pending = deferred<string>();
+  mocks.image.mockReturnValueOnce(pending.promise);
+  mocks.themes.mockResolvedValue([{ ...suggestions[0], name: "Dawn" }]);
+  await act(async () => button("Apply Ocean").click());
+  await act(async () => button("Generate themes").click());
+  await act(async () => pending.resolve("/ocean.png"));
+  expect(mocks.add).toHaveBeenCalledExactlyOnceWith("/ocean.png", expect.anything());
+  expect(chooseBackground).not.toHaveBeenCalled();
+  await act(async () => button("Preview Ocean").click());
+  expect(host.querySelector("[data-image-preview]")?.getAttribute("aria-label")).toBe("Ocean");
+});
+
+it("keeps earlier drawings visible after closing and reopening the generator", async () => {
+  const pending = deferred<string>();
+  mocks.image.mockReturnValueOnce(pending.promise);
+  await act(async () => button("Apply Ocean").click());
+  await act(async () => root.render(null));
+  await render();
+  expect(button("Cancel Ocean")).toBeTruthy();
+  await act(async () => pending.resolve("/ocean.png"));
+  expect(button("Preview Ocean")).toBeTruthy();
 });
 it("shows the chosen look's image failure and permits retry", async () => {
   const pending = deferred<string>();
@@ -202,6 +294,7 @@ it("revokes an explicit image use while its copy is pending", async () => {
   );
   await act(async () => button("Apply Ocean").click());
   expect(mocks.image).not.toHaveBeenCalled();
+  await act(async () => button("Use image").click());
   expect(typeof chooseBackground.mock.calls.at(-1)?.[1]?.isCurrent).toBe("function");
   generatorSession.invalidateImageIntent();
   await act(async () => {

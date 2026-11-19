@@ -59,6 +59,21 @@ export function permissionBadge(state: PermissionState) {
       return { label: t("Unknown"), tone: "neutral" as const };
   }
 }
+/** Switched on in the OS, but this process gets it only after a restart. */
+export function permissionNeedsRestart(entry: PermissionEntry) {
+  return entry.state !== "granted" && entry.detail === "restart-required";
+}
+/**
+ * macOS applies Screen Recording and Full Disk Access to a running app only
+ * after it restarts, and reads cannot always see the pending switch. After
+ * the owner visited System Settings, a restart is the next step.
+ */
+export function permissionMayNeedRestart(
+  id: PermissionId,
+  platform?: SystemPermissionsReport["platform"],
+) {
+  return platform === "macos" && (id === "screen-recording" || id === "full-disk-access");
+}
 export function unknownPermission(id: PermissionId): PermissionEntry {
   return { id, state: "unknown", canRequest: false, canOpenSettings: false };
 }

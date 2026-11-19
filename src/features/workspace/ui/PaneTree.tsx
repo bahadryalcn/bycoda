@@ -114,6 +114,8 @@ type Shared = {
   onRemoteSnapshot?: SessionPaneProps["onRemoteSnapshot"];
   onRefreshAdoptedSession?: SessionPaneProps["onRefreshAdoptedSession"];
   onRetrySessionHistory?: SessionPaneProps["onRetrySessionHistory"];
+  onLoadSessionHistory?: SessionPaneProps["onLoadSessionHistory"];
+  onPrepareSessionHistory?: SessionPaneProps["onPrepareSessionHistory"];
   onSelectFile: (paneId: string, fileId: string) => void;
   onCloseFile: (paneId: string, fileId: string) => void;
   onCloseOtherFiles: (paneId: string, fileId: string, direction?: "left" | "right") => void;
@@ -148,7 +150,7 @@ type Shared = {
   onSaveDraft: (sessionId: string, text: string, attachments: Attachment[]) => boolean | void;
   onRemoveDraft: (sessionId: string, draftBlockId: string) => boolean | void;
   onStop: (sessionId: string) => void;
-  onCompactContext: (sessionId: string) => boolean;
+  onCompactContext: SessionPaneProps["onCompactContext"];
   onRewindMessage?: SessionPaneProps["onRewindMessage"];
   onNewSession?: SessionPaneProps["onNewSession"];
   onPlaceSessionInFolder: (
@@ -258,6 +260,8 @@ function PaneTreeComponent({
   onRemoteSnapshot,
   onRefreshAdoptedSession,
   onRetrySessionHistory,
+  onLoadSessionHistory,
+  onPrepareSessionHistory,
   onSelectFile,
   onCloseFile,
   onCloseOtherFiles,
@@ -858,6 +862,8 @@ function PaneTreeComponent({
                         onRemoteSnapshot={onRemoteSnapshot}
                         onRefreshAdoptedSession={onRefreshAdoptedSession}
                         onRetrySessionHistory={onRetrySessionHistory}
+                        onLoadSessionHistory={onLoadSessionHistory}
+                        onPrepareSessionHistory={onPrepareSessionHistory}
                         onCwdChange={onCwdChange}
                         onBranchChange={onBranchChange}
                         onWorktreeChange={onWorktreeChange}

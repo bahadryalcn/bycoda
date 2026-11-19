@@ -2,6 +2,7 @@
 export {
   machineHidesView,
   readMachineAvailability,
+  subscribeAvailability,
   useMachineAvailability,
   type MachineAvailability,
   type MachineUnavailableReason,

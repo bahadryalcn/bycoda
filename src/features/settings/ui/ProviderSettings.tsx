@@ -81,6 +81,7 @@ import {
 } from "../../providers/public/providerAccounts";
 import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
 import { GenericAcpSettings } from "../../providers/ui/GenericAcpSettings";
+import { OllamaSettings } from "../../providers/ui/OllamaSettings";
 import type { RecentProject } from "../../projects/public/recents";
 import { loadClaudeHooks, saveClaudeHooks, subscribeClaudeHooks } from "../model/settings";
 import { providersTabForSetting, type ProvidersTab } from "../model/providerSettingsTabs";
@@ -248,6 +249,8 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
       setSelectedProvider("antigravity");
     } else if (revealedSetting.startsWith("acp-")) {
       setSelectedProvider("acp");
+    } else if (revealedSetting === "ollama-models" || revealedSetting === "ollama-port") {
+      setSelectedProvider("opencode");
     } else if (
       revealedSetting === "provider-accounts" ||
       revealedSetting === "terminal-account-profiles"
@@ -541,6 +544,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                         onPickerVisible={(visible) => onPickerVisible(harness, visible)}
                       />
                       {harness === "acp" ? <GenericAcpSettings cwd={cwd} embedded /> : null}
+                      {harness === "opencode" ? (
+                        <OllamaSettings opencodeAvailable={isHarnessAvailable("opencode")} />
+                      ) : null}
                     </div>
                   ))}
                   {/* The provider's catalog sits under its own account and runtime. */}

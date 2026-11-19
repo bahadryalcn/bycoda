@@ -243,6 +243,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             name: fields.name.trim(),
             port: fields.port ? Number(fields.port) : null,
             alternate: parsed?.ok ? parsed.value.alternate : null,
+            ...(plan?.environmentId ? { expectedEnvironmentId: plan.environmentId } : {}),
           });
       if (!alive.current) {
         await cancel(id);

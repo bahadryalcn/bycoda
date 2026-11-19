@@ -96,6 +96,8 @@ export function useDiffIndex(
 
   useEffect(() => {
     if (!enabled || !cwd || cwd === "~") {
+      // The read that met the outage failed; its retry backoff must not delay the recovery read.
+      if (!available) failedRead.current = null;
       return;
     }
     const releaseCache = indexByCwd.retain(cwd);
@@ -235,7 +237,7 @@ export function useDiffIndex(
       unsubGit();
       releaseCache();
     };
-  }, [cwd, enabled, nonce, remote, polling, panel]);
+  }, [cwd, enabled, available, nonce, remote, polling, panel]);
 
   return { index, reload, showOptimistic, error, loading, checking: enabled && checking };
 }

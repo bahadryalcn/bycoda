@@ -60,6 +60,7 @@ import { takeRequeuedHeadSignal } from "./submit/submitBusySteer";
 import { t } from "../../../shared/i18n";
 
 export interface QueuedMessageActionDeps {
+  ensureSessionHistoryForExecution?: (sessionId: string) => Promise<boolean>;
   sessions: Session[];
   movingWindows: Set<string>;
   windowTransferPending: boolean;
@@ -619,12 +620,14 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         flushHarnessEvents();
         return false;
       }
-      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
-      if (!session || !session.queuedMessages?.length) {
-        return false;
-      }
       manualActions.current.add(sessionId);
       try {
+        const original = sessionsRef.current.find((entry) => entry.id === sessionId);
+        if (!original?.queuedMessages?.length) return false;
+        if (original.storedHistory && !(await deps.ensureSessionHistoryForExecution?.(sessionId)))
+          throw new Error(t("Earlier messages could not be loaded."));
+        const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+        if (!session?.queuedMessages?.length) return false;
         // A send still waiting for the provider is answered before anything else
         // is planned; one that never settles is given up and held for review.
         const inFlight = await settleSharedSend(sessionId);

@@ -195,6 +195,28 @@ it("presents a lost Host result in words and keeps the typed password for a retr
   expect(onDone).not.toHaveBeenCalled();
 });
 
+it("keeps every typed field of a password change after a lost Host result", async () => {
+  vi.mocked(changeLockPassword).mockRejectedValue(
+    new Error("RPC_WS_INTERRUPTED: Native Host connection did not return a result."),
+  );
+  await act(async () =>
+    root.render(createElement(SetLockPasswordDialog, { mode: "change", onClose: vi.fn() })),
+  );
+  const inputs = document.querySelectorAll<HTMLInputElement>('input[type="password"]');
+  ["old-password", "new-password", "new-password"].forEach((value, i) => {
+    inputs[i].value = value;
+  });
+  await act(async () => {
+    submit();
+  });
+  expect(document.querySelector('[role="alert"]')?.textContent).not.toContain("RPC_WS_");
+  expect([...inputs].map((input) => input.value)).toEqual([
+    "old-password",
+    "new-password",
+    "new-password",
+  ]);
+});
+
 it("does not run the prompt completion callback after its dialog unmounts", async () => {
   let resolve!: (value: VerifyResult) => void;
   const result = new Promise<VerifyResult>((done) => {

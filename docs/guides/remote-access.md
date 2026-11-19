@@ -93,8 +93,11 @@ support SSE; HTTP RPC remains the fallback transport.
 **Settings → Connections → Computers** lists your saved computers. **Add a computer**
 opens a dialog: **Found** combines computers signed in to your account, Tailscale
 devices, SSH config aliases and known hosts, each with its sources and online state,
-with a search by name or address. Choose **Add** to connect one. A machine with an
-SSH address is set up as in the SSH section below, without a form; its progress and
+with a search by name or address. The same computer found by several sources is one
+row: an account computer joins the SSH entry on its Tailscale or home-network address.
+Choose **Add** to connect one. A machine with an
+SSH address is set up as in the SSH section below, without a form; for an account
+computer, setup stops if that address answers as a different computer. Its progress and
 any host key or password prompt show on the Computers tab. **Enter address** holds
 the SSH and Host URL form.
 
@@ -118,7 +121,9 @@ outcome is never replayed on another route. Closing the pairing dialog cancels
 pending setup and status waits before a ticket can be redeemed.
 Plain HTTP is used only for loopback. The other computer must be signed in with the same
 account, online, and have "Let my signed-in phones find this computer" on; pairing needs
-its phone access (Tailscale or local network) to be set up once.
+an HTTPS route there (Tailscale Serve or a tunnel). The home-network phone route is not
+used between desktops: without an HTTPS route or an SSH address, **Add** stays off and its
+info icon says so.
 
 ## Create a Host conversation on this computer
 

@@ -423,7 +423,7 @@ describe("Explorer create availability", () => {
 
     expect(container.querySelector("[data-explorer-root]")).toBeNull();
     expect(container.querySelector('[data-machine-unavailable="offline"]')?.textContent).toContain(
-      "Waiting for it to come back",
+      "isn’t available",
     );
     expect(reads).not.toHaveBeenCalled();
 

@@ -1,4 +1,6 @@
 import { TranscriptHistoryNotice } from "./TranscriptHistoryNotice";
+import { innerScrollerTakes } from "../../../shared/hooks/useLockOverscroll";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { JumpRelay } from "./transcriptJumpRelay";
 import { FrameMemory } from "./transcriptFrameMemory";
@@ -99,7 +101,6 @@ import { Button } from "../../../shared/ui/Button";
 import { UserDraftFooter } from "./UserDraftFooter";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import type {
   FloatingButtonGroupAction,
@@ -454,6 +455,7 @@ function AgentTranscriptComponent({
     lastVisibleTurn,
     visibleTurns,
     loadEarlier,
+    onHistoryScroll,
     loadNewer,
     jumpLatest,
     revealBlock: pagingRevealBlock,
@@ -623,6 +625,24 @@ function AgentTranscriptComponent({
         ref={setScroller}
         data-chat-citation-session={sessionId}
         tabIndex={-1}
+        onScroll={(event) => {
+          onHistoryScroll(
+            event.currentTarget.scrollTop,
+            false,
+            visible && !remoteHistoryError && follow.hasReaderInput(),
+          );
+        }}
+        onWheel={(event) => {
+          if (
+            visible &&
+            !remoteHistoryError &&
+            event.deltaY < 0 &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !innerScrollerTakes(event.currentTarget, event.nativeEvent)
+          )
+            onHistoryScroll(event.currentTarget.scrollTop, true);
+        }}
         onClickCapture={(event) => {
           imageOpen.noteClick(event);
           captureCodeDisclosure(event.target, retention);
@@ -635,6 +655,14 @@ function AgentTranscriptComponent({
         }}
         onKeyDown={(event) => {
           const target = event.target as HTMLElement;
+          if (
+            target === event.currentTarget &&
+            visible &&
+            !remoteHistoryError &&
+            !activeVersionValid &&
+            ["ArrowUp", "PageUp", "Home"].includes(event.key)
+          )
+            onHistoryScroll(event.currentTarget.scrollTop, true);
           if (
             !activeVersionValid ||
             event.shiftKey ||
@@ -699,13 +727,25 @@ function AgentTranscriptComponent({
             </div>
           </div>
         ) : null}
+        {(remoteHistoryLoading || pagingLoading) &&
+        !remoteHistoryError &&
+        !pagingError &&
+        blocks.length > 0 ? (
+          <div className="pointer-events-none sticky inset-bs-0 z-(--layer-pane-sheet) h-0">
+            <LoadingText className="mx-auto w-fit px-4 py-2">
+              {t("Loading earlier messages…")}
+            </LoadingText>
+          </div>
+        ) : null}
         <div
           data-transcript-content
           className="transcript-content mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-1 pb-8"
         >
           <TranscriptHistoryNotice
             initial={blocks.length === 0}
-            loading={historyLoading}
+            loading={
+              historyLoading || (blocks.length === 0 && (remoteHistoryLoading || pagingLoading))
+            }
             loadFailed={!!historyLoadError}
             pageError={
               remoteHistoryError ||
@@ -718,23 +758,6 @@ function AgentTranscriptComponent({
               remoteHistoryHasMore && onLoadRemoteHistory ? () => void loadEarlier() : undefined
             }
           />
-          {firstVisibleTurn > 0 || remoteHistoryHasMore ? (
-            <div className="flex justify-center px-4 py-3">
-              <CollectionFooter
-                standalone
-                hasMore
-                onLoadMore={() => void loadEarlier()}
-                loadMoreLabel={t("Load earlier messages")}
-                loadMoreButtonProps={{
-                  motion: "none",
-                  variant: "ghost",
-                  type: "button",
-                  loading: remoteHistoryLoading || pagingLoading,
-                  disabled: remoteHistoryLoading || pagingLoading,
-                }}
-              />
-            </div>
-          ) : null}
           {renderedTurns.map(({ turn, index }, turnIndex) => {
             const turnNumber = index + 1;
             const isLastTurn = turnNumber === turns.length;

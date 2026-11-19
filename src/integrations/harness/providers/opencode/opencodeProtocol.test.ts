@@ -342,6 +342,39 @@ describe("OpenCode CLI inventory parsers", () => {
       "opencode/mimo-v2.6-flash-free",
     ]);
   });
+
+  it("marks free OpenCode models from v2 price bands, including names without Free", () => {
+    const free = { input: 0, output: 0, cache: { read: 0, write: 0 } };
+    const parsed = parseV2Catalog(
+      [
+        { id: "big-pickle", providerID: "opencode", cost: [free] },
+        { id: "beam-free", providerID: "opencode-go", cost: [free] },
+        { id: "missing-free", providerID: "opencode" },
+        { id: "empty", providerID: "opencode", cost: [] },
+        { id: "paid-output", providerID: "opencode", cost: [{ ...free, output: 1 }] },
+        { id: "paid-band", providerID: "opencode", cost: [free, { ...free, input: 1 }] },
+        { id: "third-party", providerID: "custom", cost: [free] },
+      ],
+      [],
+    );
+    expect(
+      flattenOpenCodeModels(parsed, [])
+        .filter((model) => model.free)
+        .map((model) => model.nativeId),
+    ).toEqual(["opencode-go/beam-free", "opencode/big-pickle"]);
+  });
+
+  it("reads v1 pricing and checks cache prices as well as input and output", () => {
+    const models = flattenOpenCodeModels(
+      parseModelsCliOutput(
+        'opencode/big-pickle\n{"cost":{"input":0,"output":0}}\nopencode/paid-cache\n{"cost":{"input":0,"output":0,"cache_read":1}}',
+      ),
+      [],
+    );
+    expect(models.filter((model) => model.free).map((model) => model.nativeId)).toEqual([
+      "opencode/big-pickle",
+    ]);
+  });
 });
 
 describe("mergeOpenCodeAssistantText", () => {

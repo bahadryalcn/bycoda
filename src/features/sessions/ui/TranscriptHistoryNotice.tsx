@@ -50,7 +50,7 @@ export function TranscriptHistoryNotice({
     );
   if (loading)
     return (
-      <LoadingText delay={false} className="px-4 py-3">
+      <LoadingText className="px-4 py-3">
         {initial ? t("Loading conversation…") : t("Loading earlier messages…")}
       </LoadingText>
     );

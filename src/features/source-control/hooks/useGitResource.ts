@@ -12,6 +12,10 @@ type Snapshot<T> = {
   /** What the last read rejected with; unset after a success. `error` is only the
    * message a screen shows, and a transient failure has none. */
   cause?: unknown;
+  /** `data`, `error` and `cause` are the outcome of a read this hook finished since its
+   * key, availability or refresh last changed, not only what the cache kept. Remote health
+   * may learn only from such an outcome: a paused read is no answer from the machine. */
+  settled: boolean;
 };
 // Results stay cached so a revisited panel opens with its last data, but the
 // cache is a least-recently-used one: commit diffs, blame and history pages
@@ -103,6 +107,7 @@ export function useGitResource<T>(
     loading: enabled && (!quiet || !completed.has(key)),
     error: completed.get(key)?.error ?? null,
     cause: completed.get(key)?.cause,
+    settled: false,
   }));
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep this resource's admitted reads synchronized with checkout notifications and resume events until unmount.
   useEffect(() => {
@@ -121,6 +126,7 @@ export function useGitResource<T>(
       loading: enabled && shows(forced),
       error: completed.get(key)?.error ?? null,
       cause: completed.get(key)?.cause,
+      settled: false,
     }));
     if (!enabled) return;
     const load = async (force = false) => {
@@ -191,7 +197,7 @@ export function useGitResource<T>(
             continue;
           }
           if (!outcome.success) throw outcome.error;
-          setSnapshot({ key, data: outcome.data, loading: false, error: null });
+          setSnapshot({ key, data: outcome.data, loading: false, error: null, settled: true });
           break;
         }
       } catch (error) {
@@ -201,6 +207,7 @@ export function useGitResource<T>(
             loading: false,
             error: presentRemoteError(error) ?? null,
             cause: error,
+            settled: true,
           }));
       } finally {
         inFlight = false;
@@ -250,6 +257,7 @@ export function useGitResource<T>(
           data: readCached<T>(key) ?? null,
           loading: enabled,
           error: null,
+          settled: false,
         };
   return { ...current, refresh };
 }

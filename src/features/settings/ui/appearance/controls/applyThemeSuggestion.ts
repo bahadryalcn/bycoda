@@ -117,7 +117,11 @@ export function applyDrawnImageTuning(appearance: AppearanceSettings, suggestion
  * switches the old one off. Preference fields share one `onPreferences` write. The background
  * image is the generator's call (it knows whether this suggestion has a drawing).
  */
-export function applyThemeSuggestion(appearance: AppearanceSettings, suggestion: ThemeSuggestion) {
+export function applyThemeSuggestion(
+  appearance: AppearanceSettings,
+  suggestion: ThemeSuggestion,
+  { deferImageTuning = false } = {},
+) {
   if (suggestion.scheme) appearance.onThemePreference(suggestion.scheme);
   appearance.onTint(suggestion.hue, suggestion.saturation);
   appearance.onAccentColor(ensureAccentContrast(suggestion.accent));
@@ -146,7 +150,7 @@ export function applyThemeSuggestion(appearance: AppearanceSettings, suggestion:
   }
   if (suggestion.interface) applyInterface(appearance, suggestion.interface);
   if (suggestion.background) applyBackground(appearance, suggestion.background);
-  if (suggestion.image) applyImageTuning(appearance, suggestion.image);
+  if (suggestion.image && !deferImageTuning) applyImageTuning(appearance, suggestion.image);
   const motion = suggestion.motion;
   if (motion?.crewTheme) saveCrewTheme(motion.crewTheme);
   if (motion?.showCrew !== undefined) saveCrewSceneEnabled(motion.showCrew);

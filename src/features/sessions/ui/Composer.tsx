@@ -426,9 +426,9 @@ type Props = {
     text: string,
     attachments: Attachment[],
     parentAdmission?: ParentAdmission,
-  ) => boolean | void;
+  ) => boolean | void | Promise<boolean | void>;
   onStop?: () => void;
-  onCompactContext?: (parentAdmission?: ParentAdmission) => boolean;
+  onCompactContext?: (parentAdmission?: ParentAdmission) => boolean | Promise<boolean>;
   onNewSession?: (options?: NewSessionOptions, parentAdmission?: ParentAdmission) => void;
   onPlaceInFolder?: (
     target: SessionFolderTarget,
@@ -2219,30 +2219,40 @@ export const Composer = memo(function Composer({
         sessionId: logicalParentSessionId,
         snapshot: () => input,
       });
+      const revision = draftRevisionRef.current;
+      const identity = parentChanged.identity();
+      const finishDraftSave = (accepted: boolean | void) => {
+        const isCurrent =
+          parentChanged.identity() === identity && draftRevisionRef.current === revision;
+        if (accepted === false) {
+          retained.release();
+          if (isCurrent)
+            setPasteError(t("The draft was not accepted. Your text and files are kept."));
+          return;
+        }
+        retained.update({ ...input, disposition: "accepted-unknown" });
+        if (!isCurrent || !ref.current) return;
+        pasteGenerationRef.current += 1;
+        clearComposer();
+        setAttachments([]);
+        setDraftSelected(false);
+        setSelectedMcp([]);
+        setPlusOpen(false);
+        setModeOpen(false);
+        setSlash(null);
+        setMention(null);
+        setCreatingSkill(false);
+        setCreateError(null);
+        syncHasText("");
+      };
       const accepted = onSaveDraft(
         mcpContextText(taggedMcpServers(text, selectedMcp), text),
         files,
         ...continuationArgs,
       );
-      if (accepted === false) {
-        retained.release();
-        setPasteError(t("The draft was not accepted. Your text and files are kept."));
-        return;
-      }
-      retained.update({ ...input, disposition: "accepted-unknown" });
-      if (!ref.current) return;
-      pasteGenerationRef.current += 1;
-      clearComposer();
-      setAttachments([]);
-      setDraftSelected(false);
-      setSelectedMcp([]);
-      setPlusOpen(false);
-      setModeOpen(false);
-      setSlash(null);
-      setMention(null);
-      setCreatingSkill(false);
-      setCreateError(null);
-      syncHasText("");
+      if (accepted instanceof Promise)
+        void accepted.then(finishDraftSave, () => finishDraftSave(false));
+      else finishDraftSave(accepted);
       return;
     }
     const folderCommand = consumeSessionFolderCommand(value);
@@ -2296,17 +2306,32 @@ export const Composer = memo(function Composer({
     }
 
     if (isCompactCommand(value)) {
-      if (!onCompactContext?.(...continuationArgs)) return;
-      if (!ref.current) return;
-      pasteGenerationRef.current += 1;
-      clearComposer();
-      setPlusOpen(false);
-      setModeOpen(false);
-      setSlash(null);
-      setMention(null);
-      setCreatingSkill(false);
-      setCreateError(null);
-      syncHasText("");
+      const revision = draftRevisionRef.current;
+      const identity = parentChanged.identity();
+      const clearAcceptedCommand = (accepted: boolean) => {
+        if (
+          !accepted ||
+          !ref.current ||
+          draftRevisionRef.current !== revision ||
+          parentChanged.identity() !== identity
+        )
+          return;
+        pasteGenerationRef.current += 1;
+        clearComposer();
+        setPlusOpen(false);
+        setModeOpen(false);
+        setSlash(null);
+        setMention(null);
+        setCreatingSkill(false);
+        setCreateError(null);
+        syncHasText("");
+      };
+      const accepted = onCompactContext?.(...continuationArgs);
+      if (accepted instanceof Promise)
+        void accepted.then(clearAcceptedCommand).catch((error) => {
+          console.warn("Compaction could not start", error);
+        });
+      else clearAcceptedCommand(!!accepted);
       return;
     }
 

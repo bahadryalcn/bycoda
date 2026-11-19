@@ -267,6 +267,45 @@ test("captures both themes and widths with disabled and pending shared actions",
   await page.screenshot({ path: `${captureRoot}/footer-dark-1280-normal-motion.png` });
 });
 
+test("installed update fits beside Settings and opens notes before dismissal", async ({ page }) => {
+  const capture = "temp/verification/whats-new-footer";
+  mkdirSync(capture, { recursive: true });
+  writeFileSync(
+    `${capture}/README.md`,
+    "# Installed update notice\n\nChromium account footer fixture with a seeded installed update and mocked native operations.\n",
+  );
+  await page.goto(`${route}?account&installed-notice`);
+  const footer = page.locator("[data-sidebar-account-footer]");
+  const notice = footer.getByRole("button", { name: "What's new", exact: true });
+  const dismiss = footer.getByRole("button", { name: "Dismiss update notification" });
+  const settings = footer.getByRole("button", { name: "Settings", exact: true });
+  await expect(notice).toBeVisible();
+  await expect(dismiss).toBeVisible();
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      const [noticeBox, settingsBox] = await Promise.all([
+        notice.boundingBox(),
+        settings.boundingBox(),
+      ]);
+      expect(Math.abs(noticeBox!.y - settingsBox!.y)).toBeLessThan(2);
+      await page.locator("[data-account-fixture-rail]").screenshot({
+        path: `${capture}/${theme}-${width}.png`,
+      });
+    }
+  }
+  await notice.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-fixture-notes]")).toHaveText(appVersion);
+  await dismiss.click();
+  await expect(notice).toHaveCount(0);
+  await expect(settings).toBeVisible();
+});
+
 test("compact account rail preserves its width, standard targets and action order", async ({
   page,
 }) => {

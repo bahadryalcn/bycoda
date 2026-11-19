@@ -1177,12 +1177,17 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/settings/settings.html?section=appearance&generatorSuggestions&theme=${theme}&lang=en`,
       );
+      await page.getByRole("button", { name: "Generate with AI", exact: true }).click();
       const suggestion = page
         .getByRole("group", { name: "Suggested themes" })
         .getByRole("button", { name: /Fixture meadow/ });
       await expect(suggestion).toBeVisible();
       await expect(suggestion.locator(".theme-swatch-strip > span")).toHaveCount(4);
       await suggestion.screenshot({ path: info.outputPath(`suggestion-${theme}-${width}.png`) });
+      await page
+        .getByRole("dialog", { name: "Generate with AI", exact: true })
+        .getByRole("button", { name: "Close", exact: true })
+        .click();
       await page.getByRole("button", { name: "Search settings", exact: true }).click();
       const search = page.getByRole("combobox", { name: "Search settings", exact: true });
       await search.fill("Interface font");

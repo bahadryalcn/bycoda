@@ -36,6 +36,7 @@ import { handleVoiceRpc } from "./rpc-voice";
 import { handlePushRpc } from "./rpc-push";
 import { handleWorkspacesRpc } from "./rpc-workspaces";
 import { handleDiagnosticsLogsRpc } from "./rpc-diagnostics";
+import { handleOllamaRpc } from "./rpc-ollama";
 import { createHash } from "node:crypto";
 import type { DiagnosticLogFields } from "@bycoda/account-contracts";
 import { createLogger } from "../diagnostics/logger";
@@ -652,6 +653,12 @@ const handlers: Record<
   "voice.local.release": handleVoiceRpc,
   "providers.center.read": handleProvidersRpc,
   "providers.acp.patchMetadata": handleProvidersRpc,
+  "ollama.status": handleOllamaRpc,
+  "ollama.start": handleOllamaRpc,
+  "ollama.pull.start": handleOllamaRpc,
+  "ollama.pull.cancel": handleOllamaRpc,
+  "ollama.port.set": handleOllamaRpc,
+  "ollama.opencode.save": handleOllamaRpc,
   "models.list": handleProvidersRpc,
   "modelRouting.get": handleModelRoutingRpc,
   "modelRouting.save": handleModelRoutingRpc,
@@ -661,6 +668,7 @@ const handlers: Record<
   "appearance.themeSuggestions": handleAppearanceRpc,
   "appearance.backgroundSuggestions": handleAppearanceRpc,
   "appearance.backgroundImage": handleAppearanceRpc,
+  "appearance.cancelGeneration": handleAppearanceRpc,
   "assistant.builder.interview": handleAssistantBuilderRpc,
   "assistant.builder.avatarGenerate": handleAssistantBuilderRpc,
   "assistant.builder.avatarRead": handleAssistantBuilderRpc,

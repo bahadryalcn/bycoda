@@ -10,6 +10,7 @@ import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { CooldownNotice } from "./CooldownNotice";
+import { isTransientTransportError } from "../../connections/public/remoteFailure";
 import {
   cooldownMessage,
   pause,
@@ -117,7 +118,9 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
       onClose();
     } catch (reason) {
       if (!alive.current) return;
-      clear();
+      // A lost Host result is not a refused password: keep the fields typed so the retry is one
+      // click, as the unlock prompt does. Any other failure clears the secrets.
+      if (!isTransientTransportError(reason)) clear();
       setError(promptErrorMessage(reason));
     } finally {
       if (alive.current) setBusy(false);

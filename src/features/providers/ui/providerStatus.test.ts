@@ -44,7 +44,7 @@ it("shows a missing CLI or an unclassified failure as not checked, never as sign
   }
 });
 
-it("names used-up windows and their reset with the shared labels", () => {
+it("names used-up windows with the shared labels", () => {
   const now = 1_000_000;
   const limits = {
     ...idleRateLimits("claude"),
@@ -52,9 +52,7 @@ it("names used-up windows and their reset with the shared labels", () => {
     session: { usedPercent: 100, windowMinutes: 300, resetsAt: now + 31 * 60_000 },
     weekly: { usedPercent: 100, windowMinutes: 10_080, resetsAt: null },
   };
-  expect(exhaustedExplanation(limits, now)).toBe(
-    "The 5-hour + Weekly limit is used up. Resets in 31m",
-  );
+  expect(exhaustedExplanation(limits, now)).toBe("The 5-hour + Weekly limit is used up.");
   expect(exhaustedExplanation({ ...limits, session: null }, now)).toBe(
     "The Weekly limit is used up.",
   );

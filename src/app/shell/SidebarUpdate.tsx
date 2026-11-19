@@ -31,6 +31,7 @@ export function SidebarUpdateFooter({
   onOpenWhatsNew,
   onDismissUpdate,
   noticesOnly = false,
+  inlineNotice = false,
   icon = false,
   compact = false,
 }: {
@@ -38,6 +39,7 @@ export function SidebarUpdateFooter({
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
   noticesOnly?: boolean;
+  inlineNotice?: boolean;
   /** Legacy fixture option; repository prompts now live inside the update dialog. */
   repositoryPrompt?: boolean;
   /** Footer icon button: only the download icon (dot while an update waits) and its dialog. */
@@ -68,7 +70,12 @@ export function SidebarUpdateFooter({
 
   const card =
     update && onOpenWhatsNew && onDismissUpdate ? (
-      <UpdateRailCard update={update} onOpen={onOpenWhatsNew} onDismiss={onDismissUpdate} />
+      <UpdateRailCard
+        update={update}
+        onOpen={onOpenWhatsNew}
+        onDismiss={onDismissUpdate}
+        inline={inlineNotice}
+      />
     ) : null;
   const actionable = isSidebarUpdateActionable(snapshot);
   const actionLabel =

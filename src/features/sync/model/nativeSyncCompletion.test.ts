@@ -8,6 +8,7 @@ import {
   COMPLETE_RETRY_MAX_MS,
   completeNativeSyncCycle,
   completeRetryDelay,
+  syncOwnerFailureText,
 } from "./nativeSyncCompletion";
 
 beforeEach(() => {
@@ -103,4 +104,21 @@ it("throws any other refusal at once", async () => {
   mocks.invoke.mockImplementation(() => Promise.reject("SYNC_OWNER_UNKNOWN"));
   await expect(completeNativeSyncCycle("pc", "op-6")).rejects.toBe("SYNC_OWNER_UNKNOWN");
   expect(mocks.invoke).toHaveBeenCalledTimes(1);
+});
+
+it("describes native owner refusals without their codes", () => {
+  for (const code of [
+    "SYNC_OWNER_UNKNOWN",
+    "SYNC_OWNER_HELD",
+    "NATIVE_CONTROL_WINDOW_BUSY",
+    "SYNC_OWNER_PAGE_STALE",
+  ]) {
+    const text = syncOwnerFailureText(code);
+    expect(text).not.toMatch(/[A-Z]{2,}_[A-Z_]+/);
+    expect(text).toMatch(/retry/);
+  }
+  expect(syncOwnerFailureText("SYNC_OWNER_UNKNOWN")).toMatch(/earlier run/);
+  expect(syncOwnerFailureText(new Error("database is locked"))).toBe(
+    "Sync could not start: database is locked",
+  );
 });

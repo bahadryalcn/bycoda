@@ -3407,6 +3407,7 @@ pub fn remote_ssh_begin(
     name: String,
     port: Option<u16>,
     alternate: Option<String>,
+    expected_environment_id: Option<String>,
 ) -> Result<String, String> {
     let target = remote_ssh::validate_target(&target, port)?;
     let alternate = remote_ssh::validate_alternate(alternate.as_deref(), port)?
@@ -3424,6 +3425,7 @@ pub fn remote_ssh_begin(
         name.trim().chars().take(100).collect(),
         None,
         false,
+        expected_environment_id.filter(|id| !id.is_empty()),
     )
 }
 
@@ -3455,6 +3457,7 @@ pub fn remote_ssh_reconnect(
         machine.name.clone(),
         Some(machine),
         upgrade.unwrap_or(false),
+        None,
     )
 }
 

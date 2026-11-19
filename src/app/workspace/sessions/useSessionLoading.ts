@@ -2,6 +2,7 @@ import { useCallback, useRef, type MutableRefObject } from "react";
 import { flushSync } from "react-dom";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
+  getEarlierStoredHistory,
   getSession,
   persistFingerprint,
   type SessionHydrationOptions,
@@ -104,6 +105,7 @@ export function hydrationHandlers(
                 queuedMessages: hydrated.queuedMessages,
                 queueStatus: hydrated.queueStatus,
                 historyLoading: hydrated.historyLoading,
+                storedHistory: hydrated.storedHistory,
                 historyLoadError: undefined,
               }
             : value,
@@ -154,7 +156,7 @@ export function useSessionLoading({
 
   const loadStoredSession = useCallback((sessionId: string): Promise<Session | null> => {
     const cached = loadedSessionCache.current.get(sessionId);
-    if (cached && !cached.historyLoading) {
+    if (cached && (!cached.historyLoading || cached.storedHistory)) {
       // The cache owns closed sessions only. Transfer this reference into
       // live state instead of retaining a stale duplicate while it changes.
       loadedSessionCache.current.delete(sessionId);
@@ -166,14 +168,14 @@ export function useSessionLoading({
     if (pending) return pending;
 
     const epoch = sessionLoadEpochs.current.get(sessionId) ?? 0;
-    const loading = getSession(
-      sessionId,
-      hydrationHandlers(
+    const loading = getSession(sessionId, {
+      ...hydrationHandlers(
         { sessionsRef, setSessions, loadedSessionCache, removingSessionIds, sessionLoadEpochs },
         sessionId,
         epoch,
       ),
-    )
+      deferHistory: true,
+    })
       .then((loaded) => {
         if (
           !loaded ||
@@ -193,6 +195,90 @@ export function useSessionLoading({
     });
     return loading;
   }, []);
+
+  const onLoadSessionHistory = useCallback(
+    async (sessionId: string): Promise<number> => {
+      const original = sessionsRef.current.find((session) => session.id === sessionId);
+      const privacy = getGroupLockView();
+      if (
+        !original?.storedHistory ||
+        removingSessionIds.current.has(sessionId) ||
+        isProjectLockedIn(privacy.lock, original.cwd) ||
+        isProjectLockedIn(privacy.lock, sessionWorkCwd(original))
+      )
+        return 0;
+      const page = await getEarlierStoredHistory(original);
+      if (!page || removingSessionIds.current.has(sessionId) || getGroupLockView() !== privacy)
+        return 0;
+      const current = sessionsRef.current.find((session) => session.id === sessionId);
+      if (!current || current.storedHistory !== original.storedHistory) return 0;
+      setSessions((previous) =>
+        previous.map((session) =>
+          session === current
+            ? {
+                ...session,
+                blocks: [...page.blocks, ...session.blocks],
+                storedHistory: page.cursor,
+              }
+            : session,
+        ),
+      );
+      return page.blocks.length;
+    },
+    [removingSessionIds, sessionsRef, setSessions],
+  );
+
+  const historyForExecution = useRef(new Map<string, Promise<boolean>>());
+  const ensureSessionHistoryForExecution = useCallback(
+    (sessionId: string): Promise<boolean> => {
+      const pending = historyForExecution.current.get(sessionId);
+      if (pending) return pending;
+      const original = sessionsRef.current.find((session) => session.id === sessionId);
+      if (!original?.storedHistory) return Promise.resolve(!!original && !original.historyLoading);
+      const privacy = getGroupLockView();
+      if (
+        isProjectLockedIn(privacy.lock, original.cwd) ||
+        isProjectLockedIn(privacy.lock, sessionWorkCwd(original))
+      )
+        return Promise.resolve(false);
+      const epoch = sessionLoadEpochs.current.get(sessionId) ?? 0;
+      const loading = getSession(sessionId)
+        .then((hydrated) => {
+          const current = sessionsRef.current.find((session) => session.id === sessionId);
+          if (
+            !hydrated ||
+            !current?.storedHistory ||
+            current.busy ||
+            current.storedHistory.revision !== original.storedHistory?.revision ||
+            current.queuedMessages !== original.queuedMessages ||
+            current.cwd !== original.cwd ||
+            sessionWorkCwd(current) !== sessionWorkCwd(original) ||
+            getGroupLockView() !== privacy ||
+            removingSessionIds.current.has(sessionId) ||
+            (sessionLoadEpochs.current.get(sessionId) ?? 0) !== epoch
+          )
+            return false;
+          hydrationHandlers(
+            { sessionsRef, setSessions, loadedSessionCache, removingSessionIds, sessionLoadEpochs },
+            sessionId,
+            epoch,
+          ).onHydrated?.(current, hydrated);
+          lastPersisted.current.set(sessionId, persistFingerprint(hydrated));
+          return !sessionsRef.current.find((session) => session.id === sessionId)?.historyLoading;
+        })
+        .finally(() => historyForExecution.current.delete(sessionId));
+      historyForExecution.current.set(sessionId, loading);
+      return loading;
+    },
+    [
+      lastPersisted,
+      loadedSessionCache,
+      removingSessionIds,
+      sessionLoadEpochs,
+      sessionsRef,
+      setSessions,
+    ],
+  );
 
   const retryingHistory = useRef(new Set<string>());
   /**
@@ -375,10 +461,11 @@ export function useSessionLoading({
 
   return {
     invalidateLoadedSession,
-    loadStoredSession,
     ensureOpenSession,
     onPopOutSession,
     onPrefetchHistorySession,
     onRetrySessionHistory,
+    onLoadSessionHistory,
+    ensureSessionHistoryForExecution,
   };
 }

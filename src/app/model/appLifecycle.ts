@@ -681,6 +681,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         interrupted.has(id)
           ? undefined
           : {
+              deferHistory: true,
               onHydrated: (original, hydrated) => {
                 if (loaded.get(id)?.blocks === original.blocks) loaded.set(id, hydrated);
                 publishBootSession(original, hydrated);
@@ -773,6 +774,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
               return;
             }
             void getSession(session.id, {
+              deferHistory: true,
               onHydrated: (original, hydrated) => {
                 publishBootSession(original, hydrated);
                 if (!hydrated.historyLoading) resolve();
@@ -791,7 +793,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
                   placeholder,
                   record ?? { ...placeholder, historyLoading: false },
                 );
-                if (!record?.historyLoading) resolve();
+                if (!record?.historyLoading || record.storedHistory) resolve();
               })
               .catch(() => {
                 publishBootSession(placeholder, {

@@ -40,5 +40,5 @@ it("keeps the update notice wrapper visible in the compact project rail", () => 
     /<div className="([^"]+)"\s*>\s*<SidebarUpdateFooter\s+noticesOnly/,
   );
   expect(wrapper?.[1]).toBeDefined();
-  expect(wrapper?.[1]).not.toContain("hidden");
+  expect(wrapper?.[1]).toContain("@max-[140px]/rail:block");
 });

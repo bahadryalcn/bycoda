@@ -155,6 +155,34 @@ it("keeps Add disabled for an account computer without a published https route",
   expect(addButton().disabled).toBe(true);
 });
 
+it("adds a home-network account computer over SSH when an SSH entry has its address", async () => {
+  account.state = { phase: "signed-in", deviceId: "me-1" };
+  vi.mocked(listOtherComputers).mockResolvedValue([
+    {
+      ...studio,
+      routes: [{ endpoint: "http://192.168.2.108:61882", lanKey: "a".repeat(64) }],
+    },
+  ] as never);
+  await render([
+    {
+      ...native,
+      key: "known:192.168.2.108",
+      name: "192.168.2.108",
+      sources: ["known-hosts"],
+      sshUser: "kraba",
+      routes: [{ address: "192.168.2.108", kind: "lan" }],
+    },
+  ]);
+  expect(container.querySelectorAll("button")).toHaveLength(1);
+  await act(async () => addButton().click());
+  expect(onAdd).toHaveBeenCalledWith({
+    target: "kraba@192.168.2.108",
+    alternate: null,
+    name: "Studio",
+    environmentId: "env-1",
+  });
+});
+
 const many = Array.from({ length: 7 }, (_, index) => ({
   ...native,
   key: `ssh:box-${index}`,

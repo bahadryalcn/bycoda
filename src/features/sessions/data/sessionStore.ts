@@ -1273,6 +1273,8 @@ export async function searchSessionContent(options: {
 }
 
 export type SessionHydrationOptions = {
+  /** Read the recent window and wait for explicit requests for older pages. */
+  deferHistory?: boolean;
   /** Applied only if the consumer still owns the original, idle snapshot. */
   onHydrated?: (original: Session, hydrated: Session) => void;
   onHydrationFailed?: (original: Session) => void;
@@ -1283,6 +1285,32 @@ type StoredTranscriptPage = {
   totalBlocks: number;
   revision: number;
 };
+
+const STORED_HISTORY_INITIAL_BLOCKS = 48;
+const STORED_HISTORY_INITIAL_TURNS = 10;
+const STORED_HISTORY_PAGE_BLOCKS = 80;
+
+export async function getEarlierStoredHistory(session: Session) {
+  const cursor = session.storedHistory;
+  if (cursor?.before == null || deletedSessionIds.has(session.id)) return null;
+  const page = await invoke<StoredTranscriptPage | null>("session_get_page", {
+    sessionId: session.id,
+    before: cursor.before,
+    revision: cursor.revision,
+    limit: STORED_HISTORY_PAGE_BLOCKS,
+  });
+  if (deletedSessionIds.has(session.id)) return null;
+  if (
+    !page ||
+    page.revision !== cursor.revision ||
+    (page.before != null && page.before >= cursor.before)
+  )
+    throw new Error("Invalid transcript cursor");
+  return {
+    blocks: recordToSession(page.session).blocks,
+    cursor: { revision: page.revision, before: page.before ?? undefined },
+  };
+}
 
 export function getSession(
   sessionId: string,
@@ -1337,7 +1365,7 @@ async function loadStoredSession(
   const finish = startPerformanceSpan("session-load");
   // Consumers without progressive callbacks require complete history and queues.
   // The native full read uses the authoritative transcript compatibility view.
-  if (!options.onHydrated) {
+  if (!options.onHydrated && !options.deferHistory) {
     try {
       const record = await invoke<SessionRecord | null>("session_get", { sessionId });
       if (!record || deletedSessionIds.has(sessionId)) return null;
@@ -1356,7 +1384,10 @@ async function loadStoredSession(
   }
   let page: StoredTranscriptPage | null;
   try {
-    page = await invoke<StoredTranscriptPage | null>("session_get_page", { sessionId, limit: 80 });
+    page = await invoke<StoredTranscriptPage | null>("session_get_page", {
+      sessionId,
+      limit: options.deferHistory ? STORED_HISTORY_INITIAL_BLOCKS : 80,
+    });
   } catch (error) {
     finish();
     throw error;
@@ -1367,8 +1398,21 @@ async function loadStoredSession(
   }
   const record = page.session;
   const session = recordToSession(record);
+  if (options.deferHistory) {
+    let turns = 0;
+    for (let index = session.blocks.length - 1; index > 0; index--) {
+      if (session.blocks[index].role !== "user" || ++turns !== STORED_HISTORY_INITIAL_TURNS)
+        continue;
+      session.blocks = session.blocks.slice(index);
+      page.before = (page.before ?? 0) + index;
+      break;
+    }
+    if (page.before != null)
+      session.storedHistory = { before: page.before, revision: page.revision };
+  }
   session.historyLoading = page.before != null;
   finish({ blocks: session.blocks.length, revision: page.revision });
+  if (session.storedHistory) return withStoredQueue(session);
   if (!session.historyLoading)
     persistenceBaselines.set(sessionId, {
       blocks: incrementalBlocks(session),

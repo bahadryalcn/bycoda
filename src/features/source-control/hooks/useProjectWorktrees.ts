@@ -128,8 +128,8 @@ export function useProjectWorktrees(cwd: string, enabled = true) {
   );
   const getSnapshot = useCallback(() => (active ? entryFor(cwd).snapshot : EMPTY), [active, cwd]);
   const refresh = useCallback(() => {
-    return active ? load(entryFor(cwd), true) : Promise.resolve(false);
-  }, [active, cwd]);
+    return active && readable ? load(entryFor(cwd), true) : Promise.resolve(false);
+  }, [active, readable, cwd]);
   return {
     ...useSyncExternalStore(subscribe, getSnapshot, getSnapshot),
     refresh,

@@ -123,6 +123,35 @@ and Antigravity's setup steps open below it. The
 catalog manages model availability. Decision models have their own page, **Settings > Decision models**. Shared model
 order, limits and groups are managed in Settings > Models > Background work.
 
+Opening the OpenCode panel loads its model catalog. Models with zero token prices
+show a **Free** badge. Select **Free** or search for `free` or its translated
+label to show those models. **Enable all free** turns on every free model and
+keeps the current settings for other models.
+
+### Local models with Ollama
+
+The OpenCode panel has a **Local models (Ollama)** group for running Ollama models on
+this computer through OpenCode. Settings search finds it under `ollama`.
+
+- If Ollama is not installed, **Download Ollama** opens its download page; install it
+  and select **Check again**. If it is installed but stopped, **Start Ollama** starts it
+  in the background. Bycoda never stops Ollama, because other apps may use it.
+- **Download a model** pulls a model by its Ollama name, such as `qwen3:8b`, with
+  progress and **Cancel**. Embedding models are hidden. Models without tool support are
+  marked: they can chat but cannot edit files or run commands.
+- Select models and choose **Save to OpenCode**. Bycoda writes them to the
+  `provider.ollama` block of OpenCode's user config (`OPENCODE_CONFIG`, otherwise
+  `~/.config/opencode/opencode.json`), keeps every other setting, and saves the previous
+  file next to it with a `.monocode.bak` suffix. The models then appear in OpenCode's model list
+  as `ollama/<name>`. Clearing every model removes the block.
+- **Ollama port** sets the port Bycoda uses to reach Ollama on this computer (always
+  `127.0.0.1`). By default it comes from `OLLAMA_HOST`, otherwise 11434; **Use default**
+  returns to it. **Start Ollama** listens on that port, and Ollama models already saved to
+  OpenCode move to it at once. An address that points at another machine is left as is.
+- A config file with comments is never rewritten, so the comments are not lost; add
+  the models to it by hand. OpenCode itself is installed from the panel's header, not
+  by this group.
+
 **Settings > Usage & limits** is a separate page for provider usage, quotas and
 local budgets. Existing usage links and Settings search open that page.
 Switching between Providers and Usage & limits keeps account drafts and pending

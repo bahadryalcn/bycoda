@@ -477,7 +477,7 @@ def log_command_failure(error, tail=4000):
         if isinstance(value, bytes):
             value = value.decode('utf-8', 'replace')
         if value:
-            print(f'{name} (last {tail} characters):\n' + redact(value[-tail:]), file=sys.stderr)
+            print(f'{name} (last {tail} characters):\n' + redact(value)[-tail:], file=sys.stderr)
     sys.stderr.flush()
 
 def main(launch_key=None):

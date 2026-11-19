@@ -120,6 +120,31 @@ pub(super) fn connection_file(connection: &rusqlite::Connection) -> Result<File,
     })?))
 }
 
+/// `None` only for a definite absence. Any other failure, or an entry that is
+/// not one regular file, stays an error so callers never read it as absent.
+pub(super) fn existing_file(path: &Path) -> Result<Option<File>, String> {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err("Native writer sidecar state is unknown".into()),
+        Ok(_) => safe_file(path, false, false).map(Some),
+    }
+}
+
+/// A directory entry that is a real directory, never a link or reparse point.
+pub(super) fn plain_directory(path: &Path) -> Result<bool, String> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|_| "Native writer registry metadata is unavailable")?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Ok(false);
+        }
+    }
+    Ok(metadata.is_dir() && !metadata.file_type().is_symlink())
+}
+
 pub(super) fn safe_file(path: &Path, create: bool, fresh: bool) -> Result<File, String> {
     if let Ok(metadata) = std::fs::symlink_metadata(path) {
         if metadata.file_type().is_symlink() || !metadata.is_file() {

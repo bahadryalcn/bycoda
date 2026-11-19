@@ -557,7 +557,7 @@ export function ProviderAccountsSettings({
                             {t("Signed out")}
                           </Badge>
                         ) : usageRenewalPending(limits) ? null : (
-                          <AccountStatusLabel status={status} className="shrink-0" />
+                          <AccountStatusLabel status={status} size="caption" />
                         )}
                       </div>
                       <div className="provider-account-actions">

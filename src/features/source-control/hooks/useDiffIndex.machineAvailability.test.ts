@@ -99,3 +99,19 @@ it("keeps the loaded changes and starts no read while the machine is offline, th
 
   expect(gitDiffIndex.mock.calls.length).toBeGreaterThan(1);
 });
+
+// The read that met the outage failed, and its three-minute retry backoff outlived a short
+// outage: the panel kept its stale changes after the machine answered again.
+it("reads the changes as soon as the machine recovers from a failed read", async () => {
+  adoptRemoteMachineInventory([MACHINE]);
+  gitDiffIndex.mockRejectedValueOnce(new Error("Machine is unreachable"));
+  await act(async () => root.render(createElement(View)));
+  expect(gitDiffIndex).toHaveBeenCalledTimes(1);
+
+  await act(async () => recordRemoteConnection("env", "Machine is unreachable"));
+  gitDiffIndex.mockResolvedValue(INDEX);
+  await act(async () => recordRemoteConnection("env"));
+  await act(async () => notifyRemoteRecovered("env"));
+
+  expect(gitDiffIndex).toHaveBeenCalledTimes(2);
+});

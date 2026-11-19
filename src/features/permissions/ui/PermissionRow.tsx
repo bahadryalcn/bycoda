@@ -10,7 +10,13 @@ import {
   type PermissionState,
 } from "../../../platform/tauri/systemPermissions";
 import { usePermissionStatus } from "../hooks/usePermissionStatus";
-import { permissionBadge, permissionInfo, permissionReady } from "../model/permissions";
+import {
+  permissionBadge,
+  permissionInfo,
+  permissionNeedsRestart,
+  permissionReady,
+} from "../model/permissions";
+import { PermissionRestartButton } from "./PermissionRestartButton";
 import { PermissionSetupSheet } from "./PermissionSetupSheet";
 import styles from "./PermissionRow.module.css";
 
@@ -18,7 +24,9 @@ import styles from "./PermissionRow.module.css";
  * One OS permission. A ready permission shows only its badge. "Allow" shows
  * the OS prompt in place and opens the guide only when access is still
  * missing afterwards; "Review access" opens the guide, which launches the
- * settings pane and watches for the grant. A failed status read offers only "Check again".
+ * settings pane and watches for the grant. Access switched on in the OS that
+ * applies only after a restart offers "Restart now". A failed status read
+ * offers only "Check again".
  */
 export function PermissionRow({
   id,
@@ -37,6 +45,7 @@ export function PermissionRow({
   const [requesting, setRequesting] = useState(false);
   const info = permissionInfo(id);
   const ready = permissionReady(entry.state);
+  const restart = !failed && permissionNeedsRestart(entry);
 
   async function allow() {
     if (requesting) return;
@@ -65,7 +74,7 @@ export function PermissionRow({
               {t("Status unavailable")}
             </Badge>
           ) : (
-            <PermissionStatusBadge state={entry.state} animate />
+            <PermissionStatusBadge state={entry.state} restart={restart} animate />
           )}
           {helperState && (
             <Badge size="xs" tone={permissionBadge(helperState).tone}>
@@ -80,12 +89,13 @@ export function PermissionRow({
                 {t("Check again")}
               </Button>
             )}
-            {!failed && entry.canRequest && (
+            {restart && <PermissionRestartButton />}
+            {!failed && !restart && entry.canRequest && (
               <Button loading={requesting} disabled={requesting} onClick={() => void allow()}>
                 {t("Allow")}
               </Button>
             )}
-            {!failed && !entry.canRequest && (
+            {!failed && !restart && !entry.canRequest && (
               <Button onClick={() => setSetup(true)}>{t("Review access")}</Button>
             )}
           </span>

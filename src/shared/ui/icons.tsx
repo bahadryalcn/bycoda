@@ -45,6 +45,7 @@ import {
   CircleHelp as LucideCircleHelp,
   Info as LucideInfo,
   CircleX as LucideCircleX,
+  CloudOff as LucideCloudOff,
   CloudUpload as LucideCloudUpload,
   Calendar as LucideCalendar,
   CalendarDays as LucideCalendarDays,
@@ -409,6 +410,7 @@ export const CircleDot = wrap(LucideCircleDot, "CircleDot");
 export const CircleHelp = wrap(LucideCircleHelp, "CircleHelp");
 export const Info = wrap(LucideInfo, "Info");
 export const CircleX = wrap(LucideCircleX, "CircleX");
+export const CloudOff = wrap(LucideCloudOff, "CloudOff");
 export const CloudUpload = wrap(LucideCloudUpload, "CloudUpload");
 export const Calendar = wrap(LucideCalendar, "Calendar");
 export const CalendarDays = wrap(LucideCalendarDays, "CalendarDays");

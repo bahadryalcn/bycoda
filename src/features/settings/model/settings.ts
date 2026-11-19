@@ -1190,6 +1190,18 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       keywords: "registry install discover acp katalog keşfet kur",
     },
     {
+      id: "ollama-models",
+      section: "providers",
+      label: "Local models (Ollama)",
+      keywords: "ollama local model opencode offline download pull yerel model indir",
+    },
+    {
+      id: "ollama-port",
+      section: "providers",
+      label: "Ollama port",
+      keywords: "ollama port address host OLLAMA_HOST 11434 adres",
+    },
+    {
       id: "account-limits",
       section: "usage",
       label: "Provider account limit",

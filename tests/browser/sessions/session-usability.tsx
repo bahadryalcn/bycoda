@@ -174,6 +174,13 @@ const modelSource = {
     : {}),
 };
 const sessionId = "integrated-session-usability";
+const historyFixture = new URLSearchParams(location.search).has("historyFixture");
+const historyBlocks: Block[] = Array.from({ length: 32 }, (_, index) => ({
+  id: `history-${index}`,
+  role: index % 2 === 0 ? "user" : "assistant",
+  text: `${index % 2 === 0 ? "Request" : "Response"} ${Math.floor(index / 2) + 1}`,
+}));
+let finishHistoryPage: (() => void) | undefined;
 const baseBlocks: Block[] = [
   {
     id: "user",
@@ -203,7 +210,12 @@ const initial: Session = {
   ...newSession("claude", "/fixture", modelId),
   id: sessionId,
   title: "Integrated usability conversation with a long project title",
-  blocks: new URLSearchParams(location.search).has("socialDiscussion") ? [] : baseBlocks,
+  blocks: historyFixture
+    ? historyBlocks.slice(12)
+    : new URLSearchParams(location.search).has("socialDiscussion")
+      ? []
+      : baseBlocks,
+  ...(historyFixture ? { historyLoading: true, storedHistory: { before: 12, revision: 1 } } : {}),
   rewindHistory: new URLSearchParams(location.search).has("rewindFixture")
     ? [
         {
@@ -227,7 +239,7 @@ setComposerAttachments(sessionId, [
     data: btoa("context"),
   },
 ]);
-const events = { sends: 0, stops: 0, approvals: 0, queueAttempts: 0 };
+const events = { sends: 0, stops: 0, approvals: 0, queueAttempts: 0, historyPages: 0 };
 // The real pane resolves approval identity from the canonical session store.
 setSessions([initial]);
 type Mode = "idle" | "working" | "approval" | "unknown" | "tools" | "long";
@@ -235,6 +247,7 @@ type FixtureControl = {
   mode: (mode: Mode) => void;
   remount: () => void;
   events: typeof events;
+  finishHistoryPage: () => void;
 };
 declare global {
   interface Window {
@@ -256,6 +269,7 @@ function Fixture() {
   useEffect(() => {
     window.sessionUsability = {
       events,
+      finishHistoryPage: () => finishHistoryPage?.(),
       remount: () => setRevision((value) => value + 1),
       mode: (mode) => {
         if (mode === "unknown") {
@@ -357,6 +371,20 @@ function Fixture() {
       return false;
     },
     onSaveDraft: () => false,
+    onLoadSessionHistory: historyFixture
+      ? async () => {
+          events.historyPages++;
+          await new Promise<void>((resolve) => {
+            finishHistoryPage = resolve;
+          });
+          setSession((value) => ({
+            ...value,
+            blocks: historyBlocks,
+            storedHistory: { revision: 1 },
+          }));
+          return 12;
+        }
+      : undefined,
     onRemoveDraft: () => false,
     onStop: () => {
       events.stops++;

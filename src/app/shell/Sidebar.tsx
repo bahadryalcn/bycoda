@@ -149,6 +149,7 @@ import { RemoteDataStatus } from "../../features/connections/ui/RemoteDataStatus
 import { RemoteLoadError } from "../../features/connections/ui/RemoteLoadError";
 import { useRemoteConnectionFeedback } from "../../features/connections/ui/RemoteConnectionFeedback";
 import { useRemoteConnection } from "../../features/connections/model/useRemoteConnection";
+import { useRemoteLoadFailure } from "../../features/connections/public/remoteHealth";
 import { useMachineFocus } from "../../features/connections/hooks/useMachineFocus";
 import {
   classifyRemoteError,
@@ -707,12 +708,15 @@ function SidebarComponent({
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
   const machineAvailability = useMachineAvailability(remoteProject ? cwd : undefined);
-  // An offline machine keeps its last session list (its channel recovers on its own); one this
-  // computer cannot ask at all (not added, pairing refused, off, sign-in) is not read.
+  // An offline machine keeps its last session list unread until it answers again; one this
+  // computer cannot ask at all (not added, pairing refused, off, sign-in) drops it.
   const remote = useRemoteProjectSessions(
     cwd,
     remoteProject && (machineAvailability.available || machineAvailability.reason === "offline"),
+    machineAvailability.available,
   );
+  // While offline the retained list is dimmed under the same unreachable notice as other panes.
+  const sessionsFailure = useRemoteLoadFailure(cwd, "sessions");
   const closeFilesSearch = useCallback(
     () => onFilesSearchOpenChange(false),
     [onFilesSearchOpenChange],
@@ -857,6 +861,7 @@ function SidebarComponent({
   const sessionsHidden =
     remoteProject &&
     machineHidesView(machineAvailability, remote.loaded || projectSessions.length > 0);
+  const sessionsStale = remoteProject && !machineAvailability.available && !sessionsHidden;
   // Count the whole workspace before search, pagination or worktree filters.
   // Local busy IDs also include sessions continued on this desktop's host.
   const workingSessionCount = new Set(
@@ -3655,7 +3660,9 @@ function SidebarComponent({
           }
         />
         {tab === "sessions" && remoteProject && !lastSessionsOpen && !sessionsHidden ? (
-          !remote.machine && remote.dataState.error && remoteConnectionIssue ? (
+          sessionsStale && sessionsFailure ? (
+            <RemoteLoadError cwd={cwd} failure={sessionsFailure} stale compact />
+          ) : !remote.machine && remote.dataState.error && remoteConnectionIssue ? (
             <RemoteLoadError cwd={cwd} failure={classifyRemoteError(remote.dataState.error)} />
           ) : (
             <RemoteDataStatus
@@ -3796,8 +3803,9 @@ function SidebarComponent({
             </Text>
           ) : (
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
-              <div>
-                {onOpenCrewSession && (
+              <div className={sessionsStale ? "opacity-60" : undefined}>
+                {/* Crews read through the same machine; its error would only repeat the notice. */}
+                {onOpenCrewSession && !sessionsHidden && (
                   <CrewSidebar
                     key={cwd}
                     cwd={cwd}
@@ -3809,7 +3817,7 @@ function SidebarComponent({
                 {/* Loading and errors precede empty results, so an unfinished
                   request never claims this project has no conversations. */}
                 {sessionsHidden ? (
-                  <MachineUnavailable cwd={cwd} size="compact" />
+                  <MachineUnavailable cwd={cwd} size="panel" />
                 ) : remoteProject &&
                   projectSessions.length === 0 &&
                   !["ready", "empty"].includes(remote.dataState.phase) ? null : pendingFirstLoad ? (
@@ -3948,18 +3956,28 @@ function SidebarComponent({
                 collapsible
               />
             </div>
-            <SidebarUpdateFooter
-              noticesOnly
-              update={updateNotice}
-              onOpenWhatsNew={onOpenWhatsNew}
-              onDismissUpdate={onDismissUpdate}
-            />
-            {!compactProjectRail ? (
+            {compactProjectRail ? (
+              <SidebarUpdateFooter
+                noticesOnly
+                update={updateNotice}
+                onOpenWhatsNew={onOpenWhatsNew}
+                onDismissUpdate={onDismissUpdate}
+              />
+            ) : (
               <SidebarAccountFooter
+                updateNotice={
+                  <SidebarUpdateFooter
+                    noticesOnly
+                    inlineNotice
+                    update={updateNotice}
+                    onOpenWhatsNew={onOpenWhatsNew}
+                    onDismissUpdate={onDismissUpdate}
+                  />
+                }
                 onOpenSettings={onOpenSettings}
                 onOpenAccountSettings={openAccountSettings}
               />
-            ) : null}
+            )}
           </>
         ) : null}
       </>

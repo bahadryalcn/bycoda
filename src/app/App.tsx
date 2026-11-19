@@ -1415,11 +1415,12 @@ function Workspace({
 
   const {
     invalidateLoadedSession,
-    loadStoredSession,
     ensureOpenSession,
     onPopOutSession,
     onPrefetchHistorySession,
     onRetrySessionHistory,
+    onLoadSessionHistory,
+    ensureSessionHistoryForExecution,
   } = useSessionLoading({
     sessionsRef,
     setSessions,
@@ -1441,7 +1442,6 @@ function Workspace({
    * Working card shows them without a tab; they unload once seen after done. */
   useRunningOnHostLoader({
     loadRunningOnHostRef,
-    loadStoredSession,
     openingSessionIds,
     removingSessionIds,
     loadedSessionCache,
@@ -1980,6 +1980,7 @@ function Workspace({
       activeSessionIdRef,
     },
     getSubmitSessionRef: () => submitSessionRef,
+    ensureSessionHistoryForExecution,
     workspaceNavigation,
     applyProjectLocationChange,
     dismissNoticesForContinuedSession,
@@ -2093,6 +2094,7 @@ function Workspace({
     sessionsRef,
     setSessions,
     onSubmit: submitSession,
+    ensureSessionHistoryForExecution,
     enqueueHarnessEvent,
     flushHarnessEvents,
     onStopRef,
@@ -2175,6 +2177,7 @@ function Workspace({
     onSubmit,
   });
   const { onCompactContext, onRewindMessage } = useCompactAndRewind({
+    ensureSessionHistoryForExecution,
     sessionsRef,
     setSessions,
     turnGen,
@@ -2794,7 +2797,9 @@ function Workspace({
     onRemoteSnapshot,
     onRefreshAdoptedSession,
     onRetrySessionHistory,
+    onLoadSessionHistory,
     onWorkspaceModeChange,
+    onPrepareSessionHistory: ensureSessionHistoryForExecution,
     onWorktreeBaseChange,
     onManageWorktrees,
     onModelChange,

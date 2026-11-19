@@ -1715,6 +1715,16 @@ class LocalUpdateTests(unittest.TestCase):
             record = read_json(root / 'host/update-jobs/host.json')
             self.assertEqual(record['error'], 'Command failed; see local stage logs')
 
+    def test_stage_log_tail_redacts_before_cutting(self):
+        # Cutting first could drop "Bearer " and leave the token after it unmasked.
+        from local_install import log_command_failure
+        stderr = 'x' * 10 + 'Bearer zz-token-value\n'
+        failure = subprocess.CalledProcessError(1, ['node.exe'], stderr=stderr)
+        log = io.StringIO()
+        with contextlib.redirect_stderr(log):
+            log_command_failure(failure, tail=len(stderr) - 17)
+        self.assertNotIn('zz-token-value', log.getvalue())
+
     def test_same_pending_package_does_not_spawn_second_helper(self):
         with temp_dir() as folder:
             root = pathlib.Path(folder)

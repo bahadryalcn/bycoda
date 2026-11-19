@@ -7143,6 +7143,50 @@ mod tests {
     }
 
     #[test]
+    fn recovery_lease_left_in_a_registry_of_an_older_file_identity_keeps_its_state() {
+        let dir =
+            std::env::temp_dir().join(format!("bycoda-recovery-lease-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let store = SessionStore::open(dir.join("sessions.sqlite")).unwrap();
+        let own = store.native_instance_id().to_string();
+        // Same database file, older identity (macOS renumbers st_dev at boot).
+        let stale = dir.join(format!(".bycoda-writers-{}-recovery", "f".repeat(64)));
+        std::fs::create_dir(&stale).unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let lease = std::fs::File::create(stale.join(&id)).unwrap();
+        lease.try_lock().unwrap();
+        let conn = store.conn.lock().unwrap();
+        assert!(matches!(
+            conn.recovery_lease_state(&id),
+            Ok(cohort::LeaseState::Live)
+        ));
+        assert!(conn.other_recovery_lease_live(&own).unwrap());
+        lease.unlock().unwrap();
+        drop(lease);
+        assert!(matches!(
+            conn.recovery_lease_state(&id),
+            Ok(cohort::LeaseState::Unleased)
+        ));
+        assert!(!conn.other_recovery_lease_live(&own).unwrap());
+        // Absent from every registry, or present but not a lease file: unknown.
+        assert!(conn
+            .recovery_lease_state(&uuid::Uuid::new_v4().to_string())
+            .is_err());
+        let unusable = uuid::Uuid::new_v4().to_string();
+        std::fs::create_dir(stale.join(&unusable)).unwrap();
+        assert!(conn.recovery_lease_state(&unusable).is_err());
+        // A directory that only resembles a registry is not consulted.
+        let foreign = dir.join(".bycoda-writers-not-a-hash-recovery");
+        std::fs::create_dir(&foreign).unwrap();
+        let foreign_id = uuid::Uuid::new_v4().to_string();
+        std::fs::File::create(foreign.join(&foreign_id)).unwrap();
+        assert!(conn.recovery_lease_state(&foreign_id).is_err());
+        drop(conn);
+        drop(store);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn retired_page_recovers_without_clearing_live_or_unknown_siblings() {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("CREATE TABLE in_flight_sessions (session_id TEXT PRIMARY KEY, cwd TEXT NOT NULL, sort_index INTEGER NOT NULL)").unwrap();

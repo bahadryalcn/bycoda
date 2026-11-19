@@ -4,6 +4,7 @@ import { gitDiffStats, subscribeGitChanged, type GitDiffStats } from "../../../p
 import { currentGitChangeHint, peekFullGitIndex } from "../model/gitIndexStore";
 import {
   readMachineAvailability,
+  subscribeAvailability,
   useMachineAvailability,
 } from "../../connections/public/machineAvailability";
 import {
@@ -219,10 +220,12 @@ export function useProjectsDiffStats(
   cwds: readonly string[],
   enabled: boolean,
 ): (GitDiffStats | null)[] {
-  // Reads only machines that can be asked; a list of many projects checks each one.
-  const paths = cwds.filter(
-    (cwd) => enabled && Boolean(cwd) && cwd !== "~" && readMachineAvailability(cwd).available,
-  );
+  // Reads only machines that can be asked; a list of many projects checks each one. The
+  // subscription re-renders when one of them changes, so its reads stop or resume with it.
+  const readable = (cwd: string) => readMachineAvailability(cwd).available;
+  const readableKey = () => cwds.map((cwd) => (readable(cwd) ? "1" : "0")).join("");
+  useSyncExternalStore(subscribeAvailability, readableKey, readableKey);
+  const paths = cwds.filter((cwd) => enabled && Boolean(cwd) && cwd !== "~" && readable(cwd));
   const key = JSON.stringify(paths);
   const subscribe = useCallback(
     (listener: () => void) => {

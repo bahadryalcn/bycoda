@@ -1267,18 +1267,6 @@ export function ProjectRail({
                 ))}
               </div>
             </ProjectMultiSelect>
-            {!navigator ? (
-              <>
-                <div className="shrink-0 px-2">
-                  <SidebarUpdateFooter
-                    noticesOnly
-                    update={updateNotice}
-                    onOpenWhatsNew={onOpenWhatsNew}
-                    onDismissUpdate={onDismissUpdate}
-                  />
-                </div>
-              </>
-            ) : null}
           </>
         )}
       </div>
@@ -1289,11 +1277,26 @@ export function ProjectRail({
         >
           <div className="@max-[140px]/rail:hidden">
             <SidebarAccountFooter
+              updateNotice={
+                <SidebarUpdateFooter
+                  noticesOnly
+                  inlineNotice
+                  update={updateNotice}
+                  onOpenWhatsNew={onOpenWhatsNew}
+                  onDismissUpdate={onDismissUpdate}
+                />
+              }
               onOpenSettings={onOpenSettings}
               onOpenAccountSettings={openAccountSettings}
             />
           </div>
           <div className="hidden @max-[140px]/rail:block">
+            <SidebarUpdateFooter
+              noticesOnly
+              update={updateNotice}
+              onOpenWhatsNew={onOpenWhatsNew}
+              onDismissUpdate={onDismissUpdate}
+            />
             <SidebarAccountFooter
               compact
               onOpenSettings={onOpenSettings}

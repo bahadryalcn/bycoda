@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { z } from "zod";
@@ -16,6 +16,7 @@ type Params = z.infer<typeof AppearanceBackgroundImageParamsSchema>;
 const IMAGE_DIRECTORY = join(tmpdir(), "bycoda-appearance-images");
 /** The adapter stops its own HTTP work at 180 s; this also bounds the Codex turn. */
 const TIMEOUT_MS = 200_000;
+const IMAGE_RETENTION_MS = 60 * 60 * 1_000;
 
 /** The owner's words stay quoted data; the frame keeps the image usable behind chat text. */
 export function backgroundImagePrompt(request: string): string {
@@ -26,13 +27,19 @@ export function backgroundImagePrompt(request: string): string {
   ].join(" ");
 }
 
-/** Keeps only the latest few generated files; the desktop copies the chosen one into its store. */
-async function pruneOldImages(keep: string) {
+/** Give concurrent replies time to copy their separate files into the desktop library. */
+async function pruneOldImages() {
   const entries = await readdir(IMAGE_DIRECTORY).catch(() => [] as string[]);
+  const cutoff = Date.now() - IMAGE_RETENTION_MS;
   await Promise.all(
     entries
-      .filter((name) => name.startsWith("background-") && name !== keep)
-      .map((name) => rm(join(IMAGE_DIRECTORY, name), { force: true }).catch(() => undefined)),
+      .filter((name) => name.startsWith("background-"))
+      .map(async (name) => {
+        const path = join(IMAGE_DIRECTORY, name);
+        const file = await stat(path).catch(() => undefined);
+        if (file?.isFile() && file.mtimeMs < cutoff)
+          await rm(path, { force: true }).catch(() => undefined);
+      }),
   );
 }
 
@@ -43,7 +50,11 @@ async function pruneOldImages(keep: string) {
 export async function generateAppearanceBackgroundImage(
   params: Params,
   adapters: SocialImageAdapters = createSocialImageAdapters(IMAGE_DIRECTORY),
+  requestSignal?: AbortSignal,
 ): Promise<{ path: string }> {
+  const timeout = AbortSignal.timeout(TIMEOUT_MS);
+  const signal = requestSignal ? AbortSignal.any([requestSignal, timeout]) : timeout;
+  signal.throwIfAborted();
   const adapter = adapters[params.provider];
   if (!adapter)
     throw new Error(
@@ -55,20 +66,26 @@ export async function generateAppearanceBackgroundImage(
   if (!capability.available)
     throw new Error(capability.reason || "The selected image provider is unavailable.");
   await mkdir(IMAGE_DIRECTORY, { recursive: true, mode: 0o700 });
+  signal.throwIfAborted();
   const id = randomUUID();
   const result = await adapter.generate({
     prompt: backgroundImagePrompt(params.prompt),
     aspectRatio: "16:9",
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal,
     checkpoint: () => undefined,
     id,
   });
+  signal.throwIfAborted();
   validateGeneratedImage(result.bytes);
   const bytes = Buffer.from(result.bytes);
   const extension = bytes[0] === 0xff && bytes[1] === 0xd8 ? "jpg" : "png";
   const name = `background-${id}.${extension}`;
   const path = join(IMAGE_DIRECTORY, name);
   await writeFileAtomic(path, bytes, { mode: 0o600 });
-  await pruneOldImages(name);
+  await pruneOldImages();
+  if (signal.aborted) {
+    await rm(path, { force: true }).catch(() => undefined);
+    signal.throwIfAborted();
+  }
   return { path };
 }

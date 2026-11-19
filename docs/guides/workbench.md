@@ -7,6 +7,15 @@ or Settings > Workspace for Autosave. Inbox opens with Ctrl+Shift+I (⌘⇧I on
 Mac) and Notes with Ctrl+Shift+L (⌘⇧L on Mac). The menu shows the active
 shortcuts from Settings > Keybindings.
 
+After an app update, open What's new from the expanded sidebar footer. Hover or
+focus the icon to see the installed version, or use the adjacent close button to
+dismiss the notice.
+
+## Conversation history
+
+Long conversations open at their recent messages. Scroll toward the top of the
+conversation to load earlier messages. The message you were reading stays in place.
+
 ## Transient notifications
 
 Information, success and progress notices appear at the top right. Warnings and

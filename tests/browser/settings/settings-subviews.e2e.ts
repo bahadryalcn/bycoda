@@ -3,6 +3,95 @@ import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
+    test(`provider account quota typography ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?providersFixture&providerQuotaFixture&section=providers&theme=${theme}&lang=en`,
+      );
+      await page
+        .locator(".provider-tabs")
+        .getByRole("tab", { name: "Providers", exact: true })
+        .click();
+      const picker = page.locator(".provider-cli-select").getByRole("button");
+      if (await picker.isVisible()) {
+        await picker.click();
+        await page.getByRole("option", { name: /^Claude Code/ }).click();
+      } else {
+        await page
+          .locator(".provider-cli-selector")
+          .getByRole("button", { name: /^Claude Code,/ })
+          .click();
+      }
+
+      const accounts = page.locator('[data-setting-id="provider-accounts"]:visible');
+      const reset = accounts.locator(".provider-account-status").getByText(/^Resets in /);
+      const remaining = accounts.getByText("8% left", { exact: true });
+      await expect(reset).toBeVisible();
+      await expect(remaining).toBeVisible();
+      await accounts.screenshot({
+        path: `temp/verification/provider-account-quota/${theme}-${width}.png`,
+      });
+      for (const detail of [reset, remaining]) {
+        const row = detail.locator("xpath=ancestor::*[contains(@class, 'provider-account-row')]");
+        const name = row.locator(".provider-account-name");
+        const fontSize = (node: Element) => parseFloat(getComputedStyle(node).fontSize);
+        expect(await detail.evaluate(fontSize)).toBeLessThanOrEqual(await name.evaluate(fontSize));
+      }
+      await expect(accounts.getByText(/Resets in /)).toHaveCount(1);
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`OpenCode free models ${theme} ${width}`, async ({ page }) => {
+      const output = "temp/verification/opencode-free-models";
+      mkdirSync(output, { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?providersFixture&openCodePricing&section=providers&theme=${theme}&lang=en`,
+      );
+      await page
+        .locator(".provider-tabs")
+        .getByRole("tab", { name: "Providers", exact: true })
+        .click();
+      const picker = page.locator(".provider-cli-select").getByRole("button");
+      if (await picker.isVisible()) {
+        await picker.click();
+        await page.getByRole("option", { name: /^OpenCode/ }).click();
+      } else {
+        await page
+          .locator(".provider-cli-selector")
+          .getByRole("button", { name: /^OpenCode(?:,|$)/ })
+          .click();
+      }
+      const models = page.locator('[data-setting-id="enabled-models"]');
+      const list = models.locator(".provider-models-list");
+      await expect(list.getByText("Free", { exact: true })).toHaveCount(2);
+      await expect(list.getByText("DeepSeek V4.1 Flash", { exact: true })).toBeVisible();
+      await models.screenshot({ path: `${output}/${theme}-${width}.png` });
+      const free = page.getByRole("button", { name: "Free", exact: true });
+      const paidModel = list.getByRole("switch", { name: "Use DeepSeek V4.1 Flash", exact: true });
+      const freeModel = list.getByRole("switch", { name: "Use Big Pickle", exact: true });
+      await paidModel.click();
+      await freeModel.click();
+      await free.click();
+      await expect(free).toHaveAttribute("aria-pressed", "true");
+      await expect(list.getByText("Big Pickle", { exact: true })).toBeVisible();
+      await expect(paidModel).toHaveCount(0);
+      const enableFree = page.getByRole("button", { name: "Enable all free", exact: true });
+      await expect(enableFree).toBeEnabled();
+      await models.screenshot({ path: `${output}/${theme}-${width}-filtered.png` });
+      await enableFree.click();
+      await expect(freeModel).toBeChecked();
+      await expect(enableFree).toBeDisabled();
+      await free.click();
+      await expect(free).toHaveAttribute("aria-pressed", "false");
+      await expect(paidModel).toHaveAttribute("aria-checked", "false");
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
     test(`provider defaults scope ${theme} ${width}`, async ({ page }) => {
       mkdirSync("temp/verification/providers-1114/defaults", { recursive: true });
       await page.setViewportSize({ width, height: 900 });

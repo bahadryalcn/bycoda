@@ -193,6 +193,17 @@ function UpdateFixture() {
           <nav className="bycoda-rail-tools bycoda-rail-tools--footer" aria-label="Account">
             <SidebarAccountFooter
               compact={compact}
+              updateNotice={
+                params.has("installed-notice") ? (
+                  <SidebarUpdateFooter
+                    noticesOnly
+                    inlineNotice
+                    update={notices.updateNotice}
+                    onOpenWhatsNew={notices.onOpenWhatsNew}
+                    onDismissUpdate={notices.onDismissUpdate}
+                  />
+                ) : null
+              }
               onOpenSettings={() => setClicks((value) => value + 1)}
             />
           </nav>
@@ -205,6 +216,9 @@ function UpdateFixture() {
           state="off"
           onOpen={() => setClicks((value) => value + 1)}
         />
+        <output className="update-fixture-output" data-fixture-notes>
+          {notices.whatsNewVersion ?? "No release notes opened"}
+        </output>
       </main>
     );
   }

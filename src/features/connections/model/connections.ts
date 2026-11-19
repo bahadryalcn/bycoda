@@ -1404,8 +1404,13 @@ export type RemoteProjectSessions = {
 };
 
 /** Lists a remote project's host sessions, keeping the last list visible
- * while the machine is unreachable. */
-export function useRemoteProjectSessions(project: string, enabled = true): RemoteProjectSessions {
+ * while the machine is unreachable. `readable` false keeps that list without reading
+ * (no request, channel or poller) until the machine can be asked again. */
+export function useRemoteProjectSessions(
+  project: string,
+  enabled = true,
+  readable = true,
+): RemoteProjectSessions {
   const remote = enabled ? remoteProjectFor(project) : undefined;
   const {
     machines,
@@ -1453,6 +1458,16 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
       setLoaded(false);
       lastVerified.current = undefined;
       setDataState({ phase: "loading" });
+      return;
+    }
+    // A machine that cannot be asked keeps the last list; its recovery re-runs this and reads.
+    // A refresh it cut off never answers, so the list stops claiming one is running.
+    if (!readable) {
+      setDataState((previous) =>
+        previous.phase === "refreshing"
+          ? { phase: "stale", updatedAt: lastVerified.current }
+          : previous,
+      );
       return;
     }
     setDataState({ phase: "refreshing", updatedAt: lastVerified.current });
@@ -1578,7 +1593,7 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
       disposed = true;
       stopFallback();
     };
-  }, [project, remote?.projectId, machine?.id, refresh, capabilityVersion]);
+  }, [project, remote?.projectId, machine?.id, refresh, capabilityVersion, readable]);
   // Effects run after render. Never expose the previous project's cards with
   // the new project's click handlers during that transition.
   const current = sessionList.project === project;

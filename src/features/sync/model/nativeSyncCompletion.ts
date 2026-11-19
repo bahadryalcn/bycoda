@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { errorText } from "../../../shared/lib/errors";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 
 /** First wait before completion is offered again after the native owner answered "held". */
@@ -16,6 +17,18 @@ export const completeRetryDelay = (attempt: number): number =>
 function isOwnerBusy(error: unknown): boolean {
   const message = String(error);
   return message.includes("SYNC_OWNER_HELD") || message.includes("NATIVE_CONTROL_WINDOW_BUSY");
+}
+
+/** What a refused cycle begin or completion means for the person; native owner codes are for
+ * programs. Any other failure keeps its own message after `outcome`. */
+export function syncOwnerFailureText(error: unknown, outcome = "Sync could not start"): string {
+  const message = errorText(error);
+  if (isOwnerBusy(message)) return "Another window is still finishing a sync. It will retry.";
+  if (message.includes("SYNC_OWNER_UNKNOWN"))
+    return "Sync is waiting until an earlier run of bycoda has fully stopped. It will retry; if this continues, quit and reopen bycoda.";
+  if (/SYNC_OWNER_[A-Z_]+/.test(message))
+    return "Sync could not start in this window. It will retry.";
+  return `${outcome}: ${message}`;
 }
 
 /** Resolves after `ms`, or at once when `signal` aborts; never leaves a timer or listener behind. */

@@ -281,7 +281,7 @@ export function RemoteSession({
       <MachineUnavailable
         cwd={shell.cwd}
         reason="not-added"
-        size={compactPresentation ? "compact" : "page"}
+        size={compactPresentation ? "panel" : "page"}
       />
     ) : (
       <LoadingText>{t("Connecting to the machine…")}</LoadingText>

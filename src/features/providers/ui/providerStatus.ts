@@ -3,8 +3,6 @@ import { useEffect } from "react";
 import { loadRateLimits, useCachedRateLimits } from "../model/rateLimitsCache";
 import { accountStatus, providerAccountSignedOut } from "../model/accountUsage";
 import {
-  exhaustedWindowResetAt,
-  formatResetCountdown,
   rateLimitWindowNameWith,
   type ProviderRateLimits,
   type RateLimitWindow,
@@ -68,7 +66,7 @@ export function providerAuthState(
 }
 
 /**
- * Says which limit is used up and when it frees, for an account whose headroom is gone.
+ * Names the used-up windows. The account status displays the reset time.
  * Null when no window is full.
  */
 export function exhaustedExplanation(
@@ -82,9 +80,5 @@ export function exhaustedExplanation(
     windowIsFull(limits.monthly, now) ? rateLimitWindowNameWith("monthly", t) : null,
   ].filter((name): name is string => name != null);
   if (names.length === 0) return null;
-  const resetAt = exhaustedWindowResetAt(limits);
-  const sentence = t("The {p0} limit is used up.", { p0: names.join(" + ") });
-  return resetAt != null && resetAt > now
-    ? `${sentence} ${formatResetCountdown(resetAt - now)}`
-    : sentence;
+  return t("The {p0} limit is used up.", { p0: names.join(" + ") });
 }

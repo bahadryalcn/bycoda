@@ -1,5 +1,16 @@
 import { z } from "zod";
+import { WIRE_UUID_V4_PATTERN } from "./schemas";
 import { SessionProviderSchema } from "./session-commands";
+
+const AppearanceGenerationIdSchema = z.string().regex(WIRE_UUID_V4_PATTERN);
+
+export const AppearanceCancelGenerationParamsSchema = z.strictObject({
+  generationId: AppearanceGenerationIdSchema,
+});
+
+export const AppearanceCancelGenerationResultSchema = z.strictObject({
+  cancelled: z.boolean(),
+});
 
 /** A text-only model chosen in Settings; the Host runs one isolated prompt with it. */
 export const AppearanceThemeSuggestionsParamsSchema = z.strictObject({
@@ -9,6 +20,7 @@ export const AppearanceThemeSuggestionsParamsSchema = z.strictObject({
   modelSettings: z.record(z.string(), z.string()).optional(),
   /** bycoda provider account profile; absent means the provider's own default login. */
   providerAccountId: z.string().min(1).max(80).optional(),
+  generationId: AppearanceGenerationIdSchema.optional(),
 });
 
 const HexColorSchema = z.string().min(7).max(7);
@@ -58,7 +70,10 @@ export const AppearanceThemeSuggestionsResultSchema = z.strictObject({
 });
 
 /** A text-only model writes one gradient for the workspace background; the Host validates it too. */
-export const AppearanceBackgroundSuggestionsParamsSchema = AppearanceThemeSuggestionsParamsSchema;
+export const AppearanceBackgroundSuggestionsParamsSchema =
+  AppearanceThemeSuggestionsParamsSchema.omit({
+    generationId: true,
+  });
 
 export const AppearanceBackgroundSuggestionsResultSchema = z.strictObject({
   gradient: AppearanceBackgroundSuggestionSchema,
@@ -72,6 +87,7 @@ export const AppearanceBackgroundSuggestionsResultSchema = z.strictObject({
 export const AppearanceBackgroundImageParamsSchema = z.strictObject({
   prompt: z.string().min(1).max(600),
   provider: z.enum(["codex", "gemini"]),
+  generationId: AppearanceGenerationIdSchema.optional(),
 });
 
 export const AppearanceBackgroundImageResultSchema = z.strictObject({
