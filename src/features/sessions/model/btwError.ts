@@ -1,5 +1,5 @@
 import { safeErrorDetail } from "../../../integrations/harness/core/errorDetail";
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 
 /** Why a side conversation stopped before an answer; the sheet picks the sentence from this. */
 export const BTW_ERROR_CODES = [

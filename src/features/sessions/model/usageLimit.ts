@@ -1,4 +1,4 @@
-import { formatDate, t } from "../../../shared/i18n";
+import { formatDate, t } from "../../../shared/i18n/core";
 import { formatResetDuration } from "../../providers/model/rateLimits";
 import type { Session } from "./session";
 

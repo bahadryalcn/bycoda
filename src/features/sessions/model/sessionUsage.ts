@@ -1,4 +1,5 @@
-import { formatNumber, type BoundFormat } from "../../../shared/i18n";
+import { formatNumber } from "../../../shared/i18n/core";
+import type { BoundFormat } from "../../../shared/i18n/boundFormat";
 
 export type TurnUsage = {
   processCostUsd?: number;

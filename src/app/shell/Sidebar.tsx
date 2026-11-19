@@ -149,7 +149,7 @@ import { RemoteDataStatus } from "../../features/connections/ui/RemoteDataStatus
 import { RemoteLoadError } from "../../features/connections/ui/RemoteLoadError";
 import { useRemoteConnectionFeedback } from "../../features/connections/ui/RemoteConnectionFeedback";
 import { useRemoteConnection } from "../../features/connections/model/useRemoteConnection";
-import { useMachineFocus } from "../../features/connections/model/machineFocus";
+import { useMachineFocus } from "../../features/connections/hooks/useMachineFocus";
 import {
   classifyRemoteError,
   isConnectionFailure,

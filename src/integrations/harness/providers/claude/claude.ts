@@ -49,7 +49,7 @@ import type {
   TaskListItem,
   TaskListMeta,
 } from "../../../../features/sessions/model/session";
-import { loadClaudeHooks } from "../../../../features/settings/model/settings";
+import { loadClaudeHooks } from "../../../../features/settings/model/claudeHooksSetting";
 import {
   resolveClaudeBinary,
   spawnChild,

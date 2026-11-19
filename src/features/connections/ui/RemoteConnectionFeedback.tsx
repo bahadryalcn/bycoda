@@ -21,7 +21,7 @@ import { parseRemotePath } from "../model/remoteProjects";
 import { readRemoteDownSince } from "../model/remoteHealth";
 import { formatDate, t, useLocale } from "../../../shared/i18n";
 import { useRemoteConnection } from "../model/useRemoteConnection";
-import { useMachineFocus } from "../model/machineFocus";
+import { useMachineFocus } from "../hooks/useMachineFocus";
 import {
   loadRemoteAutoReconnect,
   subscribeRemoteAutoReconnect,

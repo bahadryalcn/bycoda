@@ -10,7 +10,7 @@ import {
 import { isFilesystemTab, type FilePaneTab } from "../../workspace/model/layout";
 import { isEqualOrInside, pathKey, parentPath } from "../../../shared/lib/paths";
 import { isBlankSession } from "../../projects/public/projectReturn";
-import { t } from "../../../shared/i18n/git";
+import { t } from "../../../shared/i18n/gitCore";
 
 export type Worktree = {
   path: string;

@@ -43,6 +43,13 @@ afterEach(() => {
 const NO_DETAIL = new Set(["bycoda.closeToTray", "bycoda.tabAnimationsEnabled"]);
 /** Appearance flags keep the applied value for this window when the write fails. */
 const APPLIED_ON_FAILURE = new Set(["bycoda.bodyGlass"]);
+/** Stored flags publish only after the change is persisted. */
+const CONFIRMED_EVENTS = new Set([
+  "bycoda.notesEnabled",
+  "bycoda.liveAgentsEnabled",
+  "bycoda.keepAwakeScreen",
+  "bycoda.claudeHooks",
+]);
 
 describe.each([
   [
@@ -169,7 +176,7 @@ describe.each([
     }
   });
 
-  it("still emits its change event when writing fails", () => {
+  it("follows the flag's change notification contract when writing fails", () => {
     const value = !fallback;
     const dispatch = vi.spyOn(window, "dispatchEvent");
     const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
@@ -180,7 +187,7 @@ describe.each([
       expect(() => save(value)).not.toThrow();
       // Appearance keeps the applied value in this window; other flags keep the stored value.
       expect(load()).toBe(APPLIED_ON_FAILURE.has(key) ? value : fallback);
-      const emits = eventName;
+      const emits = eventName && !CONFIRMED_EVENTS.has(key);
       expect(dispatch).toHaveBeenCalledTimes(emits ? 1 : 0);
       if (emits) {
         expect(dispatch).toHaveBeenCalledWith(

@@ -1,5 +1,5 @@
 import { redactDiagnosticText } from "@bycoda/account-contracts";
-import { recordUiLog } from "../../diagnostics";
+import { recordUiLog } from "../../diagnostics/public/uiLog";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import type { AdoptedEntry } from "./adoptedSessions";

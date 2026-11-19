@@ -56,7 +56,7 @@ import {
   queuedModelTarget,
   sameQueuedModelTarget,
 } from "../../../features/sessions/model/messageQueue";
-import { loadResumeAtReset } from "../../../features/settings/model/settings";
+import { loadAgentDefault } from "../../../features/settings/model/agentDefaultsStore";
 import { selectedAnswerLabels } from "../../../features/sessions/model/userQuestion";
 import type { HarnessEvent } from "./types";
 import {
@@ -491,7 +491,9 @@ export function applyHarnessEvent(
           // Armed even before the reset time is known; a later lookup fills it in.
           // A repeated limit event keeps the choice already made for this one.
           resumeAtReset:
-            session.usageLimit?.resumeAtReset ?? options.resumeAtReset ?? loadResumeAtReset(),
+            session.usageLimit?.resumeAtReset ??
+            options.resumeAtReset ??
+            loadAgentDefault("resumeAtReset"),
         },
       };
     case "interjection":

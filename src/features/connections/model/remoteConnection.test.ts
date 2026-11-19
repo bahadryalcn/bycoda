@@ -109,6 +109,11 @@ describe("sanitizeConnectionError", () => {
     ).toBe("No route to host.");
     expect(sanitizeConnectionError("x".repeat(500)).length).toBe(198);
   });
+
+  it("keeps a complete grapheme at the truncation boundary", () => {
+    const prefix = "x".repeat(196) + "👩‍💻";
+    expect(sanitizeConnectionError(prefix + "y".repeat(10))).toBe(prefix + "…");
+  });
 });
 
 describe("reduceConnection", () => {

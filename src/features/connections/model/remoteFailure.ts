@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import { TimeoutError } from "../../../shared/lib/withTimeout";
 import { actionableUnreachableReason, sanitizeConnectionError } from "./connectionReason";
 

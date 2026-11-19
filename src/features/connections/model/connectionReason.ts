@@ -1,4 +1,5 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import type { RemoteConnectionStatus } from "./remoteConnection";
 import { classifySshFailure, parseSshStartFailure } from "./sshFailure";
 
@@ -12,7 +13,7 @@ export function sanitizeConnectionError(text: string): string {
     .replace(/\s*Open Settings → (?:Machines|Connections) and reconnect[^.]*\.?/gi, "")
     .replace(/\s+/g, " ")
     .trim();
-  return cleaned.length > 200 ? `${cleaned.slice(0, 197)}…` : cleaned;
+  return cleaned.length > 200 ? truncateGraphemes(cleaned, 198) : cleaned;
 }
 
 /** The machine answered 403 for its route: a proxy or origin header, not the pairing. */

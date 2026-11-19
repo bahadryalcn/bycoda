@@ -1,5 +1,3 @@
-import { useEffect } from "react";
-
 /** Machines the user is working in right now: the machine of an open remote project or of a
  * machine settings view. A machine that is down and not focused is checked rarely and retried
  * quietly; it never raises a notice outside its own session. */
@@ -31,10 +29,4 @@ export function focusMachine(environmentId: string): () => void {
 export function subscribeMachineFocused(listener: (environmentId: string) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
-}
-
-/** Keeps the machine focused while the caller is mounted. */
-export function useMachineFocus(environmentId?: string): void {
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- holds the module-level focus mark for the mounted view's machine, released on change or unmount
-  useEffect(() => (environmentId ? focusMachine(environmentId) : undefined), [environmentId]);
 }

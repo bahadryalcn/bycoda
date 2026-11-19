@@ -2171,25 +2171,12 @@ export function subscribeAutosave(onStoreChange: () => void) {
   };
 }
 
-const CLAUDE_HOOKS_KEY = "bycoda.claudeHooks";
-
-export const CLAUDE_HOOKS_DEFAULT = true;
-
-const claudeHooksSetting = storedFlag(
-  CLAUDE_HOOKS_KEY,
+export {
   CLAUDE_HOOKS_DEFAULT,
-  "bycoda:claude-hooks-change",
-  true,
-);
-export const subscribeClaudeHooks = claudeHooksSetting.subscribe;
-
-export function loadClaudeHooks(): boolean {
-  return claudeHooksSetting.load() ?? CLAUDE_HOOKS_DEFAULT;
-}
-
-export function saveClaudeHooks(value: boolean) {
-  claudeHooksSetting.save(value);
-}
+  loadClaudeHooks,
+  saveClaudeHooks,
+  subscribeClaudeHooks,
+} from "./claudeHooksSetting";
 
 const CTRL = IS_MAC ? "⌃" : "Ctrl+";
 

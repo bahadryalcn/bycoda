@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block, Session } from "../../sessions/model/session";
-import { recordUiLog } from "../../diagnostics";
+import { recordUiLog } from "../../diagnostics/public/uiLog";
 import {
   mirrorAdoptedSessions,
   type AdoptedEntry,
@@ -9,7 +9,7 @@ import {
 import { ADOPTED_SYNC_FAILURE_FLAG_AFTER, adoptedSyncFailing } from "./adoptedSyncFailures";
 import type { HostSession } from "./protocol";
 
-vi.mock("../../diagnostics", () => ({ recordUiLog: vi.fn() }));
+vi.mock("../../diagnostics/public/uiLog", () => ({ recordUiLog: vi.fn() }));
 
 /** A pass that is never the only thing between two fetches: longer than any backoff here. */
 const PAST_BACKOFF_MS = 60_000;
