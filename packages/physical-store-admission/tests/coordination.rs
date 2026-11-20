@@ -377,13 +377,16 @@ fn a_replaced_sidecar_inode_is_rejected_before_admission_locks_it() {
     let fixture = Fixture::new();
     let store = fixture.registry().bind(fixture.file()).unwrap();
     let path = fixture.namespace().join("writers.lock");
-    fs::remove_file(&path).unwrap();
+    // Create the replacement while the original still exists, then rename it over the
+    // original: deleting first lets Linux hand the freed inode number straight back.
+    let replacement = fixture.namespace().join("writers.lock.replacement");
     OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .open(&path)
+        .open(&replacement)
         .unwrap();
+    fs::rename(&replacement, &path).unwrap();
     assert!(matches!(store.try_writer(), Err(Error::Changed(_))));
     assert!(matches!(store.try_begin_close(), Err(Error::Changed(_))));
 }
