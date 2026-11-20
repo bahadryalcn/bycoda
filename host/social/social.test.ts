@@ -3396,6 +3396,21 @@ describe("Merkezi sosyal servis", () => {
     await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("permit replies");
     expect(s.send).not.toHaveBeenCalled();
   });
+  // Regression: the owner's notification poller read two lists every 4 s and each read
+  // added a never-pruned audit row (~1,800 rows an hour on a real Host).
+  it("does not audit the owner's read-only calls but still audits session reads", async () => {
+    const s = await fixture();
+    const session = await s.session();
+    const reads = async () =>
+      (await s.store.db.prepare("SELECT value FROM social_audit").all())
+        .map((row) => JSON.parse(String(row.value)))
+        .filter((log) => log.action === "browser.needsHuman.list");
+    for (let index = 0; index < 3; index++) await s.call("browser.needsHuman.list", {}, owner);
+    expect(await reads()).toHaveLength(0);
+    await s.call("browser.needsHuman.list", {}, session.principal);
+    expect(await reads()).toMatchObject([{ sessionId: session.principal.sessionId }]);
+  });
+
   it("identity forgery and idempotent repeats create a separate audit record with verified targets", async () => {
     const s = await fixture();
     const account = await s.account();

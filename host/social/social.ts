@@ -1772,7 +1772,11 @@ export class SocialService implements SocialServiceApi {
         () => this.dispatch(principal, action, input, operationId),
       );
       if (principal.assistantAccountId) await this.validate(principal);
-      await this.audit(principal, action, operationId, accountId, "success", result);
+      // The owner reading its own Host is not an audit event. The notification poller
+      // read two lists every 4 s, adding ~1,800 never-pruned rows (and a DB write) an hour.
+      // Agent, session and peer reads stay audited.
+      if (!(principal.kind === "owner" && this.actions.get(action)?.readOnly))
+        await this.audit(principal, action, operationId, accountId, "success", result);
       await recordAiWrite(this.audience, principal, action, accountId, input, this.now());
       if (key)
         await this.store.db
