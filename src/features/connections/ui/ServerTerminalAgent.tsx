@@ -1,11 +1,13 @@
 import { useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
-import { errorText } from "../../../shared/lib/errors";
+import { useDragResize } from "../../../shared/hooks/useDragResize";
+import { observeResize } from "../../../shared/lib/observeResize";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError } from "../../../shared/ui/InlineError";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Sash } from "../../../shared/ui/Sash";
 import { Sparkles, X } from "../../../shared/ui/icons";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { NewSessionProjectDialog } from "../../projects/public/NewSessionProjectDialog";
 import {
   ServerAgentContext,
   type ServerAgentSession,
@@ -19,114 +21,135 @@ export function ServerTerminalAgent({
 }: {
   target?: ServerAgentTarget;
   visible: boolean;
-  children: (actions?: ReactNode, onSendToAgent?: (text: string) => Promise<void>) => ReactNode;
+  children: (
+    actions?: ReactNode,
+    onSendToAgent?: (text: string) => Promise<void>,
+    onSendToHost?: (text: string) => Promise<void>,
+  ) => ReactNode;
 }) {
   const t = useT();
   const bridge = useContext(ServerAgentContext);
   const [binding, setBinding] = useState<{ project: string; session: ServerAgentSession }>();
+  const [request, setRequest] = useState<{ text?: string; direct?: boolean }>();
   const [expanded, setExpanded] = useState(false);
-  const [opening, setOpening] = useState(false);
-  const [error, setError] = useState("");
-  const pending = useRef<{
-    project: string;
-    operation: Promise<ServerAgentSession | undefined>;
-  } | null>(null);
   const host = useRef<HTMLDivElement>(null);
+  const layout = useRef<HTMLDivElement>(null);
+  const [stacked, setStacked] = useState(false);
   const mount = bridge?.mount;
-  const session = binding?.project === bridge?.project ? binding?.session : undefined;
+  const session =
+    binding?.project === "~" || bridge?.projects.some(({ path }) => path === binding?.project)
+      ? binding?.session
+      : undefined;
   const shown = visible && expanded && !!session && !!mount;
+  const defaultSize = stacked ? 340 : 448;
+  const resize = useDragResize({
+    axis: stacked ? "vertical" : "horizontal",
+    min: stacked ? 160 : 280,
+    max: () =>
+      layout.current
+        ? stacked
+          ? layout.current.clientHeight - 120
+          : layout.current.clientWidth - 280
+        : defaultSize,
+    defaultWidth: defaultSize,
+    initial: defaultSize,
+    direction: "left",
+  });
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Match the sash axis to the container layout.
+  useLayoutEffect(() => {
+    if (!visible || !layout.current) return;
+    const element = layout.current;
+    const sync = () => setStacked(element.clientWidth <= 640);
+    sync();
+    return observeResize(element, sync);
+  }, [visible]);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the app-owned conversation pointed at only the active tab's pane.
   useLayoutEffect(() => {
     if (shown && session && host.current) return mount(session, host.current);
   }, [shown, session, mount]);
 
-  const open = () => {
-    if (!bridge || !target) return Promise.resolve(undefined);
-    if (pending.current?.project === bridge.project) return pending.current.operation;
-    setOpening(true);
-    setError("");
-    const operation = bridge
-      .open(target)
-      .then(
-        (opened) => {
-          if (pending.current?.operation !== operation) return undefined;
-          setBinding({ project: bridge.project, session: opened });
-          setExpanded(true);
-          return opened;
-        },
-        (reason: unknown) => {
-          if (pending.current?.operation === operation) setError(errorText(reason));
-          return undefined;
-        },
-      )
-      .finally(() => {
-        if (pending.current?.operation === operation) {
-          pending.current = null;
-          setOpening(false);
-        }
-      });
-    pending.current = { project: bridge.project, operation };
-    return operation;
-  };
   const actions =
     bridge && target ? (
       <Button
         variant="ghost"
         size="sm"
         aria-pressed={!!session && expanded}
-        loading={opening}
         onClick={() => {
           if (session && expanded) setExpanded(false);
-          else void open().catch(() => undefined);
+          else setRequest({});
         }}
       >
         <Sparkles aria-hidden className="icon-sm" />
         {t("Ask AI")}
       </Button>
     ) : undefined;
-  const send =
-    bridge && target
-      ? async (text: string) => {
-          const opened = await open();
-          if (!opened) throw new Error(t("Could not add result to chat. Try again."));
-          bridge.addSelection(opened.sessionId, text);
-        }
-      : undefined;
+  const send = async (text: string, direct: boolean) => {
+    if (!bridge || !target) return;
+    if (!shown || !session) {
+      setRequest({ text, direct });
+      return;
+    }
+    if (direct) await bridge.sendSelection(session, text);
+    else bridge.addSelection(session.sessionId, text);
+  };
   return (
-    <div className="@container flex min-h-0 min-w-0 flex-1">
-      <div className="flex min-h-0 min-w-0 flex-1 @max-[640px]:flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1">
+      <div ref={layout} className={`flex min-h-0 min-w-0 flex-1 ${stacked ? "flex-col" : ""}`}>
         <div className="flex min-h-24 min-w-0 flex-1 flex-col">
-          {error ? <InlineError className="mx-3 my-1">{error}</InlineError> : null}
-          {children(actions, send)}
+          {children(
+            actions,
+            bridge && target ? (text) => send(text, false) : undefined,
+            bridge && target ? (text) => send(text, true) : undefined,
+          )}
         </div>
         {shown && session ? (
-          <section
-            aria-label={t("Ask AI")}
-            {...surfaceAttributes(
-              { frame: "pane", edge: "inline-start", variant: "workspace-panel" },
-              "flex min-h-0 min-w-0 basis-[min(42%,28rem)] flex-col @max-[640px]:basis-1/2",
-            )}
-          >
-            <PaneHeader
-              title={t("Ask AI")}
-              meta={target?.name}
-              actions={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
-                  label={t("Close")}
-                  onClick={() => setExpanded(false)}
-                >
-                  <X aria-hidden />
-                </Button>
-              }
-            />
-            <div ref={host} className="flex min-h-0 min-w-0 flex-1 flex-col" />
-          </section>
+          <>
+            <Sash {...resize.sashProps} label={t("Resize panel")} />
+            <section
+              ref={resize.setPaneRef}
+              aria-label={t("Ask AI")}
+              {...surfaceAttributes(
+                { frame: "pane", variant: "workspace-panel" },
+                "flex min-h-0 min-w-0 shrink-0 flex-col",
+              )}
+            >
+              <PaneHeader
+                title={t("Ask AI")}
+                meta={target?.name}
+                actions={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    label={t("Close")}
+                    onClick={() => setExpanded(false)}
+                  >
+                    <X aria-hidden />
+                  </Button>
+                }
+              />
+              <div ref={host} className="flex min-h-0 min-w-0 flex-1 flex-col" />
+            </section>
+          </>
         ) : null}
       </div>
+      {visible && request && bridge && target ? (
+        <NewSessionProjectDialog
+          projects={bridge.projects}
+          onClose={() => setRequest(undefined)}
+          onPick={async (project) => {
+            const opened = await bridge.open(target, project);
+            setBinding({ project, session: opened });
+            setExpanded(true);
+            if (request.text) {
+              if (request.direct) await bridge.sendSelection(opened, request.text);
+              else bridge.addSelection(opened.sessionId, request.text);
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -96,8 +96,11 @@ for (const theme of ["light", "dark"]) {
         );
       expect(await writes()).toHaveLength(0);
       await credentials.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(credentials.locator("dt").getByText("SSH key", { exact: true })).toBeVisible();
       await expect(
-        credentials.getByText(/SSH key: C:\/Users\/fixture\/\.ssh\/id_ed25519_work/),
+        credentials
+          .locator("dd")
+          .getByText("C:/Users/fixture/.ssh/id_ed25519_work", { exact: true }),
       ).toBeVisible();
       expect(await writes()).toHaveLength(1);
       await expect(

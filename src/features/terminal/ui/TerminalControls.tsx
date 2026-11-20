@@ -40,8 +40,11 @@ type Props = Omit<
   sshConnectionId?: string;
   sshConnectionName?: string;
   onSshPromptReady?: () => void;
-  snippetsOpen: boolean;
-  onSnippetsOpenChange: (open: boolean) => void;
+  snippets: { initialCommand?: string } | null;
+  onOpenSavedCommands: () => void;
+  onSaveSelectedCommand: (text: string) => void;
+  onCloseSnippets: () => void;
+  onAlreadySaved: () => void;
 };
 
 /** Own SSH suggestion updates independently of the xterm/PTY view. */
@@ -54,8 +57,12 @@ export function TerminalControls({
   sshConnectionName,
   onSshPromptReady,
   onEnableShellIntegration,
-  snippetsOpen,
-  onSnippetsOpenChange,
+  snippets,
+  onOpenSavedCommands,
+  onSaveSelectedCommand,
+  onCloseSnippets,
+  onAlreadySaved,
+  onSendSelectedText,
   terminal,
   mode,
   onModeChange,
@@ -98,7 +105,7 @@ export function TerminalControls({
   }, [bindShellActions, invalidate, notifyInput, suspendAutomatic, request, source]);
 
   const [reportedId, setReportedId] = useState<string>();
-  const [initialCommand, setInitialCommand] = useState<string>();
+  const initialCommand = snippets?.initialCommand;
   const currentShellReported = integrated && shell.state?.id === id;
   // Keep the manual setup option stable through the gaps between native snapshots.
   const nextReportedId = !integrated ? undefined : currentShellReported ? id : reportedId;
@@ -126,19 +133,9 @@ export function TerminalControls({
       }
     : undefined;
   const closeSnippets = () => {
-    onSnippetsOpenChange(false);
-    setInitialCommand(undefined);
+    onCloseSnippets();
     dismiss();
     terminal?.focus();
-  };
-  const openSnippets = (createCommand: boolean) => {
-    const selection =
-      createCommand && mode !== "search" && terminal?.buffer.active.type === "normal"
-        ? terminal.getSelection()
-        : "";
-    setInitialCommand(createCommand ? selection : undefined);
-    onSnippetsOpenChange(true);
-    if (!createCommand && integrated) void request();
   };
   const showInsertion = initialCommand === undefined && integrated;
   const snapshot = shell.state;
@@ -158,8 +155,25 @@ export function TerminalControls({
         remoteShell={remoteTools}
         onStartupReview={onStartupReview}
         onEnableShellIntegration={enableShellIntegration}
-        onSavedCommands={sshConnectionId ? () => openSnippets(false) : undefined}
-        onSaveCommand={sshConnectionId ? () => openSnippets(true) : undefined}
+        onSavedCommands={
+          sshConnectionId
+            ? () => {
+                onOpenSavedCommands();
+                if (integrated) void request();
+              }
+            : undefined
+        }
+        onSaveCommand={
+          sshConnectionId
+            ? () =>
+                onSaveSelectedCommand(
+                  mode !== "search" && terminal?.buffer.active.type === "normal"
+                    ? terminal.getSelection()
+                    : "",
+                )
+            : undefined
+        }
+        onSendSelectedText={onSendSelectedText}
         fontSize={fontSize}
         savedFontSize={savedFontSize}
         onResetFontSize={onResetFontSize}
@@ -177,7 +191,7 @@ export function TerminalControls({
           }}
         />
       ) : null}
-      {snippetsOpen && sshConnectionId ? (
+      {snippets && sshConnectionId ? (
         <Modal
           title={t(initialCommand === undefined ? "Saved SSH commands" : "Save command")}
           onClose={closeSnippets}
@@ -204,6 +218,10 @@ export function TerminalControls({
                 sshConnectionName ?? (snapshot ? `${snapshot.user}@${snapshot.host}` : undefined)
               }
               initialCommand={initialCommand}
+              onAlreadySaved={() => {
+                closeSnippets();
+                onAlreadySaved();
+              }}
               onInsert={
                 showInsertion &&
                 snapshot?.id === id &&

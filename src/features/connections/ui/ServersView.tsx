@@ -23,6 +23,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { Divider } from "../../../shared/ui/Divider";
 import { Sheet } from "../../../shared/ui/Sheet";
 import "./ServersView.css";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -793,68 +794,76 @@ export function ServersView({
         </div>
         {selected && detailReady ? (
           <Activity mode={inventoryVisible ? "visible" : "hidden"}>
+            <Divider decorative className="@min-[44rem]/servers:hidden" />
+            <Divider
+              decorative
+              orientation="vertical"
+              className="hidden @min-[44rem]/servers:block"
+            />
             <div className="servers-detail-pane relative min-h-0 min-w-0">
               <Sheet
                 modal={false}
                 role="region"
                 anchor="container"
+                surface="canvas"
+                expanded
                 escapeScope="[data-app-servers]"
                 title={t("Server details")}
-                size="100%"
                 motion="none"
                 initialFocus={false}
                 dismissOnOutside={false}
                 padding="none"
                 onClose={closeDetails}
                 header={
-                  <div
-                    {...surfaceAttributes(
-                      { frame: "pane", edge: "bottom" },
-                      "flex min-w-0 shrink-0 items-center gap-2 px-4 py-3",
-                    )}
-                  >
-                    <ServerIdentity accent={serverAccentColor(selected)} />
-                    <OverflowTooltip label={selected.name}>
-                      <Heading size="section" truncate className="min-w-0 flex-1">
-                        {selected.name}
-                      </Heading>
-                    </OverflowTooltip>
-                    {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
-                    <Button
-                      variant="ghost"
-                      iconOnly
-                      label={t("Server color")}
-                      aria-haspopup="dialog"
-                      onClick={(event) =>
-                        setColorTarget({ serverId: selected.id, at: event.currentTarget })
-                      }
-                    >
-                      <Palette aria-hidden className="icon-sm" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      iconOnly
-                      label={t("Server actions")}
-                      aria-haspopup="menu"
-                      aria-expanded={menu?.serverId === selected.id}
-                      onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
-                    >
-                      <MoreHorizontal aria-hidden className="icon-sm" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      iconOnly
-                      label={t("Close server details")}
-                      onClick={closeDetails}
-                    >
-                      <X aria-hidden className="icon-sm" />
-                    </Button>
-                  </div>
+                  <PaneHeader
+                    leading={<ServerIdentity accent={serverAccentColor(selected)} />}
+                    title={
+                      <OverflowTooltip label={selected.name}>
+                        <Text as="span" size="inherit" tone="inherit" truncate className="block">
+                          {selected.name}
+                        </Text>
+                      </OverflowTooltip>
+                    }
+                    meta={selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : undefined}
+                    actions={
+                      <>
+                        <Button
+                          variant="ghost"
+                          iconOnly
+                          label={t("Server color")}
+                          aria-haspopup="dialog"
+                          onClick={(event) =>
+                            setColorTarget({ serverId: selected.id, at: event.currentTarget })
+                          }
+                        >
+                          <Palette aria-hidden className="icon-sm" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          iconOnly
+                          label={t("Server actions")}
+                          aria-haspopup="menu"
+                          aria-expanded={menu?.serverId === selected.id}
+                          onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
+                        >
+                          <MoreHorizontal aria-hidden className="icon-sm" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          iconOnly
+                          label={t("Close server details")}
+                          onClick={closeDetails}
+                        >
+                          <X aria-hidden className="icon-sm" />
+                        </Button>
+                      </>
+                    }
+                  />
                 }
               >
-                <div className="min-w-0 p-4">
+                <div className="min-w-0 px-4 pbs-3 pbe-2">
                   {selected.machine ? (
-                    <div className="mbe-3 flex items-start justify-between gap-2">
+                    <div className="mbe-3 flex flex-wrap items-start justify-between gap-2">
                       <MachineStatus
                         key={selected.id}
                         machine={selected.machine}
@@ -866,8 +875,10 @@ export function ServersView({
                       </div>
                     </div>
                   ) : null}
-                  <DescriptionList size="sm" className="mbe-4">
-                    <DescriptionItem term={t("Address")}>{address(selected)}</DescriptionItem>
+                  <DescriptionList>
+                    <DescriptionItem term={t("Address")} monospace>
+                      {address(selected)}
+                    </DescriptionItem>
                     {selected.machine?.ssh || selected.sshEndpoint ? (
                       <>
                         <DescriptionItem term={t("SSH port")}>
@@ -884,22 +895,22 @@ export function ServersView({
                       </>
                     ) : null}
                   </DescriptionList>
-                  <ServersConnectionTools
-                    key={selected.id}
-                    server={selected}
-                    servers={servers}
-                    onUseServer={setSelectedId}
-                    onEditServer={(existing) => {
-                      setSelectedId(existing.id);
-                      setEditor(existing);
-                    }}
-                  />
-                  {selected.machine ? (
-                    <Disclosure className="mbs-2" size="sm" summary={t("Diagnostics")}>
-                      <RemoteConnectionDetails environmentId={selected.machine.environmentId} />
-                    </Disclosure>
-                  ) : null}
                 </div>
+                <ServersConnectionTools
+                  key={selected.id}
+                  server={selected}
+                  servers={servers}
+                  onUseServer={setSelectedId}
+                  onEditServer={(existing) => {
+                    setSelectedId(existing.id);
+                    setEditor(existing);
+                  }}
+                />
+                {selected.machine ? (
+                  <Disclosure className="mx-4 mbe-4" size="sm" summary={t("Diagnostics")}>
+                    <RemoteConnectionDetails environmentId={selected.machine.environmentId} />
+                  </Disclosure>
+                ) : null}
               </Sheet>
             </div>
           </Activity>

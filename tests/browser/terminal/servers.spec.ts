@@ -872,6 +872,10 @@ for (const theme of ["light", "dark"]) {
       await page.screenshot({ path: `${directory}/menu-${theme}-${width}.png` });
       await page.keyboard.press("Escape");
       await ask.click();
+      const projects = page.getByRole("dialog", { name: "Choose a project for the new session" });
+      await expect(projects).toBeVisible();
+      await page.screenshot({ path: `${directory}/projects-${theme}-${width}.png` });
+      await projects.getByText("fixture", { exact: true }).click();
       const pane = page.getByRole("region", { name: "Ask AI" });
       await expect(pane.getByText("Check whether the server is ready.")).toBeVisible();
       await expect(pane.locator("[data-session-composer]")).toBeVisible();
@@ -899,6 +903,20 @@ for (const theme of ["light", "dark"]) {
         pane.boundingBox(),
       ]);
       expect(paneBounds!.x).toBeGreaterThan(terminalBounds!.x);
+      const sash = page.getByRole("separator", { name: "Resize panel" });
+      await sash.focus();
+      await sash.press("ArrowLeft");
+      await expect
+        .poll(async () => (await pane.boundingBox())!.width)
+        .toBeGreaterThan(paneBounds!.width);
+      const edge = (await sash.boundingBox())!;
+      await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(edge.x + 32, edge.y + edge.height / 2, { steps: 4 });
+      await page.mouse.up();
+      await expect
+        .poll(async () => (await pane.boundingBox())!.width)
+        .toBeLessThan(paneBounds!.width);
       const [askBounds, findBounds, moreBounds] = await Promise.all([
         ask.boundingBox(),
         find.boundingBox(),
@@ -917,11 +935,15 @@ for (const theme of ["light", "dark"]) {
         fixture.serversFixtureTerminalOutput(input.id, "\x1b[2J\x1b[Hprivate log");
       });
       await page.screenshot({ path: `${directory}/ask-ai-${theme}-${width}.png` });
-      await page.evaluate(() =>
-        (
-          window as unknown as { serversFixtureSelectAgentText(): void }
-        ).serversFixtureSelectAgentText(),
-      );
+      const selectExcerpt = () =>
+        page.evaluate(() =>
+          (
+            window as unknown as { serversFixtureSelectAgentText(): void }
+          ).serversFixtureSelectAgentText(),
+        );
+      await selectExcerpt();
+      await expect(page.getByRole("button", { name: "Send to Host", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${directory}/selection-${theme}-${width}.png` });
       await page.getByRole("button", { name: "Send to agent", exact: true }).click();
       const selections = await page.evaluate(
         () =>
@@ -933,9 +955,52 @@ for (const theme of ["light", "dark"]) {
       );
       expect(selections).toEqual([{ sessionId: "agent-fixture-3", text: "private log" }]);
       await expect(pane.locator("[data-session-composer]")).toContainText("private log");
+      await selectExcerpt();
+      await page.getByRole("button", { name: "Send to Host", exact: true }).click();
+      const sends = await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              serversFixtureHostSelections: Array<{ sessionId: string; cwd: string; text: string }>;
+            }
+          ).serversFixtureHostSelections,
+      );
+      expect(sends).toEqual([
+        { sessionId: "agent-fixture-3", cwd: "/fixture", text: "private log" },
+      ]);
+      await selectExcerpt();
+      await page
+        .locator("[data-selection-menu]")
+        .getByRole("button", { name: "Save command", exact: true })
+        .click();
+      const save = page.getByRole("dialog", { name: "Save command" });
+      await expect(save.getByRole("textbox", { name: "Command preview" })).toHaveValue(
+        "private log",
+      );
+      await expect(save.getByRole("textbox", { name: "Name" })).toHaveValue("");
+      await page.screenshot({ path: `${directory}/save-command-${theme}-${width}.png` });
+      await save.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(save.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await selectExcerpt();
+      await page
+        .locator("[data-selection-menu]")
+        .getByRole("button", { name: "Save command", exact: true })
+        .click();
+      await expect(page.getByText("Command already saved.", { exact: true })).toBeVisible();
+      await expect(save).toHaveCount(0);
       await pane.getByRole("button", { name: "Close", exact: true }).click();
       await expect(pane).toHaveCount(0);
       await expect(terminal).toBeVisible();
+      await selectExcerpt();
+      await more.click();
+      await page
+        .getByRole("button", { name: "Send to agent", exact: true })
+        .filter({ visible: true })
+        .click();
+      await expect(projects).toBeVisible();
+      await projects.getByText("No project", { exact: true }).click();
+      await expect(pane).toBeVisible();
     });
   }
 }

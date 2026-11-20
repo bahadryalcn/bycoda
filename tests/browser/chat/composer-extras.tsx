@@ -49,6 +49,8 @@ import {
   renameProviderAccount,
   saveProviderAccount,
 } from "../../../src/features/providers/model/providerAccounts";
+import { idleRateLimits } from "../../../src/features/providers/model/rateLimits";
+import { setCachedRateLimits } from "../../../src/features/providers/model/rateLimitsCache";
 import "../../../src/styles/index.css";
 
 // Real composer and catalogs, without a native host or provider invocation.
@@ -198,6 +200,21 @@ if (accountPicker) {
     .forEach((label, index) =>
       saveProviderAccount({ id: `account-extra-${index}`, provider: "claude", label }),
     );
+  if (new URLSearchParams(location.search).has("account-usage")) {
+    const now = Date.now();
+    for (const [id, usedPercent, hours] of [
+      ["default", 8, 131],
+      ["account-work", 35, 100],
+      ["account-extra-0", 100, 7],
+    ] as const) {
+      setCachedRateLimits("claude", id, {
+        ...idleRateLimits("claude"),
+        status: "ok",
+        updatedAt: now,
+        weekly: { usedPercent, windowMinutes: 10_080, resetsAt: now + hours * 3_600_000 },
+      });
+    }
+  }
 }
 
 import {

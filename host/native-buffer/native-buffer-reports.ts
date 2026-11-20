@@ -1155,7 +1155,6 @@ export function createNativeBufferReports(deps: Dependencies) {
       for await (const captured of snapshots()) {
         const prior = captured.value;
         if (
-          prior.device !== device ||
           prior.clientId !== input.clientId ||
           prior.instanceId === input.instanceId ||
           prior.retiredAt !== undefined
@@ -1168,7 +1167,13 @@ export function createNativeBufferReports(deps: Dependencies) {
           )
         )
           continue;
-        if (!clean(prior) || prior.recovery?.kind === "hold") {
+        if (prior.device !== device) {
+          // The same desktop install under an earlier authorization (after re-pairing) never
+          // reports again, so nothing else can ever retire it. Release it only when it is
+          // dead, clean and unreported; anything else stays its own device's to recover.
+          if (!released(prior, latest.value) || !processGone(prior.processId)) continue;
+          if (prior.recovery?.kind === "hold") continue;
+        } else if (!clean(prior) || prior.recovery?.kind === "hold") {
           if (!released(prior, latest.value) || !processGone(prior.processId)) {
             blocked.push({ instanceId: prior.instanceId, processId: prior.processId });
             continue;

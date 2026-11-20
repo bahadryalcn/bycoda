@@ -52,6 +52,15 @@ const TURN = ".transcript-turn";
 const ANCHOR = "[data-prompt-anchor]";
 
 type Hover = { id: string; el: HTMLElement };
+type StackLayout = {
+  count: number;
+  newestId: string | null;
+  activeId: string | null;
+  firstBarId: string;
+  lastBarId: string;
+  budget: number;
+  stack: ReturnType<typeof barStack>;
+};
 
 type Props = {
   blocks: Block[];
@@ -83,6 +92,7 @@ export const PromptOutline = memo(function PromptOutline({
   const prompts = promptBlocks(blocks);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [stackBudget, setStackBudget] = useState(BAR_STACK_MAX_PX);
+  const [lastLayout, setLastLayout] = useState<StackLayout | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -145,7 +155,9 @@ export const PromptOutline = memo(function PromptOutline({
     const observer = new ResizeObserver(schedule);
     observer.observe(scroller);
     // Content growth moves the anchors without a scroll event.
-    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild);
+    const content =
+      scroller.querySelector("[data-transcript-content]") ?? scroller.firstElementChild;
+    if (content) observer.observe(content);
     schedule();
     return () => {
       scroller.removeEventListener("scroll", schedule);
@@ -322,7 +334,34 @@ export const PromptOutline = memo(function PromptOutline({
   if (prompts.length < MIN_PROMPTS) return null;
 
   const activeIndex = prompts.findIndex((prompt) => prompt.id === activeId);
-  const stack = barStack(prompts.length, activeIndex >= 0 ? activeIndex : null, stackBudget);
+  // Keep bar positions stable while history is prepended around the same visible prompt.
+  const offset = prompts.length - (lastLayout?.count ?? 0);
+  const retained =
+    lastLayout &&
+    offset >= 0 &&
+    lastLayout.newestId === lastId &&
+    lastLayout.activeId === activeId &&
+    lastLayout.budget === stackBudget &&
+    prompts[lastLayout.stack.start + offset]?.id === lastLayout.firstBarId &&
+    prompts[lastLayout.stack.end - 1 + offset]?.id === lastLayout.lastBarId;
+  const stack = retained
+    ? {
+        start: lastLayout.stack.start + offset,
+        end: lastLayout.stack.end + offset,
+        gap: lastLayout.stack.gap,
+      }
+    : barStack(prompts.length, activeIndex >= 0 ? activeIndex : null, stackBudget);
+  if (!retained || offset !== 0) {
+    setLastLayout({
+      count: prompts.length,
+      newestId: lastId,
+      activeId,
+      firstBarId: prompts[stack.start].id,
+      lastBarId: prompts[stack.end - 1].id,
+      budget: stackBudget,
+      stack,
+    });
+  }
   const bars = prompts.slice(stack.start, stack.end);
   const hoverIndex = hover ? bars.findIndex((bar) => bar.id === hover.id) : -1;
   // One tab stop for the whole rail. Arrow keys walk it from there.

@@ -40,6 +40,12 @@ type Props = {
   onTranslate?: (target: TextActionTarget) => void;
   sessionId?: string;
   allowReprompt?: boolean;
+  extraActions?: {
+    id: string;
+    label: string;
+    icon: FloatingButtonGroupAction["icon"];
+    onSelect: (text: string) => void | Promise<void>;
+  }[];
 };
 
 type Operations = {
@@ -137,6 +143,7 @@ export function TranscriptSelectionMenu({
   onTranslate,
   sessionId,
   allowReprompt = false,
+  extraActions,
 }: Props) {
   const t = useT();
   const dismissSelection = useEffectEvent(() => onDismiss());
@@ -332,6 +339,8 @@ export function TranscriptSelectionMenu({
         }));
       },
     });
+  for (const extra of extraActions ?? [])
+    items.push(action(extra.id, extra.label, extra.icon, () => extra.onSelect(selection.text)));
   if (onTranslate) {
     if (allowReprompt)
       items.push(action("reprompt", t("Reprompt"), <Sparkles />, () => onTranslate("reprompt")));

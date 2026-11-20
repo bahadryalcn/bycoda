@@ -12,6 +12,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { isSingleLineCommand } from "../../terminal/model/terminalSuggestions";
 import {
+  DuplicateSshSnippetError,
   insertSshSnippet,
   loadSshSnippets,
   saveSshSnippet,
@@ -26,6 +27,7 @@ type ServerSnippetsProps = {
   initialCommand?: string;
   /** Supply only when a verified remote prompt/echo capability permits insertion. */
   onInsert?: (text: string) => Promise<void>;
+  onAlreadySaved?: () => void;
   embedded?: boolean;
 };
 
@@ -40,6 +42,7 @@ function ServerSnippetsForm({
   serverName,
   initialCommand,
   onInsert,
+  onAlreadySaved,
   embedded = false,
 }: ServerSnippetsProps) {
   const [snippets, setSnippets] = useState<SshSnippet[]>([]);
@@ -154,7 +157,12 @@ function ServerSnippetsForm({
               });
               setSelected(saved);
               setNotice("saved");
-            } catch {
+            } catch (reason) {
+              if (reason instanceof DuplicateSshSnippetError) {
+                if (createOnly && onAlreadySaved) onAlreadySaved();
+                else setError(t("Command already saved."));
+                return;
+              }
               setError(
                 t(
                   "Couldn’t save this command. Reload a changed command and use one line without terminal controls.",
@@ -164,9 +172,8 @@ function ServerSnippetsForm({
           }}
         >
           <TextField
-            label={t("Name")}
+            label={t("Name (optional)")}
             value={name}
-            required
             maxLength={200}
             disabled={busy}
             onChange={(event) => {
@@ -210,7 +217,7 @@ function ServerSnippetsForm({
               variant={createOnly ? "primary" : "secondary"}
               success={notice === "saved"}
               successLabel={t("Saved")}
-              disabled={busy || !name.trim() || !isSingleLineCommand(command)}
+              disabled={busy || !isSingleLineCommand(command)}
             >
               {t("Save")}
             </Button>

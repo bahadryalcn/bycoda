@@ -59206,7 +59206,7 @@
           "audio": { "maxLength": 1000000, "minLength": 1, "type": "string" },
           "language": { "maxLength": 32, "minLength": 1, "type": "string" },
           "model": { "maxLength": 200, "minLength": 1, "type": "string" },
-          "provider": { "const": "openrouter", "type": "string" }
+          "provider": { "enum": ["openrouter", "openai", "xai"], "type": "string" }
         },
         "required": ["provider", "audio"],
         "type": "object"
@@ -62015,7 +62015,7 @@
                 "audio": { "maxLength": 1000000, "minLength": 1, "type": "string" },
                 "language": { "maxLength": 32, "minLength": 1, "type": "string" },
                 "model": { "maxLength": 200, "minLength": 1, "type": "string" },
-                "provider": { "const": "openrouter", "type": "string" }
+                "provider": { "enum": ["openrouter", "openai", "xai"], "type": "string" }
               },
               "required": ["provider", "audio"],
               "type": "object"
@@ -82391,5 +82391,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "da82e647df4beff1183b75889a0e464fc58aaa6cff42f3d05d5d260a69bbd64d"
+  "schemaHash": "05373de7b45aa7f577428a528fc331a106de676602d962e2e3a5697ded72e210"
 }

@@ -1465,6 +1465,70 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   });
 });
 
+test("composer keeps named account and controls visible at narrow widths", async ({ page }) => {
+  await initializeChatLayout(page);
+  for (const theme of ["dark", "light"]) {
+    for (const width of [420, 320, 800, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts&workspace-footer&theme=${theme}${width === 320 ? "&long-account" : ""}`,
+      );
+      const box = page.locator("[data-composer-box]");
+      const trigger = box.locator("[data-composer-model-controls] button[aria-haspopup]").first();
+      const access = box.locator("[data-access-picker-trigger]");
+      const mode = box.locator("[data-composer-mode-trigger]");
+      const add = box.getByRole("button", { name: "Add files or skills" });
+      const send = box.getByRole("button", { name: "Send", exact: true });
+      const selectWork = width === 420 || width === 800;
+      if (selectWork) {
+        await trigger.click();
+        const picker = page.getByRole("dialog", { name: "Model and settings", exact: true });
+        await picker.getByRole("radio", { name: /^work\b/ }).click();
+        if (theme === "dark" && width === 800) {
+          await picker.screenshot({
+            path: "temp/verification/composer-account-layout/picker-dark-800.png",
+          });
+        }
+        await page.keyboard.press("Escape");
+        await expect(picker).toHaveCount(0);
+      }
+      const name = selectWork ? "work" : "personal";
+      await expect(trigger.locator("[data-model-trigger-name]")).toHaveText("Sonnet 5");
+      await expect(trigger).not.toContainText(name);
+      await expect(trigger).toHaveAccessibleName(new RegExp(`Account: ${name}`));
+      const icon = trigger.locator("[data-model-provider-icon]");
+      const number = icon.locator("[data-model-account-number]");
+      await expect(number).toHaveText(selectWork ? "2" : "1");
+      const iconBounds = (await icon.boundingBox())!;
+      const numberBounds = (await number.boundingBox())!;
+      expect(numberBounds.x).toBeGreaterThan(iconBounds.x);
+      expect(numberBounds.y).toBeLessThan(iconBounds.y);
+      const model = (await trigger.boundingBox())!;
+      const accessBounds = (await access.boundingBox())!;
+      const modeBounds = (await mode.boundingBox())!;
+      const modelCenter = model.y + model.height / 2;
+      expect(accessBounds.y + accessBounds.height / 2).toBeCloseTo(modelCenter, 0);
+      expect(modeBounds.y + modeBounds.height / 2).toBeCloseTo(modelCenter, 0);
+      await expect(send).toBeInViewport();
+      await expect(add).toBeInViewport();
+      if (width <= 420) {
+        const addBounds = (await add.boundingBox())!;
+        const sendBounds = (await send.boundingBox())!;
+        expect(Math.abs(addBounds.y + addBounds.height / 2 - modelCenter)).toBeLessThanOrEqual(1);
+        expect(Math.abs(sendBounds.y + sendBounds.height / 2 - modelCenter)).toBeLessThanOrEqual(1);
+        expect(addBounds.x - (modeBounds.x + modeBounds.width)).toBeGreaterThanOrEqual(0);
+        expect(addBounds.x - (modeBounds.x + modeBounds.width)).toBeLessThanOrEqual(6);
+      }
+      expect(await box.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
+        1,
+      );
+      await box.screenshot({
+        path: `temp/verification/composer-account-layout/${theme}-${width}.png`,
+      });
+    }
+  }
+});
+
 test("model picker names and selects accounts and session shows its active agent", async ({
   page,
 }, testInfo) => {
@@ -1489,27 +1553,34 @@ test("model picker names and selects accounts and session shows its active agent
   await page.setViewportSize({ width: 1000, height: 800 });
   await page.goto("/tests/browser/chat/composer-extras.html?accounts");
   const main = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
-  await expect(main).toContainText("personal");
+  await expect(main).toHaveAccessibleName(/Account: personal/);
   await main.click();
   const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
   await expect(panel).toBeVisible();
-  // Two accounts: a segmented control in the list header names both; each model is listed once.
+  // Two accounts stay in view above a single copy of the model list.
   const account = panel.getByRole("radiogroup", { name: "Account", exact: true });
-  await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeVisible();
-  await expect(account.getByRole("radio", { name: "work", exact: true })).toBeVisible();
-  await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeChecked();
+  const personal = account.getByRole("radio", { name: /^personal\b/ });
+  const work = account.getByRole("radio", { name: /^work\b/ });
+  await expect(personal).toBeVisible();
+  await expect(work).toBeVisible();
+  await expect(personal).toBeChecked();
   const opus = panel.getByRole("option", { name: "Claude Opus 5.5", exact: true });
   await expect(opus).toHaveCount(1);
   await page.screenshot({
     path: testInfo.outputPath("account-model-picker.png"),
     animations: "disabled",
   });
+  const personalRow = (await personal.boundingBox())!;
+  const workRow = (await work.boundingBox())!;
+  expect(workRow.y).toBeGreaterThanOrEqual(personalRow.y + personalRow.height);
+  expect(workRow.x).toBeCloseTo(personalRow.x);
+  expect(workRow.width).toBeCloseTo(personalRow.width);
   await opus.click();
   await expect(panel).toBeVisible();
-  await account.getByRole("radio", { name: "work", exact: true }).click();
-  await expect(account.getByRole("radio", { name: "work", exact: true })).toBeChecked();
+  await work.click();
+  await expect(work).toBeChecked();
   await expect(main).toContainText("Opus 5.5");
-  await expect(main.locator("[data-model-account]")).toHaveText("work");
+  await expect(main).toHaveAccessibleName(/Account: work/);
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   await expect(page.locator("[data-session-agent]")).toContainText(
@@ -2009,6 +2080,58 @@ test("model picker selects image models under Agents in both themes and widths",
   }
 });
 
+test("model picker aligns account rows and keeps quota readable in both themes and widths", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  for (const width of [1280, 800]) {
+    for (const theme of ["light", "dark"]) {
+      for (const count of [2, 3]) {
+        await page.setViewportSize({ width, height: 850 });
+        await page.goto(
+          `/tests/browser/chat/composer-extras.html?chat-layout&accounts=${count}&account-usage&theme=${theme}`,
+        );
+        await page.locator("[data-composer-model-controls] button[aria-haspopup]").first().click();
+        const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+        if (count === 3) {
+          const trigger = panel.locator("[data-model-account-menu]");
+          await trigger.click();
+          await expect(trigger).toHaveAccessibleName("Accounts");
+        }
+        const rows = panel.locator("[data-model-account-list]").getByRole("radio");
+        await expect(rows).toHaveCount(count);
+        await expect(rows.first()).toBeChecked();
+        await expect(rows.first()).toContainText("8% used");
+        await expect(rows.nth(1)).toContainText("35% used");
+        await expect(rows.last()).toBeInViewport();
+        const first = (await rows.first().boundingBox())!;
+        const last = (await rows.last().boundingBox())!;
+        expect(last.y).toBeGreaterThanOrEqual(first.y + first.height);
+        expect(last.x).toBeCloseTo(first.x);
+        expect(last.width).toBeCloseTo(first.width);
+        await panel.screenshot({
+          path: `temp/verification/model-account-rows/${count}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+        if (count === 2) {
+          await panel
+            .getByRole("listbox", { name: "Models" })
+            .getByRole("option")
+            .last()
+            .scrollIntoViewIfNeeded();
+          expect((await rows.first().boundingBox())!.y).toBeCloseTo(first.y);
+          await rows.first().focus();
+          await rows.first().press("ArrowDown");
+          await expect(rows.nth(1)).toBeChecked();
+          await expect(rows.nth(1)).toBeFocused();
+        } else {
+          await expect(rows.last()).toContainText("100% used");
+        }
+      }
+    }
+  }
+});
+
 test("remote model picker selects a Host account in both themes and widths", async ({ page }) => {
   await initializeChatLayout(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -2030,7 +2153,7 @@ test("remote model picker selects a Host account in both themes and widths", asy
         path: `temp/verification/remote-provider-accounts/picker-${width}-${theme}.png`,
       });
       await list.getByRole("radio", { name: /^Mac work/ }).click();
-      await expect(trigger.locator("[data-model-account]")).toHaveText("Mac work");
+      await expect(trigger).toHaveAccessibleName(/Account: Mac work/);
     }
   }
 });

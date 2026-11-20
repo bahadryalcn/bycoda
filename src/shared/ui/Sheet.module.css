@@ -1,3 +1,7 @@
+.sheet[data-sheet-surface="canvas"] {
+  background-color: var(--ui-workspace-canvas);
+}
+
 .sheet[data-sheet-surface="chat"] {
   background-color: var(--ui-chat-pane-canvas);
 }

@@ -164,6 +164,11 @@ the composer or paused queue. Retry is hidden for that admission error so it
 cannot resend an earlier conversation message. Recover the retained input after
 the Host connection and ownership transfer are confirmed.
 
+The composer shows the short model name beside the provider icon. If there are
+multiple accounts, the account number appears on the icon and the account name
+appears in the tooltip. In a narrow chat pane, the model, access, mode and Add
+controls sit close together beside the send controls when there is room.
+
 When a usage limit stops a conversation, use **Switch account**, **Switch model**
 or the reset controls in its usage-limit notice. The generic failed-turn Retry
 stays hidden while this notice is active. Repeated reports of the same Claude

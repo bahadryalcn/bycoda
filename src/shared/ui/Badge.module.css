@@ -70,6 +70,6 @@
 }
 .identity[data-size] {
   color: var(--ui-tone-neutral-fg);
-  background: color-mix(in srgb, var(--badge-identity) 31%, var(--ui-tone-neutral-subtle));
-  border-color: color-mix(in srgb, var(--badge-identity) 55%, var(--ui-tone-neutral-border));
+  background: color-mix(in oklch, var(--badge-identity) 14%, var(--ui-tone-neutral-subtle));
+  border-color: color-mix(in oklch, var(--badge-identity) 26%, var(--ui-tone-neutral-border));
 }

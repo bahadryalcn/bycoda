@@ -12,6 +12,7 @@ import {
 import { requestSessionQuote } from "../../../src/features/sessions/public/targetedChatQuote";
 import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
 import { ServerAgentFixture } from "./server-agent-fixture";
+import { ToastRegion } from "../../../src/shared/ui/ToastRegion";
 import { ProjectRail } from "../../../src/app/shell/ProjectRail";
 import {
   ToolNavigation,
@@ -44,17 +45,24 @@ let selectAgentExcerpt: (() => void) | undefined;
 let activityOutput = "";
 const fixtureTurnStartedAt = Date.now();
 const sharedSelections: Array<{ sessionId: string; text: string }> = [];
+const hostSelections: Array<{ sessionId: string; cwd: string; text: string }> = [];
 const agentFixture = params.has("agentFixture")
   ? {
-      project: "/fixture",
-      open: async ({ serverId, terminalId }: { serverId?: string; terminalId: string }) => ({
+      projects: [{ path: "/fixture", openedAt: 1 }],
+      open: async (
+        { serverId, terminalId }: { serverId?: string; terminalId: string },
+        cwd: string,
+      ) => ({
         sessionId: `agent-${serverId ?? terminalId}`,
-        cwd: "/fixture",
+        cwd,
         serverId,
       }),
       addSelection: (sessionId: string, text: string) => {
         sharedSelections.push({ sessionId, text });
         requestSessionQuote(sessionId, text);
+      },
+      sendSelection: async ({ sessionId, cwd }: ServerAgentSession, text: string) => {
+        hostSelections.push({ sessionId, cwd, text });
       },
     }
   : null;
@@ -62,7 +70,11 @@ if (agentFixture) {
   const openTerminal = Terminal.prototype.open;
   Terminal.prototype.open = function (container) {
     openTerminal.call(this, container);
-    selectAgentExcerpt = () => this.select(0, 0, 11);
+    selectAgentExcerpt = () => {
+      // xterm retains the last programmatic range in its change detector after clearSelection.
+      this.select(0, 0, 10);
+      this.select(0, 0, 11);
+    };
   };
 }
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
@@ -123,6 +135,11 @@ const sshRecords: ServerRecord[] =
             host: "duplicate.example.invalid",
             user: "fixture",
             port: 22,
+            ...(params.has("detailLongKey")
+              ? {
+                  identityFile: `C:/Users/fixture/.ssh/${"long-identity-filename-".repeat(6)}ed25519`,
+                }
+              : {}),
             ...(params.has("httpProxyFixture")
               ? { httpProxy: { host: "proxy.example.invalid", port: 8080 } }
               : {}),
@@ -237,6 +254,7 @@ const machines = Array.from({ length: params.has("emptyServers") ? 0 : 35 }, (_,
 Object.assign(window, {
   serversFixtureSelectAgentText: () => selectAgentExcerpt?.(),
   serversFixtureSharedSelections: sharedSelections,
+  serversFixtureHostSelections: hostSelections,
   serversFixtureAgentOutput: (text: string) => {
     activityOutput = text;
   },
@@ -775,6 +793,7 @@ function Fixture() {
     ) : null;
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
+      <ToastRegion />
       <div style={{ display: "flex", gap: 8, padding: "4px 16px" }}>
         <Button onClick={() => setVisible(!visible)}>Toggle servers</Button>
       </div>

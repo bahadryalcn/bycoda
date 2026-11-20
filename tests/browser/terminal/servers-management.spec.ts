@@ -15,11 +15,33 @@ for (const theme of ["light", "dark"])
       const details = page.getByRole("region", { name: "Server details", exact: true });
       await expect(details).toBeVisible();
       const toolTabs = details.getByRole("tablist", { name: "Server tools", exact: true });
+      expect(
+        await toolTabs.evaluate((strip) => {
+          const pane = strip.closest("section")!;
+          const style = getComputedStyle(pane);
+          return {
+            sameCanvas:
+              style.backgroundColor === getComputedStyle(strip.parentElement!).backgroundColor,
+            noFloatingShadow: style.boxShadow === "none",
+            tabsFit: strip.scrollWidth <= strip.clientWidth,
+            opaque: style.backgroundColor !== "rgba(0, 0, 0, 0)",
+            fillsPane: pane.offsetWidth === pane.parentElement!.clientWidth,
+          };
+        }),
+      ).toEqual({
+        sameCanvas: true,
+        noFloatingShadow: true,
+        tabsFit: true,
+        opaque: true,
+        fillsPane: true,
+      });
       await toolTabs.getByRole("tab", { name: "Connection", exact: true }).focus();
       await page.keyboard.press("End");
       await expect(toolTabs.getByRole("tab", { name: "Activity", exact: true })).toBeFocused();
-      if (width === 800)
-        expect(await toolTabs.evaluate((strip) => strip.scrollLeft)).toBeGreaterThan(0);
+      await expect(toolTabs.getByRole("tab", { name: "Activity", exact: true })).toHaveCSS(
+        "outline-style",
+        "solid",
+      );
       await page.keyboard.press("Home");
       await expect(toolTabs.getByRole("tab", { name: "Connection", exact: true })).toBeFocused();
       const folder = "temp/verification/2026-11-14-servers-six";

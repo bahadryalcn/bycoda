@@ -2826,7 +2826,6 @@ html.is-reordering {
   container: composer-controls / inline-size;
 }
 @container composer-controls (width < 560px) {
-  [data-model-account],
   [data-extras-summary] {
     display: none;
   }

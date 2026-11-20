@@ -1,4 +1,4 @@
-import { createRealtimeSecret, createVoiceClientSecret } from "../voice/voice";
+import { createRealtimeSecret, createVoiceClientSecret, realtimeCredential } from "../voice/voice";
 import { DictationCleanupRuns } from "../voice/voice-dictation-runs";
 import { processVoiceTranscript } from "../voice/voice-dictation-process";
 import { inspectVoiceRuntime } from "../voice/voice-runtime";
@@ -83,7 +83,7 @@ export async function handleVoiceRpc(
         request.input.method === "voice.realtime.secret"
           ? await createRealtimeSecret(request.params.provider)
           : request.input.method === "voice.cloud.status"
-            ? await dependencies.voiceCloud.status()
+            ? await transcriptionStatus(dependencies.voiceCloud)
             : await dependencies.voiceCloud.setKey(
                 request.params.provider,
                 request.params.key ?? null,
@@ -194,4 +194,13 @@ export async function handleVoiceRpc(
       request.result = dependencies.localVoice.release(request.params.lease);
       break;
   }
+}
+
+async function transcriptionStatus(cloud: ServerBindings["voiceCloud"]) {
+  const [status, openai, xai] = await Promise.all([
+    cloud.status(),
+    realtimeCredential("openai").catch(() => undefined),
+    realtimeCredential("xai").catch(() => undefined),
+  ]);
+  return { ...status, openai: Boolean(openai), xai: Boolean(xai) };
 }

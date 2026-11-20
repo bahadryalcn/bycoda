@@ -465,7 +465,8 @@ function Workspace({
   );
   const { inboxAskPortal, setInboxAskPortal, openingInboxSessions } = useInboxAskPortal();
   const socialSessionPanel = useSocialSessionPanel();
-  const serverAgentPanel = useServerAgentPanel(projectCwd);
+  const submitAfterProjectSyncRef = useRef<Submit>(() => false);
+  const serverAgentPanel = useServerAgentPanel(visibleRecents, submitAfterProjectSyncRef);
   const panelSessionIds = useMemo(
     () => [...socialSessionPanel.sessionIds, ...serverAgentPanel.sessionIds],
     [socialSessionPanel.sessionIds, serverAgentPanel.sessionIds],
@@ -730,7 +731,6 @@ function Workspace({
   const openingFileWindowIds = useRef(new Set<string>());
   const importedSessionsApplied = useRef(false);
   const projectLocationSyncs = useProjectLocationSyncs();
-  const submitAfterProjectSyncRef = useRef<Submit>(() => false);
 
   useProjectLocationSeeding({
     recents,

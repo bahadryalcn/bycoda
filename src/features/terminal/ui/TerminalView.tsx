@@ -22,6 +22,9 @@ import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useT } from "../../../shared/i18n";
+import { useToast } from "../../../shared/ui/ToastRegion";
+import { errorText } from "../../../shared/lib/errors";
+import { loadSshSnippets } from "../../connections/model/sshSnippets";
 import { bindTerminalDomInput } from "../runtime/terminalDomInput";
 import { createTerminalFitting } from "../runtime/terminalFitting";
 import {
@@ -43,6 +46,7 @@ type Props = {
   toolbarTarget?: HTMLDivElement | null;
   sshConnectionName?: string;
   onSendToAgent?: (text: string) => Promise<void>;
+  onSendToHost?: (text: string) => Promise<void>;
   /** Surface-specific typography, independent of the code editor's text size. */
   fontSize?: number;
   onFontSizeChange?: (size: number) => void;
@@ -82,6 +86,18 @@ type Props = {
 // no terminal asks again.
 let metaSupported = true;
 
+function checkSavedCommand(serverId: string, initialCommand: string) {
+  const command = initialCommand.trim();
+  if (!command) return {};
+  try {
+    return {
+      duplicate: loadSshSnippets(serverId).some((snippet) => snippet.command.trim() === command),
+    };
+  } catch (reason) {
+    return { error: errorText(reason) };
+  }
+}
+
 async function reconnectTerminal(
   reconnect: () => unknown,
   fail: (reason: unknown) => void,
@@ -100,6 +116,7 @@ export function TerminalView({
   toolbarTarget,
   sshConnectionName,
   onSendToAgent,
+  onSendToHost,
   fontSize,
   onFontSizeChange,
   lineHeight,
@@ -163,7 +180,16 @@ export function TerminalView({
   const isActive = useStableCallback(() => active);
   const composingRef = useRef(false);
   const editRevisionRef = useRef(0);
-  const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const [snippets, setSnippets] = useState<{ initialCommand?: string } | null>(null);
+  const toast = useToast();
+  const alreadySaved = () => toast.show({ message: t("Command already saved."), tone: "info" });
+  const handleSaveCommand = (initialCommand: string) => {
+    if (!sshConnectionId) return;
+    const { duplicate, error } = checkSavedCommand(sshConnectionId, initialCommand);
+    if (error) toast.show({ message: error, tone: "danger" });
+    else if (duplicate) alreadySaved();
+    else setSnippets({ initialCommand });
+  };
   // Same signal as the WebGL addon: the terminal is actually on screen. Without
   // IntersectionObserver there is no signal, so assume visible.
   const [onScreen, setOnScreen] = useState(typeof IntersectionObserver === "undefined");
@@ -580,7 +606,7 @@ export function TerminalView({
         if (hostRef.current?.contains(event.target as Node)) termRef.current?.focus();
       }}
       onKeyDownCapture={(event) => {
-        if (snippetsOpen) return;
+        if (snippets) return;
         if (isImeComposition(event.nativeEvent)) return;
         const next = terminalToolShortcut(event, !privateTerminal || integrated);
         if (!next) return;
@@ -631,8 +657,12 @@ export function TerminalView({
         onEnableShellIntegration={
           sshConnectionId || sshEndpoint ? onEnableShellIntegration : undefined
         }
-        snippetsOpen={snippetsOpen}
-        onSnippetsOpenChange={setSnippetsOpen}
+        snippets={snippets}
+        onOpenSavedCommands={() => setSnippets({})}
+        onSaveSelectedCommand={handleSaveCommand}
+        onCloseSnippets={() => setSnippets(null)}
+        onAlreadySaved={alreadySaved}
+        onSendSelectedText={onSendToAgent}
       />
       {exitCode !== undefined ? (
         <div className="shrink-0 px-3 py-2">
@@ -707,8 +737,16 @@ export function TerminalView({
       <TerminalSelectionMenu
         terminal={terminal}
         host={hostRef}
-        active={active && onScreen && tool !== "search" && (!privateTerminal || !!onSendToAgent)}
+        active={
+          active &&
+          onScreen &&
+          tool !== "search" &&
+          (!privateTerminal || !!(onSendToAgent || sshConnectionId))
+        }
         onSendToAgent={onSendToAgent}
+        onSendToHost={onSendToHost}
+        onSaveCommand={sshConnectionId ? handleSaveCommand : undefined}
+        privateTerminal={privateTerminal}
         cwd={cwd}
       />
     </div>

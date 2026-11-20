@@ -65,8 +65,8 @@ export type SheetProps = {
    * nearest positioned ancestor (a pane); Escape closes it only when focus is in that pane.
    */
   anchor?: "viewport" | "container";
-  /** Non-modal only. `chat` uses the opaque chat canvas for transcript detail. */
-  surface?: "floating" | "chat";
+  /** Non-modal only. `canvas` fits an inline workspace pane; `chat` uses the chat canvas. */
+  surface?: "floating" | "canvas" | "chat";
   /** Non-modal only: `false` keeps the sheet mounted but inert and hidden from Escape. */
   open?: boolean;
   onClose: () => void;
@@ -375,9 +375,12 @@ function NonModalSheet({
           insetBlockEnd: 0,
           marginInline: "auto",
         };
-  const frame = end
-    ? `border-s border-(--ui-pane-border) ${viewport ? "" : "rounded-s-(--ui-radius-popup)"}`
-    : "w-full max-w-4xl rounded-t-(--ui-radius-popup) border border-b-0 border-(--ui-pane-border)";
+  const frame =
+    fill === "canvas"
+      ? ""
+      : end
+        ? `border-s border-(--ui-pane-border) ${viewport ? "" : "rounded-s-(--ui-radius-popup)"}`
+        : "w-full max-w-4xl rounded-t-(--ui-radius-popup) border border-b-0 border-(--ui-pane-border)";
 
   const surface = (
     <section
@@ -398,7 +401,8 @@ function NonModalSheet({
       style={{ ...position, ...sizeStyle }}
       className={[
         styles.sheet,
-        "isolate flex flex-col shadow-(--ui-elevation-floating) outline-none",
+        "isolate flex flex-col outline-none",
+        fill !== "canvas" && "shadow-(--ui-elevation-floating)",
         frame,
         className,
       ]

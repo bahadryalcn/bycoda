@@ -363,14 +363,14 @@ beside the catalog; **Recently used first** changes order without filtering entr
 
 Group shortcuts above the catalog narrow the existing search without clearing it.
 User-selected server colors appear on the identity tile, separately
-from the Host connection status. Selecting an entry opens a right-hand details sheet
-and reserves its own space, so the catalog reflows and other servers remain selectable.
+from the Host connection status. Selecting an entry opens its details beside the
+catalog, so other servers remain selectable.
 On narrow panes the details sit below the catalog. Escape closes details from anywhere
 in Servers and returns focus to the selected entry; an open menu closes first.
-List rows adapt to the catalog's remaining width. Detail tool tabs scroll horizontally
-when space is limited, keeping their full labels and keyboard navigation.
-Its header stays visible; connection actions and tool
-tabs stay together while scrolling. Switching tool tabs preserves unfinished drafts.
+List rows adapt to the catalog's remaining width. Detail tool tabs wrap when space
+is limited, keeping their full labels and keyboard navigation. The header stays
+visible. Connection actions and tabs stay together while scrolling. Switching
+tabs preserves unfinished drafts. Long SSH key paths wrap below the key chooser.
 SSH settings, server editing, Termius import and SFTP open in side sheets with their
 existing explicit save, import, connection and transfer approvals.
 Server names are optional; an empty name uses the SSH address. Refreshing SSH keys
@@ -388,8 +388,10 @@ entries. Only saved connections can be remembered. Restoring an entry requires
 **Connect**, opens a new shell and does not replay previous commands. Exact endpoint
 and identity-file details remain available from the terminal's connection information.
 
-**Ask AI** opens a conversation beside the terminal. Select terminal text and
-choose **Send to agent** to add that selection to the conversation's draft. The
+**Ask AI** asks which project should own the conversation and opens it beside
+the terminal. Drag the divider or use its arrow keys to resize the pane.
+Select terminal text and choose **Send to agent** to add the excerpt to the
+draft, or **Send to Host** to submit it immediately through that conversation. The
 manual shell stays private. The conversation can request commands on the saved
 server. Running commands appear inline in the standard session transcript.
 Expand a command row to inspect its live output.
@@ -402,8 +404,10 @@ In a remote conversation, type the saved server ID after the prefix. The agent
 resolves it through the owning Host's available server tools.
 
 The terminal header keeps Find and the terminal actions menu in view. For a
-saved server, **Save command** opens the command editor. You can start with a
-single line selected in the terminal or type a command in the editor. Use
+saved server, **Save command** opens the command editor from the header or a
+single-line terminal selection. Leave the name blank to use the command as its
+label. If the same command already exists for that server, the terminal shows
+**Command already saved.** Use
 **Saved commands** in the terminal actions menu to edit or copy saved entries.
 Inserting a saved command requires a verified empty prompt with shell integration.
 

@@ -521,7 +521,7 @@ export function ServersTerminalWorkspace({
                         }
                   }
                 >
-                  {(actions, onSendToAgent) => (
+                  {(actions, onSendToAgent, onSendToHost) => (
                     <ServerTerminalSession
                       actions={actions}
                       name={terminal.name}
@@ -541,6 +541,7 @@ export function ServersTerminalWorkspace({
                           toolbarTarget={toolbarTarget}
                           sshConnectionName={terminal.server?.name}
                           onSendToAgent={onSendToAgent}
+                          onSendToHost={onSendToHost}
                           fontSize={fontSize}
                           onFontSizeChange={onFontSizeChange}
                           lineHeight={lineHeight}

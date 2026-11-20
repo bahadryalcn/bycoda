@@ -1245,3 +1245,33 @@ it("lets a clean hold of a retired dead predecessor go inert instead of rewritin
   expect(await f.service.probe("workspace")).toHaveLength(0);
   expect(await f.files()).toHaveLength(3);
 });
+
+it("retires a dead clean report of the same desktop under an earlier authorization only", async () => {
+  for (const scenario of ["released", "dirty", "alive"] as const) {
+    const f = await fixture();
+    const live = f.report(false);
+    const earlier = {
+      ...live.owners[0],
+      ownerId: "earlier-window",
+      unknown: true,
+      buffers: [{ path: join(f.path, "old.txt"), dirty: scenario === "dirty" }],
+    };
+    await f.service.updateBuffers(
+      { ...live, instanceId: "prior", processId: 99999, owners: [earlier] },
+      other,
+    );
+    await f.service.updateBuffers(live, owner);
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("probe"), { code: scenario === "alive" ? "EPERM" : "ESRCH" });
+    });
+    // The other device's leftover is never this caller's blocker, released or not.
+    await expect(
+      f.service.reconcileBuffers(
+        { clientId: "client", instanceId: "instance", predecessors: [] },
+        owner,
+      ),
+    ).resolves.toEqual({ acknowledged: true });
+    kill.mockRestore();
+    expect(await f.service.probe("workspace")).toHaveLength(scenario === "released" ? 0 : 1);
+  }
+});

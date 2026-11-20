@@ -3649,6 +3649,7 @@ export const Composer = memo(function Composer({
                     values={modelSettings}
                     allowedHarnesses={allowedModelHarnesses}
                     project={cwd}
+                    compactIdentity
                     showEffortSummary
                     hotkeys={hotkeys && enabled}
                     openRequest={modelPickerRequest}

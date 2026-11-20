@@ -36,6 +36,8 @@ import styles from "./TerminalTools.module.css";
 import type { SshShellController } from "../model/sshShellIntegration";
 import { useHideWhileTyping } from "./useHideWhileTyping";
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import { useToast } from "../../../shared/ui/ToastRegion";
+import { errorText } from "../../../shared/lib/errors";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
 const SEARCH_RESULT_LIMIT = 1000;
@@ -54,6 +56,7 @@ export function TerminalTools({
   onEnableShellIntegration,
   onSavedCommands,
   onSaveCommand,
+  onSendSelectedText,
   onStartupReview,
   fontSize,
   savedFontSize,
@@ -75,6 +78,7 @@ export function TerminalTools({
   onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
   onSavedCommands?: () => void;
   onSaveCommand?: () => void;
+  onSendSelectedText?: (text: string) => Promise<void>;
   onStartupReview?: () => Promise<void>;
   /** Effective per-instance size, supplied by the terminal owner after zoom. */
   fontSize?: number;
@@ -86,6 +90,7 @@ export function TerminalTools({
   toolbarTarget?: HTMLDivElement | null;
 }) {
   const t = useT();
+  const toast = useToast();
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);
@@ -329,6 +334,24 @@ export function TerminalTools({
             }}
           >
             {t("Saved commands")}
+          </Button>
+        ) : null}
+        {!search && onSendSelectedText ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            align="start"
+            disabled={mode === "search" || !terminal?.hasSelection()}
+            onClick={() => {
+              const text = terminal?.getSelection();
+              if (!text?.trim()) return;
+              changeMode(null);
+              void onSendSelectedText(text).catch((reason: unknown) => {
+                toast.show({ message: errorText(reason), tone: "danger" });
+              });
+            }}
+          >
+            {t("Send to agent")}
           </Button>
         ) : null}
         {!search && onEnableShellIntegration ? (
@@ -597,6 +620,7 @@ export function TerminalTools({
                 ) : null}
                 {remoteShell ||
                 (!toolbarTarget && onSaveCommand) ||
+                onSendSelectedText ||
                 onSavedCommands ||
                 onEnableShellIntegration ||
                 onStartupReview ? (

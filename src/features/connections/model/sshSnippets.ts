@@ -4,6 +4,7 @@ import {
   subscribePromptTemplates,
 } from "../../sessions/public/promptTemplates";
 import { isSingleLineCommand } from "../../terminal/model/terminalSuggestions";
+import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
 
 const KEY = "bycoda.sshSnippetReferences.v1";
 const CHANGE = "bycoda:ssh-snippets";
@@ -18,6 +19,12 @@ export type SshSnippet = {
   /** Editing a shared template elsewhere requires another explicit preview/save. */
   reviewed: boolean;
 };
+
+export class DuplicateSshSnippetError extends Error {
+  constructor() {
+    super("Command already saved.");
+  }
+}
 
 // Change detector only; this is not a credential hash or security signature.
 function fingerprint(text: string) {
@@ -83,13 +90,13 @@ export function loadSshSnippets(serverId: string): SshSnippet[] {
 export function saveSshSnippet(input: {
   id?: string;
   serverId: string;
-  name: string;
+  name?: string;
   command: string;
   expectedVersion?: number;
   expectedCommand?: string;
 }): SshSnippet {
-  if (!input.serverId || !input.name.trim() || input.name.length > 200)
-    throw new Error("A target server and command name are required");
+  if (!input.serverId || (input.name?.length ?? 0) > 200)
+    throw new Error("Use a target server and a name of at most 200 characters");
   if (input.command.length > 8192 || !isSingleLineCommand(input.command))
     throw new Error("Use one command line without terminal controls");
   const data = manifest();
@@ -106,6 +113,17 @@ export function saveSshSnippet(input: {
       templates.find((template) => template.id === id)?.body !== input.expectedCommand)
   )
     throw new Error("This command changed. Reload it before saving");
+  if (
+    templates.some(
+      (template) =>
+        template.id !== id &&
+        Object.prototype.hasOwnProperty.call(data.references, template.id) &&
+        data.references[template.id].serverId === input.serverId &&
+        template.body.trim() === input.command.trim(),
+    )
+  )
+    throw new DuplicateSshSnippetError();
+  const name = input.name?.trim() || truncateCodeUnits(input.command.trim(), 200);
   const version = (previous?.version ?? 0) + 1;
   data.references[id] = {
     serverId: input.serverId,
@@ -116,13 +134,13 @@ export function saveSshSnippet(input: {
   // leaves a mismatched reference, which disables insertion until reviewed.
   localStorage.setItem(KEY, JSON.stringify(data));
   const next = templates.filter((template) => template.id !== id);
-  next.push({ id, name: input.name.trim(), body: input.command });
+  next.push({ id, name, body: input.command });
   savePromptTemplates(next);
   window.dispatchEvent(new Event(CHANGE));
   return {
     id,
     serverId: input.serverId,
-    name: input.name.trim(),
+    name,
     command: input.command,
     version,
     reviewed: true,

@@ -125,6 +125,8 @@ type Props = {
    * full-width, left-aligned form field, for forms where the picker answers a labelled question.
    */
   presentation?: "inline" | "field";
+  /** In the composer, the provider icon and account number carry the inline identity. */
+  compactIdentity?: boolean;
   /**
    * Optional labelled "no explicit model" choice, e.g. "Use the global agent". It leads the menu;
    * `selected` mirrors the owner's empty value and `onSelect` stores it. While it is selected the
@@ -189,6 +191,7 @@ export function ModelPicker({
   openRequest = 0,
   externalTrigger,
   presentation = "inline",
+  compactIdentity = false,
   inheritChoice,
   accountId,
   accountChoices = false,
@@ -466,6 +469,10 @@ export function ModelPicker({
   const triggerTitle = inheritSelected
     ? inherit.label
     : [HARNESS_TITLE[current.harness], current.provider?.name].filter(Boolean).join(" · ");
+  const triggerAccountName = fieldAccount?.label ?? triggerAccountLabel;
+  const triggerModelName = compactIdentity
+    ? current.name.replace(/^(?:Claude(?: Code)?|Codex|Grok)(?:\s*[·:]\s*|\s+)(?=\S)/i, "")
+    : current.name;
   const providerKey = pickerHarnesses.join(",");
   const visibleTab = coerceModelPickerTab(tab, (id) => pickerHarnesses.includes(id));
   const accountCatalog = JSON.parse(accountsSnapshot) as ModelAccountCatalog;
@@ -831,7 +838,10 @@ export function ModelPicker({
           shortcut={hotkeys ? switchShortcut : null}
 
           label={triggerTitle}
-          details={[t("Recent models: right-click or {p0}", { p0: recentShortcut.text })]}
+          details={[
+            ...(triggerAccountName ? [t("Account: {p0}", { p0: triggerAccountName })] : []),
+            t("Recent models: right-click or {p0}", { p0: recentShortcut.text }),
+          ]}
         >
           <Trigger
             {...(field
@@ -847,7 +857,7 @@ export function ModelPicker({
                 ? inherit.label
                 : `${HARNESS_TITLE[current.harness]}${
                     current.provider ? `, ${current.provider.name},` : ""
-                  } ${currentLabel}${triggerEffortLabel ? `, ${t("effort {p0}", { p0: triggerEffortLabel })}` : ""}${triggerFastOn ? `, ${t("Fast")}` : triggerFastState === "off" && field ? `, ${t("Fast off")}` : ""}${fieldAccount ? `, ${t("Account: {p0}", { p0: fieldAccount.label })}` : ""}${triggerExtras.map((extra) => `, ${extra.name}: ${extra.label}`).join("")}`
+                  } ${triggerAccountName ? current.name : currentLabel}${triggerEffortLabel ? `, ${t("effort {p0}", { p0: triggerEffortLabel })}` : ""}${triggerFastOn ? `, ${t("Fast")}` : triggerFastState === "off" && field ? `, ${t("Fast off")}` : ""}${triggerAccountName ? `, ${t("Account: {p0}", { p0: triggerAccountName })}` : ""}${triggerExtras.map((extra) => `, ${extra.name}: ${extra.label}`).join("")}`
             }
             expanded={open || recentOpen}
             aria-haspopup="dialog"
@@ -881,10 +891,27 @@ export function ModelPicker({
                 </Text>
               ) : (
                 <>
-                  <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
+                  <span
+                    data-model-provider-icon
+                    className={`relative inline-flex shrink-0${!field && activeAccount?.accountNumber !== undefined ? " me-1.5" : ""}`}
+                  >
+                    <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
+                    {!field ? (
+                      <ModelAccountNumber
+                        account={activeAccount}
+                        className="absolute -end-1.5 [inset-block-start:-0.25rem]"
+                      />
+                    ) : null}
+                  </span>
 
-                  <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                    {current.name}
+                  <Text
+                    data-model-trigger-name
+                    size="inherit"
+                    tone="inherit"
+                    truncate
+                    className="min-w-0"
+                  >
+                    {triggerModelName}
                   </Text>
                 </>
               )}
@@ -898,19 +925,16 @@ export function ModelPicker({
                 />
               ) : (
                 <>
-                  {triggerAccountLabel && !inheritSelected ? (
-                    <>
-                      <ModelAccountNumber account={activeAccount} />
-                      <Text
-                        data-model-account
-                        size="inherit"
-                        tone="secondary"
-                        truncate
-                        className="min-w-0 max-w-24"
-                      >
-                        {triggerAccountLabel}
-                      </Text>
-                    </>
+                  {!compactIdentity && triggerAccountLabel && !inheritSelected ? (
+                    <Text
+                      data-model-account
+                      size="inherit"
+                      tone="secondary"
+                      truncate
+                      className="min-w-0 max-w-24"
+                    >
+                      {triggerAccountLabel}
+                    </Text>
                   ) : null}
 
                   {triggerEffortLabel ? (
