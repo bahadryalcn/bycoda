@@ -13,6 +13,7 @@ import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { t } from "../../../../shared/i18n";
 import { AssistantAvatarMark } from "../../../assistant/public/avatar";
 import { Button } from "../../../../shared/ui/Button";
+import { ButtonGroup } from "../../../../shared/ui/ButtonGroup";
 import { AppWindow } from "../../../../shared/ui/icons";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { Popover } from "../../../../shared/ui/Popover";
@@ -164,29 +165,37 @@ export function VoiceLauncher({
   ) : (
     <VoiceVisualizer visual={visual} state="off" small="icon" />
   );
+  const launchButton = (
+    <Button
+      ref={ref}
+      shape={wakeControls ? undefined : "pill"}
+      variant={slot || wakeControls ? "ghost" : "secondary"}
+      iconOnly={compact}
+      padding={wakeControls && !compact ? { end: "xxs" } : undefined}
+      {...(slot || wakeControls
+        ? { className: styles.launcherButton }
+        : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
+      data-docked={slot ? "" : undefined}
+      label={label}
+      tooltip={compact || returnToWindow ? label : name ? t("Voice assistant") : undefined}
+      shortcut={shortcut}
+      tooltipSide={compact ? "right" : "top"}
+      startIcon={compact ? undefined : icon}
+      onClick={onOpen}
+    >
+      {compact ? icon : name || t("Voice")}
+    </Button>
+  );
   return (
     <VoiceLauncherFrame>
-      <div className={styles.launcherControls}>
-        <Button
-          ref={ref}
-          shape="pill"
-          variant={slot ? "ghost" : "secondary"}
-          iconOnly={compact}
-          {...(slot
-            ? { className: styles.launcherButton }
-            : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
-          data-docked={slot ? "" : undefined}
-          label={label}
-          tooltip={compact || returnToWindow ? label : name ? t("Voice assistant") : undefined}
-          shortcut={shortcut}
-          tooltipSide={compact ? "right" : "top"}
-          startIcon={compact ? undefined : icon}
-          onClick={onOpen}
-        >
-          {compact ? icon : name || t("Voice")}
-        </Button>
-        {wakeControls && <VoiceWakeMenu controls={wakeControls} />}
-      </div>
+      {wakeControls ? (
+        <ButtonGroup aria-label={t("Voice companion")} surface={slot ? "navigation" : "default"}>
+          {launchButton}
+          <VoiceWakeMenu controls={wakeControls} />
+        </ButtonGroup>
+      ) : (
+        launchButton
+      )}
     </VoiceLauncherFrame>
   );
 }
@@ -207,6 +216,7 @@ function VoiceWakeMenu({ controls }: { controls: VoiceWakeControls }) {
         ref={anchor}
         iconOnly
         size="xs"
+        stretch
         variant="ghost"
         label={label}
         tooltipSide="top"

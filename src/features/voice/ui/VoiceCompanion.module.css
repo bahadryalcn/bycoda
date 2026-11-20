@@ -14,14 +14,6 @@
 .launcherSlot:not([data-compact]) {
   flex: 0 1 auto;
 }
-.launcherControls {
-  display: flex;
-  align-items: center;
-  min-inline-size: 0;
-}
-.launcherControls > :first-child {
-  flex: 0 1 auto;
-}
 .wakeMenu {
   display: grid;
   gap: var(--space-1);

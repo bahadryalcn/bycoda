@@ -644,9 +644,18 @@ for (const theme of ["light", "dark"]) {
         `/tests/browser/voice/voice-visual-styles.html?wake-quick-settings=error&theme=${theme}${width === 800 ? "&compact-rail" : ""}`,
       );
       const slot = page.locator("[data-voice-launcher-slot]");
+      const launcher = slot.getByRole("button", { name: "Talk to Arif", exact: true });
       const trigger = slot.getByRole("button", { name: "Voice settings", exact: true });
       const popup = page.getByRole("dialog", { name: "Voice settings" });
       const message = "Wake phrase stopped listening. Check the microphone.";
+      const group = slot.getByRole("group", { name: "Voice companion" });
+      await expect(group).toBeVisible();
+      await expect(group.getByRole("button")).toHaveCount(2);
+      const primaryBox = (await launcher.boundingBox())!;
+      const settingsBox = (await trigger.boundingBox())!;
+      expect(settingsBox.x).toBeCloseTo(primaryBox.x + primaryBox.width, 0);
+      expect(settingsBox.y).toBeCloseTo(primaryBox.y, 0);
+      expect(settingsBox.height).toBeCloseTo(primaryBox.height, 0);
       await trigger.click();
       await popup.getByRole("switch", { name: "Wake and sleep phrases" }).click();
       await expect(popup.getByText(message)).toBeInViewport({ ratio: 1 });

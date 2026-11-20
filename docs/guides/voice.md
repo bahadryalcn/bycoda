@@ -962,8 +962,9 @@ default) let you open and close the conversation by voice. While no conversation
 open, the desktop is unlocked and you are not Away or on Do not disturb, the
 microphone listens on this computer only for your wake phrase. The assistant
 avatar shows a green dot while listening and an amber dot when listening needs
-attention. Open the arrow beside the avatar to see the status and switch **Wake
-and sleep phrases** on or off. Short sounds are recognized with the local
+attention. Select the assistant's avatar or name to open the companion. Select
+the arrow on the same control to see the status and switch **Wake and sleep
+phrases** on or off. Short sounds are recognized with the local
 voice pack (never a cloud provider), compared with the phrase and discarded;
 nothing is saved or sent. On a match the listener releases the microphone. The
 workspace comes forward and opens the voice companion, even when the keyboard

@@ -1179,7 +1179,10 @@ it("drops an omitted clean unknown owner without a hold but keeps an omitted dir
 
 it("retires a dead clean unknown predecessor only once its successor stops reporting its owners", async () => {
   const reconcile = (f: Awaited<ReturnType<typeof fixture>>) =>
-    f.service.reconcileBuffers({ clientId: "client", instanceId: "instance", predecessors: [] }, owner);
+    f.service.reconcileBuffers(
+      { clientId: "client", instanceId: "instance", predecessors: [] },
+      owner,
+    );
   for (const scenario of ["released", "still-reported", "dirty", "alive"] as const) {
     const f = await fixture();
     const live = f.report(false);
@@ -1194,7 +1197,9 @@ it("retires a dead clean unknown predecessor only once its successor stops repor
       owner,
     );
     const successor =
-      scenario === "still-reported" ? [live.owners[0], { ...earlier, updatedAt: live.owners[0].updatedAt }] : [live.owners[0]];
+      scenario === "still-reported"
+        ? [live.owners[0], { ...earlier, updatedAt: live.owners[0].updatedAt }]
+        : [live.owners[0]];
     await f.service.updateBuffers({ ...live, owners: successor }, owner);
     const kill = vi.spyOn(process, "kill").mockImplementation(() => {
       throw Object.assign(new Error("probe"), { code: scenario === "alive" ? "EPERM" : "ESRCH" });
