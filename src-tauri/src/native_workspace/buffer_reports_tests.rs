@@ -498,3 +498,42 @@ fn malformed_storage_types_and_unsafe_legacy_timestamps_are_visible_but_uninspec
         Some(i64::MAX.to_string().as_str())
     );
 }
+
+fn reported(conn: &Connection) -> Vec<String> {
+    let mut statement = conn
+        .prepare(&format!(
+            "SELECT b.owner_id FROM native_workspace_buffers b WHERE {UNRELEASED} ORDER BY b.owner_id"
+        ))
+        .unwrap();
+    let rows = statement.query_map([], |r| r.get(0)).unwrap();
+    rows.collect::<rusqlite::Result<Vec<String>>>().unwrap()
+}
+
+#[test]
+fn restart_releases_only_clean_earlier_rows_without_a_draft_at_their_exact_version() {
+    let conn = setup();
+    let path = |tag: &str| crate::fs::path_to_js(&std::env::temp_dir().join(tag));
+    let clean = |tag: &str| serde_json::json!([{"path":path(tag),"dirty":false}]).to_string();
+    legacy(&conn, "clean-old", &clean("a"), None);
+    legacy(&conn, "empty-old", "[]", None);
+    legacy(&conn, "dirty-old", &raw("b"), None);
+    legacy(&conn, "drafted-old", &clean("c"), None);
+    legacy(&conn, "odd-old", r#"[{"path":"/x","dirty":"no"}]"#, None);
+    // Shape only: the guard reads owner, window and path columns of persisted drafts.
+    conn.execute_batch("CREATE TABLE native_editor_drafts(owner_id TEXT,store_instance TEXT,window_incarnation TEXT,path TEXT)").unwrap();
+    conn.execute(
+        "INSERT INTO native_editor_drafts VALUES('elsewhere','s','w',?1)",
+        [path("c")],
+    )
+    .unwrap();
+    super::super::ensure_schema(&conn).unwrap();
+    assert_eq!(reported(&conn), ["dirty-old", "drafted-old", "odd-old"]);
+    // A later write moves the version: the row is reported again until the next restart
+    // (the untrusted rewrite also keeps a retained guard of the released version).
+    legacy(&conn, "clean-old", &clean("a2"), Some("rewritten"));
+    let after = reported(&conn);
+    assert!(after.iter().any(|owner| owner == "clean-old"));
+    assert!(!after.iter().any(|owner| owner == "empty-old"));
+    super::super::ensure_schema(&conn).unwrap();
+    assert_eq!(reported(&conn), ["dirty-old", "drafted-old", "odd-old"]);
+}

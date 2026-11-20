@@ -923,6 +923,17 @@ export function createNativeBufferReports(deps: Dependencies) {
           lineages.set(before.ownerId, "legacy");
           continue;
         }
+        // The desktop drops an earlier run's window only when every buffer it recorded was
+        // clean and no editor draft can belong to it. A report holds paths and dirty flags,
+        // never text, so holding a clean unknown owner it omits guards nothing and fenced the
+        // workspace for good. A Host-made missing-owner marker is not such a window.
+        if (
+          !after &&
+          before.unknown &&
+          !before.ownerId.startsWith(EMPTY_PREFIX) &&
+          !before.buffers.some((buffer) => buffer.dirty)
+        )
+          continue;
         const same =
           after &&
           previous?.value.recovery?.ownerLineages[before.ownerId] === "physical" &&
@@ -1086,6 +1097,26 @@ export function createNativeBufferReports(deps: Dependencies) {
     });
   }
 
+  // A dead predecessor that is unknown but not dirty, none of whose owners its live successor
+  // still reports: the successor keeps every earlier window that was dirty or may have a
+  // draft, so it no longer vouches for any of these and nothing unsaved is on record.
+  const released = (prior: BufferLease, successor: BufferLease) => {
+    const kept = new Set(successor.owners.map((item) => item.ownerId));
+    const sources = prior.owners.map((item) => item.ownerId);
+    if (prior.recovery?.sourceOwnerId) sources.push(prior.recovery.sourceOwnerId);
+    return (
+      !prior.owners.some((item) => item.buffers.some((buffer) => buffer.dirty)) &&
+      !sources.some((id) => kept.has(id))
+    );
+  };
+  const processGone = (processId: number) => {
+    try {
+      assertProcessDead(processId);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const reconcileOutcome = createReconcileOutcome();
   function reconcileBuffers(
     request: {
@@ -1129,10 +1160,11 @@ export function createNativeBufferReports(deps: Dependencies) {
         )
           continue;
         if (!clean(prior) || prior.recovery?.kind === "hold") {
-          blocked.push({ instanceId: prior.instanceId, processId: prior.processId });
-          continue;
-        }
-        assertProcessDead(prior.processId);
+          if (!released(prior, latest.value) || !processGone(prior.processId)) {
+            blocked.push({ instanceId: prior.instanceId, processId: prior.processId });
+            continue;
+          }
+        } else assertProcessDead(prior.processId);
         await archive(captured);
         await authenticate(owner, device);
         await writeSnapshot(captured.reportId, JSON.stringify({ ...prior, retiredAt: now() }));

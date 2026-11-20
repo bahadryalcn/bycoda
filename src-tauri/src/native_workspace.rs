@@ -6,6 +6,7 @@ use std::path::Path;
 use tauri::{AppHandle, Manager};
 
 pub(crate) mod buffer_reports;
+pub(crate) use buffer_reports::UNRELEASED;
 mod heartbeat;
 pub(crate) mod recovery_bridge;
 
@@ -209,6 +210,7 @@ pub(crate) fn ensure_schema(conn: &rusqlite::Connection) -> rusqlite::Result<()>
         tx.execute_batch("ALTER TABLE native_workspace_buffers ADD COLUMN report_nonce TEXT")?;
     }
     buffer_reports::install_schema(&tx)?;
+    buffer_reports::release_earlier_runs(&tx)?;
     tx.execute_batch("UPDATE native_workspace_buffers SET confirmed=0;")?;
     tx.commit()
 }
@@ -301,10 +303,11 @@ fn report_owners(
     receipt: &BufferReportReceipt,
     now: i64,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let mut statement = conn.prepare(
+    let mut statement = conn.prepare(&format!(
         "SELECT b.owner_id,b.snapshot_json,b.updated_at,b.confirmed,b.report_nonce,i.current_version,i.kind,i.store_instance,i.incarnation
-         FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id ORDER BY b.owner_id",
-    ).map_err(|error| error.to_string())?;
+         FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id WHERE {} ORDER BY b.owner_id",
+        buffer_reports::UNRELEASED
+    )).map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
             Ok((

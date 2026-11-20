@@ -31,7 +31,8 @@ pub(super) fn install_schema(conn: &Connection) -> rusqlite::Result<()> {
            body_id INTEGER NOT NULL REFERENCES native_workspace_buffer_bodies(id),updated_at INTEGER NOT NULL,confirmed INTEGER NOT NULL,report_nonce TEXT);
          CREATE TABLE IF NOT EXISTS native_workspace_buffer_guard_groups(owner_id TEXT PRIMARY KEY,original_owner_id TEXT NOT NULL,body_id INTEGER NOT NULL,UNIQUE(original_owner_id,body_id));
          CREATE TABLE IF NOT EXISTS native_workspace_buffer_holds(version INTEGER PRIMARY KEY,owner_id TEXT NOT NULL);
-         CREATE TABLE IF NOT EXISTS native_workspace_buffer_write_permits(owner_id TEXT PRIMARY KEY,nonce TEXT NOT NULL);",
+         CREATE TABLE IF NOT EXISTS native_workspace_buffer_write_permits(owner_id TEXT PRIMARY KEY,nonce TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS native_workspace_buffer_released(owner_id TEXT PRIMARY KEY,version INTEGER NOT NULL);",
     )?;
     // Add provenance for existing rows without changing any retained bytes.
     let base: i64 = conn.query_row(
@@ -131,6 +132,40 @@ pub(super) fn install_schema(conn: &Connection) -> rusqlite::Result<()> {
          CREATE TRIGGER IF NOT EXISTS native_buffers_v2_body_delete BEFORE DELETE ON native_workspace_buffer_bodies BEGIN SELECT RAISE(ABORT,'NATIVE_BUFFER_BODY_IMMUTABLE'); END;"
     ))?;
     Ok(())
+}
+
+/// Not released: a reported row, or a released one whose version has moved since.
+pub(crate) const UNRELEASED: &str = "NOT EXISTS(SELECT 1 FROM native_workspace_buffer_released r JOIN native_workspace_buffer_identity ri ON ri.owner_id=r.owner_id WHERE r.owner_id=b.owner_id AND r.version=ri.current_version)";
+
+/// Runs at Store open, before this app run records any window, so every row is from an
+/// earlier run whose window is gone. Rows are never deleted (a delete makes a retained
+/// guard), and an earlier run's row is never confirmed again, so without this every
+/// closed window stays an unknown owner in each report and the Host and the authority
+/// quiescence check hold it forever. Only rows whose every buffer was recorded clean and
+/// that no persisted editor draft could belong to are released, at their exact version.
+pub(super) fn release_earlier_runs(conn: &Connection) -> rusqlite::Result<usize> {
+    let drafts: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_editor_drafts')",
+        [],
+        |r| r.get(0),
+    )?;
+    let draft_guard = if drafts {
+        "AND NOT EXISTS(SELECT 1 FROM native_editor_drafts d WHERE (d.store_instance IS i.store_instance AND d.window_incarnation IS i.incarnation)
+           OR d.owner_id=b.owner_id OR 'physical:v2:'||d.owner_id=b.owner_id
+           OR d.path IN (SELECT json_extract(e.value,'$.path') FROM json_each(b.snapshot_json) e))"
+    } else {
+        ""
+    };
+    conn.execute(
+        &format!(
+            "INSERT OR REPLACE INTO native_workspace_buffer_released(owner_id,version)
+             SELECT b.owner_id,i.current_version FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id
+             WHERE json_valid(b.snapshot_json) AND json_type(b.snapshot_json)='array'
+             AND NOT EXISTS(SELECT 1 FROM json_each(b.snapshot_json) e WHERE json_type(e.value,'$.dirty') IS NOT 'false')
+             {draft_guard}"
+        ),
+        [],
+    )
 }
 
 pub(super) struct OwnerStamp {
@@ -306,13 +341,13 @@ fn metadata(
     version: i64,
 ) -> Result<(ReportMetadata, Option<String>), String> {
     let (owner,kind,label,updated,bytes,raw,current,held,confirmed): MetadataRow = conn.query_row(
-        "SELECT CASE WHEN typeof(h.owner_id)='text' AND length(CAST(h.owner_id AS BLOB)) BETWEEN 1 AND 512 THEN h.owner_id END,h.kind,
+        &format!("SELECT CASE WHEN typeof(h.owner_id)='text' AND length(CAST(h.owner_id AS BLOB)) BETWEEN 1 AND 512 THEN h.owner_id END,h.kind,
            CASE WHEN length(CAST(h.label AS BLOB))<=512 THEN h.label END,h.updated_at,length(CAST(p.snapshot_json AS BLOB)),
            CASE WHEN typeof(p.snapshot_json)='text' AND length(CAST(p.snapshot_json AS BLOB))<=?2 THEN p.snapshot_json END,
-           EXISTS(SELECT 1 FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id WHERE b.owner_id=h.owner_id AND i.current_version=h.version),
+           EXISTS(SELECT 1 FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id WHERE b.owner_id=h.owner_id AND i.current_version=h.version AND {UNRELEASED}),
            EXISTS(SELECT 1 FROM native_workspace_buffer_holds x JOIN native_workspace_buffers b ON b.owner_id=x.owner_id WHERE x.version=h.version),
            COALESCE((SELECT b.confirmed FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id WHERE b.owner_id=h.owner_id AND i.current_version=h.version),h.confirmed)
-         FROM native_workspace_buffer_history h JOIN native_workspace_buffer_bodies p ON p.id=h.body_id WHERE h.version=?1",
+         FROM native_workspace_buffer_history h JOIN native_workspace_buffer_bodies p ON p.id=h.body_id WHERE h.version=?1"),
         params![version,MAX_DISCLOSURE],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?)),
     ).map_err(|_|failure())?;
     if !(1..=MAX_SAFE).contains(&version) || bytes < 0 {

@@ -228,7 +228,6 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   remoteSessionLoading: boolean;
   remoteSessionStarted: boolean;
   managedWorkspaceCreationReady: boolean;
-  workingMachine?: string;
   headerStatus?: ReactNode;
   /** The host recorded that this chat's last turn was lost; Continue is offered. */
   interruptedTurn: boolean;
@@ -3932,7 +3931,6 @@ function ConnectedRemoteSession({
         connectionIssueHandled={connectionIssueHandled}
       />
     ),
-    workingMachine: online && hostSession && snapshot?.status === "running" ? hostLabel : undefined,
     session,
     remoteSession: true,
     remoteFeatures: {

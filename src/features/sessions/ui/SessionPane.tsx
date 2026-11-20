@@ -10,7 +10,6 @@ import { AssistantSessionControl } from "./AssistantSessionControl";
 import { useSessionLifecycleActions } from "./SessionLifecycleControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
 import { useLocale, useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
 import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
@@ -336,7 +335,6 @@ type Props = SessionPaneProps & {
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
   managedWorkspaceCreationReady?: boolean;
-  workingMachine?: string;
   headerStatus?: ReactNode;
   /** A host chat whose last turn the host lost: shows Continue, as a quit turn does locally. */
   interruptedTurn?: boolean;
@@ -419,7 +417,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteSessionLoading = false,
   remoteSessionStarted = false,
   managedWorkspaceCreationReady = false,
-  workingMachine,
   headerStatus,
   interruptedTurn,
   sendBlockedReason,
@@ -1570,12 +1567,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
     paneHeaderSurface.className,
   );
   const titleBarSlot = useTitleBarActionsSlot();
-  const workingBadge = workingMachine ? (
-    <Badge tone="neutral" role="status" data-working-machine className="min-w-0">
-      {t("Working on ")}
-      {workingMachine}.
-    </Badge>
-  ) : null;
   const notesShortcut = useKeybindingShortcut(NOTES_PANEL_COMMAND);
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const lifecycle = useSessionLifecycleActions({
@@ -1686,9 +1677,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             onPaneDragStart(event);
           }}
         >
-          <div
-            className={`session-header-title flex min-w-0 items-center gap-1.5 ${workingBadge ? "" : "flex-1"}`}
-          >
+          <div className="session-header-title flex min-w-0 flex-1 items-center gap-1.5">
             {onPaneDragStart ? (
               <GripVertical className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
             ) : null}
@@ -1713,7 +1702,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
               </Text>
             </OverflowTooltip>
           </div>
-          {workingBadge}
           <div className="session-pane-header-actions">
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
             <AssistantSessionControl
@@ -1734,7 +1722,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           visible ? (
             <Portal target={titleBarSlot}>
               <>
-                {workingBadge ? <div className="min-w-0 max-w-56">{workingBadge}</div> : null}
                 <AssistantManagedBadge management={session.managedBy} local={!remote} />
                 <AssistantSessionControl
                   sessionId={session.id}
@@ -1752,7 +1739,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
             data-session-toolbar
             className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center justify-end gap-1 px-2 py-0.5"
           >
-            {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
             <AssistantSessionControl
               sessionId={session.id}

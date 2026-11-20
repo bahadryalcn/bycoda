@@ -3801,7 +3801,7 @@ it("shows a host turn as running from its status without requiring the transcrip
   openExistingChat({ status: "running", runId: "run-1" });
   host!.session.busy = false;
   await render();
-  expect(document.body.textContent).toContain("Working on Home server.");
+  expect(document.body.textContent).not.toContain("Working on Home server.");
   expect(container.querySelector('[aria-label="Transcript"]')?.getAttribute("data-busy")).toBe(
     "true",
   );
@@ -3809,7 +3809,6 @@ it("shows a host turn as running from its status without requiring the transcrip
   setHost({ status: "idle", busy: true });
   await act(async () => notifyRemoteRecovered());
   await settle();
-  expect(document.body.textContent).not.toContain("Working on Home server.");
   expect(container.querySelector('[aria-label="Transcript"]')?.getAttribute("data-busy")).toBe(
     "false",
   );
