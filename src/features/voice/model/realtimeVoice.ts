@@ -18,7 +18,9 @@ import { voiceSeedItems } from "./voiceOpenWork";
 import { openMicrophone } from "./microphoneAccess";
 import {
   VOICE_AUDIO_STEP_MS,
+  VOICE_HOST_STEP_MS,
   VOICE_MICROPHONE_STEP_MS,
+  VOICE_SOCKET_STEP_MS,
   voiceConnectionStep,
 } from "./voiceConnectionStep";
 import { t } from "../../../shared/i18n";
@@ -108,6 +110,9 @@ export function realtimeSession(
 export const REALTIME_END_SILENCE = 1.2;
 /** ASR wait for one committed candidate, including its upload. */
 const TRANSCRIPT_TIMEOUT = 15_000;
+/** Renew the socket credential when less than this is left: socket open plus session
+ * confirmation may take the whole socket budget. */
+const SECRET_RENEW_MARGIN_MS = VOICE_SOCKET_STEP_MS;
 /** Queued upload that never drains for this long means the link is stalled. */
 const CONGESTION_LIMIT = 15_000;
 
@@ -386,6 +391,8 @@ export class RealtimeVoice {
       openWork?: string;
       deviceId?: string;
       disclosureCurrent?: () => boolean;
+      /** Mints a fresh credential when `secret` would expire before the socket finishes. */
+      renewSecret?: () => Promise<RealtimeSecret>;
     } = {},
   ) {
     if (
@@ -565,8 +572,24 @@ export class RealtimeVoice {
       this.outputGain = this.output.createGain();
       this.outputGain.gain.value = this.outputMuted ? 0 : 1;
       this.outputGain.connect(this.output.destination);
-      await voiceRuntimeDeadline(() => this.output!.resume(), this.lifetime.signal, 12_000);
+      await voiceRuntimeDeadline(
+        () => this.output!.resume(),
+        this.lifetime.signal,
+        VOICE_AUDIO_STEP_MS,
+      );
       requireDisclosure();
+      // The provider credential lives 60 s, and the steps above may have waited on a slow
+      // Host or a microphone prompt: renew it rather than open a socket it cannot finish.
+      if (options.renewSecret && secret.expires_at * 1000 - Date.now() < SECRET_RENEW_MARGIN_MS) {
+        secret = await voiceConnectionStep(
+          "secret-renew",
+          this.provider,
+          options.renewSecret(),
+          VOICE_HOST_STEP_MS,
+          t("Voice could not start: the voice key was not issued."),
+        );
+        requireDisclosure();
+      }
       const socket = (this.socket = new WebSocket(
         secret.url,
         this.provider === "openai"
@@ -577,7 +600,7 @@ export class RealtimeVoice {
         const timer = setTimeout(() => {
           reject(new Error("Voice connection timed out."));
           this.close();
-        }, 12000);
+        }, VOICE_SOCKET_STEP_MS);
         this.abortConnect = (error) => {
           clearTimeout(timer);
           reject(error);

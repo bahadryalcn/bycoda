@@ -10,7 +10,7 @@ export type SessionReadRequest =
       kind: "desktop";
       paths: string[];
       platform: NodeJS.Platform;
-      method: "snapshot" | "stamp" | "metadata";
+      method: "snapshot" | "snapshotStamp" | "metadata";
       sessionId: string;
       projectId?: string;
       expectedProjectCwd?: string;

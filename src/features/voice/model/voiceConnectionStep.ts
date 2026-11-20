@@ -5,7 +5,11 @@ import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps"
 export const VOICE_HOST_STEP_MS = 25_000;
 /** Longer than the OS microphone permission prompt a person may still be reading. */
 export const VOICE_MICROPHONE_STEP_MS = 60_000;
-export const VOICE_AUDIO_STEP_MS = 12_000;
+/** Audio engine start; a loaded machine (builds, many processes) needed more than 12 s. */
+export const VOICE_AUDIO_STEP_MS = 30_000;
+/** Provider socket open through session confirmation. Its 60 s credential is minted
+ * right before connecting, so this budget stays well inside the credential's life. */
+export const VOICE_SOCKET_STEP_MS = 30_000;
 
 /**
  * Bounds one step of the connecting phase. On expiry it logs the step, provider and elapsed

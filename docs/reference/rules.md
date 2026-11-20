@@ -123,6 +123,8 @@ fall. Suppress one line only, always with a reason.
   - State files written in place are truncated to zero bytes by a crash mid-write. Use writeFileAtomic() / readStateFile() from host/storage/atomic-write.ts for anything the Host reads back at startup. Streaming logs and scratch files may use fs/promises writeFile with an `// oxlint-disable-next-line no-restricted-imports -- <why>` comment.
 - `oxlint/no-restricted-imports`: `node:fs/promises {writeFile}` (`host/**`)
   - State files written in place are truncated to zero bytes by a crash mid-write. Use writeFileAtomic() / readStateFile() from host/storage/atomic-write.ts for anything the Host reads back at startup.
+- `oxlint/no-restricted-imports`: `node:os {networkInterfaces}` (`host/**`)
+  - os.networkInterfaces() is a synchronous adapter query that blocks the Host event loop (~20 ms on Windows, more under load); per-request or per-poll calls froze the Host. Use currentNetworkInterfaces() / networkFingerprint() from host/mobile/mobile-network.ts.
 - `oxlint/no-restricted-properties`: `window.alert` (`src/**, host/**, packages/**`)
   - Native dialogs block the webview and bypass theming and i18n. Use InlineError/Alert/Toast from src/shared/ui.
 - `oxlint/no-restricted-properties`: `window.confirm` (`src/**, host/**, packages/**`)

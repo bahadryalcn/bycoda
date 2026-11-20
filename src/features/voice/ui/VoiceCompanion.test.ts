@@ -1286,6 +1286,34 @@ it("shows the Host's reason when the cloud companion cannot get a credential", a
   expect(container.textContent).toContain("Start voice");
 });
 
+// Regression: a Host step that never answered left the companion on "Connecting voice…"
+// forever, with no error and no way to tell which step stalled.
+it("times out a Host step that never answers and recovers instead of staying connecting", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    localStorage.setItem("bycoda.voice", JSON.stringify({ enabled: true, mode: "openai" }));
+    mock.realtimeSecret.mockImplementationOnce(() => new Promise<never>(() => {}));
+    await setup();
+    expect(mock.realtimeConnect).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(26_000);
+    });
+    // The stalled credential step expired, and the recovery attempt connected.
+    expect(mock.realtimeSecret).toHaveBeenCalledTimes(2);
+    expect(mock.realtimeConnect).toHaveBeenCalledOnce();
+    expect(container.textContent).not.toContain("Connecting voice");
+    expect(warn).toHaveBeenCalledWith(
+      "[voice.connection]",
+      "openai",
+      expect.objectContaining({ kind: "step-timeout", step: "secret" }),
+    );
+  } finally {
+    warn.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it("picks the voice session from the panel and keeps it while the active session changes", async () => {
   const { render, onSubmit } = await setup();
   // The session picker lists sessions with their project; choosing one pins it.

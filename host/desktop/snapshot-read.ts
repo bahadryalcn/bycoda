@@ -44,19 +44,15 @@ export async function readDesktopSnapshot(options: {
     sessionId: id,
   };
   signal.throwIfAborted();
-  const record = await options.reads.read<DesktopSnapshotRecord | undefined>(
-    { ...request, method: "snapshot", projectId, expectedProjectCwd },
-    signal,
-  );
+  // One helper process reads the snapshot and its owner stamps; the consistency
+  // checks below stay here, outside the child.
+  const { record, rows } = await options.reads.read<{
+    record: DesktopSnapshotRecord | undefined;
+    rows: DesktopStampRow[];
+  }>({ ...request, method: "snapshotStamp", projectId, expectedProjectCwd }, signal);
   options.assertCurrent();
   signal.throwIfAborted();
   if (!record) return undefined;
-  const rows = await options.reads.read<DesktopStampRow[]>(
-    { ...request, paths: options.paths(), method: "stamp" },
-    signal,
-  );
-  options.assertCurrent();
-  signal.throwIfAborted();
   // Match the earliest-created owning copy, preserving database order on ties.
   const owner = rows.reduce<DesktopStampRow | undefined>(
     (old, row) =>

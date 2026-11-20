@@ -1,7 +1,10 @@
 import { createSocket } from "node:dgram";
 import { execFile } from "node:child_process";
+// oxlint-disable-next-line no-restricted-imports -- the one shared, cached adapter reader
 import { networkInterfaces } from "node:os";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+
+export type NetworkInterfaces = ReturnType<typeof networkInterfaces>;
 
 /** `os.networkInterfaces()` is a synchronous adapter query (~20 ms on Windows, more
  * under load) and status reads call it per address on every poll, so it blocked the

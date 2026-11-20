@@ -2541,7 +2541,7 @@
         ]
       },
       "requiredCapability": "assistant.v1",
-      "responseTimeoutMs": 12000,
+      "responseTimeoutMs": 150000,
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -82333,5 +82333,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "02b87cdc512b3c955d060c12be761dece744894b4ef102fd6187aec24acb4af6"
+  "schemaHash": "fc199b18ae7981ef88e24fec8ee574a4308525c6ef476a096c650d15e55688d3"
 }

@@ -2652,6 +2652,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       }
       runtimeRegistrationPending = false;
       await voice.connect(secret, safeTurns, {
+        renewSecret: () => realtimeSecret(provider),
         summary,
         openWork: await soft(
           "open-work",

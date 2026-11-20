@@ -47,6 +47,7 @@ export function createGitRuntime(
     | "managed"
     | "devServers"
     | "sprints"
+    | "gitWatches"
   >,
 ) {
   const fileService = createFileService({
@@ -83,7 +84,8 @@ export function createGitRuntime(
           { cwd, timeout: 10_000, maxBuffer: 2 * 1024 * 1024 },
         )
       ).stdout,
-    branches: hostBranches,
+    // The picker reuses the list until the checkout's watched refs change.
+    branches: (cwd) => hostBranches(cwd, (path) => dependencies.gitWatches.read(path)),
     switch: switchHostBranch,
     createBranch: createHostBranch,
     worktrees: hostWorktrees,

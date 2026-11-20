@@ -45,7 +45,9 @@ it("saves one CPU profile for repeated stalls and keeps only the newest ones", a
   writeFileSync(join(dir, "host.log"), "");
   const { log, profiler, watch, tick } = fixture(dir);
   for (let index = 0; index < 5; index++) await tick(700);
-  await vi.waitFor(() => expect(log.warn).toHaveBeenCalledWith("stall profile saved", expect.anything()));
+  await vi.waitFor(() =>
+    expect(log.warn).toHaveBeenCalledWith("stall profile saved", expect.anything()),
+  );
   expect(profiler).toHaveBeenCalledTimes(1);
   const files = readdirSync(dir).sort();
   expect(files.filter((name) => name.endsWith(".cpuprofile"))).toHaveLength(3);

@@ -1,7 +1,7 @@
 import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { hostname, type networkInterfaces } from "node:os";
+import { hostname } from "node:os";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   isLanAddress,
@@ -18,6 +18,7 @@ import { GATEWAY_ADMISSION, OVER_CAPACITY_HTTP_RESPONSE } from "../security/gate
 import type { MobileTlsAuthority, MobileTlsMaterial } from "../security/mobile-tls";
 import {
   currentNetworkInterfaces,
+  type NetworkInterfaces,
   defaultRouteAddress,
   knownDefaultRouteAddress,
   windowsNetworkHint,
@@ -36,7 +37,7 @@ export function localMobileAddresses(
  * one (host key, environment id) before using it. Virtual adapters are left out:
  * another computer cannot reach them. */
 export function reachableAddresses(
-  interfaces: ReturnType<typeof networkInterfaces> = currentNetworkInterfaces(),
+  interfaces: NetworkInterfaces = currentNetworkInterfaces(),
   preferred = knownDefaultRouteAddress(),
 ): string[] {
   const lan: string[] = [];

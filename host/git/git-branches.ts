@@ -1,5 +1,6 @@
 import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
 import { withHostGitMutation } from "./git-mutations";
+import { headBranchFromFiles } from "./git-actions";
 
 const options = (cwd: string, mutation = false) => ({
   cwd,
@@ -15,33 +16,67 @@ export type HostBranches = {
   remotes: { remote: string; name: string }[];
 };
 
-export async function hostBranches(cwd: string): Promise<HostBranches> {
-  const [{ stdout: names }, { stdout: remoteNames }, { stdout: configuredRemotes }, current] =
-    await Promise.all([
-      exec("git", ["for-each-ref", "--format=%(refname:strip=2)", "refs/heads"], options(cwd)),
-      exec(
-        "git",
-        ["for-each-ref", "--format=%(refname:strip=2)%00%(symref)", "refs/remotes"],
-        options(cwd),
-      ),
-      exec("git", ["remote"], options(cwd)),
-      exec("git", ["symbolic-ref", "--quiet", "HEAD"], options(cwd))
-        .then(({ stdout }) => stdout.trim().replace(/^refs\/heads\//, ""))
-        .catch(() => null),
-    ]);
+/** The checkout's watched refs revision (`GitWatches.read`): `etag` moves whenever
+ * HEAD, a ref, packed-refs or the config changes. */
+export type RefsRevision = (cwd: string) => Promise<{ etag: string; watching: boolean }>;
+
+/** Two processes, run together: every start blocks the Host event loop on Windows. */
+async function readBranches(cwd: string): Promise<HostBranches> {
+  const [{ stdout: refs }, { stdout: configuredRemotes }, fromFiles] = await Promise.all([
+    exec(
+      "git",
+      ["for-each-ref", "--format=%(refname)%00%(symref)", "refs/heads", "refs/remotes"],
+      options(cwd),
+    ),
+    exec("git", ["remote"], options(cwd)),
+    headBranchFromFiles(cwd),
+  ]);
+  // Files answer a branch, "" (detached) or undefined (reftable or unreadable: ask git).
+  const current =
+    fromFiles === undefined
+      ? await exec("git", ["symbolic-ref", "--quiet", "HEAD"], options(cwd))
+          .then(({ stdout }) => stdout.trim().replace(/^refs\/heads\//, "") || null)
+          .catch(() => null)
+      : fromFiles || null;
   const remotePrefixes = configuredRemotes
     .split("\n")
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
-  const remotes = remoteNames
-    .split("\n")
-    .filter(Boolean)
-    .flatMap((line) => {
-      const [ref, symref] = line.split("\0");
-      const remote = remotePrefixes.find((name) => ref.startsWith(`${name}/`));
-      return remote && !symref ? [{ remote, name: ref.slice(remote.length + 1) }] : [];
-    });
-  return { current, branches: names.split("\n").filter(Boolean), remotes };
+  const branches: string[] = [];
+  const remotes: HostBranches["remotes"] = [];
+  for (const line of refs.split("\n")) {
+    const [ref = "", symref] = line.split("\0");
+    if (ref.startsWith("refs/heads/")) branches.push(ref.slice("refs/heads/".length));
+    else if (ref.startsWith("refs/remotes/") && !symref) {
+      const short = ref.slice("refs/remotes/".length);
+      const remote = remotePrefixes.find((name) => short.startsWith(`${name}/`));
+      if (remote) remotes.push({ remote, name: short.slice(remote.length + 1) });
+    }
+  }
+  return { current, branches, remotes };
+}
+
+const listed = new Map<string, { etag: string; value: Promise<HostBranches> }>();
+const MAX_LISTED = 64;
+
+/**
+ * Like an editor's branch picker: while the checkout's `.git` metadata is watched and
+ * unchanged, the last list is reused without running git. Without `revision`, or when
+ * the checkout is not watched, it always reads (mutations validate against fresh state).
+ */
+export async function hostBranches(cwd: string, revision?: RefsRevision): Promise<HostBranches> {
+  const watched = revision && (await revision(cwd).catch(() => undefined));
+  if (!watched?.watching || !watched.etag) return readBranches(cwd);
+  const hit = listed.get(cwd);
+  if (hit?.etag === watched.etag) return hit.value;
+  const value = readBranches(cwd);
+  listed.delete(cwd);
+  listed.set(cwd, { etag: watched.etag, value });
+  while (listed.size > MAX_LISTED) listed.delete(listed.keys().next().value!);
+  value.catch(() => {
+    if (listed.get(cwd)?.value === value) listed.delete(cwd);
+  });
+  return value;
 }
 
 export async function switchHostBranch(
@@ -49,7 +84,13 @@ export async function switchHostBranch(
   branch: unknown,
   remote?: unknown,
 ): Promise<HostBranches> {
-  return withHostGitMutation(cwd, () => switchHostBranchSerialized(cwd, branch, remote));
+  // The watch reports a settled change up to a second later; show this one at once.
+  listed.delete(cwd);
+  try {
+    return await withHostGitMutation(cwd, () => switchHostBranchSerialized(cwd, branch, remote));
+  } finally {
+    listed.delete(cwd);
+  }
 }
 
 async function switchHostBranchSerialized(
@@ -82,7 +123,12 @@ async function switchHostBranchSerialized(
 }
 
 export async function createHostBranch(cwd: string, branch: unknown): Promise<HostBranches> {
-  return withHostGitMutation(cwd, () => createHostBranchSerialized(cwd, branch));
+  listed.delete(cwd);
+  try {
+    return await withHostGitMutation(cwd, () => createHostBranchSerialized(cwd, branch));
+  } finally {
+    listed.delete(cwd);
+  }
 }
 
 async function createHostBranchSerialized(cwd: string, branch: unknown): Promise<HostBranches> {

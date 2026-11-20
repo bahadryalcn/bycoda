@@ -174,6 +174,8 @@ const queueOperation = (paramsSchema: z.ZodType): HostRpcMethodDefinition => ({
 });
 /** Healthy slow Host reads (git, files, session sync, project browse) must outlive the 12 s default. */
 const SLOW_READ_RESPONSE_TIMEOUT_MS = 30_000;
+/** Outlasts the phone's 120 s wait for an assistant reply, so the client, not the socket, decides. */
+export const ASSISTANT_REQUEST_RESPONSE_TIMEOUT_MS = 150_000;
 const GIT_ACTION_RESPONSE_TIMEOUT_MS = 600_000;
 const sessionRead = (
   params: z.ZodType,
@@ -419,11 +421,13 @@ export const HOST_RPC_METHODS = Object.freeze({
   "voice.local.speechNext": voiceOperation("voice.local.speechNext"),
   "voice.local.keepAlive": voiceOperation("voice.local.keepAlive"),
   "voice.local.release": voiceOperation("voice.local.release"),
-  "assistant.request": workflowOperation(
-    "assistant.v1",
-    AssistantRequestSchema,
-    AssistantResponseSchema,
-  ),
+  "assistant.request": {
+    ...workflowOperation("assistant.v1", AssistantRequestSchema, AssistantResponseSchema),
+    // A Room send waits for the assistant's reply, which routinely takes longer than the 12 s
+    // default: the socket cut every longer reply and the phone's voice call read it as "connection
+    // interrupted". Owner HTTP adds no deadline here; this outlasts the phone's own 120 s wait.
+    responseTimeoutMs: ASSISTANT_REQUEST_RESPONSE_TIMEOUT_MS,
+  },
   "desktop.request": workflowOperation(
     "desktop.control.v1",
     DesktopControlRequestSchema,

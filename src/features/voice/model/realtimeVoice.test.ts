@@ -1325,6 +1325,27 @@ it("opens an output-only preview without requesting microphone permission", asyn
   });
   voice.close();
 });
+// Regression: the 60 s credential was minted before slow Host steps and the microphone
+// prompt, so the socket could open with an expired credential and fail.
+it("renews a credential that would expire before the socket finishes", async () => {
+  setup();
+  const renewSecret = vi.fn(async () => ({ ...secret("openai"), value: "renewed" }));
+  const stale = new RealtimeVoice("openai", callbacks(), "tr");
+  await stale.connect({ ...secret("openai"), expires_at: Math.floor(Date.now() / 1000) + 10 }, [], {
+    renewSecret,
+  });
+  expect(renewSecret).toHaveBeenCalledOnce();
+  expect(sockets.at(-1)!.protocols).toContain("openai-insecure-api-key.renewed");
+  stale.close();
+  const fresh = new RealtimeVoice("openai", callbacks(), "tr");
+  await fresh.connect({ ...secret("openai"), expires_at: Math.floor(Date.now() / 1000) + 60 }, [], {
+    renewSecret,
+  });
+  expect(renewSecret).toHaveBeenCalledOnce();
+  expect(sockets.at(-1)!.protocols).toContain("openai-insecure-api-key.temporary");
+  fresh.close();
+});
+
 it("fails with a named error when the microphone never answers instead of staying connecting", async () => {
   vi.useFakeTimers();
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
