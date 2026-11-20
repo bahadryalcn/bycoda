@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useState } from "react";
 import { invokeWorkspace, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { joinPath, pathKey } from "../../../shared/lib/paths";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { useMachineAvailability } from "../../connections/public/machineAvailability";
 
 type Modules = Readonly<Record<string, readonly string[]>>;
@@ -13,9 +14,15 @@ const EMPTY: Modules = {};
 const NO_LIMITS: Limits = {};
 const pending = new Map<string, Promise<Discovery>>();
 const cached = new Map<string, Discovery>();
+/** When each discovery last started. A repository scan stats every directory of the working
+ * tree (seconds of CPU on a large checkout); running one per Git change while agents commit
+ * kept the app busy around half a core. */
+const lastScan = new Map<string, number>();
+export const REPOSITORY_RESCAN_MS = 30_000;
 
 export function resetGitSubmoduleCache() {
   cached.clear();
+  lastScan.clear();
 }
 
 const cacheKey = (cwd: string, includeRepositories: boolean) =>
@@ -36,6 +43,7 @@ function list(cwd: string, includeRepositories: boolean): Promise<Discovery> {
     return found;
   });
   pending.set(key, request);
+  lastScan.set(key, monotonicNow());
   const clear = () => {
     if (pending.get(key) === request) pending.delete(key);
   };
@@ -111,13 +119,26 @@ export function useGitSubmodules(
     const roots: string[] = JSON.parse(rootsKey);
     if (!roots.length) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const changed = () => {
+    // A repository scan walks the working tree; it waits out REPOSITORY_RESCAN_MS since the
+    // last one, and the trailing timer still delivers the latest change.
+    const schedule = (delayMs: number) => {
       clearTimeout(timer);
-      if (!document.hidden) timer = setTimeout(reload, 250);
+      if (document.hidden) return;
+      const settle = includeRepositories
+        ? Math.max(
+            0,
+            ...roots.map((root) => {
+              const last = lastScan.get(cacheKey(root, true));
+              return last === undefined ? 0 : REPOSITORY_RESCAN_MS - elapsedSince(last);
+            }),
+          )
+        : 0;
+      const wait = Math.max(delayMs, settle);
+      if (wait <= 0) reload();
+      else timer = setTimeout(reload, wait);
     };
-    const resume = () => {
-      if (!document.hidden) reload();
-    };
+    const changed = () => schedule(250);
+    const resume = () => schedule(0);
     const stops = roots.map((cwd) => subscribeGitChanged(changed, { cwd }));
     window.addEventListener("focus", resume);
     document.addEventListener("visibilitychange", resume);
@@ -127,7 +148,7 @@ export function useGitSubmodules(
       window.removeEventListener("focus", resume);
       document.removeEventListener("visibilitychange", resume);
     };
-  }, [enabled, rootsKey, reload]);
+  }, [enabled, rootsKey, reload, includeRepositories]);
 
   const known = (JSON.parse(rootsKey) as string[]).flatMap((root) => {
     const found = cached.get(cacheKey(root, includeRepositories));
