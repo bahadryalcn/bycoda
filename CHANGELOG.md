@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.15]
+
+### Added
+
+- Set up a local Ollama server from the app and use its models with OpenCode.
+- Show Claude Workflow subagents in the chat, and GitHub inbox layouts with richer Markdown previews.
+- Choose the model that writes commit messages, with immediate feedback while a push runs.
+
+### Improved
+
+- Bound Host queues, scans, uploads, retention and blocking work so long sessions, crews and automations stay responsive.
+- Pause background polling and timers while windows are hidden, and keep settled chat messages from re-rendering on focus changes.
+- Show one clear notice when a remote machine cannot be asked, and clearer messages when a saved choice or remote action could not be confirmed.
+- Format diagnostics values, dates, bytes and durations consistently in every language.
+- Give voice connections more time to start and refresh their connection key before it expires.
+
+### Fixed
+
+- Crew and automation runs no longer stay pending after scheduler cleanup.
+- Workspace setup retries a locked database instead of failing.
+- Large native uploads no longer time out over WebSocket.
+- The Windows Host launcher keeps its real exit code, cleans up child processes and updates without a half-moved install.
+- Closing a tooltip no longer blocks focus from returning to the field that opened it.
+- The composer keeps its fill in dark mode, and the voice panel no longer overflows sideways.
+
 ## [0.7.13]
 
 ### Improved
