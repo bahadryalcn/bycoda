@@ -52,7 +52,7 @@ import {
   claudeWorkflowArtifacts,
   resolveClaudeWorkflow,
 } from "./providers/claude-workflow-artifacts";
-import { providerAuthStatus } from "./providers/provider-auth";
+import { reusedProviderAuthStatus } from "./providers/provider-auth";
 import {
   ProviderLines,
   PROVIDER_STDOUT_LINE_BYTES,
@@ -253,7 +253,7 @@ export class HostChildBackend implements ChildBackend {
     if (command === "harness_auth_status") {
       const provider = args.provider;
       if (provider !== "claude" && provider !== "codex") return "unknown" as T;
-      return (await providerAuthStatus(
+      return (await reusedProviderAuthStatus(
         provider,
         await this.resolve(provider),
         typeof args.accountId === "string" ? args.accountId : undefined,

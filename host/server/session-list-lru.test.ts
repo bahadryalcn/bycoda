@@ -38,6 +38,7 @@ async function setup() {
           fingerprint: fingerprints.get(projectId) ?? "fixed",
         }),
         samePath: (x: string, y: string) => x === y,
+        pathKey: (path: string) => path,
       },
       desktopWatch: async () => false,
       catchUp: async () => undefined,

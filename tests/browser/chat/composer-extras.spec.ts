@@ -1128,7 +1128,7 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
   }
 });
 
-test("composer access shows only the selected icon until opened", async ({ page }) => {
+test("composer access keeps the icon button size when opened", async ({ page }) => {
   await initializeChatLayout(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/tests/browser/chat/composer-extras.html?chat-layout&workspace-footer");
@@ -1171,10 +1171,11 @@ test("composer access shows only the selected icon until opened", async ({ page 
       await expect(access).toBeInViewport();
       if (width >= 800) {
         await access.click();
-        await expect(label).toHaveText("Full access");
-        await expect(label).toBeVisible();
-        await expect(chevron).toBeVisible();
-        await expect(access).toHaveCSS("border-top-width", "1px");
+        await expect(access).toHaveAttribute("aria-expanded", "true");
+        await expect(label).toBeHidden();
+        await expect(chevron).toBeHidden();
+        await expect(access).toHaveCSS("border-top-width", "0px");
+        expect(await access.boundingBox()).toEqual(accessBounds);
         await expect(page.getByRole("option", { name: /^Full access / })).toHaveAttribute(
           "aria-selected",
           "true",

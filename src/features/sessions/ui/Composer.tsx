@@ -3645,7 +3645,7 @@ export const Composer = memo(function Composer({
                   <AccessPicker
                     value={runtimeMode}
                     busy={busy}
-                    compactWhenClosed
+                    iconOnly
                     unavailable={unavailableRuntimeModes(harness)}
                     onChange={(...args) =>
                       mutateParentInput(parentChanged, () => onRuntimeModeChange(...args))

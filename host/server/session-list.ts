@@ -193,6 +193,12 @@ export async function createSessionListRuntime(
   // The registry changes only in addProject, which moves projectRegistryVersion; reuse the
   // loaded rows until then instead of scanning every registered project on each poll.
   let registeredProjects: { version: number; rows: { id: string; cwd: string }[] } | undefined;
+  // Registered ids by folder key. Every project poll asked for its siblings, which compared
+  // its path with every registered path (100+ projects: ~10,000 normalizations a round).
+  // Rebuilt with the registry, and after the path normalizer's realpath TTL so a retargeted
+  // junction still regroups.
+  let folders: { rows: unknown; at: number; ids: Map<string, string[]> } | undefined;
+  const FOLDER_KEYS_TTL_MS = 5_000;
   const siblingProjectIds = async (project: { id: string; cwd: string }) => {
     const { store } = dependencies.engine;
     const version = store.projectRegistryVersion;
@@ -201,11 +207,17 @@ export async function createSessionListRuntime(
       registry = { version, rows: await store.projects() };
       registeredProjects = registry;
     }
-    return registry.rows
-      .filter(
-        (other) => other.id !== project.id && dependencies.desktop.samePath(other.cwd, project.cwd),
-      )
-      .map((other) => other.id)
+    const now = Date.now();
+    if (folders?.rows !== registry.rows || now - folders.at >= FOLDER_KEYS_TTL_MS) {
+      const ids = new Map<string, string[]>();
+      for (const row of registry.rows) {
+        const key = dependencies.desktop.pathKey(row.cwd);
+        ids.set(key, [...(ids.get(key) ?? []), row.id]);
+      }
+      folders = { rows: registry.rows, at: now, ids };
+    }
+    return (folders.ids.get(dependencies.desktop.pathKey(project.cwd)) ?? [])
+      .filter((id) => id !== project.id)
       .sort();
   };
   const buildProjectSessionList = async (

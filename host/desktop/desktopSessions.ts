@@ -1317,6 +1317,11 @@ export class DesktopSessions {
     return sameProjectPath(a, b, this.platform);
   }
 
+  /** The key `samePath` compares: equal keys are the same folder. */
+  pathKey(path: string): string {
+    return normalizeProjectPath(path, this.platform);
+  }
+
   snapshot(id: string, projectId: string): HostSession | undefined {
     const found = this.collect("id=?", [id])[0];
     return this.snapshotFromRow(id, projectId, found);

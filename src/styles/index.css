@@ -2801,15 +2801,15 @@ html.is-reordering {
   cursor: grabbing !important;
 }
 
-[data-access-picker-compact][data-state="closed"] {
+[data-access-picker-compact] {
   inline-size: var(--ui-control-height-compact);
   justify-content: center;
   padding-inline: 0;
   border-width: 0;
 }
 
-[data-access-picker-compact][data-state="closed"] > span:not([aria-hidden]),
-[data-access-picker-compact][data-state="closed"] > svg:last-child {
+[data-access-picker-compact] > span:not([aria-hidden]),
+[data-access-picker-compact] > svg:last-child {
   display: none;
 }
 

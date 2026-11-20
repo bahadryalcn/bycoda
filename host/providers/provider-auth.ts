@@ -27,6 +27,42 @@ export function parseProviderAuthStatus(
   return "unknown";
 }
 
+/** How long a signed-in answer is reused; a sign-out shows on the next run's own failure. */
+export const SIGNED_IN_REUSE_MS = 2 * 60_000;
+const signedIn = new Map<string, number>();
+const probing = new Map<string, ReturnType<typeof providerAuthStatus>>();
+
+/**
+ * `providerAuthStatus` for the app's repeated sign-in checks. Each check starts the provider
+ * CLI, and process creation blocks the Host event loop (one took 530 ms on Windows), so a
+ * signed-in answer is reused for SIGNED_IN_REUSE_MS and concurrent checks share one process.
+ * Signed-out and unknown answers are never reused, so a fresh login shows on the next check.
+ */
+export function reusedProviderAuthStatus(
+  provider: string,
+  command: string,
+  accountId?: string,
+): ReturnType<typeof providerAuthStatus> {
+  const key = `${provider}\0${command}\0${accountId ?? ""}`;
+  const at = signedIn.get(key);
+  if (at !== undefined && Date.now() - at < SIGNED_IN_REUSE_MS) return Promise.resolve("signedIn");
+  let flight = probing.get(key);
+  if (!flight) {
+    flight = providerAuthStatus(provider, command, accountId).then((status) => {
+      if (status === "signedIn") signedIn.set(key, Date.now());
+      else signedIn.delete(key);
+      return status;
+    });
+    probing.set(key, flight);
+    void flight
+      .finally(() => {
+        if (probing.get(key) === flight) probing.delete(key);
+      })
+      .catch(() => {});
+  }
+  return flight;
+}
+
 export async function providerAuthStatus(provider: string, command: string, accountId?: string) {
   if (provider !== "claude" && provider !== "codex") return "unknown";
   const args = provider === "claude" ? ["auth", "status", "--json"] : ["login", "status"];

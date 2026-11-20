@@ -225,7 +225,8 @@ const SOCIAL_REFRESH_RETRY_MS = 30_000;
 const SOCIAL_REFRESH_RETRY_MAX_MS = 15 * 60_000;
 const SOCIAL_AUDIT_RETENTION_MS = 30 * 24 * 60 * 60_000;
 const SOCIAL_AUDIT_PRUNE_IDLE_MS = 60 * 60_000;
-const SOCIAL_AUDIT_PRUNE_BATCH = 5000;
+// 5,000 rows held the database queue for 4.8 s on the first post-upgrade run.
+const SOCIAL_AUDIT_PRUNE_BATCH = 500;
 /** Per-account refresh failure state (social_settings `refreshState:<id>`); holds no token. */
 type SocialRefreshState = { failures: number; nextRefreshAt: number; permanent?: true };
 export class SocialService implements SocialServiceApi {

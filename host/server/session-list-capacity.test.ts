@@ -26,7 +26,11 @@ it("serves a second pass over many projects from cache without rereading the reg
   await createSessionListRuntime(
     {
       engine: { store },
-      desktop: { listSnapshotAsync, samePath: (a: string, b: string) => a === b },
+      desktop: {
+        listSnapshotAsync,
+        samePath: (a: string, b: string) => a === b,
+        pathKey: (path: string) => path,
+      },
       desktopWatch: async () => false,
       catchUp: async () => undefined,
       tasks: { changeEtag: async () => "tasks" },
@@ -64,6 +68,7 @@ it("reads an unchanged session source epoch without opening a write transaction"
       desktop: {
         listSnapshotAsync: async () => ({ sessions: [], fingerprint: "fixed" }),
         samePath: (a: string, b: string) => a === b,
+        pathKey: (path: string) => path,
         live: { overlay: () => ({ sourceEpoch }) },
       },
       desktopWatch: async () => true,

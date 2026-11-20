@@ -22,6 +22,7 @@ async function fixture() {
   await store.addProject(directory, "Fixture");
   const desktop = {
     samePath: (a: string, b: string) => a === b,
+        pathKey: (path: string) => path,
     metadataAsync: async (id: string) =>
       id === "desktop-only" ? { cwd: directory, harness: "codex", running: true } : undefined,
   };

@@ -32,6 +32,7 @@ it("rebuilds a decorated session row when its branch or project name changes, an
       desktop: {
         listSnapshotAsync: async () => ({ sessions: [], fingerprint: "fixed" }),
         samePath: (a: string, b: string) => a === b,
+        pathKey: (path: string) => path,
       },
       desktopWatch: async () => false,
       catchUp: async () => undefined,
@@ -78,6 +79,7 @@ it("re-reads the registered folders only after a project is added", async () => 
       desktop: {
         listSnapshotAsync: async () => ({ sessions: [], fingerprint: "fixed" }),
         samePath: (a: string, b: string) => a === b,
+        pathKey: (path: string) => path,
       },
       desktopWatch: async () => false,
       catchUp: async () => undefined,
@@ -101,4 +103,48 @@ it("re-reads the registered folders only after a project is added", async () => 
   await build();
   await build();
   expect(registry).toHaveBeenCalledTimes(1);
+});
+
+/** Legacy spellings of one folder list together; paths are keyed once, not per comparison. */
+it("lists a folder's legacy duplicate ids without re-normalizing every registered path", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-session-siblings-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(async () => {
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const project = await store.addProject("/Same", "Same");
+  // A legacy spelling of the same folder (the real normalizer resolves case and junctions).
+  const legacy = await store.addProject("/legacy-spelling", "Legacy");
+  await store.addProject("/other", "Other");
+  const pathKey = vi.fn((path: string) =>
+    path === "/legacy-spelling" ? "/same" : path.toLowerCase(),
+  );
+  let runtime!: Awaited<ReturnType<typeof createSessionListRuntime>>;
+  await createSessionListRuntime(
+    {
+      engine: { store },
+      desktop: {
+        listSnapshotAsync: async () => ({ sessions: [], fingerprint: "fixed" }),
+        samePath: (a: string, b: string) => pathKey(a) === pathKey(b),
+        pathKey,
+      },
+      desktopWatch: async () => false,
+      catchUp: async () => undefined,
+      tasks: { changeEtag: async () => "tasks" },
+      providers: [],
+      pullRequestWatch: { wakeSources: () => new Map() },
+    } as never,
+    (value) => {
+      runtime = value;
+    },
+  );
+  const summaries = vi.spyOn(store, "summaries");
+  await runtime.buildProjectSessionList(project, [], "t", new Map());
+  expect(summaries.mock.calls.map(([id]) => id).sort()).toEqual([legacy.id, project.id].sort());
+  pathKey.mockClear();
+  for (let round = 0; round < 5; round++)
+    await runtime.buildProjectSessionList(project, [], "t", new Map());
+  // One key per build for the asking project; the registered rows stay keyed.
+  expect(pathKey.mock.calls.filter(([path]) => path === "/other")).toHaveLength(0);
 });
