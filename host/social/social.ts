@@ -223,6 +223,9 @@ const SOCIAL_IDLE_TICK_MS = 30_000;
 /** Failed OAuth refreshes back off exponentially from the base to the cap per account. */
 const SOCIAL_REFRESH_RETRY_MS = 30_000;
 const SOCIAL_REFRESH_RETRY_MAX_MS = 15 * 60_000;
+const SOCIAL_AUDIT_RETENTION_MS = 30 * 24 * 60 * 60_000;
+const SOCIAL_AUDIT_PRUNE_IDLE_MS = 60 * 60_000;
+const SOCIAL_AUDIT_PRUNE_BATCH = 5000;
 /** Per-account refresh failure state (social_settings `refreshState:<id>`); holds no token. */
 type SocialRefreshState = { failures: number; nextRefreshAt: number; permanent?: true };
 export class SocialService implements SocialServiceApi {
@@ -1237,6 +1240,38 @@ export class SocialService implements SocialServiceApi {
       throw new Error("Cached operation belongs to another project.");
     if (Array.isArray(record.variants))
       await forEachAsync(record.variants, async (item) => await this.receiptAccess(p, item));
+  }
+  private nextAuditPruneAt = 0;
+  /**
+   * Audit rows are kept for SOCIAL_AUDIT_RETENTION_MS. Before 0.7.16 the owner's own
+   * notification poller (actor "push") audited two read-only lists every 4 s; those rows are
+   * removed whatever their age. Deletes run in batches so one tick never holds the database.
+   */
+  async pruneAuditIfDue(): Promise<number> {
+    const at = performance.now();
+    if (at < this.nextAuditPruneAt) return 0;
+    this.nextAuditPruneAt = at + SOCIAL_AUDIT_PRUNE_IDLE_MS;
+    const reads = [...this.actions].filter(([, spec]) => spec.readOnly).map(([name]) => name);
+    const removed = Number(
+      (
+        await this.store.db
+          .prepare(
+            `DELETE FROM social_audit WHERE rowid IN (SELECT rowid FROM social_audit
+               WHERE json_extract(value,'$.at') < ?
+                  OR (json_extract(value,'$.actorId')='push'
+                      AND json_extract(value,'$.action') IN (SELECT value FROM json_each(?)))
+               LIMIT ?)`,
+          )
+          .run(
+            this.now() - SOCIAL_AUDIT_RETENTION_MS,
+            JSON.stringify(reads),
+            SOCIAL_AUDIT_PRUNE_BATCH,
+          )
+      ).changes,
+    );
+    // A backlog (the first run after an upgrade) continues on the next tick.
+    if (removed >= SOCIAL_AUDIT_PRUNE_BATCH) this.nextAuditPruneAt = at;
+    return removed;
   }
   async audit(
     principal: SocialPrincipal,
@@ -5263,6 +5298,9 @@ export class SocialService implements SocialServiceApi {
       await this.mediaQuarantine
         .sweepIfDue()
         .catch((error) => console.error("Social media retention failed; retrying later:", error));
+      await this.pruneAuditIfDue().catch((error) =>
+        console.error("Social audit retention failed; retrying later:", error),
+      );
       if ((await this.setting("stopped")) === "true") return;
       // A host that never used social media has nothing to refresh, generate,
       // poll or send: skip the scans this 5 s tick would otherwise repeat.

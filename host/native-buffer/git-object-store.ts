@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createCatFileReader, type CatFileAnswer } from "./git-cat-file-reader";
 
 /** Private plumbing for a bycoda-owned bare repository. Never points at a user repository:
  * every call runs with an explicit GIT_DIR, no work tree, no inherited GIT_* variables,
@@ -50,6 +51,26 @@ function environment(gitDir: string, extra: Record<string, string>) {
 
 export function createGitObjectStore(options: GitObjectStoreOptions) {
   const { git, gitDir, timeoutMs } = options;
+  const reader = createCatFileReader({
+    git,
+    cwd: tmpdir(),
+    env: environment(gitDir, {}),
+    timeoutMs,
+  });
+  // Off when this git has no `cat-file --batch-command` (before 2.36): one process per call.
+  let persistent = true;
+  /** Runs `work` on the long-lived reader; falls back to one-shot processes if git lacks it. */
+  async function viaReader<T>(work: () => Promise<T>, fallback: () => Promise<T>): Promise<T> {
+    if (!persistent) return fallback();
+    try {
+      return await work();
+    } catch (error) {
+      if (!/^git cat-file exited/.test((error as Error).message)) throw error;
+      // Exited right away: the option is unsupported (or the process died); retry one-shot.
+      persistent = false;
+      return fallback();
+    }
+  }
 
   /** Runs git without a shell; rejects on spawn failure, deadline or output overflow. */
   function run(args: string[], opts: RunOptions = {}): Promise<RunResult> {
@@ -124,7 +145,7 @@ export function createGitObjectStore(options: GitObjectStoreOptions) {
     return { oid, type, size: value };
   }
   /** One process for many `<rev>:<path>` lookups; null for missing objects. */
-  async function batchCheck(specs: string[]): Promise<(GitObjectInfo | null)[]> {
+  async function batchCheckOnce(specs: string[]): Promise<(GitObjectInfo | null)[]> {
     if (!specs.length) return [];
     if (specs.some((spec) => /[\r\n]/.test(spec))) throw new Error("Invalid git object name");
     const lines = (await exec(["cat-file", "--batch-check"], { input: specs.join("\n") + "\n" }))
@@ -135,7 +156,7 @@ export function createGitObjectStore(options: GitObjectStoreOptions) {
     return lines.map(parseHeader);
   }
   /** Reads many objects in one process; the total output is bounded by maxBytes. */
-  async function catBatch(specs: string[], maxBytes: number): Promise<(Buffer | null)[]> {
+  async function catBatchOnce(specs: string[], maxBytes: number): Promise<(Buffer | null)[]> {
     if (!specs.length) return [];
     if (specs.some((spec) => /[\r\n]/.test(spec))) throw new Error("Invalid git object name");
     const raw = await exec(["cat-file", "--batch"], {
@@ -161,8 +182,8 @@ export function createGitObjectStore(options: GitObjectStoreOptions) {
     return values;
   }
   /** Reads one blob by id with a byte bound; null when the object does not exist. */
-  async function readBlob(spec: string, limit: number): Promise<Buffer | null> {
-    const [info] = await batchCheck([spec]);
+  async function readBlobOnce(spec: string, limit: number): Promise<Buffer | null> {
+    const [info] = await batchCheckOnce([spec]);
     // A directory is not a readable artifact, as in the SQL store.
     if (!info || info.type === "tree") return null;
     if (info.type !== "blob") throw new Error("Native buffer git entry is not a file");
@@ -171,6 +192,59 @@ export function createGitObjectStore(options: GitObjectStoreOptions) {
     if (bytes.length !== info.size || gitBlobOid(bytes) !== info.oid)
       throw new Error("Native buffer git object is corrupt");
     return bytes;
+  }
+  const info = (answer: CatFileAnswer): GitObjectInfo | null =>
+    answer && { oid: answer.oid, type: answer.type, size: answer.size };
+  /** Object headers for many `<rev>:<path>` lookups; null for missing objects. */
+  function batchCheck(specs: string[]): Promise<(GitObjectInfo | null)[]> {
+    if (specs.some((spec) => /[\r\n]/.test(spec)))
+      return Promise.reject(new Error("Invalid git object name"));
+    return viaReader(
+      async () => (await Promise.all(specs.map(reader.info))).map(info),
+      () => batchCheckOnce(specs),
+    );
+  }
+  /** Reads many blobs; the total size is checked from the headers before any body is read. */
+  function catBatch(specs: string[], maxBytes: number): Promise<(Buffer | null)[]> {
+    return viaReader(
+      async () => {
+        const headers = await batchCheck(specs);
+        let total = 0;
+        for (const header of headers) {
+          if (!header) continue;
+          if (header.type !== "blob") throw new Error("git cat-file returned an unexpected object");
+          total += header.size;
+        }
+        if (total > maxBytes) throw new Error("git cat-file output exceeded its limit");
+        return Promise.all(
+          headers.map(async (header) => {
+            if (!header) return null;
+            const answer = await reader.contents(header.oid);
+            if (!answer?.body || answer.body.length !== header.size)
+              throw new Error("git cat-file returned an unexpected object");
+            return answer.body;
+          }),
+        );
+      },
+      () => catBatchOnce(specs, maxBytes),
+    );
+  }
+  /** Reads one blob with a byte bound; null when the object does not exist. */
+  function readBlob(spec: string, limit: number): Promise<Buffer | null> {
+    return viaReader(
+      async () => {
+        const [header] = await batchCheck([spec]);
+        // A directory is not a readable artifact, as in the SQL store.
+        if (!header || header.type === "tree") return null;
+        if (header.type !== "blob") throw new Error("Native buffer git entry is not a file");
+        if (header.size > limit) throw new Error("Native buffer git entry exceeds the read limit");
+        const bytes = (await reader.contents(header.oid))?.body;
+        if (!bytes || bytes.length !== header.size || gitBlobOid(bytes) !== header.oid)
+          throw new Error("Native buffer git object is corrupt");
+        return bytes;
+      },
+      () => readBlobOnce(spec, limit),
+    );
   }
   /** Writes every blob in one fast-import process (small sets stay loose objects). */
   async function writeBlobs(blobs: Buffer[]): Promise<string[]> {
@@ -243,17 +317,36 @@ export function createGitObjectStore(options: GitObjectStoreOptions) {
         return { name: path.slice(directory.length + 1), isDirectory: type === "tree" };
       });
   }
-  async function readHead(ref: string): Promise<GitHead | null> {
+  async function readCommit(ref: string): Promise<{ oid: string; body: string } | null> {
     const raw = await exec(["cat-file", "--batch"], { input: ref + "\n", maxBytes: 1024 * 1024 });
     const end = raw.indexOf(10);
     const header = parseHeader(raw.subarray(0, end < 0 ? raw.length : end).toString());
     if (!header) return null;
     if (header.type !== "commit") throw new Error("Native buffer git ref is not a commit");
-    const body = raw.subarray(end + 1, end + 1 + header.size).toString(),
+    return { oid: header.oid, body: raw.subarray(end + 1, end + 1 + header.size).toString() };
+  }
+  /** Read before every native-buffer access, so it goes through the long-lived reader. */
+  async function readHead(ref: string): Promise<GitHead | null> {
+    if (/[\r\n]/.test(ref)) throw new Error("Invalid git object name");
+    const commit = await viaReader(
+      async () => {
+        const [header] = await batchCheck([ref]);
+        if (!header) return null;
+        if (header.type !== "commit") throw new Error("Native buffer git ref is not a commit");
+        if (header.size > 1024 * 1024) throw new Error("git cat-file output exceeded its limit");
+        const answer = await reader.contents(header.oid);
+        if (!answer?.body || answer.type !== "commit")
+          throw new Error("Native buffer git commit is corrupt");
+        return { oid: header.oid, body: answer.body.toString() };
+      },
+      () => readCommit(ref),
+    );
+    if (!commit) return null;
+    const { body } = commit,
       split = body.indexOf("\n\n"),
       tree = /^tree ([a-f0-9]{40})$/m.exec(body.slice(0, split));
     if (split < 0 || !tree) throw new Error("Native buffer git commit is corrupt");
-    return { commit: header.oid, tree: tree[1], message: body.slice(split + 2) };
+    return { commit: commit.oid, tree: tree[1], message: body.slice(split + 2) };
   }
   async function commitTree(tree: string, messages: string[]): Promise<string> {
     const commit = await text(["commit-tree", tree, ...messages.flatMap((m) => ["-m", m])], {
@@ -281,6 +374,8 @@ export function createGitObjectStore(options: GitObjectStoreOptions) {
     readHead,
     commitTree,
     updateRef,
+    /** Ends the long-lived reader; the next read starts a new one. */
+    close: () => reader.close(),
   };
 }
 export type GitObjectStore = ReturnType<typeof createGitObjectStore>;

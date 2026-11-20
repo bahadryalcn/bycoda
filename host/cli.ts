@@ -512,6 +512,9 @@ Connect another computer using an SSH forward to the loopback port.`);
       provider: createNativeSourceHelperProvider({ directory }),
       environmentId: store.environmentId,
     });
+    // version.json sits next to this runtime and never changes while it runs; the desktop polls
+    // lifecycle status, so it is read once instead of on the event loop per poll.
+    const buildIdentity = readHostBuildIdentity(entryPath);
     let stopping: Promise<void> | undefined;
     let stop: (reason?: string) => Promise<void>;
     // A separate local administrative credential cannot be used as a paired
@@ -548,7 +551,7 @@ Connect another computer using an SSH forward to the loopback port.`);
                   pid: process.pid,
                   version,
                   runtime: entryPath,
-                  buildIdentity: readHostBuildIdentity(entryPath),
+                  buildIdentity,
                 }),
               );
               if (action === "stop") void stop();

@@ -32,7 +32,7 @@ async function fixture() {
   let fingerprint = "1",
     clock = 1_000;
   const desktop = {
-    fingerprint: () => fingerprint,
+    fingerprintAsync: async () => fingerprint,
     samePath: (a: string, b: string) => a === b,
     metadataAsync: vi.fn(async (_id: string) => ({
       cwd: directory,

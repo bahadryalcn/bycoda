@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Improved
+
+- Native buffer reads reuse one long-lived git reader instead of starting three git processes per read.
+- The Host no longer checks the desktop database files with blocking disk calls, so a stalled disk (a restore point, an antivirus scan) cannot freeze it.
+- Social audit records are kept for 30 days, and the notification poller's old read records are removed.
+
 ## [0.7.15]
 
 ### Added

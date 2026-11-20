@@ -669,6 +669,8 @@ export function createNativeBufferGitPersistence(
           return Number.isSafeInteger(total) ? total : undefined;
         };
         const beforeBytes = await size().catch(() => undefined);
+        // An open reader keeps old packs mapped (locked on Windows) while gc replaces them.
+        git.close();
         await git.exec(
           [
             "-c",
@@ -700,6 +702,7 @@ export function createNativeBufferGitPersistence(
       closed = true;
       views.clear();
       listing = null;
+      git.close();
     },
   };
 }

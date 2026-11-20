@@ -324,3 +324,14 @@ it("serves cancellable stamp reads from the shared point reader instead of a hel
     read.mockRestore();
   }
 });
+
+it("matches the worker's database fingerprint without a sync stat on the event loop", async () => {
+  const { db, desktop, paths } = fixture();
+  const before = await desktop.fingerprintAsync();
+  expect(before).toBe(desktop.fingerprint());
+  expect(before.split("|")).toHaveLength(paths.length * 2);
+  db.exec("INSERT INTO sessions(id,cwd,harness,blocks_json) VALUES('later','/x','codex','[]')");
+  const after = await desktop.fingerprintAsync();
+  expect(after).not.toBe(before);
+  expect(after).toBe(desktop.fingerprint());
+});

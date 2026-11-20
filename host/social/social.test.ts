@@ -3411,6 +3411,25 @@ describe("Merkezi sosyal servis", () => {
     expect(await reads()).toMatchObject([{ sessionId: session.principal.sessionId }]);
   });
 
+  it("prunes expired audit rows and the poller's legacy read rows in batches", async () => {
+    const s = await fixture();
+    const now = (s.social as unknown as { now(): number }).now();
+    const insert = s.store.db.prepare("INSERT INTO social_audit VALUES (?,?)");
+    const row = (id: string, actorId: string, action: string, at: number) =>
+      insert.run(id, JSON.stringify({ operationId: id, actorId, action, at, outcome: "success" }));
+    await row("old", "device:a", "campaigns.schedule", now - 31 * 24 * 60 * 60_000);
+    await row("push-read", "push", "browser.needsHuman.list", now);
+    await row("push-write", "push", "campaigns.schedule", now);
+    await row("device-read", "device:a", "browser.needsHuman.list", now);
+    const removed = await s.social.pruneAuditIfDue();
+    expect(removed).toBe(2);
+    const left = await s.store.db.prepare("SELECT operation_id FROM social_audit").all();
+    expect(left.map((entry) => entry.operation_id).sort()).toEqual(["device-read", "push-write"]);
+    // Not due again within the hour.
+    await row("push-read-2", "push", "browser.needsHuman.list", now);
+    expect(await s.social.pruneAuditIfDue()).toBe(0);
+  });
+
   it("identity forgery and idempotent repeats create a separate audit record with verified targets", async () => {
     const s = await fixture();
     const account = await s.account();
