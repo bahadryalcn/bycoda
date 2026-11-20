@@ -3,6 +3,7 @@ import { Chunk } from "@codemirror/merge";
 import { describe, expect, it, vi } from "vitest";
 import {
   detectLineEnding,
+  preserveEditorViewport,
   editorDocChanges,
   normalizeLineBreaks,
   restoreLineEnding,
@@ -113,5 +114,43 @@ describe("mixed line ending provenance", () => {
     expect(restoreMixedLineEndings("first\nsecond\nthird\nfourth", raw)).toBe(
       "first\r\nsecond\nthird\rfourth",
     );
+  });
+});
+
+// Regression: the restore pass read layout (coordsAtPos) inside the measure `write`
+// phase, which CodeMirror rejects with "Reading the editor layout isn't allowed during
+// an update" (logged repeatedly by the desktop app).
+describe("preserveEditorViewport", () => {
+  it("reads layout only in the measure read phase and keeps the caret in place", () => {
+    let caretTop = 100;
+    let inWrite = false;
+    let request: { read: () => unknown; write: (value: never) => void } | undefined;
+    const scroller = {
+      scrollTop: 40,
+      scrollLeft: 0,
+      getBoundingClientRect: () => ({ top: 10 }),
+    } as unknown as HTMLElement;
+    const view = {
+      dom: { isConnected: true },
+      scrollDOM: scroller,
+      state: { selection: { main: { head: 5 } } },
+      coordsAtPos: () => {
+        if (inWrite) throw new Error("Reading the editor layout isn't allowed during an update");
+        return { top: caretTop };
+      },
+      requestMeasure: (value: typeof request) => {
+        request = value;
+      },
+    };
+    preserveEditorViewport(view as never, () => {
+      caretTop = 130; // the update pushed the caret down by 30 px
+    });
+    // The immediate pass already compensated.
+    expect(scroller.scrollTop).toBe(70);
+    caretTop = 112; // a later layout pass moves it again
+    const measured = request!.read();
+    inWrite = true;
+    expect(() => request!.write(measured as never)).not.toThrow();
+    expect(scroller.scrollTop).toBe(82);
   });
 });

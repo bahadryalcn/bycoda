@@ -92,7 +92,10 @@ export { blockRevisions } from "./sessions/block-revisions";
 // the row budget below bounds memory, so this count must not evict projects a poll still needs.
 const SUMMARY_PROJECTS = 512;
 const SUMMARY_ROWS = 100000;
-const CACHED_SESSIONS = 32;
+// The 64 MiB weight budget in `remember` bounds memory. At 32 entries, listing one parent's
+// subagent runs (30 children on a real Host) evicted the working set on every poll, and each
+// miss re-parsed a snapshot or started a read helper process (a measured Host stall source).
+const CACHED_SESSIONS = 128;
 type SummaryEntry = {
   version: number;
   external: number;

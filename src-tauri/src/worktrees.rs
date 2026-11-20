@@ -1006,6 +1006,13 @@ fn recover_remnants(root: &Path, path: &Path) -> Result<(), String> {
         if !same_path(path, Path::new(&saved.path)) {
             continue;
         }
+        // Nothing is left to delete. The recovery-branch check below guards removing
+        // remnants; a branch deleted later must not keep the receipt (and the startup
+        // retry with its Git processes) pending forever.
+        if !path.try_exists().map_err(|e| e.to_string())? {
+            finish_native_removal_receipts(root, path)?;
+            return Ok(());
+        }
         let branch = format!("refs/heads/{}", saved.branch);
         if git(
             root,

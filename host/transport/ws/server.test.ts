@@ -438,6 +438,41 @@ describe("WebSocket read admission and safe disclosure", () => {
     stderr.mockRestore();
   });
 
+  // Regression: every held desktop command take (~15 s by design) was logged as a slow
+  // request, burying the real Host stalls in the log.
+  it("logs a slow request but not a long poll held within its own waitMs", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const host = await fixture({
+        methods: ["projects.list", "native.services.conversation.desktop.take"],
+        dispatch: async (method) => {
+          await new Promise((resolve) => setTimeout(resolve, 5_300));
+          return method === "projects.list" ? [] : { id: null };
+        },
+      });
+      const client = await host.ready();
+      // The probe client gives up waiting after 2 s; the Host still finishes and logs.
+      void client
+        .request("held", "native.services.conversation.desktop.take", { waitMs: 10_000 })
+        .catch(() => {});
+      void client.request("slow", "projects.list").catch(() => {});
+      await vi.waitFor(
+        () =>
+          expect(stderr.mock.calls.map(([line]) => String(line)).join("")).toMatch(
+            /slow request method=projects\.list/,
+          ),
+        { timeout: 10_000 },
+      );
+      // Both dispatches finished together; give the held one's log the same chance.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(stderr.mock.calls.map(([line]) => String(line)).join("")).not.toMatch(
+        /slow request method=native\.services\.conversation\.desktop\.take/,
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  }, 20_000);
+
   it("keeps typed method result validation before delivery", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const host = await fixture({

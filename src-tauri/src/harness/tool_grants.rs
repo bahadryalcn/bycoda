@@ -162,7 +162,14 @@ pub(super) fn configure_optional_tool_grants(
         })
     });
     let ok = reason == "issued";
-    log::warn!("[session tools] provider={provider} session={session_id} conversation grant={} reason={reason}", if ok { "ok" } else { "failed" });
+    // Only a grant that should have been issued is a warning; sessionless probes are
+    // expected to run without one and logged a warning on every probe.
+    let level = if ok || reason == "sessionless child" {
+        log::Level::Debug
+    } else {
+        log::Level::Warn
+    };
+    log::log!(level, "[session tools] provider={provider} session={session_id} conversation grant={} reason={reason}", if ok { "ok" } else { "failed" });
     ok
 }
 

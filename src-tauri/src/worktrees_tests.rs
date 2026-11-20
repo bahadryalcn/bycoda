@@ -595,6 +595,46 @@ fn worktree_removal_reconciles_only_journaled_unregistered_remnants() {
     assert!(unknown.join("keep").exists());
 }
 
+// Regression: a receipt whose recovery branch was later deleted failed
+// `rev-parse --verify` on every launch ("Needed a single revision") although its
+// folder was already gone, so the removal stayed pending forever.
+#[test]
+fn removal_recovery_finishes_a_gone_worktree_whose_branch_was_deleted() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "gone-branch", "main", false).unwrap();
+    let path = Path::new(&tree.path);
+    let journal = removal_journal_directory(&root).unwrap();
+    std::fs::create_dir_all(&journal).unwrap();
+    let receipt = journal.join("interrupted.json");
+    let saved = NativeRemovalJournal {
+        path: tree.path.clone(),
+        branch: "gone-branch".into(),
+        head: tree.head.clone(),
+        manifest: native_removal_manifest(path).unwrap(),
+    };
+    std::fs::write(&receipt, serde_json::to_vec(&saved).unwrap()).unwrap();
+    git_checked(&root, &["worktree", "remove", "--force", "--", &tree.path]).unwrap();
+    git_checked(&root, &["branch", "-D", "gone-branch"]).unwrap();
+    assert!(!path.exists());
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    let journal_row = serde_json::json!({ "project_cwd": path_to_js(&root), "sessions": [] });
+    conn.execute(
+        "INSERT INTO worktree_removals (path, sessions_json) VALUES (?1, ?2)",
+        rusqlite::params![tree.path, journal_row.to_string()],
+    )
+    .unwrap();
+    reconcile_removals(&conn).unwrap();
+    let pending: i64 = conn
+        .query_row("SELECT COUNT(*) FROM worktree_removals", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(pending, 0);
+    assert!(!receipt.exists());
+}
+
 #[test]
 fn orchestration_worktree_starts_from_the_lead_checkout_contents() {
     let repo = repo();

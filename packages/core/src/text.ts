@@ -40,10 +40,24 @@ export function graphemeLength(text: string): number {
  */
 export function truncateGraphemes(text: string, max: number, suffix = "…"): string {
   if (!(max > 0)) return "";
-  const parts = graphemes(text);
-  if (parts.length <= max) return text;
+  // Every grapheme is at least one UTF-16 unit, so a short text cannot exceed `max`.
+  if (text.length <= max) return text;
   const keep = Math.max(0, max - graphemeLength(suffix));
-  return parts.slice(0, keep).join("") + suffix;
+  // Segment lazily and stop after `max + 1` graphemes: segmenting a whole long text to
+  // keep a short prefix was a measurable Host CPU cost on every status update.
+  let count = 0;
+  let offset = 0;
+  let cut = 0;
+  for (const part of segmenter ? segmenter.segment(text) : codePoints(text)) {
+    if (count === keep) cut = offset;
+    if (++count > max) return text.slice(0, cut) + suffix;
+    offset += part.segment.length;
+  }
+  return text;
+}
+
+function* codePoints(text: string): Iterable<{ segment: string }> {
+  for (const segment of text) yield { segment };
 }
 
 /**

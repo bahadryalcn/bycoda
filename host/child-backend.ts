@@ -891,7 +891,9 @@ export class HostChildBackend implements ChildBackend {
       }
       Object.assign(env, opencodeCompactionEnv(env.OPENCODE_CONFIG_CONTENT, autoCompact));
       const conversationGranted = !!env.BYCODA_CONVERSATION_TOKEN;
-      console.warn(
+      // Only a grant that should have been issued is a warning; probes and other
+      // sessionless children are expected to run without one (every probe logged it).
+      (conversationGranted || sessionless ? console.debug : console.warn)(
         `[session tools] provider=${String(args.binaryProvider ?? "generic")} session=${id} conversation grant=${conversationGranted ? "ok" : "failed"} reason=${conversationGranted ? "issued" : sessionless ? "sessionless child" : "grant unavailable"}`,
       );
       if (!conversationGranted) launch.args = withoutConversationBridge(launch.args);

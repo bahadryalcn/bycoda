@@ -809,8 +809,18 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       clearTimeout(deadline);
       const started = peer.inflight.get(request.id);
       // A slow request explains a later client deadline or interruption. `*.wait`
-      // methods are long polls that hold the request open by design.
-      if (started && !request.method.endsWith(".wait") && elapsedSince(started.startedAt) >= 5_000)
+      // methods, and requests that ask to be held (`waitMs`, such as the desktop
+      // command take), are long polls: only time past their own wait is slow. Logging
+      // every held take buried the real stalls in the Host log.
+      const heldMs =
+        typeof request.params?.waitMs === "number" && request.params.waitMs > 0
+          ? request.params.waitMs
+          : 0;
+      if (
+        started &&
+        !request.method.endsWith(".wait") &&
+        elapsedSince(started.startedAt) >= 5_000 + heldMs
+      )
         resultLog.warn("slow request", {
           method: request.method,
           ms: Math.round(elapsedSince(started.startedAt)),
