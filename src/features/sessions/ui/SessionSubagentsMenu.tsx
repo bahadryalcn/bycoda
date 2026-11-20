@@ -8,12 +8,9 @@ import {
 } from "../../../shared/ui/DropdownMenu";
 import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { MemberAvatar, memberTraits } from "../../crews/public/mentions";
 import { groupDockAgents, type DockAgent } from "../model/activityDock";
 import { AgentStatusDot } from "./ActivityDock";
 import { formatElapsed } from "./useElapsedFrom";
-
-const SUBAGENTS_FACE = memberTraits({ id: "subagents" });
 
 /**
  * The session's subagents, past and running, behind one composer control. It
@@ -94,7 +91,29 @@ export function SessionSubagentsMenu({
         {running > 0 ? (
           <WorkingIndicator size="xs" />
         ) : (
-          <MemberAvatar traits={SUBAGENTS_FACE} size={16} />
+          <svg aria-hidden="true" width={16} height={16} viewBox="0 0 24 24" fill="none">
+            <path
+              d="M9 9V8a4 4 0 0 1 4-4h5a4 4 0 0 1 4 4v2a4 4 0 0 1-4 4h-1"
+              stroke="currentColor"
+              strokeWidth={1.7}
+              strokeLinecap="round"
+            />
+            <rect
+              x={2}
+              y={11}
+              width={13}
+              height={9}
+              rx={4}
+              stroke="currentColor"
+              strokeWidth={1.7}
+            />
+            <path
+              d="M6.5 15.5h.01m4 0h.01M13.5 8.5h.01m4 0h.01"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+            />
+          </svg>
         )}
         <Text as="span" size="inherit" tone="inherit">
           {agents.length}

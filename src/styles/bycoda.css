@@ -218,7 +218,7 @@ html [data-composer-box][data-ui-focus-group],
 [data-composer] > [data-question-form] > form {
   border-radius: var(--ui-radius-popup);
   border-color: var(--ui-composer-border);
-  background: var(--ui-composer-surface);
+  background: var(--ui-chat-composer-surface, var(--ui-composer-surface));
   box-shadow: var(--ui-composer-shadow);
 }
 /* Operation boundaries retain their meaning independently of ordinary focus. */

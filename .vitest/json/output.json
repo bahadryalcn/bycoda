@@ -1,1 +1,181 @@
-{"numTotalTestSuites":2,"numPassedTestSuites":2,"numFailedTestSuites":0,"numPendingTestSuites":0,"numTotalTests":12,"numPassedTests":12,"numFailedTests":0,"numPendingTests":0,"numTodoTests":0,"snapshot":{"added":0,"failure":false,"filesAdded":0,"filesRemoved":0,"filesRemovedList":[],"filesUnmatched":0,"filesUpdated":0,"matched":0,"total":0,"unchecked":0,"uncheckedKeysByFile":[],"unmatched":0,"updated":0,"didUpdate":false},"startTime":1795207691392,"success":true,"testResults":[{"assertionResults":[{"ancestorTitles":[],"fullName":"keeps the development marker inside footer actions (compact=false)","status":"passed","title":"keeps the development marker inside footer actions (compact=false)","duration":34.97019999999975,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"keeps the development marker inside footer actions (compact=true)","status":"passed","title":"keeps the development marker inside footer actions (compact=true)","duration":7.672200000000885,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"omits the development marker in production","status":"passed","title":"omits the development marker in production","duration":3.3735000000015134,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"keeps Settings and account without a repository promotion","status":"passed","title":"keeps Settings and account without a repository promotion","duration":9.135800000000017,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"marks a waiting update with a dot","status":"passed","title":"marks a waiting update with a dot","duration":5.365499999999884,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"uses the signed-in name","status":"passed","title":"uses the signed-in name","duration":4.565300000000207,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"stacks the compact variant with the same action order","status":"passed","title":"stacks the compact variant with the same action order","duration":4.475200000000768,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"retains the update action without a repository prompt","status":"passed","title":"retains the update action without a repository prompt","duration":10.1257999999998,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]}],"startTime":1795207700082,"endTime":1795207700161.1257,"status":"passed","message":"","name":"G:/Projects/my_projects/monocode/src/app/shell/SidebarAccountFooter.test.ts"},{"assertionResults":[{"ancestorTitles":[],"fullName":"floats in the window corner without a visible footer slot","status":"passed","title":"floats in the window corner without a visible footer slot","duration":17.76800000000003,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"docks into the rendered footer copy, never a hidden one","status":"passed","title":"docks into the rendered footer copy, never a hidden one","duration":6.989999999999782,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"shows the assistant avatar with a status dot, docked or floating","status":"passed","title":"shows the assistant avatar with a status dot, docked or floating","duration":16.9378999999999,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]},{"ancestorTitles":[],"fullName":"keeps the voice visual before the assistant has a name","status":"passed","title":"keeps the voice visual before the assistant has a name","duration":10.120299999999588,"failureMessages":[],"meta":{},"tags":[],"benchmarks":[]}],"startTime":1795207697068,"endTime":1795207697119.1204,"status":"passed","message":"","name":"G:/Projects/my_projects/monocode/src/features/voice/ui/companion/voiceLauncherSlot.test.ts"}]}
+{
+  "numTotalTestSuites": 2,
+  "numPassedTestSuites": 2,
+  "numFailedTestSuites": 0,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 12,
+  "numPassedTests": 12,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1795207691392,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "keeps the development marker inside footer actions (compact=false)",
+          "status": "passed",
+          "title": "keeps the development marker inside footer actions (compact=false)",
+          "duration": 34.97019999999975,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "keeps the development marker inside footer actions (compact=true)",
+          "status": "passed",
+          "title": "keeps the development marker inside footer actions (compact=true)",
+          "duration": 7.672200000000885,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "omits the development marker in production",
+          "status": "passed",
+          "title": "omits the development marker in production",
+          "duration": 3.3735000000015134,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "keeps Settings and account without a repository promotion",
+          "status": "passed",
+          "title": "keeps Settings and account without a repository promotion",
+          "duration": 9.135800000000017,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "marks a waiting update with a dot",
+          "status": "passed",
+          "title": "marks a waiting update with a dot",
+          "duration": 5.365499999999884,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "uses the signed-in name",
+          "status": "passed",
+          "title": "uses the signed-in name",
+          "duration": 4.565300000000207,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "stacks the compact variant with the same action order",
+          "status": "passed",
+          "title": "stacks the compact variant with the same action order",
+          "duration": 4.475200000000768,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "retains the update action without a repository prompt",
+          "status": "passed",
+          "title": "retains the update action without a repository prompt",
+          "duration": 10.1257999999998,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1795207700082,
+      "endTime": 1795207700161.1257,
+      "status": "passed",
+      "message": "",
+      "name": "G:/Projects/my_projects/monocode/src/app/shell/SidebarAccountFooter.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "floats in the window corner without a visible footer slot",
+          "status": "passed",
+          "title": "floats in the window corner without a visible footer slot",
+          "duration": 17.76800000000003,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "docks into the rendered footer copy, never a hidden one",
+          "status": "passed",
+          "title": "docks into the rendered footer copy, never a hidden one",
+          "duration": 6.989999999999782,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "shows the assistant avatar with a status dot, docked or floating",
+          "status": "passed",
+          "title": "shows the assistant avatar with a status dot, docked or floating",
+          "duration": 16.9378999999999,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "keeps the voice visual before the assistant has a name",
+          "status": "passed",
+          "title": "keeps the voice visual before the assistant has a name",
+          "duration": 10.120299999999588,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1795207697068,
+      "endTime": 1795207697119.1204,
+      "status": "passed",
+      "message": "",
+      "name": "G:/Projects/my_projects/monocode/src/features/voice/ui/companion/voiceLauncherSlot.test.ts"
+    }
+  ]
+}

@@ -40,7 +40,9 @@ describe("composer surface", () => {
       /\bhtml\s+\[data-composer-box\]\[data-ui-focus-group\],\s*\[data-composer\]\s*>\s*\[data-question-form\]\s*>\s*form\s*\{([^}]*)\}/,
     );
     expect(rule?.[1]).toContain("border-radius: var(--ui-radius-popup);");
-    expect(rule?.[1]).toContain("background: var(--ui-composer-surface);");
+    expect(rule?.[1]).toContain(
+      "background: var(--ui-chat-composer-surface, var(--ui-composer-surface));",
+    );
     expect(rule?.[1]).not.toMatch(/border-radius:\s*\d+px/);
   });
 });

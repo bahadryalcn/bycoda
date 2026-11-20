@@ -1210,3 +1210,38 @@ it("retires a dead clean unknown predecessor only once its successor stops repor
     else expect(outcome).toMatchObject({ state: "recovery-required", total: 1 });
   }
 });
+
+it("lets a clean hold of a retired dead predecessor go inert instead of rewriting it", async () => {
+  const f = await fixture();
+  const live = f.report(false);
+  const prior = { ...live, instanceId: "prior", processId: 99999 };
+  await f.service.updateBuffers(prior, owner);
+  f.advance(61_000);
+  const other = {
+    ...live.owners[0],
+    ownerId: "other-window",
+    updatedAt: live.owners[0].updatedAt + 61_000,
+  };
+  await f.service.updateBuffers({ ...prior, owners: [other] }, owner);
+  const files = await f.files();
+  expect(files.length).toBe(2);
+  const fresh = {
+    ...live.owners[0],
+    ownerId: "fresh-window",
+    updatedAt: live.owners[0].updatedAt + 61_000,
+  };
+  await f.service.updateBuffers({ ...live, owners: [fresh] }, owner);
+  expect(await f.service.probe("workspace")).toHaveLength(1);
+  const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+    throw Object.assign(new Error("gone"), { code: "ESRCH" });
+  });
+  await expect(
+    f.service.reconcileBuffers(
+      { clientId: "client", instanceId: "instance", predecessors: [] },
+      owner,
+    ),
+  ).resolves.toEqual({ acknowledged: true });
+  kill.mockRestore();
+  expect(await f.service.probe("workspace")).toHaveLength(0);
+  expect(await f.files()).toHaveLength(3);
+});

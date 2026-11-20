@@ -810,9 +810,18 @@ export function createNativeBufferReports(deps: Dependencies) {
     if (!stored) throw new Error("Native workspace registry identity is unavailable");
     const workspace = { ...stored, path: await canonicalWorkspaceEntry(stored.path) };
     const result = new Map<string, WorkspaceActivity>();
-    for await (const captured of snapshots()) {
+    const all: Captured[] = [];
+    for await (const captured of snapshots()) all.push(captured);
+    // A parent carries its hold's projection, so reconcile retires it only when that
+    // hold is clean as well; the immutable hold then has nothing left to fence.
+    const retired = new Set(
+      all.filter((item) => item.value.retiredAt !== undefined).map((item) => item.reportId),
+    );
+    for (const captured of all) {
       const report = captured.value;
       if (report.retiredAt !== undefined) continue;
+      if (report.recovery?.kind === "hold" && retired.has(report.recovery.parentReportId!))
+        continue;
       const stale =
         !refreshed.has(captured.reportId) ||
         now() - beats.fresh(captured.reportId, report.receivedAt) > 45_000 ||
@@ -1164,6 +1173,9 @@ export function createNativeBufferReports(deps: Dependencies) {
             blocked.push({ instanceId: prior.instanceId, processId: prior.processId });
             continue;
           }
+          // A hold is an immutable shadow: never rewritten, so it cannot carry retiredAt.
+          // It goes inert with its retired parent (`probe` skips it).
+          if (prior.recovery?.kind === "hold") continue;
         } else assertProcessDead(prior.processId);
         await archive(captured);
         await authenticate(owner, device);

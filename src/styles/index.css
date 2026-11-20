@@ -1522,6 +1522,13 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
    Native glass keeps the window translucent: the main pane's glass owns that fill. */
 .chat-pane-background {
   background-color: var(--ui-chat-pane-canvas);
+  --ui-chat-composer-surface: color-mix(in oklch, var(--ui-composer-surface) 80%, transparent);
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  .chat-pane-background {
+    --ui-chat-composer-surface: var(--ui-composer-surface);
+  }
 }
 
 html.has-native-glass:not(.theme-light) .chat-pane-background {

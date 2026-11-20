@@ -10,6 +10,14 @@ Owner decision, 2026-11-01, composer surface, source: owner chat:
 
 Recorded decision: on the Pure background the composer is no longer the mid-gray step. It is one quiet step above the pure ground, with a faint lift in dark mode and a faint tint in light mode. The composer border keeps the writing area distinct. This supersedes the general rule that composer roles stay unchanged, for the Pure background only. The implementation was source-checked, not visually verified, when recorded.
 
+## Translucent chat writing surface
+
+Owner decision, 2026-11-21, chat appearance, source: owner chat:
+
+> Burası yarı saydam bir yapı olması gerekiyordu hatta
+
+The session composer and its docked question form let the conversation backdrop show through their theme fill. Reduced transparency and forced colors use a solid fill.
+
 ## Provider, account and model switches as one transcript row
 
 Owner decision, 2026-11-07, switch history, source: owner chat:

@@ -59,11 +59,20 @@ for (const light of [true, false])
 
 for (const light of [true, false])
   for (const width of [800, 1280])
-    test(`composer and question glass fallback ${light ? "light" : "dark"} ${width}`, async ({
+    test(`composer and question translucency ${light ? "light" : "dark"} ${width}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(url({ "docked-question": "" }, light));
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        root.classList.add("has-chat-background", "chat-background-effect-ready");
+        root.style.setProperty(
+          "--chat-background-image",
+          "linear-gradient(120deg, oklch(55% 0.18 255), oklch(70% 0.17 170))",
+        );
+        root.style.setProperty("--chat-background-session-opacity", "0.65");
+      });
       const box = page.locator("[data-composer-box]");
       const question = page.locator("[data-question-form] > form");
       await expect(question).toBeVisible();
@@ -72,30 +81,27 @@ for (const light of [true, false])
         await page.emulateMedia({ forcedColors: mode === "forced-colors" ? "active" : "none" });
         await page.evaluate((state) => {
           document.documentElement.toggleAttribute("data-performance-no-blur", state === "no-blur");
-          const session = document.querySelector("[data-composer]");
-          session?.toggleAttribute("data-session-streaming", state === "streaming");
+          const session = document.querySelector(".chat-pane-background");
+          session?.removeAttribute("data-session-streaming");
           if (state === "streaming") session?.setAttribute("data-session-streaming", "true");
         }, mode);
         for (const node of [box, question]) {
           const actual = await node.evaluate((element) => {
             const s = getComputedStyle(element);
-            const probe = document.createElement("span");
-            element.appendChild(probe);
-            probe.style.background = "var(--ui-composer-surface)";
-            const opaque = getComputedStyle(probe).backgroundColor;
-            probe.remove();
-            return { background: s.backgroundColor, filter: s.backdropFilter, opaque };
+            const sample = document.createElement("canvas").getContext("2d")!;
+            sample.fillStyle = s.backgroundColor;
+            sample.fillRect(0, 0, 1, 1);
+            return { alpha: sample.getImageData(0, 0, 1, 1).data[3]!, filter: s.backdropFilter };
           });
-          // Glass was dropped (DECISIONS-LOG): every mode paints the one opaque composer surface.
-          expect(actual.background, `${mode} ${node === box ? "composer" : "question"}`).toBe(
-            actual.opaque,
-          );
+          expect(actual.alpha).toBeGreaterThan(0);
+          if (mode === "forced-colors") expect(actual.alpha).toBe(255);
+          else expect(actual.alpha).toBeLessThan(255);
           expect(actual.filter).toBe("none");
         }
         await expect(field(page)).toHaveValue("Retained composer draft");
         await page.screenshot({
           animations: "disabled",
-          path: `temp/verification/feature-controls/composer-question-${mode}-${light ? "light" : "dark"}-${width}.png`,
+          path: `temp/verification/composer-translucency/${test.info().project.name}/composer-question-${mode}-${light ? "light" : "dark"}-${width}.png`,
         });
       }
     });
