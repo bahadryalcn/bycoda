@@ -15,7 +15,7 @@ import {
 } from "./voiceReconnect";
 import { refusedVoiceCancel } from "./realtimeVoiceErrors";
 import { voiceSeedItems } from "./voiceOpenWork";
-import { openMicrophone } from "./microphoneAccess";
+import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 import {
   VOICE_AUDIO_STEP_MS,
   VOICE_HOST_STEP_MS,
@@ -420,15 +420,18 @@ export class RealtimeVoice {
           throw new Error(
             t("Microphone access requires the desktop app or a secure browser context."),
           );
-        const opening = openMicrophone({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
+        const opening = openMicrophone(
+          {
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
+            },
+            video: false,
           },
-          video: false,
-        });
+          { signal: this.lifetime.signal },
+        );
         try {
           this.stream = await voiceConnectionStep(
             "microphone",
@@ -439,14 +442,11 @@ export class RealtimeVoice {
           );
         } catch (cause) {
           // A stream granted after the deadline must not keep the microphone open.
-          void opening.then(
-            (late) => late.getTracks().forEach((track) => track.stop()),
-            () => undefined,
-          );
+          void opening.then(stopMicrophone, () => undefined);
           throw cause;
         }
         if (this.closed) {
-          this.stream.getTracks().forEach((track) => track.stop());
+          stopMicrophone(this.stream);
           return;
         }
         requireDisclosure();
@@ -556,7 +556,7 @@ export class RealtimeVoice {
               this.congestedSince = now;
             this.congestedBytes = buffered;
             if (elapsedSince(this.congestedSince, now) > CONGESTION_LIMIT) {
-              this.fail("Voice connection is too slow. Start voice again.");
+              this.fail("Voice connection is too slow. Start voice again.", "audio-send-backlog");
               return;
             }
           } else this.congestedSince = undefined;
@@ -1010,7 +1010,7 @@ export class RealtimeVoice {
         return;
       }
       // Without even a commit acknowledgement the connection is unresponsive.
-      this.fail("Voice connection is too slow. Start voice again.");
+      this.fail("Voice connection is too slow. Start voice again.", "audio-commit-unacknowledged");
     };
     return setTimeout(expire, TRANSCRIPT_TIMEOUT);
   }
@@ -1176,6 +1176,8 @@ export class RealtimeVoice {
           ? this.callbacks.tool(name, args, wait)
           : this.callbacks.tool(name, args),
       this.lifetime.signal,
+      undefined,
+      name === "app_tool_call" && typeof args.requestId === "string" ? args.requestId : undefined,
     )
       .catch((error: unknown) => ({
         status: "uncertain",
@@ -1668,8 +1670,8 @@ export class RealtimeVoice {
     this.silence();
     this.stream?.getTracks().forEach((track) => {
       track.onended = null;
-      track.stop();
     });
+    stopMicrophone(this.stream);
     navigator.mediaDevices?.removeEventListener?.("devicechange", this.deviceChanged);
     this.source?.disconnect();
     this.capture?.disconnect();

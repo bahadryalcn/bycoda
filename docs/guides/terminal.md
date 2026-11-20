@@ -63,6 +63,12 @@ IME candidate confirmation leaves Find and suggestion selection unchanged,
 including WebKit's final composition key event. Shell editing shortcuts also
 leave composition to the terminal input handler.
 
+Shift+Insert and a plain right-click in the terminal paste text from this
+computer's clipboard, including in SSH tabs under **Servers**. Pasting adds no
+Enter keystroke. Multiline clipboard text keeps its line breaks and follows the
+shell's bracketed-paste behavior. Terminal applications that request mouse
+events continue to receive right-clicks.
+
 While a terminal has focus, plain Ctrl+letter chords (Ctrl+W, D, T, N, B, P, O, J,
 K and the rest) go to the shell instead of the app's default shortcuts. Ctrl+Shift
 chords, Ctrl+Tab, Ctrl+Alt+arrows, zoom, full screen and Escape keep working, and

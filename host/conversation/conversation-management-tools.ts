@@ -315,28 +315,38 @@ export class ConversationManagementTools<
     const signature = createHash("sha256")
       .update(JSON.stringify([action, input]))
       .digest("hex");
+    // A Room caller needs current disclosure authority for a stored result too.
+    // Read the exact receipt inside that scope without re-entering approval or execution.
+    const readReceipt = () =>
+      qualify(async () => {
+        const receipt = await this.ports.receipt(key);
+        await check();
+        if (!receipt || receipt.signature !== signature)
+          throw new Error("Management operation receipt is unavailable or changed.");
+        return {
+          requestId: input.requestId,
+          ...receipt,
+          state: receipt.state === "pending" ? "uncertain" : receipt.state,
+        };
+      });
     const previous = await this.ports.receipt(key);
     await check();
     if (previous) {
       if (previous.signature !== signature)
         throw new Error("Management request ID was reused with different input.");
-      return {
-        requestId: input.requestId,
-        ...previous,
-        state: previous.state === "pending" ? "uncertain" : previous.state,
-      };
+      return readReceipt();
     }
     const pending = this.pending.get(key);
     if (pending) {
       if (pending.signature !== signature)
         throw new Error("Management request ID was reused with different input.");
-      const result = await pending.promise;
-      await check();
-      return result;
+      await pending.promise;
+      return readReceipt();
     }
     const operation = (async () => {
       await this.ports.saveReceipt(key, { signature, state: "pending" });
       let admitted = false;
+      let scopeEntered = false;
       try {
         await check();
         const approved = await this.ports.approve(
@@ -348,9 +358,10 @@ export class ConversationManagementTools<
         if (!approved.approved || approved.operationHash !== signature)
           throw new Error("Native owner approval required.");
         admitted = true;
-        const result = await qualify(() =>
-          this.ports.execute(action, input, principal, authorized),
-        );
+        const result = await qualify(() => {
+          scopeEntered = true;
+          return this.ports.execute(action, input, principal, authorized);
+        });
         await check();
         const receipt: ManagementReceipt = { signature, state: "completed", result };
         await this.ports.saveReceipt(key, receipt);
@@ -362,6 +373,7 @@ export class ConversationManagementTools<
           error: error instanceof Error ? error.message : "Management operation failed.",
         };
         await this.ports.saveReceipt(key, receipt);
+        if (!scopeEntered && (await authorized())) return readReceipt();
         return { requestId: input.requestId, ...receipt };
       }
     })();

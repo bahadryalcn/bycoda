@@ -236,7 +236,7 @@ async function runTurn(
       input.signal.throwIfAborted();
       return {
         action: "reply",
-        reply: summary || voiceLimitFallback(input.transcript, observations.length),
+        reply: summary || voiceLimitFallback(input.transcript),
         requestIds: observedRequestIds(observations),
       };
     }
@@ -257,6 +257,10 @@ async function runTurn(
                 ? input.execute(decision.name, decision.args, input.signal, wait)
                 : input.execute(decision.name, decision.args, input.signal),
             input.signal,
+            undefined,
+            decision.name === "app_tool_call" && typeof decision.args.requestId === "string"
+              ? decision.args.requestId
+              : undefined,
           ),
         );
       } catch (error) {

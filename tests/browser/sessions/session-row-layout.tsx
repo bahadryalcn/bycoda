@@ -10,6 +10,7 @@ import { saveSessionFolders } from "../../../src/features/sessions/model/session
 import { setSessionLifecycleList } from "../../../src/features/sessions/model/sessionLifecycleClient";
 import type { SessionSummary } from "../../../src/features/sessions/data/sessionStore";
 import {
+  saveAutoTabGroupLabel,
   saveRailBackgrounds,
   saveTabGroupColor,
   saveTabGroupLabel,
@@ -55,7 +56,12 @@ const demoWorktree = "/fixture/demo-repo-worktree";
 saveTabGroupLabel(demoCwd, "demo-repo");
 saveTabGroupColor(demoCwd, 5);
 saveRailBackgrounds(demoCwd, { header: { color: "#774466", opacity: 22 } });
-saveTabGroupLabel(cwd, params.has("remote-header") ? "bycoda-cloud" : "bycoda");
+if (params.has("legacy-remote-label")) {
+  saveTabGroupLabel(cwd, "");
+  saveAutoTabGroupLabel(cwd, "bycoda (Office Mac)");
+} else {
+  saveTabGroupLabel(cwd, params.has("remote-header") ? "bycoda-cloud" : "bycoda");
+}
 saveTabGroupColor(cwd, 7);
 saveTabGroupMascot(cwd, "cat");
 saveRailBackgrounds(cwd, { header: { color: "#336677", opacity: 25 } });

@@ -278,34 +278,10 @@ pub(super) fn check_semantic(
     Ok(())
 }
 
-fn eligible(original: &Original) -> bool {
+pub(super) fn eligible(original: &Original) -> bool {
     matches!(original.phase, Phase::Prepared | Phase::Possible)
         && original.result_sha256.is_none()
         && original.created_instance != original.runtime.to_string()
-}
-
-/// The exact next unresolved original after the locally eligible prefix, only
-/// when an older runtime allocated it and left it unadmitted (prepared/possible).
-/// A current-runtime original may still be in flight and is never offered.
-pub(crate) fn gap_candidate(
-    store: &SessionStore,
-    epoch: &EpochHandle,
-) -> Result<Option<Original>, String> {
-    runtime(store, epoch)?;
-    let conn = store.lock_conn()?;
-    let value = pinned(&conn, epoch)?;
-    let end = value.high_water.min(value.local_through + COMPACT_ROWS);
-    let covered = prefix(&conn, &value, end, epoch.runtime, epoch.connection, false)?;
-    let next = value.local_through + covered.len() as i64 + 1;
-    if next > end {
-        return Ok(None);
-    }
-    let id = format!("nd2:{}:{}:{}", value.owner_id, value.generation, next);
-    let original = read(&conn, &id, epoch.runtime, epoch.connection)?.ok_or_else(invalid)?;
-    if !eligible(&original) || remote_acked(&conn, &original)? {
-        return Ok(None);
-    }
-    Ok(Some(original))
 }
 
 /// Write the Host's exact never-admitted fence for `original` inside the

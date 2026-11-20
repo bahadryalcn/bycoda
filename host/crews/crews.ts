@@ -405,12 +405,34 @@ export class HostCrews {
   async readForAssistantThread(action: string, input: Record<string, unknown>, projectId: string) {
     await this.ready;
     await this.store.project(projectId);
-    const before = this.stateRevision(await this.read(), projectId);
-    const view = await this.listForAssistantThread(projectId);
-    const after = this.stateRevision(await this.read(), projectId);
-    if (before !== after) throw new Error("Crew changed while reading. Refresh its state.");
+    const snapshot = await readCrewProjectState(this.store, projectId);
+    const revision = this.stateRevision(snapshot, projectId);
+    const libraryRead = [
+      "crews.definitions.list",
+      "crews.definition.get",
+      "crews.agents.list",
+      "crews.agent.get",
+    ].includes(action);
     let value: unknown;
-    if (action === "crews.list") {
+    if (action === "crews.schema") {
+      value = await this.call(action, input, projectId);
+    } else if (libraryRead) {
+      // The library and its revision come from the same snapshot. A library
+      // query must never reconcile coordinators or fetch tasks from run history.
+      value = callConversationCrewRead(
+        action,
+        input,
+        redactCrewProfiles({
+          definitions: snapshot.definitions.filter(
+            (row) => !row.projectId || row.projectId === projectId,
+          ),
+          agents: (snapshot.agents ?? []).filter(
+            (row) => !row.projectId || row.projectId === projectId,
+          ),
+          runs: [],
+        }),
+      );
+    } else if (action === "crews.list") {
       const offset = Number(input.offset ?? 0),
         limit = Number(input.limit ?? 30);
       if (
@@ -421,6 +443,7 @@ export class HostCrews {
         limit > 100
       )
         throw new Error("Provide bounded crew pagination");
+      const view = await this.listForAssistantThread(projectId);
       value = Object.fromEntries(
         ["definitions", "agents", "runs"].map((key) => {
           const rows = view[key as keyof typeof view] as unknown[];
@@ -435,17 +458,23 @@ export class HostCrews {
         }),
       );
     } else if (Object.hasOwn(CONVERSATION_CREW_READ_TOOLS, action)) {
-      value = callConversationCrewRead(action, input, view);
+      value = callConversationCrewRead(action, input, await this.listForAssistantThread(projectId));
     } else if (action === "crews.get") {
-      value = view.runs.find((run) => run.id === input.runId);
+      value = (await this.listForAssistantThread(projectId)).runs.find(
+        (run) => run.id === input.runId,
+      );
       if (!value) throw new Error("Crew work is not available to this project.");
-    } else if (action === "crews.schema" || action === "crews.inspect") {
+    } else if (action === "crews.inspect") {
       value = await this.call(action, input, projectId);
     } else throw new Error("Unknown Crew read.");
     await this.store.db.checkAuthorization();
-    if (after !== this.stateRevision(await this.read(), projectId))
+    if (
+      action !== "crews.schema" &&
+      !libraryRead &&
+      revision !== this.stateRevision(await readCrewProjectState(this.store, projectId), projectId)
+    )
       throw new Error("Crew changed while reading. Refresh its state.");
-    return { expectedRevision: after, source: { projectId }, value };
+    return { expectedRevision: revision, source: { projectId }, value };
   }
   /** Only the exact native-reviewed tool facade calls this owner operation. The
    * real thread remains provenance; the canonical owner path creates a real coordinator. */

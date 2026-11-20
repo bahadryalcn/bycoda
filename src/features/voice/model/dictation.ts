@@ -6,7 +6,7 @@ import {
 } from "./localVoiceClient";
 import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
-import { openMicrophone } from "./microphoneAccess";
+import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
 import { processDictationText, type DictationProcessingOptions } from "./dictationProcessing";
 
@@ -37,6 +37,7 @@ type Callbacks = {
  * once; stopping transcribes the unfinished phrase.
  */
 export class Dictation {
+  private readonly captureAbort = new AbortController();
   private lease?: string;
   private stream?: MediaStream;
   private audio?: AudioContext;
@@ -103,15 +104,18 @@ export class Dictation {
       const backend = this.engine !== "local" ? Promise.resolve("") : this.startLocal();
       this.backend = backend;
       backend.catch((cause) => this.fail(cause));
-      const stream = await openMicrophone({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          ...(this.microphoneId ? { deviceId: { exact: this.microphoneId } } : {}),
+      const stream = await openMicrophone(
+        {
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            ...(this.microphoneId ? { deviceId: { exact: this.microphoneId } } : {}),
+          },
+          video: false,
         },
-        video: false,
-      });
+        { signal: this.captureAbort.signal },
+      );
       this.stream = stream;
       if (this.closed) return this.stopCapture();
       const audio = (this.audio = new AudioContext({ sampleRate: 16000 }));
@@ -310,8 +314,9 @@ export class Dictation {
   }
 
   private stopCapture() {
+    this.captureAbort.abort();
     this.callbacks.level?.(0);
-    this.stream?.getTracks().forEach((track) => track.stop());
+    stopMicrophone(this.stream);
     this.source?.disconnect();
     this.capture?.disconnect();
     if (this.capture) this.capture.port.onmessage = null;

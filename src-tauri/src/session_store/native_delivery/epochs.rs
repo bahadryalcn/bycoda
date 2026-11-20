@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[path = "epoch_gaps.rs"]
 mod gaps;
-pub(crate) use gaps::{gap_candidate, record_gap_tx};
+pub(crate) use gaps::record_gap_tx;
 
 const MARKER_ROWS: i64 = 1_000_000;
 const MARKER_BYTES: i64 = 128 * 1024 * 1024;
@@ -117,6 +117,7 @@ impl EpochHandle {
         self.state.generation as u64
     }
     /// Latest observed Host floor, not evidence that local rows can be deleted.
+    #[cfg(test)]
     pub(crate) fn through(&self) -> u64 {
         self.state.host_through as u64
     }
@@ -733,7 +734,18 @@ pub(super) fn validate_original(conn: &Connection, original: &Original) -> Resul
         return Ok(());
     };
     let value = state(conn, &id.owner, id.generation)?;
-    if id.sequence <= value.local_through
+    validate_original_in_state(conn, original, &id, &value)
+}
+
+fn validate_original_in_state(
+    conn: &Connection,
+    original: &Original,
+    id: &V2Id,
+    value: &State,
+) -> Result<(), String> {
+    if id.owner != value.owner_id
+        || id.generation != value.generation
+        || id.sequence <= value.local_through
         || id.sequence > value.high_water
         || original.source_store_id != value.source_store_id
         || original.source_profile_id != value.source_profile_id
@@ -868,37 +880,84 @@ pub(super) fn check_semantic(
     gaps::check_semantic(conn, ids, semantic, route, method, hash, bytes)
 }
 
+struct Prefix {
+    slots: Vec<(Original, bool)>,
+    blocker: Option<Original>,
+}
+
 fn prefix(
     conn: &Connection,
     value: &State,
     end: i64,
     runtime: uuid::Uuid,
     connection: usize,
-    strict: bool,
-) -> Result<Vec<(Original, bool)>, String> {
+) -> Result<Prefix, String> {
     // `(original, gap)`: consumed and remote-ACKed, or exactly proven never admitted.
     let mut originals = Vec::new();
     for sequence in value.local_through + 1..=end {
         let id = format!("nd2:{}:{}:{}", value.owner_id, value.generation, sequence);
-        let original = read(conn, &id, runtime, connection)?.ok_or_else(invalid)?;
+        let original = read_record(conn, &id, runtime, connection)?.ok_or_else(invalid)?;
+        let id = parse_id(original.id()).ok_or_else(invalid)?;
+        validate_original_in_state(conn, &original, &id, value)?;
         let retired = original.phase() == Phase::Acknowledged && remote_acked(conn, &original)?;
         if !retired && !gaps::proven(conn, &original)? {
-            if strict {
-                return Err("NATIVE_DELIVERY_EPOCH_HOLE: Host floor cannot replace local consume and remote ACK evidence".into());
-            }
-            break;
+            return Ok(Prefix {
+                slots: originals,
+                blocker: Some(original),
+            });
         }
         originals.push((original, !retired));
     }
-    Ok(originals)
+    Ok(Prefix {
+        slots: originals,
+        blocker: None,
+    })
 }
-pub(crate) fn eligible_through(store: &SessionStore, epoch: &EpochHandle) -> Result<u64, String> {
+
+pub(crate) struct MaintenancePlan {
+    pub(crate) expected_through: u64,
+    pub(crate) eligible_through: u64,
+    pub(crate) gap: Option<Original>,
+}
+
+pub(crate) fn maintenance_plan(
+    store: &SessionStore,
+    epoch: &EpochHandle,
+    gap_supported: bool,
+) -> Result<MaintenancePlan, String> {
     runtime(store, epoch)?;
     let conn = store.lock_conn()?;
-    let value = pinned(&conn, epoch)?;
+    // Keep the pinned state and its checked originals in one SQLite snapshot.
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let value = pinned(&tx, epoch)?;
     let end = value.high_water.min(value.local_through + COMPACT_ROWS);
-    let rows = prefix(&conn, &value, end, epoch.runtime, epoch.connection, false)?;
-    Ok((value.local_through + rows.len() as i64) as u64)
+    let prefix = prefix(&tx, &value, end, epoch.runtime, epoch.connection)?;
+    let eligible_through = value.local_through + prefix.slots.len() as i64;
+    let mut gap = None;
+    // A retired prefix takes priority. Only try the first unresolved slot.
+    if gap_supported && eligible_through <= value.host_through {
+        if let Some(original) = prefix.blocker {
+            if gaps::eligible(&original) && !remote_acked(&tx, &original)? {
+                gap = Some(original);
+            }
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(MaintenancePlan {
+        expected_through: value.host_through as u64,
+        eligible_through: eligible_through as u64,
+        gap,
+    })
+}
+
+#[cfg(test)]
+fn eligible_through(store: &SessionStore, epoch: &EpochHandle) -> Result<u64, String> {
+    Ok(maintenance_plan(store, epoch, false)?.eligible_through)
+}
+
+#[cfg(test)]
+fn gap_candidate(store: &SessionStore, epoch: &EpochHandle) -> Result<Option<Original>, String> {
+    Ok(maintenance_plan(store, epoch, true)?.gap)
 }
 #[cfg(test)]
 pub(crate) fn compact(
@@ -937,8 +996,11 @@ fn compact_limits(
         return Err(stale());
     }
     let end = (description.through as i64).min(value.local_through + COMPACT_ROWS);
-    let slots = prefix(conn, &value, end, epoch.runtime, epoch.connection, true)?;
-    let (originals, fenced): (Vec<_>, Vec<_>) = slots.into_iter().partition(|slot| !slot.1);
+    let prefix = prefix(conn, &value, end, epoch.runtime, epoch.connection)?;
+    if prefix.blocker.is_some() {
+        return Err("NATIVE_DELIVERY_EPOCH_HOLE: Host floor cannot replace local consume and remote ACK evidence".into());
+    }
+    let (originals, fenced): (Vec<_>, Vec<_>) = prefix.slots.into_iter().partition(|slot| !slot.1);
     let (rows, bytes) = read_budget(conn)?;
     let weights = originals
         .iter()

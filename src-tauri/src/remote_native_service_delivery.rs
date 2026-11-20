@@ -65,23 +65,36 @@ fn recover_epoch_gap(
     original: &Original,
     deadline: Instant,
 ) -> Result<bool, String> {
-    if Instant::now() >= deadline || original.route_fingerprint() != route(channel)? {
+    if Instant::now() >= deadline {
+        return Err("cleanup deadline elapsed before Host lookup".into());
+    }
+    let route =
+        route(channel).map_err(|error| epoch_wire::gap_error("route unavailable", &error))?;
+    if original.route_fingerprint() != route {
+        return Err("route changed before Host lookup".into());
+    }
+    let params = epoch_wire::gap_params(original)
+        .map_err(|error| epoch_wire::gap_error("invalid local gap identity", &error))?;
+    let reply = epoch_call(channel, epoch_wire::GAP_RESOLVE, params.clone(), deadline)
+        .map_err(|error| epoch_wire::gap_error("Host lookup failed", &error))?;
+    if !epoch_wire::gap_outcome(&params, &reply.value)
+        .map_err(|error| epoch_wire::gap_error("invalid Host gap reply", &error))?
+    {
         return Ok(false);
     }
-    let params = epoch_wire::gap_params(original)?;
-    let reply = epoch_call(channel, epoch_wire::GAP_RESOLVE, params.clone(), deadline)?;
-    if !epoch_wire::gap_outcome(&params, &reply.value)? {
-        return Ok(false);
-    }
-    access(channel)?.with(|store| {
-        let admission = journal::completion_admission(store)?;
-        let result = channel.with_current(&reply.guards(), || {
-            authority::with_full_projection_transaction(store, |tx| {
-                journal::epochs::record_gap_tx(tx.connection(), original)
+    access(channel)
+        .and_then(|access| {
+            access.with(|store| {
+                let admission = journal::completion_admission(store)?;
+                let result = channel.with_current(&reply.guards(), || {
+                    authority::with_full_projection_transaction(store, |tx| {
+                        journal::epochs::record_gap_tx(tx.connection(), original)
+                    })
+                });
+                admission.finish(result)
             })
-        });
-        admission.finish(result)
-    })?;
+        })
+        .map_err(|error| epoch_wire::gap_error("Host fence could not be saved", &error))?;
     Ok(true)
 }
 

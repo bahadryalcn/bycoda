@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -13,10 +13,34 @@ import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
 import { createHostServer } from "../../server";
 
-it("hands an opted-in task notification to the exact signed native owner without replay", async () => {
+/** A Host with Assistant enabled, task observations opted in and manual scope over `projectNames`. */
+async function taskObservationHost(
+  projectNames: string[],
+  test: (fixture: {
+    store: HostStore;
+    server: Awaited<ReturnType<typeof createHostServer>>;
+    projects: Array<{ id: string; cwd: string }>;
+    other: { token: string };
+    threadId: string;
+    call: (
+      method: string,
+      params: Record<string, unknown>,
+      token?: string,
+    ) => Promise<{ result?: any; error?: string }>;
+    signed: (
+      action: string,
+      value: unknown,
+    ) => Promise<{ operationJson: string; proof: { challenge: unknown; signature: string } }>;
+  }) => Promise<void>,
+) {
   const dir = mkdtempSync(join(tmpdir(), "assistant-task-notification-http-"));
   const store = new HostStore(join(dir, "host.db"));
-  const project = await store.addProject(dir, "Project");
+  const projects: Array<{ id: string; cwd: string }> = [];
+  for (const name of projectNames) {
+    const cwd = join(dir, name);
+    mkdirSync(cwd);
+    projects.push(await store.addProject(cwd, name));
+  }
   const pair = generateKeyPairSync("ed25519"),
     registry = join(dir, "native.json");
   writeFileSync(
@@ -86,7 +110,7 @@ it("hands an opted-in task notification to the exact signed native owner without
           policyDigest: "a".repeat(64),
           issuer: "window",
           privacyRevision: 1,
-          visibleProjects: [{ cwd: project.cwd }],
+          visibleProjects: projects.map(({ cwd }) => ({ cwd })),
         },
       },
     });
@@ -102,7 +126,7 @@ it("hands an opted-in task notification to the exact signed native owner without
         groups: [],
         excludedPaths: [],
         excludedGroupIds: [],
-        projects: [{ cwd: project.cwd, name: "Project" }],
+        projects: projects.map(({ cwd }, index) => ({ cwd, name: projectNames[index]! })),
       },
     });
     const snapshot = (await call("assistant.request", { op: "snapshot" })).result.snapshot;
@@ -132,231 +156,13 @@ it("hands an opted-in task notification to the exact signed native owner without
           op: "manual.policy",
           expectedVersion: manual.version,
           enabled: true,
-          projectIds: [project.id],
+          projectIds: projects.map(({ id }) => id),
         })
       ).error,
     ).toBeUndefined();
     await call("assistant.request", { op: "presence.set", state: "away" });
     const threadId = (await call("assistant.request", { op: "threads.open" })).result.thread.id;
-    await store.db.prepare("INSERT INTO tasks(id,value) VALUES(?,?)").run(
-      "task",
-      JSON.stringify({
-        id: "task",
-        projectId: project.id,
-        createdAt: 1,
-        updatedAt: Date.now(),
-        status: "done",
-      }),
-    );
-    await call("conversation.desktop.take", {});
-    let sequence = 0,
-      delivered = 0,
-      acceptedInput: any;
-    const driveTick = async (unknownDelivery = false) => {
-      let settled = false;
-      const ticking = server.assistant.tick().finally(() => {
-        settled = true;
-      });
-      while (!settled) {
-        const pending = (await call("conversation.desktop.take", {})).result ?? [];
-        for (const request of pending) {
-          const params = { id: request.id, action: request.action };
-          expect(
-            (await call("native.services.conversation.desktop.authorize", params)).result,
-          ).toEqual({ authorized: true });
-          expect(
-            (await call("native.services.conversation.desktop.authorize", params, other.token))
-              .result,
-          ).toEqual({ authorized: false });
-          let result: unknown;
-          if (request.action === "privacy.scope.capture") {
-            result = await signed("assistant.visibility.capture", {
-              environmentId: store.environmentId,
-              threadId,
-              issuer: "window",
-              relayId: request.id,
-              projectId: project.id,
-              targetCwd: project.cwd,
-              action: request.input.action,
-              requestId: request.input.requestId,
-              operationHash: request.input.operationHash,
-              projectionRevision: 1,
-              policyDigest: "a".repeat(64),
-              privacyRevision: 1,
-              visibleCwds: [project.cwd],
-              sequence: ++sequence,
-            });
-          } else {
-            expect(["assistant.notification.status", "assistant.notification.deliver"]).toContain(
-              request.action,
-            );
-            if (request.action === "assistant.notification.deliver") {
-              delivered++;
-              const handoff = {
-                threadId,
-                notificationId: request.input.notificationId,
-                operationHash: request.input.operationHash,
-              };
-              if (!unknownDelivery) acceptedInput = handoff;
-              expect(
-                (await call("native.services.assistant.notification.authorize", { input: handoff }))
-                  .result,
-              ).toEqual({ authorized: true });
-              expect(
-                (
-                  await call(
-                    "native.services.assistant.notification.authorize",
-                    { input: handoff },
-                    other.token,
-                  )
-                ).result,
-              ).toEqual({ authorized: false });
-              if (unknownDelivery) {
-                expect(
-                  (
-                    await call("conversation.desktop.finish", {
-                      id: request.id,
-                      error: "Outcome unknown",
-                    })
-                  ).error,
-                ).toBeUndefined();
-                continue;
-              }
-            }
-            result = await signed("assistant.notification.receipt", {
-              environmentId: store.environmentId,
-              threadId,
-              issuer: "window",
-              relayId: request.id,
-              notificationId: request.input.notificationId,
-              kind: request.input.kind,
-              requestId: request.input.requestId,
-              operationHash: request.input.operationHash,
-              permission: "granted",
-              state: request.action === "assistant.notification.deliver" ? "accepted" : "unknown",
-            });
-          }
-          expect(
-            (await call("conversation.desktop.finish", { id: request.id, result })).error,
-          ).toBeUndefined();
-        }
-        if (!settled) await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      await ticking;
-    };
-    await driveTick();
-    expect(delivered).toBe(1);
-    expect(
-      (await call("native.services.assistant.notification.authorize", { input: acceptedInput }))
-        .result,
-    ).toEqual({ authorized: true });
-    await call("assistant.request", { op: "presence.set", state: "dnd" });
-    expect(
-      (await call("native.services.assistant.notification.authorize", { input: acceptedInput }))
-        .result,
-    ).toEqual({ authorized: false });
-    await call("assistant.request", { op: "presence.set", state: "away" });
-    const current = (await call("assistant.request", { op: "snapshot" })).result.snapshot.profile;
-    await call("assistant.request", {
-      op: "profile.update",
-      expectedVersion: current.version,
-      patch: { observationTaskDone: false },
-    });
-    expect(
-      (await call("native.services.assistant.notification.authorize", { input: acceptedInput }))
-        .result,
-    ).toEqual({ authorized: false });
-    const optedOut = (await call("assistant.request", { op: "snapshot" })).result.snapshot.profile;
-    await call("assistant.request", {
-      op: "profile.update",
-      expectedVersion: optedOut.version,
-      patch: { observationTaskDone: true },
-    });
-    await store.db
-      .prepare(
-        "UPDATE assistant_observation_source_revisions SET version=version+1 WHERE source='task' AND source_id='task'",
-      )
-      .run();
-    expect(
-      (await call("native.services.assistant.notification.authorize", { input: acceptedInput }))
-        .result,
-    ).toEqual({ authorized: false });
-    await store.db.prepare("INSERT INTO tasks(id,value) VALUES(?,?)").run(
-      "task-unknown",
-      JSON.stringify({
-        id: "task-unknown",
-        projectId: project.id,
-        createdAt: 2,
-        updatedAt: Date.now(),
-        status: "done",
-      }),
-    );
-    await driveTick(true);
-    expect(delivered).toBe(2);
-    await driveTick(true);
-    expect(delivered).toBe(2);
-    const recover = async (params: Record<string, unknown>) => {
-      let done = false;
-      const result = call("assistant.request", params).finally(() => {
-        done = true;
-      });
-      while (!done) {
-        for (const request of (await call("conversation.desktop.take", {})).result ?? []) {
-          let payload: unknown;
-          if (request.action === "organization.read")
-            payload = { items: [{ cwd: project.cwd }], nextOffset: null };
-          else if (request.action === "privacy.scope.capture")
-            payload = await signed("assistant.visibility.capture", {
-              environmentId: store.environmentId,
-              threadId,
-              issuer: "window",
-              relayId: request.id,
-              projectId: project.id,
-              targetCwd: project.cwd,
-              action: request.input.action,
-              requestId: request.input.requestId,
-              operationHash: request.input.operationHash,
-              projectionRevision: 1,
-              policyDigest: "a".repeat(64),
-              privacyRevision: 1,
-              visibleCwds: [project.cwd],
-              sequence: ++sequence,
-            });
-          else {
-            expect(request.action).toBe("assistant.notification.status");
-            payload = await signed("assistant.notification.receipt", {
-              environmentId: store.environmentId,
-              threadId,
-              issuer: "window",
-              relayId: request.id,
-              notificationId: request.input.notificationId,
-              kind: request.input.kind,
-              requestId: request.input.requestId,
-              operationHash: request.input.operationHash,
-              permission: "granted",
-              state: "unknown",
-            });
-          }
-          await call("conversation.desktop.finish", { id: request.id, result: payload });
-        }
-        if (!done) await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-      return result;
-    };
-    const pendingRecovery = await recover({
-      op: "observation.delivery.list",
-      projectId: project.id,
-    });
-    expect(pendingRecovery.error).toBeUndefined();
-    expect(pendingRecovery.result.observationDeliveries).toHaveLength(1);
-    const pendingId = pendingRecovery.result.observationDeliveries[0].notificationId;
-    const refreshed = await recover({
-      op: "observation.delivery.refresh",
-      projectId: project.id,
-      notificationId: pendingId,
-    });
-    expect(refreshed.result.observationDeliveries[0].state).toBe("unknown");
-    expect(delivered).toBe(2);
+    await test({ store, server, projects, other, threadId, call, signed });
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -367,4 +173,270 @@ it("hands an opted-in task notification to the exact signed native owner without
     else process.env.BYCODA_NATIVE_ADMISSION_REGISTRY = previous;
     rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
   }
+}
+
+it("hands an opted-in task notification to the exact signed native owner without replay", async () => {
+  await taskObservationHost(
+    ["Project"],
+    async ({ store, server, projects, other, threadId, call, signed }) => {
+      const project = projects[0]!;
+      await store.db.prepare("INSERT INTO tasks(id,value) VALUES(?,?)").run(
+        "task",
+        JSON.stringify({
+          id: "task",
+          projectId: project.id,
+          createdAt: 1,
+          updatedAt: Date.now(),
+          status: "done",
+        }),
+      );
+      await call("conversation.desktop.take", {});
+      let sequence = 0,
+        delivered = 0,
+        acceptedInput: any;
+      const driveTick = async (unknownDelivery = false) => {
+        let settled = false;
+        const ticking = server.assistant.tick().finally(() => {
+          settled = true;
+        });
+        while (!settled) {
+          const pending = (await call("conversation.desktop.take", {})).result ?? [];
+          for (const request of pending) {
+            const params = { id: request.id, action: request.action };
+            expect(
+              (await call("native.services.conversation.desktop.authorize", params)).result,
+            ).toEqual({ authorized: true });
+            expect(
+              (await call("native.services.conversation.desktop.authorize", params, other.token))
+                .result,
+            ).toEqual({ authorized: false });
+            let result: unknown;
+            if (request.action === "privacy.scope.capture") {
+              result = await signed("assistant.visibility.capture", {
+                environmentId: store.environmentId,
+                threadId,
+                issuer: "window",
+                relayId: request.id,
+                projectId: project.id,
+                targetCwd: project.cwd,
+                action: request.input.action,
+                requestId: request.input.requestId,
+                operationHash: request.input.operationHash,
+                projectionRevision: 1,
+                policyDigest: "a".repeat(64),
+                privacyRevision: 1,
+                visibleCwds: [project.cwd],
+                sequence: ++sequence,
+              });
+            } else {
+              expect(["assistant.notification.status", "assistant.notification.deliver"]).toContain(
+                request.action,
+              );
+              if (request.action === "assistant.notification.deliver") {
+                delivered++;
+                const handoff = {
+                  threadId,
+                  notificationId: request.input.notificationId,
+                  operationHash: request.input.operationHash,
+                };
+                if (!unknownDelivery) acceptedInput = handoff;
+                expect(
+                  (
+                    await call("native.services.assistant.notification.authorize", {
+                      input: handoff,
+                    })
+                  ).result,
+                ).toEqual({ authorized: true });
+                expect(
+                  (
+                    await call(
+                      "native.services.assistant.notification.authorize",
+                      { input: handoff },
+                      other.token,
+                    )
+                  ).result,
+                ).toEqual({ authorized: false });
+                if (unknownDelivery) {
+                  expect(
+                    (
+                      await call("conversation.desktop.finish", {
+                        id: request.id,
+                        error: "Outcome unknown",
+                      })
+                    ).error,
+                  ).toBeUndefined();
+                  continue;
+                }
+              }
+              result = await signed("assistant.notification.receipt", {
+                environmentId: store.environmentId,
+                threadId,
+                issuer: "window",
+                relayId: request.id,
+                notificationId: request.input.notificationId,
+                kind: request.input.kind,
+                requestId: request.input.requestId,
+                operationHash: request.input.operationHash,
+                permission: "granted",
+                state: request.action === "assistant.notification.deliver" ? "accepted" : "unknown",
+              });
+            }
+            expect(
+              (await call("conversation.desktop.finish", { id: request.id, result })).error,
+            ).toBeUndefined();
+          }
+          if (!settled) await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        await ticking;
+      };
+      await driveTick();
+      expect(delivered).toBe(1);
+      expect(
+        (await call("native.services.assistant.notification.authorize", { input: acceptedInput }))
+          .result,
+      ).toEqual({ authorized: true });
+      await call("assistant.request", { op: "presence.set", state: "dnd" });
+      expect(
+        (await call("native.services.assistant.notification.authorize", { input: acceptedInput }))
+          .result,
+      ).toEqual({ authorized: false });
+      await call("assistant.request", { op: "presence.set", state: "away" });
+      const current = (await call("assistant.request", { op: "snapshot" })).result.snapshot.profile;
+      await call("assistant.request", {
+        op: "profile.update",
+        expectedVersion: current.version,
+        patch: { observationTaskDone: false },
+      });
+      expect(
+        (await call("native.services.assistant.notification.authorize", { input: acceptedInput }))
+          .result,
+      ).toEqual({ authorized: false });
+      const optedOut = (await call("assistant.request", { op: "snapshot" })).result.snapshot
+        .profile;
+      await call("assistant.request", {
+        op: "profile.update",
+        expectedVersion: optedOut.version,
+        patch: { observationTaskDone: true },
+      });
+      await store.db
+        .prepare(
+          "UPDATE assistant_observation_source_revisions SET version=version+1 WHERE source='task' AND source_id='task'",
+        )
+        .run();
+      expect(
+        (await call("native.services.assistant.notification.authorize", { input: acceptedInput }))
+          .result,
+      ).toEqual({ authorized: false });
+      await store.db.prepare("INSERT INTO tasks(id,value) VALUES(?,?)").run(
+        "task-unknown",
+        JSON.stringify({
+          id: "task-unknown",
+          projectId: project.id,
+          createdAt: 2,
+          updatedAt: Date.now(),
+          status: "done",
+        }),
+      );
+      await driveTick(true);
+      expect(delivered).toBe(2);
+      await driveTick(true);
+      expect(delivered).toBe(2);
+      const recover = async (params: Record<string, unknown>) => {
+        let done = false;
+        const result = call("assistant.request", params).finally(() => {
+          done = true;
+        });
+        while (!done) {
+          for (const request of (await call("conversation.desktop.take", {})).result ?? []) {
+            let payload: unknown;
+            if (request.action === "organization.read")
+              payload = { items: [{ cwd: project.cwd }], nextOffset: null };
+            else if (request.action === "privacy.scope.capture")
+              payload = await signed("assistant.visibility.capture", {
+                environmentId: store.environmentId,
+                threadId,
+                issuer: "window",
+                relayId: request.id,
+                projectId: project.id,
+                targetCwd: project.cwd,
+                action: request.input.action,
+                requestId: request.input.requestId,
+                operationHash: request.input.operationHash,
+                projectionRevision: 1,
+                policyDigest: "a".repeat(64),
+                privacyRevision: 1,
+                visibleCwds: [project.cwd],
+                sequence: ++sequence,
+              });
+            else {
+              expect(request.action).toBe("assistant.notification.status");
+              payload = await signed("assistant.notification.receipt", {
+                environmentId: store.environmentId,
+                threadId,
+                issuer: "window",
+                relayId: request.id,
+                notificationId: request.input.notificationId,
+                kind: request.input.kind,
+                requestId: request.input.requestId,
+                operationHash: request.input.operationHash,
+                permission: "granted",
+                state: "unknown",
+              });
+            }
+            await call("conversation.desktop.finish", { id: request.id, result: payload });
+          }
+          if (!done) await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        return result;
+      };
+      const pendingRecovery = await recover({
+        op: "observation.delivery.list",
+        projectId: project.id,
+      });
+      expect(pendingRecovery.error).toBeUndefined();
+      expect(pendingRecovery.result.observationDeliveries).toHaveLength(1);
+      const pendingId = pendingRecovery.result.observationDeliveries[0].notificationId;
+      const refreshed = await recover({
+        op: "observation.delivery.refresh",
+        projectId: project.id,
+        notificationId: pendingId,
+      });
+      expect(refreshed.result.observationDeliveries[0].state).toBe("unknown");
+      expect(delivered).toBe(2);
+    },
+  );
+}, 30000);
+
+it("asks a closed Room once per tick, not once per observed project", async () => {
+  await taskObservationHost(["One", "Two", "Three"], async ({ store, server, projects, call }) => {
+    for (const project of projects)
+      await store.db.prepare("INSERT INTO tasks(id,value) VALUES(?,?)").run(
+        `task-${project.id}`,
+        JSON.stringify({
+          id: `task-${project.id}`,
+          projectId: project.id,
+          createdAt: 1,
+          updatedAt: Date.now(),
+          status: "done",
+        }),
+      );
+    await call("conversation.desktop.take", {});
+    const asked: string[] = [];
+    let settled = false;
+    const ticking = server.assistant.tick().finally(() => {
+      settled = true;
+    });
+    while (!settled) {
+      for (const request of (await call("conversation.desktop.take", {})).result ?? []) {
+        asked.push(request.action);
+        await call("conversation.desktop.finish", {
+          id: request.id,
+          error: "Open the Assistant Room on this Host",
+        });
+      }
+      if (!settled) await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    await ticking;
+    expect(asked).toEqual(["privacy.scope.capture"]);
+  });
 }, 30000);

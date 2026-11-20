@@ -8,6 +8,7 @@ export type OwnerApproval = {
   sessionId?: string;
   /** Native action name; absent for approvals created outside the native relay. */
   action?: string;
+  operationId?: string;
   title: string;
   message: string;
   confirmLabel: string;
@@ -144,6 +145,9 @@ export function requestOwnerApproval(
     id: payload.id,
     sessionId: payload.sessionId as string | undefined,
     ...(action ? { action } : {}),
+    ...(typeof input.operationId === "string" && input.operationId.length <= 300
+      ? { operationId: input.operationId }
+      : {}),
     title: input.title,
     message: input.message,
     confirmLabel: input.confirmLabel,

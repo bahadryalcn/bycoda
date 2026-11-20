@@ -36,14 +36,15 @@ export async function handleVoiceRpc(
     case "voice.dictation.process":
     case "voice.cloud.transcribe":
     case "voice.cloud.models":
-      // Sign-ins and keys stay on this computer: no browser or remote caller. Cloud
-      // transcription and status alone also serve a paired owner device (the phone).
+      // Sign-ins and keys stay on this computer. Paired owner devices can use
+      // transcription, status and the public transcription-model catalog.
       if (
         request.request.headers.origin ||
         !(
           isLoopback(request) ||
           ((request.input.method === "voice.cloud.transcribe" ||
-            request.input.method === "voice.cloud.status") &&
+            request.input.method === "voice.cloud.status" ||
+            request.input.method === "voice.cloud.models") &&
             (await request.domainContext.authorized()))
         )
       )

@@ -135,6 +135,7 @@ fn ask_conversation_as<T>(
         channel,
         prompt,
         details,
+        room_operation_id(request),
         || {
             check()?;
             let now = SystemTime::now()
@@ -154,6 +155,17 @@ fn ask_conversation_as<T>(
     )
 }
 
+fn room_operation_id(request: &Value) -> Option<&str> {
+    if request["threadId"].as_str().is_none() || request["sessionId"].as_str().is_some() {
+        return None;
+    }
+    let input = &request["input"];
+    input["operation"]["input"]["requestId"]
+        .as_str()
+        .or_else(|| input["requestId"].as_str())
+        .or_else(|| input["operationId"].as_str())
+}
+
 fn ask(
     app: &AppHandle,
     window: &WebviewWindow,
@@ -168,6 +180,7 @@ fn ask(
         ApprovalChannel::Approval,
         prompt,
         Value::Null,
+        None,
         check,
         decision,
     )
@@ -180,6 +193,7 @@ fn ask_as<T>(
     channel: ApprovalChannel<'_>,
     prompt: Prompt<'_>,
     details: Value,
+    operation_id: Option<&str>,
     check: impl Fn() -> Result<(), String>,
     decode: impl Fn(&Value) -> Result<T, String>,
 ) -> Result<T, String> {
@@ -222,6 +236,9 @@ fn ask_as<T>(
         let mut input = json!({"title":prompt.title,"message":prompt.message,"confirmLabel":prompt.confirm,"cancelLabel":prompt.cancel,"deadline":deadline});
         if !details.is_null() {
             input["details"] = details;
+        }
+        if let Some(operation_id) = operation_id {
+            input["operationId"] = json!(operation_id);
         }
         if let ApprovalChannel::Secret { field } = channel {
             input["fieldLabel"] = json!(field);
@@ -313,6 +330,18 @@ fn secret_decision(value: &Value) -> Result<Option<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reports_the_reviewed_room_effect_id_instead_of_the_approval_id() {
+        let request = json!({
+            "id": "native-approval",
+            "threadId": "room",
+            "input": { "operation": { "input": { "requestId": "crew-save" } } }
+        });
+        assert_eq!(room_operation_id(&request), Some("crew-save"));
+        let mut coding_approval = request;
+        coding_approval["sessionId"] = json!("unrelated-session");
+        assert_eq!(room_operation_id(&coding_approval), None);
+    }
     #[test]
     fn exact_decisions_only_and_revocation_wins_over_a_queued_yes() {
         assert_eq!(decision(&json!({"ok":true,"result":true})), Ok(true));

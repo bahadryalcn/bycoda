@@ -261,6 +261,52 @@ it("starts a real supervised coordinator from a reviewed Room thread and reconci
   ).rejects.toThrow("reused");
 });
 
+it("gets the Crew schema and library without fetching live run details", async () => {
+  const f = await threadFixture();
+  const listRuns = vi
+    .spyOn(f.crews, "list")
+    .mockRejectedValue(new Error("Run details unavailable"));
+  try {
+    for (const action of ["crews.schema", "crews.definitions.list", "crews.agents.list"]) {
+      await expect(f.tools.call(action, {}, f.threadPrincipal, f.guard)).resolves.toMatchObject({
+        expectedRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
+        source: { projectId: f.project.id },
+      });
+    }
+    expect(listRuns).not.toHaveBeenCalled();
+  } finally {
+    listRuns.mockRestore();
+  }
+});
+
+it("saves a new Crew from the spoken workflow's schema revision, with one owner review", async () => {
+  const f = await threadFixture();
+  const { expectedRevision } = (await f.tools.call(
+    "crews.schema",
+    {},
+    f.threadPrincipal,
+    f.guard,
+  )) as {
+    expectedRevision: string;
+  };
+  const input = {
+    operationId: "voice-create-crew",
+    expectedRevision,
+    definitionJson: JSON.stringify({ ...f.saved, id: "voice-crew", name: "Voice Crew" }),
+  };
+  const scoped = vi.fn();
+  const qualify = <T>(effect: () => Promise<T>) => {
+    scoped();
+    return effect();
+  };
+  const save = () => f.tools.call("crews.save", input, f.threadPrincipal, f.guard, qualify);
+  expect(await save()).toMatchObject({ state: "completed", result: { id: "voice-crew" } });
+  expect(await save()).toMatchObject({ state: "completed", result: { id: "voice-crew" } });
+  expect(f.approve).toHaveBeenCalledOnce();
+  expect(scoped).toHaveBeenCalledTimes(2);
+  expect(f.engine.command).not.toHaveBeenCalled();
+});
+
 it("rejects a Crew edit made while native review is open before creating a coordinator", async () => {
   const f = await threadFixture();
   f.approve.mockImplementation(async (operation) => {

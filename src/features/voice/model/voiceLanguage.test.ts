@@ -2,6 +2,10 @@ import { expect, it } from "vitest";
 import { realtimeSession, voiceInstructions } from "./realtimeVoice";
 import { voiceLanguageCode, voiceLanguageInstructions } from "./voiceLanguage";
 
+it("normalizes the legacy Turkish language setting for provider transcription", () => {
+  expect(voiceLanguageCode("turkish")).toBe("tr");
+});
+
 it("keeps automatic language flexible and omits the transcription lock", () => {
   expect(voiceLanguageInstructions()).toBe("");
   expect(voiceInstructions("en")).toContain("in the language the user speaks");

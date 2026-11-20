@@ -84,7 +84,7 @@ function approvalPort() {
   const listeners = new Set<() => void>();
   const state = { pending: false };
   setVoiceApprovalPort({
-    pending: () => state.pending,
+    pending: (requestId) => requestId === "reviewed-operation" && state.pending,
     subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
   });
   return {
@@ -105,6 +105,7 @@ it("suspends the deadline while an owner approval is pending and restarts a full
     () => new Promise<string>((done) => (resolve = done)),
     new AbortController().signal,
     100,
+    "reviewed-operation",
   );
   let outcome = "";
   void result.then(
@@ -129,9 +130,23 @@ it("still resolves normally when approvals appear and clear mid-operation", asyn
     () => new Promise<string>((done) => setTimeout(() => done("ok"), 300)),
     new AbortController().signal,
     100,
+    "reviewed-operation",
   );
   const settled = expect(result).resolves.toBe("ok");
   port.set(true);
   await vi.advanceTimersByTimeAsync(300);
   await settled;
+});
+
+it("keeps an unrelated tool and audio initialization on their own deadlines", async () => {
+  vi.useFakeTimers();
+  approvalPort().set(true);
+  const signal = new AbortController().signal;
+  const never = () => new Promise(() => {});
+  const unrelated = expect(
+    voiceRuntimeDeadline(never, signal, 100, "other-operation"),
+  ).rejects.toThrow("timed out");
+  const audio = expect(voiceRuntimeDeadline(never, signal, 100)).rejects.toThrow("timed out");
+  await vi.advanceTimersByTimeAsync(100);
+  await Promise.all([unrelated, audio]);
 });

@@ -3,6 +3,7 @@ import { act, createElement, StrictMode, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatSessionTitle } from "../../features/sessions/model/session";
+import { saveAutoTabGroupLabel } from "../../features/workspace/model/tabGroups";
 import { formatReminderTime } from "../../features/sessions/model/sessionReminders";
 import { HOVER_CARD_CLOSE_MS, HOVER_CARD_OPEN_MS } from "../../shared/ui/Tooltip";
 import { Sidebar } from "./Sidebar";
@@ -2574,6 +2575,30 @@ it("lets compact row actions overlay the idle time instead of reserving a gutter
     saveSessionListDisplay(DEFAULT_SESSION_LIST_DISPLAY);
   }
 });
+
+it.each(["standard", "compact", "detailed"] as const)(
+  "shows the remote marker before the provider in %s rows",
+  (density) => {
+    saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density });
+    act(render);
+    expect(card().querySelector('[aria-label="On another machine"]')).toBeNull();
+
+    const cwd = "remote://env-1/workspace/project";
+    saveAutoTabGroupLabel(cwd, "project (tailm)");
+    props.sessions = [{ ...props.sessions[0], cwd }];
+    act(render);
+    const provider = card().querySelector('[data-session-provider="codex"]')!;
+    const marker = provider.parentElement?.previousElementSibling;
+    expect(marker?.getAttribute("aria-label")).toBe("On another machine");
+    expect(marker?.querySelector("svg")).not.toBeNull();
+    if (density !== "compact") {
+      expect(card().querySelector("[data-session-row-project]")?.textContent).toContain("project");
+      expect(card().querySelector("[data-session-row-project]")?.textContent).not.toContain(
+        "tailm",
+      );
+    }
+  },
+);
 
 it("drops a repository prefix that repeats the project in detailed rows", () => {
   saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density: "detailed" });

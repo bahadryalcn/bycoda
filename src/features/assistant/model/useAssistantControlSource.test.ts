@@ -160,6 +160,44 @@ it("upgrades a shared background source for an interactive Room and downgrades o
   await act(async () => root.unmount());
   expect(invoke.mock.calls.at(-1)?.[1]).toMatchObject({ active: false });
 });
+it("keeps the background lease alive while a hidden window also holds an interactive source", async () => {
+  invoke.mockClear();
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get");
+  let hidden = false;
+  visibility.mockImplementation(() => (hidden ? "hidden" : "visible"));
+  const root = createRoot(document.createElement("div"));
+  const Background = () => {
+    useAssistantControlSource("room-hidden-owner", "host", "background");
+    return null;
+  };
+  const Voice = () => {
+    useAssistantControlSource("room-hidden-owner", "host");
+    return null;
+  };
+  try {
+    await act(async () =>
+      root.render(createElement("div", {}, createElement(Background), createElement(Voice))),
+    );
+    expect(invoke.mock.calls.at(-1)?.[1]).toMatchObject({ active: true, role: "interactive" });
+    hidden = true;
+    const before = invoke.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(invoke.mock.calls.length).toBe(before + 1);
+    expect(invoke.mock.calls.at(-1)?.[1]).toMatchObject({ active: true, role: "background" });
+    hidden = false;
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(invoke.mock.calls.at(-1)?.[1]).toMatchObject({ active: true, role: "interactive" });
+    await act(async () => root.unmount());
+  } finally {
+    visibility.mockRestore();
+    vi.useRealTimers();
+  }
+});
 it("fails background registration closed on old native while retaining legacy interactive registration", async () => {
   invoke.mockClear();
   invoke.mockImplementation(async (command) => {
@@ -316,5 +354,34 @@ it("reports failed native Room registration instead of claiming readiness", asyn
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
+  }
+});
+
+it("renews the exact hidden Room while voice is active and stops when voice ends", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  const root = createRoot(document.createElement("div"));
+  const Surface = ({ active }: { active: boolean }) => {
+    useAssistantControlSource("voice-project", "voice-host", "interactive", active);
+    return null;
+  };
+  const calls = () =>
+    invoke.mock.calls.filter(
+      ([, payload]) => (payload as { threadId: string }).threadId === "voice-project",
+    );
+  try {
+    await act(async () => root.render(createElement(Surface, { active: true })));
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(calls()).toHaveLength(5);
+    expect(calls().at(-1)?.[1]).toMatchObject({ active: true, role: "interactive" });
+    await act(async () => root.render(createElement(Surface, { active: false })));
+    const before = calls().length;
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(calls()).toHaveLength(before);
+  } finally {
+    await act(async () => root.unmount());
+    visibility.mockRestore();
+    vi.useRealTimers();
   }
 });

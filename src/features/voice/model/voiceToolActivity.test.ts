@@ -1,5 +1,51 @@
 import { expect, it, vi } from "vitest";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "./voiceToolActivity";
+import { setVoiceApprovalPort } from "./voiceRuntimeDeadline";
+
+it("keeps a reviewed tool observable through native approval and delivers its receipt", async () => {
+  vi.useFakeTimers();
+  let pending = false;
+  const listeners = new Set<() => void>();
+  setVoiceApprovalPort({
+    pending: (requestId) => requestId === "crew-save" && pending,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  });
+  try {
+    let entries: readonly VoiceToolActivityEntry[] = [];
+    const activity = new VoiceToolActivity((value) => {
+      entries = value;
+    });
+    let complete!: (value: unknown) => void;
+    const result = activity.run(
+      { name: "crews.save", target: "Project", projectPath: "/p", requestId: "crew-save" },
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    pending = true;
+    listeners.forEach((listener) => listener());
+    const unrelated = activity.run(
+      { name: "crews.list", target: "Project", projectPath: "/p", requestId: "crew-list" },
+      () => new Promise(() => {}),
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(entries[0].state).toBe("waiting-owner");
+    expect(await unrelated).toMatchObject({ status: "uncertain", requestId: "crew-list" });
+    pending = false;
+    listeners.forEach((listener) => listener());
+    expect(entries[0].state).toBe("running");
+    complete({ state: "completed" });
+    expect(await result).toEqual({ state: "completed" });
+    expect(listeners.size).toBe(0);
+  } finally {
+    setVoiceApprovalPort(undefined);
+    vi.useRealTimers();
+  }
+});
 it("stops observation without claiming effect cancellation, retains original request and accepts late result", async () => {
   let entries: readonly VoiceToolActivityEntry[] = [];
   const activity = new VoiceToolActivity((value) => {
@@ -76,6 +122,7 @@ it.each([
   [{ state: "failed", error: "Approval required" }, "failed", "failed"],
   [{ state: "completed" }, "returned", "completed"],
   [{ error: "Action rejected" }, "failed", undefined],
+  [{ tools: [], hostToolsError: "Host unavailable" }, "failed", undefined],
   [{ result: { state: "completed" } }, "returned", undefined],
 ])(
   "reports receipt state without inventing operation completion from nested data: %j",

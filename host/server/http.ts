@@ -267,9 +267,7 @@ export function createHttpRuntime(
         let liveAbort: AbortController | undefined;
         const resultScopeReleases: Array<() => void> = [];
         const resultScopeSettlements: Promise<void>[] = [];
-        let voiceToolLog:
-          | { action: string; requestId: string | null; startedAt: number; outcome: string }
-          | undefined;
+        let voiceToolLog: HttpToolRequest["voiceToolLog"];
         try {
           if (await dependencies.bulkHandler(request, response)) return;
           if (await dependencies.mobilePairing.handle(request, response)) return;
@@ -841,6 +839,7 @@ export function createHttpRuntime(
               action: voiceToolLog.action,
               requestId: voiceToolLog.requestId,
               elapsedMs: elapsedSince(voiceToolLog.startedAt),
+              ...(voiceToolLog.stage ? { stage: voiceToolLog.stage } : {}),
               outcome:
                 response.destroyed && !response.writableEnded
                   ? "disconnected"

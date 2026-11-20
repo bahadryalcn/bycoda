@@ -57,12 +57,14 @@ fn recover_epoch_gap(
     original: &journal::Original,
     deadline: std::time::Instant,
 ) -> Result<bool, String> {
-    if std::time::Instant::now() >= deadline
-        || original.route_fingerprint() != ws_fingerprint(&channel.selection.machine)
-    {
-        return Ok(false);
+    if std::time::Instant::now() >= deadline {
+        return Err("cleanup deadline elapsed before Host lookup".into());
     }
-    let params = epoch_wire::gap_params(original)?;
+    if original.route_fingerprint() != ws_fingerprint(&channel.selection.machine) {
+        return Err("route changed before Host lookup".into());
+    }
+    let params = epoch_wire::gap_params(original)
+        .map_err(|error| epoch_wire::gap_error("invalid local gap identity", &error))?;
     let reply = call_until(
         channel,
         epoch_wire::GAP_RESOLVE,
@@ -70,12 +72,15 @@ fn recover_epoch_gap(
         None,
         deadline,
     )
-    .map_err(|error| error.message)?
+    .map_err(|error| epoch_wire::gap_error("Host lookup failed", &error.message))?
     .reply;
-    if !epoch_wire::gap_outcome(&params, &reply.value)? {
+    if !epoch_wire::gap_outcome(&params, &reply.value)
+        .map_err(|error| epoch_wire::gap_error("invalid Host gap reply", &error))?
+    {
         return Ok(false);
     }
-    let admission = journal::completion_admission(store)?;
+    let admission = journal::completion_admission(store)
+        .map_err(|error| epoch_wire::gap_error("Host fence could not be saved", &error))?;
     let projection = NativeProjection::new(&reply);
     let result = NativeProjection::commit(&[&projection], || {
         let commit = || {
@@ -90,7 +95,9 @@ fn recover_epoch_gap(
         }
         commit()
     });
-    admission.finish(result)?;
+    admission
+        .finish(result)
+        .map_err(|error| epoch_wire::gap_error("Host fence could not be saved", &error))?;
     Ok(true)
 }
 

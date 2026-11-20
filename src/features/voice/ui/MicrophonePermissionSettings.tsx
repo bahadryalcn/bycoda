@@ -12,6 +12,7 @@ import {
   microphoneBlockedMessage,
   webviewMicrophoneBlockedMessage,
   openMicrophone,
+  stopMicrophone,
 } from "../model/microphoneAccess";
 import { loadVoiceSettings } from "../model/voiceSettings";
 
@@ -22,6 +23,7 @@ export function MicrophonePermissionSettings() {
   const [requestPending, setRequestPending] = useState(false);
   const [error, setError] = useState("");
   const attempt = useRef(0);
+  const captureRequest = useRef<AbortController | null>(null);
   const pending = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -52,6 +54,7 @@ export function MicrophonePermissionSettings() {
     return () => {
       mounted.current = false;
       attempt.current++;
+      captureRequest.current?.abort();
       status?.removeEventListener("change", update);
     };
   }, []);
@@ -61,16 +64,21 @@ export function MicrophonePermissionSettings() {
     pending.current = true;
     setRequestPending(true);
     const id = ++attempt.current;
+    const request = new AbortController();
+    captureRequest.current = request;
     setBusy(true);
     setError("");
     try {
       const microphoneId = loadVoiceSettings().microphoneId;
-      const stream = await openMicrophone({
-        audio: microphoneId ? { deviceId: { exact: microphoneId } } : true,
-        video: false,
-      });
+      const stream = await openMicrophone(
+        {
+          audio: microphoneId ? { deviceId: { exact: microphoneId } } : true,
+          video: false,
+        },
+        { signal: request.signal },
+      );
       // A grant can arrive after Cancel, disabling the feature, or unmounting.
-      stream.getTracks().forEach((track) => track.stop());
+      stopMicrophone(stream);
       if (mounted.current && id === attempt.current) setPermission("granted");
     } catch (cause) {
       if (mounted.current && id === attempt.current) {
@@ -79,6 +87,7 @@ export function MicrophonePermissionSettings() {
         setError(message);
       }
     } finally {
+      if (captureRequest.current === request) captureRequest.current = null;
       pending.current = false;
       if (mounted.current) setRequestPending(false);
       if (mounted.current && id === attempt.current) setBusy(false);
@@ -133,6 +142,7 @@ export function MicrophonePermissionSettings() {
           <Button
             onClick={() => {
               attempt.current++;
+              captureRequest.current?.abort();
               setBusy(false);
             }}
           >

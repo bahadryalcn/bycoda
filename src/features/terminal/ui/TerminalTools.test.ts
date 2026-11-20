@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import type { Terminal } from "@xterm/xterm";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TerminalTools } from "./TerminalTools";
+import { RemoteShellSuggestionsOverlay } from "./RemoteShellSuggestionsOverlay";
 import type { SshShellController } from "../model/sshShellIntegration";
 
 vi.mock("./TerminalCursorPopover", () => ({
@@ -357,13 +358,11 @@ it("keeps the passive suggestion popover mounted while the next snapshot is pend
   const render = (remoteShell: SshShellController) =>
     act(async () =>
       root.render(
-        createElement(TerminalTools, {
+        createElement(RemoteShellSuggestionsOverlay, {
           terminal,
-          mode: null,
-          onModeChange: vi.fn(),
-          ready: true,
-          suggestionsAllowed: false,
-          remoteShell,
+          selectionMode: false,
+          onClose: vi.fn(),
+          shell: remoteShell,
         }),
       ),
     );

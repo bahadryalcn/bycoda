@@ -65,8 +65,26 @@ beforeEach(() => {
 afterEach(async () => {
   window.removeEventListener(VOICE_WAKE_EVENT, talk);
   await act(async () => root.unmount());
+  vi.useRealTimers();
   vi.clearAllMocks();
   localStorage.clear();
+});
+
+it("retries a transient recognition failure and stops retrying when the desktop locks", async () => {
+  vi.useFakeTimers();
+  mocks.recognize.mockRejectedValue(new Error("Recognition is busy"));
+  await render();
+  await speak();
+  expect(seen.indicator).toEqual({ kind: "error" });
+  expect(mocks.close).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(mocks.open).toHaveBeenCalledTimes(2);
+  await speak();
+  mocks.presence = "away";
+  await render();
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(mocks.open).toHaveBeenCalledTimes(2);
+  expect(seen.indicator).toBeNull();
 });
 
 it("does not listen unless the owner enabled the wake phrase", async () => {

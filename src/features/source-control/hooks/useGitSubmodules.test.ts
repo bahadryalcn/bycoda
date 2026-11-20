@@ -2,11 +2,7 @@
 import { act, createElement, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import {
-  REPOSITORY_RESCAN_MS,
-  resetGitSubmoduleCache,
-  useGitSubmodules,
-} from "./useGitSubmodules";
+import { REPOSITORY_RESCAN_MS, resetGitSubmoduleCache, useGitSubmodules } from "./useGitSubmodules";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn(), subscribe: vi.fn(() => () => {}) }));
 vi.mock("../../../platform/tauri/fs", () => ({

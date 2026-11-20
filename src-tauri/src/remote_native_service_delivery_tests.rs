@@ -198,6 +198,17 @@ fn v2_reopen_fences_missing_original_before_compacting_its_slot() {
         assert_eq!(gap["method"], epoch_wire::GAP_RESOLVE);
         let expected = identity.recv_timeout(FIXTURE_WAIT).unwrap();
         assert_eq!(gap["params"], expected);
+        let mut invalid_proof = expected.clone();
+        invalid_proof["outcome"] = json!("not_admitted");
+        invalid_proof["sequence"] = json!(2);
+        result(&mut socket, &gap, invalid_proof).await;
+        let reopen = next(&mut socket).await;
+        assert_eq!(reopen["method"], EPOCH_OPEN);
+        assert_eq!(reopen["params"]["openId"], open_id);
+        result(&mut socket, &reopen, epoch_description(&open_id, 0, 0)).await;
+        let gap = next(&mut socket).await;
+        assert_eq!(gap["method"], epoch_wire::GAP_RESOLVE);
+        assert_eq!(gap["params"], expected);
         let mut proof = expected;
         proof["outcome"] = json!("not_admitted");
         result(&mut socket, &gap, proof).await;
@@ -230,6 +241,12 @@ fn v2_reopen_fences_missing_original_before_compacting_its_slot() {
     Arc::get_mut(fixture.channel.as_mut().unwrap())
         .unwrap()
         .delivery_epoch_gaps_supported = true;
+    let epoch = ensure_epoch(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap();
+    assert_eq!(epoch.through(), 0);
+    assert_eq!(
+        retained_count(fixture.store(), "native_delivery_originals"),
+        1
+    );
     let epoch = ensure_epoch(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap();
     assert_eq!(epoch.through(), 1);
     assert_eq!(

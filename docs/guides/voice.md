@@ -965,8 +965,9 @@ avatar shows a green dot while listening and an amber dot when listening needs
 attention. Open the arrow beside the avatar to see the status and switch **Wake
 and sleep phrases** on or off. Short sounds are recognized with the local
 voice pack (never a cloud provider), compared with the phrase and discarded;
-nothing is saved or sent. On a match the listener releases the microphone and Talk
-starts as if you pressed it. Saying your sleep phrase on its own, optionally
+nothing is saved or sent. On a match the listener releases the microphone. The
+workspace comes forward and opens the voice companion, even when the keyboard
+and mouse have been idle. Saying your sleep phrase on its own, optionally
 followed by the assistant's name, ends the conversation and returns to Ready with
 the microphone closed; running work continues. Defaults follow the voice (or app)
 language, for example "Hey {name}" and "Görüşürüz" in Turkish, and update when the
@@ -979,6 +980,13 @@ Wake listening pauses while dictation is active and resumes afterward only if
 the wake setting and presence checks still allow it. Editing a phrase preserves
 your unsaved text when settings change elsewhere; untouched fields follow the
 latest saved value.
+
+Desktop windows share a microphone capture slot when the WebView supports Web
+Locks. Starting Talk, dictation, or a microphone check takes priority over the
+passive wake listener. Wake listening retries transient failures while the
+desktop remains unlocked. Permission and setup errors wait for owner action.
+If an active conversation continues while its workspace is minimized, it keeps
+its original project tool source until the conversation ends.
 
 Synthetic offline Turkish audio and subscription-login smoke checks can verify
 the individual runtime paths. They do not prove physical microphone acoustics,

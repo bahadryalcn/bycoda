@@ -29,11 +29,8 @@ import {
 } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 import { LocalTerminalSuggestions } from "./LocalTerminalSuggestions";
-import { TerminalCursorPopover } from "./TerminalCursorPopover";
 import styles from "./TerminalTools.module.css";
 import type { SshShellController } from "../model/sshShellIntegration";
-import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
-import { localTerminalPrefix } from "../model/localTerminalCompletion";
 import { useHideWhileTyping } from "./useHideWhileTyping";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 
@@ -66,7 +63,10 @@ export function TerminalTools({
   onModeChange: (mode: TerminalTool) => void;
   ready: boolean;
   suggestionsAllowed?: boolean;
-  remoteShell?: SshShellController;
+  remoteShell?: Pick<
+    SshShellController,
+    "automatic" | "source" | "waiting" | "request" | "dismiss" | "setSource" | "setAutomatic"
+  >;
   onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
   onSavedCommands?: () => void;
   onStartupReview?: () => Promise<void>;
@@ -91,23 +91,7 @@ export function TerminalTools({
   const helpAnchor = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  // undefined: not measured yet; null: the prompt line cannot be read.
-  const [promptPrefix, setPromptPrefix] = useState<string | null>();
-  const retaining = !!remoteShell?.preview && mode === null;
   const [overlayRef, typing] = useHideWhileTyping<HTMLDivElement>();
-
-  // Presentation only: narrows the retained passive list to the echoed prompt
-  // text while the next native snapshot is pending. Never used for insertion.
-  useEffect(() => {
-    if (!terminal || !retaining) return;
-    const sync = () => setPromptPrefix(localTerminalPrefix(terminal));
-    sync();
-    const subscription = terminal.onWriteParsed(sync);
-    return () => {
-      subscription.dispose();
-      setPromptPrefix(undefined);
-    };
-  }, [terminal, retaining]);
 
   useEffect(() => {
     if (!terminal) return;
@@ -409,26 +393,6 @@ export function TerminalTools({
       ) : null}
     </div>
   );
-  // Before the first measurement the screen still shows the retained prefix.
-  const shownPrefix = promptPrefix === undefined ? remoteShell?.preview?.prefix : promptPrefix;
-  const preview =
-    retaining && remoteShell?.preview && shownPrefix != null
-      ? {
-          prefix: shownPrefix,
-          suggestions: remoteShell.preview.suggestions.filter(
-            (value) => value.startsWith(shownPrefix) && value !== shownPrefix,
-          ),
-        }
-      : undefined;
-  const showRemote =
-    terminal &&
-    remoteShell &&
-    !alternate &&
-    (mode === "remote" ||
-      (mode === null &&
-        remoteShell.automatic &&
-        ((remoteShell.state?.status === "suggestions" && !!remoteShell.state.suggestions?.length) ||
-          !!preview?.suggestions.length)));
   const overlayAppearance = actionContentAttributes(
     { phase: "hover-overlay", hidden: typing, open: mode === "search" || menuOpen || helpOpen },
     styles.overlay,
@@ -641,25 +605,6 @@ export function TerminalTools({
           explicit={mode === "command"}
           onClose={() => changeMode(null)}
         />
-      ) : null}
-      {showRemote ? (
-        <>
-          <TerminalCursorPopover
-            terminal={terminal}
-            onDismiss={() => {
-              remoteShell.dismiss();
-              changeMode(null);
-            }}
-          >
-            <RemoteShellSuggestions
-              shell={remoteShell}
-              terminal={terminal}
-              preview={preview}
-              selectionMode={mode === "remote"}
-              onClose={() => changeMode(null)}
-            />
-          </TerminalCursorPopover>
-        </>
       ) : null}
     </>
   );

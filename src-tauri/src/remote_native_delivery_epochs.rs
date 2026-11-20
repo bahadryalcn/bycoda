@@ -105,16 +105,21 @@ pub(super) fn compact_params(
     store: &SessionStore,
     epoch: &journal::epochs::EpochHandle,
 ) -> Result<Option<Value>, String> {
-    let current = journal::epochs::current(store, epoch)?;
-    let eligible = journal::epochs::eligible_through(store, &current)?;
-    if eligible <= current.through() {
-        return Ok(None);
-    }
-    let target = eligible.min(current.through().saturating_add(32));
-    Ok(Some(
-        json!({"ownerId":current.owner_id(),"generation":current.generation(),
-        "expectedThrough":current.through(),"through":target}),
-    ))
+    let plan = journal::epochs::maintenance_plan(store, epoch, false)?;
+    Ok(compact_request(epoch, &plan))
+}
+
+fn compact_request(
+    epoch: &journal::epochs::EpochHandle,
+    plan: &journal::epochs::MaintenancePlan,
+) -> Option<Value> {
+    (plan.eligible_through > plan.expected_through).then(|| {
+        let target = plan
+            .eligible_through
+            .min(plan.expected_through.saturating_add(32));
+        json!({"ownerId":epoch.owner_id(),"generation":epoch.generation(),
+            "expectedThrough":plan.expected_through,"through":target})
+    })
 }
 
 /// Give the existing retired prefix priority. Try one abandoned gap when the
@@ -125,16 +130,33 @@ pub(super) fn maintenance_params(
     gap_supported: bool,
     recover: impl FnOnce(&journal::Original) -> Result<bool, String>,
 ) -> Result<Option<Value>, String> {
-    let prefix = compact_params(store, epoch)?;
-    if prefix.is_some() || !gap_supported {
-        return Ok(prefix);
-    }
-    if let Some(original) = journal::epochs::gap_candidate(store, epoch)? {
-        if recover(&original).unwrap_or(false) {
-            return compact_params(store, epoch);
+    let plan = journal::epochs::maintenance_plan(store, epoch, gap_supported)?;
+    if let Some(original) = plan.gap.as_ref() {
+        // Log only the sequence and a bounded diagnostic, never request or reply data.
+        let sequence = plan.eligible_through + 1;
+        match recover(original) {
+            Ok(true) => {
+                log::info!("Native delivery gap {sequence}: Host fence saved");
+                return compact_params(store, epoch);
+            }
+            Ok(false) => log::debug!("Native delivery gap {sequence}: already admitted by Host"),
+            Err(error) => log::warn!("Native delivery gap {sequence}: {error}"),
         }
     }
-    Ok(None)
+    Ok(compact_request(epoch, &plan))
+}
+
+pub(super) fn gap_error(stage: &str, error: &str) -> String {
+    let code = error.split([':', ' ']).next().unwrap_or_default();
+    if code.starts_with("NATIVE_DELIVERY_")
+        && code.len() <= 64
+        && code
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte == b'_')
+    {
+        return format!("{stage} ({code})");
+    }
+    stage.into()
 }
 
 #[cfg(test)]

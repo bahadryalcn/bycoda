@@ -2261,18 +2261,19 @@ function ProjectCard({
     remote && machine && (indicator.tone === "down" || remoteConnection.status === "outdated-host")
       ? (remoteConnection.error ?? "")
       : "";
-  // The row's second label tells same-named projects apart: the machine for a remote project, the parent
-  // folder for a local project whose name another rail project shares. The stored name never changes.
   const hostLabel = machine ? machineLabel(machines, machine) : "";
-  // A remote project never prints the host inline: the right-hand globe carries it in its tooltip and label.
   const context =
     !remote && isDuplicateProjectName(nameCollisions, name) ? parentFolderLabel(item.path) : "";
   const changeSummary = change ? projectGitChangeSummary(change, t, format.formatNumber) : "";
-  // The tooltip shows on hover and on keyboard focus: the name, then the path and state as muted lines.
   const rowTipDetails = [
-    remote
-      ? t("{p0} on {p1}", { p0: remote.cwd, p1: hostLabel || t("another machine") })
-      : item.path,
+    remote ? (
+      <span key="remote-path" className="flex items-start gap-1.5">
+        <Internet className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+        <span>{t("{p0} on {p1}", { p0: remote.cwd, p1: hostLabel || t("another machine") })}</span>
+      </span>
+    ) : (
+      item.path
+    ),
     connectionStatus,
     connectionDetail,
     busy && t("Working"),
@@ -2397,7 +2398,7 @@ function ProjectCard({
         data-project-primary
         variant="item"
         type="button"
-        tooltip={name}
+        tooltip={remote ? undefined : name}
         tooltipDetails={rowTipDetails}
         tooltipSide="right"
         tooltipWide

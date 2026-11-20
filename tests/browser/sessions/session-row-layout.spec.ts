@@ -5,6 +5,40 @@ import path from "node:path";
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
 for (const theme of ["dark", "light"]) {
+  test(`remote project and session markers in ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-row-layout.html?remote-header&legacy-remote-label&global&wide&${theme}`,
+    );
+    const project = page.locator(
+      '[data-project-path="remote://fixture-office/fixture/bycoda"] [data-project-primary]',
+    );
+    await expect(project.locator("[data-truncate]").first()).toHaveText("bycoda");
+    const session = page.locator('[data-session-card="row-multi"]');
+    await expect(session.locator("[data-session-row-project] [data-truncate]")).toHaveText(
+      "bycoda",
+    );
+    const marker = session.getByRole("img", { name: "On another machine" });
+    await expect(marker).toBeVisible();
+    await expect(
+      marker.locator("+ [data-tooltip-wrap] [data-session-provider=codex]"),
+    ).toBeVisible();
+    const directory = path.resolve("temp/verification/remote-project-marker");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, "README.md"),
+      "# Remote project and session markers\n\nIsolated desktop browser fixture at 1280 px.\n",
+    );
+    await page.screenshot({ path: path.join(directory, `${theme}-rows.png`) });
+    await project.hover();
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toContainText("/fixture/bycoda on Office Mac");
+    await expect(tooltip.locator("svg")).toBeVisible();
+    await page.screenshot({ path: path.join(directory, `${theme}-tooltip.png`) });
+  });
+}
+
+for (const theme of ["dark", "light"]) {
   test(`managed session mark in ${theme}`, async ({ page }) => {
     const directory = path.resolve("temp/verification/managed-session-mark");
     await mkdir(directory, { recursive: true });

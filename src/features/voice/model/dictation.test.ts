@@ -11,6 +11,7 @@ const backend = vi.hoisted(() => ({
 }));
 vi.mock("./localVoiceClient", () => ({ localVoiceBackend: backend }));
 import { Dictation } from "./dictation";
+import { stopMicrophone } from "./microphoneAccess";
 /** A voiced (150 Hz) speech-like frame: the VAD requires pitch, not just level. */
 const voicedFrame = () =>
   Int16Array.from({ length: 1024 }, (_, i) =>
@@ -18,6 +19,7 @@ const voicedFrame = () =>
   );
 
 const track = { stop: vi.fn() };
+const stream = { getTracks: () => [track] } as unknown as MediaStream;
 let port: { onmessage: ((event: { data: ArrayBuffer }) => void) | null };
 function setup() {
   const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), port: { onmessage: null } });
@@ -47,7 +49,7 @@ function setup() {
   );
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
-    value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })) },
+    value: { getUserMedia: vi.fn(async () => stream) },
   });
   const events = { text: vi.fn(), state: vi.fn(), error: vi.fn() };
   return events;
@@ -59,6 +61,7 @@ const pause = () => {
   for (let i = 0; i < 10; i++) port.onmessage!({ data: new Int16Array(1024).buffer });
 };
 afterEach(() => {
+  stopMicrophone(stream);
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });

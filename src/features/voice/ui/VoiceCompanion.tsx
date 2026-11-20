@@ -62,6 +62,7 @@ import { useVoiceHearing } from "./companion/useVoiceHearing";
 import { voiceStatusText } from "./companion/voiceStatusText";
 import { useVoiceReturnCall } from "./useVoiceReturnCall";
 import { useVoiceTalkEvent } from "./useVoiceTalkEvent";
+import { revealVoiceTalkWindow } from "../../../platform/tauri/voiceTalkEvent";
 import { RealtimeVoice } from "../model/realtimeVoice";
 import { realtimeSecret, type RealtimeProvider } from "../model/realtimeVoiceClient";
 import {
@@ -237,8 +238,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const [status, setStatus] = useState<
     "idle" | "connecting" | "live" | "reconnecting" | "sleeping" | "ready"
   >("idle");
-  const conversationActive =
-    status === "connecting" || status === "reconnecting" || status === "live" || playback;
+  const liveConversation =
+    status === "connecting" || status === "reconnecting" || status === "live";
+  const conversationActive = liveConversation || playback;
   useEffect(
     () => (conversationActive ? claimVoiceConversationActivity() : undefined),
     [conversationActive],
@@ -1031,6 +1033,8 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   useAssistantControlSource(
     managementCurrent ? managementSource?.threadId : undefined,
     managementCurrent ? managementSource?.environmentId : undefined,
+    "interactive",
+    liveConversation,
   );
   const threadSummary = useRef("");
   const turnHistory = useRef<Promise<VoiceHistory | null> | undefined>(undefined);
@@ -2081,6 +2085,12 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     const isActive = () => active() && turnRevision.current === revision;
     if (generation.current !== epoch || !isActive() || !voiceDisclosureCurrent())
       return { error: "The voice connection is no longer active." };
+    if (/^(?:conversation|social|runtime_logs|workspace)_/.test(name))
+      return {
+        status: "failed",
+        error:
+          "No operation was dispatched. Invoke discovered tools through app_tool_call, using their family and exact action fields.",
+      };
     if (
       ![
         "present_choices",
@@ -2356,9 +2366,14 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     // response owner suppresses stale speech; retain the actual delivery receipt.
     return result;
   }
-  function recoverRealtime(provider: RealtimeProvider, reason: string, rotation = false) {
+  function recoverRealtime(
+    provider: RealtimeProvider,
+    reason: string,
+    rotation = false,
+    code?: string,
+  ) {
     // The app log is the only record of why a live voice session dropped.
-    console.warn("[voice] realtime recovering", { provider, reason, rotation });
+    console.warn("[voice] realtime recovering", { provider, reason, rotation, code });
     invalidateFeatureHosts();
     const wasMuted = mutedRef.current;
     if (presenceRef.current !== "active") {
@@ -2494,7 +2509,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         error: (value, fatal, details) => {
           if (generation.current !== epoch) return;
           if (fatal && details?.recoverable) {
-            recoverRealtime(provider, value);
+            recoverRealtime(provider, value, false, details.code);
             return;
           }
           if (fatal) close();
@@ -2696,7 +2711,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       }
     }
   }
-  async function start() {
+  async function start(wake = false) {
     if (
       client.current ||
       status === "connecting" ||
@@ -2709,7 +2724,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     const epoch = ++generation.current;
     const manualAway =
       assistantSnapshot?.presence?.state === "away" || assistantSnapshot?.presence?.state === "dnd";
-    checkingTalkPresence.current = manualAway;
+    checkingTalkPresence.current = wake || manualAway;
     setStatus("connecting");
     setError("");
     setTranscript("");
@@ -2721,7 +2736,23 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       const selected = currentSpeechTarget(),
         binding = selected.historyBinding!;
       activeHistoryBinding.current = binding;
-      if (manualAway) {
+      if (wake) {
+        const actual = await readNativeVoicePresence(settings.idleSleepMinutes);
+        if (generation.current !== epoch) return;
+        const manual = snapshotRef.current?.presence?.state;
+        if ((actual !== "active" && actual !== "idle") || manual === "away" || manual === "dnd") {
+          stopCapture("ready", true);
+          return;
+        }
+        // The accepted wake phrase is recent speech even when keyboard/mouse are idle.
+        markAdmittedSpeech();
+        setOpen(true);
+        if (detached) dock();
+        void revealVoiceTalkWindow().catch(() =>
+          console.warn("[voice] could not reveal the workspace after wake"),
+        );
+        checkingTalkPresence.current = false;
+      } else if (manualAway) {
         const actual = await readNativeVoicePresence(settings.idleSleepMinutes);
         if (generation.current !== epoch) return;
         checkingTalkPresence.current = false;
@@ -2890,9 +2921,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   });
   useVoiceTalkEvent({
     status,
-    start: () => {
-      setOpen(true);
-      void start();
+    start: (wake) => {
+      if (!wake) setOpen(true);
+      void start(wake);
     },
   });
   const visualState = voiceVisualState({ status, phase, muted, playback, error });

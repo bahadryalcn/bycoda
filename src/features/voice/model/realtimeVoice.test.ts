@@ -2,8 +2,13 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { RealtimeVoice, realtimeSession, VOICE_RESPONSE_TIMEOUT_MS } from "./realtimeVoice";
 import { VOICE_TOOL_TIMEOUT_MS, type VoiceToolWait } from "./voiceRuntimeDeadline";
+import { stopMicrophone } from "./microphoneAccess";
 
 const track = { stop: vi.fn(), enabled: true, onended: null as null | (() => void) };
+const stream = {
+  getTracks: () => [track],
+  getAudioTracks: () => [track],
+};
 const node = () => ({
   connect: vi.fn(),
   disconnect: vi.fn(),
@@ -88,10 +93,7 @@ function setup() {
       }
     },
   );
-  const getUserMedia = vi.fn(async () => ({
-    getTracks: () => [track],
-    getAudioTracks: () => [track],
-  }));
+  const getUserMedia = vi.fn(async () => stream);
   Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
   return getUserMedia;
 }
@@ -1127,6 +1129,7 @@ it("consumes a proven owner correction after transcript activation without creat
   voice.close();
 });
 afterEach(() => {
+  stopMicrophone(stream as unknown as MediaStream);
   autoSessionUpdate = true;
   workletGate = undefined;
   sockets = [];
@@ -1448,6 +1451,7 @@ it("authenticates per provider and disables automatic provider responses/interru
       input: { transcription: { language: "de", prompt: expect.stringContaining("Aufgaben") } },
     },
   });
+  openai.close();
   const xai = new RealtimeVoice("xai", callbacks(), "en");
   await xai.connect(secret("xai"));
   expect(sockets[1].protocols).toEqual(["xai-client-secret.temporary"]);
@@ -1779,6 +1783,7 @@ it("refuses image URLs, unsupported formats and providers without sending image 
   expect(
     sockets[0].sent().filter((event) => event.type === "conversation.item.create"),
   ).toHaveLength(0);
+  openai.close();
   const xai = new RealtimeVoice("xai", callbacks(), "en");
   await xai.connect(secret("xai"));
   expect(xai.addImage("data:image/png;base64,AQID")).toMatchObject({
@@ -1788,7 +1793,6 @@ it("refuses image URLs, unsupported formats and providers without sending image 
   expect(
     sockets[1].sent().filter((event) => event.type === "conversation.item.create"),
   ).toHaveLength(0);
-  openai.close();
   xai.close();
 });
 
@@ -2049,7 +2053,7 @@ it("ends voice when the provider never acknowledges a commit", async () => {
     expect(events.error).toHaveBeenCalledWith(
       "Voice connection is too slow. Start voice again.",
       true,
-      { recoverable: true },
+      { recoverable: true, code: "audio-commit-unacknowledged" },
     );
     expect(track.stop).toHaveBeenCalled();
     expect(sockets[0].close).toHaveBeenCalled();
@@ -2077,7 +2081,7 @@ it("keeps waiting for a commit while a long utterance is still uploading", async
     expect(events.error).toHaveBeenCalledWith(
       "Voice connection is too slow. Start voice again.",
       true,
-      { recoverable: true },
+      { recoverable: true, code: "audio-commit-unacknowledged" },
     );
     voice.close();
   } finally {
@@ -2138,7 +2142,7 @@ it("tolerates a briefly full send buffer and fails only on a sustained stall", a
     expect(events.error).toHaveBeenCalledWith(
       "Voice connection is too slow. Start voice again.",
       true,
-      { recoverable: true },
+      { recoverable: true, code: "audio-send-backlog" },
     );
     voice.close();
   } finally {

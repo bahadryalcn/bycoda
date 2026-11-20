@@ -100,6 +100,44 @@ fn record(store: &SessionStore, original: &Original) -> Result<(), String> {
 }
 
 #[test]
+fn stalled_prefix_validates_the_full_epoch_once() {
+    use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    let store = FileDb::new();
+    let old = store.open();
+    let (description, epoch) = first_bind(&old);
+    prepare(&old, "lost", ROUTE, FORMAT, RAW, &epoch).unwrap();
+    drop(old);
+
+    let reopened = store.open();
+    let epoch = rebind(&reopened, &description, 0, 1);
+    let validations = Arc::new(AtomicUsize::new(0));
+    let observed = Arc::clone(&validations);
+    reopened
+        .lock_conn()
+        .unwrap()
+        .authorizer(Some(move |context: AuthContext<'_>| {
+            if matches!(
+                context.action,
+                AuthAction::Read {
+                    table_name: "native_delivery_epoch_intents",
+                    column_name: "bound_generation",
+                }
+            ) {
+                observed.fetch_add(1, Ordering::Relaxed);
+            }
+            Authorization::Allow
+        }))
+        .unwrap();
+    assert!(gap_candidate(&reopened, &epoch).unwrap().is_some());
+    assert_eq!(validations.load(Ordering::Relaxed), 1);
+}
+
+#[test]
 fn older_runtime_unadmitted_original_is_proven_compacted_and_fenced_permanently() {
     for (method, possible) in [(BUFFER, false), (BUFFER, true), (FORMAT, true)] {
         let db = FileDb::new();

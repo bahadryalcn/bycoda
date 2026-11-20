@@ -106,7 +106,7 @@ it("reports unavailable capture APIs without a permission request", async () => 
 });
 
 it("returns the exact stream and constraints to the capture lifetime owner", async () => {
-  const stream = { getTracks: vi.fn() };
+  const stream = { getTracks: () => [] };
   const getUserMedia = capture(Promise.resolve(stream));
   const constraints = { audio: { deviceId: { exact: "owner-mic" } }, video: false };
   await expect(openMicrophone(constraints)).resolves.toBe(stream);

@@ -10,6 +10,7 @@ type Registration = {
   environmentId: string;
   users: number;
   interactive: number;
+  activeVoice: number;
   background: number;
   legacyActive: boolean;
   timer?: ReturnType<typeof setInterval>;
@@ -59,12 +60,17 @@ export function waitForAssistantControlSource(
   });
 }
 
-/** Refresh the native lease. Skips when one is already pending, and for hidden interactive windows. */
+function registrationRole(source: Registration) {
+  if (source.activeVoice || (source.interactive && document.visibilityState !== "hidden"))
+    return "interactive";
+  return source.background ? "background" : undefined;
+}
+
+/** Active voice keeps its exact source while a hidden text-only Room yields to background. */
 function heartbeat(source: Registration) {
   if (source.heartbeatQueued || source.users === 0) return;
-  const role = source.interactive ? "interactive" : "background";
-  // A hidden interactive Room is not the user's surface; background ownership keeps its lease.
-  if (role === "interactive" && document.visibilityState === "hidden") return;
+  const role = registrationRole(source);
+  if (!role) return;
   source.heartbeatQueued = true;
   void register(source, true, role).finally(() => {
     source.heartbeatQueued = false;
@@ -136,6 +142,7 @@ export function useAssistantControlSource(
   threadId: string | undefined,
   environmentId: string | undefined,
   role: "interactive" | "background" = "interactive",
+  activeVoice = false,
 ) {
   const [state, setState] = useState<{ key: string; status: Registration["status"] }>({
     key: "",
@@ -152,6 +159,7 @@ export function useAssistantControlSource(
         environmentId,
         users: 0,
         interactive: 0,
+        activeVoice: 0,
         background: 0,
         legacyActive: false,
         heartbeatQueued: false,
@@ -162,31 +170,30 @@ export function useAssistantControlSource(
       source.timer = setInterval(() => heartbeat(captured), 15_000);
       // Heartbeats paused while hidden; renew the lease as soon as the window is shown again.
       source.onVisible = () => {
-        if (document.visibilityState === "visible") heartbeat(captured);
+        if (document.visibilityState === "visible" || captured.activeVoice) heartbeat(captured);
       };
       document.addEventListener("visibilitychange", source.onVisible);
       registrations.set(key, source);
     }
-    const previousRole = source.interactive
-      ? "interactive"
-      : source.background
-        ? "background"
-        : undefined;
+    const previousRole = registrationRole(source);
     source.users++;
     source[role]++;
+    if (activeVoice) source.activeVoice++;
     const listener = (status: Registration["status"]) => setState({ key, status });
     source.listeners.add(listener);
     listener(source.status);
-    const currentRole = source.interactive ? "interactive" : "background";
-    if (!previousRole || previousRole !== currentRole) register(source, true, currentRole);
+    const currentRole = registrationRole(source);
+    if (currentRole && previousRole !== currentRole) register(source, true, currentRole);
     const captured = source;
     return () => {
       captured.listeners.delete(listener);
+      const previousRole = registrationRole(captured);
       captured.users--;
       captured[role]--;
+      if (activeVoice) captured.activeVoice--;
       if (captured.users > 0) {
-        const nextRole = captured.interactive ? "interactive" : "background";
-        if (nextRole !== currentRole) register(captured, true, nextRole);
+        const nextRole = registrationRole(captured);
+        if (nextRole !== previousRole) register(captured, !!nextRole, nextRole);
         return;
       }
       clearInterval(captured.timer);
@@ -195,6 +202,6 @@ export function useAssistantControlSource(
       notifySource(key);
       register(captured, false);
     };
-  }, [threadId, environmentId, role]);
+  }, [threadId, environmentId, role, activeVoice]);
   return selectedKey && state.key === selectedKey ? state.status : "pending";
 }

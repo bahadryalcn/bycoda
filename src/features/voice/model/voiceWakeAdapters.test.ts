@@ -7,7 +7,8 @@ const backend = vi.hoisted(() => ({
   transcribe: vi.fn(),
 }));
 vi.mock("./localVoiceClient", () => ({ localVoiceBackend: backend }));
-vi.mock("./microphoneAccess", () => ({
+vi.mock("./microphoneAccess", async (original) => ({
+  ...(await original<typeof import("./microphoneAccess")>()),
   openMicrophone: async () => ({ getTracks: () => [{ stop }] }),
 }));
 const stop = vi.fn();
@@ -68,7 +69,9 @@ it.each(["resume", "worklet"])("closes tracks and context after %s failure", asy
     configurable: true,
     value: { getUserMedia: vi.fn() },
   });
-  await expect(localWakeDeps({ config: {} }).openCapture(() => {})).rejects.toThrow("setup");
+  await expect(
+    localWakeDeps({ config: {} }).openCapture(() => {}, new AbortController().signal),
+  ).rejects.toThrow("setup");
   expect(stop).toHaveBeenCalledTimes(1);
   expect(close).toHaveBeenCalledTimes(1);
 });

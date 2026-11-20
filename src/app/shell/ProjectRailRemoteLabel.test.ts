@@ -4,6 +4,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { ProjectRail } from "./ProjectRail";
 import { setLanguagePreference } from "../../shared/i18n/core";
+import { saveAutoTabGroupLabel } from "../../features/workspace/model/tabGroups";
+
+const REMOTE_PATH = "remote://env-1/srv/app";
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -19,7 +22,7 @@ vi.mock("../../features/projects/model/projectData", () => ({
 }));
 vi.mock("../../features/connections/public/useRemoteProject", () => ({
   useRemoteProject: (path: string) =>
-    path === "/srv/app" ? { environmentId: "env-1", cwd: "/srv/app" } : undefined,
+    path === REMOTE_PATH ? { environmentId: "env-1", cwd: "/srv/app" } : undefined,
 }));
 vi.mock("../../features/connections/model/connections", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../features/connections/model/connections")>()),
@@ -43,6 +46,7 @@ it("translates the remote project row's accessible name instead of joining a lit
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   await setLanguagePreference("tr");
+  saveAutoTabGroupLabel(REMOTE_PATH, "app (tailm)");
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -51,7 +55,7 @@ it("translates the remote project row's accessible name instead of joining a lit
       root.render(
         createElement(ProjectRail, {
           cwd: "~",
-          recents: [{ path: "/srv/app", openedAt: 1 }],
+          recents: [{ path: REMOTE_PATH, openedAt: 1 }],
           onSelectProject: vi.fn(),
           onOpenProject: vi.fn(),
         }),
@@ -62,6 +66,13 @@ it("translates the remote project row's accessible name instead of joining a lit
     );
     expect(labels.some((label) => label?.includes("Studio üzerinde"))).toBe(true);
     expect(labels.some((label) => / on Studio/.test(label ?? ""))).toBe(false);
+    const row = container.querySelector<HTMLButtonElement>("[data-project-primary]")!;
+    expect(row.querySelector("[data-truncate]")?.textContent).toBe("app");
+    await act(async () => row.focus());
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.querySelector("svg")).not.toBeNull();
+    expect(tooltip?.textContent).toContain("Studio üzerinde /srv/app");
+    expect(tooltip?.textContent).not.toContain("tailm");
   } finally {
     await act(async () => root.unmount());
     container.remove();

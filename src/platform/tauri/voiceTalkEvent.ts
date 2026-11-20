@@ -14,3 +14,13 @@ export type VoiceTalkPayload = { source: "global-shortcut"; at: number };
 export function listenVoiceTalk(handler: (payload: VoiceTalkPayload) => void): WindowSubscription {
   return listenWindow<VoiceTalkPayload>(VOICE_TALK_EVENT, (message) => handler(message.payload));
 }
+
+/** Reveal the workspace that recognized the owner's local wake phrase. */
+export async function revealVoiceTalkWindow(): Promise<void> {
+  if (!("__TAURI_INTERNALS__" in window)) return;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const workspace = getCurrentWindow();
+  await workspace.unminimize();
+  await workspace.show();
+  await workspace.setFocus();
+}

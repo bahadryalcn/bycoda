@@ -2,6 +2,15 @@ import { systemPermissionsStatus } from "../../../platform/tauri/systemPermissio
 import { t } from "../../../shared/i18n";
 import { isTauri } from "@tauri-apps/api/core";
 import { IS_LINUX, IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { claimMicrophone, MicrophoneBusyError } from "./microphoneOwnership";
+
+const captures = new WeakMap<MediaStream, () => void>();
+
+export function stopMicrophone(stream: MediaStream | undefined) {
+  if (!stream) return;
+  stream.getTracks().forEach((track) => track.stop());
+  captures.get(stream)?.();
+}
 
 /** The operating system or browser refused microphone capture. */
 const BLOCKED_NAMES = new Set(["NotAllowedError", "PermissionDeniedError", "SecurityError"]);
@@ -57,7 +66,10 @@ export function isMacMicrophoneBlocked(message: string): boolean {
  * keeps the `NotAllowedError` name so reconnect logic still treats it as an
  * owner action rather than a transient failure.
  */
-export async function openMicrophone(constraints: MediaStreamConstraints): Promise<MediaStream> {
+export async function openMicrophone(
+  constraints: MediaStreamConstraints,
+  { signal, wake = false }: { signal?: AbortSignal; wake?: boolean } = {},
+): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
     const error = new Error(
       t("Microphone access requires the desktop app or a secure browser context."),
@@ -65,9 +77,49 @@ export async function openMicrophone(constraints: MediaStreamConstraints): Promi
     error.name = "NotSupportedError";
     throw error;
   }
+  let release: (() => void) | undefined;
   try {
-    return await navigator.mediaDevices.getUserMedia(constraints);
+    const claim = claimMicrophone(wake, signal);
+    release = typeof claim === "function" ? claim : await claim;
+    signal?.throwIfAborted();
+    const releaseOpening = release;
+    signal?.addEventListener("abort", releaseOpening, { once: true });
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } finally {
+      signal?.removeEventListener("abort", releaseOpening);
+    }
+    // getUserMedia cannot cancel an open permission prompt. Close a late grant
+    // before the retired caller can attach its capture worklet.
+    if (signal?.aborted) {
+      stopMicrophone(stream);
+      return stream;
+    }
+    const tracks = stream.getTracks();
+    if (!tracks.length) {
+      release();
+      return stream;
+    }
+    const done = () => {
+      for (const track of tracks) track.removeEventListener?.("ended", ended);
+      captures.delete(stream);
+      release?.();
+    };
+    const ended = () => {
+      if (tracks.every((track) => track.readyState === "ended")) done();
+    };
+    captures.set(stream, done);
+    for (const track of tracks) track.addEventListener?.("ended", ended);
+    return stream;
   } catch (cause) {
+    release?.();
+    if (cause instanceof MicrophoneBusyError && !wake) {
+      cause.message = t(
+        "The microphone could not start. Close other apps using it and check the system input device.",
+      );
+      throw cause;
+    }
     // DOMException can originate in another realm; do not depend on instanceof.
     const name = cause && typeof cause === "object" && "name" in cause ? String(cause.name) : "";
     let message: string;

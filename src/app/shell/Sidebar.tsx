@@ -103,6 +103,7 @@ import {
   Sparkles,
   SplitSquare,
   StickyNote,
+  Internet,
   Server,
   Trash2,
   Zap,
@@ -5946,34 +5947,53 @@ const SessionCard = memo(function SessionCard({
     bottom: orchestrationExpanded ? "lg" : compact ? "xs" : "sm",
   } as const;
 
-  const modelLabel = showModel ? (
-    <span data-session-row-model className="flex shrink-0 items-center gap-1.5" aria-label={model}>
-      <span className="sr-only">
-        <SessionSearchText text={model} />
+  const remoteSession = isRemoteProjectPath(session.cwd);
+  const remoteLabel = t("On another machine");
+  const modelLabel =
+    showModel || remoteSession ? (
+      <span
+        data-session-row-model={showModel ? "" : undefined}
+        className="flex shrink-0 items-center gap-1.5"
+        aria-label={showModel ? model : undefined}
+      >
+        {showModel ? (
+          <span className="sr-only">
+            <SessionSearchText text={model} />
+          </span>
+        ) : null}
+        {remoteSession ? (
+          <Tooltip label={remoteLabel} asChild>
+            <Text role="img" aria-label={remoteLabel} size="inherit" tone="secondary">
+              <Internet className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+            </Text>
+          </Tooltip>
+        ) : null}
+        {showModel &&
+          providerHistory.providers.map((harness) => (
+            <Tooltip key={harness} label={HARNESS_TITLE[harness]}>
+              <Text
+                as="span"
+                size="inherit"
+
+                data-session-provider={harness}
+                data-provider-active={harness === providerHistory.activeHarness ? "true" : "false"}
+
+                tone={harness === providerHistory.activeHarness ? "primary" : "muted"}
+                className={
+                  harness === providerHistory.activeHarness
+                    ? undefined
+                    : "session-provider-inactive"
+                }
+              >
+                <HarnessIcon
+                  harness={harness}
+                  className={`${compact ? "icon-xs" : "icon-md"} shrink-0`}
+                />
+              </Text>
+            </Tooltip>
+          ))}
       </span>
-      {providerHistory.providers.map((harness) => (
-        <Tooltip key={harness} label={HARNESS_TITLE[harness]}>
-          <Text
-            as="span"
-            size="inherit"
-
-            data-session-provider={harness}
-            data-provider-active={harness === providerHistory.activeHarness ? "true" : "false"}
-
-            tone={harness === providerHistory.activeHarness ? "primary" : "muted"}
-            className={
-              harness === providerHistory.activeHarness ? undefined : "session-provider-inactive"
-            }
-          >
-            <HarnessIcon
-              harness={harness}
-              className={`${compact ? "icon-xs" : "icon-md"} shrink-0`}
-            />
-          </Text>
-        </Tooltip>
-      ))}
-    </span>
-  ) : null;
+    ) : null;
   const BranchIcon = worktree ? FolderTree : GitBranch;
   const branchLabel =
     showBranch && !compact && branchText ? (
@@ -6280,7 +6300,7 @@ const SessionCard = memo(function SessionCard({
               <AssistantManagedBadge
                 management={session.managedBy}
                 compact
-                local={!isRemoteProjectPath(session.cwd)}
+                local={!remoteSession}
               />
               {compact ? modelLabel : null}
               {!compact ? null : (

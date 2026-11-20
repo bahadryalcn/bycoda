@@ -65,7 +65,7 @@ export function createGitObjectStore(options: GitObjectStoreOptions) {
     try {
       return await work();
     } catch (error) {
-      if (!/^git cat-file exited/.test((error as Error).message)) throw error;
+      if (!String((error as Error).message).startsWith("git cat-file exited")) throw error;
       // Exited right away: the option is unsupported (or the process died); retry one-shot.
       persistent = false;
       return fallback();

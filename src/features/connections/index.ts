@@ -53,3 +53,5 @@ export type * as uiUnreachableMachinesNoticeApi from "./public/UnreachableMachin
 export type * as headlessApi from "./public/headless";
 export type * as delegatedRuns from "./public/delegatedRuns";
 export type * as uiDelegatedSessionRequestsApi from "./public/DelegatedSessionRequests";
+
+export const loadServerSnippets = () => import("./ui/ServerSnippets");

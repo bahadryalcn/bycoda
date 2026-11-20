@@ -1,4 +1,5 @@
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { getVoiceApprovalPort, VOICE_TOOL_TIMEOUT_MS } from "./voiceRuntimeDeadline";
 
 export type VoiceToolActivityEntry = {
   id: string;
@@ -55,6 +56,15 @@ export class VoiceToolActivity {
     this.entries.push(entry);
     let observing = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let waitingForInlineReview = false;
+    let stopWatching: (() => void) | undefined;
+    const clearObservation = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      stopWatching?.();
+      stopWatching = undefined;
+      this.cancellations.delete(entry.id);
+    };
     const cancelled = new Promise<{
       status: "uncertain";
       requestId?: string;
@@ -64,8 +74,7 @@ export class VoiceToolActivity {
       this.cancellations.set(entry.id, () => {
         if (!observing) return;
         observing = false;
-        clearTimeout(timer);
-        this.cancellations.delete(entry.id);
+        clearObservation();
         Object.assign(entry, { state: "uncertain", elapsedMs: elapsedSince(entry.startedAt) });
         this.publish();
         resolve({
@@ -77,16 +86,27 @@ export class VoiceToolActivity {
         });
       });
     });
-    this.publish();
-    timer = setTimeout(() => this.stopWaiting(entry.id), 35_000);
+    const approval = entry.requestId ? getVoiceApprovalPort() : undefined;
+    const syncWait = () => {
+      if (!observing) return;
+      if (waitingForInlineReview || (entry.requestId && approval?.pending(entry.requestId))) {
+        clearTimeout(timer);
+        timer = undefined;
+        entry.state = "waiting-owner";
+      } else {
+        timer ??= setTimeout(() => this.stopWaiting(entry.id), VOICE_TOOL_TIMEOUT_MS);
+        entry.state = "running";
+      }
+      this.publish();
+    };
+    stopWatching = approval?.subscribe(syncWait);
+    syncWait();
     const work = (async () =>
       execute(
         () => observing,
         () => {
-          if (!observing) return;
-          clearTimeout(timer);
-          entry.state = "waiting-owner";
-          this.publish();
+          waitingForInlineReview = true;
+          syncWait();
         },
       ))()
       .then(
@@ -98,7 +118,7 @@ export class VoiceToolActivity {
           Object.assign(entry, {
             state: uncertain
               ? "uncertain"
-              : value.error || receiptState === "failed"
+              : value.error || value.hostToolsError || receiptState === "failed"
                 ? "failed"
                 : "returned",
             elapsedMs: elapsedSince(entry.startedAt),
@@ -114,10 +134,7 @@ export class VoiceToolActivity {
           throw cause;
         },
       )
-      .finally(() => {
-        clearTimeout(timer);
-        this.cancellations.delete(entry.id);
-      });
+      .finally(clearObservation);
     return Promise.race([work, cancelled]);
   }
 }

@@ -134,11 +134,16 @@ vi.mock("../../assistant/model/assistantClient", () => ({
 const presence = vi.hoisted(() => ({
   value: "active" as "active" | "idle" | "away" | "unknown",
   native: "unknown" as "active" | "idle" | "away" | "unknown",
+  revealWindow: vi.fn(async () => {}),
 }));
 vi.mock("../model/voicePresence", async (original) => ({
   ...(await original<typeof import("../model/voicePresence")>()),
   useVoicePresence: () => presence.value,
   readNativeVoicePresence: async () => presence.native,
+}));
+vi.mock("../../../platform/tauri/voiceTalkEvent", async (original) => ({
+  ...(await original<typeof import("../../../platform/tauri/voiceTalkEvent")>()),
+  revealVoiceTalkWindow: presence.revealWindow,
 }));
 const mock = vi.hoisted(() => ({
   callbacks: null as any,
@@ -276,6 +281,7 @@ vi.mock("../../../shared/i18n", () => ({
   translateAt: (_locale: string, key: string) => key,
 }));
 import { VoiceCompanion } from "./VoiceCompanion";
+import { VOICE_WAKE_EVENT } from "./useVoiceTalkEvent";
 
 it.each(["pointerup", "pointercancel"] as const)(
   "moves presentation without rendering audio controls until %s",
@@ -420,7 +426,7 @@ afterEach(async () => {
 });
 const a = { id: "a", title: "Alpha", cwd: "/a", blocks: [], busy: true } as unknown as Session;
 const b = { id: "b", title: "Beta", cwd: "/b", blocks: [] } as unknown as Session;
-async function setup(initial = a, initialSessions = [a, b]) {
+async function setup(initial = a, initialSessions = [a, b], start = true) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -432,10 +438,32 @@ async function setup(initial = a, initialSessions = [a, b]) {
       root.render(createElement(VoiceCompanion, { activeId, sessions, onSubmit, onStop })),
     );
   await render(initial.id, initialSessions);
-  await click("Voice companion");
-  await act(async () => container.querySelector<HTMLButtonElement>(START_CONTROL)!.click());
+  if (start) {
+    await click("Voice companion");
+    await act(async () => container.querySelector<HTMLButtonElement>(START_CONTROL)!.click());
+  }
   return { render, onSubmit, onStop };
 }
+
+it("opens the companion and starts Talk when the wake phrase is heard during keyboard idle", async () => {
+  presence.value = "idle";
+  presence.native = "idle";
+  await setup(a, [a, b], false);
+  await act(async () => window.dispatchEvent(new CustomEvent(VOICE_WAKE_EVENT)));
+  expect(container.querySelector('section[aria-label="Voice companion"]')).not.toBeNull();
+  expect(presence.revealWindow).toHaveBeenCalledOnce();
+  expect(mock.connect).toHaveBeenCalledOnce();
+  expect(mock.close).not.toHaveBeenCalled();
+});
+
+it("does not start Talk when the computer locks during wake handoff", async () => {
+  presence.native = "away";
+  await setup(a, [a, b], false);
+  await act(async () => window.dispatchEvent(new CustomEvent(VOICE_WAKE_EVENT)));
+  expect(mock.connect).not.toHaveBeenCalled();
+  expect(presence.revealWindow).not.toHaveBeenCalled();
+  expect(container.querySelector('section[aria-label="Voice companion"]')).toBeNull();
+});
 it("keeps remote Project voice available without claiming local persisted history", async () => {
   const remote = { ...a, id: "remote-a", cwd: "remote://paired/repo" };
   await setup(remote, [remote]);
@@ -1397,6 +1425,16 @@ async function setupGlobal(
   await act(async () => container.querySelector<HTMLButtonElement>(START_CONTROL)!.click());
   return { render, workspace, onSubmit, onStop, ensureToolSession };
 }
+
+it("explains how to invoke a catalog label without dispatching a tool", async () => {
+  await setupGlobal();
+  const result = await mock.realtime.tool("conversation_crews_schema", {});
+  expect(result).toMatchObject({
+    status: "failed",
+    error: expect.stringContaining("app_tool_call"),
+  });
+  expect(mock.toolCall).not.toHaveBeenCalled();
+});
 it.each(["local", "openai", "grok"] as const)(
   "restarts %s voice after a previous global participant becomes private",
   async (mode) => {
