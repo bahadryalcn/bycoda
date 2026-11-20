@@ -13,11 +13,14 @@ import {
   withinGlobalRecentWindow,
 } from "../model/globalRecentSessions";
 import { isRemoteProjectPath } from "../../projects/public/recents";
+import { pathKey } from "../../../shared/lib/paths";
+import { remoteSessionFor } from "../../connections/public/connections";
 import { t } from "../../../shared/i18n";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 
 const NO_ROWS: SessionSummary[] = [];
+const NO_PROJECTS: readonly string[] = [];
 
 // Summaries contain only small wire metadata, never transcript bodies. Compare
 // nested metadata too: updatedAt alone does not cover pin or provider changes.
@@ -56,6 +59,8 @@ export function useGlobalRecentSessions(
   sessions: readonly Session[],
   enabled: boolean,
   allowedProjectKeys: ReadonlySet<string>,
+  remoteRows: readonly SessionSummary[] = NO_ROWS,
+  freshRemoteProjects: readonly string[] = NO_PROJECTS,
 ): {
   rows: SessionSummary[];
   loading: boolean;
@@ -71,14 +76,33 @@ export function useGlobalRecentSessions(
   const running = useRef<Promise<void> | null>(null);
   const refreshRun = useRef<(() => void) | null>(null);
   const refresh = useCallback(() => refreshRun.current?.(), []);
+  const freshKeys = useMemo(() => new Set(freshRemoteProjects.map(pathKey)), [freshRemoteProjects]);
   // Only the open panel reads the rows, so a closed one builds nothing: tool starts and status
   // changes in any open session would otherwise re-merge all history and rescan every live
   // transcript. Opening builds from the current inputs in the same render.
-  const merged = useMemo(
-    () =>
-      enabled ? mergeGlobalRecentSessions(stored, history, sessions, allowedProjectKeys) : NO_ROWS,
-    [enabled, stored, history, sessions, allowedProjectKeys],
-  );
+  const merged = useMemo(() => {
+    if (!enabled) return NO_ROWS;
+    const listedByProject = new Map<string, Set<string>>();
+    for (const row of remoteRows) {
+      const key = pathKey(row.cwd);
+      const ids = listedByProject.get(key) ?? new Set<string>();
+      ids.add(row.id);
+      listedByProject.set(key, ids);
+    }
+    const keep = (row: { cwd: string; id: string }) => {
+      if (!isRemoteProjectPath(row.cwd)) return true;
+      const key = pathKey(row.cwd);
+      return (
+        !freshKeys.has(key) && !listedByProject.get(key)?.has(remoteSessionFor(row.id) ?? row.id)
+      );
+    };
+    return mergeGlobalRecentSessions(
+      stored.filter(keep),
+      [...history.filter(keep), ...remoteRows],
+      sessions.filter(keep),
+      allowedProjectKeys,
+    );
+  }, [enabled, stored, history, sessions, allowedProjectKeys, remoteRows, freshKeys]);
   const projectedRows = useMemo(() => withinGlobalRecentWindow(merged, clock), [merged, clock]);
   const rows = useStableValue(projectedRows, sameRecentRows);
   const updateClock = useStableCallback(() => {
@@ -225,8 +249,8 @@ export function useGlobalRecentSessions(
     };
   }, [enabled, historyKey, publishStored, publishError, publishLoading]);
   const remoteHistoryLimited = useMemo(
-    () => [...allowedProjectKeys].some(isRemoteProjectPath),
-    [allowedProjectKeys],
+    () => [...allowedProjectKeys].some((key) => isRemoteProjectPath(key) && !freshKeys.has(key)),
+    [allowedProjectKeys, freshKeys],
   );
   const visibleLoading = enabled && loading;
   return useMemo(

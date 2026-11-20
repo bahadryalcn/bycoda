@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useLocalLifecycleMachine } from "./useLocalLifecycleMachine";
 import {
   applyLifecycleListRead,
@@ -74,6 +74,50 @@ export function useSessionLifecycleList(enabled = true) {
     );
   }, [enabled, machineId]);
   return { machineId, ...useSessionLifecycleSnapshot() };
+}
+
+/** Recent sessions can span several Hosts. Keep their records separate from the local shelf. */
+export function useRemoteSessionLifecycleLists(machineKey: string) {
+  const scope = useId();
+  const [lists, setLists] = useState<
+    ReadonlyMap<string, ReadonlyMap<string, SessionLifecycleView>>
+  >(() => new Map());
+  const revisions = useRef(new Map<string, number>());
+  const pending = [...lists.values()].some((views) =>
+    [...views.values()].some((view) => view.state === "settling"),
+  );
+  const publish = useCallback(
+    (machineId: string, records: ReadonlyMap<string, SessionLifecycleView>) => {
+      setLists((current) => new Map(current).set(machineId, records));
+    },
+    [],
+  );
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Subscribe to lifecycle reads for the visible remote Hosts.
+  useEffect(() => {
+    if (!machineKey) return;
+    const stops = (JSON.parse(machineKey) as string[]).map((machineId) =>
+      subscribeSharedRead(
+        `recent-remote-list:${scope}:${machineId}`,
+        async (isCurrent) => {
+          const revision = revisions.current.get(machineId);
+          const { records } = await sessionLifecycleClient(machineId, false).list();
+          if (isCurrent() && revision === revisions.current.get(machineId))
+            publish(machineId, new Map(records.map((view) => [view.sessionId, view])));
+        },
+        { intervalMs: pending ? POLL_SETTLING_MS : REFRESH_LIST_MS, refreshOnFocus: true },
+      ),
+    );
+    return () => stops.forEach((stop) => stop());
+  }, [machineKey, pending, publish, scope]);
+  const change = async (machineId: string, sessionId: string, undo: boolean) => {
+    const client = sessionLifecycleClient(machineId, false);
+    const view = await (undo ? client.unsettle(sessionId) : client.settle(sessionId));
+    revisions.current.set(machineId, (revisions.current.get(machineId) ?? 0) + 1);
+    setLists((current) =>
+      new Map(current).set(machineId, new Map(current.get(machineId)).set(sessionId, view)),
+    );
+  };
+  return { lists, change };
 }
 
 /**

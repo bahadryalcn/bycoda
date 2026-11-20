@@ -286,6 +286,11 @@ import {
 import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
 import { useComposerMentionSources } from "./useComposerMentionSources";
 import { workItemMentionOf } from "../model/workItemMentionRows";
+import {
+  parseServerMentionQuery,
+  serverMentionAliasHint,
+  serverMentionOf,
+} from "../model/serverMentions";
 import { rememberWorkItemMention } from "../../inbox/public/workItemMentions";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { keepEqualToken } from "./keepEqualToken";
@@ -1028,7 +1033,12 @@ export const Composer = memo(function Composer({
     attachmentsRef.current = attachments;
   }, [slash, mention, attachments]);
   const mentionOpen =
-    mention !== null && (looksLikeProject(executionCwd) || (!remote && notesEnabled));
+    mention !== null &&
+    (looksLikeProject(executionCwd) ||
+      (!remote &&
+        (notesEnabled ||
+          serverMentionAliasHint(mention.query) !== undefined ||
+          parseServerMentionQuery(mention.query) !== null)));
   const tokens = useMemo(() => attachmentTokens(attachments), [attachments]);
   const navigationEmpty =
     draft.length === 0 &&
@@ -1104,6 +1114,11 @@ export const Composer = memo(function Composer({
     workItemsLoading,
     workItemsScoped,
     workItemsAvailable,
+    serversScoped,
+    serversAvailable,
+    serversLoading,
+    serversFailed,
+    retryServers,
   } = useComposerMentionSources({
     executionCwd,
     remote,
@@ -1770,10 +1785,12 @@ export const Composer = memo(function Composer({
         return;
       }
       const workItem = workItemMentionOf(file);
-      const hint = workItem?.kind === "hint";
+      const server = serverMentionOf(file);
+      const hint = workItem?.kind === "hint" || server?.hint === true;
       if (workItem?.kind === "item") rememberWorkItemMention(workItem.item);
       const label =
         workItem?.token ??
+        server?.token ??
         (remote || isNoteMentionPath(file.path)
           ? file.relative
           : mentionLabel(file, mentionIndexRef.current));
@@ -3408,16 +3425,20 @@ export const Composer = memo(function Composer({
               query={mention?.query ?? ""}
               active={mentionActive}
               loading={
+                serversLoading ||
                 workItemsLoading ||
-                (!workItemsScoped &&
+                (!serversScoped &&
+                  !workItemsScoped &&
                   looksLikeProject(executionCwd) &&
                   peekProjectFiles(executionCwd) == null)
               }
               workItemsScoped={workItemsScoped}
+              serversScoped={serversScoped}
+              includeServers={serversAvailable}
               includeWorkItems={workItemsAvailable}
-              failed={filesFailed}
+              failed={serversScoped ? serversFailed : filesFailed}
               indexNotice={filesIndexNotice}
-              onRetry={retryFiles}
+              onRetry={serversScoped ? retryServers : retryFiles}
               includeNotes={notesEnabled}
               onActive={setMentionActive}
               onPick={pickMention}

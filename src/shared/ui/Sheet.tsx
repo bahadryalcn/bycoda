@@ -65,6 +65,8 @@ export type SheetProps = {
    * nearest positioned ancestor (a pane); Escape closes it only when focus is in that pane.
    */
   anchor?: "viewport" | "container";
+  /** Non-modal only. `chat` uses the opaque chat canvas for transcript detail. */
+  surface?: "floating" | "chat";
   /** Non-modal only: `false` keeps the sheet mounted but inert and hidden from Escape. */
   open?: boolean;
   onClose: () => void;
@@ -167,7 +169,7 @@ function useContainerFocusReturn(sheet: RefObject<HTMLElement | null>, active: b
 /**
  * A side or bottom sheet. Modal sheets reuse Modal; both share the body `padding` rule. Non-modal sheets are
  * side panels that keep the page usable (session sub-panels, the notification list). Header is the
- * shared PanelHeader; the surface is the shared floating glass (`popover-backdrop`).
+ * shared PanelHeader. Non-modal sheets use floating glass by default and can use the chat canvas.
  * Hand-written side and bottom overlay panels; header, close, padding and footer reuse Modal chrome.
  * @group overlay
  * @use A detail or secondary panel beside or below the work (task detail, notifications).
@@ -236,6 +238,7 @@ function NonModalSheet({
   role = "dialog",
   side = "end",
   anchor = "viewport",
+  surface: fill = "floating",
   open = true,
   onClose,
   title,
@@ -383,6 +386,7 @@ function NonModalSheet({
       tabIndex={-1}
       data-sheet-side={side}
       data-sheet-motion={motion}
+      data-sheet-surface={fill}
       data-state={open ? "open" : "closed"}
       // A closed sheet a caller keeps mounted (to keep its content) must not stay painted.
       hidden={!open}
@@ -396,10 +400,12 @@ function NonModalSheet({
         .filter(Boolean)
         .join(" ")}
     >
-      <GlassBackdrop
-        ref={glassRef}
-        className={["popover-backdrop", glassClassName].filter(Boolean).join(" ")}
-      />
+      {fill === "floating" ? (
+        <GlassBackdrop
+          ref={glassRef}
+          className={["popover-backdrop", glassClassName].filter(Boolean).join(" ")}
+        />
+      ) : null}
       {resizable && end ? (
         <Sash
           orientation="vertical"

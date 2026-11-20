@@ -81,6 +81,7 @@ export const SubscriptionTargetSchema = z.discriminatedUnion("kind", [
   }),
   /** Model catalog as `models.list` returns it (capability `models.catalog.stream.v1`). */
   z.strictObject({ kind: z.literal("models"), projectId: IdentifierSchema.optional() }),
+  z.strictObject({ kind: z.literal("delegationMessages"), sessionId: IdentifierSchema }),
   z.strictObject({
     kind: z.literal("session"),
     sessionId: IdentifierSchema,

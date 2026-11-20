@@ -1,4 +1,4 @@
-import { readProviderAccountIdentity } from "./providerAccountIdentity";
+import { refreshProviderAccountIdentity } from "./providerAccountIdentity";
 import { invoke } from "@tauri-apps/api/core";
 import { remoteRequest } from "../../connections/public/connections";
 import { retryOnLocalHostAvailable } from "../../connections/public/localHostRetry";
@@ -20,7 +20,6 @@ type Styles = Record<
       isDefault?: boolean;
       color?: string;
       kind?: "personal" | "work";
-      derivedKind?: "personal" | "work";
     }
   >
 >;
@@ -87,27 +86,23 @@ export function startProviderAccountHostSync(): () => void {
       return;
     }
     running = (async () => {
+      for (const provider of ["claude", "codex"] as const) {
+        for (const account of providerAccounts(provider)) {
+          if (stopped || changes !== at) return;
+          if (!account.kind) await refreshProviderAccountIdentity(provider, account.id);
+        }
+      }
+      if (stopped || changes !== at) return;
       const machine = await invoke<RemoteMachine | null>("local_host_connect");
       if (!machine) {
         retry.later();
         return;
       }
-      const published = structuredClone(styles);
-      for (const provider of PROVIDER_ACCOUNT_PROVIDERS) {
-        for (const account of providerAccounts(provider)) {
-          const identity = await readProviderAccountIdentity(provider, account.id);
-          const organization = identity?.organization?.trim();
-          if (organization)
-            published[provider]![account.id]!.derivedKind = /['’]s Organization$/.test(organization)
-              ? "personal"
-              : "work";
-        }
-      }
       if (stopped || changes !== at) return;
       await remoteRequest(
         machine.id,
         "host.settings.save",
-        { providerAccountStyles: published },
+        { providerAccountStyles: styles },
         false,
         true,
       );
@@ -154,10 +149,9 @@ export function startProviderAccountHostSync(): () => void {
             continue;
           const label = style.label || account.label;
           const color = style.color as ProviderAccountColor | undefined;
-          if (label === account.label && color === account.color && style.kind === account.kind)
-            continue;
-          if (editProviderAccount(provider, account.id, { label, color, kind: style.kind }))
-            edited = true;
+          const kind = style.kind ?? account.kind;
+          if (label === account.label && color === account.color && kind === account.kind) continue;
+          if (editProviderAccount(provider, account.id, { label, color, kind })) edited = true;
         }
       }
       if (!edited) return "unchanged";

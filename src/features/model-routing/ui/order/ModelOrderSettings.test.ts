@@ -53,7 +53,6 @@ vi.mock("../../../sessions/public/modelSource", () => ({
 vi.mock("../../../sessions/public/ModelLabel", () => ({ ModelLabel: () => null }));
 vi.mock("../../model/modelProfile", () => ({
   modelProfile: () => ({ intelligence: 4, cost: 2, estimated: true }),
-  inferAccountKind: (label: string) => (/work/i.test(label) ? "work" : undefined),
 }));
 vi.mock("./useOrderDraft", () => ({ useOrderSettings: vi.fn(), useOrderDraft: vi.fn() }));
 vi.mock("../../model/modelRoutingClient", () => ({
@@ -94,7 +93,7 @@ vi.mock("../../../providers/public/providerAccounts", () => ({
   subscribeProviderAccounts: () => () => {},
   providerAccounts: () => [
     { id: "default", label: "Default account" },
-    { id: "work", label: "Work login" },
+    { id: "work", label: "Work login", kind: "work" },
     { id: "own", label: "Own login", kind: "personal" },
   ],
   defaultProviderAccountId: () => "default",
@@ -608,7 +607,7 @@ it("edits the group effort and saves it with the draft", async () => {
 it("splits models into work, personal and shared lists by account kind", async () => {
   saves.length = 0;
   await renderScreen([
-    modelEntry("s1", "grok"),
+    modelEntry("s1", "cursor"),
     modelEntry("w1", "claude", "work"),
     modelEntry("p1", "codex", "own"),
     modelEntry("s2", "claude"),
@@ -616,20 +615,20 @@ it("splits models into work, personal and shared lists by account kind", async (
   await openTab("Models & order");
   expect(headings().slice(0, 3)).toEqual(["Work accounts", "Personal accounts", "Shared models"]);
   expect(container.querySelectorAll('[aria-label^="More for model"]')).toHaveLength(4);
-  // Each list numbers its own rows from 1; shared holds the grok and the default-account model.
+  // Each list numbers its own rows from 1. The legacy default account is Personal.
   const labels = [...container.querySelectorAll('[aria-label^="More for model"]')].map((item) =>
     item.getAttribute("aria-label"),
   );
   expect(labels).toEqual([
     "More for model 1",
     "More for model 1",
-    "More for model 1",
     "More for model 2",
+    "More for model 1",
   ]);
 });
 
-it("uses one All models title when no account has a kind", async () => {
-  await renderScreen([modelEntry("s1", "grok"), modelEntry("s2", "claude")]);
+it("uses one All models title when no entry has a resolvable provider account", async () => {
+  await renderScreen([modelEntry("s1", "cursor"), modelEntry("s2", "claude", "missing")]);
   await openTab("Models & order");
   expect(headings()[0]).toBe("All models");
   expect(headings()).not.toContain("Work accounts");

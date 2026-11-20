@@ -1209,7 +1209,10 @@ function ToolCallSummary({
               <span className="font-mono text-ui-secondary text-(--color-content)">{target}</span>
             </>
           ) : (
-            <span className="font-mono text-ui-secondary">{label}</span>
+            <>
+              {command ? <>{t("Running")} </> : null}
+              <span className="font-mono text-ui-secondary">{label}</span>
+            </>
           )}
         </WorkingIndicator>
       </span>

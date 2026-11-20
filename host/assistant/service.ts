@@ -2721,6 +2721,8 @@ export class HostAssistant {
     });
   }
   private readonly report = (error: unknown) => this.ports.onError?.(error);
+  /** The observed-task poll in flight; it runs outside the request queue. */
+  private observedTaskPoll?: Promise<void>;
   private readonly later = (run: () => Promise<unknown>) =>
     this.store.db.outsideScope(() => void this.serialize(run).catch(this.report));
   private readonly kick = () => {
@@ -6256,6 +6258,13 @@ export class HostAssistant {
       profile.enabled && profile.setupComplete
         ? await readAssistantPresence(this.ports.readPresence)
         : undefined;
+    // The poll waits on the desktop for up to 10 s; outside the queue owner requests do not
+    // wait behind it. Each accepted event rechecks policy in its own critical transaction.
+    // Ticks overlap now that the poll is outside the queue; share the one in flight.
+    this.observedTaskPoll ??= this.pollObservedTasks(profile).finally(() => {
+      this.observedTaskPoll = undefined;
+    });
+    await this.observedTaskPoll;
     return this.serialize(async () => {
       try {
         await this.tickInner(undefined, presence);
@@ -6316,6 +6325,44 @@ export class HostAssistant {
     await this.setRuntime("receiptRetentionAt", now);
   }
   /** Called only with a live, exact project permit captured by the Host observation owner. */
+  private async pollObservedTasks(profile: AssistantProfile) {
+    const observationPolicy = assistantPolicy(profile);
+    if (
+      this.closing ||
+      this.emergencyStop ||
+      !profile.enabled ||
+      !profile.setupComplete ||
+      !this.ports.pollObservedTasks ||
+      !(
+        this.ports.observedTaskDeliveryConfigured?.() === true ||
+        this.ports.observationTasksReady?.() === true
+      ) ||
+      !(observationPolicy.observationTaskDone || observationPolicy.observationTaskNeedsInput) ||
+      (await this.runtime("paused", false))
+    )
+      return;
+    const scope = await this.manualPolicy();
+    if (!scope.enabled) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.ports.pollObservedTasks(
+          scope.projectIds,
+          (event, guard) => this.acceptObservedTaskEvent(event, () => active && guard()),
+          () => active,
+        ),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Observation poll timed out.")), 10000);
+        }),
+      ]);
+    } catch (error) {
+      this.ports.onError?.(error);
+    } finally {
+      active = false;
+      if (timer) clearTimeout(timer);
+    }
+  }
   async acceptObservedTaskEvent(
     event: AssistantObservation & { id: string; sequence: number },
     guard: () => boolean,
@@ -6437,36 +6484,6 @@ export class HostAssistant {
       return;
     await this.store.transaction(() => this.setRuntime("heartbeat", this.now()));
     await this.syncBudgetHolds(profile);
-    const observationPolicy = assistantPolicy(profile);
-    if (
-      this.ports.pollObservedTasks &&
-      (this.ports.observedTaskDeliveryConfigured?.() === true ||
-        this.ports.observationTasksReady?.() === true) &&
-      (observationPolicy.observationTaskDone || observationPolicy.observationTaskNeedsInput)
-    ) {
-      const scope = await this.manualPolicy();
-      if (scope.enabled) {
-        let active = true;
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          await Promise.race([
-            this.ports.pollObservedTasks(
-              scope.projectIds,
-              (event, guard) => this.acceptObservedTaskEvent(event, () => active && guard()),
-              () => active,
-            ),
-            new Promise<never>((_, reject) => {
-              timer = setTimeout(() => reject(new Error("Observation poll timed out.")), 10000);
-            }),
-          ]);
-        } catch (error) {
-          this.ports.onError?.(error);
-        } finally {
-          active = false;
-          if (timer) clearTimeout(timer);
-        }
-      }
-    }
     let usage = await this.usage(profile);
     let incompleteUsage = false;
     const events: AssistantActivity[] = [];

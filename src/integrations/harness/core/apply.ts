@@ -1103,12 +1103,13 @@ function patchStreaming(
   if (role === "reasoning" && (typeof input === "string" ? !input : input.every((text) => !text)))
     return session;
   let index = session.blocks.length - 1;
-  while (
-    index >= 0 &&
-    session.blocks[index].role === "system" &&
-    !session.blocks[index].interjection
-  )
-    index--;
+  // A steer is part of the same turn and can land between deltas of one provider message.
+  for (; index >= 0; index--) {
+    const block = session.blocks[index];
+    if (block.role === "system" && !block.interjection) continue;
+    if (block.role === "user" && block.continuationOf) continue;
+    break;
+  }
   const last = session.blocks[index];
   // A completion closes one provider message. The next delta is a new message
   // even when no tool or status row landed between them; joining the two can

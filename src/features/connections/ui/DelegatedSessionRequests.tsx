@@ -5,6 +5,7 @@ import {
   ComposerQuestionForm,
 } from "../../sessions/public/delegatedRequests";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { remoteSessionFor, useRemoteMachines } from "../model/connections";
 import { remoteProjectFor } from "../model/remoteProjects";
@@ -101,6 +102,18 @@ function SessionRequests({
         );
         return (
           <ApprovalDecisionProvider session={session} dispatch={onApproval}>
+            {remote.remoteHistoryHasMore ? (
+              <Button
+                variant="ghost"
+                disabled={remote.remoteHistoryLoading}
+                onClick={() => void Promise.resolve(remote.onLoadRemoteHistory?.()).catch(() => {})}
+              >
+                {t("Load earlier messages")}
+              </Button>
+            ) : null}
+            {remote.remoteHistoryError ? (
+              <InlineError>{remote.remoteHistoryError}</InlineError>
+            ) : null}
             {approvals.map((block) => (
               <ActivityRow
                 key={block.id}

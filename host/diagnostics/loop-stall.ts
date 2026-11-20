@@ -20,6 +20,14 @@ const PROFILE_FILE = /^stall-.+\.cpuprofile$/;
 /** Records the main thread for `durationMs` and returns a `.cpuprofile` JSON document. */
 export type StallProfiler = (durationMs: number) => Promise<string>;
 
+// Off by default: `Profiler.start` itself freezes the main thread (0.8–3.4 s measured on a
+// busy Host), so stall profiles are a developer switch (Settings > General > Diagnostics).
+let stallProfilesEnabled = false;
+/** The owner's Host setting, applied at start-up and on each save. */
+export function setStallProfilesEnabled(enabled: boolean) {
+  stallProfilesEnabled = enabled;
+}
+
 async function inspectorProfile(durationMs: number): Promise<string> {
   const session = new Session();
   session.connect();
@@ -38,17 +46,19 @@ async function inspectorProfile(durationMs: number): Promise<string> {
 /**
  * Reports event-loop stalls when they happen. The 15-minute health p99 hides
  * second-long freezes, and a stalled Host shows only as slow, unrelated requests.
- * With `profileDir`, repeated stalls also save a short CPU profile there, so the
- * blocking code is named without attaching a debugger.
+ * With `profileDir` and profiles enabled, repeated stalls also save a short CPU profile
+ * there, so the blocking code is named without attaching a debugger.
  */
 export function watchLoopStalls(options: {
   log: Logger;
   profileDir?: string;
   profiler?: StallProfiler;
+  profilesEnabled?: () => boolean;
   now?: () => number;
 }) {
   const now = options.now ?? monotonicNow;
   const profiler = options.profiler ?? inspectorProfile;
+  const profilesEnabled = options.profilesEnabled ?? (() => stallProfilesEnabled);
   let last = now();
   let lastWarn: number | undefined;
   let suppressed = 0;
@@ -90,6 +100,7 @@ export function watchLoopStalls(options: {
     const dir = options.profileDir;
     if (
       !dir ||
+      !profilesEnabled() ||
       profiling ||
       recent.length < PROFILE_AFTER_STALLS ||
       (lastProfile !== undefined && elapsedSince(lastProfile, at) < PROFILE_EVERY_MS)

@@ -4,10 +4,11 @@ import {
   decodeCrewMemberChild,
   decodeDelegationParent,
   type CrewMemberChild,
+  type DelegationMessage,
   type DelegationParent,
 } from "../../../shared/model/host-contracts/delegation";
 import type { DockAgent, DockAgentStatus } from "./activityDock";
-import type { AgentStep, Block, Session } from "./session";
+import type { AgentInput, AgentStep, Block, Session } from "./session";
 import { delegatedBlockId } from "./delegatedBlockId";
 import { executionUserIndex } from "./executionTurn";
 import { isSessionErrorBlock } from "./sessionIssue";
@@ -247,9 +248,7 @@ export { delegatedBlockId };
  */
 export function delegatedRound(child: Session): number {
   const hosted = delegationParentOf(child)?.round;
-  const turns = child.blocks.filter(
-    (block) => block.role === "user" && !block.internal && !block.continuationOf,
-  ).length;
+  const turns = child.blocks.filter(isDelegatedTurn).length;
   return Math.max(hosted ?? 0, turns, 1);
 }
 
@@ -268,17 +267,32 @@ export function delegatedFailureText(child: Session): string | undefined {
  * A tool-shaped block for a child session, so the subagent sheet renders it
  * exactly like a native run. Its steps are the child's own calls and prose.
  */
-export function delegatedAgentBlock(child: Session): Block {
+export function delegatedAgentBlock(
+  child: Session,
+  options?: { history: true; receipts?: readonly DelegationMessage[] },
+): Block {
   const parent = delegationParentOf(child);
-  const first = child.blocks.find((block) => block.role === "user");
-  // The clock and steps belong to the latest round; earlier rounds are history.
+  const first = child.historyPartial ? undefined : child.blocks.find(isDelegatedTurn);
+  // Keep inline summaries scoped to the active round. The opened panel can show history.
   const latestIndex = executionUserIndex(child.blocks);
   const latest = child.blocks[latestIndex] ?? first;
   const steps: AgentStep[] = [];
-  for (const block of latestIndex > 0 ? child.blocks.slice(latestIndex) : child.blocks) {
+  const history = options?.history;
+  const receipts = options?.receipts;
+  const linked = receipts?.length ? new Map<string, DelegationMessage>() : undefined;
+  for (const receipt of receipts ?? []) if (receipt.blockId) linked?.set(receipt.blockId, receipt);
+  const shown = receipts?.length ? new Set<string>() : undefined;
+  const round = delegatedRound(child);
+  let stepRound = history ? Math.max(0, round - child.blocks.filter(isDelegatedTurn).length) : 0;
+  for (const block of !history && latestIndex > 0
+    ? child.blocks.slice(latestIndex)
+    : child.blocks) {
     if (block.internal) continue;
+    if (history && isDelegatedTurn(block)) stepRound++;
+    const stepMeta = history ? { round: Math.max(stepRound, 1) } : {};
     if (isToolBlock(block)) {
       steps.push({
+        ...stepMeta,
         id: block.id,
         kind: "tool",
         text: toolCallLabel(block),
@@ -294,15 +308,39 @@ export function delegatedAgentBlock(child: Session): Block {
         ...(block.tool?.preview ? { preview: block.tool.preview } : {}),
       });
     } else if (block.role === "assistant" && block.text.trim()) {
-      steps.push({ id: block.id, kind: "message", text: block.text });
+      steps.push({ ...stepMeta, id: block.id, kind: "message", text: block.text });
+    } else if (
+      history &&
+      block.role === "user" &&
+      block !== first &&
+      block.text.trim() &&
+      (!block.draft || block.followUpDelivery)
+    ) {
+      const receipt = linked?.get(block.id);
+      if (receipt) shown?.add(receipt.id);
+      steps.push({
+        ...stepMeta,
+        id: receipt?.id ?? block.id,
+        kind: "message",
+        text: receipt?.text ?? block.text,
+        input: receipt ? receiptInput(receipt, block) : historicalInput(block),
+      });
     }
+  }
+  for (const receipt of receipts ?? []) {
+    if (shown?.has(receipt.id)) continue;
+    steps.push({
+      id: receipt.id,
+      kind: "message",
+      text: receipt.text,
+      input: receiptInput(receipt),
+    });
   }
   const startedAt = latest?.startedAt ?? parent?.startedAt;
   const ended =
     !child.busy && latest?.startedAt !== undefined && latest.durationMs !== undefined
       ? latest.startedAt + latest.durationMs
       : undefined;
-  const round = delegatedRound(child);
   const status = child.busy || child.continuingElsewhere ? "running" : "completed";
   // Runs started before the task title was kept are named "Subagent · <model>";
   // recover their task line from the brief instead of repeating the model.
@@ -331,6 +369,35 @@ export function delegatedAgentBlock(child: Session): Block {
       ...(ended !== undefined ? { endedAt: ended } : {}),
       ...(round > 1 ? { round } : {}),
     },
+  };
+}
+
+function isDelegatedTurn(block: Block): boolean {
+  return block.role === "user" && !block.internal && !block.draft && !block.continuationOf;
+}
+
+function historicalInput(block: Block): AgentInput {
+  const input: AgentInput = {};
+  if (block.continuationOf) input.mode = "steer";
+  if (block.followUpDelivery === "pending") input.delivery = "sending";
+  if (block.followUpDelivery === "undelivered") input.delivery = "failed";
+  if (block.followUpDelivery === "uncertain") input.delivery = "unknown";
+  const author = block.author;
+  if (author) input.sender = author.kind === "delegation" ? author.title : author.name;
+  return input;
+}
+
+function receiptInput(receipt: DelegationMessage, block?: Block): AgentInput {
+  const delivery =
+    block && receipt.effectiveMode === "steer"
+      ? (historicalInput(block).delivery ?? (block.draft ? receipt.delivery : "accepted"))
+      : receipt.delivery;
+  return {
+    sender: receipt.sender,
+    mode: receipt.mode,
+    effectiveMode: receipt.effectiveMode,
+    delivery,
+    detail: receipt.detail,
   };
 }
 

@@ -55,6 +55,40 @@ it("hydrates children and resumes background updates after the live sheet owner 
   }
 });
 
+it("clears a stale local busy flag when discovery reports the delegated turn settled", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const parent = { id: "p", cwd: "/p", modelSettings: {} } as Session;
+  const blocks = [{ id: "reply", role: "assistant", text: "Finished" }] as Session["blocks"];
+  const child = {
+    id: "c",
+    cwd: "/p",
+    modelSettings: {},
+    blocks,
+    busy: true,
+    continuingElsewhere: true,
+    adoptedRunId: "host-turn",
+  } as Session;
+  resetSessionsStore([parent, child]);
+  // desktopCopyOf omits the native busy flag. The Host may settle without a transcript update.
+  const { busy: _busy, ...settled } = child;
+  discover.mockResolvedValueOnce([
+    { ...settled, continuingElsewhere: undefined, adoptedRunId: undefined },
+  ]);
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe, { id: "p" })));
+    const updated = getSessions()[1];
+    expect(updated.busy).toBeFalsy();
+    expect(updated.continuingElsewhere).toBeUndefined();
+    expect(updated.adoptedRunId).toBeUndefined();
+    expect(updated.blocks).toBe(blocks);
+  } finally {
+    await act(async () => root.unmount());
+    resetSessionsStore([]);
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each(["streamed", "owner", "removed", "arrived"])(
   "does not replace a child's %s state with a delayed discovery result",
   async (mode) => {

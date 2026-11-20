@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { watchLoopStalls } from "./loop-stall";
+import { setStallProfilesEnabled, watchLoopStalls } from "./loop-stall";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -10,7 +10,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function fixture(profileDir?: string) {
+function fixture(profileDir?: string, profilesEnabled: (() => boolean) | null = () => true) {
   vi.useFakeTimers();
   let clock = 0;
   const log = {
@@ -22,7 +22,13 @@ function fixture(profileDir?: string) {
     child: vi.fn(),
   };
   const profiler = vi.fn(async () => '{"nodes":[]}');
-  const watch = watchLoopStalls({ log, profileDir, profiler, now: () => clock });
+  const watch = watchLoopStalls({
+    log,
+    profileDir,
+    profiler,
+    profilesEnabled: profilesEnabled ?? undefined,
+    now: () => clock,
+  });
   /** One timer tick that arrived `lagMs` late. */
   const tick = async (lagMs = 0) => {
     clock += 200 + lagMs;
@@ -61,6 +67,22 @@ it("saves one CPU profile for repeated stalls and keeps only the newest ones", a
   expect(files).toContain("host.log");
   expect(files).not.toContain("stall-1.cpuprofile");
   watch.stop();
+});
+
+it("profiles nothing until the owner turns stall profiles on", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bycoda-stall-"));
+  dirs.push(dir);
+  const { profiler, watch, tick } = fixture(dir, null);
+  for (let index = 0; index < 5; index++) await tick(700);
+  expect(profiler).not.toHaveBeenCalled();
+  setStallProfilesEnabled(true);
+  try {
+    for (let index = 0; index < 3; index++) await tick(700);
+    expect(profiler).toHaveBeenCalledTimes(1);
+  } finally {
+    setStallProfilesEnabled(false);
+    watch.stop();
+  }
 });
 
 it("profiles nothing without a directory", async () => {

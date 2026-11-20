@@ -62,12 +62,17 @@ it("fails with stable codes that carry no identity, and keeps the cleanup cause"
   expect((cleanup as ProviderAccountError).cause).toMatchObject({ message: "Login cancelled" });
 });
 
-it("persists a verified different identity", async () => {
+it("persists the selected kind and color with a verified different identity", async () => {
   vi.mocked(readProviderAccountIdentity).mockImplementation(async (_, id) => ({
     email: id === "default" ? "personal@example.com" : "work@example.com",
   }));
-  await registerProviderAccount(account);
+  await registerProviderAccount({ ...account, kind: "work", color: "blue" });
   expect(providerAccounts("codex").map((entry) => entry.id)).toEqual(["default", "account-new"]);
+  expect(providerAccounts("codex")[1]).toMatchObject({
+    label: "Work",
+    kind: "work",
+    color: "blue",
+  });
   expect(removeProviderAccountCredentials).not.toHaveBeenCalled();
 });
 

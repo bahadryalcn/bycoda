@@ -1,5 +1,5 @@
 import { errorText } from "../../shared/lib/errors";
-import { resolveBrowserAddress } from "./model/browserAddress";
+import { resolveBrowserAddress, validBrowserHome } from "./model/browserAddress";
 import { browserDefaultViewport, toolPreferences } from "./model/toolPreferences";
 import type { BrowserViewState as BrowserState } from "./model/browserViewState";
 import { StatusDot } from "../../shared/ui/StatusDot";
@@ -29,6 +29,7 @@ import {
 import { hostLifetimeDeadline, remainingUntil } from "../../shared/lib/time/hostLifetime";
 import { monotonicNow } from "../../shared/lib/time/timestamps";
 import { BrowserAnnotationDetails } from "./BrowserAnnotationDetails";
+import { consumeBrowserNavigation } from "./model/browserNavigationRequests";
 import { BrowserInspectorNavigation } from "./BrowserInspectorNavigation";
 import { Button } from "../../shared/ui/Button";
 import { TextareaField } from "../../shared/ui/TextareaField";
@@ -80,6 +81,8 @@ type Frame = {
 type Props = {
   cwd: string;
   initialUrl?: string;
+  /** Explicit navigation request; each ID navigates once, in this or any other window. */
+  navigation?: { id: string; url: string };
   sessionId?: string;
   composerSessionId?: string;
   composerWindow?: string;
@@ -116,6 +119,7 @@ export function BrowserPanel(props: Props) {
 function ProjectBrowserPanel({
   cwd,
   initialUrl,
+  navigation,
   sessionId,
   composerSessionId = sessionId,
   composerWindow,
@@ -874,6 +878,28 @@ function ProjectBrowserPanel({
       }
     }
   };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- drives the Host Browser connection to a request delivered from another window, once per request ID
+  useEffect(() => {
+    // Reason: an explicit request (chat link) reaches the visible, idle panel once; the
+    // ledger keeps remounts, dock moves and window reloads from replaying it.
+    if (
+      !active ||
+      busy ||
+      pending.current ||
+      !navigation ||
+      !consumeBrowserNavigation(navigation.id)
+    )
+      return;
+    const target = navigation.url;
+    void action(async () => {
+      if (!validBrowserHome(target)) throw new Error(t("Use an HTTP or HTTPS address."));
+      setUrl(target);
+      // An annotation in progress keeps its draft; the address waits for an explicit Open.
+      if (selecting) throw new Error(t("Finish selection"));
+      await openWebsite(target);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, busy, navigation?.id]);
 
   const { browserStatus, errorSummary, statusTone, statusLabel, statusDetails } =
     browserStatusPresentation({ state, error, notice, busy, setupRequired });

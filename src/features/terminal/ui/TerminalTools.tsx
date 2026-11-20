@@ -2,6 +2,7 @@ import { actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
+import { Portal } from "../../../shared/ui/Portal";
 import type { Terminal } from "@xterm/xterm";
 import {
   SearchAddon,
@@ -11,7 +12,7 @@ import {
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Switch } from "../../../shared/ui/Switch";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Select } from "../../../shared/ui/Select";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Popover } from "../../../shared/ui/Popover";
 import { MenuRow } from "../../../shared/ui/MenuRow";
@@ -21,6 +22,8 @@ import {
   ChevronDown,
   CheckList,
   ChevronUp,
+  Minus,
+  Plus,
   Search,
   Terminal as TerminalIcon,
   X,
@@ -50,12 +53,14 @@ export function TerminalTools({
   remoteShell,
   onEnableShellIntegration,
   onSavedCommands,
+  onSaveCommand,
   onStartupReview,
   fontSize,
   savedFontSize,
   onResetFontSize,
   onFontSizeChange,
   searchDecorations,
+  toolbarTarget,
 }: {
   terminalId?: string;
   terminal: Terminal | null;
@@ -69,6 +74,7 @@ export function TerminalTools({
   >;
   onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
   onSavedCommands?: () => void;
+  onSaveCommand?: () => void;
   onStartupReview?: () => Promise<void>;
   /** Effective per-instance size, supplied by the terminal owner after zoom. */
   fontSize?: number;
@@ -77,6 +83,7 @@ export function TerminalTools({
   onFontSizeChange?: (size: number) => void;
   /** Resolved shared semantic colors; the terminal owner refreshes these with its theme. */
   searchDecorations?: ISearchOptions["decorations"];
+  toolbarTarget?: HTMLDivElement | null;
 }) {
   const t = useT();
   const [query, setQuery] = useState("");
@@ -185,6 +192,7 @@ export function TerminalTools({
 
   const changeMode = (next: TerminalTool) => {
     setMenuOpen(false);
+    setHelpOpen(false);
     onModeChange(next);
   };
   const close = () => {
@@ -200,9 +208,9 @@ export function TerminalTools({
     }
   };
 
-  const controls = (
+  const renderControls = (search: boolean) => (
     <div
-      data-terminal-tools=""
+      data-terminal-tools={search ? "" : undefined}
       onMouseDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         event.stopPropagation();
@@ -212,8 +220,8 @@ export function TerminalTools({
         }
       }}
     >
-      <div className={styles.tools}>
-        {mode === "search" ? (
+      <div className={search ? styles.tools : styles.menuActions}>
+        {search ? (
           <>
             <SearchInput
               ref={inputRef}
@@ -266,11 +274,12 @@ export function TerminalTools({
             </Text>
           </>
         ) : null}
-        {mode !== "search" && remoteShell ? (
+        {!search && remoteShell ? (
           <>
             <Button
               variant="ghost"
               size="sm"
+              align="start"
               disabled={!ready || alternate}
               loading={mode === "remote" && remoteShell.waiting}
               shortcut="Ctrl+Space"
@@ -284,6 +293,7 @@ export function TerminalTools({
             <Button
               variant="ghost"
               size="sm"
+              align="start"
               disabled={!ready || alternate}
               onClick={() => {
                 remoteShell.setSource("history");
@@ -295,11 +305,24 @@ export function TerminalTools({
             </Button>
           </>
         ) : null}
-        {mode !== "search" && onSavedCommands ? (
+        {!search && !toolbarTarget && onSaveCommand ? (
           <Button
             variant="ghost"
             size="sm"
-            disabled={!ready || alternate}
+            align="start"
+            onClick={() => {
+              changeMode(null);
+              onSaveCommand();
+            }}
+          >
+            {t("Save command")}
+          </Button>
+        ) : null}
+        {!search && onSavedCommands ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            align="start"
             onClick={() => {
               changeMode(null);
               onSavedCommands();
@@ -308,7 +331,7 @@ export function TerminalTools({
             {t("Saved commands")}
           </Button>
         ) : null}
-        {mode !== "search" && onEnableShellIntegration ? (
+        {!search && onEnableShellIntegration ? (
           <SplitButton
             variant="ghost"
             size="sm"
@@ -334,11 +357,11 @@ export function TerminalTools({
             onClick={() => onEnableShellIntegration("bash")}
           />
         ) : null}
-        {mode !== "search" && onStartupReview ? (
+        {!search && onStartupReview ? (
           <Button
             variant="ghost"
             size="sm"
-            iconOnly
+            align="start"
             label={t("Review startup scripts")}
             loading={reviewingStartup}
             disabled={!ready}
@@ -354,41 +377,45 @@ export function TerminalTools({
             }}
           >
             <CheckList className="icon-sm" />
+            {t("Review startup scripts")}
           </Button>
         ) : null}
-        {(mode === "search" || mode === "remote") && (
+        {(search || mode === "remote") && (
           <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={close}>
             <X className="icon-sm" />
           </Button>
         )}
       </div>
-      {mode !== "search" && remoteShell ? (
-        <Disclosure size="sm" className="px-2 py-1" summary={t("Suggestion settings")}>
-          <div className="flex flex-wrap items-center gap-2 py-1">
+      {!search && remoteShell ? (
+        <Disclosure size="sm" className={styles.settings} summary={t("Suggestion settings")}>
+          <div className={styles.settingRow}>
+            <Text as="span" size="caption">
+              {t("Show suggestions while typing")}
+            </Text>
             <Switch
               checked={remoteShell.automatic}
               onCheckedChange={remoteShell.setAutomatic}
               aria-label={t("Show suggestions while typing")}
             />
-            <span>{t("Show suggestions while typing")}</span>
-            <SegmentedControl
-              label={t("Suggestion source")}
-              value={remoteShell.source}
-              onValueChange={(value) =>
-                remoteShell.setSource(value as "commands" | "paths" | "history")
-              }
-              options={[
-                { value: "commands", label: t("Commands") },
-                { value: "paths", label: t("Remote paths") },
-                { value: "history", label: t("Reviewed history") },
-              ]}
-            />
           </div>
-          <p>
+          <Select
+            fieldSize="sm"
+            label={t("Suggestion source")}
+            value={remoteShell.source}
+            onValueChange={(value) =>
+              remoteShell.setSource(value as "commands" | "paths" | "history")
+            }
+            options={[
+              { value: "commands", label: t("Commands") },
+              { value: "paths", label: t("Remote paths") },
+              { value: "history", label: t("Reviewed history") },
+            ]}
+          />
+          <Text as="p" size="caption" tone="muted" className={styles.settingNote}>
             {t(
               "Session only. Remote command and path names may appear here. Reviewed history uses approved command forms; arbitrary shell completion stays on Tab.",
             )}
-          </p>
+          </Text>
         </Disclosure>
       ) : null}
     </div>
@@ -397,184 +424,224 @@ export function TerminalTools({
     { phase: "hover-overlay", hidden: typing, open: mode === "search" || menuOpen || helpOpen },
     styles.overlay,
   );
-  return (
-    <>
-      <div
-        {...overlayAppearance}
-        ref={overlayRef}
-        {...surfaceAttributes(
-          { frame: "pane", edge: "all", radius: "card", variant: "floating" },
-          overlayAppearance.className,
-        )}
-        data-open={mode === "search" || menuOpen || helpOpen || undefined}
-        data-typing={typing || undefined}
-        onMouseDown={(event) => event.stopPropagation()}
+  const toolbar = (
+    <div className={styles.menuTrigger}>
+      {toolbarTarget && onSaveCommand ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            changeMode(null);
+            onSaveCommand();
+          }}
+        >
+          {t("Save command")}
+        </Button>
+      ) : null}
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly
+        label={t("Find in terminal")}
+        shortcut="Ctrl/Cmd+F"
+        aria-pressed={mode === "search"}
+        disabled={!terminal}
+        onClick={() => {
+          changeMode("search");
+          inputRef.current?.focus();
+          inputRef.current?.select();
+        }}
       >
-        {mode === "search" ? (
-          controls
-        ) : (
-          <div className={styles.menuTrigger}>
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={t("Find in terminal")}
-              shortcut="Ctrl/Cmd+F"
-              disabled={!terminal}
-              onClick={() => changeMode("search")}
+        <Search className="icon-sm" />
+      </Button>
+      {!toolbarTarget && suggestionsAllowed && (
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Command suggestions")}
+          shortcut="Ctrl+Space"
+          aria-pressed={mode === "command"}
+          disabled={!ready || alternate}
+          onClick={() => {
+            if (mode === "command") close();
+            else changeMode("command");
+          }}
+        >
+          <TerminalIcon className="icon-sm" />
+        </Button>
+      )}
+      {!toolbarTarget && onEnableShellIntegration ? (
+        <Button
+          ref={helpAnchor}
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("About shell suggestions")}
+          aria-expanded={helpOpen}
+          aria-haspopup="dialog"
+          onClick={() => setHelpOpen(!helpOpen)}
+        >
+          <Info aria-hidden className="icon-sm" />
+        </Button>
+      ) : null}
+      {terminal || toolbarTarget ? (
+        <>
+          <Button
+            ref={menuAnchor}
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("Terminal pane actions")}
+            aria-expanded={menuOpen}
+            aria-haspopup="dialog"
+            disabled={!terminal && !onSavedCommands}
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            <MoreHorizontal className="icon-sm" />
+          </Button>
+          {menuOpen ? (
+            <Popover
+              anchor={menuAnchor}
+              align="end"
+              width={320}
+              solid
+              kind="dialog"
+              aria-label={t("Terminal pane actions")}
+              onDismiss={() => {
+                setMenuOpen(false);
+                if (toolbarTarget) setHelpOpen(false);
+              }}
             >
-              <Search className="icon-sm" />
-            </Button>
-            {suggestionsAllowed && (
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                label={t("Command suggestions")}
-                shortcut="Ctrl+Space"
-                aria-pressed={mode === "command"}
-                disabled={!ready || alternate}
-                onClick={() => {
-                  if (mode === "command") close();
-                  else changeMode("command");
-                }}
-              >
-                <TerminalIcon className="icon-sm" />
-              </Button>
-            )}
-            {onEnableShellIntegration ? (
-              <Button
-                ref={helpAnchor}
-                variant="ghost"
-                size="sm"
-                iconOnly
-                label={t("About shell suggestions")}
-                aria-expanded={helpOpen}
-                aria-haspopup="dialog"
-                onClick={() => setHelpOpen(!helpOpen)}
-              >
-                <Info aria-hidden className="icon-sm" />
-              </Button>
-            ) : null}
-            {terminal ? (
-              <>
-                <Button
-                  ref={menuAnchor}
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
-                  label={t("Terminal pane actions")}
-                  aria-expanded={menuOpen}
-                  aria-haspopup="dialog"
-                  onClick={() => setMenuOpen(!menuOpen)}
-                >
-                  <MoreHorizontal className="icon-sm" />
-                </Button>
-                {menuOpen ? (
-                  <Popover
-                    anchor={menuAnchor}
-                    align="end"
-                    width={300}
-                    solid
-                    kind="dialog"
-                    aria-label={t("Terminal pane actions")}
-                    onDismiss={() => setMenuOpen(false)}
-                  >
-                    <div className={styles.menuBody}>
-                      <MenuRow
-                        type="button"
-                        onClick={() => {
-                          terminal.scrollToBottom();
-                          setMenuOpen(false);
-                          terminal.focus();
-                        }}
+              <div className={styles.menuBody}>
+                {terminal ? (
+                  <>
+                    <MenuRow
+                      type="button"
+                      onClick={() => {
+                        terminal.scrollToBottom();
+                        setMenuOpen(false);
+                        terminal.focus();
+                      }}
+                    >
+                      {t("Scroll to bottom")}
+                    </MenuRow>
+                    <MenuRow
+                      type="button"
+                      disabled={alternate}
+                      onClick={() => {
+                        terminal.clear();
+                        setMenuOpen(false);
+                        terminal.focus();
+                      }}
+                    >
+                      {t("Clear terminal")}
+                    </MenuRow>
+                  </>
+                ) : null}
+                {fontSize !== undefined ? (
+                  <>
+                    {terminal ? <Divider className="my-1" /> : null}
+                    <div
+                      className={styles.fontRow}
+                      role="group"
+                      aria-label={t("Terminal font size")}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        label={t("Decrease terminal text size")}
+                        disabled={!onFontSizeChange || fontSize <= 8}
+                        onClick={() => onFontSizeChange?.(fontSize - 1)}
                       >
-                        {t("Scroll to bottom")}
-                      </MenuRow>
-                      <MenuRow
-                        type="button"
-                        disabled={alternate}
-                        onClick={() => {
-                          terminal.clear();
-                          setMenuOpen(false);
-                          terminal.focus();
-                        }}
+                        <Minus className="icon-sm" />
+                      </Button>
+                      <Text
+                        size="caption"
+                        tone="secondary"
+                        leading="inherit"
+                        className={styles.fontValue}
+                        role="status"
+                        aria-label={t("Terminal font size")}
                       >
-                        {t("Clear terminal")}
-                      </MenuRow>
-                      {fontSize !== undefined ? (
-                        <>
-                          <Divider className="my-1" />
-                          <div
-                            className={styles.fontRow}
-                            role="group"
-                            aria-label={t("Terminal font size")}
-                          >
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              iconOnly
-                              label={t("Decrease terminal text size")}
-                              disabled={!onFontSizeChange || fontSize <= 8}
-                              onClick={() => onFontSizeChange?.(fontSize - 1)}
-                            >
-                              −
-                            </Button>
-                            <Text
-                              size="caption"
-                              tone="secondary"
-                              leading="inherit"
-                              className={styles.fontValue}
-                              role="status"
-                              aria-label={t("Terminal font size")}
-                            >
-                              {fontSize}px
-                            </Text>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              iconOnly
-                              label={t("Increase terminal text size")}
-                              disabled={!onFontSizeChange || fontSize >= 40}
-                              onClick={() => onFontSizeChange?.(fontSize + 1)}
-                            >
-                              +
-                            </Button>
-                            {onResetFontSize ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                label={t("Reset text size")}
-                                disabled={savedFontSize === undefined || fontSize === savedFontSize}
-                                onClick={() => {
-                                  onResetFontSize();
-                                  setMenuOpen(false);
-                                  terminal.focus();
-                                }}
-                              >
-                                {t("Reset")}
-                              </Button>
-                            ) : null}
-                          </div>
-                        </>
-                      ) : null}
-                      {remoteShell ||
-                      onSavedCommands ||
-                      onEnableShellIntegration ||
-                      onStartupReview ? (
-                        <div className={styles.popoverBody}>
-                          <Divider className="my-1" />
-                          {controls}
-                        </div>
+                        {fontSize}px
+                      </Text>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        label={t("Increase terminal text size")}
+                        disabled={!onFontSizeChange || fontSize >= 40}
+                        onClick={() => onFontSizeChange?.(fontSize + 1)}
+                      >
+                        <Plus className="icon-sm" />
+                      </Button>
+                      {onResetFontSize ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          label={t("Reset text size")}
+                          disabled={savedFontSize === undefined || fontSize === savedFontSize}
+                          onClick={() => {
+                            onResetFontSize();
+                            setMenuOpen(false);
+                            terminal?.focus();
+                          }}
+                        >
+                          {t("Reset")}
+                        </Button>
                       ) : null}
                     </div>
-                  </Popover>
+                  </>
                 ) : null}
-              </>
-            ) : null}
-          </div>
-        )}
-      </div>
+                {remoteShell ||
+                (!toolbarTarget && onSaveCommand) ||
+                onSavedCommands ||
+                onEnableShellIntegration ||
+                onStartupReview ? (
+                  <div>
+                    {terminal || fontSize !== undefined ? <Divider className="my-1" /> : null}
+                    {renderControls(false)}
+                    {toolbarTarget && onEnableShellIntegration ? (
+                      <MenuRow
+                        ref={helpAnchor}
+                        type="button"
+                        aria-expanded={helpOpen}
+                        aria-haspopup="dialog"
+                        onClick={() => setHelpOpen(!helpOpen)}
+                      >
+                        {t("About shell suggestions")}
+                      </MenuRow>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </Popover>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+  return (
+    <>
+      {/* This target is the server's fixed header, not a floating overlay. */}
+      {toolbarTarget ? <Portal target={toolbarTarget}>{toolbar}</Portal> : null}
+      {(!toolbarTarget || mode === "search") && (
+        <div
+          {...overlayAppearance}
+          ref={overlayRef}
+          {...surfaceAttributes(
+            { frame: "pane", edge: "all", radius: "card", variant: "floating" },
+            overlayAppearance.className,
+          )}
+          data-open={mode === "search" || menuOpen || helpOpen || undefined}
+          data-typing={typing || undefined}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {mode === "search" ? renderControls(true) : toolbar}
+        </div>
+      )}
       {onEnableShellIntegration && helpOpen ? (
         <Popover
           anchor={helpAnchor}

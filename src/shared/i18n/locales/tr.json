@@ -5182,6 +5182,7 @@
   "SSH user": "SSH kullanıcısı",
   "Save rule": "Kuralı kaydet",
   "Saved SSH commands": "Kayıtlı SSH komutları",
+  "Save command": "Komutu kaydet",
   "Saved commands": "Kayıtlı komutlar",
   "Separate tags with commas.": "Etiketleri virgülle ayırın.",
   "Server filters": "Sunucu filtreleri",
@@ -10688,6 +10689,7 @@
   "Could not delete sessions: {p0}": "Oturumlar silinemedi: {p0}",
   "Still saving. Try again in a moment.": "Hâlâ kaydediliyor. Birazdan yeniden deneyin.",
   "Connect this project's machine to delete its sessions.": "Bu projenin makinesini bağlayarak oturumlarını silin.",
+  "Connect this project’s machine to load its sessions.": "Oturumları yüklemek için bu projenin çalıştığı makineye bağlanın.",
   "Waiting for orchestrator": "Orkestratör bekleniyor",
   "Waiting for answers": "Yanıtlar bekleniyor",
   "running in background": "arka planda çalışıyor",
@@ -12418,5 +12420,9 @@
   "Voice could not start: the assistant did not respond.": "Ses başlatılamadı: asistan yanıt vermedi.",
   "Voice could not start: the conversation did not respond.": "Ses başlatılamadı: konuşma yanıt vermedi.",
   "Voice could not start: the voice key was not issued.": "Ses başlatılamadı: ses anahtarı verilmedi.",
-  "Voice could not start: the voice runtime did not register.": "Ses başlatılamadı: ses çalışma zamanı kaydedilmedi."
+  "Voice could not start: the voice runtime did not register.": "Ses başlatılamadı: ses çalışma zamanı kaydedilmedi.",
+  "Host CPU profiles": "Host CPU profilleri",
+  "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.": "Host'un olay döngüsü art arda takılırsa Host log klasörüne 30 saniyelik CPU profili kaydeder.",
+  "For developers. Starting a profile briefly freezes the Host, so keep this off.": "Geliştiriciler için. Profil başlatmak Host'u kısa süre dondurur; kapalı tutun.",
+  "Could not reach this computer's Host setting: {p1}": "Bu bilgisayardaki Host ayarına ulaşılamadı: {p1}"
 }

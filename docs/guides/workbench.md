@@ -58,6 +58,7 @@ or waiting for an operation; the current custom value is kept.
 Search Phone or Sharing to open those Connections tabs; automatic reconnect
 continues to open its Machines setting.
 
+Pages with a reset action show it in the Settings toolbar and ask for confirmation.
 General's Restore defaults restores Application language to System and the independent
 Git and Technical languages to English. If a reset step fails, completed steps remain
 applied and the confirmation offers retry. Folder rows refresh after a successful reset;
@@ -129,8 +130,9 @@ arrow; Last sessions uses a clock. Rail section headings share one icon and labe
 hover or keyboard focus replaces a collapsible section's icon with its disclosure arrow.
 Pinned also collapses and remembers that choice.
 Activity groups attention separately: failures are red, retries and input requests use
-the warning tone. Its collapsed header retains the attention icon and count. Last sessions rows in the rail and combined list only open conversations; they have
-no pin, settle, archive, delete controls or action menu. Crew Start stays at the right edge, with options to its left.
+the warning tone. Its collapsed header retains the attention icon and count. Last sessions
+rows in the rail open conversations. The combined list has its own row actions.
+Crew Start stays at the right edge, with options to its left.
 Project Git totals occupy the right edge until hover or focus reveals options; opening
 those options keeps the Git summary in the menu. Narrow group and workspace rows keep secondary
 shortcuts in that menu: **Changes** opens the existing Git overview, and **Lock group**
@@ -370,13 +372,14 @@ that belongs to no project: it runs in the folder set under Settings → General
 created when missing) and appears in Last Sessions with a folder icon. Choosing a project from the rail returns
 to its own conversation list. The
 combined list does not make unrelated repositories share Git operations. The time
-filter can narrow this window to Today; Clear restores Last 7 days. Remote rows
-come from available history and show a coverage note rather than claiming a full
-remote archive. Pin actions are available only in the project view. Local rows
-provide Settle, Archive and Delete; each action updates that conversation in its
-own project, even while another project is open. Remote lifecycle actions remain
-in the owning project view. Deleting several remote conversations at once
-sends them together; the result appears on both computers.
+filter can narrow this window to Today. Clear restores Last 7 days. The list uses
+current remote project results when available and shows a coverage note when a
+remote project cannot supply current results. Right-click a row or press
+**Shift+F10** to open its actions. **Archive** and **Delete** use the conversation's
+owning project, including on a connected remote machine. **Settle** uses the
+session's owning Host. Open the **Settled** filter to find those sessions and
+bring them back with **Un-settle**. Use the project view to pin conversations or
+act on several at once.
 
 In **Settings > Archive**, project archive and restore keep the source entry until
 the destination is saved. Storage errors leave the project reachable for retry;

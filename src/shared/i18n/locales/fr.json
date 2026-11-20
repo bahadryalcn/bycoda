@@ -4899,6 +4899,7 @@
   "SSH user": "Utilisateur SSH",
   "Save rule": "Enregistrer la règle",
   "Saved SSH commands": "Commandes SSH enregistrées",
+  "Save command": "Enregistrer la commande",
   "Saved commands": "Commandes enregistrées",
   "Separate tags with commas.": "Séparez les étiquettes par des virgules.",
   "Server filters": "Filtres des serveurs",
@@ -10686,6 +10687,7 @@
   "Could not delete sessions: {p0}": "Impossible de supprimer les sessions : {p0}",
   "Still saving. Try again in a moment.": "Enregistrement en cours. Réessayez dans un instant.",
   "Connect this project's machine to delete its sessions.": "Connectez la machine de ce projet pour supprimer ses sessions.",
+  "Connect this project’s machine to load its sessions.": "Connectez la machine de ce projet pour charger ses sessions.",
   "Waiting for orchestrator": "En attente de l'orchestrateur",
   "Waiting for answers": "En attente des réponses",
   "running in background": "en cours en arrière-plan",
@@ -12418,5 +12420,9 @@
   "Voice could not start: the assistant did not respond.": "Impossible de démarrer la voix : l'assistant n'a pas répondu.",
   "Voice could not start: the conversation did not respond.": "Impossible de démarrer la voix : la conversation n'a pas répondu.",
   "Voice could not start: the voice key was not issued.": "Impossible de démarrer la voix : la clé vocale n'a pas été émise.",
-  "Voice could not start: the voice runtime did not register.": "Impossible de démarrer la voix : l'environnement vocal n'a pas été enregistré."
+  "Voice could not start: the voice runtime did not register.": "Impossible de démarrer la voix : l'environnement vocal n'a pas été enregistré.",
+  "Host CPU profiles": "Profils CPU du Host",
+  "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.": "Enregistre un profil CPU de 30 secondes dans le dossier des journaux du Host lorsque sa boucle d'événements se bloque à plusieurs reprises.",
+  "For developers. Starting a profile briefly freezes the Host, so keep this off.": "Pour les développeurs. Démarrer un profil fige brièvement le Host ; laissez cette option désactivée.",
+  "Could not reach this computer's Host setting: {p1}": "Impossible d'accéder au réglage du Host de cet ordinateur : {p1}"
 }

@@ -4899,6 +4899,7 @@
   "SSH user": "SSH 用户",
   "Save rule": "保存规则",
   "Saved SSH commands": "已保存的 SSH 命令",
+  "Save command": "保存命令",
   "Saved commands": "已保存的命令",
   "Separate tags with commas.": "使用逗号分隔标签。",
   "Server filters": "服务器筛选",
@@ -10686,6 +10687,7 @@
   "Could not delete sessions: {p0}": "无法删除会话：{p0}",
   "Still saving. Try again in a moment.": "仍在保存。请稍后再试。",
   "Connect this project's machine to delete its sessions.": "连接此项目所在的机器后才能删除其会话。",
+  "Connect this project’s machine to load its sessions.": "连接此项目所在的机器后才能加载其会话。",
   "Waiting for orchestrator": "等待编排器",
   "Waiting for answers": "等待回答",
   "running in background": "在后台运行",
@@ -12418,5 +12420,9 @@
   "Voice could not start: the assistant did not respond.": "无法启动语音：助手没有响应。",
   "Voice could not start: the conversation did not respond.": "无法启动语音：对话没有响应。",
   "Voice could not start: the voice key was not issued.": "无法启动语音：未签发语音密钥。",
-  "Voice could not start: the voice runtime did not register.": "无法启动语音：语音运行时未注册。"
+  "Voice could not start: the voice runtime did not register.": "无法启动语音：语音运行时未注册。",
+  "Host CPU profiles": "Host CPU 性能分析",
+  "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.": "当 Host 的事件循环反复卡顿时，将 30 秒的 CPU 性能分析保存到 Host 日志文件夹。",
+  "For developers. Starting a profile briefly freezes the Host, so keep this off.": "供开发者使用。启动分析会让 Host 短暂卡住，请保持关闭。",
+  "Could not reach this computer's Host setting: {p1}": "无法访问此电脑的 Host 设置：{p1}"
 }

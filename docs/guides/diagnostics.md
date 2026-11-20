@@ -75,6 +75,12 @@ pairing material, private URLs, email addresses and unrelated paths or messages.
 Screenshots and traces can also contain private information. Share only the
 sanitized copy. Report security issues privately using [SECURITY.md](../../SECURITY.md).
 
+The Host always logs event-loop stalls in `host.log`. To find the blocking code,
+turn on **Settings > General > Host CPU profiles**: after repeated stalls, this
+computer's Host saves a 30-second `.cpuprofile` next to its log, at most hourly,
+keeping the newest three. It is off by default because starting a profile briefly
+freezes the Host; turn it off again once you have one.
+
 ## Safe investigation and recovery
 
 Read status and relevant sanitized logs first. Preserve drafts, sessions,

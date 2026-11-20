@@ -17,6 +17,7 @@ const fake = vi.hoisted(() => ({
   sessions: new Map<string, unknown>(),
   sheetProps: [] as Array<Record<string, unknown>>,
   owners: [] as Array<Record<string, unknown>>,
+  receiptCalls: [] as unknown[][],
 }));
 
 // The sheet is captured, not rendered: these tests check what SessionSubagentSheet hands it.
@@ -39,6 +40,10 @@ vi.mock("../model/sessionsStore", async (original) => ({
     select([...fake.sessions.values()]),
 }));
 vi.mock("../../connections/public/DelegatedSessionRequests", () => ({
+  useDelegatedMessageReceipts: (...args: unknown[]) => {
+    fake.receiptCalls.push(args);
+    return [];
+  },
   DelegatedSessionRequests: (props: Record<string, unknown>) => {
     fake.owners.push(props);
     return null;
@@ -139,6 +144,7 @@ beforeEach(() => {
   fake.sessions.clear();
   fake.sheetProps.length = 0;
   fake.owners.length = 0;
+  fake.receiptCalls.length = 0;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -417,4 +423,27 @@ it("retries a failed child by sending it the same task through the pane's send p
   expect(state.connecting).toEqual([]);
   onSubmitToSession.mockReturnValue(false as never);
   await expect(retryDelegated("parent", "child-1")).rejects.toThrow();
+});
+
+const hosted = {
+  environmentId: "env-1",
+  machineId: "machine-1",
+  projectId: "project-1",
+  sessionId: "host-child-1",
+};
+
+it("asks for a child's message receipts only while its panel is open, from its serving Host", () => {
+  fake.sessions.set("child-1", child({ hostBinding: hosted } as Partial<Session>));
+  render(props({ delegated: delegatedState("child-1"), visible: false }));
+  expect(fake.receiptCalls.at(-1)).toEqual([undefined, undefined, undefined]);
+  render(props({ delegated: delegatedState("child-1") }));
+  expect(fake.receiptCalls.at(-1)).toEqual(["env-1", "host-child-1", "machine-1"]);
+  render(props({ delegated: delegatedState("child-1", { isOpen: false }) }));
+  expect(fake.receiptCalls.at(-1)).toEqual([undefined, undefined, undefined]);
+});
+
+it("never borrows another authority for a child without a readable binding", () => {
+  fake.sessions.set("child-1", child());
+  render(props({ delegated: delegatedState("child-1") }));
+  expect(fake.receiptCalls.at(-1)).toEqual([undefined, undefined, undefined]);
 });

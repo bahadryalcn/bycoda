@@ -63,7 +63,7 @@ export type DesktopLivePayload = {
   /** The last remote-activity cursor this desktop saw (`activity.seq`). */
   activitySeq?: number;
   /** The shared queues this desktop holds the drain lease of; the beat keeps them alive. `blocked`: it cannot send them now (a sync conflict). */
-  queueLeases?: { sessionId: string; epoch: number; blocked?: boolean }[];
+  queueLeases?: { sessionId: string; epoch: number; blocked?: boolean; syncPending?: boolean }[];
   /** The conversations this window runs a turn of under a run lease; the beat keeps them alive. */
   runLeases?: { sessionId: string; epoch: number }[];
   /** Someone is using this window now; the Host holds phone pushes meanwhile. */
@@ -401,7 +401,7 @@ export async function runDesktopLiveTick(deps: {
   onAdopted?: (change: { ids: string[]; reset: boolean }) => void;
   /** The drain leases this desktop holds, and what the host answered for them. */
   queueLeases?: {
-    held: () => { sessionId: string; epoch: number; blocked?: boolean }[];
+    held: () => NonNullable<DesktopLivePayload["queueLeases"]>;
     answered: (answers: NonNullable<DesktopLiveResult["queueLeases"]>) => void;
   };
   /** The run leases of the turns this window runs; `answered` returns the conversations whose lease was lost. */

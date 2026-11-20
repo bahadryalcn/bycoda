@@ -5,6 +5,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { shareStructure } from "../../../shared/lib/shareStructure";
 import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
 import type {
+  AssistantNote,
   AssistantRequest,
   AssistantResponse,
   AssistantSnapshot,
@@ -121,12 +122,28 @@ async function refreshAfterMutation(): Promise<void> {
   mutationGeneration++;
   if (pending) await pending;
   await runRefresh(false);
+  window.dispatchEvent(new Event("bycoda:assistant-changed"));
+}
+
+/** Apply acknowledged deletions to the captured Room, then reconcile once in the background. */
+export function finishAssistantNoteDeletion(
+  environmentId: string | undefined,
+  confirmed: readonly Pick<AssistantNote, "id" | "updatedAt">[],
+) {
+  const snapshot = state.snapshot;
+  if (snapshot && state.environmentId === environmentId && confirmed.length) {
+    const deletedVersions = new Map(confirmed.map((note) => [note.id, note.updatedAt]));
+    const notes = snapshot.notes.filter((note) => deletedVersions.get(note.id) !== note.updatedAt);
+    if (notes.length !== snapshot.notes.length) emit({ snapshot: { ...snapshot, notes } });
+  }
+  void refreshAfterMutation().catch(() => {});
 }
 
 /** Mutation retries remain explicit. Callers retain their idempotency key and draft. */
 export async function assistantRequest(
   request: AssistantRequest,
   expectedEnvironmentId?: string,
+  options?: { deferNoteRefresh?: true },
 ): Promise<AssistantResponse> {
   const result = AssistantResponseValidationSchema.parse(
     await hostToolRequest<AssistantResponse>(
@@ -138,6 +155,8 @@ export async function assistantRequest(
       expectedEnvironmentId,
     ),
   );
+  // The Room's delete batch applies the receipts and reconciles after the last attempt.
+  if (request.op === "notes.delete" && options?.deferNoteRefresh) return result;
   if (
     ![
       "snapshot",
@@ -158,7 +177,6 @@ export async function assistantRequest(
     ].includes(request.op)
   ) {
     await refreshAfterMutation();
-    window.dispatchEvent(new Event("bycoda:assistant-changed"));
   }
   return result;
 }

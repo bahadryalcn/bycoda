@@ -101,7 +101,9 @@ export function useDelegatedRunDiscovery(parentId: string, visible: boolean) {
           const next = sessions.map((session) => {
             const update = updates.get(session.id);
             updates.delete(session.id);
-            return update ? { ...session, ...update } : session;
+            // Discovery mirrors Host-owned children. Their running state comes from
+            // continuingElsewhere, even when an older shell still carries native busy.
+            return update ? { ...session, ...update, busy: undefined } : session;
           });
           return [...next, ...updates.values()];
         });

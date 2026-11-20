@@ -19,7 +19,8 @@ import { useHeldValue } from "../helpers/stableProps";
 import { WindowControls } from "../../shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, type ContextType } from "react";
+import { ServerAgentContext } from "../../../features/connections/public/serverAgent";
 import { useAssistantRoomRequests } from "./useAssistantRoomRequests";
 import { workspaceActiveTool } from "./workspaceActiveTool";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
@@ -58,6 +59,7 @@ type AutomationsProps = ComponentProps<typeof AutomationsView>;
 type SetBoolean = Dispatch<SetStateAction<boolean>>;
 
 export interface WorkspaceToolPanelsProps {
+  serverAgent?: ContextType<typeof ServerAgentContext>;
   sessionPaneProps?: WorkspaceSessionPaneProps;
   onLoadCrewCoordinator?: AutomationsProps["onOpenBackgroundSession"];
   auxiliaryTool?: AuxiliaryToolId | null;
@@ -124,6 +126,7 @@ export interface WorkspaceToolPanelsProps {
 }
 
 function WorkspaceToolPanelsComponent({
+  serverAgent,
   sessionPaneProps,
   onLoadCrewCoordinator,
   auxiliaryTool,
@@ -567,12 +570,14 @@ function WorkspaceToolPanelsComponent({
       </ToolPanel>
       <ToolPanel active={serversViewOpen && !crewsOpen} keepEffects>
         <NavigationBoundary name="Servers" onBack={onLeaveServers}>
-          <ServersView
-            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-            compactRail={compactRailActive}
-            onClose={onLeaveServers}
-            onToggleSidebar={onToggleSidebar}
-          />
+          <ServerAgentContext.Provider value={serverAgent ?? null}>
+            <ServersView
+              besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
+              compactRail={compactRailActive}
+              onClose={onLeaveServers}
+              onToggleSidebar={onToggleSidebar}
+            />
+          </ServerAgentContext.Provider>
         </NavigationBoundary>
       </ToolPanel>
       <ToolPanel active={inboxViewOpen}>

@@ -22,7 +22,6 @@ import { ArrowDown, ArrowLeft, CornerDownRight, Square } from "../../../shared/u
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { AnsiText } from "../../../shared/ui/AnsiText";
-import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
 import { blockLifecycle } from "../model/activityDock";
 import { commandCopyText, emptyOutputReason, inspectCommand } from "../model/commandInspection";
 import type { AgentStep, Block } from "../model/session";
@@ -42,6 +41,15 @@ import { Sheet } from "../../../shared/ui/Sheet";
 import styles from "./SubagentSheet.module.css";
 import { useSubagentModelName } from "../model/reactiveReads";
 import { SubagentMessageForm, type SubagentRelay } from "./SubagentMessageForm";
+import {
+  TimelineInput,
+  groupRounds,
+  hasRoundHistory,
+  isTimelineReport,
+  roundSummary,
+  stepRounds,
+  timelineMarkdown,
+} from "./SubagentSheetTimeline";
 
 export type { SubagentRelay } from "./SubagentMessageForm";
 
@@ -110,6 +118,7 @@ export function SubagentSheet({
   agentRole,
   nested,
   back,
+  needsInput,
 }: {
   block: Block;
   busy: boolean;
@@ -131,6 +140,8 @@ export function SubagentSheet({
   nested?: ReactNode;
   /** This run was started by another subagent: return to that one's sheet. */
   back?: { name: string; open: () => void };
+  /** The child waits on the user while running, as the dock shows it. */
+  needsInput?: boolean;
 }) {
   const t = useT();
   const command = !isSubagentBlock(block);
@@ -154,6 +165,7 @@ export function SubagentSheet({
       modal={false}
       anchor="container"
       side="end"
+      surface={command ? "floating" : "chat"}
       open={visible}
       title={
         command
@@ -231,7 +243,15 @@ export function SubagentSheet({
           ) : null}
         </>
       }
-      headerBelow={<SubagentStateLine block={block} busy={busy} steps={steps} model={model} />}
+      headerBelow={
+        <SubagentStateLine
+          block={block}
+          busy={busy}
+          steps={steps}
+          model={model}
+          needsInput={needsInput}
+        />
+      }
     >
       {showFailed ? (
         <div className="shrink-0 px-4 pt-2">
@@ -575,7 +595,7 @@ function CopyTranscriptButton({
   const copyText = useStableCallback(() => {
     const text = command
       ? commandDetailsCopyText(block, busy, status, t)
-      : agentRunMarkdown(block, status);
+      : timelineMarkdown(block, status);
     // Nothing to copy: show the failed state instead of a false "Copied".
     if (!text) throw new Error("Nothing to copy");
     return text;
@@ -670,9 +690,10 @@ const SheetStep = memo(function SheetStep({
       </Disclosure>
     );
   }
+  if (step.input) return <TimelineInput step={step} input={step.input} />;
   if (step.kind === "message") {
     return (
-      <div className="min-w-0 py-1">
+      <div data-timeline-message={step.id} className="min-w-0 py-1">
         <AgentMarkdown text={step.text} cwd={cwd} onOpenFile={onOpenFile} />
       </div>
     );
@@ -718,9 +739,28 @@ function SubagentTrail({
   const activeSubagents = subagents.filter(
     (step) => blockLifecycle(blockForStep(step), running) === "running",
   ).length;
-  const trail = steps.filter((step) => !step.agentRun && (!report || !isReportStep(step, report)));
-  const visible = trail.length > shown ? trail.slice(trail.length - shown) : trail;
-  const hidden = trail.length - visible.length;
+  // The closing report is the latest round's; an earlier round that ended on the same
+  // words keeps its own row.
+  const transcriptSteps = steps.filter((step) => !step.input || step.round !== undefined);
+  const unlinkedInputs = steps.flatMap((step) =>
+    step.input && step.round === undefined ? [{ step, input: step.input }] : [],
+  );
+  const stepRound = stepRounds(transcriptSteps);
+  const latestRound = stepRound[stepRound.length - 1];
+  const trail = transcriptSteps.filter(
+    (step, index) =>
+      !step.agentRun &&
+      (!report || stepRound[index] !== latestRound || !isTimelineReport(step, report)),
+  );
+  // Rounds of a delegated conversation: earlier ones open on demand, the latest in
+  // full. A run of one round keeps the plain trail. Open state lives here, so live
+  // updates (new ids, new steps) never close what the reader opened.
+  const [openRounds, setOpenRounds] = useState<readonly number[]>([]);
+  const rounds = hasRoundHistory(trail) ? groupRounds(trail) : undefined;
+  const earlier = rounds ? rounds.slice(0, -1) : [];
+  const current = rounds ? rounds[rounds.length - 1].steps : trail;
+  const visible = current.length > shown ? current.slice(current.length - shown) : current;
+  const hidden = current.length - visible.length;
 
   const following = useFollowBottom(scroller, true, steps, 32, false, report);
 
@@ -753,10 +793,53 @@ function SubagentTrail({
             ))}
           </section>
         ) : null}
-        {visible.length === 0 && !report && subagents.length === 0 ? (
+        {visible.length === 0 && !report && subagents.length === 0 && !unlinkedInputs.length ? (
           <Text as="p" size="caption" tone="secondary" className="pt-1">
             {running ? t("Waiting for the first step.") : t("This agent did not report any steps.")}
           </Text>
+        ) : null}
+        {earlier.map((group) => (
+          <Disclosure
+            key={group.round}
+            data-timeline-round={group.round}
+            variant="row"
+            open={openRounds.includes(group.round)}
+            onOpenChange={(open) =>
+              setOpenRounds((rounds) =>
+                open
+                  ? rounds.includes(group.round)
+                    ? rounds
+                    : [...rounds, group.round]
+                  : rounds.filter((entry) => entry !== group.round),
+              )
+            }
+            summary={
+              <span className="flex min-w-0 flex-col">
+                <Text weight="medium">{t("Round {p0}", { p0: group.round })}</Text>
+                <Text size="caption" tone="secondary" truncate>
+                  {roundSummary(group.steps)}
+                </Text>
+              </span>
+            }
+          >
+            {openRounds.includes(group.round)
+              ? group.steps.map((step) => (
+                  <SheetStep
+                    key={step.id}
+                    step={step}
+                    live={false}
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    onOpenDiff={onOpenDiff}
+                  />
+                ))
+              : null}
+          </Disclosure>
+        ))}
+        {rounds ? (
+          <div data-timeline-round={rounds[rounds.length - 1].round}>
+            <SectionLabel>{t("Round {p0}", { p0: rounds[rounds.length - 1].round })}</SectionLabel>
+          </div>
         ) : null}
         {hidden > 0 ? (
           <Button
@@ -783,6 +866,9 @@ function SubagentTrail({
           />
         ))}
         <SubagentReport block={block} cwd={cwd} onOpenFile={onOpenFile} className="mt-3" />
+        {unlinkedInputs.map(({ step, input }) => (
+          <TimelineInput key={step.id} step={step} input={input} />
+        ))}
       </div>
     </ScrollArea>
   );

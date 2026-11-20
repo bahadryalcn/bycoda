@@ -9,9 +9,12 @@ import {
   isDelegatedDescendantOf,
 } from "../model/delegatedAgents";
 import { useDelegatedDockAgents, useNestedDelegationOwner } from "../model/reactiveReads";
-import type { Block, ComposerTurnOptions } from "../model/session";
+import { sessionNeedsInput, type Block, type ComposerTurnOptions } from "../model/session";
 import { getSessions, useSession, useSessionsSelector } from "../model/sessionsStore";
-import { DelegatedSessionRequests } from "../../connections/public/DelegatedSessionRequests";
+import {
+  DelegatedSessionRequests,
+  useDelegatedMessageReceipts,
+} from "../../connections/public/DelegatedSessionRequests";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { useHostSessionBindingReader } from "../../connections/public/useHostSessionBinding";
 import { useRemoteSessionBindings } from "../../connections/public/useRemoteSessionBinding";
@@ -53,6 +56,35 @@ function canOwnDelegatedSession(
     );
   } catch {
     return false;
+  }
+}
+
+/**
+ * Which Host serves this child, for its message receipts: the local binding, or the
+ * remote project's environment with the session it is paired to. Anything unreadable
+ * reads as no authority, never as another one.
+ */
+function receiptAuthority(
+  session: NonNullable<ReturnType<typeof useSession>>,
+  readHostBinding: ReturnType<typeof useHostSessionBindingReader>,
+  remoteBindings: ReturnType<typeof useRemoteSessionBindings>,
+): { environmentId: string; sessionId: string; machineId?: string } | undefined {
+  try {
+    const remote = parseRemotePath(session.cwd);
+    if (remote) {
+      const sessionId = remoteBindings.sessionFor(session.id);
+      return sessionId ? { environmentId: remote.environmentId, sessionId } : undefined;
+    }
+    const binding = readHostBinding(session);
+    return binding
+      ? {
+          environmentId: binding.environmentId,
+          sessionId: binding.sessionId,
+          machineId: binding.machineId,
+        }
+      : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -346,7 +378,19 @@ export function SessionSubagentSheet({
         onOpenDiff={onOpenDiff}
       />
     ));
-  const childBlock = useMemo(() => (child ? delegatedAgentBlock(child) : undefined), [child]);
+  // Receipts of the sends to the open child, from the authority that serves it and no other.
+  const receiptTarget =
+    visible && selected ? receiptAuthority(child, readHostBinding, remoteBindings) : undefined;
+  const receipts = useDelegatedMessageReceipts(
+    receiptTarget?.environmentId,
+    receiptTarget?.sessionId,
+    receiptTarget?.machineId,
+  );
+  // The panel reads the whole conversation; the parent's inline card keeps the latest round.
+  const childBlock = useMemo(
+    () => (child ? delegatedAgentBlock(child, { history: true, receipts }) : undefined),
+    [child, receipts],
+  );
   // A subagent's own subagents: listed at the top of its sheet, and their
   // requests answered here, so nothing waits unseen one level down.
   const nestedAgents = useDelegatedDockAgents(delegated.childId ?? "", child?.blocks ?? NO_BLOCKS);
@@ -431,6 +475,8 @@ export function SessionSubagentSheet({
       <SubagentSheet
         block={childBlock}
         busy={running}
+        // Same child state as the dock row; a settled child never claims it waits.
+        needsInput={running && sessionNeedsInput(child)}
         visible={visible && (delegated.isOpen ?? true)}
         agentRole={delegationParentOf(child)?.kind}
         nested={<NestedSubagentList agents={nestedAgents} onOpen={delegated.open} />}

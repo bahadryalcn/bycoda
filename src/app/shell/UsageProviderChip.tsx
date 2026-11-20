@@ -10,7 +10,6 @@ import { UnknownUsageBar } from "./UnknownUsageBar";
 import { Text } from "../../shared/ui/Text";
 import { motionAttributes } from "../../shared/ui/Motion";
 import { UsageMeter as QuotaMeter } from "../../shared/ui/UsageMeter";
-import { TextField } from "../../shared/ui/TextField";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
 import {
@@ -68,9 +67,13 @@ import {
   type ProviderSignInState,
 } from "../../features/sessions/ui/ProviderSignInPanel";
 import {
+  newProviderAccount,
   supportsProviderAccounts,
   type ProviderAccount,
+  type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
+import { providerAccountErrorTextWith } from "../../features/providers/public/providerAccountError";
+import { ProviderAccountDialog } from "../../features/providers/public/accountIdentity";
 import {
   accountStatusWith,
   accountUsageKey,
@@ -85,7 +88,6 @@ import {
 } from "../../features/providers/ui/ProviderAccountUsage";
 import {
   identityKey,
-  identityOrganizationTag,
   useProviderAccountIdentities,
   type ProviderAccountIdentity,
 } from "../../features/providers/model/providerAccountIdentity";
@@ -106,7 +108,7 @@ type UsageProviderChipProps = {
   accountId?: string;
   onSelectAccount?: (accountId: string) => void;
   onSelectUsageAccount?: (accountId: string) => void;
-  onAddAccount?: (label: string) => Promise<ProviderAccount>;
+  onAddAccount?: (account: ProviderAccount, signal: AbortSignal) => Promise<void>;
   onManageAccounts?: () => void;
   onConsumeReset?: (creditId?: string) => Promise<CodexRateLimitResetOutcome>;
   onReconnect?: () => Promise<void>;
@@ -264,7 +266,6 @@ function UsageProviderDetails({
   const providerLabel = presentation?.label ?? HARNESS_TITLE[limits.provider];
   const iconHarness = presentation?.harness ?? limits.provider;
   const activeAccount = accounts.find((account) => account.id === accountId);
-  const canManageAccounts = !usageOnly && Boolean(onSelectAccount && onAddAccount);
   const activeAccountLabel = activeAccount?.label ?? t("Removed account");
   const identities = useProviderAccountIdentities(
     accounts,
@@ -272,6 +273,7 @@ function UsageProviderDetails({
   );
   const activeIdentity = activeAccount ? identities[identityKey(activeAccount)] : null;
   const accountProvider = supportsProviderAccounts(limits.provider) ? limits.provider : undefined;
+  const canManageAccounts = !usageOnly && Boolean(onSelectAccount && onAddAccount);
   const otherAccounts = accounts.filter((account) => account.id !== accountId);
   const accountUsage = useProviderAccountUsage(accounts.map((account) => account.id).join("|"), {
     provider: accountProvider,
@@ -328,6 +330,20 @@ function UsageProviderDetails({
       disabled={resetAction === "using" || reconnectState === "running"}
     />
   ) : null;
+  if (accountView === "add" && accountProvider && onAddAccount) {
+    return (
+      <AddProviderAccount
+        provider={accountProvider}
+        existingLabels={accounts.map((account) => account.label)}
+        onBack={() => setAccountView("accounts")}
+        onAdd={onAddAccount}
+        onComplete={(accountId) => {
+          onSelectAccount?.(accountId);
+          close();
+        }}
+      />
+    );
+  }
   return (
     <Popover
       anchor={trigger}
@@ -402,13 +418,6 @@ function UsageProviderDetails({
               onSelectAccount?.(nextAccountId);
               close();
             }}
-          />
-        ) : accountView === "add" ? (
-          <AddProviderAccount
-            providerLabel={providerLabel}
-            onBack={() => setAccountView("accounts")}
-            onAdd={onAddAccount}
-            onComplete={() => close()}
           />
         ) : loginView ? (
           <>
@@ -651,7 +660,7 @@ function ProviderAccountPicker({
         {accounts.map((account) => {
           const selected = account.id === accountId;
           const identity = identities[identityKey(account)];
-          const orgTag = identityOrganizationTag(identity);
+          const kind = t(account.kind === "work" ? "Work" : "Personal");
           const usage = usageFor(account);
           const meters = meterWindowsWith(usage, t);
           const chipSurface = surfaceAttributes(
@@ -692,11 +701,9 @@ function ProviderAccountPicker({
                     {account.label}
                   </Text>
                   <ProviderAccountSubtitle identity={identity} size="caption" tone="secondary" />
-                  {orgTag ? (
-                    <Badge size="xs" truncate className="max-w-24 shrink-0">
-                      {orgTag}
-                    </Badge>
-                  ) : null}
+                  <Badge size="xs" truncate className="max-w-24 shrink-0">
+                    {kind}
+                  </Badge>
                 </span>
                 <Text
                   size="caption"
@@ -797,84 +804,58 @@ function SwitchSuggestion({
   );
 }
 function AddProviderAccount({
-  providerLabel,
+  provider,
+  existingLabels,
   onBack,
   onAdd,
   onComplete,
 }: {
-  providerLabel: string;
+  provider: ProviderAccountProvider;
+  existingLabels: string[];
   onBack: () => void;
-  onAdd?: (label: string) => Promise<ProviderAccount>;
-  onComplete: () => void;
+  onAdd: NonNullable<UsageProviderChipProps["onAddAccount"]>;
+  onComplete: (accountId: string) => void;
 }) {
   const t = useT();
-  const [label, setLabel] = useState("");
+  const [draft, setDraft] = useState(() => ({ ...newProviderAccount(provider, ""), label: "" }));
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const submit = async (event: FormEvent) => {
+  const [failure, setFailure] = useState<{ error: unknown } | null>(null);
+  const abort = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Cancel the browser sign-in when its usage surface unmounts.
+  useEffect(() => () => abort.current?.abort(), []);
+  const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!onAdd || !label.trim() || running) return;
+    if (abort.current || !draft.kind) return;
+    const controller = new AbortController();
+    abort.current = controller;
     setRunning(true);
-    setError(null);
-    try {
-      await onAdd(label);
-      onComplete();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not add this account");
-      setRunning(false);
-    }
+    setFailure(null);
+    return Promise.resolve()
+      .then(() => onAdd(draft, controller.signal))
+      .then(() => onComplete(draft.id))
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === "AbortError") onBack();
+        else setFailure({ error });
+      })
+      .finally(() => {
+        abort.current = null;
+        setRunning(false);
+      });
   };
   return (
-    <form onSubmit={(event) => void submit(event)}>
-      <div className="flex min-h-(--ui-control-height-compact) items-center gap-1">
-        <Button
-          iconOnly
-          label={t("Back to accounts")}
-          variant="ghost"
-          motion="none"
-          type="button"
-          className="grid place-items-center"
-          aria-label={t("Back to accounts")}
-          disabled={running}
-          onClick={onBack}
-        >
-          <ArrowLeft className="icon-sm" aria-hidden />
-        </Button>
-        <Heading size="item" level={2}>
-          {t("Add {p0} account", { p0: providerLabel })}
-        </Heading>
-      </div>
-      <Text as="p" size="caption" tone="secondary" className="mt-1 px-1">
-        {t("Give this account a local name, then finish sign-in in your browser.")}
-      </Text>
-      <TextField
-        fieldClassName="mt-3 min-w-0 flex-1"
-        label={t("Account name")}
-        autoFocus
-        type="text"
-        maxLength={48}
-        value={label}
-        disabled={running}
-        placeholder={t("Work or Personal")}
-        className="w-full"
-        onChange={(event) => setLabel(event.target.value)}
-      />
-      <Button
-        variant="ghost"
-        motion="none"
-        type="submit"
-        className="mt-3 inline-flex w-full items-center justify-center gap-1.5"
-        disabled={running || !label.trim()}
-      >
-        {running ? <Spinner /> : null}
-        {running ? t("Waiting for browser…") : t("Sign in and add account")}
-      </Button>
-      {error ? (
-        <InlineError live="polite" className="mt-2">
-          {error}
-        </InlineError>
-      ) : null}
-    </form>
+    <ProviderAccountDialog
+      editor={{ ...draft, accountId: draft.id, adding: true }}
+      existingLabels={existingLabels}
+      working={running}
+      submitError={failure ? providerAccountErrorTextWith(failure.error, "save", t) : undefined}
+      onLabel={(label) => setDraft((current) => ({ ...current, label }))}
+      onMetadata={(metadata) => setDraft((current) => ({ ...current, ...metadata }))}
+      onCancel={() => {
+        if (abort.current) abort.current.abort();
+        else onBack();
+      }}
+      onSubmit={submit}
+    />
   );
 }
 function UsageWindowCard({

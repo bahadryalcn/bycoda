@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import { sameQueuedModelTarget } from "../../sessions/public/messageQueue";
 import type { Attachment, ComposerTurnOptions, QueuedMessage, RuntimeMode } from "../../sessions";
 import type { RemoteProvider } from "./protocol";
+import { SESSION_PROVIDER_ACCOUNT } from "./remoteCapabilities";
 import {
   remoteIntentAuthority,
   remoteIntentAuthorityMatches,
@@ -46,7 +47,6 @@ export function useQueuedSendDrain(input: {
   authorityGeneration: number | undefined;
   /** The conversation's own saved configuration, when the host has the session. */
   saved: QueuedConfigurationChange | undefined;
-  ownerBound: boolean;
   providers: readonly RemoteProvider[];
   capabilities: readonly string[] | undefined;
   queue: {
@@ -129,7 +129,9 @@ export function useQueuedSendDrain(input: {
         model: target.model,
         settings: { ...target.modelSettings },
         mode: saved.mode,
-        ...(input.ownerBound && switchesProvider && target.providerAccountId !== undefined
+        ...(capabilities?.includes(SESSION_PROVIDER_ACCOUNT) &&
+        switchesProvider &&
+        target.providerAccountId !== undefined
           ? {
               providerAccountId:
                 target.providerAccountId === "default" ? null : target.providerAccountId,

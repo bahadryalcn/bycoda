@@ -109,6 +109,8 @@ export function ModelPanel({
     !!accountHarness,
   );
   const shownAccounts = accountHarness ? accounts : [];
+  const showAccountControl =
+    shownAccounts.length > 1 || (shownAccounts.length === 1 && shownAccounts[0].id !== accountId);
   const listOpen = accountListOpen && shownAccounts.length > 2;
   // The rail already names the provider, so its tab header shows only its accounts.
   const title = browser.query.trim()
@@ -189,7 +191,7 @@ export function ModelPanel({
                     {title}
                   </Text>
                 ) : null}
-                {shownAccounts.length <= 1 ? null : (
+                {showAccountControl ? (
                   <ModelAccountControl
                     accounts={shownAccounts}
                     accountId={accountId}
@@ -198,7 +200,7 @@ export function ModelPanel({
                     onSelect={pickAccount}
                     onToggleList={() => onAccountListOpen(!listOpen)}
                   />
-                )}
+                ) : null}
               </div>
             }
             leading={leading}

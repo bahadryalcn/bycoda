@@ -1,12 +1,12 @@
 {
-  "numTotalTestSuites": 2,
-  "numPassedTestSuites": 2,
-  "numFailedTestSuites": 0,
+  "numTotalTestSuites": 1,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 1,
   "numPendingTestSuites": 0,
-  "numTotalTests": 6,
-  "numPassedTests": 6,
-  "numFailedTests": 0,
-  "numPendingTests": 0,
+  "numTotalTests": 13,
+  "numPassedTests": 0,
+  "numFailedTests": 1,
+  "numPendingTests": 12,
   "numTodoTests": 0,
   "snapshot": {
     "added": 0,
@@ -24,83 +24,150 @@
     "updated": 0,
     "didUpdate": false
   },
-  "startTime": 1795133637873,
-  "success": true,
+  "startTime": 1795182433734,
+  "success": false,
   "testResults": [
     {
       "assertionResults": [
         {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API requires explicit opt-in, a default account, and exact supported API model",
-          "status": "passed",
-          "title": "requires explicit opt-in, a default account, and exact supported API model",
-          "duration": 1.856899999999996,
+          "ancestorTitles": [],
+          "fullName": "hydrates children and resumes background updates after the live sheet owner closes",
+          "status": "skipped",
+          "title": "hydrates children and resumes background updates after the live sheet owner closes",
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         },
         {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API sends bounded prior context and no tools to the fixed xAI endpoint",
-          "status": "passed",
-          "title": "sends bounded prior context and no tools to the fixed xAI endpoint",
-          "duration": 23.06639999999993,
+          "ancestorTitles": [],
+          "fullName": "clears a stale local busy flag when discovery reports the delegated turn settled",
+          "status": "failed",
+          "title": "clears a stale local busy flag when discovery reports the delegated turn settled",
+          "duration": 17.5933,
+          "failureMessages": [
+            "AssertionError: expected true to be falsy\n    at G:/Projects/my_projects/monocode/src/features/connections/model/useDelegatedRunDiscovery.test.ts:81:26\n    at async file:///G:/Projects/my_projects/monocode/node_modules/.pnpm/vitest@5.1.0_@opentelemetry_5be44a38e942480fd88a290d7e4533a8/node_modules/vitest/dist/chunks/run.CjdgFZiW.js:2801:20"
+          ],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "does not replace a child's streamed state with a delayed discovery result",
+          "status": "skipped",
+          "title": "does not replace a child's streamed state with a delayed discovery result",
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         },
         {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API refuses attachments and incomplete or tool-call responses",
-          "status": "passed",
-          "title": "refuses attachments and incomplete or tool-call responses",
-          "duration": 5.904799999999909,
+          "ancestorTitles": [],
+          "fullName": "does not replace a child's owner state with a delayed discovery result",
+          "status": "skipped",
+          "title": "does not replace a child's owner state with a delayed discovery result",
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         },
         {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API rejects an unsupported effort before sending instead of ignoring the ceiling",
-          "status": "passed",
-          "title": "rejects an unsupported effort before sending instead of ignoring the ceiling",
-          "duration": 0.7001000000000204,
+          "ancestorTitles": [],
+          "fullName": "does not replace a child's removed state with a delayed discovery result",
+          "status": "skipped",
+          "title": "does not replace a child's removed state with a delayed discovery result",
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         },
         {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API bounds response bytes and never echoes provider errors",
-          "status": "passed",
-          "title": "bounds response bytes and never echoes provider errors",
-          "duration": 3.6782000000000608,
+          "ancestorTitles": [],
+          "fullName": "does not replace a child's arrived state with a delayed discovery result",
+          "status": "skipped",
+          "title": "does not replace a child's arrived state with a delayed discovery result",
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         },
         {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API cancels only the captured operation and never leaks transport errors",
-          "status": "passed",
-          "title": "cancels only the captured operation and never leaks transport errors",
-          "duration": 0.9095999999999549,
+          "ancestorTitles": [],
+          "fullName": "discovers historical children after delegation settings are removed, without querying a child as a parent",
+          "status": "skipped",
+          "title": "discovers historical children after delegation settings are removed, without querying a child as a parent",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "leaves a busy or unreachable machine to the next poll: Host rejected request: Host read capacity is busy; retry later.",
+          "status": "skipped",
+          "title": "leaves a busy or unreachable machine to the next poll: Host rejected request: Host read capacity is busy; retry later.",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "leaves a busy or unreachable machine to the next poll: RPC_WS_OVERLOAD: Host read capacity is busy; retry later.",
+          "status": "skipped",
+          "title": "leaves a busy or unreachable machine to the next poll: RPC_WS_OVERLOAD: Host read capacity is busy; retry later.",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "leaves a busy or unreachable machine to the next poll: RPC_WS_INTERRUPTED: Host connection ended before the result was known",
+          "status": "skipped",
+          "title": "leaves a busy or unreachable machine to the next poll: RPC_WS_INTERRUPTED: Host connection ended before the result was known",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "leaves a busy or unreachable machine to the next poll: Machine is unreachable. Check that it is on.",
+          "status": "skipped",
+          "title": "leaves a busy or unreachable machine to the next poll: Machine is unreachable. Check that it is on.",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "reports a failure of the check itself without the Host prefix",
+          "status": "skipped",
+          "title": "reports a failure of the check itself without the Host prefix",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "lists delegated runs with the last etag so an unchanged project costs the Host no scan",
+          "status": "skipped",
+          "title": "lists delegated runs with the last etag so an unchanged project costs the Host no scan",
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         }
       ],
-      "startTime": 1795133638941,
-      "endTime": 1795133638977.9097,
-      "status": "passed",
+      "startTime": 1795182436313,
+      "endTime": 1795182436330.5933,
+      "status": "failed",
       "message": "",
-      "name": "G:/Projects/my_projects/monocode/host/providers/grok-chat-only.test.ts"
+      "name": "G:/Projects/my_projects/monocode/src/features/connections/model/useDelegatedRunDiscovery.test.ts"
     }
   ]
 }

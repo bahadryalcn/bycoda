@@ -11,6 +11,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /.*\/connections\/model\/hostFeatureClient$/, replacement: host },
+      { find: "./hostFeatureClient", replacement: host },
       { find: /.*\/toolsHubTransport$/, replacement: fixture },
       { find: /.*\/hostToolsWindowGeometry$/, replacement: fixture },
       { find: "@tauri-apps/api/webviewWindow", replacement: fixture },

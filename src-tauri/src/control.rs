@@ -840,6 +840,24 @@ fn conversation_ui_window(
     Ok(active.window.clone())
 }
 
+pub(crate) fn conversation_ssh_activity_owner(
+    app: &AppHandle,
+    session: &str,
+    cwd: &str,
+    environment: &str,
+) -> Result<Arc<WindowIssuer>, String> {
+    let state = app.state::<ControlHost>();
+    let host = state
+        .inner
+        .lock()
+        .map_err(|_| "Control service unavailable")?;
+    conversation_ui_window(&host, session, cwd, environment)?;
+    host.active
+        .get(session)
+        .map(|active| active.issuer.clone())
+        .ok_or_else(|| "Conversation window unavailable".into())
+}
+
 fn history_import_input(
     action: &str,
     input: &Value,

@@ -1,6 +1,12 @@
 import { applyFileMentionsToTurn } from "../../files/public/fileMentions";
 import { applyNotesToTurn } from "../../notes";
 import { applyWorkItemMentionsToTurn } from "../../inbox/public/workItemMentions";
+import { isRemoteProjectPath } from "../../projects/public/recents";
+import {
+  findServerMentionIds,
+  loadServerMentionInventory,
+  withServerMentionContext,
+} from "./serverMentions";
 import {
   applySkillsToTurn,
   warmNativeSkills,
@@ -46,5 +52,11 @@ export async function preparePrompt(
         })
       : [];
   const delegated = notes.length ? [withSkills, "", "---", ...notes].join("\n") : withSkills;
-  return projectChatCitationsForProvider(withChatCitations(delegated, cited.citations));
+  const serverIds = findServerMentionIds(cited.text);
+  const serverInventory =
+    serverIds.length && !isRemoteProjectPath(context.cwd)
+      ? await loadServerMentionInventory().catch(() => [])
+      : [];
+  const withServers = withServerMentionContext(delegated, serverIds, serverInventory);
+  return projectChatCitationsForProvider(withChatCitations(withServers, cited.citations));
 }

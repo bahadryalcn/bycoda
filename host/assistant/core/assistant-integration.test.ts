@@ -1000,6 +1000,51 @@ it("polls admitted task observations through the existing notification outbox in
   expect(f.engine.command).not.toHaveBeenCalled();
 });
 
+it("serves owner requests while a task observation poll waits on the desktop", async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const poll = vi.fn<NonNullable<AssistantPorts["pollObservedTasks"]>>(async () => {
+    entered();
+    await held;
+  });
+  const f = await fixture({
+    manualProjectVisible: async () => true,
+    taskNotificationAllowed: async () => true,
+    observationTasksReady: () => true,
+    pollObservedTasks: poll,
+    readPresence: async () => ({ supported: true, locked: false, idleMs: 0 }),
+  });
+  await f.seed();
+  const policy = {
+    id: "manualPolicy",
+    version: 1,
+    createdAt: f.clock.now,
+    updatedAt: f.clock.now,
+    value: { enabled: true, version: 1, projectIds: [f.project.id] },
+  };
+  await f.store.db
+    .prepare(
+      "INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)",
+    )
+    .run(policy.id, JSON.stringify(policy), 1, f.clock.now);
+  await f.configure("report", { observationTaskNeedsInput: true, quietStart: 0, quietEnd: 0 });
+  const ticking = f.service.tick();
+  const second = f.service.tick();
+  await started;
+  // A queued owner write finishes while the poll is still held.
+  await f.configure("report", { observationTaskDone: true });
+  expect(poll).toHaveBeenCalledTimes(1);
+  release();
+  await Promise.all([ticking, second]);
+  expect(poll).toHaveBeenCalledTimes(1);
+});
+
 it("honors task-observation opt-out while project visibility is pending", async () => {
   let release!: () => void;
   let entered!: () => void;

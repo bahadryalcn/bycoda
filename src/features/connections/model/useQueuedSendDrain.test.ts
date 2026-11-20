@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { QueuedMessage } from "../../sessions";
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import { SESSION_PROVIDER_ACCOUNT } from "./remoteCapabilities";
 import {
   queuedDrainRetryDelay,
   useQueuedSendDrain,
@@ -21,7 +22,7 @@ afterEach(() => {
 });
 
 /** Renders the drain for one queued head and returns the configuration it asked for, if any. */
-function drain(next: QueuedMessage, saved: QueuedConfigurationChange) {
+function drain(next: QueuedMessage, saved: QueuedConfigurationChange, accountSwitch = true) {
   const requestChange = vi.fn();
   function Probe() {
     useQueuedSendDrain({
@@ -30,9 +31,11 @@ function drain(next: QueuedMessage, saved: QueuedConfigurationChange) {
       remoteDeleted: false,
       authorityGeneration: undefined,
       saved,
-      ownerBound: true,
       providers: ["codex", "claude"],
-      capabilities: ["sessions.harnessSwitch"],
+      capabilities: [
+        "sessions.harnessSwitch",
+        ...(accountSwitch ? [SESSION_PROVIDER_ACCOUNT] : []),
+      ],
       queue: { pause: vi.fn(), current: () => ({ messages: [next] }), sent: vi.fn() },
       leaseWait: { current: 0 },
       submit: () => true,
@@ -66,6 +69,12 @@ it("sends a same-provider row on the account the owner switched to after queuein
   expect(model).not.toHaveProperty("providerAccountId");
 });
 
+it("changes the queued model without an account field on an older Host", () => {
+  const model = drain(queued("claude", "opus"), saved, false);
+  expect(model).toMatchObject({ harness: "claude", model: "opus" });
+  expect(model).not.toHaveProperty("providerAccountId");
+});
+
 /** Renders the drain for a settled head whose `submit` answers from `answers`, in order. */
 function drainRefused(answers: boolean[]) {
   const head = queued("codex", "gpt");
@@ -81,7 +90,6 @@ function drainRefused(answers: boolean[]) {
       remoteDeleted: false,
       authorityGeneration: undefined,
       saved: { ...saved, settings: {} },
-      ownerBound: true,
       providers,
       capabilities,
       queue: { pause: vi.fn(), current: () => ({ messages: [head] }), sent },

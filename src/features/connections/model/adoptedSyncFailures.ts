@@ -12,7 +12,7 @@ export const ADOPTED_SYNC_FAILURE_FLAG_AFTER = 3;
 
 /** A session whose last fetch or merge failed, and when. `revision` is the host revision it
  * failed at: a moved revision is a new chance and is never held back by the backoff. */
-type SyncFailure = { count: number; revision: number; at: number; delay: number };
+type SyncFailure = { count: number; revision: number; at: number; delay: number; reason: string };
 const syncFailures = new WeakMap<Map<string, number>, Map<string, SyncFailure>>();
 
 function failuresOf(mirror: Map<string, number>): Map<string, SyncFailure> {
@@ -41,6 +41,14 @@ export function adoptedSyncFailing(mirror: Map<string, number>, entry: AdoptedEn
   );
 }
 
+export function adoptedSyncFailureReason(
+  mirror: Map<string, number>,
+  entry: AdoptedEntry,
+): string | undefined {
+  if (adoptedSyncFailing(mirror, entry)) return syncFailures.get(mirror)?.get(entry.id)?.reason;
+  return undefined;
+}
+
 /** Records one failed pass of a session: backs off its next fetch, and logs once when it has
  * failed enough passes in a row. The text is redacted and bounded before it is logged. */
 export function noteSyncFailure(
@@ -51,18 +59,19 @@ export function noteSyncFailure(
 ): number {
   const failures = failuresOf(mirror);
   const count = (failures.get(entry.id)?.count ?? 0) + 1;
+  const reason = truncateGraphemes(redactDiagnosticText(errorText(error)), 200);
   failures.set(entry.id, {
     count,
     revision: entry.revision,
     at: monotonicNow(),
     delay: remoteBackoffDelay(count),
+    reason,
   });
   if (count === ADOPTED_SYNC_FAILURE_FLAG_AFTER) {
-    const message = errorText(error);
     recordUiLog("warn", "ui.adopted", "adopted session could not sync", {
       scope,
       failures: count,
-      error: truncateGraphemes(redactDiagnosticText(message), 200),
+      error: reason,
     });
   }
   return count;
@@ -71,6 +80,13 @@ export function noteSyncFailure(
 /** A session that merged, or was judged, on this pass: its failure streak is over. */
 export function clearSyncFailure(mirror: Map<string, number>, id: string): void {
   syncFailures.get(mirror)?.delete(id);
+}
+
+/** An explicit wake (focus, a recovered Host, a changed machine) is a new chance for every
+ * failed session: its backoff ends now. The streak is kept, so a session that keeps failing
+ * still reaches the Sync row and logs once instead of starting its count over. */
+export function releaseSyncBackoff(mirror: Map<string, number>): void {
+  for (const failure of syncFailures.get(mirror)?.values() ?? []) failure.delay = 0;
 }
 
 /** Forgets sessions the host no longer lists. */

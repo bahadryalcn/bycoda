@@ -17,6 +17,12 @@ import {
 } from "../../notes";
 import { useComposerCrewMentions } from "./useComposerCrewMentions";
 import { useComposerWorkItemMentions } from "./useComposerWorkItemMentions";
+import {
+  loadServerMentionInventory,
+  parseServerMentionQuery,
+  serverMentionOf,
+  serverMentionRows,
+} from "../model/serverMentions";
 
 type ScopedProjectFiles = { cwd: string; files: ProjectFile[] };
 
@@ -128,14 +134,40 @@ export function useComposerMentionSources(input: {
     retry: retryFiles,
   } = useComposerProjectFiles({ cwd: executionCwd, remote, mentionOpen });
   const notes = useComposerNotes(!remote && mentionOpen && notesEnabled);
+  const serversScoped = parseServerMentionQuery(mentionQuery) !== null;
+  const [servers, setServers] = useState<Awaited<
+    ReturnType<typeof loadServerMentionInventory>
+  > | null>(null);
+  const [serverFailedAt, setServerFailedAt] = useState<number | null>(null);
+  const [serverAttempt, setServerAttempt] = useState(0);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync the local picker with desktop SSH inventory while the menu is open.
+  useEffect(() => {
+    if (remote || !mentionOpen) return;
+    let cancelled = false;
+    void loadServerMentionInventory()
+      .then((inventory) => {
+        if (cancelled) return;
+        setServers(inventory);
+        setServerFailedAt(null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setServers(null);
+        setServerFailedAt(serverAttempt);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mentionOpen, remote, serverAttempt]);
+  const serversFailed = serverFailedAt === serverAttempt;
   const workItems = useComposerWorkItemMentions({
     cwd: executionCwd,
-    active: mentionOpen,
+    active: mentionOpen && !serversScoped,
     query: mentionQuery,
   });
   const crewHits = useComposerCrewMentions({
     cwd: executionCwd,
-    active: mentionOpen,
+    active: mentionOpen && !serversScoped,
     query: mentionQuery,
   });
   const mentionFiles = !remote && notesEnabled ? [...files, ...notesAsProjectFiles(notes)] : files;
@@ -143,6 +175,8 @@ export function useComposerMentionSources(input: {
   const deferredMentionQuery = useDeferredValue(mentionQuery);
   const rankedFiles = useMemo(() => {
     if (!mentionOpen) return [];
+    const serverHits = remote || !servers ? [] : serverMentionRows(mentionQuery, servers);
+    if (serversScoped) return serverHits;
     if (workItems.scoped) return workItems.rows;
     const fileHits = looksLikeProject(executionCwd)
       ? rankMentionFiles(files, deferredMentionQuery, recentOpenedFiles(executionCwd))
@@ -151,6 +185,7 @@ export function useComposerMentionSources(input: {
     const seen = new Set(noteHits.map((file) => file.path));
     return [
       ...crewHits,
+      ...serverHits,
       ...workItems.rows,
       ...noteHits,
       ...fileHits.filter((file) => !seen.has(file.path)),
@@ -161,22 +196,32 @@ export function useComposerMentionSources(input: {
     files,
     deferredMentionQuery,
     mentionOpen,
+    mentionQuery,
     notes,
     notesEnabled,
     remote,
+    servers,
+    serversScoped,
     workItems.rows,
     workItems.scoped,
   ]);
   return {
     mentionIndex,
     rankedFiles,
-    filesFailed: !workItems.scoped && filesFailed,
+    filesFailed: !workItems.scoped && !serversScoped && filesFailed,
     // Work-item and crew rows do not come from the file index.
     filesIndexNotice:
-      !workItems.scoped && looksLikeProject(executionCwd) ? projectIndexNotice(files) : undefined,
+      !workItems.scoped && !serversScoped && looksLikeProject(executionCwd)
+        ? projectIndexNotice(files)
+        : undefined,
     retryFiles,
     workItemsLoading: workItems.loading,
     workItemsScoped: workItems.scoped,
     workItemsAvailable: workItems.available,
+    serversScoped,
+    serversAvailable: rankedFiles.some(serverMentionOf),
+    serversLoading: serversScoped && !remote && !serversFailed && servers === null,
+    serversFailed: serversScoped && !remote && serversFailed,
+    retryServers: () => setServerAttempt((count) => count + 1),
   };
 }

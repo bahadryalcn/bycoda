@@ -13,7 +13,7 @@ use std::{
     io::{Read, Write},
     process::{Command, Stdio},
     sync::{Arc, Mutex, OnceLock},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
 
@@ -64,6 +64,9 @@ enum SshSource {
 }
 struct Job {
     issuer: Arc<NativeServiceChannel>,
+    activity_owner: Option<Arc<crate::control::receipts::WindowIssuer>>,
+    created_at: Instant,
+    created_at_epoch_ms: u128,
     server: String,
     signature: String,
     endpoint_digest: String,
@@ -81,6 +84,38 @@ struct Job {
     settled_at: Option<Instant>,
 }
 impl Job {
+    fn activity(&self, request: &str) -> Option<Value> {
+        // The exact command is already retained in the replay signature. Never include endpoint data.
+        let (_, command, _): (String, String, u64) = serde_json::from_str(&self.signature).ok()?;
+        let mut start = self.output.len().saturating_sub(24 * 1024);
+        while self
+            .output
+            .get(start)
+            .is_some_and(|byte| byte & 0xc0 == 0x80)
+        {
+            start += 1;
+        }
+        Some(json!({
+            "requestId": request, "command": command, "state": self.state,
+            "startedAt": self.created_at_epoch_ms,
+            "output": String::from_utf8_lossy(&self.output[start..]),
+            "exitCode": self.exit_code, "remoteOutcomeUnknown": self.remote_unknown,
+            "truncated": start > 0 || self.output_full,
+        }))
+    }
+    fn activity_owned_by(
+        &self,
+        server: &str,
+        owner: &Arc<crate::control::receipts::WindowIssuer>,
+    ) -> bool {
+        self.server == server
+            && self.issuer.is_current()
+            && owner.is_live()
+            && self
+                .activity_owner
+                .as_ref()
+                .is_some_and(|bound| Arc::ptr_eq(bound, owner))
+    }
     fn authorize_issuer(&self, issuer: &Arc<NativeServiceChannel>) -> Result<(), String> {
         if !Arc::ptr_eq(&self.issuer, issuer) || !self.issuer.is_current() {
             return Err("SSH execution belongs to a retired or different native issuer".into());
@@ -185,6 +220,13 @@ impl Job {
             "totalBytes":self.total,"retainedBytes":self.output.len()})
     }
 }
+
+fn epoch_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
 fn complete_utf8_prefix(mut bytes: &[u8]) -> bool {
     while !bytes.is_empty() {
         match std::str::from_utf8(bytes) {
@@ -283,6 +325,9 @@ fn cancel_or_reserve(
     // Keep this tombstone for the exact issuer lifetime; no process was entered.
     let job = Arc::new(Mutex::new(Job {
         issuer: issuer.clone(),
+        activity_owner: None,
+        created_at: Instant::now(),
+        created_at_epoch_ms: epoch_ms(),
         server: String::new(),
         signature: String::new(),
         endpoint_digest: String::new(),
@@ -870,6 +915,13 @@ pub(super) fn call(
     let timeout = number(input, "timeoutSeconds", 60, 1, 300)?;
     let signature = serde_json::to_string(&json!([server, script, timeout]))
         .map_err(|_| "Invalid SSH command")?;
+    let activity_owner = match (&key.source, request["cwd"].as_str()) {
+        (SshSource::Session { session, .. }, Some(cwd)) => {
+            crate::control::conversation_ssh_activity_owner(app, session, cwd, &key.environment)
+                .ok()
+        }
+        _ => None,
+    };
     let endpoint = crate::ssh_security::prepare_endpoint(
         crate::server_inventory::resolve_ssh_endpoint(app, &server)?,
     )?;
@@ -898,6 +950,9 @@ pub(super) fn call(
         }
         let job = Arc::new(Mutex::new(Job {
             issuer: issuer.clone(),
+            activity_owner,
+            created_at: Instant::now(),
+            created_at_epoch_ms: epoch_ms(),
             server: server.clone(),
             signature,
             endpoint_digest: reviewed_digest.clone(),
@@ -1064,9 +1119,75 @@ pub(super) fn call(
     Ok(result)
 }
 
+/// Read only the AI command receipts originally admitted for this desktop page and session.
+#[tauri::command]
+pub(crate) fn server_ssh_session_activity(
+    window: tauri::WebviewWindow,
+    session_id: String,
+    server_id: String,
+) -> Result<Vec<Value>, String> {
+    let mut registry = jobs().lock().map_err(|_| "SSH executions unavailable")?;
+    evict_expired(&mut registry, Instant::now());
+    let candidates: Vec<_> = registry
+        .iter()
+        .filter_map(|(key, job)| {
+            matches!(&key.source, SshSource::Session { session, .. } if session == &session_id)
+                .then(|| (key.request.clone(), job.clone()))
+        })
+        .collect();
+    drop(registry);
+    if candidates.is_empty() {
+        return Ok(vec![]);
+    }
+    let owner = crate::control::receipts::existing(&window)?;
+    let mut snapshots: Vec<_> = candidates
+        .into_iter()
+        .filter_map(|(request, job)| {
+            let state = job.lock().ok()?;
+            if !state.activity_owned_by(&server_id, &owner) {
+                return None;
+            }
+            let order = std::cmp::Reverse((state.active(), state.created_at));
+            drop(state);
+            Some((order, request, job))
+        })
+        .collect();
+    snapshots.sort_unstable_by_key(|(order, _, _)| *order);
+    Ok(snapshots
+        .into_iter()
+        .take(4)
+        .filter_map(|(_, request, job)| {
+            let state = job.lock().ok()?;
+            if !state.activity_owned_by(&server_id, &owner) {
+                return None;
+            }
+            state.activity(&request)
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn desktop_activity_keeps_the_exact_window_and_saved_target_and_bounds_output() {
+        let owner = Arc::new(crate::control::receipts::WindowIssuer::default());
+        let sibling = Arc::new(crate::control::receipts::WindowIssuer::default());
+        let mut job = fixture_job();
+        job.activity_owner = Some(owner.clone());
+        job.created_at_epoch_ms = 1_700_000_000_000;
+        job.signature = json!([job.server, "printf 'test'", 60]).to_string();
+        job.append("☕".repeat(10_000).as_bytes(), false);
+        assert!(job.activity_owned_by(&job.server, &owner));
+        assert!(!job.activity_owned_by(&job.server, &sibling));
+        assert!(!job.activity_owned_by("different-target", &owner));
+        let view = job.activity("request").unwrap();
+        assert_eq!(view["startedAt"], 1_700_000_000_000_u64);
+        assert_eq!(view["command"], "printf 'test'");
+        let output = view["output"].as_str().unwrap();
+        assert!(output.len() <= 24 * 1024 && !output.contains('\u{fffd}'));
+        assert_eq!(view["truncated"], true);
+    }
     #[test]
     fn only_trusted_full_access_skips_approval_and_downgrades_stop_execution() {
         assert_eq!(
@@ -1104,6 +1225,9 @@ mod tests {
     fn fixture_job() -> Job {
         Job {
             issuer: NativeServiceChannel::for_test(),
+            activity_owner: None,
+            created_at: Instant::now(),
+            created_at_epoch_ms: epoch_ms(),
             server: "s".into(),
             signature: "command".into(),
             endpoint_digest: "digest".into(),
@@ -1367,6 +1491,9 @@ mod tests {
     fn output_is_bounded_and_cursor_is_bytes() {
         let mut job = Job {
             issuer: NativeServiceChannel::for_test(),
+            activity_owner: None,
+            created_at: Instant::now(),
+            created_at_epoch_ms: epoch_ms(),
             server: "s".into(),
             signature: "s".into(),
             endpoint_digest: "d".into(),

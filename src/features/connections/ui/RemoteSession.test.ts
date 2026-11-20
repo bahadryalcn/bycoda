@@ -221,6 +221,7 @@ let host: HostSession | undefined;
 let catalog: HostModelCatalog | Error;
 let providers: HostDescriptor["providers"];
 let harnessSwitchSupported = false;
+let accountSwitchSupported = false;
 let attachmentOwnershipSupported = false;
 let steerSupported = false;
 let lazyHistorySupported = false;
@@ -298,6 +299,7 @@ beforeEach(() => {
   resetDisabledModels();
   resetHarnessModelOverlays();
   harnessSwitchSupported = false;
+  accountSwitchSupported = false;
   attachmentOwnershipSupported = false;
   steerSupported = false;
   lazyHistorySupported = false;
@@ -412,6 +414,7 @@ beforeEach(() => {
           ...(steerSupported ? ["sessions.steer"] : []),
           ...(sharedQueueSupported ? ["sessions.queue"] : []),
           ...(harnessSwitchSupported ? ["sessions.harnessSwitch"] : []),
+          ...(accountSwitchSupported ? ["sessions.configure.providerAccount.v1"] : []),
           ...(lazyHistorySupported ? ["sessions.lazyHistory", "machine.changes"] : []),
           ...(inlineSyncSupported ? ["machine.changes", "machine.changes.inlineSync"] : []),
           ...(conversationRewindSupported ? ["sessions.rewind"] : []),
@@ -677,6 +680,7 @@ function dispatch(command: HostCommand) {
         cwd: command.worktreeCwd ?? "/home/me/repo",
         ...(command.workspaceId ? { workspaceId: command.workspaceId, workspaceRevision: 1 } : {}),
         harness: command.harness,
+        providerAccountId: command.providerAccountId,
         model: command.model,
         modelSettings: command.modelSettings ?? {},
         runtimeMode: command.runtimeMode,
@@ -691,6 +695,9 @@ function dispatch(command: HostCommand) {
       session: {
         ...host.session,
         ...(command.harness ? { harness: command.harness } : {}),
+        ...(command.providerAccountId === undefined
+          ? {}
+          : { providerAccountId: command.providerAccountId ?? undefined }),
         model: command.model,
         modelSettings: command.modelSettings,
         runtimeMode: command.runtimeMode,
@@ -1729,19 +1736,19 @@ it("lets an existing Claude host session select another installed provider", asy
   expect(document.body.textContent).toContain("Earlier work");
 });
 
-it("applies the local model visibility settings to a historical host chat", async () => {
+it("keeps Host models selectable despite the desktop's local model settings", async () => {
   const visible = {
     id: "claude:sonnet-5",
     name: "Sonnet",
     harness: "claude" as const,
   };
-  const disabled = {
+  const hostOnly = {
     id: "claude:opus-4-6",
     name: "Opus 4.6",
     harness: "claude" as const,
   };
   providers = ["claude"];
-  catalog = { models: { claude: [visible, disabled] }, errors: {} };
+  catalog = { models: { claude: [visible, hostOnly] }, errors: {} };
   saveModelEnabled("claude:opus-4.6", false);
   host = {
     projectId: "project",
@@ -1761,9 +1768,12 @@ it("applies the local model visibility settings to a historical host chat", asyn
   rememberRemoteSession("shell", "host-session");
   await render();
   await openModels("Claude Code Sonnet");
-  expect(
-    [...document.querySelectorAll('[role="option"]')].map((option) => option.textContent),
-  ).toEqual(["Sonnet"]);
+  const options = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+  expect(options.map((option) => option.textContent)).toEqual(["Sonnet", "Opus 4.6"]);
+  await act(async () => options[1].click());
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({ type: "configure", model: hostOnly.id }),
+  );
 });
 
 it("transport: drops settings from the tab that the host's model does not offer", async () => {
@@ -2550,6 +2560,106 @@ function openExistingChat(patch: Partial<HostSession> = {}) {
   commands = [];
   rememberRemoteSession("shell", "host-session");
 }
+
+function offerRemoteAccounts(includeDefault = true) {
+  accountSwitchSupported = true;
+  catalog = {
+    models: { codex: [gpt] },
+    errors: {},
+    accounts: {
+      codex: [
+        ...(includeDefault ? [{ id: "default", label: "Host default" }] : []),
+        { id: "remote-work", label: "Remote work" },
+      ],
+    },
+  };
+}
+
+it.each([true, false])(
+  "shows the remote account in the composer with the Host default offered: %s",
+  async (includeDefault) => {
+    offerRemoteAccounts(includeDefault);
+    openExistingChat();
+    await render();
+    const picker = container.querySelector<HTMLButtonElement>(
+      "[data-composer-model-controls] button[aria-haspopup]",
+    )!;
+    await act(async () => picker.click());
+    await vi.waitFor(() => {
+      const accounts = container.ownerDocument.querySelector(
+        '[role="radiogroup"][aria-label="Account"]',
+      );
+      expect(accounts?.textContent).toContain("Remote work");
+      expect(accounts?.textContent?.includes("Host default")).toBe(includeDefault);
+    });
+    const account = [
+      ...container.ownerDocument.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+    ].find((button) => button.textContent?.includes("Remote work"))!;
+    await act(async () => account.click());
+    await vi.waitFor(() =>
+      expect(commands.at(-1)).toMatchObject({
+        type: "configure",
+        providerAccountId: "remote-work",
+      }),
+    );
+  },
+);
+
+it("configures and clears the account of a direct remote session on its Host", async () => {
+  offerRemoteAccounts();
+  openExistingChat();
+  await renderRemoteProbe();
+  await vi.waitFor(() => expect(remoteOverrides.onSelectProviderAccount).toBeTypeOf("function"));
+
+  await act(async () => remoteOverrides.onModelChange!("shell", "codex", gpt.id, "local-only"));
+  expect(commands).toHaveLength(0);
+  await act(async () => remoteOverrides.onModelChange!("shell", "codex", gpt.id, "remote-work"));
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({
+      type: "configure",
+      sessionId: "host-session",
+      providerAccountId: "remote-work",
+    }),
+  );
+  await vi.waitFor(() => expect(host!.session.providerAccountId).toBe("remote-work"));
+  await settle();
+
+  await act(async () => remoteOverrides.onSelectProviderAccount!("shell", "codex", "default"));
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({ type: "configure", providerAccountId: null }),
+  );
+});
+
+it("creates a direct remote session with its selected Host account", async () => {
+  offerRemoteAccounts();
+  const session = { ...shell(), providerAccountId: "local-only" };
+  await renderRemoteProbe(true, session);
+  await vi.waitFor(() => expect(remoteOverrides.onSelectProviderAccount).toBeTypeOf("function"));
+  expect(remoteOverrides.session?.providerAccountId).toBeUndefined();
+
+  await act(async () => remoteOverrides.onSelectProviderAccount!("shell", "codex", "remote-work"));
+  await act(async () =>
+    expect(remoteOverrides.onSubmit!("shell", "Use the owner's account", [])).toBe(true),
+  );
+  await vi.waitFor(() =>
+    expect(commands[0]).toMatchObject({ type: "create", providerAccountId: "remote-work" }),
+  );
+});
+
+it("keeps model changes available on an older remote Host without account switching", async () => {
+  offerRemoteAccounts();
+  accountSwitchSupported = false;
+  harnessSwitchSupported = true;
+  providers = ["codex", "cursor"];
+  openExistingChat();
+  await renderRemoteProbe();
+  expect(remoteOverrides.onSelectProviderAccount).toBeUndefined();
+  await act(async () => remoteOverrides.onModelChange!("shell", "cursor", cursor.id));
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({ type: "configure", model: cursor.id }),
+  );
+  expect(commands.at(-1)).not.toHaveProperty("providerAccountId");
+});
 
 it.each(["send", "draft", "shell"] as const)(
   "authority intent: binds a new %s to the displayed generation",

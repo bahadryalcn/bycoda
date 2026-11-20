@@ -923,6 +923,70 @@ it("opens an explicitly selected preview URL on the owning host after obtaining 
   );
 });
 
+it("navigates a mounted panel once per explicit request and never replays it on remount", async () => {
+  let controlling = false;
+  let url: string | null = null;
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method, params) => {
+    if (method === "browser.claim") controlling = true;
+    if (method === "browser.open") url = String(params?.url);
+    return {
+      open: url !== null,
+      url,
+      controlling,
+      leaseId: controlling ? "lease" : undefined,
+      leaseExpiresAt: controlling ? Date.now() + 30_000 : undefined,
+    };
+  });
+  const props = { cwd: "remote://mac/repo", sessionId: "session" };
+  const first = { id: "navigation-remount-1", url: "http://localhost:3000/a?b=1#c" };
+  const methods = () => vi.mocked(hostFeatureRequest).mock.calls.map((call) => call[2]);
+  const opened = () =>
+    vi
+      .mocked(hostFeatureRequest)
+      .mock.calls.filter((call) => call[2] === "browser.open")
+      .map((call) => call[3]?.url);
+  await act(async () => root.render(createElement(BrowserPanel, props)));
+  await act(async () => root.render(createElement(BrowserPanel, { ...props, navigation: first })));
+  expect(methods()).toEqual([
+    "browser.status",
+    "browser.claim",
+    "browser.open",
+    "browser.resize",
+    "browser.frame",
+  ]);
+  await act(async () => root.render(createElement(BrowserPanel, { ...props, navigation: first })));
+  act(() => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(createElement(BrowserPanel, { ...props, navigation: first })));
+  expect(opened()).toEqual([first.url]);
+  const second = { id: "navigation-remount-2", url: "http://localhost:3000/next" };
+  await act(async () => root.render(createElement(BrowserPanel, { ...props, navigation: second })));
+  expect(opened()).toEqual([first.url, second.url]);
+  expect(methods().filter((method) => method === "browser.claim")).toHaveLength(1);
+});
+
+it("keeps another controller's lease and reports it when an explicit request arrives", async () => {
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
+    if (method === "browser.claim") return { open: true, url: "http://x.test", controlling: false };
+    return { open: true, url: "http://x.test", controlling: false };
+  });
+  await act(async () =>
+    root.render(
+      createElement(BrowserPanel, {
+        cwd: "/project",
+        navigation: { id: "navigation-held-lease", url: "http://localhost:3000/" },
+      }),
+    ),
+  );
+  const calls = vi.mocked(hostFeatureRequest).mock.calls;
+  expect(calls.some((call) => call[2] === "browser.open")).toBe(false);
+  expect(calls.some((call) => call[3]?.takeover === true)).toBe(false);
+  expect(container.querySelector('[role="alert"]')!.textContent).toContain(
+    "Browser control is unavailable",
+  );
+  expect(container.querySelector<HTMLInputElement>("input")!.value).toBe("http://localhost:3000/");
+});
+
 it("rejects unsafe preview URLs before taking control or navigating", async () => {
   vi.mocked(hostFeatureRequest).mockResolvedValue({ open: false, url: null, controlling: false });
   await act(async () =>

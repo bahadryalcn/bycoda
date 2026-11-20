@@ -22,6 +22,7 @@ import { setImmediate as nextWorkerTurn } from "node:timers/promises";
 import { SessionQueues } from "../../../../host/sessions/session-queue";
 import {
   heldSharedQueueLeases,
+  noteSharedQueueLeases,
   QUEUE_SYNC_DEADLINE_MS,
   sharedLocalQueueReady,
   resumeSharedLocalQueue,
@@ -1003,8 +1004,8 @@ it("does not resume while a given-up send may still be answered, and resumes onc
   expect(queue.status).toBe("active");
 });
 
-it("tells the host a held lease cannot send while the conversation diverged from its host copy", async () => {
-  useRealHostQueue();
+it("yields a stale mirror's queue to the host but keeps a divergence blocked", async () => {
+  const { queues } = useRealHostQueue();
   await mount();
   expect(heldSharedQueueLeases()).toEqual([{ sessionId: "chat", epoch: 1 }]);
   await act(async () => {
@@ -1013,7 +1014,27 @@ it("tells the host a held lease cannot send while the conversation diverged from
       adoptedSyncConflict: true,
     })) as Session[];
   });
+  expect(heldSharedQueueLeases()).toEqual([
+    { sessionId: "chat", epoch: 1, blocked: true, syncPending: true },
+  ]);
+  await act(async () => {
+    sessionsRef.current = sessionsRef.current.map((session) => ({
+      ...session,
+      adoptedDivergence: { key: "diverged" },
+    })) as Session[];
+  });
   expect(heldSharedQueueLeases()).toEqual([{ sessionId: "chat", epoch: 1, blocked: true }]);
+  await act(async () => {
+    sessionsRef.current = sessionsRef.current.map((session) => ({
+      ...session,
+      adoptedDivergence: undefined,
+    })) as Session[];
+    const lease = (await queues.get("chat")).drain!;
+    await queues.release("chat", lease.holder, lease.epoch);
+    noteSharedQueueLeases({ chat: null });
+    for (let i = 0; i < 20; i++) await flushTurn();
+  });
+  expect(queues.live(await queues.get("chat"))).toBe(false);
 });
 
 function releasing() {

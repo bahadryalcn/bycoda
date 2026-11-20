@@ -90,13 +90,13 @@ it("lists available visible providers, enabled models and local accounts with ki
     providerAccountId: "local-secret",
     modelSettings: { effort: "high", crossAdvisor: "reserved" },
   });
-  expect(found[0].account).toEqual({ id: "local-secret", label: "Local" });
+  expect(found[0].account).toEqual({ id: "local-secret", label: "Local", kind: "personal" });
   expect(found[0].effort).toEqual({ id: "effort", options: ["low", "medium", "high", "xhigh"] });
   expect(found[1].account?.kind).toBe("personal");
   expect(found[2].account).toBeUndefined();
 });
 
-it("infers the kind from the label and uses explicit Host catalogs only", () => {
+it("defaults legacy Host accounts to Personal and uses explicit Host catalogs only", () => {
   const host = {
     ...source(),
     id: "remote",
@@ -104,7 +104,7 @@ it("infers the kind from the label and uses explicit Host catalogs only", () => 
   };
   const found = setupCandidates(host);
   expect(found.filter((c) => c.target.harness === "codex")).toHaveLength(2);
-  expect(found[0].account?.kind).toBe("work");
+  expect(found[0].account?.kind).toBe("personal");
   expect(found.some((c) => c.target.providerAccountId === "local-secret")).toBe(false);
   expect(setupCandidates({ ...source(), available: () => false })).toEqual([]);
 });

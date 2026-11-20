@@ -53,8 +53,12 @@ it("serves public transcription models to the paired owner without exposing cred
   const owner = call(method, { owner: true });
   await handleVoiceRpc(dependencies, owner);
   expect(owner.result).toEqual([{ id: "test/model", label: "Test model" }]);
-  await expect(handleVoiceRpc(dependencies, call(method, { owner: true, origin: "https://x" }))).rejects.toThrow("only on this computer");
-  await expect(handleVoiceRpc(dependencies, call(method, { owner: false }))).rejects.toThrow("only on this computer");
+  await expect(
+    handleVoiceRpc(dependencies, call(method, { owner: true, origin: "https://x" })),
+  ).rejects.toThrow("only on this computer");
+  await expect(handleVoiceRpc(dependencies, call(method, { owner: false }))).rejects.toThrow(
+    "only on this computer",
+  );
 });
 
 it("gates cloud transcription by the same rule", async () => {

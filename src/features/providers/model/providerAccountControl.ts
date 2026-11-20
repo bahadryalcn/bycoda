@@ -162,7 +162,7 @@ export function createProviderAccountControl(
         deps.edit!(provider, accountId, {
           label: account.label,
           color: account.color,
-          kind: (change.accountKind ?? undefined) as "personal" | "work" | undefined,
+          kind: change.accountKind === "work" ? "work" : "personal",
         });
     } else if (change.kind === "default") {
       exact(change, ["kind", "confirm"]);
@@ -231,7 +231,7 @@ export function createProviderAccountControl(
             : change.kind === "color"
               ? target.color === change.color
               : change.kind === "accountKind"
-                ? (target.kind ?? null) === change.accountKind
+                ? (target.kind ?? "personal") === (change.accountKind ?? "personal")
                 : target.isDefault));
       if (!verified) throw Error("Account change could not be verified");
       receipt.status = { state: "applied", operationId, atomic: false, snapshot };

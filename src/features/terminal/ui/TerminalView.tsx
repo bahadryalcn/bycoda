@@ -40,6 +40,9 @@ import { createTerminalVisibility } from "../runtime/terminalVisibility";
 import { createTerminalWebgl } from "../runtime/terminalWebgl";
 
 type Props = {
+  toolbarTarget?: HTMLDivElement | null;
+  sshConnectionName?: string;
+  onSendToAgent?: (text: string) => Promise<void>;
   /** Surface-specific typography, independent of the code editor's text size. */
   fontSize?: number;
   onFontSizeChange?: (size: number) => void;
@@ -94,6 +97,9 @@ async function reconnectTerminal(
 }
 
 export function TerminalView({
+  toolbarTarget,
+  sshConnectionName,
+  onSendToAgent,
   fontSize,
   onFontSizeChange,
   lineHeight,
@@ -570,7 +576,9 @@ export function TerminalView({
       {...actionContentScopeAttributes()}
       ref={outerRef}
       className="bycoda-terminal relative flex h-full w-full min-h-0 min-w-0 flex-col"
-      onMouseDown={() => termRef.current?.focus()}
+      onMouseDown={(event) => {
+        if (hostRef.current?.contains(event.target as Node)) termRef.current?.focus();
+      }}
       onKeyDownCapture={(event) => {
         if (snippetsOpen) return;
         if (isImeComposition(event.nativeEvent)) return;
@@ -601,6 +609,8 @@ export function TerminalView({
       }}
     >
       <TerminalControls
+        toolbarTarget={toolbarTarget}
+        sshConnectionName={sshConnectionName}
         fontSize={displayFontSize}
         savedFontSize={savedFontSize}
         onResetFontSize={() => resetFontSizeRef.current()}
@@ -697,7 +707,8 @@ export function TerminalView({
       <TerminalSelectionMenu
         terminal={terminal}
         host={hostRef}
-        active={active && onScreen && tool !== "search" && !privateTerminal}
+        active={active && onScreen && tool !== "search" && (!privateTerminal || !!onSendToAgent)}
+        onSendToAgent={onSendToAgent}
         cwd={cwd}
       />
     </div>

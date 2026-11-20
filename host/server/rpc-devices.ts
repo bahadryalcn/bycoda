@@ -17,6 +17,10 @@ import { WATCH_STAMP_MS } from "./support";
 import { saveDisabledModels } from "../providers/disabled-models";
 import { saveBykitEnabled } from "../bykit/bykit-hint";
 import {
+  readStallProfilesEnabled,
+  saveStallProfilesEnabled,
+} from "../diagnostics/stall-profile-setting";
+import {
   readProviderAccountStyles,
   saveProviderAccountStyles,
 } from "../providers/provider-account-styles";
@@ -82,6 +86,7 @@ export async function handleDevicesRpc(
       request.result = {
         ...(await dependencies.tasks.limits.state()),
         providerAccountStyles: await readProviderAccountStyles(dependencies.engine.store),
+        stallProfiles: await readStallProfilesEnabled(dependencies.engine.store),
       };
       break;
     case "host.settings.save":
@@ -99,11 +104,14 @@ export async function handleDevicesRpc(
         dependencies.invalidateModelCatalog();
       if (request.params.bykitInstructions !== undefined)
         await saveBykitEnabled(dependencies.engine.store, request.params.bykitInstructions);
+      if (request.params.stallProfiles !== undefined)
+        await saveStallProfilesEnabled(dependencies.engine.store, request.params.stallProfiles);
       if (request.params.settings !== undefined)
         await dependencies.tasks.limits.save(request.params.settings);
       request.result = {
         ...(await dependencies.tasks.limits.state()),
         providerAccountStyles: await readProviderAccountStyles(dependencies.engine.store),
+        stallProfiles: await readStallProfilesEnabled(dependencies.engine.store),
       };
       void dependencies.tasks
         .tick()

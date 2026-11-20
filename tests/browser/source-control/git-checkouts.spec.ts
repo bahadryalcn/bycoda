@@ -169,9 +169,14 @@ for (const theme of ["light", "dark"] as const)
       await page.getByRole("button", { name: "Open full graph", exact: true }).click();
       await applyTheme();
       const dialog = page.getByRole("dialog", { name: "Commit graph", exact: true });
+      const workspace = dialog.locator('[data-surface-variant="workspace-panel"]').first();
       await expect(
         dialog.getByRole("button", { name: "Working tree actions", exact: true }),
       ).toBeVisible();
+      await expect(dialog).toHaveCSS(
+        "background-color",
+        await workspace.evaluate((element) => getComputedStyle(element).backgroundColor),
+      );
       await page.screenshot({ path: `${folder}/graph-working-${theme}-${width}.png` });
       await dialog.getByRole("button").filter({ hasText: "Workspace change 39" }).click();
       await expect(

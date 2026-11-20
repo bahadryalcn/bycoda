@@ -13,7 +13,7 @@ import { remoteSessionFor } from "../../../features/connections/model/connection
 import { shouldToggleNotesPanel, toggleNotesPanel } from "../../../features/notes/notesPanel";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
-import { isRemoteProjectPath } from "../../../features/projects/model/recents";
+import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
 import { requestSessionImport } from "../../../features/sessions/import/importModel";
 import { sessionWorkCwd } from "../../../features/sessions/model/session";
 import type { ClaudeImportTarget } from "../../../features/sessions/model/claudeSessionImport";
@@ -27,14 +27,21 @@ export function useRemoteSessionDeleted(deps: {
   tabWorktreeOf: Parameters<typeof planWorkspaceTabClose>[0]["worktreeOf"];
   onClearTabSession: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
-}): { onRemoteSessionDeleted: (remoteSessionId: string) => void } {
+}): { onRemoteSessionDeleted: (remoteSessionId: string, project?: string) => void } {
   const { tabsRef, sessionsRef, tabCloseScope, tabWorktreeOf, onClearTabSession, onCloseTab } =
     deps;
 
   const onRemoteSessionDeleted = useCallback(
-    (remoteSessionId: string) => {
+    (remoteSessionId: string, project?: string) => {
       const tab = tabsRef.current.find((entry) =>
-        leafIds(entry.layout).some((shellId) => remoteSessionFor(shellId) === remoteSessionId),
+        leafIds(entry.layout).some(
+          (shellId) =>
+            remoteSessionFor(shellId) === remoteSessionId &&
+            (!project ||
+              sessionsRef.current.some(
+                (session) => session.id === shellId && sameProjectPath(session.cwd, project),
+              )),
+        ),
       );
       if (!tab) return;
       const closePlan = planWorkspaceTabClose({

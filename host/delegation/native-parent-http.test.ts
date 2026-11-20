@@ -7,6 +7,13 @@ import { HostStore } from "../store";
 import { HostEngine } from "../engine";
 import { createHostServer } from "../server";
 import { DesktopSessions } from "../desktop/desktopSessions";
+import { WebSocket } from "ws";
+import {
+  DELEGATION_MESSAGES_STREAM,
+  HOST_SCHEMA_VERSION,
+  WS_SUBPROTOCOL,
+  WS_WIRE_VERSION,
+} from "../../src/shared/model/host-contracts";
 
 vi.mock("../../src/integrations/harness/core/authStatus", () => ({
   readHarnessAuthStatus: async () => "signedIn",
@@ -150,6 +157,51 @@ it("delegates through an authenticated Native parent absent from the Host sessio
     runId: sibling.runId,
     message: "What is your schema?",
   };
+  const description = await call("environment.describe", {});
+  expect(description.capabilities).toContain(DELEGATION_MESSAGES_STREAM);
+  const socket = new WebSocket(
+    url.replace(/^http/, "ws").replace(/\/rpc$/, "/ws"),
+    WS_SUBPROTOCOL,
+    {
+      headers: { Authorization: `Bearer ${device.token}` },
+    },
+  );
+  cleanups.push(async () => socket.terminate());
+  const frames: { id?: string; params?: { subscriptionId?: string; data?: unknown } }[] = [];
+  socket.on("message", (raw) => frames.push(JSON.parse(raw.toString())));
+  await new Promise<void>((resolve, reject) => {
+    socket.once("open", resolve);
+    socket.once("error", reject);
+  });
+  const request = (id: string, method: string, params: unknown) =>
+    socket.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+  request("hello", "connection.hello", {
+    environmentId: store.environmentId,
+    supportedWireVersions: [WS_WIRE_VERSION],
+    supportedSchemaVersions: [HOST_SCHEMA_VERSION],
+    clientId: "delegation-fixture",
+    clientKind: "desktop",
+  });
+  await vi.waitFor(() => expect(frames.some((frame) => frame.id === "hello")).toBe(true));
+  for (const [subscriptionId, sessionId] of [
+    ["target", sibling.sessionId],
+    ["source", run.sessionId],
+  ]) {
+    request(subscriptionId, "subscriptions.open", {
+      subscriptionId,
+      target: { kind: "delegationMessages", sessionId },
+    });
+  }
+  const snapshots = (subscriptionId: string) =>
+    frames.flatMap((frame) =>
+      frame.params?.subscriptionId === subscriptionId && Array.isArray(frame.params.data)
+        ? [frame.params.data]
+        : [],
+    );
+  await vi.waitFor(() => {
+    expect(snapshots("target").at(-1)).toEqual([]);
+    expect(snapshots("source").at(-1)).toEqual([]);
+  }, COMPLETION_WAIT);
   const message = await call(
     "conversation.tools.call",
     { action: "agents.send", input: messageInput },
@@ -157,6 +209,16 @@ it("delegates through an authenticated Native parent absent from the Host sessio
   );
   // The sibling already finished: a peer message does not restart it.
   expect(message).toMatchObject({ delivery: "failed", error: expect.stringContaining("finished") });
+  await vi.waitFor(() => {
+    expect(snapshots("target").at(-1)).toEqual([
+      expect.objectContaining({
+        text: messageInput.message,
+        sender: "Physics",
+        delivery: "failed",
+      }),
+    ]);
+    expect(snapshots("source").flat()).toEqual([]);
+  }, COMPLETION_WAIT);
   expect(
     await call(
       "conversation.tools.call",

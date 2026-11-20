@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { FileMentionPicker } from "./FileMentionPicker";
+import { serverMentionRows } from "../model/serverMentions";
 
 const host = document.createElement("div");
 document.body.append(host);
@@ -10,6 +11,32 @@ const root = createRoot(host);
 afterEach(() => {
   act(() => root.render(null));
   vi.unstubAllGlobals();
+});
+
+it("renders distinct IDs and hands the selected saved server row back to the composer", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const files = serverMentionRows("srv:", [
+    { id: "first", name: "Prod", kind: "ssh" },
+    { id: "second", name: "Prod", kind: "ssh" },
+  ]);
+  const onPick = vi.fn();
+  act(() =>
+    root.render(
+      createElement(FileMentionPicker, {
+        files,
+        query: "srv:",
+        active: 0,
+        serversScoped: true,
+        onActive: vi.fn(),
+        onPick,
+      }),
+    ),
+  );
+  const options = host.querySelectorAll<HTMLButtonElement>('[role="option"]');
+  expect(options[0]?.textContent).toContain("@srv:first");
+  expect(options[1]?.textContent).toContain("@srv:second");
+  act(() => options[1]!.click());
+  expect(onPick).toHaveBeenCalledExactlyOnceWith(files[1]);
 });
 
 it("keeps composer focus and ignores stationary pointer events after keyboard navigation", () => {

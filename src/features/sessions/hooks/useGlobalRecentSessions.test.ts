@@ -26,11 +26,20 @@ let history: SessionSummary[] = [];
 let sessions: Session[] = [];
 let enabled = true;
 let allowed = new Set(["/visible"]);
+let remoteRows: SessionSummary[] = [];
+let freshRemoteProjects: string[] = [];
 let result: ReturnType<typeof useGlobalRecentSessions>;
 let renders = 0;
 function Probe() {
   renders++;
-  const current = useGlobalRecentSessions(history, sessions, enabled, allowed);
+  const current = useGlobalRecentSessions(
+    history,
+    sessions,
+    enabled,
+    allowed,
+    remoteRows,
+    freshRemoteProjects,
+  );
   useLayoutEffect(() => {
     result = current;
   });
@@ -53,6 +62,32 @@ afterEach(() => {
   history = [];
   sessions = [];
   allowed = new Set(["/visible"]);
+  remoteRows = [];
+  freshRemoteProjects = [];
+});
+
+it("uses fresh remote lists, including an empty one, and keeps the note for partial coverage", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const online = "remote://online/visible";
+  const offline = "remote://offline/visible";
+  allowed = new Set(["/visible", online, offline]);
+  history = [row, { ...row, cwd: online, id: "removed" }];
+  remoteRows = [{ ...row, cwd: offline, id: "cached" }];
+  freshRemoteProjects = [online];
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    expect(result.rows.map(({ id }) => id).sort()).toEqual(["a", "cached"]);
+    expect(result.remoteHistoryLimited).toBe(true);
+    freshRemoteProjects = [online, offline];
+    remoteRows = [{ ...row, cwd: offline, id: "live" }];
+    await act(async () => root.render(createElement(Probe)));
+    expect(result.rows.map(({ id }) => id).sort()).toEqual(["a", "live"]);
+    expect(result.remoteHistoryLimited).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
 });
 
 it("does not render the owner for unchanged live provider history on a tick", async () => {

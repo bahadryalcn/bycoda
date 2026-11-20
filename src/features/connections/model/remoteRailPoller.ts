@@ -67,6 +67,7 @@ export function startRailPoller<T>(options: {
   concurrency?: number;
   loadTimeoutMs?: number;
   random?: () => number;
+  refreshEvent?: string;
 }): () => void {
   const limit = options.concurrency ?? RAIL_POLL_CONCURRENCY;
   let stopped = false;
@@ -166,9 +167,9 @@ export function startRailPoller<T>(options: {
 
   const wake = (event: Event) => {
     const active = online() && !hidden();
-    const networkBack = event.type === "online";
+    const force = event.type === "online" || event.type === options.refreshEvent;
     for (const state of states) {
-      if (active && !networkBack) {
+      if (active && !force) {
         // A focus or visibility change is not new evidence about a machine: a read in
         // flight or settled just now already answers it, and a failing target keeps its
         // backoff instead of redialing on every window switch.
@@ -192,6 +193,7 @@ export function startRailPoller<T>(options: {
     window.addEventListener("focus", wake);
     window.addEventListener("online", wake);
     window.addEventListener("offline", wake);
+    if (options.refreshEvent) window.addEventListener(options.refreshEvent, wake);
     document.addEventListener("visibilitychange", wake);
   }
   for (const state of states) void poll(state);
@@ -201,6 +203,7 @@ export function startRailPoller<T>(options: {
       window.removeEventListener("focus", wake);
       window.removeEventListener("online", wake);
       window.removeEventListener("offline", wake);
+      if (options.refreshEvent) window.removeEventListener(options.refreshEvent, wake);
       document.removeEventListener("visibilitychange", wake);
     }
     // Let queued polls run to their `stopped` check instead of leaving them pending.

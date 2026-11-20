@@ -116,7 +116,7 @@ function DefaultMark() {
   );
 }
 
-/** Switch between multiple accounts without repeating a lone account's identity. */
+/** Switch accounts, including recovery when the only offered profile differs from the saved one. */
 export function ModelAccountControl({
   accounts,
   accountId,
@@ -137,8 +137,8 @@ export function ModelAccountControl({
   const { formatNumber } = useFormat();
   const kind = accountSwitcherKind(accounts.length);
   const current = accounts.find((account) => account.id === accountId);
-  if (kind === "none" || kind === "label") return null;
-  if (kind === "switch") {
+  if (kind === "none" || (kind === "label" && current)) return null;
+  if (kind === "switch" || kind === "label") {
     return (
       <SegmentedControl
         label={t("Account")}

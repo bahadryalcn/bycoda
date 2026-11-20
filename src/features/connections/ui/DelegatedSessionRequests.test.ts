@@ -79,6 +79,35 @@ it("uses the child's Host owner and removes answered requests", () => {
   act(() => root.unmount());
 });
 
+it("loads older replies through the existing child history owner", () => {
+  const child = { id: "child", cwd: "/project", blocks: [] } as unknown as Session;
+  const load = vi.fn(async () => 2);
+  state.remote = {
+    session: child,
+    onApproval: state.approve,
+    onQuestionReply: state.answer,
+    remoteHistoryHasMore: true,
+    onLoadRemoteHistory: load,
+  };
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const render = () =>
+    root.render(createElement(DelegatedSessionRequests, { child, visible: true }));
+  try {
+    act(render);
+    const button = () => container.querySelector("button")!;
+    expect(button().textContent).toContain("Load earlier messages");
+    act(() => button().click());
+    expect(load).toHaveBeenCalledOnce();
+
+    state.remote.remoteHistoryLoading = true;
+    act(render);
+    expect(button().disabled).toBe(true);
+  } finally {
+    act(() => root.unmount());
+  }
+});
+
 it.each([true, false])(
   "publishes streamed tool steps and the final reply (renderRequests=%s)",
   (renderRequests) => {

@@ -69,14 +69,7 @@
 }
 :is(.surface, .appearance)[data-surface-layout="settings-account-list"]
   > [data-settings-part="account"]
-  ~ :is(
-    [data-settings-part="account"],
-    [data-settings-part="account-editor"],
-    [data-settings-part="account-empty"]
-  ),
-:is(.surface, .appearance)[data-surface-layout="settings-account-list"]
-  > [data-settings-part="account-editor"]
-  ~ :is([data-settings-part="account"], [data-settings-part="account-editor"]) {
+  ~ :is([data-settings-part="account"], [data-settings-part="account-empty"]) {
   border-block-start: 1px solid var(--ui-settings-hairline);
 }
 :is(.surface, .appearance):is(

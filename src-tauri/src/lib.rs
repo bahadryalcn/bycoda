@@ -729,6 +729,7 @@ pub fn run() {
             social_bridge::harness_social_bridge,
             runtime_logs_bridge::harness_runtime_logs_bridge,
             conversation_tools_bridge::harness_conversation_tools_bridge,
+            conversation_tools_bridge::ssh_execution::server_ssh_session_activity,
             default_cwd,
             home_dir,
             path_environment,

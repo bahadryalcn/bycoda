@@ -32,11 +32,15 @@ afterEach(() => {
   vi.useRealTimers();
 });
 it("publishes account styles on recovery when the Host was unavailable at mount", async () => {
-  mocks.invoke.mockResolvedValueOnce(null);
+  let connected = false;
+  mocks.invoke.mockImplementation(async (method: string) =>
+    method === "local_host_connect" && connected ? { id: "local" } : null,
+  );
   stop = startProviderAccountHostSync();
   await flush();
   expect(mocks.request).not.toHaveBeenCalled();
 
+  connected = true;
   announceRemoteRecovery("local-env");
   await flush();
   expect(mocks.request).toHaveBeenCalledWith(
@@ -51,20 +55,36 @@ it("publishes account styles on recovery when the Host was unavailable at mount"
     true,
   );
 });
-it("pushes kind and explicitly clears it with Automatic", async () => {
+it("pushes the saved kind and preserves it on a metadata edit without a kind", async () => {
   stop = startProviderAccountHostSync();
   await flush();
   expect(mocks.request.mock.calls[0]?.[2].providerAccountStyles.codex["account-a"]).toMatchObject({
     kind: "work",
-    derivedKind: "personal",
   });
   editProviderAccount("codex", "account-a", { label: "A", color: "coral" });
   await flush();
   const style = mocks.request.mock.calls.at(-1)?.[2].providerAccountStyles.codex["account-a"];
-  expect(style).not.toHaveProperty("kind");
-  expect(style.derivedKind).toBe("personal");
+  expect(style.kind).toBe("work");
 });
-it("applies inbound kind and clearing without echoing or changing defaults", async () => {
+it("publishes a detected Team account as Work on startup", async () => {
+  saveProviderAccount({ id: "account-team", provider: "claude", label: "Studio" });
+  mocks.invoke.mockImplementation(async (method: string, args?: { accountId: string }) =>
+    method === "local_host_connect"
+      ? { id: "local" }
+      : args?.accountId === "account-team"
+        ? { plan: "Team" }
+        : null,
+  );
+  stop = startProviderAccountHostSync();
+  await flush();
+  expect(providerAccounts("claude").find((a) => a.id === "account-team")?.kind).toBe("work");
+  expect(
+    mocks.request.mock.calls[0]?.[2].providerAccountStyles.claude["account-team"],
+  ).toMatchObject({
+    kind: "work",
+  });
+});
+it("applies inbound kind and preserves it if a legacy Host omits it", async () => {
   stop = startProviderAccountHostSync();
   await flush();
   const original = providerAccounts("codex").map((a) => [a.id, a.isDefault]);
@@ -85,7 +105,7 @@ it("applies inbound kind and clearing without echoing or changing defaults", asy
   });
   await vi.advanceTimersByTimeAsync(5000);
   await flush();
-  expect(providerAccounts("codex").find((a) => a.id === "account-a")?.kind).toBeUndefined();
+  expect(providerAccounts("codex").find((a) => a.id === "account-a")?.kind).toBe("personal");
   expect(providerAccounts("codex").map((a) => [a.id, a.isDefault])).toEqual(original);
   expect(mocks.request.mock.calls.filter((call) => call[1] === "host.settings.save")).toHaveLength(
     1,

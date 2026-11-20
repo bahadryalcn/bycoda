@@ -63,6 +63,32 @@ it("reads again after remount if the size estimate could not visit every node", 
   expect(container.textContent).toBe("50000");
 });
 
+it("ends manual refresh progress before a queued watcher read of uncacheable data", async () => {
+  const largeResult = Array<number>(50_000).fill(0);
+  let finishRefresh!: (result: number[]) => void;
+  let finishWatcher!: (result: number[]) => void;
+  const read = vi
+    .fn<() => Promise<number[]>>()
+    .mockResolvedValueOnce([0])
+    .mockImplementationOnce(() => new Promise((resolve) => (finishRefresh = resolve)))
+    .mockImplementationOnce(() => new Promise((resolve) => (finishWatcher = resolve)));
+  let refresh!: () => void;
+  function View() {
+    const resource = useGitResource("/large", "large", true, read);
+    refresh = resource.refresh;
+    return createElement("output", null, `${resource.loading}:${resource.data?.length}`);
+  }
+  await act(async () => root.render(createElement(View)));
+  await act(async () => refresh());
+  expect(container.textContent).toBe("true:1");
+  await act(async () => subscribeGitChanged.mock.calls.at(-1)![0]());
+  await act(async () => finishRefresh(largeResult));
+  expect(read).toHaveBeenCalledTimes(3);
+  expect(container.textContent).toBe("false:50000");
+  await act(async () => finishWatcher([0, 1]));
+  expect(container.textContent).toBe("false:2");
+});
+
 it("does not force a fresh cached resource after manually refreshing a different key", async () => {
   const readA = vi.fn(async () => "A");
   const readB = vi.fn(async () => "B");

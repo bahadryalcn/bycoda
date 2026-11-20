@@ -14,12 +14,14 @@ for (const theme of ["dark", "light"]) {
       '[data-project-path="remote://fixture-office/fixture/bycoda"] [data-project-primary]',
     );
     await expect(project.locator("[data-truncate]").first()).toHaveText("bycoda");
+    await expect(project.locator("svg.lucide-server")).toBeVisible();
     const session = page.locator('[data-session-card="row-multi"]');
     await expect(session.locator("[data-session-row-project] [data-truncate]")).toHaveText(
       "bycoda",
     );
     const marker = session.getByRole("img", { name: "On another machine" });
     await expect(marker).toBeVisible();
+    await expect(marker.locator("svg.lucide-server")).toBeVisible();
     await expect(
       marker.locator("+ [data-tooltip-wrap] [data-session-provider=codex]"),
     ).toBeVisible();
@@ -33,7 +35,7 @@ for (const theme of ["dark", "light"]) {
     await project.hover();
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).toContainText("/fixture/bycoda on Office Mac");
-    await expect(tooltip.locator("svg")).toBeVisible();
+    await expect(tooltip.locator("svg.lucide-server")).toBeVisible();
     await page.screenshot({ path: path.join(directory, `${theme}-tooltip.png`) });
   });
 }
@@ -1012,34 +1014,44 @@ for (const light of [false, true]) {
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
-    test(`global Last sessions navigation only ${theme} ${width}`, async ({ page }) => {
+    test(`global Last sessions row actions ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(`/tests/browser/sessions/session-row-layout.html?global&${theme}`, {
-        waitUntil: "domcontentloaded",
-      });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?global&global-settle&${theme}`,
+        {
+          waitUntil: "domcontentloaded",
+        },
+      );
       const row = page.locator('[data-session-card="row-demo"]');
       const open = row.locator("[data-session-select]");
       await expect(row).toBeVisible();
-      await expect(row.getByRole("button")).toHaveCount(1);
+      await expect(row.getByRole("button", { name: /^Archive / })).toBeAttached();
+      await expect(row.getByRole("button", { name: /^Delete / })).toBeAttached();
       await page.screenshot({
-        path: `temp/verification/2026-11-11-sidebar/last-sessions-${theme}-${width}-rest.png`,
+        path: `temp/verification/last-sessions-actions/${theme}-${width}-rest.png`,
         animations: "disabled",
       });
       await open.hover();
-      await expect(row.getByRole("button")).toHaveCount(1);
       await open.focus();
       await open.press("Shift+F10");
-      await expect(page.getByRole("menu")).toHaveCount(0);
+      const menu = page.getByRole("menu", { name: "Session actions" });
+      await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "Settle", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
       await open.click({ button: "right" });
-      await expect(page.getByRole("menu")).toHaveCount(0);
+      await expect(menu.getByRole("menuitem", { name: "Archive" })).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/2026-11-11-sidebar/last-sessions-${theme}-${width}-hover.png`,
+        path: `temp/verification/last-sessions-actions/${theme}-${width}-menu.png`,
         animations: "disabled",
       });
+      await page.keyboard.press("Escape");
       await open.click();
       await expect(page.getByRole("status", { name: "Selected session" })).toHaveText("row-demo");
       await expect(page.getByRole("status", { name: "Pin operations" })).toHaveText("0");
+      await open.click({ button: "right" });
+      await menu.getByRole("menuitem", { name: "Settle", exact: true }).click();
+      await expect(row).toHaveCount(0);
     });
   }
 }

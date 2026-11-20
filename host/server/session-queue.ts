@@ -166,13 +166,13 @@ export async function createSessionQueueRuntime(
           )
             return false;
           return (
-            !(await dependencies.engine.busyReason(id)) &&
+            (await dependencies.queueSessionKnown(id)) !== "running" &&
+            !(await dependencies.engine.busyReason(id, true)) &&
             // The host's own turn, including one in an adopted session the desktop
             // copy does not know is running.
             !(await hostRuns(id)) &&
             // The desktop's running state is covered by its run-holder stamp below.
             !(await desktopRunHolder(id)) &&
-            (await dependencies.queueSessionKnown(id)) !== "running" &&
             !(await usageLimited(id))
           );
         } catch {

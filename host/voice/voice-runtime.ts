@@ -228,8 +228,13 @@ export async function inspectVoiceRuntime(
 ): Promise<VoiceRuntimeStatus> {
   const config = voiceRuntimeConfig(value);
   if (config.whisperModel) {
-    config.whisperPath = join(homedir(), ".bycoda", "voice", "models",
-      config.whisperModel === "turbo" ? "whisper-large-v3-turbo" : "whisper-small");
+    config.whisperPath = join(
+      homedir(),
+      ".bycoda",
+      "voice",
+      "models",
+      config.whisperModel === "turbo" ? "whisper-large-v3-turbo" : "whisper-small",
+    );
   }
   const candidates = config.python
     ? [config.python]

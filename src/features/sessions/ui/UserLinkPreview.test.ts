@@ -55,6 +55,7 @@ import {
 } from "../../inbox/model/githubTasks";
 import { fetchLinkPreviewMetadata, type UserLink } from "../model/linkPreview";
 import { UserLinkPreview } from "./UserLinkPreview";
+import { TranscriptSessionId } from "./TranscriptSessionId";
 import { UserTextPreview } from "./UserTextPreview";
 
 const link: UserLink = {
@@ -100,8 +101,28 @@ describe("links in sent messages", () => {
       container.querySelector<HTMLAnchorElement>("[data-user-link-preview]")!.click(),
     );
 
-    expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url);
+    expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url, undefined);
     expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("opens a development link with the transcript conversation that sent it", async () => {
+    await act(async () =>
+      root.render(
+        createElement(TranscriptSessionId.Provider, {
+          value: "source-session",
+          children: createElement(UserLinkPreview, {
+            link: { url, host: "localhost", displayUrl: "localhost/report" },
+            cwd,
+            compact: true,
+          }),
+        }),
+      ),
+    );
+    await act(async () =>
+      container.querySelector<HTMLAnchorElement>("[data-user-link-preview]")!.click(),
+    );
+
+    expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url, "source-session");
   });
 
   it("opens a linked document from a sent message on its owning Host", async () => {
@@ -166,7 +187,7 @@ describe("links in sent messages", () => {
       const surface = compact ? document.querySelector('[role="dialog"]')! : container;
       await act(async () => surface.querySelector<HTMLAnchorElement>(`a[href="${url}"]`)!.click());
 
-      expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url);
+      expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url, undefined);
       expect(openUrl).not.toHaveBeenCalled();
     },
   );

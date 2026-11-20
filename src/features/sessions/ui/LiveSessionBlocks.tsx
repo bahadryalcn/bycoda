@@ -1,14 +1,17 @@
 import type { ReactNode } from "react";
+import { useT } from "../../../shared/i18n";
 import { LiveBackgroundLayer } from "../../settings/public/LiveBackgroundCanvas";
+import { useSessionSshActivity } from "../hooks/useSessionSshActivity";
 import { useDelegatedCardBlocks } from "../model/reactiveReads";
 import type { Block, Session } from "../model/session";
 import { usePaneSession, usePaneSessionBlocks } from "../model/sessionsStore";
+import { sshTranscript } from "../model/sshTranscript";
 
 /**
  * The live blocks of a session, for the parts of a pane that follow streamed
  * text. The pane itself renders from a session that ignores that text, so only
- * this component re-renders on a frame. While `enabled` is off it renders
- * `fallback` and does not subscribe.
+ * this component re-renders on a frame. While `enabled` is off it reads
+ * `fallback` instead of subscribing to the session store.
  */
 export function LiveSessionBlocks({
   sessionId,
@@ -16,6 +19,7 @@ export function LiveSessionBlocks({
   enabled,
   fallback,
   delegatedCards = false,
+  sshActivityServerId,
   children,
 }: {
   sessionId: string;
@@ -24,11 +28,14 @@ export function LiveSessionBlocks({
   fallback: Block[];
   /** The transcript shows this session's delegated runs as cards. */
   delegatedCards?: boolean;
+  sshActivityServerId?: string;
   children: (blocks: Block[]) => ReactNode;
 }) {
   const live = usePaneSessionBlocks(sessionId, visible, enabled) ?? fallback;
   const blocks = useDelegatedCardBlocks(sessionId, live, delegatedCards);
-  return <>{children(blocks)}</>;
+  const sshActivity = useSessionSshActivity(sessionId, visible ? sshActivityServerId : undefined);
+  const t = useT();
+  return <>{children(sshTranscript(blocks, sshActivity, t))}</>;
 }
 
 /** The animated chat background, driven by the streamed text of the live session. */

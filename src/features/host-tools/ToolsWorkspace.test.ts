@@ -447,6 +447,27 @@ it("creates native hub through configured Rust command before sending its acknow
   );
 });
 
+it("sends an explicit Browser URL to the project Host as one immutable navigation request", async () => {
+  nativeProtocol.native = true;
+  const request = {
+    cwd: "remote://mac/repo",
+    sessionId: "remote-session",
+    title: "localhost:3000",
+    initialTab: "browser" as const,
+    initialUrl: "http://localhost:3000/a?b=1#c",
+  };
+  await openHostToolsWindow(request);
+  await openHostToolsWindow(request);
+  const requests = nativeProtocol.send.mock.calls.map(
+    (call) => (call as unknown as [string, { pane: { viewRequest: unknown } }])[1].pane.viewRequest,
+  );
+  expect(requests).toEqual([
+    { id: expect.any(String), tab: "browser", machine: "project", url: request.initialUrl },
+    { id: expect.any(String), tab: "browser", machine: "project", url: request.initialUrl },
+  ]);
+  expect((requests[0] as { id: string }).id).not.toBe((requests[1] as { id: string }).id);
+});
+
 it("transfers to native hub reused during creation race without waiting for another boot", async () => {
   nativeProtocol.native = true;
   nativeProtocol.existing = false;

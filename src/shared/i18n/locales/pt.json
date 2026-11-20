@@ -4899,6 +4899,7 @@
   "SSH user": "Usuário SSH",
   "Save rule": "Salvar regra",
   "Saved SSH commands": "Comandos SSH salvos",
+  "Save command": "Salvar comando",
   "Saved commands": "Comandos salvos",
   "Separate tags with commas.": "Separe as etiquetas com vírgulas.",
   "Server filters": "Filtros de servidores",
@@ -10686,6 +10687,7 @@
   "Could not delete sessions: {p0}": "Não foi possível excluir as sessões: {p0}",
   "Still saving. Try again in a moment.": "Ainda salvando. Tente novamente em instantes.",
   "Connect this project's machine to delete its sessions.": "Conecte a máquina deste projeto para excluir as sessões dela.",
+  "Connect this project’s machine to load its sessions.": "Conecte a máquina deste projeto para carregar as sessões do projeto.",
   "Waiting for orchestrator": "Aguardando o orquestrador",
   "Waiting for answers": "Aguardando respostas",
   "running in background": "em execução em segundo plano",
@@ -12418,5 +12420,9 @@
   "Voice could not start: the assistant did not respond.": "Não foi possível iniciar a voz: o assistente não respondeu.",
   "Voice could not start: the conversation did not respond.": "Não foi possível iniciar a voz: a conversa não respondeu.",
   "Voice could not start: the voice key was not issued.": "Não foi possível iniciar a voz: a chave de voz não foi emitida.",
-  "Voice could not start: the voice runtime did not register.": "Não foi possível iniciar a voz: o ambiente de voz não foi registrado."
+  "Voice could not start: the voice runtime did not register.": "Não foi possível iniciar a voz: o ambiente de voz não foi registrado.",
+  "Host CPU profiles": "Perfis de CPU do Host",
+  "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.": "Salva um perfil de CPU de 30 segundos na pasta de logs do Host quando o loop de eventos trava repetidamente.",
+  "For developers. Starting a profile briefly freezes the Host, so keep this off.": "Para desenvolvedores. Iniciar um perfil congela o Host por um instante, então mantenha desligado.",
+  "Could not reach this computer's Host setting: {p1}": "Não foi possível acessar a configuração do Host deste computador: {p1}"
 }

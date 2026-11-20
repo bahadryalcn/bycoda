@@ -4,6 +4,8 @@ import type { HostStore } from "../store";
 import { attachmentPath, collectAttachmentGarbage, type AttachmentScanResume } from "./attachments";
 export const ATTACHMENT_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+/** The first sweep waits out start-up: on a cold page cache one slice held the queue 3 s. */
+const STARTUP_SWEEP_DELAY_MS = 5 * 60 * 1000;
 /** Pause between slices of one sweep, so queued database requests run first. */
 const SLICE_PAUSE_MS = 25;
 function hasControlCharacter(value: string): boolean {
@@ -17,6 +19,7 @@ function hasControlCharacter(value: string): boolean {
  * uploads are candidates; files made by older clients remain unknown/pinned. */
 export class AttachmentOwnership {
   private timer?: ReturnType<typeof setInterval>;
+  private firstSweep?: ReturnType<typeof setTimeout>;
   private sweeping?: Promise<string[]>;
   private closed = false;
   private cursor = "";
@@ -445,11 +448,14 @@ export class AttachmentOwnership {
       });
     this.timer = this.store.db.outsideScope(() => setInterval(sweep, SWEEP_INTERVAL_MS));
     this.timer.unref?.();
-    sweep();
+    this.firstSweep = this.store.db.outsideScope(() => setTimeout(sweep, STARTUP_SWEEP_DELAY_MS));
+    this.firstSweep.unref?.();
   }
   close(): void {
     this.closed = true;
     clearInterval(this.timer);
+    clearTimeout(this.firstSweep);
     this.timer = undefined;
+    this.firstSweep = undefined;
   }
 }

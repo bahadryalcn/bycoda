@@ -1984,6 +1984,32 @@ test("model picker selects image models under Agents in both themes and widths",
   }
 });
 
+test("remote model picker selects a Host account in both themes and widths", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [1280, 800]) {
+    for (const theme of ["light", "dark"]) {
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts&remote&remote-accounts&theme=${theme}`,
+      );
+      const trigger = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
+      await trigger.click();
+      const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+      await panel.locator("[data-model-account-menu]").click();
+      const list = panel.locator("[data-model-account-list]");
+      await expect(list.getByRole("radio")).toHaveCount(3);
+      await expect(list.getByRole("radio", { name: /^Host default/ })).toBeChecked();
+      await expect(list.getByRole("radio", { name: "work", exact: true })).toHaveCount(0);
+      await panel.screenshot({
+        path: `temp/verification/remote-provider-accounts/picker-${width}-${theme}.png`,
+      });
+      await list.getByRole("radio", { name: /^Mac work/ }).click();
+      await expect(trigger.locator("[data-model-account]")).toHaveText("Mac work");
+    }
+  }
+});
+
 test("model picker shows account identity and applies subagent picks as a batch", async ({
   page,
 }) => {

@@ -8,21 +8,26 @@ export interface SessionLifecycleList {
 }
 
 /** Typed wrappers for the `sessions.lifecycle.*` and `sessions.taskLink.*` Host methods. */
-export function sessionLifecycleClient(machineId: string) {
+export function sessionLifecycleClient(machineId: string, trackLocal = true) {
+  const change = (
+    sessionId: string,
+    method: "sessions.lifecycle.settle" | "sessions.lifecycle.unsettle",
+  ) => {
+    const request = remoteRequest<SessionLifecycleView>(
+      machineId,
+      method,
+      { sessionId },
+      false,
+      true,
+    );
+    return trackLocal ? confirmedMutation(request) : request;
+  };
   return {
     get: (sessionId: string) =>
       remoteRequest<SessionLifecycleView>(machineId, "sessions.lifecycle.get", { sessionId }),
     list: () => remoteRequest<SessionLifecycleList>(machineId, "sessions.lifecycle.list", {}),
-    settle: (sessionId: string) =>
-      confirmedMutation(
-        remoteRequest<SessionLifecycleView>(machineId, "sessions.lifecycle.settle", { sessionId }),
-      ),
-    unsettle: (sessionId: string) =>
-      confirmedMutation(
-        remoteRequest<SessionLifecycleView>(machineId, "sessions.lifecycle.unsettle", {
-          sessionId,
-        }),
-      ),
+    settle: (sessionId: string) => change(sessionId, "sessions.lifecycle.settle"),
+    unsettle: (sessionId: string) => change(sessionId, "sessions.lifecycle.unsettle"),
     configure: (settings: Partial<AutoSettleSettings>) =>
       remoteRequest<AutoSettleSettings>(machineId, "sessions.lifecycle.configure", settings),
     taskFor: async (sessionId: string) =>

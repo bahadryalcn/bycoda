@@ -1633,7 +1633,10 @@ function useRouteStableMachines(machines: RemoteMachine[]): RemoteMachine[] {
 /** Lists the host sessions of every remote project on the rail, so one that
  * runs on its machine shows up without its project being opened here. A
  * project whose machine does not answer keeps its last list. */
-export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSession[] {
+export function useRemoteRailSessions(projects: readonly string[]): {
+  sessions: RemoteRailSession[];
+  freshProjects: readonly string[];
+} {
   const key = projects.join("\n");
   const { machines: inventory } = useRemoteMachines(projects.length > 0);
   // Pollers and machine channels restart only when a machine they reach changes its identity
@@ -1644,7 +1647,10 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
   const machines = useRouteStableMachines(
     inventory.filter((entry) => railEnvironments.has(entry.environmentId)),
   );
-  const [sessions, setSessions] = useState<RemoteRailSession[]>([]);
+  const [snapshot, setSnapshot] = useState<ReturnType<typeof useRemoteRailSessions>>({
+    sessions: [],
+    freshProjects: [],
+  });
   const [capabilityVersion, setCapabilityVersion] = useState(0);
   useEffect(() => subscribeRemoteCapabilities(() => setCapabilityVersion((v) => v + 1)), []);
   useEffect(() => {
@@ -1655,7 +1661,7 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
       return remote && machine ? [{ project, remote, machine }] : [];
     });
     if (targets.length === 0) {
-      setSessions([]);
+      setSnapshot({ sessions: [], freshProjects: [] });
       return;
     }
     // The cached list may be old: nothing in it counts as running until the host says so.
@@ -1667,11 +1673,14 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
     );
     let shown = "";
     const publish = () => {
-      const next = railSessions(lists);
+      const next = {
+        sessions: railSessions(lists),
+        freshProjects: [...lists].filter(([, entry]) => entry.fresh).map(([project]) => project),
+      };
       const serialized = JSON.stringify(next);
       if (serialized === shown) return;
       shown = serialized;
-      setSessions(next);
+      setSnapshot(next);
     };
     publish();
     const save = (project: string, next: HostSessionSummary[]) => {
@@ -1703,6 +1712,7 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
       cleanups.push(
         startRailPoller({
           targets: fallback,
+          refreshEvent: REMOTE_HISTORY_CHANGE,
           load: ({ machine, remote }, force) =>
             sharedSessionLists.load(machine.id, remote.projectId, force),
           onResult: ({ project }, next) => save(project, next),
@@ -1765,6 +1775,8 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
         sharedSessionLists.invalidateProject(machine.id, remote.projectId);
         queueLoad();
       };
+      window.addEventListener(REMOTE_HISTORY_CHANGE, reload);
+      cleanups.push(() => window.removeEventListener(REMOTE_HISTORY_CHANGE, reload));
       cleanups.push(
         subscribeRemoteMachineChannel(
           machine.id,
@@ -1800,5 +1812,5 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
       cleanups.forEach((cleanup) => cleanup());
     };
   }, [key, machines, capabilityVersion]);
-  return sessions;
+  return snapshot;
 }

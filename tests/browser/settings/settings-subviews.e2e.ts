@@ -227,9 +227,15 @@ for (const theme of ["light", "dark"])
       };
       await capture("accounts");
       await accounts.getByRole("button", { name: "Add account", exact: true }).click();
-      const draft = accounts.locator("form input").first();
+      const accountDialog = page.getByRole("dialog", { name: "Add account", exact: true });
+      const draft = accountDialog.getByRole("textbox", { name: /New .* account/ });
       await draft.fill("Retained provider draft");
-      await categories.getByRole("tab", { name: "Usage & limits", exact: true }).click();
+      // Exercise a programmatic settings navigation while the modal owns pointer and keyboard focus.
+      await page
+        .locator('[role="tab"]')
+        .filter({ hasText: /^Usage & limits$/ })
+        .evaluate((tab: HTMLElement) => tab.click());
+      await expect(accountDialog).toHaveCount(0);
       await expect(page.locator(".settings-page-title")).toHaveText("Usage & limits");
       await expect(providerTabs).toBeHidden();
       await expect(page.getByRole("heading", { name: "Active time", exact: true })).toBeVisible();
@@ -248,7 +254,7 @@ for (const theme of ["light", "dark"])
       await capture("usage-bottom");
       await categories.getByRole("tab", { name: "Models", exact: true }).click();
       await expect(draft).toHaveValue("Retained provider draft");
-      await accounts.locator("form").getByRole("button", { name: "Cancel", exact: true }).click();
+      await accountDialog.getByRole("button", { name: "Cancel", exact: true }).click();
       // Bulk CLI actions and the catalog share the Providers tab; decision models have their own page.
       for (const [tab, surface] of [
         ["CLI", "cli"],
@@ -381,9 +387,9 @@ for (const theme of ["light", "dark"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/settings/settings.html?section=chat&theme=${theme}&lang=en`);
       const chat = page.locator(".chat-settings");
-      await page.getByRole("button", { name: "About this page", exact: true }).click();
-      await expect(page.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
-      await page.keyboard.press("Escape");
+      await expect(page.getByRole("button", { name: "Restore defaults", exact: true })).toHaveCount(
+        0,
+      );
       // With no templates the group shows only its empty row; Save appears once there is an edit.
       await expect(chat.getByText("No templates yet", { exact: true })).toBeVisible();
       await expect(chat.getByRole("button", { name: "Save templates", exact: true })).toHaveCount(

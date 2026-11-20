@@ -444,10 +444,18 @@ describe("WebSocket read admission and safe disclosure", () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       const host = await fixture({
-        methods: ["projects.list", "native.services.conversation.desktop.take"],
+        methods: [
+          "projects.list",
+          "native.services.conversation.desktop.take",
+          "assistant.request",
+        ],
         dispatch: async (method) => {
           await new Promise((resolve) => setTimeout(resolve, 5_300));
-          return method === "projects.list" ? [] : { id: null };
+          return method === "projects.list"
+            ? []
+            : method === "assistant.request"
+              ? {}
+              : { id: null };
         },
       });
       const client = await host.ready();
@@ -456,12 +464,16 @@ describe("WebSocket read admission and safe disclosure", () => {
         .request("held", "native.services.conversation.desktop.take", { waitMs: 10_000 })
         .catch(() => {});
       void client.request("slow", "projects.list").catch(() => {});
+      void client.request("op", "assistant.request", { op: "snapshot" }).catch(() => {});
       await vi.waitFor(
         () =>
           expect(stderr.mock.calls.map(([line]) => String(line)).join("")).toMatch(
             /slow request method=projects\.list/,
           ),
         { timeout: 10_000 },
+      );
+      expect(stderr.mock.calls.map(([line]) => String(line)).join("")).toMatch(
+        /slow request method=assistant.request op=snapshot/,
       );
       // Both dispatches finished together; give the held one's log the same chance.
       await new Promise((resolve) => setTimeout(resolve, 200));

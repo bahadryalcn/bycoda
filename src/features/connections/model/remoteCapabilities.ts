@@ -17,6 +17,7 @@ export const GIT_CONFLICTS = "git.conflicts";
 /** Running a `!command` from the composer in a host session (host/execution/shell.ts). */
 export const SESSION_SHELL = "sessions.shell";
 export const SESSION_REWIND = "sessions.rewind";
+export const SESSION_PROVIDER_ACCOUNT = "sessions.configure.providerAccount.v1";
 
 /** Shown where a feature stays off because the machine's host predates it. */
 export const HOST_UPDATE_NOTICE =

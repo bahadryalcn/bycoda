@@ -4899,6 +4899,7 @@
   "SSH user": "SSH ユーザー",
   "Save rule": "ルールを保存",
   "Saved SSH commands": "保存済み SSH コマンド",
+  "Save command": "コマンドを保存",
   "Saved commands": "保存済みコマンド",
   "Separate tags with commas.": "タグをカンマで区切ってください。",
   "Server filters": "サーバーフィルター",
@@ -10686,6 +10687,7 @@
   "Could not delete sessions: {p0}": "セッションを削除できませんでした: {p0}",
   "Still saving. Try again in a moment.": "まだ保存中です。少し待ってから再試行してください。",
   "Connect this project's machine to delete its sessions.": "このプロジェクトのマシンに接続すると、そのセッションを削除できます。",
+  "Connect this project’s machine to load its sessions.": "このプロジェクトのセッションを読み込むには、プロジェクトのマシンに接続してください。",
   "Waiting for orchestrator": "オーケストレーター待ち",
   "Waiting for answers": "回答待ち",
   "running in background": "バックグラウンドで実行中",
@@ -12418,5 +12420,9 @@
   "Voice could not start: the assistant did not respond.": "音声を開始できませんでした: アシスタントが応答しませんでした。",
   "Voice could not start: the conversation did not respond.": "音声を開始できませんでした: 会話が応答しませんでした。",
   "Voice could not start: the voice key was not issued.": "音声を開始できませんでした: 音声キーが発行されませんでした。",
-  "Voice could not start: the voice runtime did not register.": "音声を開始できませんでした: 音声ランタイムが登録されませんでした。"
+  "Voice could not start: the voice runtime did not register.": "音声を開始できませんでした: 音声ランタイムが登録されませんでした。",
+  "Host CPU profiles": "Host の CPU プロファイル",
+  "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.": "Host のイベントループが繰り返し停止したとき、30 秒間の CPU プロファイルを Host のログフォルダーに保存します。",
+  "For developers. Starting a profile briefly freezes the Host, so keep this off.": "開発者向けです。プロファイルの開始中は Host が一時的に停止するため、オフのままにしてください。",
+  "Could not reach this computer's Host setting: {p1}": "このコンピューターの Host 設定に接続できません: {p1}"
 }

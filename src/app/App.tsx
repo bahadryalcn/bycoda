@@ -141,6 +141,7 @@ import { useWindowDragPreview } from "./model/useWindowDragPreview";
 import { DetachedWorkingBar } from "./shell/DetachedWorkingBar";
 import { WindowControlsVisible } from "./shell/WindowControls";
 import { useFittedShellPanes } from "./shell/fitShellPanes";
+import { remoteSessionSummary } from "./shell/sidebarSessionCollections";
 import { Suspense, useCallback, useMemo, useEffect, useRef, useState } from "react";
 import { useWorktreeFocus } from "../features/source-control/model/worktreeFocus";
 import { useStableCallback } from "../shared/hooks/useStableCallback";
@@ -285,6 +286,7 @@ import { useWorkspaceTitleBar } from "./workspace/layout/useWorkspaceTitleBar";
 import { useRecoveryControl } from "./workspace/layout/useRecoveryControl";
 import { WorkspaceAuxSurfaces } from "./workspace/layout/WorkspaceAuxSurfaces";
 import { useSocialSessionPanel } from "./workspace/bridges/useSocialSessionPanel";
+import { useServerAgentPanel } from "./workspace/bridges/useServerAgentPanel";
 import { WorkspaceMainArea } from "./workspace/layout/WorkspaceMainArea";
 import {
   WorkspaceRecoveryDialogs,
@@ -463,12 +465,17 @@ function Workspace({
   );
   const { inboxAskPortal, setInboxAskPortal, openingInboxSessions } = useInboxAskPortal();
   const socialSessionPanel = useSocialSessionPanel();
+  const serverAgentPanel = useServerAgentPanel(projectCwd);
+  const panelSessionIds = useMemo(
+    () => [...socialSessionPanel.sessionIds, ...serverAgentPanel.sessionIds],
+    [socialSessionPanel.sessionIds, serverAgentPanel.sessionIds],
+  );
   const socialSessionTargets = useMemo(
     () => ({
-      sessionIds: socialSessionPanel.sessionIds,
+      sessionIds: panelSessionIds,
       register: socialSessionPanel.registerTarget,
     }),
-    [socialSessionPanel.sessionIds, socialSessionPanel.registerTarget],
+    [panelSessionIds, socialSessionPanel.registerTarget],
   );
   const {
     serversViewOpen,
@@ -825,11 +832,14 @@ function Workspace({
 
   const approvalSessionIds = useApprovalSessionIds(sessions);
 
-  const activeSessionId = inboxViewOpen
-    ? inboxAskPortal?.sessionId
-    : automationsViewOpen && socialBoardShown && socialSessionPanel.portal
-      ? socialSessionPanel.portal.sessionId
-      : active?.id;
+  const activeSessionId =
+    serversViewOpen && serverAgentPanel.portal
+      ? serverAgentPanel.portal.sessionId
+      : inboxViewOpen
+        ? inboxAskPortal?.sessionId
+        : automationsViewOpen && socialBoardShown && socialSessionPanel.portal
+          ? socialSessionPanel.portal.sessionId
+          : active?.id;
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
@@ -839,8 +849,13 @@ function Workspace({
   useNotificationPermissionProbe();
   const unseenFinishedIds = useUnseenFinishedIds(sessions, busySessionIds, activeSessionId);
 
-  const { listedRemoteSessions, loadedRemoteHostIds, unopenedRemote, unopenedRemoteRef } =
-    useRemoteRailProjects({ visibleRecents, sessionRecovery, lockSnapshot, sessions });
+  const {
+    listedRemoteSessions,
+    freshRemoteProjects,
+    loadedRemoteHostIds,
+    unopenedRemote,
+    unopenedRemoteRef,
+  } = useRemoteRailProjects({ visibleRecents, sessionRecovery, lockSnapshot, sessions });
   // The unopened list already leaves out loaded sessions and the one a tab is
   // creating, so the user's own first turn never shows as finished elsewhere.
   const [remoteUnseenFinishedIds, dismissRemoteFinished] = useRemoteUnseenFinished(
@@ -956,7 +971,7 @@ function Workspace({
     sessionsRef,
     tabs,
     tabsRef,
-    retainedSessionIds: socialSessionPanel.sessionIds,
+    retainedSessionIds: panelSessionIds,
     orchestrationRuns,
     liveAgentsEnabled,
     unseenFinishedIds,
@@ -1352,7 +1367,11 @@ function Workspace({
     tabsRef,
     sessionsRef,
     inboxAskPortal:
-      automationsViewOpen && socialBoardShown ? socialSessionPanel.portal : inboxAskPortal,
+      serversViewOpen && serverAgentPanel.portal
+        ? serverAgentPanel.portal
+        : automationsViewOpen && socialBoardShown
+          ? socialSessionPanel.portal
+          : inboxAskPortal,
     isMovingPane,
     workspaceNavigation,
     setMaximizedPane,
@@ -2277,6 +2296,16 @@ function Workspace({
     sessions,
     lastSessionsOpen,
     allowedRecentProjectKeys,
+    useMemo(
+      () =>
+        lastSessionsOpen
+          ? listedRemoteSessions
+              .filter(({ session }) => !session.draft)
+              .map(({ project, session }) => remoteSessionSummary(session, project))
+          : [],
+      [lastSessionsOpen, listedRemoteSessions],
+    ),
+    freshRemoteProjects,
   );
 
   // Which conversations a live crew manages: the session surfaces lock their stop, delete and
@@ -2913,11 +2942,8 @@ function Workspace({
   );
   const inboxAskSessions = useStableValue(
     useMemo(
-      () =>
-        sessions.filter(
-          (session) => session.inboxAsk || socialSessionPanel.sessionIds.includes(session.id),
-        ),
-      [sessions, socialSessionPanel.sessionIds],
+      () => sessions.filter((session) => session.inboxAsk || panelSessionIds.includes(session.id)),
+      [sessions, panelSessionIds],
     ),
     shallowArrayEqual,
   );
@@ -3212,6 +3238,7 @@ function Workspace({
                       newListedSessionRequest={newListedSessionRequest}
                       onNewListedSession={sidebarActions.onNewListedSession}
                       lastSessionsData={lastSessionsData}
+                      lastSessionsRemoteRows={listedRemoteSessions}
                       lastSessionsOpen={lastSessionsOpen}
                       onOpenLastSessions={sidebarActions.onOpenLastSessions}
                       onCloseLastSessions={sidebarActions.onCloseLastSessions}
@@ -3483,11 +3510,15 @@ function Workspace({
                       socialWorkspaceTargets={socialSessionPanel.workspaceTargets}
                       socialSessionPortal={socialSessionPanel.portal}
                       socialVisible={automationsViewOpen && socialBoardShown}
+                      serverSessionIds={serverAgentPanel.sessionIds}
+                      serverSessionPortal={serverAgentPanel.portal}
+                      serversVisible={serversViewOpen}
                       composerFocused={composerFocused}
                       composerFocusToken={composerFocusToken}
                       sessionPaneProps={sessionPaneProps}
                     />
                     <WorkspaceToolPanels
+                      serverAgent={serverAgentPanel.api}
                       sessionPaneProps={sessionPaneProps}
                       onLoadCrewCoordinator={(target) =>
                         onOpenBackgroundSession(target, true, true)

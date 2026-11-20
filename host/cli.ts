@@ -451,6 +451,13 @@ Connect another computer using an SSH forward to the loopback port.`);
   const { HostEngine } = await import("./engine");
   const { hostProviders } = await import("./providers/providers");
   const { createHostServer } = await import("./server");
+  if (command === "serve") {
+    const { applyStoredStallProfiles } = await import("./diagnostics/stall-profile-setting");
+    // A failed read keeps profiles off, the default.
+    await applyStoredStallProfiles(store).catch((error: unknown) =>
+      console.warn("Could not read the stall profile setting:", error),
+    );
+  }
   boot?.phase("app-skills");
   try {
     const { installAppSkills } = await import("./app-skills/app-skills");

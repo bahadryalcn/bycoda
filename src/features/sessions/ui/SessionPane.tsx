@@ -198,6 +198,7 @@ export type SessionPaneProps = {
   visible: boolean;
   focused: boolean;
   addToChatTarget?: boolean;
+  receiveTargetedQuotes?: boolean;
   inSplit: boolean;
   composerFocused: boolean;
   composerFocusToken?: number;
@@ -205,6 +206,10 @@ export type SessionPaneProps = {
   hideProjectPicker?: boolean;
   /** Feature-owned panel: keep the real transcript/composer and hide repository chrome. */
   embedded?: boolean;
+  /** The surrounding pane provides the header. */
+  hideSessionToolbar?: boolean;
+  /** Saved target whose desktop command receipts appear in this transcript. */
+  sshActivityServerId?: string;
   /** Crew screen may show the normal composer for its coordinator only. */
   crewCoordinatorChat?: boolean;
   onFocus: (sessionId: string) => void;
@@ -426,12 +431,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
   visible,
   focused,
   addToChatTarget = focused,
+  receiveTargetedQuotes = false,
   inSplit,
   composerFocused,
   composerFocusToken,
   recents,
   hideProjectPicker,
   embedded = false,
+  hideSessionToolbar = false,
+  sshActivityServerId,
   crewCoordinatorChat = false,
   onFocus,
   onClose,
@@ -783,7 +791,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     addSelectionToChat,
     acknowledgeQuote,
     snapshot: quoteSnapshot,
-  } = useQuoteRequests(rootParentRef, addToChatTarget);
+  } = useQuoteRequests(
+    rootParentRef,
+    addToChatTarget,
+    receiveTargetedQuotes ? session.id : undefined,
+  );
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   // The reader scrolled away from the end (from the transcript's follow owner).
   const [readingHistory, setReadingHistory] = useState(false);
@@ -1710,7 +1722,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           </div>
         </div>
       ) : null}
-      {!hasPaneHeader && !embedded ? (
+      {!hasPaneHeader && !embedded && !hideSessionToolbar ? (
         titleBarSlot ? (
           // A lone chat's actions live in the title bar's chrome row beside its tab (pane-hosted portal,
           // not a popover: the target is the title bar slot).
@@ -1884,6 +1896,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 enabled={!remote}
                 fallback={session.blocks}
                 delegatedCards
+                sshActivityServerId={sshActivityServerId}
               >
                 {(liveBlocks) => (
                   <PooledTranscript

@@ -116,7 +116,7 @@ export async function openMicrophone(
     release?.();
     if (cause instanceof MicrophoneBusyError && !wake) {
       cause.message = t(
-        "The microphone could not start. Close other apps using it and check the system input device.",
+        "The microphone could not start. Close other apps using it, check the input device in system sound settings, then try again.",
       );
       throw cause;
     }

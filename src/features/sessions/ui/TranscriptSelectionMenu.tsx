@@ -33,7 +33,8 @@ import {
 
 type Props = {
   selection: TranscriptSelection | null;
-  onAddToChat?: (text: string) => void;
+  onAddToChat?: (text: string) => void | Promise<void>;
+  addToChatLabel?: string;
   onAddToNotes?: (text: string) => void | Promise<void>;
   onDismiss: () => void;
   onTranslate?: (target: TextActionTarget) => void;
@@ -130,6 +131,7 @@ function useSelectionOperationRunner(
 export function TranscriptSelectionMenu({
   selection: liveSelection,
   onAddToChat,
+  addToChatLabel,
   onAddToNotes,
   onDismiss,
   onTranslate,
@@ -303,7 +305,8 @@ export function TranscriptSelectionMenu({
     items.push({
       ...action(
         "chat",
-        sessionId && selection.responseId ? t("Add citation") : t("Add to chat"),
+        addToChatLabel ??
+          (sessionId && selection.responseId ? t("Add citation") : t("Add to chat")),
         <MessageSquarePlus />,
         () => onAddToChat(selection.text),
       ),

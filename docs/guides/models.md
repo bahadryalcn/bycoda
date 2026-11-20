@@ -133,6 +133,19 @@ and Antigravity's setup steps open below it. The
 catalog manages model availability. Decision models have their own page, **Settings > Decision models**. Shared model
 order, limits and groups are managed in Settings > Models > Background work.
 
+For a remote project, the conversation's model picker shows the models and
+signed-in profiles supplied by the Host that runs the conversation. Add a
+provider account on that computer to use it in a remote conversation. Selecting
+an account in an existing conversation takes effect after the current turn.
+
+For a provider with multiple profiles, choose **Add account** and enter an account
+name. Choose **Personal** or **Work** before selecting **Sign in and add**. You
+can also pick a color. An existing account without a saved type is **Work** when
+its provider reports Claude Team or Codex Team/Business. It defaults to
+**Personal** when no team plan is reported.
+Finish signing in in your browser. The account's menu opens
+**Edit account** to change these choices later.
+
 Opening the OpenCode panel loads its model catalog. Models with zero token prices
 show a **Free** badge. Select **Free** or search for `free` or its translated
 label to show those models. **Enable all free** turns on every free model and

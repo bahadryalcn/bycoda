@@ -68,9 +68,10 @@ it("translates the remote project row's accessible name instead of joining a lit
     expect(labels.some((label) => / on Studio/.test(label ?? ""))).toBe(false);
     const row = container.querySelector<HTMLButtonElement>("[data-project-primary]")!;
     expect(row.querySelector("[data-truncate]")?.textContent).toBe("app");
+    expect(row.querySelector("svg.lucide-server")).not.toBeNull();
     await act(async () => row.focus());
     const tooltip = document.querySelector('[role="tooltip"]');
-    expect(tooltip?.querySelector("svg")).not.toBeNull();
+    expect(tooltip?.querySelector("svg.lucide-server")).not.toBeNull();
     expect(tooltip?.textContent).toContain("Studio üzerinde /srv/app");
     expect(tooltip?.textContent).not.toContain("tailm");
   } finally {

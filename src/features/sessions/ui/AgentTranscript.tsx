@@ -77,6 +77,7 @@ import {
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
+import { TranscriptSessionId } from "./TranscriptSessionId";
 import { ChatCitationList } from "./ChatCitationText";
 import { extractChatCitations } from "../model/chatCitation";
 import { TranscriptSkills } from "./SkillTokenText";
@@ -955,15 +956,17 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
       >
         <Activity mode={props.visible === false ? "hidden" : "visible"}>
           <WorkItemMentionCwd value={props.cwd}>
-            <DelegatedRunOwner.Provider value={props.delegatedRunOwner}>
-              {props.approvalContext ? (
-                <ApprovalDecisionProvider {...props.approvalContext}>
-                  {transcript}
-                </ApprovalDecisionProvider>
-              ) : (
-                transcript
-              )}
-            </DelegatedRunOwner.Provider>
+            <TranscriptSessionId.Provider value={props.sessionId}>
+              <DelegatedRunOwner.Provider value={props.delegatedRunOwner}>
+                {props.approvalContext ? (
+                  <ApprovalDecisionProvider {...props.approvalContext}>
+                    {transcript}
+                  </ApprovalDecisionProvider>
+                ) : (
+                  transcript
+                )}
+              </DelegatedRunOwner.Provider>
+            </TranscriptSessionId.Provider>
           </WorkItemMentionCwd>
         </Activity>
       </CodeExecutionProvider>

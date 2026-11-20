@@ -77,6 +77,8 @@ import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentC
 import { useSessionRankSignals } from "../../features/sessions/hooks/useSessionRankSignals";
 import { useSessionListStatus } from "../../features/sessions/hooks/useSessionListStatus";
 import { useSettledShelf } from "../../features/sessions/hooks/useSettledShelf";
+import { useRemoteSessionLifecycleLists } from "../../features/sessions/hooks/useSessionLifecycle";
+import { isSettledSession } from "../../features/sessions/model/sessionLifecycle";
 import type { BackgroundSessionTarget } from "../../features/tasks/model/backgroundSession";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -103,7 +105,6 @@ import {
   Sparkles,
   SplitSquare,
   StickyNote,
-  Internet,
   Server,
   Trash2,
   Zap,
@@ -155,6 +156,7 @@ import { useMachineFocus } from "../../features/connections/hooks/useMachineFocu
 import {
   classifyRemoteError,
   isConnectionFailure,
+  presentRemoteError,
 } from "../../features/connections/model/remoteFailure";
 import { useResolvedModelName } from "../../features/sessions/model/reactiveReads";
 import {
@@ -351,7 +353,10 @@ import { useKeybindingShortcut } from "../../features/settings/model/useKeybindi
 import { Popover } from "../../shared/ui/Popover";
 import { useProjectMenu } from "./useProjectMenu";
 import { SessionFiltersMenu } from "../../features/sessions/ui/SessionFiltersMenu";
-import { SessionSettleAction } from "../../features/sessions/ui/SessionSettleAction";
+import {
+  SessionSettleAction,
+  useSessionSettleCommand,
+} from "../../features/sessions/ui/SessionSettleAction";
 import { LinkSessionWorkItemDialog } from "../../features/sessions/ui/LinkSessionWorkItemDialog";
 import { sessionReminderPresets } from "../../features/sessions/ui/sessionReminderPresets";
 import {
@@ -365,18 +370,25 @@ import { SidebarUpdateFooter } from "./SidebarUpdate";
 import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
 import {
   machineHidesView,
+  readMachineAvailability,
   useMachineAvailability,
 } from "../../features/connections/public/machineAvailability";
 import { MachineUnavailable } from "../../features/connections/public/MachineUnavailable";
 import { useRemoteSessionBindings } from "../../features/connections/model/useRemoteSessionBinding";
 import { pathKey } from "../../shared/lib/paths";
 import {
+  knownRemoteMachine,
   refreshRemoteProjectSessions,
   sessionAccessForMachine,
   remoteSessionFor,
   useRemoteProjectSessions,
 } from "../../features/connections/model/connections";
-import { parseRemotePath, remotePath } from "../../features/connections/model/remoteProjects";
+import {
+  parseRemotePath,
+  remotePath,
+  remoteProjectFor,
+} from "../../features/connections/model/remoteProjects";
+import type { RemoteRailSession } from "../../features/connections/model/remoteRailSessions";
 import { newRequestId } from "../../shared/lib/id/requestId";
 import { requestOpenCrewsPage } from "../../features/crews/model/crewsPage";
 
@@ -423,6 +435,7 @@ type Props = {
     refresh: () => void;
     remoteHistoryLimited?: boolean;
   };
+  lastSessionsRemoteRows?: readonly RemoteRailSession[];
   newListedSessionRequest?: number;
   onNewListedSession?: (projectPath: string) => void | Promise<void>;
   onOpenLastSessions?: () => void;
@@ -463,7 +476,7 @@ type Props = {
     sessionId: string,
     options?: { preview?: boolean },
   ) => void;
-  onRemoteSessionDeleted?: (sessionId: string) => void;
+  onRemoteSessionDeleted?: (sessionId: string, project?: string) => void;
   onSessionNavigationOrder?: (ids: readonly string[]) => void;
   onPrefetchSession?: (sessionId: string) => void;
   onPlaceSessionOnPane?: (sessionId: string, targetId: string, edge: PaneEdge) => void;
@@ -588,6 +601,7 @@ const GLOBAL_SESSION_TIME_FILTERS = ["today", "7d"] as const;
 function SidebarComponent({
   lastSessionsOpen = false,
   lastSessionsData,
+  lastSessionsRemoteRows,
   onNewListedSession,
   newListedSessionRequest = 0,
   onOpenLastSessions,
@@ -731,6 +745,12 @@ function SidebarComponent({
     (!!remote.dataState.error && isConnectionFailure(classifyRemoteError(remote.dataState.error)));
   const hostProject = useRemoteProject(cwd);
   const remoteBindings = useRemoteSessionBindings();
+  const currentRemoteTarget = {
+    cwd,
+    machineId: remote.machine?.id,
+    projectId: hostProject?.projectId,
+    sessions: remote.sessions,
+  };
   const remoteChange = async (
     sessionId: string,
     patch: {
@@ -739,8 +759,9 @@ function SidebarComponent({
       pinned?: boolean;
       linkedWorkItem?: LinkedWorkItem | null;
     },
+    target = currentRemoteTarget,
   ) => {
-    if (!remote.machine || !hostProject) {
+    if (!target.machineId || !target.projectId) {
       toast.show({
         tone: "warning",
         message: "Connect this project's machine to change its sessions.",
@@ -748,9 +769,9 @@ function SidebarComponent({
       return;
     }
     try {
-      await sessionAccessForMachine(remote.machine.id, false, true).update(sessionId, {
-        projectId: hostProject.projectId,
-        authorityGeneration: remote.sessions.find((entry) => entry.id === sessionId)
+      await sessionAccessForMachine(target.machineId, false, true).update(sessionId, {
+        projectId: target.projectId,
+        authorityGeneration: target.sessions.find((entry) => entry.id === sessionId)
           ?.authorityGeneration,
         ...patch,
       });
@@ -759,12 +780,16 @@ function SidebarComponent({
       toast.show({ tone: "danger", message: `Could not update this session.\n\n${String(error)}` });
     }
   };
-  const remoteDelete = async (sessionIds: readonly string[]) => {
+  const remoteDelete = async (
+    sessionIds: readonly string[],
+    target = currentRemoteTarget,
+    canDelete = () => true,
+  ) => {
     if (sessionIds.length === 0) return;
     const authorityById = new Map(
-      remote.sessions.map((entry) => [entry.id, entry.authorityGeneration]),
+      target.sessions.map((entry) => [entry.id, entry.authorityGeneration]),
     );
-    if (!remote.machine || !hostProject) {
+    if (!target.machineId || !target.projectId) {
       toast.show({
         tone: "warning",
         message: "Connect this project's machine to delete its sessions.",
@@ -776,20 +801,21 @@ function SidebarComponent({
         count: sessionIds.length,
         title:
           sessionIds.length === 1
-            ? remote.sessions.find((entry) => entry.id === sessionIds[0])?.title
+            ? target.sessions.find((entry) => entry.id === sessionIds[0])?.title
             : undefined,
       }))
     )
       return;
+    if (!canDelete()) return;
     try {
       for (const sessionId of sessionIds) {
-        await sessionAccessForMachine(remote.machine.id, false, true).delete(
+        await sessionAccessForMachine(target.machineId, false, true).delete(
           sessionId,
-          hostProject.projectId,
+          target.projectId,
           authorityById.get(sessionId),
         );
         forgetRemoteQueue(sessionId);
-        onRemoteSessionDeleted?.(sessionId);
+        onRemoteSessionDeleted?.(sessionId, target.cwd);
       }
       refreshRemoteProjectSessions();
     } catch (error) {
@@ -958,6 +984,11 @@ function SidebarComponent({
     y: number;
     sessionId: string;
   } | null>(null);
+  const [globalSessionMenu, setGlobalSessionMenu] = useState<{
+    x: number;
+    y: number;
+    session: SessionSummary;
+  } | null>(null);
   const [linkingSession, setLinkingSession] = useState<SessionSummary | null>(null);
   const [copyIdFailure, setCopyIdFailure] = useState<{
     value: string;
@@ -1055,7 +1086,116 @@ function SidebarComponent({
     shelve: shelveSettled,
     isSettled,
     setCollapsed: setSettledCollapsed,
-  } = useSettledShelf(!remoteProject);
+  } = useSettledShelf(!remoteProject || lastSessionsOpen);
+  const remoteLifecycleMachines = new Set(
+    lastSessionsOpen
+      ? (lastSessionsRemoteRows ?? []).flatMap(({ project, fresh }) => {
+          if (!fresh || isProjectPasswordLocked(project)) return [];
+          const environmentId = parseRemotePath(project)?.environmentId;
+          const machine = environmentId && knownRemoteMachine(environmentId);
+          return machine ? [machine.id] : [];
+        })
+      : [],
+  );
+  const remoteLifecycle = useRemoteSessionLifecycleLists(
+    remoteLifecycleMachines.size ? JSON.stringify([...remoteLifecycleMachines].sort()) : "",
+  );
+  const globalRemoteView = (session: SessionSummary) => {
+    const environmentId = parseRemotePath(session.cwd)?.environmentId;
+    const machine = environmentId && knownRemoteMachine(environmentId);
+    const views = machine ? remoteLifecycle.lists.get(machine.id) : undefined;
+    return views?.get(session.id) ?? views?.get(remoteSessionFor(session.id) ?? "");
+  };
+  const isGlobalSessionSettled = (session: SessionSummary) =>
+    isRemoteProjectPath(session.cwd)
+      ? isSettledSession(globalRemoteView(session), session.lastActivityAt)
+      : isSettled(session);
+  const globalMenuSession =
+    lastSessionsOpen && globalSessionMenu
+      ? lastSessionsData?.rows.find(
+          (row) =>
+            row.id === globalSessionMenu.session.id &&
+            sameProjectPath(row.cwd, globalSessionMenu.session.cwd),
+        )
+      : undefined;
+  const globalSettle = useSessionSettleCommand(globalMenuSession ?? { id: "" });
+  const remoteMenuSession = !!globalMenuSession && isRemoteProjectPath(globalMenuSession.cwd);
+  const remoteMenuView = remoteMenuSession ? globalRemoteView(globalMenuSession) : undefined;
+  const remoteMenuUndo =
+    remoteMenuSession &&
+    (remoteMenuView?.state === "settling" ||
+      isSettledSession(remoteMenuView, globalMenuSession.lastActivityAt));
+  const runGlobalSessionAction = async (
+    session: SessionSummary,
+    action: "archive" | "delete" | "settle",
+    archived = !session.archived,
+  ) => {
+    if (isProjectPasswordLocked(session.cwd) || crewManagedIndex.has(session.id)) return;
+    if (isRemoteProjectPath(session.cwd)) {
+      const project = remoteProjectFor(session.cwd);
+      const machine = project && knownRemoteMachine(project.environmentId);
+      const boundId = remoteSessionFor(session.id);
+      const listed = lastSessionsRemoteRows?.find(
+        (entry) =>
+          entry.session.projectId === project?.projectId &&
+          sameProjectPath(entry.project, session.cwd) &&
+          (entry.session.id === session.id || entry.session.id === boundId),
+      );
+      const available = () =>
+        !isProjectPasswordLocked(session.cwd) &&
+        readMachineAvailability(session.cwd).available &&
+        remoteProjectFor(session.cwd)?.projectId === project?.projectId;
+      if (!machine || !project || !listed?.fresh || !available()) {
+        toast.show({
+          tone: "warning",
+          message: t("Connect this project’s machine to load its sessions."),
+        });
+        return;
+      }
+      const target = {
+        cwd: session.cwd,
+        machineId: machine.id,
+        projectId: project.projectId,
+        sessions: [listed.session],
+      };
+      if (action === "settle") {
+        await remoteLifecycle
+          .change(machine.id, listed.session.id, remoteMenuUndo)
+          .catch((cause: unknown) => {
+            toast.show({ tone: "danger", message: presentRemoteError(cause, { explicit: true }) });
+          });
+      } else if (action === "archive") await remoteChange(listed.session.id, { archived }, target);
+      else if (listed.session.status === "running") {
+        toast.show({ tone: "warning", message: t("1 running conversation was skipped.") });
+      } else {
+        await remoteDelete([listed.session.id], target, available);
+      }
+      return;
+    }
+    if (action === "settle") {
+      await globalSettle.run();
+      return;
+    }
+    if (action === "delete") {
+      const canDelete = () => {
+        if (isProjectPasswordLocked(session.cwd)) return false;
+        if (!busyIdsRef.current.has(session.id)) return true;
+        toast.show({ tone: "warning", message: t("1 running conversation was skipped.") });
+        return false;
+      };
+      if (!canDelete()) return;
+      const confirmed = await confirmSessionDelete({
+        count: 1,
+        title: sessionDisplayTitle(session.title, session.harness),
+      });
+      if (!confirmed || !canDelete()) return;
+    }
+    const success =
+      action === "archive"
+        ? await onArchiveLocalSession?.(session.id, archived, session)
+        : await onDeleteLocalSession?.(session.id, session);
+    if (success !== false) lastSessionsData?.refresh();
+  };
   const [sessionDrop, setSessionDrop] = useState<SessionListDropTarget | null>(null);
   const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
   const [globalSessionFilters, setGlobalSessionFilters] =
@@ -3727,6 +3867,10 @@ function SidebarComponent({
                             filterSessionsByArchive(
                               lastSessionsData?.rows ?? [],
                               globalSessionFilters.showArchived,
+                            ).filter(
+                              (session) =>
+                                globalSessionFilters.showSettled ===
+                                isGlobalSessionSettled(session),
                             ),
                             globalSessionFilters.assistantManaged,
                           ),
@@ -3768,6 +3912,22 @@ function SidebarComponent({
                           showModel={listDisplay.showModel}
                           showBranch={listDisplay.showBranch}
                           showProjectAppearance
+                          settleable={!isRemoteProjectPath(session.cwd)}
+                          onContextMenu={(_, event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            closeSessionMenu();
+                            setFilterMenu(null);
+                            setGlobalSessionMenu({ x: event.clientX, y: event.clientY, session });
+                          }}
+                          onArchive={(_, archived) => {
+                            void runGlobalSessionAction(session, "archive", archived).catch(
+                              () => {},
+                            );
+                          }}
+                          onDelete={() => {
+                            void runGlobalSessionAction(session, "delete").catch(() => {});
+                          }}
                           onSelect={(id, event) =>
                             onSelectListedSession?.(id, session.cwd, {
                               keepOpen: (event.detail ?? 0) > 1,
@@ -3779,7 +3939,9 @@ function SidebarComponent({
                   ) : (
                     <SessionsEmpty
                       message={
-                        narrowedByUser ? "No matching sessions" : "No sessions in the last 7 days"
+                        narrowedByUser || lastSessionsData?.rows.length
+                          ? "No matching sessions"
+                          : "No sessions in the last 7 days"
                       }
                     />
                   );
@@ -3996,6 +4158,41 @@ function SidebarComponent({
           onClose={closeSessionMenu}
         />
       ) : null}
+      {globalSessionMenu && globalMenuSession ? (
+        <ExplorerMenu
+          x={globalSessionMenu.x}
+          y={globalSessionMenu.y}
+          ariaLabel="Session actions"
+          items={[
+            {
+              kind: "item",
+              id: "settle",
+              label: remoteMenuSession
+                ? t(
+                    remoteMenuView?.state === "settling"
+                      ? "Cancel settle"
+                      : remoteMenuUndo
+                        ? "Un-settle"
+                        : "Settle",
+                  )
+                : globalSettle.label,
+            },
+            {
+              kind: "item",
+              id: "archive",
+              label: globalMenuSession.archived ? t("Unarchive") : t("Archive"),
+            },
+            { kind: "item", id: "delete", label: t("Delete"), danger: true },
+          ]}
+          onClose={() => setGlobalSessionMenu(null)}
+          onPick={(id) => {
+            setGlobalSessionMenu(null);
+            if (isProjectPasswordLocked(globalMenuSession.cwd)) return;
+            if (id === "settle" || id === "archive" || id === "delete")
+              void runGlobalSessionAction(globalMenuSession, id).catch(() => {});
+          }}
+        />
+      ) : null}
       {viewTabMenu && viewTabIndex >= 0 ? (
         <ExplorerMenu
           x={viewTabMenu.x}
@@ -4151,7 +4348,7 @@ function SidebarComponent({
           y={filterMenu.y}
           harnesses={sessionHarnesses}
           local={!remoteProject}
-          settled={!remoteProject && !lastSessionsOpen}
+          settled={lastSessionsOpen || !remoteProject}
           filters={lastSessionsOpen ? globalSessionFilters : sessionFilters}
           allowedTimeFilters={lastSessionsOpen ? GLOBAL_SESSION_TIME_FILTERS : undefined}
           defaultFilters={lastSessionsOpen ? GLOBAL_SESSION_FILTERS : undefined}
@@ -5548,6 +5745,19 @@ const SessionCard = memo(function SessionCard({
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
     if (e.target !== e.currentTarget) return;
+    if (onContextMenu && (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))) {
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      e.currentTarget.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left,
+          clientY: rect.bottom,
+        }),
+      );
+      return;
+    }
     if (e.key === "Escape" && detailOpen) hideDetail();
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -5964,7 +6174,7 @@ const SessionCard = memo(function SessionCard({
         {remoteSession ? (
           <Tooltip label={remoteLabel} asChild>
             <Text role="img" aria-label={remoteLabel} size="inherit" tone="secondary">
-              <Internet className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <Server className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
             </Text>
           </Tooltip>
         ) : null}

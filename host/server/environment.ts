@@ -10,6 +10,7 @@ import { WORKSPACE_CAPABILITIES } from "../workspaces/workspace-contracts";
 import type { ServerBindings } from "./bindings";
 import { GROUP_LOCK_REMOTE_CAPABILITY } from "../../src/shared/model/host-contracts/group-lock";
 import { DECISION_INSTALL_CAPABILITY } from "../../src/shared/model/host-contracts/decision-models";
+import { DELEGATION_MESSAGES_STREAM } from "../../src/shared/model/host-contracts/delegation";
 export function createEnvironmentRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -183,6 +184,7 @@ export function createEnvironmentRuntime(
         "models.list",
         "models.providerAccounts.v1",
         "models.catalog.stream.v1",
+        DELEGATION_MESSAGES_STREAM,
         "sessions.configure.providerAccount.v1",
         "crews.v1",
         "crews.tasks.v1",
@@ -320,6 +322,7 @@ export function createEnvironmentRuntime(
         "voice.tools.v1",
         "voice.local.v1",
         "voice.cloud.v1",
+        "voice.transcription-models.v1",
         "voice.local.setup.v1",
         "social.v1",
         "social.policy.reviewed.v1",

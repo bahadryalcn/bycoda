@@ -31,13 +31,14 @@ export type TerminalShellActions = Pick<
 
 type Props = Omit<
   ComponentProps<typeof TerminalTools>,
-  "terminalId" | "remoteShell" | "onSavedCommands"
+  "terminalId" | "remoteShell" | "onSavedCommands" | "onSaveCommand"
 > & {
   id: string;
   integrated: boolean;
   autoIntegration: boolean;
   bindShellActions: (actions: TerminalShellActions | null) => void;
   sshConnectionId?: string;
+  sshConnectionName?: string;
   onSshPromptReady?: () => void;
   snippetsOpen: boolean;
   onSnippetsOpenChange: (open: boolean) => void;
@@ -50,6 +51,7 @@ export function TerminalControls({
   autoIntegration,
   bindShellActions,
   sshConnectionId,
+  sshConnectionName,
   onSshPromptReady,
   onEnableShellIntegration,
   snippetsOpen,
@@ -65,6 +67,7 @@ export function TerminalControls({
   onResetFontSize,
   onFontSizeChange,
   searchDecorations,
+  toolbarTarget,
 }: Props) {
   const t = useT();
   const shell = useSshShellIntegration(id, integrated);
@@ -95,6 +98,7 @@ export function TerminalControls({
   }, [bindShellActions, invalidate, notifyInput, suspendAutomatic, request, source]);
 
   const [reportedId, setReportedId] = useState<string>();
+  const [initialCommand, setInitialCommand] = useState<string>();
   const currentShellReported = integrated && shell.state?.id === id;
   // Keep the manual setup option stable through the gaps between native snapshots.
   const nextReportedId = !integrated ? undefined : currentShellReported ? id : reportedId;
@@ -123,9 +127,20 @@ export function TerminalControls({
     : undefined;
   const closeSnippets = () => {
     onSnippetsOpenChange(false);
+    setInitialCommand(undefined);
     dismiss();
     terminal?.focus();
   };
+  const openSnippets = (createCommand: boolean) => {
+    const selection =
+      createCommand && mode !== "search" && terminal?.buffer.active.type === "normal"
+        ? terminal.getSelection()
+        : "";
+    setInitialCommand(createCommand ? selection : undefined);
+    onSnippetsOpenChange(true);
+    if (!createCommand && integrated) void request();
+  };
+  const showInsertion = initialCommand === undefined && integrated;
   const snapshot = shell.state;
   const enableShellIntegration =
     !integrated || (autoIntegration && nextReportedId !== id)
@@ -143,19 +158,14 @@ export function TerminalControls({
         remoteShell={remoteTools}
         onStartupReview={onStartupReview}
         onEnableShellIntegration={enableShellIntegration}
-        onSavedCommands={
-          integrated && sshConnectionId
-            ? () => {
-                onSnippetsOpenChange(true);
-                void request();
-              }
-            : undefined
-        }
+        onSavedCommands={sshConnectionId ? () => openSnippets(false) : undefined}
+        onSaveCommand={sshConnectionId ? () => openSnippets(true) : undefined}
         fontSize={fontSize}
         savedFontSize={savedFontSize}
         onResetFontSize={onResetFontSize}
         onFontSizeChange={onFontSizeChange}
         searchDecorations={searchDecorations}
+        toolbarTarget={toolbarTarget}
       />
       {integrated && terminal && (mode === null || mode === "remote") ? (
         <RemoteShellSuggestionsOverlay
@@ -168,23 +178,37 @@ export function TerminalControls({
         />
       ) : null}
       {snippetsOpen && sshConnectionId ? (
-        <Modal title={t("Saved SSH commands")} onClose={closeSnippets} fitViewport>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="ghost" size="sm" loading={waiting} onClick={() => void request()}>
-              {t("Refresh")}
-            </Button>
-            <Text size="caption" tone="muted">
-              {(shell.error ? t(shell.error) : "") ||
-                t("Insert commands at an empty shell prompt. Press Enter in the terminal to run.")}
-            </Text>
-          </div>
+        <Modal
+          title={t(initialCommand === undefined ? "Saved SSH commands" : "Save command")}
+          onClose={closeSnippets}
+          fitViewport
+        >
+          {showInsertion ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="ghost" size="sm" loading={waiting} onClick={() => void request()}>
+                {t("Refresh")}
+              </Button>
+              <Text size="caption" tone="muted">
+                {(shell.error ? t(shell.error) : "") ||
+                  t(
+                    "Insert commands at an empty shell prompt. Press Enter in the terminal to run.",
+                  )}
+              </Text>
+            </div>
+          ) : null}
           <Suspense fallback={<LoadingText />}>
             <ServerSnippets
               embedded
               serverId={sshConnectionId}
-              serverName={snapshot ? `${snapshot.user}@${snapshot.host}` : undefined}
+              serverName={
+                sshConnectionName ?? (snapshot ? `${snapshot.user}@${snapshot.host}` : undefined)
+              }
+              initialCommand={initialCommand}
               onInsert={
-                snapshot?.status === "suggestions" && snapshot.prefix === ""
+                showInsertion &&
+                snapshot?.id === id &&
+                snapshot.status === "suggestions" &&
+                snapshot.prefix === ""
                   ? async (value) => {
                       if (!snapshot.requestId)
                         throw new Error("Request a fresh snapshot at an empty shell prompt");

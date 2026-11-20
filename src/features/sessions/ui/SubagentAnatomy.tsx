@@ -136,6 +136,7 @@ export function SubagentStateLine({
   steps,
   model,
   inline = false,
+  needsInput = false,
   className = "",
 }: {
   block: Block;
@@ -143,6 +144,8 @@ export function SubagentStateLine({
   steps: AgentStep[];
   model?: string;
   inline?: boolean;
+  /** The run waits on the user (the dock's `needsInput`); shown only while it is running. */
+  needsInput?: boolean;
   className?: string;
 }) {
   const t = useT();
@@ -176,6 +179,11 @@ export function SubagentStateLine({
       >
         {lifecycleLabel(lifecycle, t)}
       </Badge>
+      {needsInput && running ? (
+        <Badge size="xs" appearance="subtle" tone="warning">
+          {t("Needs input")}
+        </Badge>
+      ) : null}
       {run?.round && run.round > 1 ? (
         <Badge size="xs" appearance="subtle" tone="neutral">
           {t("Round {p0}", { p0: run.round })}

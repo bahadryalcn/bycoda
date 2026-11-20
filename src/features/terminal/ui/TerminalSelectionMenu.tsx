@@ -6,6 +6,7 @@ import type { TranscriptSelection } from "../../sessions/model/transcriptSelecti
 import { TranscriptSelectionMenu } from "../../sessions/ui/TranscriptSelectionMenu";
 import { createNote, noteTitle } from "../../notes";
 import { useSyncExternalStore } from "react";
+import { useT } from "../../../shared/i18n";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
 
 export function TerminalSelectionMenu({
@@ -13,12 +14,15 @@ export function TerminalSelectionMenu({
   host,
   active,
   cwd,
+  onSendToAgent,
 }: {
   terminal: Terminal | null;
   host: RefObject<HTMLDivElement | null>;
   active: boolean;
   cwd: string;
+  onSendToAgent?: (text: string) => Promise<void>;
 }) {
+  const t = useT();
   const [selection, setSelection] = useState<TranscriptSelection | null>(null);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   useEffect(() => {
@@ -99,12 +103,16 @@ export function TerminalSelectionMenu({
     <TranscriptSelectionMenu
       selection={active ? selection : null}
       onDismiss={() => setSelection(null)}
-      onAddToChat={(text) => {
-        requestAddToChat(text, "quote");
-        terminal?.clearSelection();
-      }}
+      addToChatLabel={onSendToAgent ? t("Send to agent") : undefined}
+      onAddToChat={
+        onSendToAgent ??
+        ((text) => {
+          requestAddToChat(text, "quote");
+          terminal?.clearSelection();
+        })
+      }
       onAddToNotes={
-        notesEnabled
+        notesEnabled && !onSendToAgent
           ? async (text) => {
               await createNote({ title: noteTitle(text), body: text, sourceCwd: cwd });
               terminal?.clearSelection();

@@ -22,6 +22,9 @@ import {
 import { useLocalLifecycleMachine } from "../../features/sessions/hooks/useLocalLifecycleMachine";
 import * as lifecycleClient from "../../features/sessions/model/sessionLifecycleClient";
 import { setSessionLifecycleList } from "../../features/sessions/model/sessionLifecycleClient";
+import * as connections from "../../features/connections/model/connections";
+import { rememberRemoteProject } from "../../features/connections/model/remoteProjects";
+import type { HostProject } from "../../features/connections/model/protocol";
 vi.mock("../../features/sessions/hooks/useLocalLifecycleMachine", () => ({
   useLocalLifecycleMachine: vi.fn(() => undefined),
 }));
@@ -2590,7 +2593,7 @@ it.each(["standard", "compact", "detailed"] as const)(
     const provider = card().querySelector('[data-session-provider="codex"]')!;
     const marker = provider.parentElement?.previousElementSibling;
     expect(marker?.getAttribute("aria-label")).toBe("On another machine");
-    expect(marker?.querySelector("svg")).not.toBeNull();
+    expect(marker?.querySelector("svg.lucide-server")).not.toBeNull();
     if (density !== "compact") {
       expect(card().querySelector("[data-session-row-project]")?.textContent).toContain("project");
       expect(card().querySelector("[data-session-row-project]")?.textContent).not.toContain(
@@ -2599,6 +2602,114 @@ it.each(["standard", "compact", "detailed"] as const)(
     }
   },
 );
+
+it("archives a global remote row through its own project even when the open project is local", async () => {
+  const local = props.sessions[0];
+  const remote = rememberRemoteProject("recent-remote", {
+    id: "host-project",
+    cwd: "/remote",
+  } as HostProject);
+  const remoteRow = { ...local, id: "remote-session", cwd: remote.key };
+  const update = vi.fn().mockResolvedValue(undefined);
+  vi.spyOn(connections, "knownRemoteMachine").mockReturnValue({
+    id: "remote-machine",
+    environmentId: remote.environmentId,
+    endpoint: "ssh://fixture",
+    name: "Fixture",
+  });
+  const client = connections.sessionAccessForMachine("remote-machine", false, true);
+  const access = vi.spyOn(connections, "sessionAccessForMachine").mockReturnValue({
+    ...client,
+    update,
+  });
+  props.lastSessionsOpen = true;
+  props.lastSessionsData = { rows: [remoteRow], loading: false, error: null, refresh: vi.fn() };
+  props.lastSessionsRemoteRows = [
+    {
+      project: remote.key,
+      fresh: true,
+      session: {
+        id: remoteRow.id,
+        projectId: remote.projectId,
+        status: "idle",
+        revision: 1,
+        title: remoteRow.title,
+        harness: remoteRow.harness,
+        updatedAt: remoteRow.updatedAt,
+        authorityGeneration: 3,
+      },
+    },
+  ];
+  props.onArchiveSession = vi.fn();
+  await act(async () => render());
+  const row = container.querySelector('[data-session-card="remote-session"]')!;
+  act(() => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+  const archive = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "Archive",
+  );
+  await act(async () => archive!.click());
+  expect(access).toHaveBeenCalledWith("remote-machine", false, true);
+  expect(update).toHaveBeenCalledExactlyOnceWith("remote-session", {
+    projectId: "host-project",
+    authorityGeneration: 3,
+    archived: true,
+  });
+  expect(props.onArchiveSession).not.toHaveBeenCalled();
+});
+
+it("settles a Last sessions row on its remote Host and removes it from the active list", async () => {
+  const project = rememberRemoteProject("settle-office", {
+    id: "remote-project",
+    cwd: "/repo",
+  } as HostProject);
+  const row = { ...props.sessions[0], id: "remote-settle", cwd: project.key };
+  vi.spyOn(connections, "knownRemoteMachine").mockReturnValue({
+    id: "office-machine",
+    environmentId: project.environmentId,
+    endpoint: "ssh://office",
+    name: "Office",
+  });
+  const client = lifecycleClient.sessionLifecycleClient("office-machine");
+  vi.spyOn(client, "list").mockResolvedValue({ records: [], autoSettle: { afterDays: 3 } });
+  const settle = vi.spyOn(client, "settle").mockResolvedValue({
+    sessionId: row.id,
+    state: "settled",
+    settledAt: Date.now(),
+    participants: [],
+  });
+  const lifecycle = vi.spyOn(lifecycleClient, "sessionLifecycleClient").mockReturnValue(client);
+  props.lastSessionsOpen = true;
+  props.lastSessionsData = { rows: [row], loading: false, error: null, refresh: vi.fn() };
+  props.lastSessionsRemoteRows = [
+    {
+      project: project.key,
+      fresh: true,
+      session: {
+        id: row.id,
+        projectId: project.projectId,
+        status: "idle",
+        revision: 1,
+        title: row.title,
+        harness: row.harness,
+        updatedAt: row.updatedAt,
+      },
+    },
+  ];
+  await act(async () => render());
+  act(() =>
+    container
+      .querySelector('[data-session-card="remote-settle"]')!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (entry) => entry.textContent === "Settle",
+  );
+  expect(item).toBeDefined();
+  await act(async () => item!.click());
+  expect(lifecycle).toHaveBeenCalledWith("office-machine", false);
+  expect(settle).toHaveBeenCalledExactlyOnceWith(row.id);
+  expect(container.querySelector('[data-session-card="remote-settle"]')).toBeNull();
+});
 
 it("drops a repository prefix that repeats the project in detailed rows", () => {
   saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density: "detailed" });
@@ -2981,7 +3092,7 @@ it("opens a project selector for an explicit global New request without creating
 });
 
 it.each(["standard", "compact", "detailed"] as const)(
-  "keeps %s Last sessions rows navigation-only",
+  "opens the action menu on %s Last sessions rows and settles the target",
   async (density) => {
     saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density });
     vi.mocked(useLocalLifecycleMachine).mockReturnValue("local");
@@ -3011,10 +3122,17 @@ it.each(["standard", "compact", "detailed"] as const)(
       const row = container.querySelector('[data-session-card="foreign-session"]')!;
       expect(row.querySelector('button[aria-label="Pin"]')).toBeNull();
       expect(row.querySelector('[data-session-project-slot][data-pinned="true"]')).toBeNull();
-      expect(row.querySelector('button[aria-label^="Settle"]')).toBeNull();
-      expect(row.querySelector('button[aria-label^="Archive"]')).toBeNull();
-      expect(row.querySelector('button[aria-label^="Delete"]')).toBeNull();
-      expect(settle).not.toHaveBeenCalled();
+      act(() =>
+        row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+      );
+      const menu = document.querySelector('[aria-label="Session actions"]');
+      const items = [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+      expect(items.map((item) => item.textContent)).toEqual(
+        expect.arrayContaining(["Settle", "Archive", "Delete"]),
+      );
+      await act(async () => items.find((item) => item.textContent === "Settle")!.click());
+      expect(settle).toHaveBeenCalledWith("foreign-session");
+      expect(container.querySelector('[data-session-card="foreign-session"]')).toBeNull();
       expect(props.onArchiveSession).not.toHaveBeenCalled();
       expect(props.onDeleteSession).not.toHaveBeenCalled();
       expect(props.lastSessionsData.refresh).not.toHaveBeenCalled();
@@ -3024,3 +3142,30 @@ it.each(["standard", "compact", "detailed"] as const)(
     }
   },
 );
+
+it("confirms deletion of the exact Last sessions row before invoking local removal", async () => {
+  const listed = { ...props.sessions[0], id: "foreign-delete", cwd: "/workspace/other" };
+  const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+  vi.stubGlobal("confirm", confirm);
+  props.busySessionIds = new Set();
+  props.lastSessionsOpen = true;
+  props.lastSessionsData = { rows: [listed], loading: false, error: null, refresh: vi.fn() };
+  const remove = vi.fn(async () => true);
+  props.onDeleteSession = remove;
+  await act(async () => render());
+  const row = container.querySelector('[data-session-card="foreign-delete"]')!;
+  const clickDelete = async () => {
+    act(() =>
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+    );
+    const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (entry) => entry.textContent === "Delete",
+    );
+    await act(async () => item!.click());
+  };
+  await clickDelete();
+  expect(remove).not.toHaveBeenCalled();
+  await clickDelete();
+  expect(remove).toHaveBeenCalledExactlyOnceWith("foreign-delete", listed);
+  expect(props.lastSessionsData.refresh).toHaveBeenCalledOnce();
+});

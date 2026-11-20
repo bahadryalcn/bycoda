@@ -1,4 +1,5 @@
 import { useState, type ComponentProps } from "react";
+import { mockIPC } from "@tauri-apps/api/mocks";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { buildGlobalRecentSessions } from "../../../src/features/sessions/model/globalRecentSessions";
@@ -29,6 +30,21 @@ import "./session-row-layout.css";
 
 // Isolated browser-local history and preferences. No native writes or provider calls.
 const params = new URLSearchParams(location.search);
+if (params.has("global-settle")) {
+  mockIPC((command, args) => {
+    if (command === "local_host_connect") return { id: "fixture-local-host" };
+    if (
+      command === "remote_request" &&
+      args.machineId === "fixture-local-host" &&
+      args.method === "sessions.lifecycle.settle"
+    ) {
+      const { sessionId } = args.params as { sessionId: string };
+      return { sessionId, state: "settled", settledAt: Date.now(), participants: [] };
+    }
+    if (command === "remote_machines") return [];
+    return null;
+  });
+}
 const cwd = params.has("remote-header")
   ? rememberRemoteProject("fixture-office", {
       id: "fixture-project",

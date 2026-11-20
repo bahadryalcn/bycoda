@@ -168,6 +168,13 @@ const machineDevices = new Map([
 export async function listHostToolMachines() {
   return toolMachines;
 }
+
+export async function featureHost(cwd: string, capability: string) {
+  if (!cwd.startsWith("remote://fixture-mac-env/") || capability !== "browser.shared")
+    throw new Error("Unexpected fixture Host or capability");
+  return { machine: toolMachines[1], projectId: "fixture-project" };
+}
+
 export async function hostToolRequest<T>(
   cwd: string,
   capability: string,
@@ -206,9 +213,9 @@ function frame(): DeviceFrame {
     capturedAt: new Date().toISOString(),
   };
 }
-function browserFrame(state = browser) {
+function browserFrame(state = browser, title = "Example website") {
   const { width, height } = state.viewport;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#f4f7fb"/><rect width="100%" height="72" fill="#20314a"/><text x="44" y="46" fill="white" font-size="26" font-family="sans-serif">Example website</text><text x="44" y="155" fill="#20314a" font-size="38" font-family="sans-serif">Shared browser preview</text><rect x="44" y="200" width="560" height="190" rx="12" fill="#dce4ef"/><rect x="628" y="200" width="560" height="190" rx="12" fill="#dce4ef"/></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#f4f7fb"/><rect width="100%" height="72" fill="#20314a"/><text x="44" y="46" fill="white" font-size="26" font-family="sans-serif">${title}</text><text x="44" y="155" fill="#20314a" font-size="38" font-family="sans-serif">Shared browser preview</text><rect x="44" y="200" width="560" height="190" rx="12" fill="#dce4ef"/><rect x="628" y="200" width="560" height="190" rx="12" fill="#dce4ef"/></svg>`;
   return { ...state, mimeType: "image/svg+xml", data: btoa(svg), width, height };
 }
 export async function hostFeatureRequest<T>(
@@ -218,7 +225,12 @@ export async function hostFeatureRequest<T>(
   params: Record<string, unknown> = {},
   target: HostToolTarget = { kind: "project" },
 ): Promise<T> {
-  const machineId = target.kind === "machine" ? target.machineId : "fixture-local";
+  const machineId =
+    target.kind === "machine"
+      ? target.machineId
+      : target.kind === "project" && cwd.startsWith("remote://fixture-mac-env/")
+        ? "fixture-mac"
+        : "fixture-local";
   calls.push({ cwd, method, params, ...(target.kind === "project" ? {} : { target }) });
   await new Promise((resolve) => setTimeout(resolve, 35));
   const browserKey = `${machineId}:${String(params.sessionId ?? params.ownerPresentationScope ?? "legacy")}`;
@@ -551,7 +563,12 @@ export async function hostFeatureRequest<T>(
       result = browser;
       break;
     case "browser.frame":
-      result = browserFrame(browser);
+      result = browserFrame(
+        browser,
+        cwd.startsWith("remote://fixture-mac-env/") && machineId === "fixture-mac"
+          ? "Remote project Host fixture"
+          : undefined,
+      );
       break;
     case "browser.status":
       result = browser;

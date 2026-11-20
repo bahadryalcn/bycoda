@@ -25,7 +25,6 @@ import {
   coerceModelPickerTab,
   getModelSnapshot,
   getPickerVisibilitySnapshot,
-  isModelEnabled,
   loadFavoriteModels,
   loadRecentModelChoices,
   saveFavoriteModels,
@@ -300,7 +299,9 @@ export function ModelPicker({
       const accounts = source.accounts[harness] ?? [];
       const saved = accounts.find((account) => account.id === currentAccountId);
       if (!saved) return currentAccountId === "default" ? undefined : t("Unavailable Host account");
-      return accounts.length > 1 ? accountDisplayLabel(accounts, saved) : undefined;
+      return accounts.length > 1 || saved.id !== "default"
+        ? accountDisplayLabel(accounts, saved)
+        : undefined;
     }
     const accounts = providerAccountsAtSnapshot(harness, accountsSnapshot);
     const known = accounts.some((account) => account.id === currentAccountId);
@@ -487,9 +488,10 @@ export function ModelPicker({
   const recentModels = useMemo(() => {
     return (recentMenu?.models ?? []).filter(
       (item) =>
-        pickerHarnesses.includes(item.harness) && modelEnabledAtRevision(item.id, catalogVersion),
+        pickerHarnesses.includes(item.harness) &&
+        modelEnabledAtRevision(source, item.id, catalogVersion),
     );
-  }, [recentMenu, pickerHarnesses, catalogVersion]);
+  }, [recentMenu, pickerHarnesses, source, catalogVersion]);
   const recentOpen = recentMenu != null && recentModels.length > 0;
   // The keyboard highlight rests on rows the harness can serve; unavailable rows stay visible but disabled.
   const recentClamped = clampActiveIndex(recentActive, recentModels.length);
@@ -592,7 +594,9 @@ export function ModelPicker({
     if (!selected) return;
     const models = accountModelChoices(
       recentMenuModels(selected, source, loadRecentModelChoices()).filter(
-        (item) => pickerHarnesses.includes(item.harness) && isModelEnabled(item.id),
+        (item) =>
+          pickerHarnesses.includes(item.harness) &&
+          modelEnabledAtRevision(source, item.id, catalogVersion),
       ),
       accountChoices,
       source.accounts,
@@ -708,7 +712,7 @@ export function ModelPicker({
   const pickModel = (item: AccountModelChoice) => {
     if (
       !pickerHarnesses.includes(item.harness) ||
-      !isModelEnabled(item.id) ||
+      !modelEnabledAtRevision(source, item.id, catalogVersion) ||
       !source.available(item.harness)
     )
       return;

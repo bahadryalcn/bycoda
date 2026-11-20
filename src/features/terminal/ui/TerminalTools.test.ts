@@ -185,6 +185,46 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
   }
 });
 
+it("can save and manage commands from a saved SSH header before the terminal is ready", async () => {
+  const host = document.createElement("div");
+  const toolbarTarget = document.createElement("div");
+  document.body.append(host, toolbarTarget);
+  const root = createRoot(host);
+  const save = vi.fn();
+  const manage = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalTools, {
+          terminal: null,
+          mode: null,
+          ready: false,
+          onModeChange: vi.fn(),
+          onSaveCommand: save,
+          onSavedCommands: manage,
+          toolbarTarget,
+        }),
+      ),
+    );
+    const saveButton = Array.from(toolbarTarget.querySelectorAll("button")).find(
+      (button) => button.textContent === "Save command",
+    );
+    await act(async () => saveButton!.click());
+    expect(save).toHaveBeenCalledOnce();
+    await openTools(toolbarTarget);
+    const manager = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Saved commands",
+    );
+    expect(document.body.textContent).not.toContain("Clear terminal");
+    await act(async () => manager!.click());
+    expect(manage).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    toolbarTarget.remove();
+  }
+});
+
 it("opens search directly and offers local view actions without writing shell input", async () => {
   const host = document.createElement("div");
   document.body.append(host);
@@ -285,7 +325,11 @@ it("keeps automatic exposure and source choices explicit without requesting on m
     expect(document.body.textContent).toContain("Session only.");
     await act(async () => (document.querySelector('[role="switch"]') as HTMLButtonElement).click());
     expect(shell.setAutomatic).toHaveBeenCalledExactlyOnceWith(true);
-    const paths = [...document.querySelectorAll('[role="radio"]')].find((item) =>
+    const source = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Suggestion source: Commands"]',
+    )!;
+    await act(async () => source.click());
+    const paths = [...document.querySelectorAll('[role="option"]')].find((item) =>
       item.textContent?.includes("Remote paths"),
     ) as HTMLButtonElement;
     await act(async () => paths.click());

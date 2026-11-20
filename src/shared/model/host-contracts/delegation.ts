@@ -82,6 +82,29 @@ export type DelegateModelRef = z.infer<typeof DelegateModelRefSchema>;
 export const DelegationKindSchema = z.enum(["subagent", "advisor"]);
 export type DelegationKind = z.infer<typeof DelegationKindSchema>;
 
+export const DELEGATION_MESSAGES_STREAM = "delegation.messages.stream.v1";
+export const DelegationMessageSchema = z.strictObject({
+  id: z.string(),
+  blockId: z.string().optional(),
+  text: z.string().max(20_000),
+  sender: z.string(),
+  mode: z.enum(["auto", "queue", "steer"]),
+  effectiveMode: z.enum(["queue", "steer"]).optional(),
+  delivery: z.enum([
+    "queued",
+    "sending",
+    "submitted",
+    "accepted",
+    "failed",
+    "cancelled",
+    "unknown",
+  ]),
+  detail: z.string().optional(),
+  createdAt: z.number(),
+});
+export const DelegationMessagesSchema = z.array(DelegationMessageSchema).max(1000);
+export type DelegationMessage = z.infer<typeof DelegationMessageSchema>;
+
 // shortcut: the parent link lives in modelSettings because the native session store
 // has no free field; move it to a session column when that schema next changes.
 export const DelegationParentSchema = z.strictObject({

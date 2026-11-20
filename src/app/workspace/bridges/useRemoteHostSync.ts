@@ -70,6 +70,7 @@ export function useRemoteHostSync(): RemoteHostSync {
     setSessions,
     loadRunningOnHostRef,
     refreshAdoptedSessionRef,
+    subscribeShell,
   );
   const onRefreshAdoptedSession = useCallback<RefreshAdoptedSession>(
     (sessionId, target, resolution) => {

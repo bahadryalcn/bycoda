@@ -823,13 +823,15 @@ export class HostEngine {
   /** A rewind, clear or branch switch ended: conversations waiting on it may go on. */
   onUnblocked?: () => void;
   /** Why a turn cannot start in this conversation right now, apart from one running in it. */
-  async busyReason(sessionId: string): Promise<string | undefined> {
+  async busyReason(sessionId: string, allowDesktopOnly = false): Promise<string | undefined> {
     await this.ready;
     if (this.closing) return "Host is stopping";
     if (this.retainedWriterTurns.get(sessionId)?.cleanup)
       return "The previous Host writer retirement is pending or failed. Complete the ownership transfer before continuing.";
     if (this.rewinding.has(sessionId)) return "A conversation change is in progress";
     try {
+      // Queue admission separately verifies that a desktop-only session exists.
+      if (allowDesktopOnly && !(await this.store.sessionAuthority(sessionId))) return undefined;
       const value = await this.store.session(sessionId);
       await this.managedWorkspace(value);
       if (this.switchingProjects.has(value.projectId)) return "A branch switch is in progress";

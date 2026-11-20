@@ -6,7 +6,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderTree,
-  Internet,
+  Server,
   Pencil,
   Pin,
   PinOff,
@@ -132,7 +132,7 @@ export function projectMenuExtraItems(
               return t("Machine");
             },
             description: machine.description,
-            icon: Internet,
+            icon: Server,
             submenu: [
               {
                 kind: "item" as const,

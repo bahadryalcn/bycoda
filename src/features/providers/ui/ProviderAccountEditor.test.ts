@@ -4,6 +4,46 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { ProviderAccountEditor } from "./ProviderAccountEditor";
 
+it("offers kind and color before signing in to a new account", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onMetadata = vi.fn();
+  try {
+    act(() =>
+      root.render(
+        createElement(ProviderAccountEditor, {
+          editor: { provider: "codex", accountId: "new", label: "Office", adding: true },
+          working: false,
+          onLabel: vi.fn(),
+          onMetadata,
+          onCancel: vi.fn(),
+          onSubmit: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.textContent).not.toContain("Automatic");
+    expect(container.querySelector('button[type="submit"]')?.getAttribute("aria-disabled")).toBe(
+      "true",
+    );
+    act(() => container.querySelector<HTMLInputElement>('input[value="work"]')?.click());
+    expect(onMetadata).toHaveBeenCalledWith({ kind: "work" });
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label^="Color for Office:"]')
+        ?.click(),
+    );
+    act(() => document.querySelector<HTMLButtonElement>('button[aria-label="Blue"]')?.click());
+    expect(onMetadata).toHaveBeenCalledWith({ color: "blue" });
+    expect(container.textContent).toContain("Sign in and add");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("keeps Cancel usable while waiting for browser sign-in and blocks duplicate submissions", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
@@ -15,7 +55,7 @@ it("keeps Cancel usable while waiting for browser sign-in and blocks duplicate s
     act(() =>
       root.render(
         createElement(ProviderAccountEditor, {
-          editor: { provider: "codex", label: "Personal" },
+          editor: { provider: "codex", accountId: "new", label: "Personal", adding: true },
           working: true,
           onLabel: vi.fn(),
           onCancel,
@@ -84,11 +124,7 @@ it("shows name color and kind fields for metadata edits without a sign-in action
       container.querySelector<HTMLInputElement>('input[type="radio"][value="personal"]')!.click(),
     );
     expect(onMetadata).toHaveBeenCalledWith({ kind: "personal" });
-    const automatic = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Automatic",
-    )!;
-    act(() => automatic.click());
-    expect(onMetadata).toHaveBeenCalledWith({ kind: undefined });
+    expect(container.querySelectorAll('input[type="radio"]')).toHaveLength(2);
     act(() =>
       container
         .querySelector<HTMLButtonElement>('button[aria-label="Color for Office: Teal"]')!
@@ -154,7 +190,7 @@ it("explains invalid names when adding an account", () => {
       act(() =>
         root.render(
           createElement(ProviderAccountEditor, {
-            editor: { provider: "codex", label },
+            editor: { provider: "codex", accountId: "new", label, adding: true },
             existingLabels: ["Office"],
             working: false,
             onLabel: vi.fn(),

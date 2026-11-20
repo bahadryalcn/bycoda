@@ -1,34 +1,53 @@
-import { useId, type FormEvent } from "react";
+import { useId, type ComponentProps, type FormEvent } from "react";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
-import { ModalFooter, ModalActions } from "../../../shared/ui/Modal";
+import { Modal, ModalFooter, ModalActions } from "../../../shared/ui/Modal";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Text } from "../../../shared/ui/Text";
 import { UserRound, Briefcase } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { HARNESS_TITLE } from "../../sessions";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { ProviderAccountSubtitle } from "../../providers/public/accountIdentity";
-import type { ProviderAccountIdentity } from "../../providers/public/accountIdentity";
-import { AccountColorPicker } from "../../providers/public/accountIdentity";
+import { ProviderAccountSubtitle } from "./ProviderAccountSubtitle";
+import type { ProviderAccountIdentity } from "../model/providerAccountIdentity";
+import { AccountColorPicker } from "./AccountColorPicker";
 import type {
   ProviderAccountProvider,
   ProviderAccountColor,
   SharedCliAccountProvider,
-} from "../../providers/public/providerAccounts";
+} from "../model/providerAccounts";
 
 export type AccountEditor = {
   provider: ProviderAccountProvider | SharedCliAccountProvider;
-  accountId?: string;
+  accountId: string;
+  adding?: boolean;
   label: string;
   color?: ProviderAccountColor;
   kind?: "personal" | "work";
 };
 
+export function ProviderAccountDialog(props: ComponentProps<typeof ProviderAccountEditor>) {
+  useLocale();
+  return (
+    <Modal
+      size="sm"
+      surface="floating"
+      title={t(props.editor.adding ? "Add account" : "Edit account")}
+      initialFocus='input[type="text"]'
+      onClose={props.onCancel}
+      closeDisabled={props.working && !props.editor.adding}
+    >
+      <ProviderAccountEditor {...props} />
+    </Modal>
+  );
+}
+
 export function ProviderAccountEditor({
   editor,
   working,
   identity,
+  submitError,
   existingLabels = [],
   onLabel,
   onMetadata,
@@ -38,15 +57,16 @@ export function ProviderAccountEditor({
   editor: AccountEditor;
   working: boolean;
   identity?: ProviderAccountIdentity | null;
+  submitError?: string;
   existingLabels?: string[];
   onLabel: (label: string) => void;
-  onMetadata?: (metadata: Partial<AccountEditor>) => void;
+  onMetadata?: (metadata: Partial<Pick<AccountEditor, "kind" | "color">>) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   useLocale();
   const formId = useId();
-  const adding = !editor.accountId;
+  const { adding } = editor;
   const duplicate = existingLabels.some(
     (label) => label.trim().toLocaleLowerCase() === editor.label.trim().toLocaleLowerCase(),
   );
@@ -55,8 +75,9 @@ export function ProviderAccountEditor({
     : duplicate
       ? t("An account with this name already exists")
       : undefined;
+  const incomplete = Boolean(error) || !editor.kind;
   const actions = (
-    <ModalActions inline={adding}>
+    <ModalActions>
       <Button variant="ghost" disabled={working && !adding} onClick={onCancel}>
         {t("Cancel")}
       </Button>
@@ -66,7 +87,7 @@ export function ProviderAccountEditor({
         variant="primary"
         tone="accent"
         loading={working}
-        disabled={working || Boolean(error)}
+        disabled={working || incomplete}
         reserveLabels={adding ? [t("Waiting for browser…"), t("Sign in and add")] : undefined}
       >
         {adding ? (working ? t("Waiting for browser…") : t("Sign in and add")) : t("Save")}
@@ -76,25 +97,22 @@ export function ProviderAccountEditor({
   return (
     <form
       id={formId}
-      className={adding ? "provider-account-editor" : "provider-account-dialog-editor"}
-      data-settings-part={adding ? "account-editor" : undefined}
+      className="flex min-w-0 flex-col gap-3"
       onSubmit={(event) => {
-        if (working || error) {
+        if (working || incomplete) {
           event.preventDefault();
           return;
         }
         onSubmit(event);
       }}
     >
-      {!adding ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <HarnessIcon harness={editor.provider} className="icon-md shrink-0" />
-          <Text size="caption" tone="secondary">
-            {HARNESS_TITLE[editor.provider]}
-          </Text>
-          <ProviderAccountSubtitle identity={identity} size="caption" tone="secondary" wrap />
-        </div>
-      ) : null}
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <HarnessIcon harness={editor.provider} className="icon-md shrink-0" />
+        <Text size="caption" tone="secondary">
+          {HARNESS_TITLE[editor.provider]}
+        </Text>
+        <ProviderAccountSubtitle identity={identity} size="caption" tone="secondary" wrap />
+      </div>
       <TextField
         label={t("Account name")}
         autoFocus
@@ -103,14 +121,14 @@ export function ProviderAccountEditor({
         value={editor.label}
         disabled={working}
         placeholder={t("Work or Personal")}
-        error={error}
+        error={adding && editor.label === "" ? undefined : error}
         aria-label={t(adding ? "New {p1} account" : "Rename {p1} account", {
           p1: HARNESS_TITLE[editor.provider],
         })}
         onChange={(event) => onLabel(event.target.value)}
         fieldClassName="min-w-0 flex-1"
       />
-      {!adding && onMetadata ? (
+      {onMetadata ? (
         <>
           <Text size="secondary" weight="medium">
             {t("Kind")}
@@ -119,6 +137,7 @@ export function ProviderAccountEditor({
             <RadioGroup
               variant="inline"
               label={t("Kind")}
+              required
               value={editor.kind ?? ""}
               options={[
                 {
@@ -142,24 +161,17 @@ export function ProviderAccountEditor({
                   disabled: working,
                 },
               ]}
-              onValueChange={(kind) => onMetadata({ kind: kind as "personal" | "work" })}
+              onValueChange={(kind) => {
+                if (kind === "personal" || kind === "work") onMetadata({ kind });
+              }}
             />
-            <Button
-              size="sm"
-              variant="ghost"
-              pressed={!editor.kind}
-              disabled={working || !editor.kind}
-              onClick={() => onMetadata({ kind: undefined })}
-            >
-              {t("Automatic")}
-            </Button>
           </div>
           <div className="flex items-center">
             <AccountColorPicker
               account={{
                 provider: editor.provider,
-                id: editor.accountId!,
-                label: editor.label,
+                id: editor.accountId,
+                label: editor.label.trim() || HARNESS_TITLE[editor.provider],
                 color: editor.color,
               }}
               disabled={working}
@@ -168,7 +180,8 @@ export function ProviderAccountEditor({
           </div>
         </>
       ) : null}
-      {adding ? actions : <ModalFooter>{actions}</ModalFooter>}
+      {submitError ? <InlineError>{submitError}</InlineError> : null}
+      <ModalFooter>{actions}</ModalFooter>
     </form>
   );
 }

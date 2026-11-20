@@ -4899,6 +4899,7 @@
   "SSH user": "Usuario SSH",
   "Save rule": "Guardar regla",
   "Saved SSH commands": "Comandos SSH guardados",
+  "Save command": "Guardar comando",
   "Saved commands": "Comandos guardados",
   "Separate tags with commas.": "Separa las etiquetas con comas.",
   "Server filters": "Filtros de servidores",
@@ -10686,6 +10687,7 @@
   "Could not delete sessions: {p0}": "No se pudieron eliminar las sesiones: {p0}",
   "Still saving. Try again in a moment.": "Aún se está guardando. Inténtalo de nuevo en un momento.",
   "Connect this project's machine to delete its sessions.": "Conecta la máquina de este proyecto para eliminar sus sesiones.",
+  "Connect this project’s machine to load its sessions.": "Conecta la máquina de este proyecto para cargar sus sesiones.",
   "Waiting for orchestrator": "Esperando al orquestador",
   "Waiting for answers": "Esperando respuestas",
   "running in background": "ejecutándose en segundo plano",
@@ -12418,5 +12420,9 @@
   "Voice could not start: the assistant did not respond.": "No se pudo iniciar la voz: el asistente no respondió.",
   "Voice could not start: the conversation did not respond.": "No se pudo iniciar la voz: la conversación no respondió.",
   "Voice could not start: the voice key was not issued.": "No se pudo iniciar la voz: no se emitió la clave de voz.",
-  "Voice could not start: the voice runtime did not register.": "No se pudo iniciar la voz: el entorno de voz no se registró."
+  "Voice could not start: the voice runtime did not register.": "No se pudo iniciar la voz: el entorno de voz no se registró.",
+  "Host CPU profiles": "Perfiles de CPU del Host",
+  "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.": "Guarda un perfil de CPU de 30 segundos en la carpeta de registros del Host cuando su bucle de eventos se bloquea repetidamente.",
+  "For developers. Starting a profile briefly freezes the Host, so keep this off.": "Para desarrolladores. Iniciar un perfil congela el Host brevemente, así que mantenlo desactivado.",
+  "Could not reach this computer's Host setting: {p1}": "No se pudo acceder al ajuste del Host de este equipo: {p1}"
 }

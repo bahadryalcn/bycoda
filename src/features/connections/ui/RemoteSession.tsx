@@ -95,7 +95,6 @@ import {
   registerWorkspaceRewindUndoHandler,
   type WorkspaceRewindUndoIdentity,
 } from "../../workspaces/ui/WorkspaceRewindPreview";
-import { isModelEnabled } from "../../sessions/public/models";
 import { RemoteBindingGeneration } from "../model/remoteBindingGeneration";
 import { useRemoteModelCatalog } from "../model/useRemoteModelCatalog";
 import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
@@ -120,7 +119,12 @@ import {
   registerRemoteSessionActions,
   publishRemoteSessionActionSource,
 } from "../model/remoteSessionActions";
-import { HOST_UPDATE_NOTICE, SESSION_REWIND, SESSION_SHELL } from "../model/remoteCapabilities";
+import {
+  HOST_UPDATE_NOTICE,
+  SESSION_PROVIDER_ACCOUNT,
+  SESSION_REWIND,
+  SESSION_SHELL,
+} from "../model/remoteCapabilities";
 import { canRewindConversation } from "../../sessions/public/conversationRewind";
 import { parseShellCommand, SHELL_FOLLOW_UP_PROMPT } from "../../sessions/public/shellRun";
 import { loadResumeAtReset } from "../../settings/public/settings";
@@ -418,6 +422,8 @@ function ConnectedRemoteSession({
   const [descriptor, setDescriptor] = useState<HostDescriptor | undefined>(() =>
     cachedDescriptors.get(machine.id),
   );
+  const canSelectProviderAccount =
+    descriptor?.capabilities.includes(SESSION_PROVIDER_ACCOUNT) === true;
   const [attachmentOwner] = useState(() => attachmentOwnerId("desktop-composer", shell.id));
   const ownsAttachments = !!descriptor?.capabilities.includes(ATTACHMENT_OWNERSHIP_CAPABILITY);
   const ownership = useMemo(
@@ -1359,7 +1365,7 @@ function ConnectedRemoteSession({
   useEffect(() => {
     if (!online || sessionId || !catalog || !providers.length) return;
     const harness = providers.includes(draft.harness) ? draft.harness : providers[0];
-    const models = (catalog.models[harness] ?? []).filter((model) => isModelEnabled(model.id));
+    const models = catalog.models[harness] ?? [];
     const model =
       findRemoteModel(models, draft.model) ??
       (harness === draft.harness ? undefined : models[0]) ??
@@ -1371,7 +1377,13 @@ function ConnectedRemoteSession({
         current.model === model.id &&
         sameModelSettings(settings, current.settings)
         ? current
-        : { ...current, harness, model: model.id, settings };
+        : {
+            ...current,
+            harness,
+            model: model.id,
+            settings,
+            providerAccountId: current.harness === harness ? current.providerAccountId : undefined,
+          };
     });
   }, [online, catalog, providers, sessionId, draft.harness, draft.model]);
 
@@ -1380,9 +1392,16 @@ function ConnectedRemoteSession({
     model: hostSession.model,
     settings: hostSession.modelSettings ?? {},
     mode: hostSession.runtimeMode,
-    ...(owner ? { providerAccountId: hostSession.providerAccountId ?? null } : {}),
+    providerAccountId: hostSession.providerAccountId ?? null,
   };
   const configuration = saved ? (changes ?? saved) : draft;
+  const selectedProviderAccountId =
+    configuration.providerAccountId === null
+      ? DEFAULT_PROVIDER_ACCOUNT_ID
+      : (configuration.providerAccountId ??
+        (configuration.harness === saved?.harness
+          ? (saved.providerAccountId ?? undefined)
+          : undefined));
   useEffect(() => {
     const binding = hostSessionBinding(shell);
     if (!binding || binding.created) return;
@@ -1426,14 +1445,7 @@ function ConnectedRemoteSession({
   };
 
   const accountAvailable = (provider: "codex" | "claude" | "grok", accountId: string): boolean => {
-    if (!owner || preparingRef.current) return false;
-    if (
-      hostSession &&
-      !descriptor?.capabilities.includes("sessions.configure.providerAccount.v1")
-    ) {
-      setError(t(HOST_UPDATE_NOTICE));
-      return false;
-    }
+    if (!canSelectProviderAccount || preparingRef.current) return false;
     const accounts = catalog?.accounts?.[provider];
     if (accounts && !accounts.some((account) => account.id === accountId)) {
       setError(t("This account is not available on the owning Host."));
@@ -1928,11 +1940,7 @@ function ConnectedRemoteSession({
       setChanges(undefined);
       return;
     }
-    if (
-      owner &&
-      failedAccountConfiguration.current &&
-      same(changes, failedAccountConfiguration.current)
-    )
+    if (failedAccountConfiguration.current && same(changes, failedAccountConfiguration.current))
       return;
     if (
       applied.current &&
@@ -1951,6 +1959,9 @@ function ConnectedRemoteSession({
     }
     applying.current = true;
     const sent = changes;
+    const changesAccount =
+      sent.providerAccountId !== undefined &&
+      (sent.harness !== saved.harness || sent.providerAccountId !== saved.providerAccountId);
     void run({
       type: "configure",
       ...remoteIntentAuthority(changes),
@@ -1962,14 +1973,11 @@ function ConnectedRemoteSession({
       model: changes.model,
       modelSettings: changes.settings,
       runtimeMode: changes.mode,
-      ...(owner && changes.providerAccountId !== undefined
-        ? { providerAccountId: changes.providerAccountId }
-        : {}),
+      ...(changesAccount ? { providerAccountId: sent.providerAccountId } : {}),
     })
       .then((receipt) => {
         if (receipt) applied.current = sent;
-        else if (owner && sent.providerAccountId !== undefined)
-          failedAccountConfiguration.current = sent;
+        else if (changesAccount) failedAccountConfiguration.current = sent;
       })
       .finally(() => {
         applying.current = false;
@@ -2254,7 +2262,9 @@ function ConnectedRemoteSession({
           harness: configuration.harness,
           model: configuration.model,
           modelSettings: { ...configuration.settings },
-          ...(owner ? { providerAccountId: configuration.providerAccountId ?? "default" } : {}),
+          ...(canSelectProviderAccount && supportsProviderAccounts(configuration.harness)
+            ? { providerAccountId: selectedProviderAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID }
+            : {}),
         },
       }) !== false
     );
@@ -2604,7 +2614,9 @@ function ConnectedRemoteSession({
           harness: hostSession.harness,
           model: hostSession.model,
           modelSettings: { ...hostSession.modelSettings },
-          ...(owner ? { providerAccountId: hostSession.providerAccountId ?? "default" } : {}),
+          ...(canSelectProviderAccount && supportsProviderAccounts(hostSession.harness)
+            ? { providerAccountId: hostSession.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID }
+            : {}),
         },
       };
       if (
@@ -2740,7 +2752,9 @@ function ConnectedRemoteSession({
           harness: configuration.harness,
           model: configuration.model,
           modelSettings: { ...configuration.settings },
-          ...(owner ? { providerAccountId: configuration.providerAccountId ?? "default" } : {}),
+          ...(canSelectProviderAccount && supportsProviderAccounts(configuration.harness)
+            ? { providerAccountId: selectedProviderAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID }
+            : {}),
         },
       };
       const currentQueue = queue.current();
@@ -2805,7 +2819,6 @@ function ConnectedRemoteSession({
     remoteDeleted,
     authorityGeneration: snapshot?.authorityGeneration,
     saved,
-    ownerBound: !!owner,
     providers,
     capabilities: descriptor?.capabilities,
     queue,
@@ -2915,11 +2928,7 @@ function ConnectedRemoteSession({
     id: shell.id,
     adoptedAuthorityGeneration: hostSession ? snapshot?.authorityGeneration : undefined,
     hostBinding: hostSessionBinding(shell),
-    providerAccountId:
-      configuration.providerAccountId === null
-        ? DEFAULT_PROVIDER_ACCOUNT_ID
-        : (configuration.providerAccountId ??
-          (hostSession ? hostSession.providerAccountId : shell.providerAccountId)),
+    providerAccountId: selectedProviderAccountId,
     cwd: displayPath(project.cwd),
     worktreeCwd: executionCwd === project.cwd ? undefined : displayPath(executionCwd),
     workspaceMode: hostSession ? undefined : draftWorkspaceMode,
@@ -3987,7 +3996,7 @@ function ConnectedRemoteSession({
     },
     onQuestionReply: (_, requestId, reply) => answer(requestId, reply),
     onCompactContext: compact,
-    onSelectProviderAccount: owner
+    onSelectProviderAccount: canSelectProviderAccount
       ? (_, provider, accountId) => {
           selectAccount(provider, accountId);
         }
@@ -3995,7 +4004,7 @@ function ConnectedRemoteSession({
     onModelChange: (_, harness, model, accountId) => {
       if (!isRemoteProvider(harness)) return;
       if (
-        owner &&
+        canSelectProviderAccount &&
         accountId &&
         (!supportsProviderAccounts(harness) || !accountAvailable(harness, accountId))
       )
@@ -4004,15 +4013,14 @@ function ConnectedRemoteSession({
         ...current,
         harness,
         model,
-        ...(owner
-          ? {
-              providerAccountId:
-                accountId === DEFAULT_PROVIDER_ACCOUNT_ID
-                  ? null
-                  : (accountId ??
-                    (current.harness === harness ? current.providerAccountId : undefined)),
-            }
-          : {}),
+        providerAccountId:
+          canSelectProviderAccount && accountId
+            ? accountId === DEFAULT_PROVIDER_ACCOUNT_ID
+              ? null
+              : accountId
+            : current.harness === harness
+              ? current.providerAccountId
+              : undefined,
         settings: carryModelSettings(
           modelSource.resolve(harness, model).settings ?? [],
           current.settings,

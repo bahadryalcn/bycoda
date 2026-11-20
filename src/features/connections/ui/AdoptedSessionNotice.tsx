@@ -15,8 +15,10 @@ import {
   type AdoptedResolution,
 } from "../model/adoptedSessions";
 import type { RefreshAdoptedSession } from "../model/useAdoptedSessions";
-import { useAdoptedSyncing } from "../model/adoptedSyncing";
+import { useAdoptedSyncFailure, useAdoptedSyncing } from "../model/adoptedSyncing";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { describeRemoteError, type RemoteErrorView } from "../model/remoteFailure";
 
 /** Keeps the composer mounted (and its draft/attachments intact) during refresh. */
 export function AdoptedSessionNotice({
@@ -28,6 +30,7 @@ export function AdoptedSessionNotice({
 }) {
   useLocale();
   const syncing = useAdoptedSyncing(session.id);
+  const automaticFailure = useAdoptedSyncFailure(session.id);
   const pending = useRef<{ sessionId: string } | undefined>(undefined);
   const [refreshingId, setRefreshingId] = useState<string>();
   const refreshing = refreshingId === session.id;
@@ -35,16 +38,17 @@ export function AdoptedSessionNotice({
   const [storedFeedback, setFeedback] = useState<{
     sessionId: string;
     conflicted: boolean;
-    error: boolean;
+    /** Why the sync did not finish, as the connection layer describes it. */
+    failure?: RemoteErrorView;
     text: string;
   }>();
   const feedback =
     storedFeedback?.sessionId === session.id &&
-    (!storedFeedback.error || !storedFeedback.conflicted || session.adoptedSyncConflict)
+    (!storedFeedback.failure || !storedFeedback.conflicted || session.adoptedSyncConflict)
       ? storedFeedback
       : undefined;
   useEffect(() => {
-    if (!storedFeedback || feedback?.error) return;
+    if (!storedFeedback || feedback?.failure) return;
     const timer = setTimeout(() => setFeedback(undefined), feedback ? 6_000 : 0);
     return () => clearTimeout(timer);
   }, [feedback, storedFeedback]);
@@ -65,7 +69,6 @@ export function AdoptedSessionNotice({
       setFeedback({
         sessionId: session.id,
         conflicted: !!session.adoptedSyncConflict,
-        error: false,
         text:
           resolution === "keep-both" && branched
             ? "Both versions are kept. This computer's version is saved as a new conversation in project history."
@@ -73,13 +76,14 @@ export function AdoptedSessionNotice({
               ? "Conversation synced. The other computer's version was kept."
               : "Conversation synced.",
       });
-    } catch {
+    } catch (reason) {
       if (pending.current !== attempt) return;
+      // The retained transcript, drafts and queue stay as they are; the user sees why.
       setFeedback({
         sessionId: session.id,
         conflicted: !!session.adoptedSyncConflict,
-        error: true,
-        text: "Could not sync the conversation. Your messages were kept. Check the connection and try again.",
+        failure: describeRemoteError(reason),
+        text: "",
       });
     } finally {
       if (pending.current === attempt) {
@@ -92,6 +96,11 @@ export function AdoptedSessionNotice({
   // answer. Nothing is replaced or copied until they do.
   const choosing =
     !!session.adoptedSyncConflict && !!session.adoptedDivergence && !session.adoptedDivergence.keep;
+  const failure =
+    feedback?.failure ??
+    (session.adoptedSyncConflict && !choosing && automaticFailure
+      ? describeRemoteError(automaticFailure)
+      : undefined);
   // Keeping this version drops what the other computer added, so it is asked
   // twice; Keep both is the way to keep it.
   const confirming = choosing && confirmingId === session.id;
@@ -116,9 +125,11 @@ export function AdoptedSessionNotice({
       </div>
     ) : null;
   // Only two versions that both moved on need attention; an unfinished sync is information.
-  const attention = choosing || !!feedback?.error;
+  const attention = choosing || !!feedback?.failure;
   const showSync =
-    !!onRefresh && !choosing && (!!session.adoptedSyncConflict || !!feedback?.error || refreshing);
+    !!onRefresh &&
+    !choosing &&
+    (!!session.adoptedSyncConflict || !!feedback?.failure || refreshing);
   const syncBlocked = refreshing || session.busy;
   const keepBothTooltip = t(
     "Keep the other version here and save this computer's version as a new conversation.",
@@ -186,7 +197,7 @@ export function AdoptedSessionNotice({
             action: {
               label: refreshing
                 ? t("Refreshing…")
-                : feedback?.error
+                : feedback?.failure
                   ? t("Retry refresh")
                   : t("Sync conversation"),
               onClick: () => void refresh(),
@@ -195,9 +206,17 @@ export function AdoptedSessionNotice({
             },
           }
         : {};
+  const failureDetails =
+    failure?.details && failure.details !== failure.message ? (
+      <ErrorDetails title={failure.message} detail={failure.details} />
+    ) : undefined;
   return (
     <div className="shrink-0 px-4 py-2">
-      <Alert tone={attention ? "warning" : "info"} {...noticeActions}>
+      <Alert
+        tone={attention ? "warning" : "info"}
+        {...noticeActions}
+        extra={noticeActions.extra ?? failureDetails}
+      >
         <div className="min-w-0 space-y-1">
           {queueWaiting && !session.adoptedSyncConflict ? (
             <div>{t("Queue is waiting for the current turn to finish.")}</div>
@@ -210,7 +229,8 @@ export function AdoptedSessionNotice({
               {t(confirming ? ADOPTED_DISCARD_QUESTION : ADOPTED_CHOICE_CONSEQUENCES)}
             </Text>
           ) : null}
-          {feedback ? <div>{t(feedback.text)}</div> : null}
+          {failure ? <div>{failure.message}</div> : null}
+          {feedback && !feedback.failure ? <div>{t(feedback.text)}</div> : null}
         </div>
       </Alert>
     </div>

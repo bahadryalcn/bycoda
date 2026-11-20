@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import type { ProviderAccount, ProviderAccountProvider } from "./providerAccounts";
+import {
+  editProviderAccount,
+  providerAccounts,
+  type ProviderAccount,
+  type ProviderAccountProvider,
+} from "./providerAccounts";
 
 /** Who the profile is signed in as; the CLI's on-disk cache when offline. */
 export type ProviderAccountIdentity = {
@@ -24,13 +29,28 @@ export async function readProviderAccountIdentity(
   }
 }
 
-/** Org chip text: "Personal" for Claude's default "<name>'s Organization". */
-export function identityOrganizationTag(
-  identity: ProviderAccountIdentity | null | undefined,
-): string | null {
-  const name = identity?.organization?.trim();
-  if (!name) return null;
-  return /['’]s Organization$/.test(name) ? "Personal" : name;
+/** Refresh the profile and assign Work to unclassified accounts on a known team plan. */
+export async function refreshProviderAccountIdentity(
+  provider: ProviderAccountProvider,
+  accountId: string,
+): Promise<ProviderAccountIdentity | null> {
+  const identity = await readProviderAccountIdentity(provider, accountId);
+  const value = identity?.plan?.trim().toLowerCase();
+  const team =
+    (provider === "claude" && value === "team") ||
+    (provider === "codex" && (value === "team" || value === "business"));
+  if (team) {
+    // Re-read after the native request so an owner's edit during the lookup wins.
+    const account = providerAccounts(provider).find((entry) => entry.id === accountId);
+    if (account && !account.kind) {
+      try {
+        editProviderAccount(provider, accountId, { ...account, kind: "work" });
+      } catch {
+        console.warn("Could not save the detected provider account kind");
+      }
+    }
+  }
+  return identity;
 }
 
 export function identityKey(account: ProviderAccount): string {
@@ -55,7 +75,7 @@ export function useProviderAccountIdentities(
         async (account) =>
           [
             identityKey(account),
-            await readProviderAccountIdentity(account.provider, account.id),
+            await refreshProviderAccountIdentity(account.provider, account.id),
           ] as const,
       ),
     ).then((entries) => {

@@ -5389,6 +5389,7 @@
   "SSH user": "SSH user",
   "Save rule": "Save rule",
   "Saved SSH commands": "Saved SSH commands",
+  "Save command": "Save command",
   "Saved commands": "Saved commands",
   "Separate tags with commas.": "Separate tags with commas.",
   "Server filters": "Server filters",
@@ -10687,6 +10688,7 @@
   "Could not delete sessions: {p0}": "Could not delete sessions: {p0}",
   "Still saving. Try again in a moment.": "Still saving. Try again in a moment.",
   "Connect this project's machine to delete its sessions.": "Connect this project's machine to delete its sessions.",
+  "Connect this project’s machine to load its sessions.": "Connect this project’s machine to load its sessions.",
   "Waiting for orchestrator": "Waiting for orchestrator",
   "Waiting for answers": "Waiting for answers",
   "running in background": "running in background",
@@ -12418,5 +12420,9 @@
   "Voice could not start: the assistant did not respond.": "Voice could not start: the assistant did not respond.",
   "Voice could not start: the conversation did not respond.": "Voice could not start: the conversation did not respond.",
   "Voice could not start: the voice key was not issued.": "Voice could not start: the voice key was not issued.",
-  "Voice could not start: the voice runtime did not register.": "Voice could not start: the voice runtime did not register."
+  "Voice could not start: the voice runtime did not register.": "Voice could not start: the voice runtime did not register.",
+  "Host CPU profiles": "Host CPU profiles",
+  "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.": "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.",
+  "For developers. Starting a profile briefly freezes the Host, so keep this off.": "For developers. Starting a profile briefly freezes the Host, so keep this off.",
+  "Could not reach this computer's Host setting: {p1}": "Could not reach this computer's Host setting: {p1}"
 }

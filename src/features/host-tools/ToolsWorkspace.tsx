@@ -75,6 +75,7 @@ const SessionHostTools = lazySurface(async () => {
 });
 
 type ToolPane = ConversationTools & { id: string; onlyTab?: "logs"; detached?: boolean };
+type ToolPaneRequest = ToolPane & { registerOnly?: boolean; existingVisibleOnly?: boolean };
 type Placement = "left" | "right" | "top" | "bottom";
 const OPEN_EVENT = "bycoda:open-tool-pane";
 const LAYOUT_KEY = "bycoda.tools-dock.placement.v1";
@@ -186,11 +187,34 @@ export async function openHostToolsWindow(tools: ConversationTools, onlyTab?: "l
     composerWindow: tools.composerWindow ?? getCurrentWebviewWindow().label,
   };
   const native = nativeToolsAvailable();
-  const currentDrafts = readWorkspaceTransfer({ ...tools, onlyTab });
   const transferKey = JSON.stringify([
     payload.composerWindow,
     toolsTransferScope({ ...tools, onlyTab }),
   ]);
+  if (
+    !transferRequests.has(transferKey) &&
+    !onlyTab &&
+    payload.initialTab === "browser" &&
+    payload.initialUrl
+  ) {
+    const request = new CustomEvent<ToolPaneRequest>(OPEN_EVENT, {
+      cancelable: true,
+      detail: {
+        ...payload,
+        id: crypto.randomUUID(),
+        initialUrl: undefined,
+        existingVisibleOnly: true,
+        viewRequest: {
+          id: crypto.randomUUID(),
+          tab: "browser",
+          machine: "project",
+          url: payload.initialUrl,
+        },
+      },
+    });
+    if (!window.dispatchEvent(request)) return;
+  }
+  const currentDrafts = readWorkspaceTransfer({ ...tools, onlyTab });
   const editFingerprint = await toolsTransferFingerprint(
     toolsTransferEdits(payload, currentDrafts),
   );
@@ -208,10 +232,13 @@ export async function openHostToolsWindow(tools: ConversationTools, onlyTab?: "l
     pane: { ...payload, id: crypto.randomUUID(), detached: true },
     drafts: structuredClone(currentDrafts),
   };
+  // An explicit URL belongs to the conversation's project Host, whatever target the
+  // panel last showed; its request ID lets each Browser navigate exactly once.
   pending.pane.viewRequest ??= {
     id: pending.requestId,
     tab: payload.initialTab,
-    machine: payload.initialMachine,
+    machine: payload.initialMachine ?? (payload.initialUrl ? "project" : undefined),
+    ...(payload.initialUrl ? { url: payload.initialUrl } : {}),
   };
   transferRequests.set(transferKey, pending);
   const { requestId, pane, drafts } = pending;
@@ -269,7 +296,7 @@ export async function openHostToolsWindow(tools: ConversationTools, onlyTab?: "l
             const { invoke } = await import("@tauri-apps/api/core");
             const created = await invoke<boolean>("open_host_tools_window", {
               title: t("Conversation tools"),
-              payload: { ...payload, transferRequestId: requestId },
+              payload: { ...payload, initialUrl: undefined, transferRequestId: requestId },
             });
             // An existing destination has already booted; release the ready listener
             // and send the immutable transfer under the outer mounted acknowledgement.
@@ -664,7 +691,26 @@ export function ToolsWorkspace({
   );
   useEffect(() => {
     const receive = (event: Event) => {
-      const pane = (event as CustomEvent<ToolPane & { registerOnly?: boolean }>).detail;
+      const pane = (event as CustomEvent<ToolPaneRequest>).detail;
+      if (pane.existingVisibleOnly) {
+        const current = live.current;
+        if (
+          current.activeConversation !== undefined &&
+          !sameToolsSession(pane, current.activeConversation)
+        )
+          return;
+        const docked = current.panes.find(
+          (entry) => !entry.detached && !entry.onlyTab && sameToolsSession(entry, pane),
+        );
+        if (!docked) return;
+        event.preventDefault();
+        setPanes((entries) =>
+          entries.map((entry) =>
+            entry.id === docked.id ? { ...entry, viewRequest: pane.viewRequest } : entry,
+          ),
+        );
+        return;
+      }
       setPanes((previous) => {
         const existing = previous.find(
           (item) => sameToolsSession(item, pane) && item.onlyTab === pane.onlyTab,
@@ -709,7 +755,11 @@ export function ToolsWorkspace({
         ...toolsSessionMetadata(pane),
         id: pane.id,
         detached: pane.detached,
-        viewRequest: pane.viewRequest,
+        viewRequest: pane.viewRequest && {
+          id: pane.viewRequest.id,
+          tab: pane.viewRequest.tab,
+          machine: pane.viewRequest.machine,
+        },
         ...toolsSessionMetadata(
           accessibleRef.current?.find((session) => sameToolsSession(session, pane)) ?? pane,
         ),

@@ -88,6 +88,15 @@ const withFooter = new URLSearchParams(location.search).has("footer");
 const chatLayout = new URLSearchParams(location.search).has("chat-layout");
 const workspaceFooter = new URLSearchParams(location.search).has("workspace-footer");
 const remoteLayout = new URLSearchParams(location.search).has("remote");
+const remoteAccountCatalog = new URLSearchParams(location.search).has("remote-accounts")
+  ? {
+      claude: [
+        { id: "default", label: "Host default" },
+        { id: "mac-work", label: "Mac work" },
+        { id: "mac-review", label: "Mac review" },
+      ],
+    }
+  : undefined;
 const showProjectPicker = new URLSearchParams(location.search).has("project-picker");
 const longAccount = new URLSearchParams(location.search).has("long-account");
 // Test-only data boundary. The URL retains the stress case across reloads.
@@ -453,7 +462,9 @@ function Fixture() {
         busy={busy}
         disabled={disabled}
         providerAccountId={accountId}
-        onSelectProviderAccount={accountPicker ? (_, id) => setAccountId(id) : undefined}
+        onSelectProviderAccount={
+          accountPicker || remoteAccountCatalog ? (_, id) => setAccountId(id) : undefined
+        }
         onFocus={() => {}}
         onCwdChange={() => {}}
         onSubmit={() => {}}
@@ -482,7 +493,13 @@ function Fixture() {
     </>
   );
   return (
-    <ModelSourceContext.Provider value={source}>
+    <ModelSourceContext.Provider
+      value={
+        remoteAccountCatalog
+          ? { ...source, id: "remote:fixture", accounts: remoteAccountCatalog }
+          : source
+      }
+    >
       <main
         style={
           visualBackground

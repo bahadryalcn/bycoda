@@ -763,11 +763,15 @@ export class SharedQueueClient {
     const at = drain.expiresAt - this.skew;
     return at > Date.now() ? at : undefined;
   }
+  /** A local mirror waiting for Host history should leave a free lease to the Host. */
+  allowAutomaticLease = () => true;
+
   private wantsLease(queue: SharedQueue): boolean {
     return (
       queue.status === "active" &&
       queue.messages.length > 0 &&
-      !leaseLive(queue.drain, Date.now(), this.skew)
+      !leaseLive(queue.drain, Date.now(), this.skew) &&
+      this.allowAutomaticLease()
     );
   }
   private learn(result: unknown) {

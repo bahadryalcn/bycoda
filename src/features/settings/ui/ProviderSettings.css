@@ -204,7 +204,6 @@
   display: none;
 }
 .provider-account-row,
-.provider-account-editor,
 .provider-account-empty {
   display: flex;
   align-items: center;
@@ -250,10 +249,6 @@
   align-items: center;
   gap: 4px;
 }
-.provider-account-editor > [data-provider-account-editor-field] {
-  min-inline-size: 0;
-  flex: 1 1 0;
-}
 .provider-antigravity-box {
   overflow: hidden;
 }
@@ -294,14 +289,6 @@
   }
 }
 
-/* Metadata edits wrap as a compact form at narrow widths. */
-.provider-account-editor {
-  flex-wrap: wrap;
-}
-.provider-account-editor > .flex-wrap {
-  flex-basis: 100%;
-}
-
 /* Compact inventory: action column never wraps. Hide freshness before versions. */
 .provider-cli-status {
   display: grid;
@@ -331,12 +318,6 @@
 }
 .provider-cli-add .provider-cli-item {
   inline-size: 100%;
-}
-.provider-account-dialog-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-inline-size: 0;
 }
 
 .provider-account-status {

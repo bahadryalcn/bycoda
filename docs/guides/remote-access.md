@@ -59,7 +59,7 @@ migration of existing conversations or installed a new Windows application.
 
 bycoda can run Claude Code, Codex, Cursor, Grok Build, OpenCode, Pi, OMP, fx, Hermes Agent, and Antigravity sessions on a separate Windows, Linux, or macOS host. The host owns the provider processes and session database. Closing the desktop, closing a session tab, or losing the SSH tunnel does not stop a host session.
 
-A folder on a connected machine is a project in the rail, marked with a globe. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
+A folder on a connected machine is a project in the rail, marked with a server icon. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
 
 When a continued Codex conversation is archived in Codex, sending a follow-up asks the owning provider to restore that same thread before starting the turn. Opening history alone does not restore it. If restoration or identity verification fails, the follow-up fails rather than silently starting an empty thread. Check the owning machine and account before retrying.
 
@@ -342,6 +342,14 @@ when that machine changes them. Your own actions do not produce a notice on your
 own screen. Deleting many conversations from a remote PC sends the deletions
 together, and both sides report the result.
 
+## Catching up a conversation on this computer
+
+When another device continues a conversation through this computer's Host, the
+desktop catches up automatically. You can read the conversation while the latest
+messages arrive. If the desktop cannot finish syncing, **Sync conversation**
+retries the read. If both copies changed, the desktop asks which version to keep.
+Syncing preserves your draft and queued messages and does not resend a turn.
+
 ## Connect through SSH
 
 ### Servers catalog and terminal tabs
@@ -379,6 +387,25 @@ While a terminal is open, **Saved SSH tabs** holds the restore preference and pe
 entries. Only saved connections can be remembered. Restoring an entry requires
 **Connect**, opens a new shell and does not replay previous commands. Exact endpoint
 and identity-file details remain available from the terminal's connection information.
+
+**Ask AI** opens a conversation beside the terminal. Select terminal text and
+choose **Send to agent** to add that selection to the conversation's draft. The
+manual shell stays private. The conversation can request commands on the saved
+server. Running commands appear inline in the standard session transcript.
+Expand a command row to inspect its live output.
+Temporary connections support chat and selected excerpts. Save the connection
+to let the conversation request an SSH command on it.
+
+Type `@srv:` or `@server:` in the desktop composer to find a saved SSH server by
+name or ID. A server reference identifies the target and grants no permission.
+In a remote conversation, type the saved server ID after the prefix. The agent
+resolves it through the owning Host's available server tools.
+
+The terminal header keeps Find and the terminal actions menu in view. For a
+saved server, **Save command** opens the command editor. You can start with a
+single line selected in the terminal or type a command in the editor. Use
+**Saved commands** in the terminal actions menu to edit or copy saved entries.
+Inserting a saved command requires a verified empty prompt with shell integration.
 
 Agents use `servers.ssh.execute` to request a command on a saved SSH target.
 The connected desktop asks for approval inside bycoda of the exact target and command unless
@@ -435,7 +462,7 @@ progress. If every address is silent, SSH still tries the preferred address.
 2. Choose the machine, browse to an existing checkout (or type its absolute path, such as `/home/me/code/my-app`), and click **Open**.
 3. Send a message. The first message creates the session on the host with the model, reasoning effort, and permission mode shown in the composer.
 
-Remote projects show a globe in the project rail. Hover or focus the project to see its machine, folder path, and connection status. Remote sessions show the globe beside the provider icons.
+Remote projects show a server icon in the project rail. Hover or focus the project to see its machine, folder path, and connection status. Remote sessions show the server icon beside the provider icons.
 
 The composer's model picker lists models for the providers installed on the host. Model, provider-specific settings, and permission changes apply to the host session directly, and the next turn uses them; a change made during a running turn is applied when that turn finishes. If the host cannot load its model list, or no longer lists the session's model, the session's saved settings remain visible. The normal workspace and branch pickers use the host checkout through the shared file and Git commands. Choose an existing host worktree or create one from a branch before the first message; the session then runs in that working copy. Once the conversation starts, its worktree is fixed, as in a local session. Start a new session to use another worktree. The branch picker can search local and remote branches, create a local branch, and switch the current working copy when it is clean and the project's sessions are idle. Machine connection state appears on its project rail dot.
 
@@ -622,7 +649,7 @@ This remains development-source behavior pending installed-platform acceptance.
 
 Supported: persistent remote text conversations with all ten local provider adapters, follow-up turns, approvals, questions where the provider offers them, cancellation, per-device revocation, reconnect, remote file browsing and text editing, Git status, file diffs, and history, staging and commits, branch selection and creation, worktree selection and creation, and a tracked Git diff against HEAD. OpenCode's server and event stream stay on the host's loopback interface. Cursor's optional enrichment from its native session database is not available on the headless host; basic transcript and subagent events still work. The desktop polls the host and downloads only transcript blocks that changed since its last update (every 0.75 s while a session runs, 3 s otherwise). The desktop rejects any single host response over 16 MiB. A sync above 4 MiB, such as reopening a very long transcript or one very large tool output, is sent as a series of bounded pieces of one consistent revision. Transcript size is therefore not limited by the response cap. The host writes streamed output in 120 ms batches and keeps a bounded event journal.
 
-Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, named provider accounts, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
+Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
 
 The headless host runs the reused TypeScript adapters with a Node process backend. It proves the execution boundary without introducing the planned Rust daemon/worker IPC yet. Node is included in host release archives, separately from the desktop application.
 

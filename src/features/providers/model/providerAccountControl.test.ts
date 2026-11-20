@@ -227,7 +227,7 @@ it("guards source after digest and preserves unknown after a setter exception", 
   expect(await c(context, "providerManagement.patch", f.input)).toMatchObject({ state: "unknown" });
 });
 
-it("reviews kind edits and Automatic clearing with revision and receipt guards", async () => {
+it("reviews kind edits and maps legacy clearing requests to Personal", async () => {
   const f = await fixture();
   const result = await f.control(context, "providerManagement.patch", {
     ...f.input,
@@ -251,7 +251,7 @@ it("reviews kind edits and Automatic clearing with revision and receipt guards",
       })
     ).state,
   ).toBe("applied");
-  expect(f.get().find((a) => a.id === "two")?.kind).toBeUndefined();
+  expect(f.get().find((a) => a.id === "two")?.kind).toBe("personal");
   await expect(
     f.control(context, "providerManagement.patch", {
       ...f.input,

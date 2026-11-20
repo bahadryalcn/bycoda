@@ -48027,6 +48027,18 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "kind": { "const": "delegationMessages", "type": "string" },
+                  "sessionId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  }
+                },
+                "required": ["kind", "sessionId"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
                   "kind": { "const": "session", "type": "string" },
                   "sessionId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -71262,6 +71274,18 @@
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "kind": { "const": "delegationMessages", "type": "string" },
+                        "sessionId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "sessionId"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
                         "kind": { "const": "session", "type": "string" },
                         "sessionId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -82333,5 +82357,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "fc199b18ae7981ef88e24fec8ee574a4308525c6ef476a096c650d15e55688d3"
+  "schemaHash": "521cb19256e19d3041f197735595ac6196bbdabc74bda168fd3b3a2baba54877"
 }

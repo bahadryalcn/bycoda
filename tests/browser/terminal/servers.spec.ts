@@ -778,6 +778,168 @@ test("saved SSH command previews its target and copies without terminal input or
   await page.screenshot({ path: `${evidence}/saved-command-390.png` });
 });
 
+test("saves and reopens a command from a saved SSH tab without a verified shell prompt", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/terminal/servers.html?terminalWorkspace=1");
+  await page
+    .getByRole("list", { name: "Servers" })
+    .getByRole("button", { name: /^Server 03/ })
+    .dblclick();
+  await page.getByRole("button", { name: "Save command", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Save command", exact: true });
+  await expect(dialog).toContainText("Target: Server 03");
+  const command = dialog.getByRole("textbox", { name: "Command preview", exact: true });
+  await expect(command).toHaveValue("");
+  await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Inspect directory");
+  await command.fill("pwd");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Insert into terminal", exact: true }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      (window as unknown as { serversFixtureCalls: string[] }).serversFixtureCalls.includes(
+        "ssh_terminal_suggestions_request",
+      ),
+    ),
+  ).toBe(false);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
+  await page.getByRole("button", { name: "Saved commands", exact: true }).click();
+  const manager = page.getByRole("dialog", { name: "Saved SSH commands", exact: true });
+  await manager.getByRole("button", { name: /^Inspect directory/ }).click();
+  await expect(manager.getByRole("textbox", { name: "Command preview", exact: true })).toHaveValue(
+    "pwd",
+  );
+  expect(
+    await page.evaluate(() =>
+      (window as unknown as { serversFixtureCalls: string[] }).serversFixtureCalls.some(
+        (operation) => operation === "pty_write" || operation === "ssh_terminal_command_insert",
+      ),
+    ),
+  ).toBe(false);
+});
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`saved SSH command dialog ${theme} ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/terminal/servers.html?terminalWorkspace=1&theme=${theme}`);
+      await page
+        .getByRole("list", { name: "Servers" })
+        .getByRole("button", { name: /^Server 03/ })
+        .dblclick();
+      await page.getByRole("button", { name: "Save command", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Save command", exact: true });
+      await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Inspect directory");
+      await dialog.getByRole("textbox", { name: "Command preview", exact: true }).fill("pwd");
+      await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeInViewport();
+      const folder = "temp/verification/servers-agent/saved-commands";
+      await mkdir(folder, { recursive: true });
+      await page.screenshot({ path: `${folder}/${theme}-${width}.png` });
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`Servers Ask AI live activity and selection ${theme} ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/terminal/servers.html?terminalWorkspace=1&agentFixture=1&theme=${theme}`,
+      );
+      await page
+        .getByRole("list", { name: "Servers" })
+        .getByRole("button", { name: /^Server 03/ })
+        .dblclick();
+      const header = page.locator("[data-server-terminal-session]");
+      const ask = header.getByRole("button", { name: "Ask AI", exact: true });
+      const find = header.getByRole("button", { name: "Find in terminal", exact: true });
+      const more = header.getByRole("button", { name: "Terminal pane actions", exact: true });
+      await expect(ask).toBeVisible();
+      await expect(find).toBeInViewport();
+      await expect(more).toBeInViewport();
+      const directory = "temp/verification/server-session-chat";
+      await mkdir(directory, { recursive: true });
+      await more.click();
+      await expect(
+        page.getByRole("button", { name: "Saved commands", exact: true }),
+      ).toBeInViewport();
+      await page.screenshot({ path: `${directory}/menu-${theme}-${width}.png` });
+      await page.keyboard.press("Escape");
+      await ask.click();
+      const pane = page.getByRole("region", { name: "Ask AI" });
+      await expect(pane.getByText("Check whether the server is ready.")).toBeVisible();
+      await expect(pane.locator("[data-session-composer]")).toBeVisible();
+      await expect(pane.getByText("SSH command activity")).toHaveCount(0);
+      await page.evaluate(() => {
+        const fixture = window as unknown as { serversFixtureAgentOutput(text: string): void };
+        fixture.serversFixtureAgentOutput("Connecting…");
+      });
+      const command = pane.getByRole("button", { name: /Show output for .*printf 'ready'/ });
+      await command.click();
+      const commandRow = pane.locator(".transcript-tool-row").filter({ hasText: "printf 'ready'" });
+      await expect(commandRow).toBeVisible();
+      await expect(commandRow).toContainText("Running");
+      await expect(pane.getByText("Connecting…", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${directory}/running-${theme}-${width}.png` });
+      await page.evaluate(() => {
+        const fixture = window as unknown as { serversFixtureAgentOutput(text: string): void };
+        fixture.serversFixtureAgentOutput("ready");
+      });
+      await expect(pane.getByText("ready", { exact: true })).toBeVisible();
+      await expect(commandRow).not.toContainText("Running");
+      const terminal = header.locator(".xterm-screen");
+      const [terminalBounds, paneBounds] = await Promise.all([
+        terminal.boundingBox(),
+        pane.boundingBox(),
+      ]);
+      expect(paneBounds!.x).toBeGreaterThan(terminalBounds!.x);
+      const [askBounds, findBounds, moreBounds] = await Promise.all([
+        ask.boundingBox(),
+        find.boundingBox(),
+        more.boundingBox(),
+      ]);
+      expect(Math.abs(askBounds!.y - findBounds!.y)).toBeLessThan(5);
+      expect(Math.abs(findBounds!.y - moreBounds!.y)).toBeLessThan(5);
+      await page.evaluate(() => {
+        const fixture = window as unknown as {
+          serversFixtureRequests: Array<{ command: string; input: { id: string } }>;
+          serversFixtureTerminalOutput(id: string, text: string): void;
+        };
+        const { input } = fixture.serversFixtureRequests.find(
+          ({ command }) => command === "ssh_terminal_spawn",
+        )!;
+        fixture.serversFixtureTerminalOutput(input.id, "\x1b[2J\x1b[Hprivate log");
+      });
+      await page.screenshot({ path: `${directory}/ask-ai-${theme}-${width}.png` });
+      await page.evaluate(() =>
+        (
+          window as unknown as { serversFixtureSelectAgentText(): void }
+        ).serversFixtureSelectAgentText(),
+      );
+      await page.getByRole("button", { name: "Send to agent", exact: true }).click();
+      const selections = await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              serversFixtureSharedSelections: Array<{ sessionId: string; text: string }>;
+            }
+          ).serversFixtureSharedSelections,
+      );
+      expect(selections).toEqual([{ sessionId: "agent-fixture-3", text: "private log" }]);
+      await expect(pane.locator("[data-session-composer]")).toContainText("private log");
+      await pane.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(pane).toHaveCount(0);
+      await expect(terminal).toBeVisible();
+    });
+  }
+}
+
 test("pastes local clipboard text into the active SSH terminal with both gestures", async ({
   page,
   context,

@@ -12,10 +12,14 @@ const MessageSchema = z.object({
   targetSessionId: z.string(),
   targetRunId: z.string().optional(),
   text: z.string().max(20_000),
+  /** The sender's own words, without the Host's delivery wrapper. */
+  body: z.string().max(20_000).optional(),
   mode: z.enum(["auto", "queue", "steer"]),
   state: z.enum(["pending", "dispatching", "settled"]),
-  delivery: z.enum(["queued", "started", "steered", "failed", "unknown"]),
+  delivery: z.enum(["queued", "started", "steered", "failed", "cancelled", "unknown"]),
   error: z.string().optional(),
+  /** Recipient transcript block that carries the message, when the Host knows it. */
+  blockId: z.string().optional(),
   createdAt: z.number(),
 });
 export type AgentMessage = z.infer<typeof MessageSchema>;
@@ -29,6 +33,22 @@ export class AgentMessageStore {
   }
 
   async list(): Promise<AgentMessage[]> {
+    return structuredClone(await this.load());
+  }
+
+  async forTarget(sessionId: string, projectId: string): Promise<AgentMessage[]> {
+    const messages = await this.load();
+    return structuredClone(
+      messages.filter(
+        (message) =>
+          message.targetSessionId === sessionId &&
+          message.projectId === projectId &&
+          !!message.targetRunId,
+      ),
+    );
+  }
+
+  private async load(): Promise<AgentMessage[]> {
     if (!this.messages) {
       const loaded = await readStateFile(
         this.file,
@@ -37,9 +57,9 @@ export class AgentMessageStore {
       );
       if (loaded.status === "corrupt")
         throw new Error("Agent message state is unreadable; repair is required.");
-      this.messages = loaded.status === "ok" ? loaded.value : [];
+      this.messages ??= loaded.status === "ok" ? loaded.value : [];
     }
-    return structuredClone(this.messages);
+    return this.messages;
   }
 
   // The communication service serializes every read/modify/write.

@@ -4899,6 +4899,7 @@
   "SSH user": "SSH-Benutzer",
   "Save rule": "Regel speichern",
   "Saved SSH commands": "Gespeicherte SSH-Befehle",
+  "Save command": "Befehl speichern",
   "Saved commands": "Gespeicherte Befehle",
   "Separate tags with commas.": "Tags durch Kommas trennen.",
   "Server filters": "Serverfilter",
@@ -10686,6 +10687,7 @@
   "Could not delete sessions: {p0}": "Sitzungen konnten nicht gelöscht werden: {p0}",
   "Still saving. Try again in a moment.": "Wird noch gespeichert. Versuche es gleich noch einmal.",
   "Connect this project's machine to delete its sessions.": "Verbinde den Rechner dieses Projekts, um seine Sitzungen zu löschen.",
+  "Connect this project’s machine to load its sessions.": "Verbinde den Rechner dieses Projekts, um seine Sitzungen zu laden.",
   "Waiting for orchestrator": "Warten auf Orchestrator",
   "Waiting for answers": "Warten auf Antworten",
   "running in background": "läuft im Hintergrund",
@@ -12418,5 +12420,9 @@
   "Voice could not start: the assistant did not respond.": "Sprache konnte nicht gestartet werden: Der Assistent hat nicht reagiert.",
   "Voice could not start: the conversation did not respond.": "Sprache konnte nicht gestartet werden: Die Unterhaltung hat nicht reagiert.",
   "Voice could not start: the voice key was not issued.": "Sprache konnte nicht gestartet werden: Der Sprachschlüssel wurde nicht ausgestellt.",
-  "Voice could not start: the voice runtime did not register.": "Sprache konnte nicht gestartet werden: Die Sprach-Laufzeit wurde nicht registriert."
+  "Voice could not start: the voice runtime did not register.": "Sprache konnte nicht gestartet werden: Die Sprach-Laufzeit wurde nicht registriert.",
+  "Host CPU profiles": "Host-CPU-Profile",
+  "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.": "Speichert ein 30-Sekunden-CPU-Profil im Host-Protokollordner, wenn die Ereignisschleife wiederholt hängt.",
+  "For developers. Starting a profile briefly freezes the Host, so keep this off.": "Für Entwickler. Das Starten eines Profils friert den Host kurz ein, daher ausgeschaltet lassen.",
+  "Could not reach this computer's Host setting: {p1}": "Die Host-Einstellung dieses Computers ist nicht erreichbar: {p1}"
 }

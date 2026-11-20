@@ -6246,7 +6246,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
       await server.closeResources();
       await engine.close();
       await store.close();
-      rmSync(directory, { recursive: true, force: true });
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5 });
     });
     const sessionId = (
       await engine.command({
@@ -6264,6 +6264,63 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
   const aware = { leaseAware: true };
   const row = (id: string, extra: object = {}) => ({ id, text: id, attachments: [], ...extra });
 
+  it("automatically takes over and drains a stalled desktop-only queue", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      const s = await adopted();
+      const sessionId = "desktop-only-queue";
+      const source = await s.store.session(s.sessionId);
+      const snapshot = { ...source, session: { ...source.session, id: sessionId } };
+      vi.spyOn(s.desktop, "projectCwdAsync").mockResolvedValue(snapshot.session.cwd);
+      vi.spyOn(s.desktop, "stampAsync").mockResolvedValue({
+        updatedAt: snapshot.updatedAt,
+        running: false,
+      });
+      vi.spyOn(s.desktop, "snapshotMetaAsync").mockResolvedValue({ ...snapshot, lastUserText: "" });
+      vi.spyOn(s.desktop, "snapshotAsync").mockResolvedValue(snapshot);
+      const params = { sessionId, clientId: "desktop:win1", ...aware };
+      const changed = await s.call("sessions.queue.change", {
+        ...params,
+        before: { messages: [] },
+        after: { messages: [row("queued")], status: "paused" },
+      });
+      expect(changed.error).toBeUndefined();
+      const owned = (await s.call("sessions.queue.lease", params)).result;
+      const activated = await s.call("sessions.queue.change", {
+        ...params,
+        before: { messages: owned.messages, status: "paused" },
+        after: { messages: owned.messages, status: "active" },
+      });
+      expect(activated.result.status).toBe("active");
+      expect(await s.store.sessionAuthority(sessionId)).toBeUndefined();
+      let released = false;
+      for (let waited = 0; waited < 90_000 && !released; waited += 5_000) {
+        await vi.advanceTimersByTimeAsync(5_000);
+        const beat = await s.call("sessions.desktopLive", {
+          clientId: "win1",
+          sessions: [],
+          queueLeases: [{ sessionId, epoch: owned.drain.epoch }],
+        });
+        released = beat.result.queueLeases?.[sessionId] === null;
+      }
+      expect(released).toBe(true);
+      await vi.waitFor(
+        async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          expect(s.send).toHaveBeenCalledOnce();
+        },
+        { timeout: 10_000 },
+      );
+      s.finish();
+      await vi.waitFor(async () => {
+        expect((await s.call("sessions.queue.get", params)).result.messages).toEqual([]);
+        expect(await s.store.sessionStatus(sessionId)).toBe("idle");
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("leaves a queued row that needs a configure alone while the host runs a turn of the adopted conversation", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     try {
@@ -6274,7 +6331,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         sessionId: s.sessionId,
         text: "mac turn",
       } as never);
-      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), { timeout: 10_000 });
       await s.call("sessions.queue.change", {
         sessionId: s.sessionId,
         clientId: "remote:mac",
@@ -6325,7 +6382,7 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         sessionId: s.sessionId,
         text: "mac turn",
       } as never);
-      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), { timeout: 10_000 });
       await s.call("sessions.queue.change", {
         sessionId: s.sessionId,
         clientId: "desktop:win1",
@@ -6393,27 +6450,64 @@ describe("host turns in an adopted conversation and desktop-only queue blocks", 
         { timeout: 10_000 },
       );
       s.send.mockClear();
-      const beat = async (blocked: boolean) =>
+      const idle = await s.store.session(s.sessionId);
+      const desktopUpdatedAt = idle.updatedAt - 1;
+      const desktopCopy = vi.spyOn(s.desktop, "snapshotAsync").mockResolvedValue({
+        ...idle,
+        updatedAt: desktopUpdatedAt,
+        session: { ...idle.session, blocks: idle.session.blocks.slice(0, 1) },
+      });
+      await s.store.save(
+        {
+          ...idle,
+          revision: idle.revision + 1,
+          desktop: { updatedAt: desktopUpdatedAt, revision: idle.revision },
+        },
+        { type: "desktopSeen" },
+      );
+      const stamp = vi.spyOn(s.desktop, "stampAsync").mockResolvedValue({
+        updatedAt: desktopUpdatedAt + 1,
+        running: false,
+      });
+      const beat = async (syncPending?: boolean) =>
         (
           await s.call("sessions.desktopLive", {
             clientId: "win1",
             sessions: [],
             queueLeases: [
-              { sessionId: s.sessionId, epoch: lease.epoch, ...(blocked ? { blocked: true } : {}) },
+              { sessionId: s.sessionId, epoch: lease.epoch, blocked: true, syncPending },
             ],
           })
         ).result.queueLeases?.[s.sessionId];
-      // Blocked for three minutes of beats: the lease stays, the host sends nothing.
-      for (let waited = 0; waited < 180_000; waited += 5_000) {
-        await vi.advanceTimersByTimeAsync(5_000);
-        expect(await beat(true)).toMatchObject({ holder: "desktop:win1", epoch: lease.epoch });
+      // Both a hard block and unseen desktop work keep ownership on the desktop.
+      for (const syncPending of [undefined, true]) {
+        for (let waited = 0; waited < 70_000; waited += 5_000) {
+          await vi.advanceTimersByTimeAsync(5_000);
+          expect(await beat(syncPending)).toMatchObject({
+            holder: "desktop:win1",
+            epoch: lease.epoch,
+          });
+        }
       }
       expect(s.send).not.toHaveBeenCalled();
-      // The conflict is resolved but the window still does not send: after the stall limit the host does.
+      // The mirror is waiting on history already stored on the Host. The Host
+      // can send when the desktop's lease stalls.
+      stamp.mockResolvedValue({ updatedAt: desktopUpdatedAt, running: false });
+      const verified = await s.store.session(s.sessionId);
+      desktopCopy.mockResolvedValueOnce({
+        ...verified,
+        updatedAt: desktopUpdatedAt,
+        session: {
+          ...verified.session,
+          blocks: [{ id: "diverged", role: "user", text: "different" }],
+        },
+      });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await beat(true)).toMatchObject({ holder: "desktop:win1", epoch: lease.epoch });
       let released = false;
       for (let waited = 0; waited < 90_000 && !released; waited += 5_000) {
         await vi.advanceTimersByTimeAsync(5_000);
-        released = (await beat(false)) === null;
+        released = (await beat(true)) === null;
       }
       expect(released).toBe(true);
       await vi.waitFor(

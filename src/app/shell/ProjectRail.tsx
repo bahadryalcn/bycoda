@@ -32,7 +32,6 @@ import {
   FolderPlus,
   FolderTree,
   GitBranch,
-  Internet,
   Inbox,
   Link as LinkIcon,
   Lock,
@@ -2268,7 +2267,7 @@ function ProjectCard({
   const rowTipDetails = [
     remote ? (
       <span key="remote-path" className="flex items-start gap-1.5">
-        <Internet className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+        <Server className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
         <span>{t("{p0} on {p1}", { p0: remote.cwd, p1: hostLabel || t("another machine") })}</span>
       </span>
     ) : (
@@ -2478,7 +2477,7 @@ function ProjectCard({
               tone="secondary"
               className="relative grid size-4 shrink-0 place-items-center @max-[140px]/rail:hidden"
             >
-              <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
+              <Server className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
               <StatusDot
                 label={connectionStatus}
                 aria-hidden="true"

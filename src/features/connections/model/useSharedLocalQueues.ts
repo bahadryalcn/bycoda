@@ -95,26 +95,29 @@ const inThisWindow = (id: string): boolean =>
 export function heldSharedQueueLeases(): {
   sessionId: string;
   epoch: number;
-  /** This window holds the lease but cannot send now: the host must not wait for it. */
+  /** The window cannot send. Older Hosts treat every such report as a hard block. */
   blocked?: true;
+  syncPending?: true;
 }[] {
   return [...localQueues.entries()].flatMap(([id, entry]) => {
     const lease = inThisWindow(id) ? entry.client.heldLease() : undefined;
-    return lease
-      ? [{ ...lease, ...(drainBlocked(id, entry) ? { blocked: true as const } : {}) }]
-      : [];
+    if (!lease) return [];
+    const session = windowSessions ? sessionById(windowSessions(), id) : undefined;
+    if (lateSettlementPossible(id) || entry.client.snapshot().recovery)
+      return [{ ...lease, blocked: true as const }];
+    if (session?.adoptedSyncConflict)
+      return [
+        {
+          ...lease,
+          blocked: true as const,
+          ...(mirrorSyncPending(session) ? { syncPending: true as const } : {}),
+        },
+      ];
+    return [lease];
   });
 }
-/**
- * The lease is held but the head cannot go out from this window: the adopted
- * conversation diverged from the host copy, an unconfirmed delivery is under
- * review, or a late provider answer is still possible. The host must not send it
- * in this window's place either.
- */
-function drainBlocked(id: string, entry: Entry): boolean {
-  const session = windowSessions ? sessionById(windowSessions(), id) : undefined;
-  const state = entry.client.snapshot();
-  return !!session?.adoptedSyncConflict || lateSettlementPossible(id) || !!state.recovery;
+function mirrorSyncPending(session: Session): boolean {
+  return !!session.adoptedSyncConflict && !session.adoptedDivergence;
 }
 /** The host's answer to the heartbeat: a lease that was lost is looked at again at once. */
 export function noteSharedQueueLeases(
@@ -721,6 +724,15 @@ export function useSharedLocalQueues(
               session.id,
               desktopQueueClientId,
             );
+            client.allowAutomaticLease = () => {
+              const latest = sessionById(sessionsRef.current, session.id);
+              return (
+                !!latest &&
+                (!mirrorSyncPending(latest) ||
+                  lateSettlementPossible(session.id) ||
+                  !!client.snapshot().recovery)
+              );
+            };
             entry = {
               client,
               observed: fields(session),
