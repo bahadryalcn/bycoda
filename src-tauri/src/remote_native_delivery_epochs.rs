@@ -101,7 +101,10 @@ pub(super) fn gap_outcome(params: &Value, response: &Value) -> Result<bool, Stri
         }
     }
     match response["outcome"].as_str() {
+        // `abandoned`: Host retired an admitted format that ended without a result. No
+        // result can publish and format is never replayed, so the slot is fenced the same way.
         Some("not_admitted") => Ok(true),
+        Some("abandoned") if params["kind"] == "native.services.workspace.format" => Ok(true),
         Some("admitted") => Ok(false),
         _ => Err(invalid()),
     }
@@ -204,6 +207,21 @@ pub(super) fn gap_error(stage: &str, error: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_abandoned_host_format_fences_its_slot_but_no_other_kind_does() {
+        let params = |kind: &str| json!({"ownerId":"o","generation":2,"sequence":7,"kind":kind,"sha256":"a","byteLength":1});
+        let reply = |params: &Value, outcome: &str| {
+            let mut reply = params.clone();
+            reply["outcome"] = json!(outcome);
+            reply
+        };
+        let format = params("native.services.workspace.format");
+        assert_eq!(gap_outcome(&format, &reply(&format, "abandoned")), Ok(true));
+        assert_eq!(gap_outcome(&format, &reply(&format, "admitted")), Ok(false));
+        let finish = params("native.services.conversation.desktop.finish");
+        assert!(gap_outcome(&finish, &reply(&finish, "abandoned")).is_err());
+    }
 
     #[test]
     fn gap_lookup_waits_out_its_retry_after_a_failure_only() {

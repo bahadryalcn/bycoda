@@ -20,9 +20,20 @@ import {
   readNativeDeliveryQuota,
 } from "./native-delivery-quota";
 import {
+  nativeDeliveryEpochOriginalId,
   parseNativeDeliveryEpochOriginalId,
   type NativeDeliveryEpochFence,
+  type NativeDeliveryEpochGapParams,
 } from "../../src/shared/model/host-contracts/native-delivery-epochs";
+
+/** Consumed digest of a format retired without a result (see `abandonFormat`). */
+const ABANDONED_FORMAT = (() => {
+  const raw = '{"abandoned":true}';
+  return {
+    sha256: createHash("sha256").update(raw).digest("hex"),
+    byteLength: Buffer.byteLength(raw),
+  };
+})();
 
 export type NativeDeliveryKind =
   | "buffer"
@@ -391,7 +402,14 @@ export function createNativeDeliveryStore(store: HostStore) {
       status: epochs.status,
       compact: epochs.compact,
       close: epochs.close,
-      resolveGap: epochs.resolveGap,
+      async resolveGap(principal: string, input: NativeDeliveryEpochGapParams) {
+        const resolved = await epochs.resolveGap(principal, input);
+        if (resolved.outcome !== "admitted" || input.kind !== "native.services.workspace.format")
+          return resolved;
+        return (await abandonFormat(principal, input))
+          ? { ...resolved, outcome: "abandoned" as const }
+          : resolved;
+      },
     },
     read,
     readMetadata,
@@ -661,6 +679,65 @@ export function createNativeDeliveryStore(store: HostStore) {
       if (remaining === 0) detachedByPrincipal.delete(principal);
       else detachedByPrincipal.set(principal, remaining);
     };
+  }
+  /**
+   * Retire an admitted format whose sole continuation has ended without a result: a failed
+   * effect released its reservation, or a restart lost it. Format only computes edits, so
+   * nothing is undone or replayed; the producer can then fence its slot instead of holding
+   * the epoch prefix forever. True also when an earlier call already abandoned it.
+   */
+  async function abandonFormat(principal: string, input: NativeDeliveryEpochGapParams) {
+    const kind = "native.services.workspace.format" as const;
+    const originalId = nativeDeliveryEpochOriginalId(input);
+    if (inflight.has(inflightKey(principal, kind, { originalId }))) return false;
+    return store.transaction(async () => {
+      const row = await store.db
+        .prepare(`SELECT state,result_sha256,result_bytes,consumed_sha256,consumed_bytes,
+          result_json IS NULL AS no_result,proof_json IS NULL AS no_proof
+          FROM native_delivery_receipts WHERE environment_id=? AND principal_id=? AND kind=? AND original_id=?
+          AND sha256=? AND byte_length=? AND epoch_owner_id=? AND epoch_generation=? AND epoch_sequence=?`)
+        .get(
+          store.environmentId,
+          principal,
+          kind,
+          originalId,
+          input.sha256,
+          input.byteLength,
+          input.ownerId,
+          input.generation,
+          input.sequence,
+        );
+      if (!row) return false;
+      if (row.state === "retired")
+        return (
+          row.consumed_sha256 === ABANDONED_FORMAT.sha256 &&
+          row.consumed_bytes === ABANDONED_FORMAT.byteLength
+        );
+      if (
+        row.state !== "admitted" ||
+        row.result_sha256 !== null ||
+        row.result_bytes !== null ||
+        row.consumed_sha256 !== null ||
+        row.consumed_bytes !== null ||
+        row.no_result !== 1 ||
+        row.no_proof !== 1
+      )
+        return false;
+      await store.db.checkAuthorization();
+      const changed = await store.db
+        .prepare(`UPDATE native_delivery_receipts SET state='retired',reserved_bytes=0,consumed_sha256=?,consumed_bytes=?
+          WHERE environment_id=? AND principal_id=? AND kind=? AND original_id=? AND state='admitted'
+          AND result_sha256 IS NULL AND consumed_sha256 IS NULL`)
+        .run(
+          ABANDONED_FORMAT.sha256,
+          ABANDONED_FORMAT.byteLength,
+          store.environmentId,
+          principal,
+          kind,
+          originalId,
+        );
+      return Number(changed.changes) === 1;
+    }, "critical");
   }
   const inflightKey = (
     principal: string,

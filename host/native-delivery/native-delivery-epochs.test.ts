@@ -848,6 +848,57 @@ const gapRows = async (f: Awaited<ReturnType<typeof fixture>>) =>
     )?.count,
   );
 
+it("abandons an admitted format whose effect ended without a result, so its slot no longer holds the prefix", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID());
+  let runs = 0;
+  // Repro: the formatter failed after admission; status says result-unavailable forever.
+  await f.journal.execute(f.principal, format, identity(epoch, 1), async () => {
+    runs++;
+    throw new Error("Formatter exited without a result");
+  });
+  await retire(f, epoch, 2);
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, format))).toEqual({
+    ...gap(epoch, 1, format),
+    outcome: "abandoned",
+  });
+  // A retry after a lost reply gets the same answer; nothing was re-run.
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, format))).toMatchObject({
+    outcome: "abandoned",
+  });
+  await f.journal.execute(f.principal, format, identity(epoch, 1), async () => {
+    runs++;
+  });
+  expect(runs).toBe(1);
+  expect(
+    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 2 }),
+  ).toMatchObject({ through: 2 });
+});
+
+it("never abandons a running format or an admitted finish, whose effect is real", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID());
+  let release!: () => void;
+  const running = f.journal.execute(
+    f.principal,
+    format,
+    identity(epoch, 1),
+    () => new Promise<void>((resolve) => (release = resolve)),
+  );
+  await vi.waitFor(() => expect(release).toBeDefined());
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, format))).toMatchObject({
+    outcome: "admitted",
+  });
+  release();
+  await running;
+  await f.journal.execute(f.principal, finish, identity(epoch, 2), async () => {
+    throw new Error("Desktop finish failed");
+  });
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 2))).toMatchObject({
+    outcome: "admitted",
+  });
+});
+
 it("resolves a never-admitted hole only through an exact no-effect fence, then compacts across it", async () => {
   const f = await fixture(),
     epoch = await f.journal.epochs.open(f.principal, randomUUID()),
