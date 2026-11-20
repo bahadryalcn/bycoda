@@ -566,10 +566,10 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         {
             std::time::Duration::from_secs(1800)
         }
-        // The isolated assistant reply adapter permits a 90 s model turn.
-        // Keep its durable request identity through that bounded operation.
+        // A thread send waits for the assistant's reply; its contract allows 150 s so the
+        // phone's own 120 s wait decides. Keep the durable request identity past that deadline.
         "assistant.request" if params.get("op").and_then(Value::as_str) == Some("threads.send") => {
-            std::time::Duration::from_secs(120)
+            std::time::Duration::from_secs(160)
         }
         // Interactive HTTP-only methods that a send, the composer or an open
         // pane awaits. A hung Host must not hold a native worker (and the user's

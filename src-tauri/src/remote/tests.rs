@@ -1082,7 +1082,7 @@ fn assistant_and_desktop_owner_routes_are_finite_and_not_shared_reads() {
     }
     assert_eq!(
         rpc_timeout("assistant.request", &json!({"op":"threads.send"})),
-        std::time::Duration::from_secs(120)
+        std::time::Duration::from_secs(160)
     );
     assert_eq!(
         rpc_timeout("assistant.request", &json!({"op":"snapshot"})),
@@ -1219,7 +1219,14 @@ fn http_deadlines_outlast_every_long_contract_deadline() {
             continue;
         }
         checked += 1;
-        let http = rpc_timeout(method, &json!({}));
+        // Only an assistant thread send waits for a reply; its other operations answer at once
+        // and keep the default so a hung Host cannot hold a native worker.
+        let params = if method == "assistant.request" {
+            json!({"op": "threads.send"})
+        } else {
+            json!({})
+        };
+        let http = rpc_timeout(method, &params);
         assert!(
             http >= contract,
             "{method}: HTTP {http:?} < contract {contract:?}"
