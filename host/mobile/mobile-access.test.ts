@@ -121,7 +121,7 @@ describe("private mobile access", () => {
   // two Tailscale processes that blocked the Host event loop.
   it("reuses a status until the network changes and coalesces concurrent probes", async () => {
     let network = "Wi-Fi=192.168.1.5";
-    const run = vi.fn(async () => {
+    const run = vi.fn(async (_program: string, _args: string[]): Promise<string> => {
       throw new Error("Tailscale service is not running");
     });
     const service = createMobileAccessService(() => 3776, {

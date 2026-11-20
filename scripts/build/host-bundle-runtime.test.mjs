@@ -89,14 +89,14 @@ test("bundled readonly session helper runs with no TypeScript loader or ambient 
       kind: "desktop",
       paths: [],
       platform: process.platform,
-      method: "stamp",
+      method: "snapshotStamp",
       sessionId: "missing",
     },
   });
   assert.equal(await exit, 0);
   assert.deepEqual(reply, {
     id: "packaged-original",
-    value: [],
+    value: { record: undefined, rows: [] },
     error: undefined,
     errorKind: undefined,
   });

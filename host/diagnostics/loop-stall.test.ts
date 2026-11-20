@@ -13,7 +13,14 @@ afterEach(() => {
 function fixture(profileDir?: string) {
   vi.useFakeTimers();
   let clock = 0;
-  const log = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  const log = {
+    warn: vi.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    fatal: vi.fn(),
+    child: vi.fn(),
+  };
   const profiler = vi.fn(async () => '{"nodes":[]}');
   const watch = watchLoopStalls({ log, profileDir, profiler, now: () => clock });
   /** One timer tick that arrived `lagMs` late. */
