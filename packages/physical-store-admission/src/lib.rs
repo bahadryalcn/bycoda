@@ -324,11 +324,13 @@ impl Domain {
     }
 
     fn open_lock(&self, name: &str, anchor: &File) -> Result<File, Error> {
-        os::check_sidecar(anchor)?;
+        // Compare identities first: a replaced sidecar leaves the held anchor with no
+        // links, which is a change of file, not an unsafe one.
         let current = os::safe_file(&self.directory.path.join(name), false)?;
         if os::file_identity(&current)?.0 != os::file_identity(anchor)?.0 {
             return Err(Error::Changed("lock sidecar"));
         }
+        os::check_sidecar(anchor)?;
         Ok(current)
     }
 }
