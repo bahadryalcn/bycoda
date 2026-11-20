@@ -177,6 +177,22 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn every_host_gap_outcome_passes_the_generated_wire_contract() {
+        // Repro: a stale manifest rejected Host's `abandoned` answer as "Host lookup failed",
+        // so the abandoned slot held the epoch prefix although Host had retired it.
+        let descriptor = &Contracts::get().unwrap().methods["native.delivery.epochs.gap.resolve"];
+        let reply = |outcome: &str| {
+            json!({"ownerId":"31d63f4c-e4b8-4e17-b801-576e20212913","generation":2,"sequence":10273,
+                "kind":"native.services.workspace.format","sha256":"a".repeat(64),"byteLength":1,
+                "outcome":outcome})
+        };
+        for outcome in ["not_admitted", "admitted", "abandoned"] {
+            assert!(descriptor.result.is_valid(&reply(outcome)), "{outcome}");
+        }
+        assert!(!descriptor.result.is_valid(&reply("retired")));
+    }
+
+    #[test]
     fn native_secret_and_ssh_authorization_match_the_generated_wire_contract() {
         let contracts = Contracts::get().unwrap();
         let method = "native.services.conversation.desktop.authorize";

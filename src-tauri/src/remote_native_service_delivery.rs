@@ -116,7 +116,9 @@ fn ensure_epoch(
             &epoch,
             channel.delivery_epoch_gaps_supported,
             |original| {
-                let gap_deadline = deadline.min(Instant::now() + epoch_wire::GAP_BUDGET);
+                // Not capped by the caller's deadline: a format request arrives with little of
+                // its 2 s left, so the Host retired the slot while the desktop had already given up.
+                let gap_deadline = Instant::now() + epoch_wire::GAP_BUDGET;
                 recover_epoch_gap(channel, original, gap_deadline)
             },
         )

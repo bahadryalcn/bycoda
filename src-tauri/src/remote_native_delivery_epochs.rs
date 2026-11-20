@@ -79,9 +79,12 @@ pub(super) fn gap_params(original: &journal::Original) -> Result<Value, String> 
         "byteLength":original.payload_bytes()}))
 }
 
-/// Host's answer for that exact identity. `true`: durable no-effect fence
-/// (never admitted, never admittable; not success). `false`: Host holds a
-/// receipt; resolve through ordinary delivery. Any mismatch is an error.
+/// Host's answer for that exact identity. `true`: the slot is fenced, either by a
+/// durable no-effect fence (never admitted, never admittable; not success) or
+/// because Host abandoned an admitted original nothing runs any more (no result
+/// can publish and it is never replayed; a buffer's next full report supersedes
+/// it). `false`: Host holds a live receipt; resolve through ordinary delivery.
+/// Any mismatch is an error.
 pub(super) fn gap_outcome(params: &Value, response: &Value) -> Result<bool, String> {
     let invalid = || "NATIVE_DELIVERY_EPOCH_INVALID: Host gap resolution is invalid".to_string();
     let fields = response.as_object().ok_or_else(invalid)?;
@@ -101,10 +104,7 @@ pub(super) fn gap_outcome(params: &Value, response: &Value) -> Result<bool, Stri
         }
     }
     match response["outcome"].as_str() {
-        // `abandoned`: Host retired an admitted format that ended without a result. No
-        // result can publish and format is never replayed, so the slot is fenced the same way.
-        Some("not_admitted") => Ok(true),
-        Some("abandoned") if params["kind"] == "native.services.workspace.format" => Ok(true),
+        Some("not_admitted" | "abandoned") => Ok(true),
         Some("admitted") => Ok(false),
         _ => Err(invalid()),
     }
@@ -191,6 +191,7 @@ pub(super) fn maintenance_params(
     Ok(compact_request(epoch, &plan))
 }
 
+/// A bounded class only: Host codes and transport errors may carry request data.
 pub(super) fn gap_error(stage: &str, error: &str) -> String {
     let code = error.split([':', ' ']).next().unwrap_or_default();
     if code.starts_with("NATIVE_DELIVERY_")
@@ -201,7 +202,26 @@ pub(super) fn gap_error(stage: &str, error: &str) -> String {
     {
         return format!("{stage} ({code})");
     }
-    stage.into()
+    let lower = error.to_ascii_lowercase();
+    let class =
+        if lower.contains("deadline") || lower.contains("timed out") || lower.contains("timeout") {
+            "timeout"
+        } else if [
+            "closed",
+            "disconnect",
+            "refused",
+            "reset",
+            "not connected",
+            "unavailable",
+        ]
+        .iter()
+        .any(|word| lower.contains(word))
+        {
+            "connection"
+        } else {
+            "other"
+        };
+    format!("{stage} ({class})")
 }
 
 #[cfg(test)]
@@ -209,7 +229,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_abandoned_host_format_fences_its_slot_but_no_other_kind_does() {
+    fn an_abandoned_host_original_fences_its_slot_for_every_kind() {
         let params = |kind: &str| json!({"ownerId":"o","generation":2,"sequence":7,"kind":kind,"sha256":"a","byteLength":1});
         let reply = |params: &Value, outcome: &str| {
             let mut reply = params.clone();
@@ -219,8 +239,34 @@ mod tests {
         let format = params("native.services.workspace.format");
         assert_eq!(gap_outcome(&format, &reply(&format, "abandoned")), Ok(true));
         assert_eq!(gap_outcome(&format, &reply(&format, "admitted")), Ok(false));
-        let finish = params("native.services.conversation.desktop.finish");
-        assert!(gap_outcome(&finish, &reply(&finish, "abandoned")).is_err());
+        for kind in ["native.services.conversation.desktop.finish", "buffer"] {
+            let other = params(kind);
+            assert_eq!(gap_outcome(&other, &reply(&other, "abandoned")), Ok(true));
+        }
+        assert!(gap_outcome(&format, &reply(&format, "retired")).is_err());
+    }
+
+    #[test]
+    fn a_gap_failure_names_a_bounded_class_and_no_request_data() {
+        assert_eq!(
+            gap_error("Host lookup failed", "NATIVE_DELIVERY_EPOCH_FENCED: x"),
+            "Host lookup failed (NATIVE_DELIVERY_EPOCH_FENCED)"
+        );
+        assert_eq!(
+            gap_error(
+                "Host lookup failed",
+                "request timed out after 3s for /secret"
+            ),
+            "Host lookup failed (timeout)"
+        );
+        assert_eq!(
+            gap_error("Host lookup failed", "socket closed"),
+            "Host lookup failed (connection)"
+        );
+        assert_eq!(
+            gap_error("Host lookup failed", "boom"),
+            "Host lookup failed (other)"
+        );
     }
 
     #[test]

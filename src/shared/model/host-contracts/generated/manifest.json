@@ -35196,6 +35196,38 @@
               "outcome"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+              "generation": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+              "kind": {
+                "enum": [
+                  "buffer",
+                  "native.services.conversation.desktop.finish",
+                  "native.services.workspace.format"
+                ],
+                "type": "string"
+              },
+              "outcome": { "const": "abandoned", "type": "string" },
+              "ownerId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
+              "sequence": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+              "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+            },
+            "required": [
+              "ownerId",
+              "generation",
+              "sequence",
+              "kind",
+              "sha256",
+              "byteLength",
+              "outcome"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -82359,5 +82391,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "2d7f13b95820f19ca8912f7a71e36bcee38361ff1932f45dd4f9024551497c0f"
+  "schemaHash": "da82e647df4beff1183b75889a0e464fc58aaa6cff42f3d05d5d260a69bbd64d"
 }

@@ -67,9 +67,10 @@ export type NativeDeliveryEpochGapParams = z.infer<typeof NativeDeliveryEpochGap
 /** `not_admitted` is a durable Host witness that this original was never admitted
  * and never can be: no effect, no result and no success. `admitted` means Host
  * retains its receipt; the producer must resolve it through ordinary delivery.
- * `abandoned` (workspace format only) means Host admitted it, its sole continuation
- * ended without a result, and Host retired the receipt: no result can ever publish and
- * the effect-free format is never replayed, so the producer may fence the slot. */
+ * `abandoned` means Host admitted it, nothing is running it, and Host retired the receipt
+ * without a consumable result: no result can ever publish and the original is never
+ * replayed, so the producer fences the slot. A buffer producer then relies on its next
+ * full report, which supersedes the lost one. */
 export const NativeDeliveryEpochGapResultSchema = z.discriminatedUnion("outcome", [
   NativeDeliveryEpochGapParamsSchema.extend({ outcome: z.literal("not_admitted") }),
   NativeDeliveryEpochGapParamsSchema.extend({ outcome: z.literal("admitted") }),
