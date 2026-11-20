@@ -429,7 +429,9 @@ impl NativeWorkspaceTransport {
             cursor = Some(original.ack_cursor());
             if original.method() == "native.buffers.update" {
                 // A consumed local report can outlive its remote receipt. Probe
-                // before cleanup; absence/unknown is no proof of remote retirement.
+                // before cleanup; absence is no proof of remote retirement. `unknown`
+                // still gets the ACK: this report was consumed, so Host retires a
+                // recorded receipt whose proof aged out and refuses anything else.
                 let Ok(status) = call_until(channel, STATUS, binding(&original), None, deadline)
                 else {
                     continue;
@@ -437,7 +439,7 @@ impl NativeWorkspaceTransport {
                 if matches(&status.reply.value, &original)
                     && matches!(
                         status.reply.value["state"].as_str(),
-                        Some("recorded" | "retired")
+                        Some("recorded" | "retired" | "unknown")
                     )
                 {
                     let _held =

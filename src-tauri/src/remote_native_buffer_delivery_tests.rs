@@ -721,6 +721,45 @@ fn absent_remote_receipt_keeps_consumed_outbox_without_sending_ack() {
 }
 
 #[test]
+fn unknown_remote_receipt_of_a_consumed_report_still_gets_its_ack() {
+    // Repro: Host's recorded receipt lost its snapshot proof, so status said `unknown`
+    // and the consumed report never sent its ACK; its slot held the epoch prefix.
+    let (done, wait) = mpsc::channel();
+    let server = serve(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &[APPLY, STATUS, ACK], "host.1").await;
+        let status = next(&mut socket).await;
+        assert_eq!(status["method"], STATUS);
+        let mut unknown = status["params"].clone();
+        unknown["state"] = json!("unknown");
+        result(&mut socket, &status, unknown).await;
+        let ack = next(&mut socket).await;
+        assert_eq!(ack["method"], ACK);
+        result(&mut socket, &ack, retired(&ack["params"])).await;
+        await_done(&mut socket, wait).await;
+    });
+    let fixture = Fixture::new(&server.endpoint);
+    let transport = fixture.ack_transport();
+    let original = journal::prepare(
+        fixture.store(),
+        "ack:unknown-receipt",
+        &ws_fingerprint(&fixture.machine),
+        "native.buffers.update",
+        &serde_json::to_string(&params()).unwrap(),
+    )
+    .unwrap();
+    let original = journal::mark_possible(fixture.store(), &original).unwrap();
+    let original =
+        journal::record_result(fixture.store(), &original, r#"{"acknowledged":true}"#).unwrap();
+    journal::acknowledge(fixture.store(), &original).unwrap();
+    transport
+        .reconcile_buffer_acknowledgements(fixture.store())
+        .unwrap();
+    assert!(fixture.remote_ack_outbox().is_empty());
+    done.send(()).unwrap();
+}
+
+#[test]
 fn lost_remote_ack_reopens_to_ack_only_without_replaying_original_or_consumer() {
     let (done, wait) = mpsc::channel();
     let server = serve(move |listener| async move {
