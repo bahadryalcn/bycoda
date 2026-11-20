@@ -30,6 +30,11 @@ import { Composer, ComposerAction } from "./Composer";
 import { setHarnessModeLimits, type ComposerTurnOptions } from "../model/session";
 import { submitAfterProjectSync } from "../../../app/model/submissionAcceptance";
 import { savePromptTemplates, type PromptTemplate } from "../model/promptTemplates";
+import {
+  beginDeliveryProgress,
+  clearDeliveryProgress,
+  updateDeliveryProgress,
+} from "../model/deliveryProgress";
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
 async function tooltipText(element: HTMLElement): Promise<string> {
@@ -92,6 +97,31 @@ async function renderComposer(
 }
 
 describe("retained queue-row actions", () => {
+  it("shows one polite ownership status alongside the retained row", async () => {
+    const row = { id: "writer-wait", text: "Review this", attachments: [] };
+    const waiting = "Waiting for the previous run to finish.";
+    const blocked = "Check the conversation on its Host before resuming.";
+    const progress = beginDeliveryProgress("s1", row.id, "preparing");
+    updateDeliveryProgress("s1", progress, "waiting", waiting, false, true);
+    try {
+      await renderComposer({ queuedMessages: [row], queueStatus: "active" }, vi.fn());
+      const queue = container.querySelector("[data-message-queue-card]")!;
+      const countStatus = (text: string) =>
+        [...queue.querySelectorAll('[role="status"]')].filter((item) => item.textContent === text)
+          .length;
+      expect(countStatus(waiting)).toBe(1);
+      await act(async () =>
+        updateDeliveryProgress("s1", progress, "rejected", blocked, false, true),
+      );
+      await renderComposer({ queuedMessages: [row], queueStatus: "paused" }, vi.fn());
+      expect(countStatus(waiting)).toBe(0);
+      expect(countStatus(blocked)).toBe(1);
+      expect(queue.querySelector('[role="alert"]')).toBeNull();
+      expect(queue.textContent).toContain(row.text);
+    } finally {
+      await act(async () => clearDeliveryProgress("s1", progress));
+    }
+  });
   it.each([
     { harness: "antigravity" as const, intent: "default" as const },
     { harness: "claude" as const, intent: "plan" as const },

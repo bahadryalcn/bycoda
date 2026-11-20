@@ -18,6 +18,8 @@ export type DeliveryProgress = {
   startedAt: number;
   detail?: string;
   noticeOnly?: boolean;
+  /** Ownership feedback belongs beside the initiating queue controls. */
+  queueOnly?: boolean;
   /** A manual review must not discard ownership of an outstanding late acknowledgement. */
   reconcileUntil?: number;
 };
@@ -38,7 +40,7 @@ const pending = (value: DeliveryProgress) =>
  * dropped when the message settles otherwise, its progress is cleared, or another message
  * starts sending.
  */
-export type WaitingDelivery = { messageId: string; detail?: string };
+export type WaitingDelivery = { messageId: string; detail?: string; queueOnly?: boolean };
 const waiting = new Map<string, WaitingDelivery>();
 export const readWaitingDelivery = (sessionId: string) => waiting.get(sessionId);
 function forgetWaiting(sessionId: string, messageId?: string) {
@@ -84,6 +86,7 @@ export function updateDeliveryProgress(
   stage: DeliveryStage,
   detail?: string,
   noticeOnly = false,
+  queueOnly = false,
 ) {
   const current = operations.get(sessionId)?.get(owner.messageId);
   if (current?.operationId !== owner.operationId) return;
@@ -92,12 +95,21 @@ export function updateDeliveryProgress(
     stage,
     detail,
     noticeOnly,
+    queueOnly,
     ...(stage === "unknown" ? { reconcileUntil: Date.now() + 6 * 60_000 } : {}),
   });
   if (stage === "waiting") {
     const last = waiting.get(sessionId);
-    if (last?.messageId !== owner.messageId || last.detail !== detail)
-      waiting.set(sessionId, { messageId: owner.messageId, detail });
+    if (
+      last?.messageId !== owner.messageId ||
+      last.detail !== detail ||
+      !!last.queueOnly !== queueOnly
+    )
+      waiting.set(sessionId, {
+        messageId: owner.messageId,
+        detail,
+        ...(queueOnly ? { queueOnly } : {}),
+      });
   } else if (!pending({ ...current, stage })) forgetWaiting(sessionId, owner.messageId);
   publish(sessionId);
 }

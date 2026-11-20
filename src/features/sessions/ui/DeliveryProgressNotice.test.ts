@@ -517,6 +517,37 @@ it("keeps one waiting notice across automatic retries and honours its dismissal"
   await act(async () => root.unmount());
 });
 
+it("leaves ownership feedback beside the queue during waiting, retry and hold", async () => {
+  const first = beginDeliveryProgress("progress-chat", row.id, "preparing");
+  updateDeliveryProgress(
+    "progress-chat",
+    first,
+    "waiting",
+    "Waiting for the previous run to finish.",
+    false,
+    true,
+  );
+  const { container, root } = await renderNotice([row]);
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
+  let retry: ReturnType<typeof beginDeliveryProgress>;
+  await act(async () => {
+    retry = beginDeliveryProgress("progress-chat", row.id, "claiming");
+  });
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
+  await act(async () =>
+    updateDeliveryProgress(
+      "progress-chat",
+      retry,
+      "rejected",
+      "Check the conversation on its Host before resuming.",
+      false,
+      true,
+    ),
+  );
+  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
+  await act(async () => root.unmount());
+});
+
 it("clears a waiting notice whose row left the queue", async () => {
   resetDeliveryNoticeDismissals();
   const progress = beginDeliveryProgress("progress-chat", row.id, "preparing");

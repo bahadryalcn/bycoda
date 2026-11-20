@@ -18,11 +18,19 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ArrowDown, ArrowLeft, CornerDownRight, Square } from "../../../shared/ui/icons";
+import {
+  ArrowDown,
+  ArrowLeft,
+  CornerDownRight,
+  Maximize2,
+  Minimize2,
+  Square,
+} from "../../../shared/ui/icons";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { AnsiText } from "../../../shared/ui/AnsiText";
 import { blockLifecycle } from "../model/activityDock";
+import { delegatedBriefText } from "../model/delegatedAgents";
 import { commandCopyText, emptyOutputReason, inspectCommand } from "../model/commandInspection";
 import type { AgentStep, Block } from "../model/session";
 import type { DelegationKind } from "../../../shared/model/host-contracts/delegation";
@@ -52,6 +60,8 @@ import {
 } from "./SubagentSheetTimeline";
 
 export type { SubagentRelay } from "./SubagentMessageForm";
+
+const AGENT_PANEL_RESIZE = { min: 360, max: 1200, defaultSize: 544 };
 
 /**
  * Which delegated run's panel is open in a session pane. The pane that owns the
@@ -114,6 +124,7 @@ export function SubagentSheet({
   onOpenFile,
   onOpenDiff,
   relay,
+  composer,
   requests,
   agentRole,
   nested,
@@ -134,6 +145,7 @@ export function SubagentSheet({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
   relay?: SubagentRelay;
+  composer?: ReactNode;
   requests?: ReactNode;
   agentRole?: DelegationKind;
   /** The subagents this run started itself, above its trail. */
@@ -153,6 +165,7 @@ export function SubagentSheet({
   // Showing in the transcript can fail (the block is not rendered there); the
   // sheet stays open with the reason instead of silently losing its context.
   const [showFailedFor, setShowFailedFor] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const showFailed = showFailedFor === block.id;
   const steps = run?.steps ?? [];
   const stops = useStopRequests();
@@ -166,6 +179,8 @@ export function SubagentSheet({
       anchor="container"
       side="end"
       surface={command ? "floating" : "chat"}
+      resizable={command ? undefined : AGENT_PANEL_RESIZE}
+      expanded={!command && expanded}
       open={visible}
       title={
         command
@@ -182,6 +197,21 @@ export function SubagentSheet({
       onClose={onClose}
       headerActions={
         <>
+          {!command ? (
+            <Button
+              iconOnly
+              size="sm"
+              variant="ghost"
+              label={t(expanded ? "Restore" : "Expand")}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded ? (
+                <Minimize2 className="icon-sm" aria-hidden />
+              ) : (
+                <Maximize2 className="icon-sm" aria-hidden />
+              )}
+            </Button>
+          ) : null}
           {back ? (
             <Button
               iconOnly
@@ -260,7 +290,11 @@ export function SubagentSheet({
           </InlineMessage>
         </div>
       ) : null}
-      {!command ? nested : null}
+      {!command && nested ? (
+        <div data-chat-column className="mx-auto w-full shrink-0">
+          {nested}
+        </div>
+      ) : null}
       {command ? (
         <CommandDetails
           key={block.id}
@@ -280,10 +314,12 @@ export function SubagentSheet({
           onOpenDiff={onOpenDiff}
         />
       )}
-      {!command && requests ? (
+      {!command && (requests || composer) ? (
         <ScrollArea gutter="stable" className={styles.requests}>
-          {requests}
-          {relay ? <SubagentMessageForm name={name} relay={relay} /> : null}
+          <div data-chat-column className="mx-auto w-full min-w-0">
+            {requests}
+            {composer ?? (relay ? <SubagentMessageForm name={name} relay={relay} /> : null)}
+          </div>
         </ScrollArea>
       ) : !command && relay ? (
         <SubagentMessageForm name={name} relay={relay} />
@@ -616,6 +652,7 @@ function CopyTranscriptButton({
 /** What the subagent was asked, clamped until the reader opens it. */
 function PromptCard({ prompt }: { prompt: string }) {
   const t = useT();
+  const assignment = delegatedBriefText(prompt);
   return (
     <Surface
       as="section"
@@ -626,16 +663,28 @@ function PromptCard({ prompt }: { prompt: string }) {
     >
       <Text as="div" size="secondary" tone="inherit" leading="normal">
         <SectionLabel>{t("Prompt")}</SectionLabel>
-        <ClampText lines={6} moreLabel={t("Show full prompt")}>
+        <ClampText lines={6} moreLabel={t(assignment ? "Show more" : "Show full prompt")}>
           <Text
             as="p"
             size="inherit"
             tone="secondary"
             className="min-w-0 whitespace-pre-wrap break-words"
           >
-            {prompt}
+            {assignment ?? prompt}
           </Text>
         </ClampText>
+        {assignment ? (
+          <Disclosure variant="row" summary={t("Show full prompt")}>
+            <Text
+              as="p"
+              size="secondary"
+              tone="secondary"
+              className="min-w-0 whitespace-pre-wrap break-words"
+            >
+              {prompt}
+            </Text>
+          </Disclosure>
+        ) : null}
       </Text>
     </Surface>
   );
@@ -771,7 +820,7 @@ function SubagentTrail({
       data-subagent-trail
       className="min-h-0 flex-1 overflow-y-auto overscroll-none"
     >
-      <div className="flex min-w-0 flex-col gap-1 px-4 py-3">
+      <div data-chat-column className="mx-auto flex w-full min-w-0 flex-col gap-1 px-4 py-3">
         {prompt ? <PromptCard prompt={prompt} /> : null}
         {subagents.length > 0 ? (
           <section aria-label={t("Subagents")}>

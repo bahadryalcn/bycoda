@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -5,7 +6,75 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { sessionWorkCwd, type Session } from "../model/session";
+import { Composer } from "./Composer";
 import styles from "./SubagentSheet.module.css";
+
+type SubagentChatComposerProps = {
+  name: string;
+  session: Session;
+  visible: boolean;
+} & Pick<
+  ComponentProps<typeof Composer>,
+  | "parentSessionId"
+  | "remoteSession"
+  | "remoteFeatures"
+  | "sendBlockedReason"
+  | "sendHeldReason"
+  | "onSubmit"
+  | "onStop"
+  | "onOpenFile"
+  | "onDeleteQueuedMessage"
+  | "onEditQueuedMessage"
+  | "onQueuedMessageEditingChange"
+  | "onReorderQueuedMessages"
+  | "onSteerQueuedMessage"
+  | "onResumeQueue"
+>;
+
+const ignore = () => {};
+
+/** The ordinary conversation composer with the child's immutable execution identity. */
+export function SubagentChatComposer({
+  name,
+  session,
+  visible,
+  ...controls
+}: SubagentChatComposerProps) {
+  const t = useT();
+  return (
+    <div className="shrink-0 px-2 pb-2">
+      <Composer
+        {...controls}
+        key={session.id}
+        enabled={visible}
+        focused={false}
+        harness={session.harness}
+        model={session.model}
+        modelSettings={session.modelSettings}
+        providerAccountId={session.providerAccountId}
+        runtimeMode={session.runtimeMode}
+        cwd={session.cwd}
+        executionCwd={sessionWorkCwd(session)}
+        sessionId={session.id}
+        busy={!!session.busy || !!session.continuingElsewhere}
+        runningModelTarget={session.runningModelTarget}
+        queuedMessages={session.queuedMessages}
+        queueStatus={session.queueStatus}
+        hideProjectPicker
+        hideBranchPicker
+        hideTopBar
+        hideIdentityControls
+        placeholder={t("Message")}
+        inputAriaLabel={t("Message for {p0}", { p0: name })}
+        onFocus={ignore}
+        onCwdChange={ignore}
+        onModelChange={ignore}
+        onRuntimeModeChange={ignore}
+      />
+    </div>
+  );
+}
 
 export type SubagentRelay = {
   /** `relay` routes the message through the main agent; `direct` sends it to the child session. */
@@ -29,9 +98,10 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
     <ScrollArea
       as="form"
       gutter="stable"
+      data-chat-column
       {...surfaceAttributes(
         { frame: "pane", edge: "top" },
-        `${styles.composer} flex shrink-0 flex-col gap-2 px-4 py-3`,
+        `${styles.composer} mx-auto flex w-full shrink-0 flex-col gap-2 px-4 py-3`,
       )}
       onSubmit={(event) => {
         event.preventDefault();

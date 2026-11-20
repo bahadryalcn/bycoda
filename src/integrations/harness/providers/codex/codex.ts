@@ -145,6 +145,8 @@ import { createChildProcessHandle, type ChildProcessHandle } from "../../core/ch
 const operationTailsBySession = new Map<string, Promise<unknown>>();
 
 const retirements = createProviderRetirementLedger("codex.main", killChild);
+const writerByOperation = new WeakMap<object, ChildProcessHandle>();
+const exitedConstructions = new WeakSet<ChildProcessHandle>();
 
 type Live = {
   operation?: object;
@@ -284,6 +286,8 @@ export async function sendCodexTurn(input: SendTurnInput): Promise<void> {
         live.turns = continueAfterFailure(live.turns, async () => {
           if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
           const rpc = await bindWriter();
+          if (input.operationContext?.operation)
+            writerByOperation.set(input.operationContext.operation, live.handle);
           live.onEvent = input.onEvent;
           live.runtimeMode = input.runtimeMode;
           live.planning = input.intent === "plan";
@@ -371,6 +375,8 @@ export async function compactCodexContext(input: CompactContextInput): Promise<v
         live.turns = continueAfterFailure(live.turns, async () => {
           if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
           const rpc = await bindWriter();
+          if (input.operationContext?.operation)
+            writerByOperation.set(input.operationContext.operation, live.handle);
           live.onEvent = input.onEvent;
           live.cancelled = false;
           live.muteUpdates = false;
@@ -830,26 +836,45 @@ export async function stopCodexSession(
 /** Host-to-desktop ownership transfer is stricter than delete/provider switch.
  * A stale operation must never fall back to the latest session writer, and an
  * empty stop target is not evidence that the original writer was retired. */
+export class CodexWriterRetirementRefusal extends Error {
+  constructor(readonly reason: "original_unverified" | "original_active") {
+    super(
+      reason === "original_active"
+        ? "The original Codex writer still has active work; continuation remains guarded."
+        : "The original Codex writer cannot be verified; continuation remains guarded.",
+    );
+  }
+}
+
 export async function retireOriginalCodexWriter(
   sessionId: string,
   context: HarnessOperationContext,
 ): Promise<void> {
   const live = liveByThread.get(sessionId);
   const startup = startingByThread.get(sessionId);
-  if (
-    !context?.operation ||
-    !live ||
-    startup ||
-    !ownsOperation(context, live.handle, live.operation)
-  )
-    throw new Error("The original Codex writer cannot be verified; continuation remains guarded.");
-  if (live.activeTurnId || live.pendingTurnStart)
-    throw new Error(
-      "The original Codex writer still has active work; continuation remains guarded.",
-    );
-  // stopCodexSession captures the matching handle synchronously, before waiting
-  // for retirement. Unlike forget, it preserves the persisted resume identity.
-  await stopCodexSession(sessionId, context);
+  if (!context?.operation || startup) throw new CodexWriterRetirementRefusal("original_unverified");
+  if (!live) {
+    const original = writerByOperation.get(context.operation);
+    if (
+      !original ||
+      original.sessionId !== sessionId ||
+      !exitedConstructions.has(original) ||
+      !ownsOperation(context, original)
+    )
+      throw new CodexWriterRetirementRefusal("original_unverified");
+    // Core delivered exit for this exact construction. Join its retained
+    // physical retirement before granting a new writer.
+    await retirements.retire([original]);
+  } else {
+    if (!ownsOperation(context, live.handle, live.operation))
+      throw new CodexWriterRetirementRefusal("original_unverified");
+    if (live.activeTurnId || live.pendingTurnStart)
+      throw new CodexWriterRetirementRefusal("original_active");
+    // Captures the matching handle synchronously and preserves the persisted resume identity.
+    await stopCodexSession(sessionId, context);
+  }
+  if (liveByThread.has(sessionId) || startingByThread.has(sessionId))
+    throw new CodexWriterRetirementRefusal("original_unverified");
 }
 
 export async function forgetCodexSession(
@@ -1021,6 +1046,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       handle,
       (line) => rpc.pushLine(line),
       (code, reason) => {
+        exitedConstructions.add(handle);
         const error = new Error(
           reason ?? `Codex app-server exited${code == null ? "" : ` (exit code ${code})`}`,
         );

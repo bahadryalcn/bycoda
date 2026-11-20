@@ -81412,6 +81412,8 @@
                       "enum": [
                         "REQUEST_EXPIRED",
                         "LEASE_HELD",
+                        "HOST_WRITER_RETIREMENT_PENDING",
+                        "HOST_WRITER_RETIREMENT_FAILED",
                         "QUEUE_DRAIN_HELD",
                         "QUEUE_LEASE_CHANGED",
                         "QUEUE_CHANGED",
@@ -82357,5 +82359,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "521cb19256e19d3041f197735595ac6196bbdabc74bda168fd3b3a2baba54877"
+  "schemaHash": "2d7f13b95820f19ca8912f7a71e36bcee38361ff1932f45dd4f9024551497c0f"
 }

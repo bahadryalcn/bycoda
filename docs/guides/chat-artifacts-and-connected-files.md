@@ -108,6 +108,11 @@ If the window is catching up on Host history, the Host can take over once it
 verifies it already has the window's saved history. Conflicting histories and
 unconfirmed deliveries wait for your review.
 
+When the previous run is still closing, the queue shows that wait beside the
+message and retries an active queue when it can. If the Host needs you to check
+the conversation before it can resume safely, the queue keeps the message and
+shows that next step beside **Resume**.
+
 When the AI asks a question with a free-text answer, use **Attach files** below the answer, paste copied files or images, or drop files onto the question card. Attached items appear beside the file action, separate from the delivery status and navigation; remove an item before sending if needed. You can send files without adding text. Unfinished attachments stay with that question when you leave and return, and failed delivery keeps them for retry.
 
 Question attachments are saved as files on the computer running the conversation. The AI receives file references and reads them with its tools. Structured forms that require exact typed values do not accept attachments in those fields.

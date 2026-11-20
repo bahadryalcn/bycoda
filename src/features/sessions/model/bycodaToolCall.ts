@@ -26,7 +26,15 @@ const ACTION_LABELS: Record<string, string> = {
   "agents.reply": "Continue a session",
   "agents.wait": "Wait for a subagent",
   "agents.cancel": "Cancel a subagent",
+  "agents.list": "Subagents",
+  "agents.send": "Send message",
 };
+
+/** Known MCP titles from the Bycoda conversation server. Keep other tool names intact. */
+export function bycodaConversationLabel(title: string | undefined): string | undefined {
+  const match = title?.match(/^bycoda-conversation:(?:conversation_)?agents[_.](\w+)$/);
+  return match ? ACTION_LABELS[`agents.${match[1]}`] : undefined;
+}
 
 /** Conservatively parse one shell invocation; compound commands use the shell row. */
 function shellWords(command: string): string[] | undefined {

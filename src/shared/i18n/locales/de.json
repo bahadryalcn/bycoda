@@ -1,4 +1,6 @@
 {
+  "Waiting for the previous run to finish.": "Der vorherige Lauf wird noch abgeschlossen.",
+  "Check the conversation on its Host before resuming.": "Prüfe vor dem Fortsetzen die Unterhaltung auf ihrem Host.",
   "Use automatic selection": "Automatische Auswahl verwenden",
   "No local transcription models found.": "Keine lokalen Transkriptionsmodelle gefunden.",
   "Voice conversations": "Sprachgespräche",

@@ -907,8 +907,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     },
     [navigateBlock],
   );
-  const submitToChild = (sessionId: string, text: string, options: ComposerTurnOptions) =>
-    onSubmit(sessionId, text, [], options);
+  const submitToChild = (
+    sessionId: string,
+    text: string,
+    options: ComposerTurnOptions,
+    attachments: Attachment[] = [],
+    admission?: ParentAdmission,
+  ) => rootMutation(() => onSubmitProp(sessionId, text, attachments, options), admission);
   const subagentSheet = useSubagentSheet(stableBlocks, visible);
   const closeSubagentSheet = subagentSheet.close;
   // Claude can end one task on its own; the others only end the whole turn.
@@ -2097,6 +2102,19 @@ const LocalSessionPane = memo(function LocalSessionPane({
           }}
           delegated={delegated}
           onSubmitToSession={submitToChild}
+          localQueueActions={(id) => ({
+            onDeleteQueuedMessage: (messageId) => onDeleteQueuedMessage(id, messageId),
+            onEditQueuedMessage: (messageId, text, attachments) =>
+              onEditQueuedMessage(id, messageId, text, attachments),
+            onQueuedMessageEditingChange: (messageId) =>
+              onQueuedMessageEditingChange(id, messageId),
+            onReorderQueuedMessages: onReorderQueuedMessagesProp
+              ? (messageIds, admission) =>
+                  rootMutation(() => onReorderQueuedMessagesProp(id, messageIds), admission)
+              : undefined,
+            onSteerQueuedMessage: (messageId) => onSteerQueuedMessage(id, messageId),
+            onResumeQueue: () => onResumeQueue(id),
+          })}
           onStopSession={onStop}
           onLoadRemoteBlock={onLoadRemoteBlock}
           onOpenFile={onOpenFile}

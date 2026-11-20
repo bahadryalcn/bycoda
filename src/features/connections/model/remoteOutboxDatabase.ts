@@ -1,6 +1,7 @@
 /** Durable remote-command evidence. No entry is evicted on capacity pressure. */
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { canonicalJson } from "../../sync/model/canonicalJson";
+import { errorText } from "../../../shared/lib/errors";
 import { newRequestId } from "../../../shared/lib/id/requestId";
 
 const DATABASE = "bycoda-remote-outbox";
@@ -70,6 +71,29 @@ export async function exportOversizedOutboxRecord(record: {
 
 async function nativeRead(keys: string[]): Promise<NativeSnapshot> {
   return invoke("canonical_store_read", { scope: NATIVE_SCOPE, keys });
+}
+
+async function nativeListPage(
+  prefix: string,
+  after?: string,
+  expectedRevision?: number,
+): Promise<NativeSnapshot> {
+  try {
+    return await invoke("canonical_store_list_bounded", {
+      scope: NATIVE_SCOPE,
+      prefix,
+      after: after ?? null,
+      limit: 128,
+      maxBytes: 2 * 1024 * 1024,
+      expectedRevision: expectedRevision ?? null,
+    });
+  } catch (cause) {
+    // This read rejected its old revision before returning any rows. Restart the scan;
+    // page authority errors and mutation outcomes have different recovery rules.
+    if (errorText(cause) === "CANONICAL_LIST_STALE")
+      throw new OutboxConflictError("Pending requests changed; try again.");
+    throw cause;
+  }
 }
 
 async function nativeChange(
@@ -268,14 +292,11 @@ export async function readOutboxLegacyPage(
   }
   await ensureNativeOutbox();
   const prefix = nativeKey("legacy", LEGACY_PREFIXES[0]);
-  const page = await invoke<NativeSnapshot>("canonical_store_list_bounded", {
-    scope: NATIVE_SCOPE,
+  const page = await nativeListPage(
     prefix,
-    after: after === undefined ? null : nativeKey("legacy", after),
-    limit: 128,
-    maxBytes: 2 * 1024 * 1024,
-    expectedRevision: expectedRevision ?? null,
-  });
+    after === undefined ? undefined : nativeKey("legacy", after),
+    expectedRevision,
+  );
   if (page.oversized)
     return {
       values: [],
@@ -360,14 +381,10 @@ export async function readOutboxDatabasePage(
     if (after !== undefined && !after.startsWith(prefix))
       throw new Error("Invalid remote request cursor.");
     const start = nativeKey(kind, prefix);
-    const page = await invoke<NativeSnapshot>("canonical_store_list_bounded", {
-      scope: NATIVE_SCOPE,
-      prefix: start,
-      after: after === undefined ? null : nativeKey(kind, after),
-      limit: 128,
-      maxBytes: 2 * 1024 * 1024,
-      expectedRevision: null,
-    });
+    const page = await nativeListPage(
+      start,
+      after === undefined ? undefined : nativeKey(kind, after),
+    );
     if (page.oversized)
       return {
         values: [],

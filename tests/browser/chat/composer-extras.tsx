@@ -224,7 +224,7 @@ function Fixture() {
   const queueFeedback = new URLSearchParams(location.search).has("queue-feedback");
   const deliveryProgress = new URLSearchParams(location.search).has("delivery-progress");
   const [queueStatus, setQueueStatus] = useState<"paused" | "active">(
-    ["active", "busy", "one", "empty", "last-success"].includes(queueVisual ?? "")
+    ["active", "busy", "one", "empty", "last-success", "writer-wait"].includes(queueVisual ?? "")
       ? "active"
       : "paused",
   );
@@ -232,6 +232,21 @@ function Fixture() {
     if (queueVisual === "last-success") {
       const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
       updateDeliveryProgress("composer-layout-fixture", progress, "accepted");
+      return () => clearDeliveryProgress("composer-layout-fixture", progress);
+    }
+    if (queueVisual === "writer-wait" || queueVisual === "writer-blocked") {
+      const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
+      const waiting = queueVisual === "writer-wait";
+      updateDeliveryProgress(
+        "composer-layout-fixture",
+        progress,
+        waiting ? "waiting" : "rejected",
+        waiting
+          ? "Waiting for the previous run to finish."
+          : "Check the conversation on its Host before resuming.",
+        false,
+        true,
+      );
       return () => clearDeliveryProgress("composer-layout-fixture", progress);
     }
     if (queueVisual !== "rejected" && queueVisual !== "waiting") return;

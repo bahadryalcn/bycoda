@@ -15,6 +15,13 @@ const state = vi.hoisted(() => ({
   approve: vi.fn(),
   answer: vi.fn(),
   machines: [{ id: "machine", environmentId: "env" }],
+  composer: undefined as Record<string, unknown> | undefined,
+}));
+vi.mock("../../sessions/ui/SubagentMessageForm", () => ({
+  SubagentChatComposer: (props: Record<string, unknown>) => {
+    state.composer = props;
+    return createElement("div", { "data-child-composer": "" });
+  },
 }));
 vi.mock("../model/connections", () => ({
   useRemoteMachines: () => ({ machines: state.machines, loaded: true }),
@@ -103,6 +110,51 @@ it("loads older replies through the existing child history owner", () => {
     state.remote.remoteHistoryLoading = true;
     act(render);
     expect(button().disabled).toBe(true);
+  } finally {
+    act(() => root.unmount());
+  }
+});
+
+it("uses the linked child's Host composer authority and keeps the queued input on that child", () => {
+  const child = { id: "child", cwd: "/project", blocks: [] } as unknown as Session;
+  const ownerSubmit = vi.fn(() => true);
+  const steerQueued = vi.fn(() => true);
+  const features = { attachments: true, plan: false, draft: false, steer: true };
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  state.remote = {
+    session: child,
+    onSubmit: ownerSubmit,
+    onSteerQueuedMessage: steerQueued,
+    remoteFeatures: features,
+  };
+  state.composer = undefined;
+  const render = (visible: boolean) =>
+    root.render(
+      createElement(DelegatedSessionRequests, {
+        child,
+        visible,
+        composer: { name: "Reviewer", parentSessionId: "parent" },
+      }),
+    );
+  try {
+    act(() => render(false));
+    expect(state.composer).toBeUndefined();
+    act(() => render(true));
+    expect(container.querySelector("[data-child-composer]")).not.toBeNull();
+    expect(state.composer).toMatchObject({
+      session: child,
+      parentSessionId: "parent",
+      remoteFeatures: features,
+    });
+    const props = state.composer as unknown as import("react").ComponentProps<
+      typeof import("../../sessions/ui/SubagentMessageForm").SubagentChatComposer
+    >;
+    const options = { followUpBehavior: "queue" } as const;
+    props.onSubmit("Later", [], options);
+    expect(ownerSubmit).toHaveBeenCalledWith("child", "Later", [], options);
+    props.onSteerQueuedMessage?.("queued-message");
+    expect(steerQueued).toHaveBeenCalledWith("child", "queued-message");
   } finally {
     act(() => root.unmount());
   }

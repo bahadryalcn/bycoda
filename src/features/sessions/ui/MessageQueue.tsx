@@ -8,11 +8,13 @@ import { canSendQueueMessage } from "../model/queueAction";
 import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAcceptedQueueDeparture";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import {
   DeliveryNoticeReopen,
   DeliveryProgressIndicator,
   deliveryIsPending,
   useDeliveryProgress,
+  useQueueDeliveryMessage,
 } from "./DeliveryProgressNotice";
 import { queueState } from "../../connections/public/queueState";
 import { useQueueHoldReason } from "../model/deliveryReview";
@@ -133,6 +135,7 @@ export function MessageQueue({
   );
   const accountLists: Partial<Record<string, AccountList>> = JSON.parse(accountListsJson);
   const delivery = useDeliveryProgress(sessionId);
+  const queueDelivery = useQueueDeliveryMessage(sessionId, delivery);
   const pendingDelivery = deliveryIsPending(delivery?.stage);
   const heldByOtherWindow = useSharedQueueLeaseHeld(sessionId ?? "");
   const holdReason = useQueueHoldReason(sessionId ?? "");
@@ -573,6 +576,14 @@ export function MessageQueue({
               <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
             ) : null}
           </Text>
+        ) : null}
+        {queueDelivery?.detail && messages.some((row) => row.id === queueDelivery.messageId) ? (
+          <LiveText
+            className="px-1 pb-1"
+            size="caption"
+            tone="secondary"
+            text={t(queueDelivery.detail)}
+          />
         ) : null}
         <div
           className="max-h-[min(30dvh,15rem)] min-h-0 overflow-y-auto overscroll-contain"

@@ -2,6 +2,8 @@
 //! producer freshness or permission to replay an original.
 use crate::session_store::{native_delivery as journal, SessionStore};
 use serde_json::{json, Value};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 pub(super) const OPEN: &str = "native.delivery.epochs.open";
 pub(super) const STATUS: &str = "native.delivery.epochs.status";
@@ -9,6 +11,40 @@ pub(super) const COMPACT: &str = "native.delivery.epochs.compact";
 pub(super) const CLOSE: &str = "native.delivery.epochs.close";
 pub(super) const GAP_RESOLVE: &str = "native.delivery.epochs.gap.resolve";
 const GAP_CAPABILITY: &str = "native.delivery.epochs.gaps.v1";
+
+/// A gap lookup settles its slot for good, so it gets its own window instead of the
+/// 250 ms cleanup budget: on a busy Host that budget expired on every attempt and one
+/// unresolved slot held the whole epoch prefix (tens of thousands of retained rows).
+#[cfg(not(test))]
+pub(super) const GAP_BUDGET: Duration = Duration::from_secs(3);
+#[cfg(test)]
+pub(super) const GAP_BUDGET: Duration = Duration::from_secs(10);
+/// After a failed lookup, maintenance skips the gap this long instead of holding every
+/// caller for a full `GAP_BUDGET` while the Host stays unreachable.
+#[cfg(not(test))]
+const GAP_RETRY: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const GAP_RETRY: Duration = Duration::ZERO;
+
+struct GapBackoff(Mutex<Option<Instant>>);
+
+impl GapBackoff {
+    const fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+    fn allowed(&self, now: Instant) -> bool {
+        self.0
+            .lock()
+            .map_or(true, |next| next.map_or(true, |next| now >= next))
+    }
+    fn settle(&self, now: Instant, failed: bool, retry: Duration) {
+        if let Ok(mut next) = self.0.lock() {
+            *next = failed.then(|| now + retry);
+        }
+    }
+}
+
+static GAP_BACKOFF: GapBackoff = GapBackoff::new();
 
 /// Separately negotiated; a Host without it keeps gaps held (never guessed).
 pub(super) fn supports_gaps(descriptor: &Value) -> bool {
@@ -131,10 +167,16 @@ pub(super) fn maintenance_params(
     recover: impl FnOnce(&journal::Original) -> Result<bool, String>,
 ) -> Result<Option<Value>, String> {
     let plan = journal::epochs::maintenance_plan(store, epoch, gap_supported)?;
-    if let Some(original) = plan.gap.as_ref() {
+    if let Some(original) = plan
+        .gap
+        .as_ref()
+        .filter(|_| GAP_BACKOFF.allowed(Instant::now()))
+    {
         // Log only the sequence and a bounded diagnostic, never request or reply data.
         let sequence = plan.eligible_through + 1;
-        match recover(original) {
+        let outcome = recover(original);
+        GAP_BACKOFF.settle(Instant::now(), outcome.is_err(), GAP_RETRY);
+        match outcome {
             Ok(true) => {
                 log::info!("Native delivery gap {sequence}: Host fence saved");
                 return compact_params(store, epoch);
@@ -162,6 +204,19 @@ pub(super) fn gap_error(stage: &str, error: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gap_lookup_waits_out_its_retry_after_a_failure_only() {
+        let backoff = GapBackoff::new();
+        let now = Instant::now();
+        let retry = Duration::from_secs(30);
+        assert!(backoff.allowed(now));
+        backoff.settle(now, true, retry);
+        assert!(!backoff.allowed(now + Duration::from_secs(29)));
+        assert!(backoff.allowed(now + retry));
+        backoff.settle(now + retry, false, retry);
+        assert!(backoff.allowed(now + retry));
+    }
 
     #[test]
     fn epoch_catalog_requires_the_complete_finite_capability() {

@@ -15,6 +15,8 @@ import { nextQueueStatus } from "./queueState";
 import {
   QueueDeferredError,
   QueueNotReadyError,
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
   sameQueueValue,
   SHARED_QUEUE_CAPABILITY,
 } from "./sharedQueue";
@@ -202,6 +204,7 @@ export async function submitSharedLocalQueue(
   let caughtDeferred = false;
   /** Nothing reached the provider and the send could not start: a wait, not a rejection. */
   let waiting = false;
+  let queueOnly = false;
   try {
     entry.publish();
     if (steer) {
@@ -276,6 +279,12 @@ export async function submitSharedLocalQueue(
   } catch (caught) {
     let error: unknown = caught;
     failure = String(error).replace(/^Error: /, "");
+    if (error instanceof QueueRunLeaseBlockedError || error instanceof QueueRunLeasePendingError) {
+      failure = error.message;
+      uncertain = false;
+      queueOnly = true;
+      waiting = error instanceof QueueRunLeasePendingError;
+    }
     if (error instanceof QueueNotReadyError) {
       // A typed pre-write wait can occur after claiming too (the old turn ended).
       // Release the claim, retain the row and preserve active/user-paused status.
@@ -349,7 +358,8 @@ export async function submitSharedLocalQueue(
         }
       });
     }
-    if (!(error instanceof QueueNotReadyError)) console.warn("Shared queued send is held", error);
+    if (!queueOnly && !(error instanceof QueueNotReadyError))
+      console.warn("Shared queued send is held", error);
     throw error;
   } finally {
     if (token && !uncertain) {
@@ -378,13 +388,15 @@ export async function submitSharedLocalQueue(
     // meanwhile, the lease expiry timer.
     entry.nextIdleSyncAt = 0;
     runTick?.();
-    if (transientHold && caughtDeferred) clearDeliveryProgress(sessionId, progress);
+    if (transientHold && caughtDeferred && !queueOnly) clearDeliveryProgress(sessionId, progress);
     else
       updateDeliveryProgress(
         sessionId,
         progress,
         accepted ? "accepted" : uncertain ? "unknown" : waiting ? "waiting" : "rejected",
         failure,
+        false,
+        queueOnly,
       );
   }
 }

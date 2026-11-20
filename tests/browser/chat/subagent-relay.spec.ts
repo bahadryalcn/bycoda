@@ -290,6 +290,40 @@ for (const theme of ["dark", "light"]) {
 }
 
 for (const theme of ["dark", "light"]) {
+  for (const width of [800, 1280]) {
+    test(`expand and resize a child conversation at ${width}px in ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?theme=${theme}`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Open reviewer", exact: true }).click();
+      const panel = page.getByRole("dialog");
+      const input = panel.getByRole("textbox");
+      await input.fill("Draft stays with this child.");
+      const size = () => panel.evaluate((element) => element.getBoundingClientRect().width);
+      const compact = await size();
+      const sash = panel.getByRole("separator", { name: "Resize panel" });
+      await sash.focus();
+      await sash.press("ArrowLeft");
+      await expect.poll(size).toBeGreaterThan(compact);
+      const resized = await size();
+      await panel.getByRole("button", { name: "Expand", exact: true }).click();
+      await expect.poll(size).toBeGreaterThan(resized);
+      await expect(input).toHaveValue("Draft stays with this child.");
+      await page.screenshot({
+        path: `temp/verification/subagent-message-flow/expanded-${theme}-${width}.png`,
+      });
+      await panel.getByRole("button", { name: "Restore", exact: true }).click();
+      await expect.poll(size).toBe(resized);
+      await expect(input).toHaveValue("Draft stays with this child.");
+      await page.screenshot({
+        path: `temp/verification/subagent-message-flow/compact-${theme}-${width}.png`,
+      });
+    });
+  }
   for (const width of [390, 768, 1024, 1440]) {
     test(`relay at ${width}px in ${theme} theme`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 850 });
@@ -503,6 +537,18 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Back", exact: true }).click();
       await expect(panel).toContainText("Release audit: working through it.");
       await expect(panel.locator("[data-nested-subagent]")).toHaveCount(2);
+      await list.getByRole("button", { name: /^Open Changelog check,/ }).click();
+      await expect(panel).toHaveAccessibleName("Subagent: Changelog check");
+      await expect(panel.getByText("37", { exact: true })).toBeVisible();
+      await expect(
+        panel.getByRole("textbox", { name: "Message for Changelog check" }),
+      ).toBeVisible();
+      await panel.getByRole("button", { name: "Expand", exact: true }).click();
+      await page.screenshot({
+        path: `temp/verification/subagent-message-flow/nested-expanded-${theme}-${width}.png`,
+      });
+      await panel.getByRole("button", { name: "Back", exact: true }).click();
+      await expect(panel).toHaveAccessibleName("Subagent: Release audit");
     });
 for (const theme of ["light", "dark"] as const) {
   for (const width of [800, 1280]) {

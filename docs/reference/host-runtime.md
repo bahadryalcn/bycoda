@@ -84,9 +84,10 @@ reserves bounded record capacity before stopping an existing process.
 
 Host-to-desktop continuation keeps the settled original turn receipt after a
 lightweight provider stays warm. Explicit desktop run-lease acquisition waits
-for exact provider retirement; idle/busy flags and blocked task status do not
-prove release. Codex's transfer hook refuses missing, stale or active ownership
-and preserves the provider resume identity. Providers without that exact hook
+for exact provider retirement. Codex's transfer hook can join the retirement
+of an exited process through its original operation and construction records.
+Missing proof, a replacement process or active work keeps the ownership fence.
+The transfer preserves the provider resume identity. Providers without that exact hook
 retire through their owner-bound stop, the same cleanup a failed or cancelled
 turn uses, and the Host rebinds the persisted resume identity before granting
 the lease; a failed stop still refuses the transfer. Heartbeats cannot perform
@@ -102,6 +103,11 @@ release after a late grant still leaves ownership unknown and guarded until the
 run-lease TTL has passed, because this window never renews that lease. Desktop
 acquire waits 25 s against a retirement-capable Host so the Host's 20 s
 retirement window can answer first.
+
+An observer deadline can outlive the client's request. The Host joins the
+original retirement work and, after it confirms retirement and resource release,
+rechecks authority and wakes the queue. A requester that stopped waiting gets no
+new lease from this completion.
 
 The provider retirement ledger retains captured handles and failed cleanup after
 provider Live-map removal. Host activity release callbacks belong to the original

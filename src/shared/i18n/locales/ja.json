@@ -1,4 +1,6 @@
 {
+  "Waiting for the previous run to finish.": "前の実行が終了するまで待機しています。",
+  "Check the conversation on its Host before resuming.": "再開する前に、ホスト上で会話を確認してください。",
   "Use automatic selection": "自動選択を使う",
   "No local transcription models found.": "ローカル文字起こしモデルが見つかりません。",
   "Voice conversations": "音声での会話",

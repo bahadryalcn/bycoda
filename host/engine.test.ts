@@ -1879,12 +1879,14 @@ describe("Host writer transfer after settled task review", () => {
     await engine.waitForRun(id, receipt.runId);
     vi.mocked(provider.stop).mockRejectedValueOnce(new Error("original writer retirement failed"));
     const grant = vi.fn(async () => "unsafe");
-    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow(
-      "HOST_WRITER_RETIREMENT_FAILED",
-    );
-    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toThrow(
-      "HOST_WRITER_RETIREMENT_FAILED",
-    );
+    const refusal = {
+      message: expect.stringMatching(/^HOST_WRITER_RETIREMENT_FAILED:/),
+      code: "HOST_WRITER_RETIREMENT_FAILED",
+      retryable: false,
+      delivery: "not-sent",
+    };
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toMatchObject(refusal);
+    await expect(engine.withRetiredProviderWriter(id, grant)).rejects.toMatchObject(refusal);
     expect(provider.stop).toHaveBeenCalledOnce();
     expect(engine.hasRetainedProviderWriter(id)).toBe(true);
     expect(grant).not.toHaveBeenCalled();
@@ -1926,52 +1928,78 @@ describe("Host writer transfer after settled task review", () => {
     expect(await store.session(id)).toEqual(before);
   });
 
-  it("keeps a timed-out retirement guarded and joins its original completion on owner retry", async () => {
-    const { engine, id, provider, turns, waitForTurnStart } = await setup();
-    const receipt = await engine.command({
-      type: "send",
-      commandId: "pending-review",
-      sessionId: id,
-      text: "Review",
-    });
-    await waitForTurnStart();
-    turns[0].finish();
-    await engine.waitForRun(id, receipt.runId);
-    const entered = Promise.withResolvers<void>();
-    const released = Promise.withResolvers<void>();
-    vi.mocked(provider.stop).mockImplementationOnce(async () => {
-      entered.resolve();
-      await released.promise;
-    });
-    const grant = vi.fn(async () => "lease");
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
-      const transfer = engine.withRetiredProviderWriter(id, grant).catch((error: unknown) => error);
-      await entered.promise;
-      await vi.advanceTimersByTimeAsync(20_000);
-      expect(await transfer).toMatchObject({
-        message: expect.stringContaining("HOST_WRITER_RETIREMENT_PENDING"),
+  it.each([false, true])(
+    "keeps a timed-out retirement guarded until its original completion (detached: %s)",
+    async (detached) => {
+      const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+      const receipt = await engine.command({
+        type: "send",
+        commandId: "pending-review",
+        sessionId: id,
+        text: "Review",
       });
-      expect(grant).not.toHaveBeenCalled();
-      expect(engine.hasRetainedProviderWriter(id)).toBe(true);
-      await expect(
-        engine.command({
-          type: "send",
-          commandId: "unsafe-replacement",
-          sessionId: id,
-          text: "Must wait",
-        }),
-      ).rejects.toThrow("HOST_WRITER_RETIREMENT_PENDING");
-      expect(provider.send).toHaveBeenCalledOnce();
-      released.resolve();
-      expect(await engine.withRetiredProviderWriter(id, grant)).toBe("lease");
-      expect(provider.stop).toHaveBeenCalledOnce();
-      expect(engine.hasRetainedProviderWriter(id)).toBe(false);
-    } finally {
-      released.resolve();
-      vi.useRealTimers();
-    }
-  });
+      await waitForTurnStart();
+      turns[0].input.onEvent({
+        type: "session.providerBound",
+        providerSessionId: "pending-thread",
+      });
+      turns[0].finish();
+      await engine.waitForRun(id, receipt.runId);
+      const entered = Promise.withResolvers<void>();
+      const released = Promise.withResolvers<void>();
+      vi.mocked(provider.stop).mockImplementationOnce(async () => {
+        entered.resolve();
+        await released.promise;
+      });
+      const grant = vi.fn(async () => "lease");
+      const wake = vi.fn();
+      engine.onUnblocked = wake;
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const transfer = engine
+          .withRetiredProviderWriter(id, grant)
+          .catch((error: unknown) => error);
+        await entered.promise;
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(await transfer).toMatchObject({
+          message: expect.stringContaining("HOST_WRITER_RETIREMENT_PENDING"),
+          code: "HOST_WRITER_RETIREMENT_PENDING",
+          retryable: true,
+          delivery: "not-sent",
+        });
+        expect(grant).not.toHaveBeenCalled();
+        expect(engine.hasRetainedProviderWriter(id)).toBe(true);
+        await expect(
+          engine.command({
+            type: "send",
+            commandId: "unsafe-replacement",
+            sessionId: id,
+            text: "Must wait",
+          }),
+        ).rejects.toThrow("HOST_WRITER_RETIREMENT_PENDING");
+        expect(provider.send).toHaveBeenCalledOnce();
+        released.resolve();
+        if (detached) {
+          await vi.waitFor(() => expect(wake).toHaveBeenCalledOnce());
+          expect(grant).not.toHaveBeenCalled();
+          expect(await engine.busyReason(id)).toBeUndefined();
+          expect(provider.bind).toHaveBeenLastCalledWith(
+            id,
+            "pending-thread",
+            (await store.session(id)).session.cwd,
+            undefined,
+          );
+        } else {
+          expect(await engine.withRetiredProviderWriter(id, grant)).toBe("lease");
+        }
+        expect(provider.stop).toHaveBeenCalledOnce();
+        expect(engine.hasRetainedProviderWriter(id)).toBe(false);
+      } finally {
+        released.resolve();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("does not delete while title generation is pending", async () => {
     const { engine, store, id, provider } = await setup();

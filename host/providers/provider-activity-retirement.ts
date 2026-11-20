@@ -2,6 +2,8 @@ import {
   captureProviderRetirementCohort,
   drainProviderRetirements,
   drainRetirementsForWriter,
+  ProviderRetirementError,
+  ProviderRetirementWaitError,
 } from "../../src/integrations/harness/core/providerRetirement";
 
 type Release = (() => Promise<void>) | undefined;
@@ -21,6 +23,15 @@ async function joined(work: Iterable<Promise<unknown>>, message: string): Promis
     outcome.status === "rejected" ? [outcome.reason] : [],
   );
   if (errors.length) throw new AggregateError(errors, message);
+}
+
+function retirementWaits(error: unknown): Promise<void>[] | undefined {
+  if (error instanceof ProviderRetirementWaitError) return [error.completion];
+  if (!(error instanceof AggregateError || error instanceof ProviderRetirementError))
+    return undefined;
+  const pending = error.errors.map(retirementWaits);
+  if (!pending.length || !pending.every((value) => value !== undefined)) return undefined;
+  return pending.flat();
 }
 
 /** Own the actual release callback, independently of turn routing or an idle row. */
@@ -88,7 +99,7 @@ export class ProviderActivityRetirement {
     return this.cohort;
   }
 
-  retire(stop: () => Promise<void>): Promise<void> {
+  retire(stop: () => Promise<void>, options?: { waitForOriginal: true }): Promise<void> {
     if (this.retirementWork) return this.retirementWork;
     const original = this.capture();
     const admitted = this.startWork;
@@ -103,7 +114,14 @@ export class ProviderActivityRetirement {
       joined(
         [attempted(stop), attempted(() => original.retire())],
         "Original provider stop/retirement failed",
-      );
+      ).catch(async (error: unknown) => {
+        const waits = options?.waitForOriginal ? retirementWaits(error) : undefined;
+        if (!waits) throw error;
+        // Only observer deadlines may be recovered by joining the same actual
+        // work. A failed physical stop or an unverified owner remains fenced.
+        await joined(waits, "Original physical retirement failed");
+        await original.settled;
+      });
     const work = this.startSucceeded
       ? perform()
       : admitted
@@ -132,8 +150,8 @@ export class ProviderActivityRetirement {
   retainWarm(): Promise<void> {
     if (!this.startWork)
       return Promise.reject(new Error("Original provider activity has not started"));
-    if (!this.releaseCallback) return this.startWork;
     const original = this.capture();
+    if (!this.releaseCallback) return this.startWork;
     // Empty snapshots retain the legacy resource-only API; they are not closure proof.
     return this.releaseAfter(original.size > 0 ? original.settled : Promise.resolve());
   }

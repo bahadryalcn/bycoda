@@ -59,12 +59,13 @@ export function useDelegatedRunDiscovery(parentId: string, visible: boolean) {
   const [retry, setRetry] = useState(0);
   const cwd = parent?.cwd;
   const eligible = !!parent && isUserConversation(parent);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Refresh this visible owner's delegated conversation tree with its serving Host until the pane closes.
   useEffect(() => {
-    if (!isTauri() || !visible || !eligible || !cwd || !parent) return;
+    if (!isTauri() || !visible || !eligible || !cwd) return;
     let current = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const known = new Map<string, HostSession>();
-    const nestedListed = new Set<string>();
+    const nestedListed = new Map<string, number>();
     const report = (error: unknown) => {
       const message = delegatedDiscoveryFailure(error);
       if (current && message !== undefined) setFailure({ parentId, message });

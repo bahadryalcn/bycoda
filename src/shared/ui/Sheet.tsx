@@ -88,6 +88,8 @@ export type SheetProps = {
   size?: number | string;
   /** Non-modal end sheets: a drag/arrow-key resize edge (shared Sash) on the inner border. */
   resizable?: SheetResize;
+  /** A non-modal container end sheet can fill its pane and restore its previous width. */
+  expanded?: boolean;
   /** Non-modal: a pointer press outside closes the sheet. Default true. */
   dismissOnOutside?: boolean;
   /** Non-modal viewport: presses inside this element or selector are not outside (the trigger). */
@@ -252,6 +254,7 @@ function NonModalSheet({
   children,
   size,
   resizable,
+  expanded,
   dismissOnOutside = true,
   ignore,
   escapeScope,
@@ -337,9 +340,11 @@ function NonModalSheet({
   }, [open, initialFocus]);
 
   const end = side === "end";
+  const fillsPane = end && !viewport && expanded;
   const sized = width !== undefined ? width : size;
-  const sizeStyle: CSSProperties =
-    sized === undefined
+  const sizeStyle: CSSProperties = fillsPane
+    ? { inlineSize: "100%" }
+    : sized === undefined
       ? end
         ? { inlineSize: "min(34rem, 94%)" }
         : {}
@@ -406,7 +411,7 @@ function NonModalSheet({
           className={["popover-backdrop", glassClassName].filter(Boolean).join(" ")}
         />
       ) : null}
-      {resizable && end ? (
+      {resizable && end && !fillsPane ? (
         <Sash
           orientation="vertical"
           appearance="hidden"

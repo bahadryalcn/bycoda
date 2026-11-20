@@ -116,7 +116,8 @@ fn ensure_epoch(
     let deadline = std::time::Instant::now() + ACK_BUDGET;
     if let Some(params) =
         epoch_wire::maintenance_params(store, &epoch, channel.delivery_epoch_gaps, |original| {
-            recover_epoch_gap(channel, store, original, deadline)
+            let gap_deadline = std::time::Instant::now() + epoch_wire::GAP_BUDGET;
+            recover_epoch_gap(channel, store, original, gap_deadline)
         })?
     {
         if let Ok(response) = call_until(channel, epoch_wire::COMPACT, params, None, deadline) {

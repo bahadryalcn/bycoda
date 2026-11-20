@@ -88,7 +88,9 @@ import {
   sameByRevisions,
 } from "./sessions/desktop-digest-cache";
 import { LeaseHeldError } from "../src/features/sync/model/runLease";
-import { refuseHost } from "./domains/context";
+import { HostDomainRefusalError, refuseHost } from "./domains/context";
+import { createLogger } from "./diagnostics/logger";
+import { CodexWriterRetirementRefusal } from "../src/integrations/harness/providers/codex/codex";
 import {
   atHead,
   chooseBase,
@@ -583,7 +585,49 @@ function retainWarmActivity(activity: ProviderActivityRetirement | undefined): v
 type RetainedWriterTurn = Pick<
   ActiveHostTurn,
   "provider" | "activity" | "operationContext" | "authorityGeneration" | "cleanup"
->;
+> & { reportedRetirementReason?: WriterRetirementReason; recoveryScheduled?: boolean };
+
+type WriterRetirementReason =
+  | CodexWriterRetirementRefusal["reason"]
+  | "owner_receipt_missing"
+  | "cleanup_failed"
+  | "waiting_for_original";
+
+const writerRetirementLog = createLogger("host.writer-retirement");
+
+function writerRetirementRefusal(
+  original: RetainedWriterTurn,
+  reason: WriterRetirementReason,
+  deleting: boolean,
+  cause?: unknown,
+): HostDomainRefusalError {
+  const pending = reason === "waiting_for_original";
+  const code = pending ? "HOST_WRITER_RETIREMENT_PENDING" : "HOST_WRITER_RETIREMENT_FAILED";
+  if (original.reportedRetirementReason !== reason) {
+    original.reportedRetirementReason = reason;
+    const fields = { code, reason, operation: deleting ? "delete" : "transfer" };
+    if (pending) writerRetirementLog.info("Waiting for original provider retirement", fields);
+    else writerRetirementLog.warn("Original provider retirement could not be confirmed", fields);
+  }
+  const text = pending
+    ? deleting
+      ? "The original Host writer is still stopping; the session was not deleted."
+      : "The previous Host provider writer is still stopping. Your message was not sent."
+    : deleting
+      ? "The original Host writer could not be retired; the session was not deleted."
+      : "The previous Host writer could not be retired. Your message was not sent.";
+  return new HostDomainRefusalError(code, "conflict", pending, `${code}: ${text}`, { cause });
+}
+
+function writerRetirementFailureReason(error: unknown): WriterRetirementReason {
+  const outcomes = error instanceof AggregateError ? error.errors : [error];
+  return (
+    outcomes.find(
+      (entry): entry is CodexWriterRetirementRefusal =>
+        entry instanceof CodexWriterRetirementRefusal,
+    )?.reason ?? "cleanup_failed"
+  );
+}
 
 export type EngineCommandAdmission = {
   check: (stage: {
@@ -691,71 +735,112 @@ export class HostEngine {
         throw refuseHost(new LeaseHeldError("host"), "LEASE_HELD", "conflict", true);
       const original = this.retainedWriterTurns.get(id);
       if (original) {
+        const deleting = options?.rebind === false;
         if (!original.cleanup) {
           // Providers without an exact hook retire through the same owner-bound stop a
           // failed or cancelled turn uses; the persisted resume identity is rebound below.
           const retire = original.provider.retireOriginal ?? original.provider.stop;
           const context = original.operationContext;
           if (!context || !original.activity)
-            throw new Error(
-              options?.rebind === false
-                ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer cannot be safely retired; the session was not deleted."
-                : "HOST_WRITER_RETIREMENT_FAILED: The previous Host writer has no owner receipt to retire. Your message was not sent.",
-            );
+            throw writerRetirementRefusal(original, "owner_receipt_missing", deleting);
           original.cleanup = this.store.db.outsideScope(() =>
-            original.activity!.retire(async () => {
-              await this.store.assertAuthority(id, original.authorityGeneration);
-              await retire.call(original.provider, id, context);
-            }),
+            original.activity!.retire(
+              async () => {
+                await this.store.assertAuthority(id, original.authorityGeneration);
+                await retire.call(original.provider, id, context);
+              },
+              { waitForOriginal: true },
+            ),
           );
           void original.cleanup.catch(() => {});
         }
+        const released = original.cleanup.then(() => original.activity?.release());
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           await Promise.race([
-            original.cleanup.then(() => original.activity?.release()),
+            released,
             new Promise<never>((_, reject) => {
               timer = setTimeout(
-                () =>
-                  reject(
-                    new Error(
-                      options?.rebind === false
-                        ? "HOST_WRITER_RETIREMENT_PENDING: The original Host writer is still stopping; the session was not deleted. Retry after retirement completes."
-                        : "HOST_WRITER_RETIREMENT_PENDING: The previous Host provider writer is still stopping. Your message was not sent; retry after retirement completes.",
-                    ),
-                  ),
+                () => reject(writerRetirementRefusal(original, "waiting_for_original", deleting)),
                 20_000,
               );
             }),
           ]);
         } catch (error) {
-          if (error instanceof Error && error.message.startsWith("HOST_WRITER_RETIREMENT_PENDING:"))
+          if (
+            error instanceof HostDomainRefusalError &&
+            error.code === "HOST_WRITER_RETIREMENT_PENDING"
+          ) {
+            if (!deleting) this.recoverRetiredWriter(id, original, released);
             throw error;
-          throw new Error(
-            options?.rebind === false
-              ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer could not be retired; the session was not deleted."
-              : "HOST_WRITER_RETIREMENT_FAILED: The previous Host writer could not be retired. Your message was not sent. Inspect the connection or continue through the task repair workflow.",
-            { cause: error },
+          }
+          throw writerRetirementRefusal(
+            original,
+            writerRetirementFailureReason(error),
+            deleting,
+            error,
           );
         } finally {
           clearTimeout(timer);
         }
-        this.retainedWriterTurns.delete(id);
-        this.forgetRetiredProvider(id, original.provider);
-        // Keep only the persisted resume identity; never create a new history.
-        const current =
-          options?.rebind === false ? undefined : (await this.store.session(id)).session;
-        if (current?.providerSessionId)
-          original.provider.bind(
-            id,
-            current.providerSessionId,
-            current.cwd,
-            current.providerAccountId,
-          );
+        if (!(await this.finishRetiredWriter(id, original, deleting)))
+          throw new LeaseHeldError("host");
       }
       if (this.closing) throw new LeaseHeldError("host");
       await admitted?.();
       return grant();
+    });
+  }
+
+  private recoverRetiredWriter(
+    id: string,
+    original: RetainedWriterTurn,
+    released: Promise<void | undefined>,
+  ): void {
+    if (original.recoveryScheduled) return;
+    original.recoveryScheduled = true;
+    this.store.db.outsideScope(() => {
+      void released
+        .then(async () => {
+          const recovered = await this.operations.enqueue(id, () =>
+            this.finishRetiredWriter(id, original, false),
+          );
+          if (recovered && !this.closing) this.onUnblocked?.();
+        })
+        .catch((error: unknown) => {
+          if (this.retainedWriterTurns.get(id) === original)
+            writerRetirementRefusal(original, writerRetirementFailureReason(error), false, error);
+        });
+    });
+  }
+
+  private async finishRetiredWriter(
+    id: string,
+    original: RetainedWriterTurn,
+    deleting: boolean,
+  ): Promise<boolean> {
+    const ownsRetirement = () => !this.closing && this.retainedWriterTurns.get(id) === original;
+    return await this.store.db.scope(async () => {
+      if (!ownsRetirement()) return false;
+      if (!deleting) {
+        await this.store.assertAuthority(id, original.authorityGeneration);
+        const { session } = await this.store.session(id);
+        if (!ownsRetirement()) return false;
+        // Keep the persisted resume identity only for this original provider.
+        if (
+          session.providerSessionId &&
+          this.providers[session.harness as RemoteProvider] === original.provider
+        )
+          original.provider.bind(
+            id,
+            session.providerSessionId,
+            session.cwd,
+            session.providerAccountId,
+          );
+      }
+      this.retainedWriterTurns.delete(id);
+      this.forgetRetiredProvider(id, original.provider);
+      return true;
     });
   }
   /** Deletion may not discard another retained provider cohort or rebind a retired writer. */

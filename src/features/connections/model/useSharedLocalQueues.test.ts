@@ -8,6 +8,8 @@ import {
   QUEUE_LEASE_TTL_MS,
   QueueNotReadyError,
   QueueDeferredError,
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
   type SharedQueue,
 } from "./sharedQueue";
 import { desktopQueueClientId } from "./sharedQueueClient";
@@ -641,6 +643,29 @@ it.each(["active", "paused", "restored"] as const)(
       expect((await host.queues.get("chat")).messages).toEqual([row("b")]);
       expect((await host.queues.get("chat")).claim).toBeUndefined();
     }
+  },
+);
+
+it.each([
+  [QueueRunLeasePendingError, "waiting", "active"],
+  [QueueRunLeaseBlockedError, "rejected", "paused"],
+] as const)(
+  "retains the exact row when a Host writer blocks before delivery",
+  async (ErrorClass, stage, status) => {
+    const host = useRealHostQueue();
+    await mount();
+    const detail = "Ownership feedback";
+    await expect(
+      submitSharedLocalQueue("chat", "a", false, () => {
+        throw new ErrorClass(detail);
+      }),
+    ).rejects.toBeInstanceOf(ErrorClass);
+    await tick();
+    const retained = await host.queues.get("chat");
+    expect(retained).toMatchObject({ status, messages: [row("a")] });
+    expect(retained.claim).toBeUndefined();
+    expect(retained.messages[0]?.deliveryUnknown).toBeUndefined();
+    expect(readDeliveryProgress("chat")).toMatchObject({ stage, detail, queueOnly: true });
   },
 );
 

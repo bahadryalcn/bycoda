@@ -98,7 +98,12 @@ export function seedNestedDelegation() {
       busy: true,
       pendingOwnerApproval: true,
     }),
-    run("nested-done", "Changelog check", "nested-child", {}),
+    run("nested-done", "Changelog check", "nested-child", {
+      blocks: [
+        { id: "nested-done-brief", role: "user", text: "Task:\nPick a number" },
+        { id: "nested-done-reply", role: "assistant", text: "37" },
+      ],
+    }),
   ]);
 }
 

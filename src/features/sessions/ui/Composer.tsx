@@ -342,6 +342,8 @@ type Props = {
   hideProjectPicker?: boolean;
   hideBranchPicker?: boolean;
   hideTopBar?: boolean;
+  /** Embedded conversations show their fixed execution identity in the panel header. */
+  hideIdentityControls?: boolean;
   /** Keeps Orchestrator mode and /orchestrator out of conversations that cannot run it. */
   hideOrchestrator?: boolean;
   /** Routes discovery to the host; local-only app modes remain unavailable. */
@@ -558,6 +560,7 @@ export const Composer = memo(function Composer({
   hideProjectPicker = false,
   hideBranchPicker = false,
   hideTopBar = false,
+  hideIdentityControls = false,
   hideOrchestrator = false,
   remoteSession = false,
   sendBlockedReason,
@@ -3639,30 +3642,32 @@ export const Composer = memo(function Composer({
               className="composer-toolbar flex min-w-0 flex-1 items-center"
             >
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-                <MemoModelPicker
-                  harness={harness}
-                  model={model}
-                  values={modelSettings}
-                  allowedHarnesses={allowedModelHarnesses}
-                  project={cwd}
-                  showEffortSummary
-                  hotkeys={hotkeys && enabled}
-                  openRequest={modelPickerRequest}
-                  accountId={providerAccountId}
-                  accountChoices={Boolean(onSelectProviderAccount)}
-                  extrasDisabled={disabled || !onModelSettingsChange}
-                  extrasDisabledReason={
-                    disabled
-                      ? "Settings are locked while this conversation is updating."
-                      : onModelSettingsChange
-                        ? undefined
-                        : "Settings can't be changed here."
-                  }
-                  onChange={onPickerModelChange}
-                  onSettingsChange={onPickerSettingsChange}
-                  onClose={onPickerClose}
-                />
-                {!compact && harness !== "fx" ? (
+                {!hideIdentityControls ? (
+                  <MemoModelPicker
+                    harness={harness}
+                    model={model}
+                    values={modelSettings}
+                    allowedHarnesses={allowedModelHarnesses}
+                    project={cwd}
+                    showEffortSummary
+                    hotkeys={hotkeys && enabled}
+                    openRequest={modelPickerRequest}
+                    accountId={providerAccountId}
+                    accountChoices={Boolean(onSelectProviderAccount)}
+                    extrasDisabled={disabled || !onModelSettingsChange}
+                    extrasDisabledReason={
+                      disabled
+                        ? "Settings are locked while this conversation is updating."
+                        : onModelSettingsChange
+                          ? undefined
+                          : "Settings can't be changed here."
+                    }
+                    onChange={onPickerModelChange}
+                    onSettingsChange={onPickerSettingsChange}
+                    onClose={onPickerClose}
+                  />
+                ) : null}
+                {!hideIdentityControls && !compact && harness !== "fx" ? (
                   <AccessPicker
                     value={runtimeMode}
                     busy={busy}

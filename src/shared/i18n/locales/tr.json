@@ -1,4 +1,6 @@
 {
+  "Waiting for the previous run to finish.": "Önceki çalışmanın bitmesi bekleniyor.",
+  "Check the conversation on its Host before resuming.": "Devam etmeden önce oturumu çalıştığı bilgisayarda kontrol edin.",
   "Use automatic selection": "Otomatik seçimi kullan",
   "No local transcription models found.": "Yerel yazıya dökme modeli bulunamadı.",
   "Voice conversations": "Sesli konuşmalar",

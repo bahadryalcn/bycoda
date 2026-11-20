@@ -1,4 +1,6 @@
 {
+  "Waiting for the previous run to finish.": "正在等待上一次运行结束。",
+  "Check the conversation on its Host before resuming.": "恢复前，请在主机上检查此对话。",
   "Use automatic selection": "使用自动选择",
   "No local transcription models found.": "找不到本地转录模型。",
   "Voice conversations": "语音对话",

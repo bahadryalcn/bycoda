@@ -1,4 +1,6 @@
 {
+  "Waiting for the previous run to finish.": "Waiting for the previous run to finish.",
+  "Check the conversation on its Host before resuming.": "Check the conversation on its Host before resuming.",
   "Use automatic selection": "Use automatic selection",
   "No local transcription models found.": "No local transcription models found.",
   "Voice conversations": "Voice conversations",

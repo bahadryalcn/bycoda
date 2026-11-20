@@ -512,6 +512,12 @@ Open the subagent from its conversation card or Background work to see messages,
 delivery status and replies across rounds. Queued messages stay visible while they
 wait for the active turn. Provider acceptance confirms delivery to the provider;
 the conversation shows any answer the subagent produces.
+Drag the panel edge to resize it, or use Expand and Restore in its header. Open a
+nested subagent from the list at the top and use Back to return to its parent.
+The conversation composer sends to the open subagent. While an active turn supports
+Steer, choose Steer to reach that turn or Queue to wait. Use the attachment and
+skill controls supported by the conversation's owner. Provider-native agents that
+use the main agent as a relay show that path in the composer.
 Parent messages can use the existing shared queue, including for desktop Native
 conversations. Existing owner pauses, approvals, drafts and queue leases remain in
 force. Queued or steered means accepted, not that the model has read the message.

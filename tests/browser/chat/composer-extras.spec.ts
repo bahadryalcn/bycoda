@@ -10,6 +10,31 @@ import {
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
+    test(`queue writer feedback ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+      for (const [state, message] of [
+        ["writer-wait", "Waiting for the previous run to finish."],
+        ["writer-blocked", "Check the conversation on its Host before resuming."],
+      ] as const) {
+        await page.goto(
+          `/tests/browser/chat/composer-extras.html?chat-layout&delivery-progress&queue-state=${state}&theme=${theme}`,
+        );
+        const queue = page.locator("[data-message-queue-card]");
+        await expect(queue.getByText(message, { exact: true })).toHaveCount(1);
+        await expect(queue.getByText(message, { exact: true })).toBeVisible();
+        await expect(page.locator("[data-delivery-notice-slot]")).toHaveCount(0);
+        await expect(queue.getByRole("button", { name: "Resume", exact: true })).toHaveCount(
+          state === "writer-blocked" ? 1 : 0,
+        );
+        await queue.screenshot({
+          animations: "disabled",
+          path: `temp/verification/queue-writer-recovery/${state}-${theme}-${width}.png`,
+        });
+      }
+    });
+
     test(`queued send details ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });

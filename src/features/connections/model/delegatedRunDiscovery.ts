@@ -23,15 +23,15 @@ export type DelegatedDiscoveryPort = {
 
 /**
  * Internal hydration only: callers never open a tab or change active selection.
- * A subagent's own subagents (one level, the Host's limit) are read too: while
- * it runs on every poll, once more after `nestedListed` last saw it.
+ * A subagent's own subagents (one level, the Host's limit) are read while that
+ * subtree runs and once it settles. A later parent revision can add another child.
  */
 export async function discoverDelegatedRuns(
   parent: Session,
   port: DelegatedDiscoveryPort,
   known: Map<string, HostSession>,
   isCurrent: () => boolean,
-  nestedListed: Set<string> = new Set(),
+  nestedListed: Map<string, number> = new Map(),
 ): Promise<Session[]> {
   const binding = hostSessionBinding(parent);
   const hostParentId = binding?.sessionId ?? remoteSessionFor(parent.id) ?? parent.id;
@@ -46,7 +46,7 @@ export async function discoverDelegatedRuns(
       "The parent conversation's Host changed. Reconnect before loading its subagents.",
     );
   const children: Session[] = [];
-  const nested: { id: string; running: boolean }[] = [];
+  const nested: { id: string; revision: number; running: boolean }[] = [];
   const adopt = async (ownerId: string): Promise<boolean> => {
     const summaries = await port.list(machine.id, projectId, ownerId);
     for (const summary of summaries) {
@@ -67,9 +67,12 @@ export async function discoverDelegatedRuns(
             other.status === "running" &&
             sessionDelegationParent(other.session)?.parentSessionId === host.session.id,
         );
-      if (ownerId === hostParentId && link.kind === "subagent") {
-        if (running || !nestedListed.has(host.session.id))
-          nested.push({ id: host.session.id, running });
+      if (
+        ownerId === hostParentId &&
+        link.kind === "subagent" &&
+        (running || nestedListed.get(host.session.id) !== host.revision)
+      ) {
+        nested.push({ id: host.session.id, revision: host.revision, running });
       }
     }
     return true;
@@ -110,9 +113,10 @@ export async function discoverDelegatedRuns(
     return child;
   };
   if (!(await adopt(hostParentId))) return [];
-  for (const { id, running } of nested) {
+  for (const { id, revision, running } of nested) {
     if (!(await adopt(id))) return [];
-    if (!running) nestedListed.add(id);
+    if (running) nestedListed.delete(id);
+    else nestedListed.set(id, revision);
   }
   return children;
 }

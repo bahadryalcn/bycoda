@@ -1,7 +1,11 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
 import { gateRunLease } from "./submitRunLease";
-import { QueueDeferredError } from "../../../../features/connections/model/sharedQueue";
+import {
+  QueueDeferredError,
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
+} from "../../../../features/connections/model/sharedQueue";
 import { gateProjectLocation } from "./submitProjectLocation";
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 import { getSessions, resetSessionsStore } from "../../../../features/sessions/model/sessionsStore";
@@ -132,6 +136,59 @@ it("retains an unsent message and displays retirement failure without starting o
   });
   expect(current.busy).toBeFalsy();
 });
+
+it.each([
+  [
+    "Host is still closing",
+    { kind: "waiting", text: "Waiting for the previous run to finish." },
+    QueueRunLeasePendingError,
+  ],
+  [
+    "desktop is still reconciling",
+    { kind: "failed", queueMayWait: true, text: "Unknown grant" },
+    QueueRunLeasePendingError,
+  ],
+  [
+    "Host needs attention",
+    { kind: "failed", text: "Native Host diagnostics" },
+    QueueRunLeaseBlockedError,
+  ],
+] as const)(
+  "keeps a queued retirement result (%s) inline across project preparation",
+  async (_case, outcome, ErrorType) => {
+    client.acquire.mockResolvedValue(outcome);
+    const head = { id: "head", text: "Saved task", attachments: [] };
+    resetSessionsStore([{ ...session, queuedMessages: [head], queueStatus: "active" }]);
+    const request = input({ queuedMessageId: head.id });
+    const start = vi.fn(() => true);
+    const enqueueHarnessEvent = vi.fn();
+    const nestedContext = {
+      ...ctx,
+      enqueueHarnessEvent,
+      applyProjectLocationChange: vi.fn(),
+      refs: {
+        ...ctx.refs,
+        turnGen: { current: new Map() },
+        projectLocationSyncs: { current: new Map() },
+        submitAfterProjectSyncRef: {
+          current: (
+            sessionId: string,
+            text: string,
+            attachments: SubmitInput["attachments"],
+            options: SubmitInput["options"],
+          ) => gateRunLease(nestedContext, { sessionId, text, attachments, options }, pre, start)!,
+        },
+      },
+    } as unknown as SubmitDeps;
+    await expect(gateProjectLocation(nestedContext, request, pre)).rejects.toBeInstanceOf(
+      ErrorType,
+    );
+    expect(start).not.toHaveBeenCalled();
+    expect(enqueueHarnessEvent).not.toHaveBeenCalled();
+    expect(getSessions()[0].blocks).toEqual(session.blocks);
+    expect(getSessions()[0].queuedMessages).toEqual([head]);
+  },
+);
 
 it.each(["empty composer", "newer draft", "unmounted composer"])(
   "recovers a retirement refusal once across project preparation with %s",

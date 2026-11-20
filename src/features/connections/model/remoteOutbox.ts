@@ -167,7 +167,14 @@ export function useRemoteOutboxIssues(project?: string, environment?: string): O
   return useSyncExternalStore(subscribeOutbox, snapshot, emptyIssues);
 }
 
-export async function durableRemoteOutboxIssues(
+export function durableRemoteOutboxIssues(
+  project?: string,
+  environment?: string,
+): Promise<OutboxIssue[]> {
+  return retryOutboxConflict(() => durableRemoteOutboxIssuesOnce(project, environment));
+}
+
+async function durableRemoteOutboxIssuesOnce(
   project?: string,
   environment?: string,
 ): Promise<OutboxIssue[]> {
@@ -816,7 +823,15 @@ export async function markDurableRemoteCommandStopped(
 }
 
 /** Attachment cleanup requires a complete, stable durable inventory. */
-export async function durableRemoteAttachmentIds(
+export function durableRemoteAttachmentIds(
+  environment: string,
+  project?: string,
+  shellId?: string,
+) {
+  return retryOutboxConflict(() => durableRemoteAttachmentIdsOnce(environment, project, shellId));
+}
+
+async function durableRemoteAttachmentIdsOnce(
   environment: string,
   project?: string,
   shellId?: string,

@@ -12,6 +12,23 @@ import { validateConversationTool } from "../conversation/conversation-tools";
 import { registerRoomManagement } from "./assistant-room-management";
 import { createRoomObservationRuntime } from "./assistant-room-observation";
 import type { ServerBindings } from "./bindings";
+
+/**
+ * One capture per Room and project. A snapshot's action history repeats the same pair for
+ * every row, and each capture is a sequential desktop round trip (12 rows took 15–22 s).
+ */
+export function roomDisclosureTargets(scopes: { threadId: string; projects: string[] }[]) {
+  const seen = new Set<string>();
+  const targets: { threadId: string; projectId: string }[] = [];
+  for (const { threadId, projects } of scopes)
+    for (const projectId of projects) {
+      const key = JSON.stringify([threadId, projectId]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push({ threadId, projectId });
+    }
+  return targets;
+}
 export function createAssistantRoomRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -271,34 +288,33 @@ export function createAssistantRoomRuntime(
         },
       });
     }
-    for (const scope of scopes)
-      for (const projectId of scope.projects) {
-        const project = await dependencies.engine.store.project(projectId);
-        const captured = (await dependencies.conversationDesktop.callAssistantThread(
-          "privacy.scope.capture",
-          { action: "room.disclosure", requestId, operationHash },
-          {
-            threadId: scope.threadId,
-            environmentId: dependencies.engine.store.environmentId,
-            projectId,
-            targetProjectCwd: project.cwd,
-          },
-          authorized,
-        )) as { relayId: string; envelope: unknown };
-        captures.push({
-          envelope: captured.envelope,
-          expected: {
-            environmentId: dependencies.engine.store.environmentId,
-            threadId: scope.threadId,
-            projectId,
-            targetCwd: project.cwd,
-            action: "room.disclosure",
-            requestId,
-            operationHash,
-            relayId: captured.relayId,
-          },
-        });
-      }
+    for (const { threadId, projectId } of roomDisclosureTargets(scopes)) {
+      const project = await dependencies.engine.store.project(projectId);
+      const captured = (await dependencies.conversationDesktop.callAssistantThread(
+        "privacy.scope.capture",
+        { action: "room.disclosure", requestId, operationHash },
+        {
+          threadId,
+          environmentId: dependencies.engine.store.environmentId,
+          projectId,
+          targetProjectCwd: project.cwd,
+        },
+        authorized,
+      )) as { relayId: string; envelope: unknown };
+      captures.push({
+        envelope: captured.envelope,
+        expected: {
+          environmentId: dependencies.engine.store.environmentId,
+          threadId,
+          projectId,
+          targetCwd: project.cwd,
+          action: "room.disclosure",
+          requestId,
+          operationHash,
+          relayId: captured.relayId,
+        },
+      });
+    }
     const accountScopes = scopes.filter((scope) => scope.accounts.length);
     const holdAccounts = (index: number, valid: () => boolean): ReturnType<typeof effect> => {
       if (!valid()) throw new Error("Room response scope changed.");

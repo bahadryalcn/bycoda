@@ -115,7 +115,10 @@ fn ensure_epoch(
             store,
             &epoch,
             channel.delivery_epoch_gaps_supported,
-            |original| recover_epoch_gap(channel, original, cleanup_deadline),
+            |original| {
+                let gap_deadline = deadline.min(Instant::now() + epoch_wire::GAP_BUDGET);
+                recover_epoch_gap(channel, original, gap_deadline)
+            },
         )
     })?;
     if let Some(params) = maintenance {

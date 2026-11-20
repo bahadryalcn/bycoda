@@ -36,6 +36,7 @@ import {
   readWaitingDelivery,
   subscribeDeliveryProgress,
   updateDeliveryProgress,
+  type DeliveryProgress,
   type DeliveryStage,
 } from "../model/deliveryProgress";
 import { useLocalSharedQueueClient } from "../../connections/public/useSharedLocalQueues";
@@ -45,6 +46,17 @@ const noClientState = { queue: { claim: undefined as { id: string } | undefined 
 
 export function useDeliveryProgress(sessionId = "") {
   return useSyncExternalStore(subscribeDeliveryProgress, () => readDeliveryProgress(sessionId));
+}
+
+export function useQueueDeliveryMessage(sessionId = "", progress?: DeliveryProgress) {
+  const waiting = useSyncExternalStore(subscribeDeliveryProgress, () =>
+    readWaitingDelivery(sessionId),
+  );
+  return progress?.queueOnly
+    ? progress
+    : waiting?.queueOnly && waiting.messageId === progress?.messageId
+      ? waiting
+      : undefined;
 }
 const labels: Record<DeliveryStage, string> = {
   syncing: "Synchronizing the message queue…",
@@ -79,12 +91,14 @@ function useDeliveryNoticeState(sessionId: string, messages: QueuedMessage[]) {
   const pending = deliveryIsPending(progress?.stage);
   // An automatic retry of the same message is a new, pending operation: keep its waiting notice.
   const retrying = pending && !unknownRow && !!waiting && progress?.messageId === waiting.messageId;
+  const queueOnly = progress?.queueOnly || (retrying && waiting?.queueOnly);
   const present =
-    retrying ||
-    (!pending &&
-      ((progress && (progress.stage !== "accepted" || progress.noticeOnly)) ||
-        unknownRow ||
-        (!progress && holdDetail)));
+    (!queueOnly || !!unknownRow) &&
+    (retrying ||
+      (!pending &&
+        ((progress && (progress.stage !== "accepted" || progress.noticeOnly)) ||
+          unknownRow ||
+          (!progress && holdDetail))));
   const stage: NoticeStage = unknownRow
     ? "unknown"
     : retrying
