@@ -336,6 +336,8 @@ fn state_inner(
     generation: i64,
     check_budget: bool,
 ) -> Result<State, String> {
+    #[cfg(test)]
+    tests::STATE_READS.with(|reads| reads.set(reads.get() + 1));
     check_structure(conn)?;
     let read = |name: &str| {
         conn.query_row(
@@ -367,6 +369,53 @@ fn state_inner(
     if expected > MAX_ROWS as i64 {
         return Err(invalid());
     }
+    let version = change_version(conn)?;
+    if !verified(conn, &value, version) {
+        verify_slots(conn, &value, expected)?;
+        remember(conn, &value, version);
+    }
+    if check_budget {
+        read_budget(conn)?;
+    }
+    Ok(value)
+}
+
+/// `(data_version, total_changes)`: the first moves when any other connection commits, the
+/// second on every row this connection changes, triggers included. While both hold, no row
+/// the slot counts read can differ from the last time they passed.
+fn change_version(conn: &Connection) -> Result<(i64, u64), String> {
+    let data: i64 = conn
+        .query_row("PRAGMA data_version", [], |r| r.get(0))
+        .map_err(|_| invalid())?;
+    Ok((data, conn.total_changes()))
+}
+type Verified = (usize, (i64, u64), State);
+// The slot counts scan every live slot of the epoch. Each delivery step reads its original
+// several times, so recounting on every read cost seconds per delivery at a large backlog.
+static VERIFIED: std::sync::Mutex<Vec<Verified>> = std::sync::Mutex::new(Vec::new());
+fn verified(conn: &Connection, value: &State, version: (i64, u64)) -> bool {
+    let key = (conn as *const Connection) as usize;
+    VERIFIED.lock().is_ok_and(|entries| {
+        entries
+            .iter()
+            .any(|(at, seen, state)| *at == key && *seen == version && state == value)
+    })
+}
+fn remember(conn: &Connection, value: &State, version: (i64, u64)) {
+    let key = (conn as *const Connection) as usize;
+    if let Ok(mut entries) = VERIFIED.lock() {
+        entries.retain(|(at, _, state)| {
+            *at != key || state.owner_id != value.owner_id || state.generation != value.generation
+        });
+        if entries.len() >= 16 {
+            entries.remove(0);
+        }
+        entries.push((key, version, value.clone()));
+    }
+}
+fn verify_slots(conn: &Connection, value: &State, expected: i64) -> Result<(), String> {
+    #[cfg(test)]
+    tests::SLOT_COUNTS.with(|counts| counts.set(counts.get() + 1));
     let actual:i64=conn.query_row("SELECT COUNT(*) FROM native_delivery_epoch_allocations a JOIN native_delivery_originals o ON o.original_id=a.original_id AND o.source_store_id=a.source_store_id AND o.source_profile_id=a.source_profile_id AND o.route_fingerprint=a.route_fingerprint AND o.semantic_key=a.semantic_key AND o.method=a.method AND o.payload_sha256=a.payload_sha256 AND o.payload_bytes=a.payload_bytes WHERE a.owner_id=?1 AND a.generation=?2 AND a.sequence>?3 AND a.sequence<=?4 AND a.original_id='nd2:'||a.owner_id||':'||a.generation||':'||a.sequence",params![value.owner_id,value.generation,value.local_through,value.high_water],|r|r.get(0)).map_err(|_|invalid())?;
     let stray:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM native_delivery_epoch_allocations WHERE owner_id=?1 AND generation=?2 AND (sequence<=?3 OR sequence>?4))",params![value.owner_id,value.generation,value.local_through,value.high_water],|r|r.get(0)).map_err(|_|invalid())?;
     if actual != expected || stray {
@@ -375,15 +424,12 @@ fn state_inner(
     if value.local_through > 0 {
         let covered:i64=conn.query_row("SELECT COUNT(*) FROM native_delivery_semantic_retirements WHERE owner_id=?1 AND generation=?2 AND sequence BETWEEN 1 AND ?3 AND source_store_id=?4 AND source_profile_id=?5 AND route_fingerprint=?6",params![value.owner_id,value.generation,value.local_through,value.source_store_id,value.source_profile_id,value.route],|r|r.get(0)).map_err(|_|invalid())?;
         // Every compacted slot is a semantic marker or a permanent gap proof.
-        let fenced = gaps::covered(conn, &value)?;
+        let fenced = gaps::covered(conn, value)?;
         if covered.checked_add(fenced) != Some(value.local_through) {
             return Err(invalid());
         }
     }
-    if check_budget {
-        read_budget(conn)?;
-    }
-    Ok(value)
+    Ok(())
 }
 fn read_intent(
     conn: &Connection,
@@ -737,6 +783,34 @@ pub(super) fn validate_original(conn: &Connection, original: &Original) -> Resul
     validate_original_in_state(conn, original, &id, &value)
 }
 
+/// Validates the originals of one page, reading each epoch state once. `state` re-verifies
+/// every live slot, so checking it per original made a 32-row page cost seconds at a large
+/// backlog and the bounded recovery pass ran out of time before reaching any held original.
+pub(super) struct PageValidator<'c> {
+    conn: &'c Connection,
+    states: std::collections::HashMap<(String, i64), Result<State, String>>,
+}
+impl<'c> PageValidator<'c> {
+    pub(super) fn new(conn: &'c Connection) -> Self {
+        Self {
+            conn,
+            states: std::collections::HashMap::new(),
+        }
+    }
+    pub(super) fn check(&mut self, original: &Original) -> Result<(), String> {
+        let Some(id) = parse_id(original.id()) else {
+            return Ok(());
+        };
+        let conn = self.conn;
+        let value = self
+            .states
+            .entry((id.owner.clone(), id.generation))
+            .or_insert_with(|| state(conn, &id.owner, id.generation))
+            .clone()?;
+        validate_original_in_state(conn, original, &id, &value)
+    }
+}
+
 fn validate_original_in_state(
     conn: &Connection,
     original: &Original,
@@ -911,6 +985,29 @@ fn prefix(
     Ok(Prefix {
         slots: originals,
         blocker: None,
+    })
+}
+
+/// The compacted prefix of an open epoch on this route that still retains slots past it,
+/// so idle maintenance has work. Read-only; `None` before the epoch tables exist.
+pub(crate) fn backlog(store: &SessionStore, route: &str) -> Result<Option<i64>, String> {
+    store.with_read_conn(|conn| {
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_delivery_epochs')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if !exists {
+            return Ok(None);
+        }
+        conn.query_row(
+            "SELECT MIN(local_through) FROM native_delivery_epochs WHERE route_fingerprint=?1 AND closed=0 AND local_through<high_water",
+            [route],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())
     })
 }
 

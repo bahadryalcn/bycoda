@@ -585,3 +585,61 @@ fn descriptions_ids_and_closed_streams_are_strict_and_never_rotate_implicitly() 
     )
     .is_err());
 }
+
+thread_local! {
+    pub(super) static STATE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[test]
+fn a_pending_page_reads_its_epoch_state_once_not_once_per_original() {
+    let db = FileDb::new();
+    let store = db.open();
+    let handle = epoch(&store);
+    for index in 0..40 {
+        mark_possible(&store, &original(&store, &handle, &format!("item-{index}"))).unwrap();
+    }
+    STATE_READS.with(|reads| reads.set(0));
+    let page = super::super::pending(&store, ROUTE, None, super::super::MAX_PAGE).unwrap();
+    assert_eq!(page.originals.len(), super::super::MAX_PAGE);
+    assert_eq!(STATE_READS.with(|reads| reads.get()), 1);
+    let rest = super::super::pending(&store, ROUTE, page.next.as_deref(), 32).unwrap();
+    assert_eq!(rest.originals.len(), 8);
+    assert!(rest.next.is_none());
+}
+
+thread_local! {
+    pub(super) static SLOT_COUNTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[test]
+fn slot_counts_run_once_per_change_and_still_catch_a_foreign_commit() {
+    let db = FileDb::new();
+    let store = db.open();
+    let handle = epoch(&store);
+    let first = original(&store, &handle, "first");
+    original(&store, &handle, "second");
+    current(&store, &handle).unwrap();
+    SLOT_COUNTS.with(|counts| counts.set(0));
+    for _ in 0..5 {
+        current(&store, &handle).unwrap();
+    }
+    assert_eq!(SLOT_COUNTS.with(|counts| counts.get()), 0);
+    original(&store, &handle, "third");
+    current(&store, &handle).unwrap();
+    assert_eq!(SLOT_COUNTS.with(|counts| counts.get()), 1);
+    // Any commit by another connection, as another process would make, forces a recount.
+    let foreign = rusqlite::Connection::open(&db.path).unwrap();
+    foreign
+        .execute_batch("CREATE TABLE unrelated(x); INSERT INTO unrelated VALUES(1);")
+        .unwrap();
+    current(&store, &handle).unwrap();
+    assert_eq!(SLOT_COUNTS.with(|counts| counts.get()), 2);
+    foreign.execute_batch("DROP TRIGGER native_delivery_no_delete; DROP TRIGGER native_delivery_epoch_allocation_retained;").unwrap();
+    foreign
+        .execute(
+            "DELETE FROM native_delivery_epoch_allocations WHERE original_id=?1",
+            [first.id()],
+        )
+        .unwrap();
+    assert!(current(&store, &handle).is_err());
+}

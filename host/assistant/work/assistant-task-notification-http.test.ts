@@ -438,5 +438,9 @@ it("asks a closed Room once per tick, not once per observed project", async () =
     }
     await ticking;
     expect(asked).toEqual(["privacy.scope.capture"]);
+    // Repro: every idle tick (15 s) asked the closed Room again, so each refusal became a
+    // durable desktop delivery (~7,000 a day). The next tick inside the backoff asks nothing.
+    await server.assistant.tick();
+    expect((await call("conversation.desktop.take", {})).result ?? []).toEqual([]);
   });
 }, 30000);

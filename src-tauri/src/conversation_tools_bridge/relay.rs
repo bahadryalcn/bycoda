@@ -171,6 +171,29 @@ pub(crate) fn start_desktop_relay(app: AppHandle) {
         }
         std::thread::sleep(std::time::Duration::from_secs(30));
     });
+    // Durable deliveries settle a lost reply or ACK only on new traffic; an idle desktop
+    // would keep that slot holding the epoch prefix. One bounded pass every 30 s.
+    let maintenance_app = app.clone();
+    std::thread::spawn(move || {
+        let mut last_error = String::new();
+        loop {
+            if relay_stopped() {
+                return;
+            }
+            let outcome = crate::remote::NativeServiceChannel::connect(&maintenance_app)
+                .and_then(|channel| channel.maintain_delivery(std::time::Duration::from_secs(5)));
+            // Log a failure once per change, never request data: it names only our own stage.
+            let error = outcome.err().unwrap_or_default();
+            if !error.is_empty() && error != last_error {
+                log::warn!(
+                    "[desktop relay] delivery maintenance failed: {}",
+                    error.chars().take(200).collect::<String>()
+                );
+            }
+            last_error = error;
+            std::thread::sleep(std::time::Duration::from_secs(30));
+        }
+    });
     // Busy replies are network I/O, so they leave the poll thread: it must reach the next take.
     let (busy_queue, busy_jobs) = std::sync::mpsc::sync_channel::<BusyJob>(BUSY_QUEUE);
     std::thread::spawn(move || {

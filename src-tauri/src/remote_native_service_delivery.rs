@@ -1092,8 +1092,9 @@ pub(super) fn reconcile_remote_acks(
         .lock()
         .map_err(|_| "Native helper retirement cursor is unavailable")?
         .clone();
-    let page = access(channel)?
-        .with(|store| journal::pending_remote_acks(store, &fingerprint, after.as_deref(), 4))?;
+    let page = access(channel)?.with(|store| {
+        journal::pending_remote_acks(store, &fingerprint, after.as_deref(), journal::MAX_PAGE)
+    })?;
     let mut acknowledged = 0;
     let mut cursor = after;
     let mut complete_page = true;
@@ -1129,13 +1130,24 @@ pub(super) fn reconcile_pending(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,
 ) -> Result<usize, String> {
+    reconcile_pending_noting(channel, deadline, &mut None)
+}
+
+/// `reconcile_pending` that keeps the first swallowed failure, for maintenance diagnostics.
+fn reconcile_pending_noting(
+    channel: &Arc<NativeServiceChannel>,
+    deadline: Instant,
+    failure: &mut Option<String>,
+) -> Result<usize, String> {
     if !channel.delivery_supported {
         return Ok(0);
     }
     if channel.delivery_ack_supported {
         let now = Instant::now();
         let ack_deadline = now + deadline.saturating_duration_since(now) / 2;
-        let _ = reconcile_remote_acks(channel, ack_deadline);
+        if let Err(error) = reconcile_remote_acks(channel, ack_deadline) {
+            failure.get_or_insert(format!("ACK retry: {error}"));
+        }
     }
     let fingerprint = route(channel)?;
     let after = channel
@@ -1144,7 +1156,7 @@ pub(super) fn reconcile_pending(
         .map_err(|_| "Native helper recovery cursor is unavailable")?
         .clone();
     let page = access(channel)?
-        .with(|store| journal::pending(store, &fingerprint, after.as_deref(), 4))?;
+        .with(|store| journal::pending(store, &fingerprint, after.as_deref(), journal::MAX_PAGE))?;
     let mut recorded = 0;
     let mut cursor = after;
     let mut complete_page = true;
@@ -1159,15 +1171,27 @@ pub(super) fn reconcile_pending(
             continue;
         }
         if Instant::now() >= deadline {
+            failure.get_or_insert_with(|| "budget spent before a held original".to_owned());
             complete_page = false;
             break;
         }
-        if let Ok(reply) = status(channel, &original, deadline) {
-            if original.method() == "native.services.workspace.format" {
-                // No new owner can be constructed for this original: format
-                // invocations allocate fresh identities, and the live owner
-                // stays registered through its reply's final drop.
-                let _ = project_with_deadline(&reply, |_| Ok(()), Some(deadline));
+        let reply = status(channel, &original, deadline);
+        if let Err(error) = &reply {
+            failure.get_or_insert(format!("status: {error}"));
+        }
+        if let Ok(reply) = reply {
+            // No new owner can be constructed for these originals: format
+            // invocations allocate fresh identities and the live owner stays
+            // registered through its reply's final drop; a finish from an earlier
+            // runtime has no relay caller left, and its consumer is a no-op
+            // (conversation_tools_bridge/relay.rs `deliver_finish`). Left recorded,
+            // either holds the epoch prefix forever.
+            if original.method() == "native.services.workspace.format"
+                || original.from_earlier_runtime()
+            {
+                if let Err(error) = project_with_deadline(&reply, |_| Ok(()), Some(deadline)) {
+                    failure.get_or_insert(format!("orphan consume: {error}"));
+                }
             }
             drop(reply);
             recorded += 1;
@@ -1180,6 +1204,44 @@ pub(super) fn reconcile_pending(
         .map_err(|_| "Native helper recovery cursor is unavailable")? =
         if complete_page { page.next } else { cursor };
     Ok(recorded)
+}
+
+/// One bounded idle pass. Without it a lost reply or ACK waits for new traffic that may
+/// never come, and its slot holds the epoch prefix: retry consumed ACKs, settle orphaned
+/// results, then take one gap/compaction step while the prefix trails its high water.
+pub(super) fn maintain(
+    channel: &Arc<NativeServiceChannel>,
+    deadline: Instant,
+) -> Result<(), String> {
+    if !channel.delivery_supported || !epochs_supported(channel) {
+        return Ok(());
+    }
+    let mut failure = None;
+    reconcile_pending_noting(channel, deadline, &mut failure)
+        .map_err(|e| format!("pending: {e}"))?;
+    let fingerprint = route(channel)?;
+    let backlog = || access(channel)?.with(|store| journal::epochs::backlog(store, &fingerprint));
+    // Each step retires at most 32 slots; repeat while it makes progress so a large
+    // backlog drains in hours, not one step per pass.
+    let start = backlog().map_err(|e| format!("backlog: {e}"))?;
+    let mut through = start;
+    while through.is_some() && Instant::now() < deadline {
+        ensure_epoch(channel, deadline).map_err(|e| format!("epoch step: {e}"))?;
+        let next = backlog()?;
+        if next == through {
+            break;
+        }
+        through = next;
+    }
+    if through.is_some() && through == start {
+        if let Some(error) = failure {
+            return Err(format!(
+                "prefix held at {}: {error}",
+                start.unwrap_or_default()
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

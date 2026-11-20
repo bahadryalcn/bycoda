@@ -452,7 +452,11 @@ fn oversized_retained_blob_is_rejected_in_sql_before_rust_disclosure() {
         conn.execute("UPDATE native_delivery_originals SET params_json=CAST(zeroblob(?1) AS TEXT) WHERE original_id=?2",params![(MAX_PARAMS_BYTES+1) as i64,original.id()]).unwrap();
     }
     assert!(params_json(&store, &original).is_err());
-    assert!(pending(&store, ROUTE, None, 1).is_err());
+    // Held and never disclosed, but skipped rather than failing every later original's page.
+    assert!(pending(&store, ROUTE, None, 1)
+        .unwrap()
+        .originals
+        .is_empty());
     assert!(mark_possible(&store, &original).is_err());
     assert_eq!(rows(&store), 1);
 }

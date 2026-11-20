@@ -15,7 +15,7 @@ const MAX_FORMAT_ACTIVE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ACTIVE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_ACTIVE_ROWS: usize = 256;
 const MAX_ROWS: usize = 65_536;
-const MAX_PAGE: usize = 32;
+pub(crate) const MAX_PAGE: usize = 32;
 const MAX_KEY_BYTES: usize = 2048;
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 
@@ -127,6 +127,10 @@ impl Original {
     /// consumer must still hold its original native authority before dispatch.
     pub(crate) fn can_dispatch(&self) -> bool {
         self.phase == Phase::Prepared && self.created_instance == self.runtime.to_string()
+    }
+    /// Created by an earlier app runtime, so no consumer of this process waits for it.
+    pub(crate) fn from_earlier_runtime(&self) -> bool {
+        self.created_instance != self.runtime.to_string()
     }
 }
 
@@ -1007,6 +1011,7 @@ pub(crate) fn pending_remote_acks(
         .prepare(&format!("{SELECT} WHERE rowid=?1"))
         .map_err(|error| error.to_string())?;
     let mut originals = Vec::with_capacity(rowids.len());
+    let mut validator = epochs::PageValidator::new(&conn);
     for rowid in rowids {
         // Keep storage/SQL execution errors distinct from malformed metadata.
         // The actual Store writer remains held throughout both reads.
@@ -1016,7 +1021,7 @@ pub(crate) fn pending_remote_acks(
             })
             .map_err(|error| error.to_string())?;
         if let Ok(record) = record {
-            if epochs::validate_original(&conn, &record).is_err() {
+            if validator.check(&record).is_err() {
                 continue;
             }
             originals.push(record);
@@ -1040,13 +1045,85 @@ pub(crate) fn pending(
     }
     let connection = pin(store)?;
     store.with_read_conn(|conn| {
-        if !exists(conn)? { return Ok(PendingPage{originals:vec![],next:None}); }
-        let ids=identity(conn)?;
-        let mut statement=conn.prepare(&format!("{SELECT} WHERE source_store_id=?1 AND source_profile_id=?2 AND route_fingerprint=?3 AND phase!='acknowledged' AND original_id>?4 ORDER BY original_id LIMIT ?5")).map_err(|e|e.to_string())?;
-        let mut records=statement.query_map(params![ids.0,ids.1,route_fingerprint,after_id.unwrap_or(""),(limit+1) as i64],|r|checked_record(r,store.native_instance_id(),connection)).map_err(|_|invalid())?.collect::<rusqlite::Result<Vec<_>>>().map_err(|_|invalid())?;
-        for record in &records { epochs::validate_original(conn, record)?; }
-        let next=if records.len()>limit { records.truncate(limit); records.last().map(|r|r.id.clone()) } else { None };
-        Ok(PendingPage{originals:records,next})
+        // One snapshot for the page: on the separate reader the writer commits between
+        // statements, and an epoch validated across a commit sees its high water move.
+        let snapshot = conn.is_autocommit();
+        if snapshot {
+            conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+        }
+        let page = pending_page(store, conn, connection, route_fingerprint, after_id, limit);
+        if snapshot {
+            conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+        }
+        page
+    })
+}
+
+fn pending_page(
+    store: &SessionStore,
+    conn: &Connection,
+    connection: usize,
+    route_fingerprint: &str,
+    after_id: Option<&str>,
+    limit: usize,
+) -> Result<PendingPage, String> {
+    if !exists(conn)? {
+        return Ok(PendingPage {
+            originals: vec![],
+            next: None,
+        });
+    }
+    let ids = identity(conn)?;
+    let mut statement=conn.prepare(&format!("{SELECT} WHERE source_store_id=?1 AND source_profile_id=?2 AND route_fingerprint=?3 AND phase!='acknowledged' AND original_id>?4 ORDER BY original_id LIMIT ?5")).map_err(|e|e.to_string())?;
+    let rows = statement
+        .query_map(
+            params![
+                ids.0,
+                ids.1,
+                route_fingerprint,
+                after_id.unwrap_or(""),
+                (limit + 1) as i64
+            ],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    checked_record(r, store.native_instance_id(), connection),
+                ))
+            },
+        )
+        .map_err(|_| invalid())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|_| invalid())?;
+    let next = (rows.len() > limit).then(|| rows[limit - 1].0.clone());
+    // Like `pending_remote_acks`: a record that fails verification stays held unchanged and
+    // is skipped, so one damaged row can never stop recovery of every row after it.
+    let mut records = Vec::with_capacity(limit);
+    let mut validator = epochs::PageValidator::new(conn);
+    for (id, record) in rows.into_iter().take(limit) {
+        match record
+            .map_err(|_| invalid())
+            .and_then(|record| validator.check(&record).map(|()| record))
+        {
+            Ok(record) => records.push(record),
+            Err(error) => {
+                // Once per original and process: maintenance revisits it every pass.
+                static LOGGED: std::sync::Mutex<std::collections::BTreeSet<String>> =
+                    std::sync::Mutex::new(std::collections::BTreeSet::new());
+                if LOGGED
+                    .lock()
+                    .is_ok_and(|mut logged| logged.len() < 256 && logged.insert(id.clone()))
+                {
+                    log::warn!(
+                        "Native delivery original {} is held: {error}",
+                        id.rsplit(':').next().unwrap_or_default()
+                    );
+                }
+            }
+        }
+    }
+    Ok(PendingPage {
+        originals: records,
+        next,
     })
 }
 
