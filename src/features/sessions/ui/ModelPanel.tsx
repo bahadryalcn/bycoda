@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Settings } from "../../../shared/ui/icons";
@@ -28,6 +28,9 @@ import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { ModelAccountControl, ModelAccountList, usePanelAccounts } from "./ModelAccountSwitcher";
 import { ModelBrowser, type ModelBrowserProps, type ModelDefaultMark } from "./ModelBrowser";
 import { ModelSettingHelp, ModelSettingsColumn } from "./ModelSettingsColumn";
+import { ModelSettingPicker } from "./ModelSettingPicker";
+import { isSubagentSetting } from "../model/crossDelegation";
+import type { AccountModelChoice } from "../model/accountModelChoices";
 import { useModelSource } from "./modelSource";
 
 const PANEL_WIDTH = 600;
@@ -40,6 +43,7 @@ export type ModelPanelSettings = {
   locked: (setting: ModelSetting) => boolean;
   lockReason?: (setting: ModelSetting) => string | undefined;
   onChoose: (setting: ModelSetting, value: string) => void;
+  onSet: (setting: ModelSetting, value: string) => void;
 };
 
 /**
@@ -81,6 +85,25 @@ export function ModelPanel({
 }) {
   const t = useT();
   const [explained, setExplained] = useState<ModelSetting | null>(null);
+  const [editingSubagents, setEditingSubagents] = useState(false);
+  const content = useRef<HTMLDivElement>(null);
+  const restoreSubagents = useRef(false);
+  const subagents = editingSubagents ? settings?.settings.find(isSubagentSetting) : undefined;
+  function closeSubagents() {
+    restoreSubagents.current = true;
+    setEditingSubagents(false);
+  }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Restore DOM focus when the subagent controls become available again.
+  useLayoutEffect(() => {
+    if (editingSubagents || !restoreSubagents.current) return;
+    restoreSubagents.current = false;
+    const row = content.current?.querySelector('[data-setting-id="crossSubagents"]');
+    (
+      row?.querySelector<HTMLElement>("[data-model-setting-add]") ??
+      row?.querySelector<HTMLElement>('[aria-checked="true"]') ??
+      row?.querySelector<HTMLElement>("button")
+    )?.focus({ preventScroll: true });
+  }, [editingSubagents]);
   const { accounts, now } = usePanelAccounts(
     accountHarness ?? browser.harnesses[0],
     !!accountHarness,
@@ -92,7 +115,7 @@ export function ModelPanel({
     ? t("Results")
     : browser.tab === "favorites"
       ? t("Favorites")
-      : shownAccounts.length
+      : shownAccounts.length > 1
         ? null
         : HARNESS_TITLE[browser.tab];
 
@@ -132,11 +155,27 @@ export function ModelPanel({
       className="flex min-h-0 flex-col overflow-hidden [height:var(--layout-height)]"
     >
       {/* Narrow panels stack the settings under the list instead of squeezing the list. */}
-      <div className="@container/model-panel flex min-h-0 min-w-0 flex-1">
+      <div ref={content} className="@container/model-panel flex min-h-0 min-w-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 @max-[32rem]/model-panel:flex-col @max-[32rem]/model-panel:overflow-y-auto">
           <ModelBrowser
             {...browser}
             defaultMark={defaultMark?.mark}
+            editor={
+              subagents && settings ? (
+                <ModelSettingPicker
+                  key={settings.current.id}
+                  setting={subagents}
+                  values={settings.values}
+                  disabled={settings.locked(subagents)}
+                  onChoose={() => undefined}
+                  onClose={closeSubagents}
+                  onApply={(value) => {
+                    settings.onSet(subagents, value);
+                    closeSubagents();
+                  }}
+                />
+              ) : undefined
+            }
             header={
               <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-1.5 pb-1">
                 {title ? (
@@ -150,7 +189,7 @@ export function ModelPanel({
                     {title}
                   </Text>
                 ) : null}
-                {browser.query.trim() ? null : (
+                {shownAccounts.length <= 1 ? null : (
                   <ModelAccountControl
                     accounts={shownAccounts}
                     accountId={accountId}
@@ -175,7 +214,14 @@ export function ModelPanel({
               ) : undefined
             }
           />
-          {settings ? <ModelSettingsColumn {...settings} onExplain={setExplained} /> : null}
+          {settings ? (
+            <ModelSettingsColumn
+              {...settings}
+              onExplain={setExplained}
+              onEditSubagents={() => setEditingSubagents(true)}
+              editingSubagents={!!subagents}
+            />
+          ) : null}
         </div>
       </div>
       {settings ? (
@@ -253,8 +299,10 @@ function useDefaultMark(
   const path = [HARNESS_TITLE[harness], accountName, source.resolve(harness, value.model).name]
     .filter(Boolean)
     .join(" › ");
+  const viewedAccount = (item: AccountModelChoice) =>
+    tab === "favorites" ? item.accountId : tab === item.harness ? accountId : undefined;
   const onPin = (item: AgentModel) => {
-    const viewed = tab === item.harness ? accountId : undefined;
+    const viewed = viewedAccount(item);
     if (value.pinned && isModelDefault(value, item.harness, item.id, viewed)) {
       clearProjectDefault(project);
       return;
@@ -267,8 +315,7 @@ function useDefaultMark(
       harness,
       pinned: value.pinned,
       path,
-      isDefault: (item) =>
-        isModelDefault(value, item.harness, item.id, tab === item.harness ? accountId : undefined),
+      isDefault: (item) => isModelDefault(value, item.harness, item.id, viewedAccount(item)),
       onPin,
     },
   };

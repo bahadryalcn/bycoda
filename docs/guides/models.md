@@ -8,6 +8,16 @@ In a conversation, focus the model picker and press **Alt+Down** to open recent
 models. Arrow keys skip unavailable models. While the menu shows only unavailable
 models, it explains the state and keeps the current selection.
 
+Favorites show the model and the account that picking it will use. The provider
+logo identifies the provider. When it has several accounts, the colored number
+matches the account chooser. The home icon marks the project's default, and the
+check marks the model selected for the current conversation.
+
+In the conversation picker's **Agents** tab, open **Custom** or **Add** under
+**Subagents** to edit the list in one pass. Search for models or filter by account.
+**Select all shown** adds matching rows to your draft, within the model limit.
+**Apply** saves the entire selection. **Cancel** discards changes made in the editor.
+
 Every explicit-save editor in Settings uses one save bar. Its count opens the list of
 unsaved changes, grouped by provider, account or section, each with its own undo. Switching
 provider or account keeps every edit; a provider with unsaved edits is marked.

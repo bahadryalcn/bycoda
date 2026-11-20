@@ -220,9 +220,10 @@ describe("crossDelegationSettings", () => {
 
   it("encodes each option as the JSON ref the Host decodes", () => {
     const { subagents } = settingsFor({ harnesses: ["codex"] });
-    expect(subagents.options[2]).toEqual({
+    expect(subagents.options[2]).toMatchObject({
       value: encodeAdvisor(ref("codex", "codex:gpt-a")),
       label: "Codex · GPT A",
+      modelLabel: "GPT A",
     });
   });
 

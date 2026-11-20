@@ -1,6 +1,5 @@
 /** Different job: Account tiles combine live quota meters and account status; RadioGroup owns tile presentation. */
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
@@ -17,13 +16,13 @@ import {
   useProviderAccountUsage,
 } from "../../providers/public/accountUsage";
 import {
-  providerAccountColorValue,
   providerAccounts,
   subscribeProviderAccounts,
   supportsProviderAccounts,
   type ProviderAccount,
 } from "../../providers/public/providerAccounts";
-import { accountDisplayLabel } from "../model/accountModelChoices";
+import { modelAccountIdentities } from "../model/accountModelChoices";
+import { ModelAccountNumber, type ModelAccountIdentity } from "./ModelAccountIdentity";
 import { accountSwitcherKind, accountUsageSummary } from "../model/modelPanelData";
 import type { HarnessId } from "../model/session";
 import { useModelSource } from "./modelSource";
@@ -32,11 +31,9 @@ import { useModelSource } from "./modelSource";
 const USAGE_WARNING = 75;
 const USAGE_DANGER = 90;
 
-type PanelAccount = {
+type PanelAccount = ModelAccountIdentity & {
   id: string;
   label: string;
-  /** Local profiles carry a colour and usage; Host catalogs only name their accounts. */
-  local?: ProviderAccount;
   usedPercent: number | null;
   resetsAt: number | null;
   status?: string;
@@ -70,7 +67,8 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
     provider,
     enabled: active && local && provider != null && raw.length > 1,
   });
-  const accounts: PanelAccount[] = raw.map((account) => {
+  const identities = modelAccountIdentities(harness, raw);
+  const accounts: PanelAccount[] = raw.map((account, index) => {
     const profile = local ? (account as ProviderAccount) : undefined;
     const limits = profile ? usage.usage[accountUsageKey(profile)] : undefined;
     const summary = accountUsageSummary(limits, usage.now);
@@ -85,9 +83,9 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
             ? t("Usage unavailable")
             : undefined;
     return {
+      ...identities[index],
       id: account.id,
-      label: accountDisplayLabel(raw, account),
-      local: profile,
+      label: identities[index]?.accountLabel ?? account.label,
       ...summary,
       status,
     };
@@ -95,27 +93,15 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
   return { accounts, now: usage.now };
 }
 
-function AccountDot({ account }: { account: PanelAccount }) {
-  return account.local ? (
-    <span
-      {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-2 shrink-0 ")}
-      style={
-        { "--surface-user-color": providerAccountColorValue(account.local) } as React.CSSProperties
-      }
-      aria-hidden
-    />
-  ) : null;
-}
-
-/** Share of the account's limit used; `bare` drops the word where the control's name says it. */
-function Percent({ value, bare = false }: { value: number | null; bare?: boolean }) {
+/** Share of the account's limit used. */
+function Percent({ value }: { value: number | null }) {
   const { formatNumber } = useFormat();
   const t = useT();
   if (value == null) return null;
   const percent = formatNumber(value / 100, { style: "percent", maximumFractionDigits: 0 });
   return (
     <span className="shrink-0 tabular-nums ui-caption-text">
-      {bare ? percent : `${percent} ${t("used")}`}
+      {percent} {t("used")}
     </span>
   );
 }
@@ -130,7 +116,7 @@ function DefaultMark() {
   );
 }
 
-/** The control beside the provider title: label, two-way switch or a button for the list. */
+/** Switch between multiple accounts without repeating a lone account's identity. */
 export function ModelAccountControl({
   accounts,
   accountId,
@@ -151,19 +137,7 @@ export function ModelAccountControl({
   const { formatNumber } = useFormat();
   const kind = accountSwitcherKind(accounts.length);
   const current = accounts.find((account) => account.id === accountId);
-  if (kind === "none") return null;
-  if (kind === "label") {
-    const only = accounts[0];
-    return (
-      <span data-model-account-label className="flex min-w-0 items-center gap-1.5 ui-caption-text">
-        <AccountDot account={only} />
-        <Text size="inherit" tone="inherit" leading="snug" wrap="anywhere" className="min-w-0">
-          {only.label}
-        </Text>
-        <Percent value={only.usedPercent} />
-      </span>
-    );
-  }
+  if (kind === "none" || kind === "label") return null;
   if (kind === "switch") {
     return (
       <SegmentedControl
@@ -174,7 +148,7 @@ export function ModelAccountControl({
         options={accounts.map((account) => ({
           value: account.id,
           label: account.label,
-          icon: <AccountDot account={account} />,
+          icon: <ModelAccountNumber account={account} />,
           accessory: (
             <>
               <Percent value={account.usedPercent} />
@@ -212,26 +186,18 @@ export function ModelAccountControl({
       onMouseDown={(event) => event.preventDefault()}
       onClick={onToggleList}
     >
-      {current ? <AccountDot account={current} /> : null}
+      <ModelAccountNumber account={current} />
       <Text size="inherit" tone="inherit" truncate className="min-w-0">
         {label}
       </Text>
-      <Percent bare value={current?.usedPercent ?? null} />
+      {!listOpen ? <Percent value={current?.usedPercent ?? null} /> : null}
       {current && current.id === defaultAccountId ? <DefaultMark /> : null}
-      <span
-        {...surfaceAttributes(
-          { frame: "pane", edge: "left" },
-          "flex shrink-0 items-center gap-1 pl-1.5 ui-caption-text",
-        )}
-      >
-        {formatNumber(accounts.length)}
-        {elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
-      </span>
+      {elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
     </Button>
   );
 }
 
-/** The account list that takes the model list's place; searchable from six accounts. */
+/** Account list shown above the models; searchable from six accounts. */
 export function ModelAccountList({
   accounts,
   accountId,
@@ -255,6 +221,9 @@ export function ModelAccountList({
     : accounts;
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-model-account-list>
+      <Text size="caption" tone="secondary" className="px-2 pt-1">
+        {t("{p0} accounts", { p0: accounts.length })}
+      </Text>
       {searchable ? (
         <div className="px-2 pt-1 pb-1.5">
           <SearchInput
@@ -295,7 +264,7 @@ export function ModelAccountList({
               value: account.id,
               content: (
                 <>
-                  <AccountDot account={account} />
+                  <ModelAccountNumber account={account} />
                   <span className="min-w-0 flex-1">
                     <Text
                       as="span"
@@ -305,6 +274,7 @@ export function ModelAccountList({
                       className="flex min-w-0 items-center gap-1"
                     >
                       <Text
+                        data-model-account-name
                         size="inherit"
                         tone="inherit"
                         leading="snug"

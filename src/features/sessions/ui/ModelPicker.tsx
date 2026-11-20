@@ -45,6 +45,7 @@ import {
 import { useModelSource } from "./modelSource";
 import {
   visibleModelsAtSnapshot,
+  modelAccountIdentityIn,
   menuSettingsAtRevision,
   modelEnabledAtRevision,
   pickerProviderAtRevision,
@@ -68,6 +69,7 @@ import {
   modelAccountLabel,
   modelChoiceKey,
   type AccountModelChoice,
+  type ModelAccountCatalog,
 } from "../model/accountModelChoices";
 import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
 import {
@@ -78,6 +80,7 @@ import {
   subscribeProviderAccounts,
 } from "../../providers/public/providerAccounts";
 import { ModelTriggerBadges, type ModelTriggerBadgeData } from "./ModelTriggerBadges";
+import { ModelAccountNumber } from "./ModelAccountIdentity";
 import {
   effortSetting,
   fastSetting,
@@ -159,15 +162,15 @@ function accountForTab(
   tabAccounts: Partial<Record<HarnessId, string>>,
   currentHarness: HarnessId,
   currentAccountId: string | undefined,
-  hostAccounts: unknown,
+  accounts: ModelAccountCatalog,
 ): string {
+  const profiles = supportsProviderAccounts(target) ? accounts[target] : undefined;
   return (
     tabAccounts[target] ??
     (target === currentHarness && currentAccountId
       ? currentAccountId
-      : hostAccounts === undefined && supportsProviderAccounts(target)
-        ? defaultProviderAccountId(target)
-        : "default")
+      : (profiles?.find((account) => account.isDefault)?.id ??
+        (profiles?.length === 1 ? profiles[0].id : "default")))
   );
 }
 /**
@@ -321,8 +324,7 @@ export function ModelPicker({
     source.accounts,
     t,
   ]);
-  // The field trigger names the account whenever one is given, even a lone one and without
-  // `accountChoices`; a missing account is still shown honestly.
+  // Explicit field accounts can be shown without accountChoices. Missing accounts keep their warning.
   // oxlint-disable-next-line bycoda/compiler-owns-memo -- Reads the account store snapshot like triggerAccountLabel above; the compiler cannot prove that read pure, so the memo keeps the trigger from recomputing it each render.
   const fieldAccount = useMemo((): ModelTriggerBadgeData["account"] => {
     if (!field || inheritSelected || !accountId || !supportsProviderAccounts(harness))
@@ -333,18 +335,24 @@ export function ModelPicker({
       const saved = accounts.find((account) => account.id === accountId);
       if (!saved)
         return accountId === "default" ? undefined : { label: t("Unavailable Host account") };
-      return {
-        label: accountDisplayLabel(accounts, saved),
-        color: providerAccountColorValue({ id: saved.id, provider: harness }),
-      };
+      return accounts.length > 1
+        ? {
+            label: accountDisplayLabel(accounts, saved),
+            color: providerAccountColorValue({ id: saved.id, provider: harness }),
+            number: accounts.indexOf(saved) + 1,
+          }
+        : undefined;
     }
     const accounts = providerAccountsAtSnapshot(harness, accountsSnapshot);
     const saved = accounts.find((account) => account.id === accountId);
     if (saved)
-      return {
-        label: accountDisplayLabel(accounts, saved),
-        color: providerAccountColorValue({ ...saved, provider: harness }),
-      };
+      return accounts.length > 1
+        ? {
+            label: accountDisplayLabel(accounts, saved),
+            color: providerAccountColorValue({ ...saved, provider: harness }),
+            number: accounts.indexOf(saved) + 1,
+          }
+        : undefined;
     if (accountId !== defaultProviderAccountId(harness) && accountId !== "default")
       return { label: t("Removed account") };
     return { label: providerAccountLabel(harness, accountId) };
@@ -394,12 +402,14 @@ export function ModelPicker({
         unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
       },
       catalogVersion,
+      accountsSnapshot,
     );
     return hideAgentSettings
       ? all.filter((setting) => settingGroupId(setting) !== "delegation")
       : all;
   }, [
     catalogVersion,
+    accountsSnapshot,
     current,
     currentAccountId,
     hideAgentSettings,
@@ -457,32 +467,22 @@ export function ModelPicker({
     : [HARNESS_TITLE[current.harness], current.provider?.name].filter(Boolean).join(" · ");
   const providerKey = pickerHarnesses.join(",");
   const visibleTab = coerceModelPickerTab(tab, (id) => pickerHarnesses.includes(id));
+  const accountCatalog = JSON.parse(accountsSnapshot) as ModelAccountCatalog;
   const accountFor = (target: HarnessId) =>
-    accountForTab(target, tabAccounts, current.harness, currentAccountId, source.accounts);
-  // The browsed provider's account may be the local default, which lives in browser storage.
-  const browsedAccountId = useSyncExternalStore(
-    subscribeProviderAccounts,
-    () =>
-      visibleTab === "favorites"
-        ? ""
-        : accountForTab(
-            visibleTab,
-            tabAccounts,
-            current.harness,
-            currentAccountId,
-            source.accounts,
-          ),
-    () =>
-      visibleTab === "favorites"
-        ? ""
-        : accountForTab(
-            visibleTab,
-            tabAccounts,
-            current.harness,
-            currentAccountId,
-            source.accounts,
-          ),
-  );
+    accountForTab(target, tabAccounts, current.harness, currentAccountId, accountCatalog);
+  const railAccounts =
+    accountChoices && open
+      ? Object.fromEntries(
+          pickerHarnesses.map((id) => [
+            id,
+            modelAccountIdentityIn(id, accountFor(id), accountCatalog),
+          ]),
+        )
+      : undefined;
+  const activeAccount = triggerAccountLabel
+    ? modelAccountIdentityIn(harness, currentAccountId, accountCatalog)
+    : undefined;
+  const browsedAccountId = visibleTab === "favorites" ? "" : accountFor(visibleTab);
   // Recent models that stopped being offered drop out of the open menu.
   const recentModels = useMemo(() => {
     return (recentMenu?.models ?? []).filter(
@@ -511,6 +511,8 @@ export function ModelPicker({
           query,
           hideSettings,
           accountChoices,
+          accountFor: (target) =>
+            accountForTab(target, tabAccounts, current.harness, currentAccountId, accountCatalog),
         },
         catalogVersion,
         accountsSnapshot,
@@ -524,6 +526,10 @@ export function ModelPicker({
       visibleTab,
       accountChoices,
       accountsSnapshot,
+      tabAccounts,
+      accountCatalog,
+      current.harness,
+      currentAccountId,
       hideSettings,
     ],
   );
@@ -531,7 +537,9 @@ export function ModelPicker({
   // An inherited (empty) choice has no current model to mark or start on.
   const markedChoiceKey = inheritSelected
     ? ""
-    : hideSettings
+    : hideSettings ||
+        (visibleTab === "favorites" &&
+          visibleModels.some((item) => modelChoiceKey(item) === currentChoiceKey))
       ? currentChoiceKey
       : modelChoiceKey({ ...current, accountId: undefined });
   const currentModelIndex = visibleModels.findIndex(
@@ -647,6 +655,17 @@ export function ModelPicker({
         return;
       }
       if (!openRef.current || event.key !== "Escape") return;
+      if (event.target instanceof Element) {
+        const editor = document.querySelector("[data-model-subagent-editor]");
+        const filterList = editor?.querySelector('[aria-haspopup="listbox"][aria-expanded="true"]');
+        if (
+          editor?.contains(event.target) ||
+          (filterList &&
+            event.target.closest('[role="listbox"]')?.id ===
+              filterList.getAttribute("aria-controls"))
+        )
+          return;
+      }
       event.preventDefault();
       event.stopPropagation();
       // Escape steps back from the account list before it closes the panel.
@@ -877,7 +896,7 @@ export function ModelPicker({
                 <>
                   {triggerAccountLabel && !inheritSelected ? (
                     <>
-                      {" "}
+                      <ModelAccountNumber account={activeAccount} />
                       <Text
                         data-model-account
                         size="inherit"
@@ -968,6 +987,7 @@ export function ModelPicker({
             onActive: setActiveModel,
             onPick: pickModel,
             onToggleFavorite: toggleFavorite,
+            railAccounts,
           }}
 
           // Inherit resets model authority; it is a separate action above the value list.
@@ -1015,6 +1035,7 @@ export function ModelPicker({
                   locked: settingDisabled,
                   lockReason: (setting) => settingLockOf(setting)?.reason,
                   onChoose: pickSetting,
+                  onSet: setSetting,
                 }
           }
         />

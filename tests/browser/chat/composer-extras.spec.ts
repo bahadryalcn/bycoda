@@ -1469,7 +1469,8 @@ test("model picker names and selects accounts and session shows its active agent
   await expect(panel).toBeVisible();
   // Two accounts: a segmented control in the list header names both; each model is listed once.
   const account = panel.getByRole("radiogroup", { name: "Account", exact: true });
-  await expect(account.getByRole("radio")).toHaveText(["personal", "work"]);
+  await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeVisible();
+  await expect(account.getByRole("radio", { name: "work", exact: true })).toBeVisible();
   await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeChecked();
   const opus = panel.getByRole("option", { name: "Claude Opus 5.5", exact: true });
   await expect(opus).toHaveCount(1);
@@ -1481,7 +1482,8 @@ test("model picker names and selects accounts and session shows its active agent
   await expect(panel).toBeVisible();
   await account.getByRole("radio", { name: "work", exact: true }).click();
   await expect(account.getByRole("radio", { name: "work", exact: true })).toBeChecked();
-  await expect(main).toContainText("Opus 5.5 work");
+  await expect(main).toContainText("Opus 5.5");
+  await expect(main.locator("[data-model-account]")).toHaveText("work");
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   await expect(page.locator("[data-session-agent]")).toContainText(
@@ -1581,11 +1583,10 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
   await expect(page.getByRole("button", { name: "Extras", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
   const advisorField = settingsColumn.getByRole("button", { name: /^Advisor\b/ });
-  // Advisor and Subagents open a picker in the settings column; the provider heading carries
-  // the "Claude Code · " prefix, so options are named by model alone.
+  // Advisor opens beside the models. The batch editor uses the browser column.
   const delegate = async (name: "Advisor" | "Subagents", label: RegExp) => {
     await openPanel("agents");
-    const picker = settingsColumn.locator("[data-model-setting-picker]");
+    const picker = panel.locator("[data-model-setting-picker]");
     if (name === "Advisor") await advisorField.click();
     else {
       // Automatic has no manual list yet. Custom opens the shared model picker.
@@ -1596,7 +1597,7 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
     const choice = picker.getByRole("option", { name: label });
     await choice.click();
     if (name === "Subagents")
-      await picker.getByRole("button", { name: "Done", exact: true }).click();
+      await picker.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(picker).toHaveCount(0);
   };
   await delegate("Advisor", /^Claude Opus 5\.5\b/);
@@ -1979,6 +1980,80 @@ test("model picker selects image models under Agents in both themes and widths",
     await page.screenshot({
       path: `temp/verification/image-models/picker-${width}-${scheme}.png`,
     });
+  }
+});
+
+test("model picker shows account identity and applies subagent picks as a batch", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [1280, 800]) {
+    for (const theme of ["light", "dark"]) {
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts=3&theme=${theme}`,
+      );
+      await page
+        .getByRole("button", { name: /^Claude Code/ })
+        .first()
+        .click();
+      const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+      await expect(panel).toBeVisible();
+      const opus = panel.getByRole("option", { name: "Claude Opus 5.5", exact: true });
+      await opus.hover();
+      await opus.locator("..").getByRole("button", { name: "Add to favorites" }).click();
+      await panel.locator("[data-model-account-menu]").click();
+      await expect(panel.locator("[data-model-account-list]")).toBeVisible();
+      await expect(opus).toBeVisible();
+      await panel.screenshot({
+        path: `temp/verification/model-picker-rollout/accounts-${width}-${theme}.png`,
+      });
+      await panel.getByRole("radio", { name: /^work/ }).click();
+      await panel.getByRole("tab", { name: "Favorites" }).click();
+      const favorite = panel.getByRole("option", { name: /Opus 5\.5, Claude Code, work/ });
+      await expect(favorite.locator("[data-model-account-number]")).toHaveText("2");
+      await expect(favorite).not.toContainText("Claude Code");
+      await panel.screenshot({
+        path: `temp/verification/model-picker-rollout/favorites-${width}-${theme}.png`,
+      });
+      await panel.getByRole("tab", { name: "Agents", exact: true }).click();
+      const advisor = panel.locator('[data-setting-id="crossAdvisor"] button');
+      await advisor.click();
+      const advisorChoice = panel
+        .locator('[data-model-setting-picker="crossAdvisor"]')
+        .getByRole("option", { name: /^Claude Opus 5\.5/ });
+      await expect(advisorChoice.locator("img, svg").first()).toBeVisible();
+      await panel.screenshot({
+        path: `temp/verification/model-picker-rollout/advisor-${width}-${theme}.png`,
+      });
+      await advisorChoice.click();
+      await expect(advisor.locator("img").first()).toBeVisible();
+      await panel.getByRole("radio", { name: "Custom", exact: true }).click();
+      const editor = panel.locator("[data-model-subagent-editor]");
+      const pickerOptions = editor.getByRole("option");
+      await expect(editor.getByRole("combobox", { name: "Search models" })).toBeFocused();
+      const filter = editor.getByRole("button", { name: /^Accounts:/ });
+      await filter.click();
+      const accounts = page.getByRole("listbox", { name: "Accounts", exact: true });
+      await expect(accounts).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(accounts).toHaveCount(0);
+      await expect(panel).toBeVisible();
+      await filter.click();
+      await accounts.getByRole("option", { name: "Claude Code · personal" }).click();
+      await pickerOptions.first().click();
+      await filter.click();
+      await accounts.getByRole("option", { name: "Claude Code · work" }).click();
+      await pickerOptions.first().click();
+      await expect(editor.getByText("2 selected")).toBeVisible();
+      await expect(page.getByTestId("choice")).not.toContainText('"crossSubagents":"[');
+      await panel.screenshot({
+        path: `temp/verification/model-picker-rollout/bulk-${width}-${theme}.png`,
+      });
+      await editor.getByRole("button", { name: "Apply", exact: true }).click();
+      await expect(page.getByTestId("choice")).toContainText('"crossSubagents":"[');
+    }
   }
 });
 

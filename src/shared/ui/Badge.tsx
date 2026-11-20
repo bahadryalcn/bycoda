@@ -19,6 +19,8 @@ export type BadgeSize = "xs" | "sm" | "md";
 
 export type BadgeProps = Omit<ArcBadgeProps, "size"> & {
   size?: BadgeSize;
+  /** Tint from an account's identity palette. Text retains the theme foreground. */
+  identityColor?: string;
   /** Round 28px icon container for a decorative activity glyph. */
   shape?: "icon";
   minWidth?: CSSProperties["minInlineSize"];
@@ -60,6 +62,7 @@ export function Badge({
   max,
   variant,
   tone,
+  identityColor,
   truncate = false,
   leading,
   onRemove,
@@ -90,12 +93,17 @@ export function Badge({
       data-tone={badgeTone}
       data-variant={variant ?? "label"}
       data-leading={leading}
-      style={{ ...style, minInlineSize: minWidth ?? style?.minInlineSize }}
+      style={{
+        ...style,
+        minInlineSize: minWidth ?? style?.minInlineSize,
+        ...(identityColor ? ({ "--badge-identity": identityColor } as CSSProperties) : {}),
+      }}
       className={[
         "bycoda-arc",
         size === "xs" && styles.xs,
         shape === "icon" && styles.iconShape,
         leading && styles.leading,
+        identityColor && styles.identity,
         onRemove && styles.chip,
         className,
       ]

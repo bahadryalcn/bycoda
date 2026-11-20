@@ -129,12 +129,16 @@ export function ModelSettingsColumn({
   onChoose,
   onExplain,
   hideAgentSettings = false,
+  onEditSubagents,
+  editingSubagents = false,
 }: {
   /**
    * Leaves out the Agents tab and its settings (advisor, subagents, subagent effort, image
    * models), for callers whose changes would be discarded.
    */
   hideAgentSettings?: boolean;
+  onEditSubagents?: () => void;
+  editingSubagents?: boolean;
   current: AgentModel;
   settings: ModelSetting[];
   values: Record<string, string>;
@@ -181,8 +185,9 @@ export function ModelSettingsColumn({
   const scrolling = shown.filter((setting) => !pinned.includes(setting));
   // The reason hint wraps every row, so a row that unlocks keeps its mounted state.
   const renderSetting = (setting: ModelSetting) => {
-    const disabled = locked(setting);
-    const reason = disabled ? lockReason?.(setting) : undefined;
+    const lockedSetting = locked(setting);
+    const disabled = lockedSetting || (editingSubagents && isSubagentSetting(setting));
+    const reason = lockedSetting ? lockReason?.(setting) : undefined;
     return (
       <Tooltip key={setting.id} label={reason ? t(reason) : undefined}>
         <SettingRow
@@ -192,6 +197,10 @@ export function ModelSettingsColumn({
           disabled={disabled}
           onChoose={(value) => onChoose(setting, value)}
           onPick={() => {
+            if (onEditSubagents && isSubagentSetting(setting)) {
+              onEditSubagents();
+              return;
+            }
             returnSetting.current = setting.id;
             setPickingId(setting.id);
           }}

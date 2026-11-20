@@ -224,7 +224,9 @@ describe("model picker", () => {
     );
     expect(container.querySelector("[data-model-account]")?.textContent).toBe("personal");
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(count * 2);
-    expect(container.textContent).toContain("Opus 5 work");
+    expect(
+      container.querySelector('[role="option"][aria-label="Claude Opus 5, Claude Code, work"]'),
+    ).not.toBeNull();
   });
 
   it.each(["global", "project", "availability"])(
@@ -353,12 +355,13 @@ describe("model picker", () => {
       ),
     );
     const trigger = container.querySelector<HTMLButtonElement>("button")!;
-    expect(trigger.textContent).toContain("Opus 5.5 work");
+    expect(trigger.textContent).toContain("Opus 5.5");
+    expect(trigger.querySelector("[data-model-account]")?.textContent).toBe("work");
     await act(async () => trigger.click());
     const options = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="option"]'));
-    expect(options.map((item) => item.textContent?.trim())).toEqual([
-      "Opus 5.5 personal",
-      "Opus 5.5 work",
+    expect(options.map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Opus 5.5, Claude Code, personal",
+      "Opus 5.5, Claude Code, work",
     ]);
     expect(options.map((item) => item.getAttribute("aria-selected"))).toEqual(["false", "true"]);
     await inputText(container.querySelector<HTMLInputElement>("input")!, "personal");

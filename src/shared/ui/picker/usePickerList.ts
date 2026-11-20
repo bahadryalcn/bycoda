@@ -17,6 +17,8 @@ export type PickerOption = {
   title: ReactNode;
   /** Typeahead and accessible text when `title` is not a string. */
   textValue?: string;
+  /** Names a visual identity, such as a provider logo, that has no visible text. */
+  accessibleLabel?: string;
   /** Leading glyph, logo, avatar or colour dot (icon-sm/icon-md). */
   icon?: ReactNode;
   /** Short secondary text on the title line, end-aligned (path, account, current value). */

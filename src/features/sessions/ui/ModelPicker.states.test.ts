@@ -145,7 +145,15 @@ describe("model picker account states", () => {
     );
     expect(trigger().querySelector("[data-model-account]")?.textContent).toBe("lab");
     await act(async () => trigger().click());
-    expect(options()).toEqual(["Opus 5.5 personal", "Opus 5.5 work", "Opus 5.5 lab"]);
+    expect(
+      [...container.querySelectorAll('[role="option"]')].map((row) =>
+        row.getAttribute("aria-label"),
+      ),
+    ).toEqual([
+      "Opus 5.5, Claude Code, personal",
+      "Opus 5.5, Claude Code, work",
+      "Opus 5.5, Claude Code, lab",
+    ]);
   });
 
   it("keeps a lone default account out of the trigger", async () => {
@@ -239,7 +247,11 @@ describe("model picker with a remote Host catalog", () => {
     );
     expect(trigger().querySelector("[data-model-account]")?.textContent).toBe("Host second");
     await act(async () => trigger().click());
-    expect(options()).toEqual(["Opus 5.5 Host main", "Opus 5.5 Host second"]);
+    expect(
+      [...container.querySelectorAll('[role="option"]')].map((row) =>
+        row.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Opus 5.5, Claude Code, Host main", "Opus 5.5, Claude Code, Host second"]);
     expect(container.textContent).not.toContain("this computer");
   });
 
@@ -264,12 +276,23 @@ describe("model picker with a remote Host catalog", () => {
 
   it("follows a republished Host account list", async () => {
     const source = (label: string) =>
-      hostSource([opus], { accounts: { claude: [{ id: "default", label }] } });
+      hostSource([opus], {
+        accounts: {
+          claude: [
+            { id: "default", label },
+            { id: "host-second", label: "Other" },
+          ],
+        },
+      });
     await renderHost(source("Before"));
     await act(async () => trigger().click());
-    expect(options()).toEqual(["Opus 5.5 Before"]);
+    expect(container.querySelector('[role="option"]')?.getAttribute("aria-label")).toContain(
+      "Before",
+    );
     await renderHost(source("After"));
-    expect(options()).toEqual(["Opus 5.5 After"]);
+    expect(container.querySelector('[role="option"]')?.getAttribute("aria-label")).toContain(
+      "After",
+    );
   });
 });
 

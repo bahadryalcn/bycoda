@@ -5,22 +5,50 @@ import { providerAccountSignedOut } from "../../providers/public/accountUsage";
 import type { ProviderRateLimits } from "../../providers/public/accountUsage";
 import {
   defaultProviderAccountId,
+  PROVIDER_ACCOUNT_COLORS,
   PROVIDER_ACCOUNT_PROVIDERS,
   providerAccountLabel,
   providerAccounts,
   providerAccountColorValue,
   supportsProviderAccounts,
+  type ProviderAccount,
 } from "../../providers/public/providerAccounts";
 
 export type AccountModelChoice = AgentModel & {
   accountId?: string;
   accountColor?: string;
+  accountNumber?: number;
   /** The account's display label, kept apart from `name` so a row can truncate the model first. */
   accountLabel?: string;
 };
+type ModelAccountProfile = Pick<ProviderAccount, "id" | "label" | "isDefault"> & { color?: string };
+
 export type ModelAccountCatalog = Partial<
-  Record<"codex" | "claude" | "grok", readonly { id: string; label: string; isDefault?: boolean }[]>
+  Record<"codex" | "claude" | "grok", readonly ModelAccountProfile[]>
 >;
+
+export function modelAccountIdentities(
+  harness: AgentModel["harness"],
+  accounts: readonly ModelAccountProfile[],
+) {
+  return accounts.map((account, index) => ({
+    id: account.id,
+    isDefault: account.isDefault,
+    accountLabel: accountDisplayLabel(accounts, account),
+    accountNumber: accounts.length > 1 ? index + 1 : undefined,
+    ...(accounts.length > 1
+      ? {
+          accountColor: providerAccountColorValue({
+            id: account.id,
+            provider: harness,
+            color: account.color
+              ? PROVIDER_ACCOUNT_COLORS.find((entry) => entry.id === account.color)?.id
+              : undefined,
+          }),
+        }
+      : {}),
+  }));
+}
 
 /**
  * Display label of one account. Accounts may share a label; the stored label stays untouched and
@@ -55,24 +83,16 @@ export function accountModelChoices(
     // A Host that has not reported this provider's accounts leaves the account unknown: the
     // model stays one row and the owning Host picks its account, never this device's profiles.
     if (catalog !== undefined && catalog[model.harness] === undefined) return [model];
-    const accounts: readonly { id: string; label: string; accountColor?: string }[] =
-      catalog === undefined
-        ? providerAccounts(model.harness).map((account) => ({
-            id: account.id,
-            label: account.label,
-            accountColor: providerAccountColorValue(account),
-          }))
-        : (catalog[model.harness] ?? []);
-    return accounts.map((account) => {
-      const accountLabel = accountDisplayLabel(accounts, account);
-      return {
+    const accounts =
+      catalog === undefined ? providerAccounts(model.harness) : (catalog[model.harness] ?? []);
+    return modelAccountIdentities(model.harness, accounts).map(
+      ({ id, isDefault: _default, ...account }) => ({
         ...model,
-        name: `${model.name} ${accountLabel}`,
-        accountLabel,
-        accountId: account.id,
-        ...(account.accountColor ? { accountColor: account.accountColor } : {}),
-      };
-    });
+        ...account,
+        name: `${model.name} ${account.accountLabel}`,
+        accountId: id,
+      }),
+    );
   });
 }
 
