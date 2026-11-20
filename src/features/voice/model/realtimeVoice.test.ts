@@ -1325,6 +1325,28 @@ it("opens an output-only preview without requesting microphone permission", asyn
   });
   voice.close();
 });
+it("fails with a named error when the microphone never answers instead of staying connecting", async () => {
+  vi.useFakeTimers();
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const getUserMedia = setup();
+  getUserMedia.mockImplementation(() => new Promise<never>(() => {}));
+  const voice = new RealtimeVoice("openai", callbacks(), "tr");
+  const connecting = voice.connect(secret("openai"));
+  const outcome = expect(connecting).rejects.toThrow(
+    "Voice could not start: microphone did not respond.",
+  );
+  await vi.advanceTimersByTimeAsync(61_000);
+  await outcome;
+  expect(sockets).toHaveLength(0);
+  expect(warn).toHaveBeenCalledWith(
+    "[voice.connection]",
+    "openai",
+    expect.objectContaining({ step: "microphone" }),
+  );
+  vi.useRealTimers();
+  warn.mockRestore();
+});
+
 it("applies changed owner rules without reconnecting or authorizing a response", async () => {
   const getUserMedia = setup();
   const voice = new RealtimeVoice("openai", callbacks(), "tr");

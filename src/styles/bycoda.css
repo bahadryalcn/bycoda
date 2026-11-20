@@ -130,7 +130,11 @@
 /* Selection is one calm shared fill with full-strength text; rows, tabs and
    project cards never grow a decorative edge stripe. */
 .bycoda-sidebar [aria-selected="true"],
-.bycoda-project-rail [aria-current]:not(.project-reorder-item *):not([data-live-agent-card]) {
+.bycoda-project-rail
+  [aria-current]:not(.project-reorder-item *):not(
+    [data-live-agent-card],
+    [data-rail-section-primary]
+  ) {
   box-shadow: none;
   background: var(--ui-surface-selected);
   color: var(--color-content);

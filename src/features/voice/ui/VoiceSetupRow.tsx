@@ -65,6 +65,17 @@ export function VoiceSetupRow({
         ) : null}
         {!installing ? (
           <>
+            <Button onClick={() => setup.setLocating(true)}>{t("Locate existing")}</Button>
+            {setup.gpuUnavailable ? (
+              <Button
+                onClick={() => {
+                  setup.resetJob();
+                  change({ device: "auto" });
+                }}
+              >
+                {t("Use automatic selection")}
+              </Button>
+            ) : null}
             {pythonMissing ? (
               <Button
                 variant="primary"
@@ -103,43 +114,30 @@ export function VoiceSetupRow({
                 {t("Try again")}
               </Button>
             ) : null}
-            <Button
-              ref={moreAnchor}
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={t("More voice setup actions")}
-              aria-haspopup="menu"
-              aria-expanded={moreOpen}
-              onClick={() => setMoreOpen((open) => !open)}
-            >
-              <MoreHorizontal aria-hidden className="icon-sm" />
-            </Button>
-            {moreOpen ? (
+            {!visibleError ? (
+              <Button
+                ref={moreAnchor}
+                variant="ghost"
+                size="sm"
+                iconOnly
+                label={t("More voice setup actions")}
+                aria-haspopup="menu"
+                aria-expanded={moreOpen}
+                onClick={() => setMoreOpen((open) => !open)}
+              >
+                <MoreHorizontal aria-hidden className="icon-sm" />
+              </Button>
+            ) : null}
+            {moreOpen && !visibleError ? (
               <DropdownMenu
                 anchor={moreAnchor}
                 label={t("More voice setup actions")}
-                items={[
-                  { kind: "item", id: "locate", label: t("Locate existing") },
-                  ...((ready || pythonMissing) && !visibleError
-                    ? [
-                        {
-                          kind: "item" as const,
-                          id: "check",
-                          label: t("Check again"),
-                          disabled: busy,
-                        },
-                      ]
-                    : []),
-                ]}
+                items={[{ kind: "item", id: "check", label: t("Check again"), disabled: busy }]}
                 onClose={() => setMoreOpen(false)}
-                onPick={(id) => {
+                onPick={() => {
                   setMoreOpen(false);
-                  if (id === "locate") setup.setLocating(true);
-                  else {
-                    setup.resetJob();
-                    setup.check();
-                  }
+                  setup.resetJob();
+                  setup.check();
                 }}
               />
             ) : null}
@@ -152,9 +150,18 @@ export function VoiceSetupRow({
           size="md"
           onClose={setup.closeLocate}
           footer={
-            <Button variant="secondary" onClick={setup.closeLocate}>
-              {t("Done")}
-            </Button>
+            <>
+              <Button
+                loading={busy}
+                disabled={!setup.checked || busy || setup.browsing !== null}
+                onClick={setup.findExisting}
+              >
+                {t("Automatic detection")}
+              </Button>
+              <Button variant="secondary" onClick={setup.closeLocate}>
+                {t("Done")}
+              </Button>
+            </>
           }
         >
           <div className={styles.locations}>
@@ -187,8 +194,21 @@ export function VoiceSetupRow({
             <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.hint}>
               {t("Leave a location empty to find it automatically.")}
             </Text>
-            {visibleError ? (
-              <SettingsFeedback state="error">{visibleError.message}</SettingsFeedback>
+            {setup.locateError || visibleError ? (
+              <SettingsFeedback
+                state="error"
+                extra={
+                  setup.locateError?.detail ? (
+                    <InfoPopover label={t("Technical details")}>
+                      <Text as="p" size="caption" tone="secondary" className={styles.detail}>
+                        {setup.locateError.detail}
+                      </Text>
+                    </InfoPopover>
+                  ) : undefined
+                }
+              >
+                {setup.locateError?.message ?? visibleError?.message}
+              </SettingsFeedback>
             ) : null}
           </div>
         </Modal>

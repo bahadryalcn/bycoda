@@ -92,6 +92,31 @@ it("boxes each link with its text intact and opens it from the end badge", () =>
   expect(openUrl).toHaveBeenCalledWith("https://example.com/");
 });
 
+it("keeps the attachment and citation tokens inside Markdown emphasis", () => {
+  act(() =>
+    root.render(
+      createElement(ComposerHighlight, {
+        text: "**Look at [image1] and [quote1]**",
+        mode: null,
+        names: new Set<string>(),
+        skillParts: (text) => [{ text }],
+        mentions: new Map(),
+        mcpTags: [],
+        attachments: [
+          { id: "image", kind: "image", name: "photo.png", mimeType: "image/png", size: 1 },
+        ],
+        citations: 1,
+      }),
+    ),
+  );
+  const emphasis = host.querySelector('[data-draft-markdown="strong"]');
+  expect(emphasis?.querySelector('[data-composer-attachment-kind="image"]')).not.toBeNull();
+  expect(emphasis?.querySelector("[data-composer-citation-token]")).not.toBeNull();
+  const source = emphasis!.cloneNode(true) as HTMLElement;
+  source.querySelectorAll('[aria-hidden="true"]').forEach((face) => face.remove());
+  expect(source.textContent).toBe("**Look at [image1] and [quote1]**");
+});
+
 it("decorates recognized skills and MCP references without changing the draft", () => {
   const text = "/frontend-design $frontend-design @browser /unknown";
   act(() =>

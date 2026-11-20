@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   resolveBinary: vi.fn(),
   spawnChild: vi.fn(),
+  execChild: vi.fn(),
   killChild: vi.fn(),
   acquireHarnessBridge: vi.fn(),
   inspectHarnessBinary: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("../../core/child", () =>
     resolveOmpBinary: mocks.resolveBinary,
     resolvePiBinary: mocks.resolveBinary,
     spawnChild: mocks.spawnChild,
+    execChild: mocks.execChild,
     unwatchChild: vi.fn(),
     watchChild: vi.fn(),
     writeChild: vi.fn(),
@@ -100,6 +102,7 @@ describe("Pi live session", () => {
     mocks.request.mockReset();
     mocks.resolveBinary.mockReset();
     mocks.spawnChild.mockReset();
+    mocks.execChild.mockReset();
     mocks.killChild.mockReset();
     mocks.frames.length = 0;
     mocks.resolveBinary.mockResolvedValue({ path: "/fake/pi" });
@@ -121,6 +124,94 @@ describe("Pi live session", () => {
       }
       return { data: {} };
     });
+  });
+
+  it("rejects an older Pi before starting a process or sending a prompt", async () => {
+    mocks.execChild.mockResolvedValue("--no-tools --no-extensions --help");
+    await expect(
+      sendPiTurn({
+        sessionId: "pi-chat-old",
+        cwd: "/scratch/run",
+        model: "pi:default",
+        runtimeMode: "supervised",
+        text: "test",
+        attachments: [],
+        modelSettings: { leanContext: "on" },
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("cannot enforce chat-only");
+    expect(mocks.execChild).toHaveBeenCalledWith(
+      "/fake/pi",
+      ["--no-extensions", "--no-mcp", "--no-approve", "--help"],
+      "/scratch/run",
+      "pi",
+      null,
+      "utility",
+    );
+    expect(mocks.spawnChild).not.toHaveBeenCalled();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it("keeps scratch restrictions when resuming and never retries unrestricted", async () => {
+    mocks.execChild.mockResolvedValue(
+      "--no-tools --no-extensions --no-mcp --no-skills --no-prompt-templates --no-context-files --no-approve --system-prompt --session-dir --session",
+    );
+    bindSession(PI_FLAVOR, "pi-chat-resume", "native-session", "/scratch/run");
+    mocks.request.mockRejectedValueOnce(new Error("Resume failed"));
+    await expect(
+      compactContext(PI_FLAVOR, {
+        sessionId: "pi-chat-resume",
+        cwd: "/scratch/run",
+        model: "pi:default",
+        runtimeMode: "supervised",
+        modelSettings: { leanContext: "on" },
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("Resume failed");
+    expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+    expect(mocks.spawnChild.mock.calls[0][2]).toEqual(
+      expect.arrayContaining([
+        "--no-tools",
+        "--no-mcp",
+        "--session",
+        "native-session",
+        "--session-dir",
+        "/scratch/run/.bycoda-pi-sessions",
+      ]),
+    );
+    expect(mocks.spawnChild.mock.calls[0][3]).toBe("/scratch/run");
+  });
+
+  it("starts a fresh tool-free Pi session in scratch before prompting", async () => {
+    mocks.execChild.mockResolvedValue(
+      "--no-tools --no-extensions --no-mcp --no-skills --no-prompt-templates --no-context-files --no-approve --system-prompt --session-dir --session",
+    );
+    const turn = sendPiTurn({
+      sessionId: "pi-chat-fresh",
+      cwd: "/scratch/fresh",
+      model: "pi:default",
+      runtimeMode: "supervised",
+      text: "discuss",
+      attachments: [],
+      modelSettings: { leanContext: "on" },
+      onEvent: () => undefined,
+    });
+    await vi.waitFor(() =>
+      expect(mocks.request.mock.calls.some(([command]) => command.type === "prompt")).toBe(true),
+    );
+    expect(mocks.spawnChild.mock.calls[0][2]).toEqual(
+      expect.arrayContaining([
+        "--no-tools",
+        "--no-extensions",
+        "--no-mcp",
+        "--session-dir",
+        "/scratch/fresh/.bycoda-pi-sessions",
+      ]),
+    );
+    expect(mocks.spawnChild.mock.calls[0][3]).toBe("/scratch/fresh");
+    mocks.frames.at(-1)!({ type: "agent_end" });
+    await turn;
+    await stopPiSession("pi-chat-fresh");
   });
 
   it("applies omp compaction per session and resumes without an override on Default", async () => {

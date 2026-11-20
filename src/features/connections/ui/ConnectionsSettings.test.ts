@@ -605,17 +605,18 @@ it("advertises every supported provider when checking a host", async () => {
   });
 });
 
-it("does not open the machine edit and remove panels at the same time", async () => {
+it("opens machine editing in its own dialog and replaces the remove dialog", async () => {
   machines = [machine];
   await render();
   await pick("Home Mac", "Remove connection…");
   expect(document.querySelector('[role="dialog"]')).toBeTruthy();
   await editMachine("Home Mac");
-  expect(document.querySelector('[role="dialog"]')).toBeNull();
-  expect(container.querySelector('form[aria-label="Edit Home Mac"]')).toBeTruthy();
-  expect(container.querySelector('[aria-label="Connection method"]')).toBeNull();
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  const editDialog = document.querySelector('[role="dialog"]')!;
+  expect(editDialog.querySelector('form[aria-label="Edit Home Mac"]')).toBeTruthy();
+  expect(editDialog.querySelector('[aria-label="Connection method"]')).toBeNull();
   await pick("Home Mac", "Remove connection…");
-  expect(container.querySelector('form[aria-label="Edit Home Mac"]')).toBeNull();
+  expect(document.querySelector('form[aria-label="Edit Home Mac"]')).toBeNull();
   expect(document.querySelector('[role="dialog"]')).toBeTruthy();
 });
 
@@ -685,13 +686,15 @@ it("does not save an invalid Host port", async () => {
   await editMachine("Home Mac");
   await fill('input[name="hostPort"]', "0");
   await act(async () =>
-    container
+    document
       .querySelector('input[name="hostPort"]')!
       .closest("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
   expect(invoke).not.toHaveBeenCalledWith("remote_machine_update", expect.anything());
-  expect(container.textContent).toContain("The Host port must be a number from 1 to 65535.");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "The Host port must be a number from 1 to 65535.",
+  );
 });
 const requested = (method: string) =>
   vi
@@ -813,14 +816,18 @@ it("only renames without reconnecting, and offers the host's name for a raw IP",
   ];
   await render();
   await editMachine("Mini.local");
-  expect(container.textContent).toContain("Use me@Mini.local instead of the IP");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Use me@Mini.local instead of the IP",
+  );
   await act(async () => button("Use me@Mini.local instead of the IP").click());
   const address = 'input[placeholder="user@my-mac-mini or an SSH alias"]';
   expect(document.querySelector<HTMLInputElement>(address)!.value).toBe("me@Mini.local");
   await fill(address, "me@192.168.1.5");
   await fill('input[placeholder="Optional, e.g. Home Mac mini"]', "Office");
   expect(button("Save")).toBeTruthy();
-  expect(container.textContent).toContain("Saving changes the computer name without reconnecting.");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Saving changes the computer name without reconnecting.",
+  );
   await act(async () => button("Save").click());
   expect(requested("remote_ssh_reconnect")).toBe(false);
   expect(container.textContent).toContain("was renamed");

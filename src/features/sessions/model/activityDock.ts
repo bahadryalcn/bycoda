@@ -1,6 +1,11 @@
 import { t } from "../../../shared/i18n/core";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
-import { hasPendingApproval, type Block, type HarnessId } from "./session";
+import {
+  hasPendingApproval,
+  type Block,
+  type HarnessId,
+  type WorkflowAgentParent,
+} from "./session";
 import { executionUserIndex } from "./executionTurn";
 import { delegatedChildIdOf } from "./delegatedBlockId";
 import {
@@ -84,6 +89,7 @@ export type DockAgent = {
   blockId: string;
   /** The provider's id for the call, which is how a stop request finds it. */
   callId?: string;
+  workflow?: WorkflowAgentParent;
   name: string;
   /** The Crew member a delegated child runs; its portrait and @handle replace the generic marks. */
   crewMember?: CrewMemberChild;
@@ -226,7 +232,8 @@ export function dockAgent(block: Block, busy: boolean): DockAgent[] {
   return [
     {
       blockId: block.id,
-      ...(block.tool?.callId ? { callId: block.tool.callId } : {}),
+      ...(block.agentRun?.workflow ? { workflow: block.agentRun.workflow } : {}),
+      ...(block.tool?.callId && !block.agentRun?.workflow ? { callId: block.tool.callId } : {}),
       name: agent ? subagentName(block) : toolCallLabel(block),
       kind: agent ? "agent" : "command",
       status,
@@ -250,6 +257,23 @@ export function dockAgent(block: Block, busy: boolean): DockAgent[] {
         : {}),
     },
   ];
+}
+
+export function groupDockAgents(agents: readonly DockAgent[]) {
+  const standalone: DockAgent[] = [];
+  const phases = new Map<string, { id: string; phase?: string; agents: DockAgent[] }>();
+  for (const agent of agents) {
+    if (!agent.workflow) {
+      standalone.push(agent);
+      continue;
+    }
+    const { callId, phase } = agent.workflow;
+    const id = JSON.stringify([callId, phase]);
+    const existing = phases.get(id);
+    if (existing) existing.agents.push(agent);
+    else phases.set(id, { id, phase, agents: [agent] });
+  }
+  return { standalone, phases: [...phases.values()] };
 }
 
 /**

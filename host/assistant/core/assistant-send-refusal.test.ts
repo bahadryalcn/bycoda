@@ -43,4 +43,24 @@ it("settles the receipt of a message refused because the assistant is not set up
   // A key that never reached the Host still reads as unknown: absence never permits a resend.
   const unseen = await request({ op: "threads.sendStatus", ...send, idempotencyKey: "never-sent" });
   expect(unseen.sendReceipt).toEqual({ status: "unknown" });
+  // After a Host restart the phone's check read "connection interrupted, check the result": the
+  // instance mismatch is a refusal with nothing applied, so the client keeps its real message.
+  const restarted = request({
+    op: "threads.sendStatus",
+    ...send,
+    expectedHostInstance: "previous-instance",
+  });
+  await expect(restarted).rejects.toMatchObject({
+    name: "HostDomainRefusalError",
+    code: "CONTEXT_CHANGED",
+    delivery: "not-sent",
+  });
+  await expect(
+    request({
+      op: "threads.send",
+      via: "text",
+      ...send,
+      expectedHostInstance: "previous-instance",
+    }),
+  ).rejects.toMatchObject({ code: "CONTEXT_CHANGED" });
 });

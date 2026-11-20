@@ -1420,7 +1420,7 @@ describe("settings pages", () => {
     await act(async () => openCodeDetails.click());
 
     await save("Codex", "/bad/codex");
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
       "Codex failed to start",
     );
     expect(container.textContent).not.toContain("/opt/codex/bin/codex");
@@ -1436,7 +1436,7 @@ describe("settings pages", () => {
 
     failAutoCodex = true;
     await save("Codex", "");
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
       "Codex auto-detection failed",
     );
     expect(JSON.parse(localStorage.getItem("bycoda.providerBinaryPaths.v1") ?? "{}").codex).toBe(
@@ -1735,6 +1735,26 @@ describe("settings pages", () => {
     if (section === "skills") {
       vi.mocked(invoke).mockResolvedValue([]);
     }
+    if (section === "providers") {
+      vi.mocked(invoke).mockImplementation(async (command, args) => {
+        if (command === "local_host_connect") return { id: "settings-fixture" };
+        if (
+          command === "remote_request" &&
+          args &&
+          "method" in args &&
+          args.method === "ollama.status"
+        )
+          return {
+            port: 11434,
+            portCustom: false,
+            runtime: "missing",
+            models: [],
+            pull: null,
+            opencode: { config: "ready", models: [] },
+          };
+        return undefined;
+      });
+    }
     await render(section);
     if (section === "skills") {
       await act(async () =>
@@ -1753,7 +1773,7 @@ describe("settings pages", () => {
       if (!renderedSettingIds().includes(id)) await render(section, { anchor: id });
       if (
         section === "providers" &&
-        ["models-chat", "default-provider", "agent-clis"].includes(id)
+        ["models-chat", "default-provider", "agent-clis", "ollama-port"].includes(id)
       ) {
         await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
       }

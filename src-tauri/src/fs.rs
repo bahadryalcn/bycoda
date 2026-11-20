@@ -273,7 +273,7 @@ pub(crate) fn claude_project_dir(config_dir: &Path, cwd: &str) -> PathBuf {
 /// The directory a Claude account keeps its config and transcripts in. An
 /// added account runs its CLI with `CLAUDE_CONFIG_DIR` pointed at its own
 /// profile, so its conversations live there and never under `~/.claude`.
-fn claude_config_dir(
+pub(crate) fn claude_config_dir(
     app: &AppHandle,
     provider_account_id: Option<&str>,
 ) -> Result<PathBuf, String> {

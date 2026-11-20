@@ -104,6 +104,24 @@ describe("grok live turn sequence", () => {
     heldApprovalWrite = null;
   });
 
+  it("refuses files:false before spawning or sending any ACP request", async () => {
+    const before = spawned.length;
+    await expect(
+      sendGrokTurn({
+        sessionId: "grok-no-tools",
+        cwd: "/scratch/run",
+        model: "grok:grok-4.6",
+        runtimeMode: "supervised",
+        modelSettings: { leanContext: "on" },
+        text: "discuss",
+        attachments: [],
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("cannot disable configured plugins and MCP servers");
+    expect(spawned).toHaveLength(before);
+    expect(sent).toHaveLength(0);
+  });
+
   it.each([false, true])(
     "retains Grok actual approval writes after timeout (cancel first: %s)",
     async (cancelBeforeTimeout) => {

@@ -5,11 +5,30 @@ import {
   tailscaleIdentity,
 } from "./mobile-access-config";
 import { mobileAccessFailure, runTailscale, tailscaleExecutable } from "./mobile-access-process";
+import { networkFingerprint } from "./mobile-network";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 
 type Dependencies = {
   executable: () => Promise<string | undefined>;
   run: (program: string, args: string[]) => Promise<string>;
+  /** Changes when adapters change; defaults to the live network fingerprint. */
+  network?: () => string;
 };
+
+/** A probe starts two Tailscale CLI processes, and every start blocks the Host event
+ * loop on Windows, while `environment.describe` reads this status on each call. So an
+ * answer is reused until the network changes (Tailscale coming up or going down adds or
+ * drops its adapter address) or it ages: a settled answer for a minute, one the owner
+ * is acting on (approval, permission, setup) only briefly. */
+const SETTLED_STATUS_MS = 60_000;
+const ACTIVE_STATUS_MS = 5_000;
+const SETTLED_STATES = new Set<MobileAccessStatus["state"]>([
+  "ready",
+  "install-required",
+  "sign-in-required",
+  "offline",
+  "unavailable",
+]);
 
 /** Authenticated owner UI calls enable explicitly; status is always read-only. */
 export function createMobileAccessService(
@@ -59,13 +78,52 @@ export function createMobileAccessService(
     };
     return { identity, config, status };
   };
-  const status = async (): Promise<MobileAccessStatus> => {
+  const network = dependencies.network ?? networkFingerprint;
+  let cached: { status: MobileAccessStatus; at: number; key: string } | undefined;
+  let reading: Promise<MobileAccessStatus> | undefined;
+  // Bumped by enable, so a probe that started earlier cannot replace its newer answer.
+  let generation = 0;
+  const cacheKey = () => `${getPort()}\0${network()}`;
+  const remember = (status: MobileAccessStatus, key: string) => {
+    cached = { status, at: monotonicNow(), key };
+  };
+  const probe = async (): Promise<MobileAccessStatus> => {
     try {
       const program = await dependencies.executable();
-      if (!program) return observed({ state: "install-required" });
-      return observed((await inspect(program)).status);
+      if (!program) return { state: "install-required" };
+      return (await inspect(program)).status;
     } catch (error) {
-      return observed(mobileAccessFailure(error));
+      return mobileAccessFailure(error);
+    }
+  };
+  /** `fresh`: the owner asked explicitly, so an external `tailscale serve` change shows
+   * now; a probe already in flight is fresh enough to share. */
+  const status = async (options: { fresh?: boolean } = {}): Promise<MobileAccessStatus> => {
+    // An enable is about to answer with newer state; do not start more CLI processes.
+    if (enabling) return enabling;
+    const key = cacheKey();
+    if (
+      !options.fresh &&
+      cached &&
+      cached.key === key &&
+      elapsedSince(cached.at) <
+        (SETTLED_STATES.has(cached.status.state) ? SETTLED_STATUS_MS : ACTIVE_STATUS_MS)
+    )
+      return cached.status;
+    if (reading) return reading;
+    const started = generation;
+    const read = probe().then((result) => {
+      // An enable finished while this probe ran: its answer is newer, and observers
+      // already saw it, so the older result must not reach them either.
+      if (generation !== started && cached) return cached.status;
+      remember(result, key);
+      return observed(result);
+    });
+    reading = read;
+    try {
+      return await read;
+    } finally {
+      if (reading === read) reading = undefined;
     }
   };
   const enable = async (): Promise<MobileAccessStatus> => {
@@ -96,7 +154,10 @@ export function createMobileAccessService(
     })();
     enabling = operation;
     try {
-      return observed(await operation);
+      const result = await operation;
+      generation++;
+      remember(result, cacheKey());
+      return observed(result);
     } finally {
       if (enabling === operation) enabling = undefined;
     }

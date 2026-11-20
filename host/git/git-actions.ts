@@ -6,8 +6,8 @@ import {
   MANAGED_DELIVERY_REVIEW_REQUIRED,
   withHostGitMutation,
 } from "./git-mutations";
-import { isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
-import { readFile, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -536,25 +536,46 @@ export class BranchCache {
   }
 }
 
-/** The branch named by a checkout's own `HEAD` file, read without spawning git.
- * Undefined means "ask git": a subfolder, a detached or reftable HEAD, or any read problem. */
-async function headBranchFromFiles(cwd: string): Promise<string | undefined> {
+/** The branch named by the enclosing checkout's `HEAD` file, read without spawning git.
+ * Session lists poll every folder, and a Windows spawn blocks the Host event loop, so
+ * subfolders walk up to their checkout and a missing folder or non-repository answers
+ * "" (what git would), as does a detached HEAD. Undefined means "ask git": a reftable
+ * HEAD or a read problem. */
+export async function headBranchFromFiles(cwd: string): Promise<string | undefined> {
   try {
-    let gitDir = join(cwd, ".git");
+    if (!(await stat(cwd)).isDirectory()) return "";
+  } catch {
+    return "";
+  }
+  try {
+    let root = cwd;
     let marker: string;
-    try {
-      marker = await readFile(gitDir, "utf8");
-    } catch (error) {
-      // `.git` is a directory in a normal checkout: read its HEAD below.
-      if ((error as NodeJS.ErrnoException).code !== "EISDIR") return undefined;
-      marker = "";
+    for (;;) {
+      try {
+        marker = await readFile(join(root, ".git"), "utf8");
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // `.git` is a directory in a normal checkout: read its HEAD below.
+        if (code === "EISDIR") {
+          marker = "";
+          break;
+        }
+        if (code !== "ENOENT" && code !== "ENOTDIR") return undefined;
+        const parent = dirname(root);
+        if (parent === root) return "";
+        root = parent;
+      }
     }
+    let gitDir = join(root, ".git");
     if (marker) {
       const target = /^gitdir:\s*(.+?)\s*$/m.exec(marker)?.[1];
       if (!target) return undefined;
-      gitDir = isAbsolute(target) ? target : resolvePath(cwd, target);
+      gitDir = isAbsolute(target) ? target : resolvePath(root, target);
     }
     const head = (await readFile(join(gitDir, "HEAD"), "utf8")).trim();
+    // Detached: `git symbolic-ref --quiet` would exit 1, which the cache records as "".
+    if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(head)) return "";
     const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head)?.[1];
     // `.invalid` is the reftable placeholder; only plain local branches are answered here.
     return ref && ref !== ".invalid" ? ref : undefined;

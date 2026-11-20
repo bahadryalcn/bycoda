@@ -13,3 +13,4 @@ export type * as uiCatalogReceiptStatus from "./public/CatalogReceiptStatus";
 export type * as providerSettingsLink from "./public/providerSettingsLink";
 
 export type * as uiProviderStatusGroup from "./public/ProviderStatusGroup";
+export type * as uiProviderList from "./public/ProviderList";

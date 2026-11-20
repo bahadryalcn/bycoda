@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { surfaceAttributes, type SurfaceTone } from "../../../../shared/ui/Surface";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
@@ -12,12 +11,13 @@ import { formatDuration } from "../../../../shared/i18n/format";
 import { elapsedSince, monotonicNow } from "../../../../shared/lib/time/timestamps";
 import { subscribeVoiceSecond } from "../../model/voicePresentationTimers";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
+import { VoiceCallScene } from "./VoiceCallScene";
 import { VoiceCore } from "./VoiceCore";
 import { voiceStatusTone } from "./VoiceLauncher";
 import styles from "./VoiceCompanionParts.module.css";
 
 /**
- * The stage of the expanded panel, tinted by who has the floor. With the transcript hidden it
+ * With the transcript hidden, the expanded panel
  * is a call screen: a large voice core, the status, the engine and session clock, and the words
  * in flight. With the transcript shown it shrinks to a strip: the small core beside the status.
  * The scope choice sits under both, so no state moves another control.
@@ -66,25 +66,23 @@ export function VoiceCompanionStatus({
   const tone = voiceStatusTone(visualState);
   const work = working ? sessionStatusText : "";
   return (
-    <div
-      {...surfaceAttributes(
-        { radius: "panel", tone: stage ? stageTone(visualState) : undefined },
-        styles.stage,
-      )}
-      data-layout={stage ? "stage" : "strip"}
-    >
+    <div className={styles.stage} data-layout={stage ? "stage" : "strip"}>
       <div className={styles.status}>
-        <VoiceCore
-          state={visualState}
-          level={audioLevel}
-          name={name}
-          avatar={avatar}
-          size={stage ? "stage" : undefined}
-        />
+        {stage ? (
+          <VoiceCallScene part="orb" state={visualState} level={audioLevel} />
+        ) : (
+          <VoiceCore state={visualState} level={audioLevel} name={name} avatar={avatar} />
+        )}
         <div className={styles.statusText}>
           <div className={styles.statusLine}>
             {tone && <StatusDot tone={tone} size="fixed" appearance="solid" />}
-            <LiveText size="secondary" weight="medium" leading="snug" truncate text={statusText} />
+            <LiveText
+              size={stage ? "body" : "secondary"}
+              weight="medium"
+              leading="snug"
+              truncate
+              text={statusText}
+            />
             {working && (
               <Button
                 iconOnly
@@ -139,14 +137,6 @@ export function VoiceCompanionStatus({
       )}
     </div>
   );
-}
-
-/** The stage tint follows the voice core's ink: accent while talking, warning while thinking. */
-function stageTone(state: VoiceVisualState): SurfaceTone {
-  if (state === "thinking") return "warning";
-  if (state === "error") return "danger";
-  if (state === "off" || state === "muted" || state === "connecting") return "neutral";
-  return "accent";
 }
 
 /**

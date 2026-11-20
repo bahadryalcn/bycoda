@@ -9,17 +9,18 @@ import {
 } from "../model/voiceActivity";
 import { voiceLanguageCode } from "../model/voiceLanguage";
 import { useVoicePresence } from "../model/voicePresence";
-import {
-  loadVoiceSettings,
-  saveVoiceSettings,
-  voiceRuntimeSettings,
-  type VoiceSettings,
-} from "../model/voiceSettings";
+import { voiceRuntimeSettings, type VoiceSettings } from "../model/voiceSettings";
+import { saveVoiceSettingsPatch } from "../model/voiceSettingsSave";
 import { localWakeDeps } from "../model/voiceWakeAdapters";
 import { WakeListener } from "../model/voiceWakeListener";
 import { resolveWakePhrases } from "../model/voiceWakePhrase";
-import type { WakeIndicatorState } from "./VoiceWakeIndicator";
 import { VOICE_WAKE_EVENT } from "./useVoiceTalkEvent";
+
+type WakeIndicatorState =
+  | { kind: "listening"; phrase: string }
+  | { kind: "paused" }
+  | { kind: "pack" }
+  | { kind: "error" };
 
 /** Missing pieces that stop local recognition; natural speech is not needed to listen. */
 export const wakeRecognitionMissing = (missing: string[]) =>
@@ -106,7 +107,8 @@ export function useVoiceWake({ settings, profile, manualPresence }: Input) {
     };
   }, [armed, wake, language, configKey, settings.microphoneId]);
   return {
+    enabled: settings.wakeEnabled === true,
     indicator: armed ? indicator : null,
-    turnOff: () => saveVoiceSettings({ ...loadVoiceSettings(), wakeEnabled: false }),
+    setEnabled: (wakeEnabled: boolean) => saveVoiceSettingsPatch({ wakeEnabled }),
   };
 }

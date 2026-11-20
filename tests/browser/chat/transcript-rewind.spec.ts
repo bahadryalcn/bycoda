@@ -28,12 +28,15 @@ for (const width of [1280, 800])
         let previous = -1;
         let steady = 0;
         await expect
-          .poll(async () => {
-            const now = await distance();
-            steady = now === previous ? steady + 1 : 0;
-            previous = now;
-            return steady >= 4;
-          })
+          .poll(
+            async () => {
+              const now = await distance();
+              steady = now === previous ? steady + 1 : 0;
+              previous = now;
+              return steady >= 4;
+            },
+            { intervals: [100], timeout: 15_000 },
+          )
           .toBe(true);
       };
       await scrollUp();

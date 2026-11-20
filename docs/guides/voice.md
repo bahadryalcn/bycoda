@@ -299,15 +299,13 @@ setup prevent the call. With the setting off, returning keeps the microphone clo
 
 ## Visual style and compact mode
 
-The expanded companion has one header with a **More voice options** button for its
-secondary actions, such as finishing the turn and muting the speaker. The status
-row shows the assistant's avatar inside the voice core, the connection state and
-readouts: the voice engine (hover or focus it to see where audio goes) and, while
-connected, the microphone input level and the session time. The core's rings turn
-while voice is connected, turn faster while a reply is prepared, react to your
-voice and the assistant's, and stop when voice is off or the microphone is paused.
-The **Global** scope toggle sits below. Your speech and replies appear as chat
-bubbles.
+The expanded companion centers a particle orb, connection status, scope and round
+call controls. The orb scales down in a shorter panel. Blue light and particles
+respond to the microphone. While waiting for a reply, the particles orbit against
+violet and pink light. During playback they move in waves over teal light. The
+scene settles when the call stops or the microphone is muted. Reduced motion shows
+a still frame for each state. Hover or focus the engine name to see where audio
+goes. **Conversation** opens the transcript and moves the status into a smaller row.
 
 Drag any edge or corner of the expanded companion to resize it. The opposite
 edge stays in place, and the panel stays inside the window. Size and position
@@ -316,12 +314,12 @@ are saved on this device. Double-click an edge to return to automatic sizing.
 Choose **Settings → Voice assistant → Companion → Visual style** to select
 **bycoda mark** (default), **Wave**, **Dots** or **Orb**. Each option has a live
 preview. The style applies to the launcher, the compact companion and the
-floating overlay; the expanded companion always shows the voice core. Changing
+floating overlay; the expanded call view uses the particle orb. Changing
 the style updates an open companion immediately and keeps the
 voice connection running. The choice is saved on this device.
 
-The expanded floating window uses the same voice core, assistant avatar and
-conversation bubbles as the in-app companion. Drag its header to move it, or
+The expanded floating window uses the avatar and voice core from the in-app
+transcript view, along with its conversation bubbles. Drag its header to move it, or
 focus the header and use arrow keys. Double-click the header to compact it.
 Returning to the app keeps the microphone and voice session running.
 
@@ -501,8 +499,11 @@ virtual environment, `~/.bycoda/voice`, PATH and standard Windows Python folders
 and launcher versions. The scan has a total time limit. A settings check that
 cannot finish offers **Try again**; **Install** remains available while checking.
 
-Use **Locate existing** to choose the Python executable and model directories or
-enter their paths. Blank paths mean automatic detection. Missing components and
+If starting local voice or dictation fails the setup check, open **Voice settings**
+from the error. Use **Locate existing** on the setup row and choose **Automatic
+detection** to look for an existing installation. If the check succeeds, bycoda
+uses the detected files. If it fails, choose the Python executable and model
+directories or enter their paths. Blank paths mean automatic detection. Missing components and
 failure details are available behind **Technical details**. A custom model path
 must point to the actual model files, such as a cache snapshot, rather than a
 repository's parent cache directory. Changing the engine or paths disconnects an active voice
@@ -530,6 +531,8 @@ that the runtime can actually load them.
   otherwise runs on the CPU.
 - **GPU** requires an NVIDIA GPU with CUDA support for High quality replies. Voice does
   not start until GPU support is installed; it never silently falls back to CPU.
+  If bycoda cannot detect the GPU, **Use automatic selection** on the setup row
+  lets you explicitly switch to Automatic processing.
 - **CPU** keeps recognition and natural replies off the GPU.
 
 High quality replies are much slower on the CPU and can sound choppy. On Windows,
@@ -598,6 +601,12 @@ Nothing is sent until you press Send, so you can edit the text first.
   (or `OPENROUTER_API_KEY`). Keys never reach the app window. Previews are billed
   like any other recognized audio. **Dictation model** chooses the provider's
   transcription model; the first entry is the default.
+
+On Windows, bycoda Host uses the Windows certificate store for its outbound
+connections alongside Node's certificate authorities. A certificate error means
+the Host could not verify the connection. If OpenAI reports exhausted speech
+recognition quota, check API billing or configure `OPENAI_API_KEY` with available
+quota on the Host. A temporary rate limit can be retried after a pause.
 
 Select the button while it is preparing to cancel. Dictation keeps listening when
 you switch to another tab or view; while its message box is off screen, the
@@ -951,8 +960,10 @@ closure; reopening the panel does not prove an old connection has closed.
 **Wake and sleep phrases** (Settings → Voice assistant → Voice conversations, off by
 default) let you open and close the conversation by voice. While no conversation is
 open, the desktop is unlocked and you are not Away or on Do not disturb, the
-microphone listens on this computer only for your wake phrase, and a visible
-indicator with **Turn off** shows it. Short sounds are recognized with the local
+microphone listens on this computer only for your wake phrase. The assistant
+avatar shows a green dot while listening and an amber dot when listening needs
+attention. Open the arrow beside the avatar to see the status and switch **Wake
+and sleep phrases** on or off. Short sounds are recognized with the local
 voice pack (never a cloud provider), compared with the phrase and discarded;
 nothing is saved or sent. On a match the listener releases the microphone and Talk
 starts as if you pressed it. Saying your sleep phrase on its own, optionally
@@ -960,7 +971,7 @@ followed by the assistant's name, ends the conversation and returns to Ready wit
 the microphone closed; running work continues. Defaults follow the voice (or app)
 language, for example "Hey {name}" and "Görüşürüz" in Turkish, and update when the
 language changes until you type your own (2 to 40 characters). Without the local
-voice pack the indicator says **Wake phrase needs the local voice pack**; after
+voice pack the menu says **Wake phrase needs the local voice pack**; after
 many bursts of background speech it pauses for five minutes. The semantic turn
 experiment does not enable the wake phrase.
 

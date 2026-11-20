@@ -642,6 +642,8 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
             std::time::Duration::from_secs(105)
         }
         "decisionModels.manual.verify" => std::time::Duration::from_secs(55),
+        // Starting a local Ollama server waits up to its 45 s contract for the API to answer.
+        "ollama.start" => std::time::Duration::from_secs(55),
         // Must outlast the Host contract deadlines (interview 100 s, avatar 240 s).
         "assistant.builder.interview" => std::time::Duration::from_secs(110),
         "assistant.builder.avatarGenerate" => std::time::Duration::from_secs(250),

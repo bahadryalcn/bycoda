@@ -173,7 +173,8 @@ export function setChosenProfile(id: string | null, path = choicePath()): void {
 }
 
 export function listShellProfiles(path = choicePath()): ShellProfiles {
-  const profiles = detectShellProfiles();
+  // Detection walks PATH with synchronous fs calls; share the resolver's cache.
+  const profiles = cachedShellProfiles();
   return {
     profiles,
     defaultId: defaultProfile(profiles)?.id ?? null,

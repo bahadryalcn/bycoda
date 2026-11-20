@@ -91,10 +91,9 @@ it("reveals a remote page whose callback resolves before its blocks reach React"
       }),
     ),
   );
-  const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "Load earlier messages",
-  )!;
-  act(() => button.click());
+  const scroller = host.querySelector<HTMLElement>(".agent-transcript")!;
+  act(() => scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40, bubbles: true })));
+  expect(load).toHaveBeenCalledOnce();
   await act(async () => resolve(20));
   const older: Block[] = Array.from({ length: 20 }, (_, index) => ({
     id: `older-${index}`,

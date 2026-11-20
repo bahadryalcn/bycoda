@@ -134,7 +134,7 @@ export class LocalVoiceService {
         });
         if (!found.ready)
           throw new Error(
-            `Voice setup is incomplete: ${found.missing.join(", ")}. Open Settings → Chat → Voice companion to choose installation paths.`,
+            `Voice setup is incomplete: ${found.missing.join(", ")}. Open Settings → Voice assistant. Choose Locate existing to find installed voice files, or Install to get missing files.`,
           );
         // A concurrent start may have finished probing while this one was waiting.
         if (this.loading && this.runtimeKey !== key)

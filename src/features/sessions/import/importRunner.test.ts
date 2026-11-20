@@ -124,6 +124,23 @@ async function run(
 }
 
 describe("runSessionImport", () => {
+  it("hydrates Claude workflows before persisting the imported session", async () => {
+    const h = harness({
+      hydrateClaudeWorkflows: async ({ session, cwd, providerSessionId }) => ({
+        ...session,
+        blocks: [
+          ...session.blocks,
+          { id: "workflow-proof", role: "system", text: `${cwd}|${providerSessionId}` },
+        ],
+      }),
+    });
+    await run(h, [candidate()]);
+    expect(
+      h.persisted[0].session.blocks.some(
+        (block) => block.id === "workflow-proof" && block.text.includes("conv-1"),
+      ),
+    ).toBe(true);
+  });
   it.each(["claude", "codex"] as const)(
     "imports a valid bounded %s tail without a user record",
     async (provider) => {

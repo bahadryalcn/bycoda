@@ -22,11 +22,11 @@ const WARNING_PERCENT = 75;
 const DANGER_PERCENT = 90;
 
 /** Text tone matching the meter's own: neutral, amber, red. */
-function ringTone(ratio: number): "danger" | "warning" | "secondary" {
+function ringTone(ratio: number): "danger" | "warning" | "neutral" {
   const tone = meterTone(ratio * 100, { warning: WARNING_PERCENT, danger: DANGER_PERCENT });
   if (tone === "danger") return "danger";
   if (tone === "warning") return "warning";
-  return "secondary";
+  return "neutral";
 }
 
 /**
@@ -63,6 +63,7 @@ export function ContextMeter({
     side: "top",
     align: "end",
     width: 280,
+    solid: true,
     disabled: open,
     className: "context-meter-popover",
     "aria-label": t("Context usage"),
@@ -109,24 +110,24 @@ export function ContextMeter({
   // Built only while a panel shows: the meter re-renders with the composer.
   const renderPanel = () => (
     <Text as="div" tone="neutral" leading="normal">
-      <Text
-        as="div"
-        size="inherit"
-        tone="inherit"
-        weight="medium"
-        className="context-meter-heading"
-      >
-        <span>{t("Context usage")}</span>
+      <div className="context-meter-overview">
+        <Text as="div" size="inherit" tone="inherit" weight="medium">
+          {t("Context usage")}
+        </Text>
         <Text
           as="strong"
-          size="secondary"
-          leading="inherit"
+          size={ratio === null ? "secondary" : "heading"}
+          leading="none"
           weight="medium"
-          tone={ringTone(ratio ?? 0)}
+          tone={ratio === null ? "secondary" : ringTone(ratio)}
+          className="context-meter-percent"
         >
           {percent}
         </Text>
-      </Text>
+        <Text as="div" size="caption" tone="secondary">
+          {detail}
+        </Text>
+      </div>
       {ratio !== null ? (
         <Meter
           label={t("Context usage")}
@@ -135,46 +136,35 @@ export function ContextMeter({
           danger={DANGER_PERCENT}
           valueText={detail}
           size="md"
-          className="my-3"
+          className="context-meter-capacity"
         />
       ) : null}
-      <Text as="div" size="inherit" tone="secondary" className="context-meter-tokens">
-        <span>
-          {usage
-            ? `${formatTokens(usage.used)}${ratio !== null ? ` / ${formatTokens(usage.window!)}` : ""}`
-            : t("Unavailable")}
-        </span>
-        {usage ? <span>{t("tokens")}</span> : null}
-      </Text>
-      <section className="context-meter-speed-details" aria-label={t("Response speed")}>
-        <Text
-          as="div"
-          size="inherit"
-          tone="inherit"
-          weight="medium"
-          className="context-meter-heading"
-        >
-          <span className="inline-flex items-center gap-1">{t("Response speed")}</span>
-          <Text as="strong" size="secondary" tone="inherit" weight="medium" leading="inherit">
-            {tps ?? t("Unavailable")}
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-stats")}>
+        <DescriptionList size="sm" className="context-meter-metrics">
+          <DescriptionItem term={t("Response speed")}>{tps ?? t("Unavailable")}</DescriptionItem>
+          {sessionUsage ? (
+            <DescriptionItem term={t("Cost")}>
+              {formatCostWith(sessionUsage.costUsd, format)}
+            </DescriptionItem>
+          ) : null}
+          {sessionUsage && sessionUsage.apiMs > 0 ? (
+            <DescriptionItem term={t("API time")}>
+              {formatApiTime(sessionUsage.apiMs)}
+            </DescriptionItem>
+          ) : null}
+        </DescriptionList>
+        {tps ? (
+          <Text as="p" size="caption" tone="secondary" className="context-meter-hint">
+            {t("Average speed includes tools and waiting.")}
           </Text>
-        </Text>
-        <Text as="p" size="inherit" tone="secondary" className="context-meter-hint">
-          {t("Average over the full turn, including tools and waiting; not live generation speed.")}
-        </Text>
-      </section>
+        ) : null}
+      </div>
       {agents.size > 0 ? (
         <section
           {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-agents")}
           aria-label={t("Subagents")}
         >
-          <Text
-            as="div"
-            size="inherit"
-            tone="inherit"
-            weight="medium"
-            className="context-meter-heading"
-          >
+          <Text as="div" size="inherit" tone="inherit" weight="medium">
             {t("Subagents")} · {agents.size}
           </Text>
           <ul className="context-meter-agent-list" tabIndex={0} aria-label={t("Subagents")}>
@@ -200,21 +190,6 @@ export function ContextMeter({
             })}
           </ul>
         </section>
-      ) : null}
-      {sessionUsage ? (
-        <DescriptionList
-          size="sm"
-          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-stats")}
-        >
-          <DescriptionItem term={t("Cost")}>
-            {formatCostWith(sessionUsage.costUsd, format)}
-          </DescriptionItem>
-          {sessionUsage.apiMs > 0 ? (
-            <DescriptionItem term={t("API time")}>
-              {formatApiTime(sessionUsage.apiMs)}
-            </DescriptionItem>
-          ) : null}
-        </DescriptionList>
       ) : null}
       {onCompact ? (
         <div
@@ -269,6 +244,7 @@ export function ContextMeter({
           side="top"
           align="end"
           width={280}
+          solid
           kind="dialog"
           aria-label={t("Context usage")}
           onDismiss={(reason) => {

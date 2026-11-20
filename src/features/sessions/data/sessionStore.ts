@@ -47,6 +47,7 @@ import { clearComposerDraft } from "../model/draftCache";
 import { retireToolsDraftsForSession } from "../../host-tools/toolsDraftTransfer";
 import { buildConversationReplay } from "../model/conversationRewind";
 import { repairSessionModelIdentity } from "../model/sessionModelIdentity";
+import { recoverClaudeWorkflows } from "./claudeWorkflowRecovery";
 import {
   markMissingAttachments,
   persistableQueue,
@@ -1568,6 +1569,18 @@ async function repairStoredSession(
   expectedRevision?: number,
   work?: PersistenceWork,
 ): Promise<Session> {
+  if (session.harness === "claude") {
+    const recovered = await recoverClaudeWorkflows(session);
+    if (recovered !== session) {
+      const committed = await upsertSessionIfUnchanged(
+        recovered,
+        expectedUpdatedAt,
+        expectedRevision,
+        work,
+      ).catch(() => false);
+      if (committed) session = recovered;
+    }
+  }
   if (session.harness === "claude" && session.providerSessionId) {
     const toolIds = shellPlaceholderIds(session.blocks);
     if (toolIds.length) {

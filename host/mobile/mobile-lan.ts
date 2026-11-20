@@ -1,7 +1,7 @@
 import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { hostname, networkInterfaces } from "node:os";
+import { hostname, type networkInterfaces } from "node:os";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   isLanAddress,
@@ -17,6 +17,7 @@ import { createMobileWssGateway } from "../security/mobile-wss";
 import { GATEWAY_ADMISSION, OVER_CAPACITY_HTTP_RESPONSE } from "../security/gateway-admission";
 import type { MobileTlsAuthority, MobileTlsMaterial } from "../security/mobile-tls";
 import {
+  currentNetworkInterfaces,
   defaultRouteAddress,
   knownDefaultRouteAddress,
   windowsNetworkHint,
@@ -25,7 +26,7 @@ import {
 /** Adapters that only reach this computer's own VMs, containers or a VPN. */
 const VIRTUAL_INTERFACE = /virtual|vethernet|docker|wsl|vpn|vmware|vbox|hyper-v/i;
 export function localMobileAddresses(
-  interfaces = networkInterfaces(),
+  interfaces = currentNetworkInterfaces(),
   preferred = knownDefaultRouteAddress(),
 ): string[] {
   return reachableAddresses(interfaces, preferred).filter(isLanAddress);
@@ -35,7 +36,7 @@ export function localMobileAddresses(
  * one (host key, environment id) before using it. Virtual adapters are left out:
  * another computer cannot reach them. */
 export function reachableAddresses(
-  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+  interfaces: ReturnType<typeof networkInterfaces> = currentNetworkInterfaces(),
   preferred = knownDefaultRouteAddress(),
 ): string[] {
   const lan: string[] = [];
@@ -57,14 +58,14 @@ function isTailnetAddress(address: string): boolean {
   return a === 100 && b >= 64 && b <= 127;
 }
 function interfaceForAddress(address: string): string | undefined {
-  return Object.entries(networkInterfaces()).find(([, entries]) =>
+  return Object.entries(currentNetworkInterfaces()).find(([, entries]) =>
     (entries ?? []).some(
       (entry) => !entry.internal && entry.family === "IPv4" && entry.address === address,
     ),
   )?.[0];
 }
 function addressForInterface(name: string): string | undefined {
-  return (networkInterfaces()[name] ?? []).find(
+  return (currentNetworkInterfaces()[name] ?? []).find(
     (entry) => !entry.internal && entry.family === "IPv4" && isLanAddress(entry.address),
   )?.address;
 }

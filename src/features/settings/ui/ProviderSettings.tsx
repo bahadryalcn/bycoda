@@ -61,7 +61,7 @@ import {
   ProviderList,
   providerMetaLine,
   type ProviderListEntry,
-} from "../../providers/ui/ProviderList";
+} from "../../providers/public/ProviderList";
 import {
   ProviderDetailHeader,
   ProviderStatusGroup,

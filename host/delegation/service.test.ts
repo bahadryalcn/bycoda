@@ -317,6 +317,7 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "delegation-service-"));
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -397,6 +398,7 @@ describe("agents.options", () => {
           model: "claude:sonnet-5",
           label: "Claude Sonnet 5",
           available: true,
+          filesFalse: { available: true, repositoryReadIsolation: false },
           effortLevels: [],
         },
         {
@@ -406,6 +408,7 @@ describe("agents.options", () => {
           model: "codex:gpt-5",
           label: "GPT 5",
           available: true,
+          filesFalse: { available: true, repositoryReadIsolation: false },
           effortLevels: [],
         },
       ],
@@ -415,6 +418,7 @@ describe("agents.options", () => {
         model: "codex:gpt-6.1",
         label: "GPT 6.1",
         available: true,
+        filesFalse: { available: true, repositoryReadIsolation: false },
         effortLevels: [],
       },
       running: { subagents: 0, advisors: 0 },
@@ -1629,6 +1633,87 @@ describe("Automatic and the subagent ceiling", () => {
 });
 
 describe("files: false", () => {
+  it("uses scratch for Pi and refuses a continuation after its cwd changes", async () => {
+    const ref = { harness: "pi", model: "pi:test" } as DelegateModelRef;
+    setup({ subagents: [ref] });
+    deps.models = async () =>
+      ({
+        models: { pi: [{ id: ref.model, harness: "pi", name: "Pi" }] },
+        errors: {},
+      }) as unknown as HostModelCatalog;
+    deps.providers = ["pi"] as typeof deps.providers;
+    const started = await delegate("pi-chat", { files: false });
+    expect(await call("agents.options")).toMatchObject({
+      subagents: [{ filesFalse: { available: true, repositoryReadIsolation: false } }],
+    });
+    const child = String(started.sessionId);
+    expect(host.scratch.get(child)).toBeDefined();
+    host.finish(child, "done");
+    host.entries.get(child)!.session.cwd = "/project";
+    await expect(
+      call("agents.reply", { requestId: "pi-reply", runId: started.runId, message: "again" }),
+    ).rejects.toThrow("scratch folder");
+    expect(host.commandsOf("send")).toHaveLength(1);
+  });
+  it.each([
+    ["opencode", "opencode:test"],
+    ["grok", "grok:grok-4.7"],
+    ["antigravity", "antigravity:gemini-3.8-flash-high"],
+  ])(
+    "advertises and launches a supported %s chat-only child in scratch",
+    async (harness, model) => {
+      vi.stubEnv("BYCODA_GROK_CHAT_ONLY_API", "1");
+      vi.stubEnv("BYCODA_GEMINI_CHAT_ONLY_API", "1");
+      vi.stubEnv("XAI_API_KEY", "test-xai-key");
+      vi.stubEnv("GEMINI_API_KEY", "test-gemini-key");
+      const ref = { harness, model } as DelegateModelRef;
+      setup({ subagents: [ref] });
+      deps.models = async () =>
+        ({
+          models: { [harness]: [{ id: model, harness, name: "Chat-only test" }] },
+          errors: {},
+        }) as unknown as HostModelCatalog;
+      deps.providers = [harness] as typeof deps.providers;
+      expect(await call("agents.options")).toMatchObject({
+        subagents: [{ filesFalse: { available: true, repositoryReadIsolation: false } }],
+      });
+      const started = await delegate(`chat-only-${harness}`, { files: false });
+      expect(host.scratch.get(String(started.sessionId))).toBeDefined();
+      expect(host.commandsOf("create")).toEqual([
+        expect.objectContaining({
+          harness,
+          model,
+          runtimeMode: "supervised",
+          modelSettings: expect.objectContaining({ [DELEGATION_CHAT_ONLY_KEY]: "on" }),
+        }),
+      ]);
+    },
+  );
+
+  it.each(["grok", "cursor", "antigravity", "hermes"])(
+    "reports and rejects unsupported %s without launching a child",
+    async (harness) => {
+      vi.stubEnv("BYCODA_GROK_CHAT_ONLY_API", undefined);
+      vi.stubEnv("BYCODA_GEMINI_CHAT_ONLY_API", undefined);
+      const ref = { harness, model: `${harness}:test` } as DelegateModelRef;
+      setup({ subagents: [ref], advisor: ref });
+      deps.models = async () =>
+        ({
+          models: { [harness]: [{ id: ref.model, harness, name: "Test" }] },
+          errors: {},
+        }) as unknown as HostModelCatalog;
+      deps.providers = [harness] as typeof deps.providers;
+      expect(await call("agents.options")).toMatchObject({
+        subagents: [{ filesFalse: { available: false, repositoryReadIsolation: false } }],
+        advisor: { filesFalse: { available: false, repositoryReadIsolation: false } },
+      });
+      await expect(delegate(`unsupported-${harness}`, { files: false })).rejects.toThrow(
+        "files:false is unavailable",
+      );
+      expect(host.commandsOf("create")).toHaveLength(0);
+    },
+  );
+
   it("runs a subagent chat-only in its own empty scratch folder, supervised", async () => {
     setup({ subagents: [codexFive], worktreeCwd: "/worktrees/feature" });
     host.entries.get("parent")!.session.runtimeMode = "auto-accept-edits";
@@ -1652,6 +1737,33 @@ describe("files: false", () => {
     );
     await delegate("req-true", { files: true });
     expect(host.scratch.size).toBe(0);
+  });
+
+  it.each([
+    ["opencode", "opencode:provider/model"],
+    ["grok", "grok:grok-4.7"],
+    ["antigravity", "antigravity:gemini-3.8-flash-high"],
+  ])("uses normal worktree access for %s without a chat-only API key", async (harness, model) => {
+    vi.stubEnv("XAI_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
+    const ref = { harness, model } as DelegateModelRef;
+    const worktreeCwd = "/worktrees/feature";
+    setup({ subagents: [ref], worktreeCwd });
+    host.entries.get("parent")!.session.runtimeMode = "auto-accept-edits";
+    deps.models = async () =>
+      ({
+        models: { [harness]: [{ id: model, harness, name: model }] },
+        errors: {},
+      }) as HostModelCatalog;
+    deps.providers = [ref.harness];
+
+    await delegate("req-provider-normal");
+
+    const create = host.commandsOf("create")[0]!;
+    expect(create).toMatchObject({ harness, model, worktreeCwd, runtimeMode: "auto-accept-edits" });
+    expect(create.modelSettings).not.toHaveProperty(DELEGATION_CHAT_ONLY_KEY);
+    expect(host.scratch.size).toBe(0);
+    expect(host.commandsOf("send")).toHaveLength(1);
   });
 
   it("applies to advisors and rejects a non-boolean value", async () => {

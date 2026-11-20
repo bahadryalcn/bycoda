@@ -57,6 +57,11 @@ import {
   writeChild,
   readHarnessTaskOutput,
 } from "../../core/child";
+import {
+  loadClaudeWorkflowArtifacts,
+  workflowReference,
+  type ClaudeWorkflowReference,
+} from "./claudeWorkflowArtifacts";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import {
   askUserQuestionAllowInput,
@@ -197,6 +202,7 @@ type BackgroundTask = {
   description: string;
   toolUseId?: string;
   outputPath?: string;
+  taskType?: string;
 };
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
@@ -233,6 +239,8 @@ type Live = {
   /** Rows shown for tasks still running when Claude yielded, by task id. */
   backgroundRows: Map<string, string>;
   outputWatches: Map<string, { stop: () => void; finish: () => void }>;
+  workflowWatches: Map<string, { stop: () => void; finish: (status: string) => void }>;
+  workflowOutcomes: Map<string, string>;
   /** Tasks the user asked to stop, and the calls that stand for them. */
   stoppedTasks: Set<string>;
   stoppedCalls: Set<string>;
@@ -834,6 +842,8 @@ function newLiveState(input: {
     backgroundTasks: new Map(),
     backgroundRows: new Map(),
     outputWatches: new Map(),
+    workflowWatches: new Map(),
+    workflowOutcomes: new Map(),
     stoppedTasks: new Set(),
     stoppedCalls: new Set(),
     awaitingResume: null,
@@ -1503,9 +1513,19 @@ function handleUser(live: Live, rec: Record<string, unknown>): void {
     noteSubagentResults(live, rec);
     return;
   }
+  const workflow = workflowReference(rec);
+  if (
+    workflow &&
+    live.handle &&
+    live.claudeSessionId &&
+    live.toolsById.get(workflow.callId)?.name === "Workflow"
+  ) {
+    watchWorkflow(live, workflow);
+  }
   for (const result of toolResultsFromUserMessage(rec)) {
     const tool = live.toolsById.get(result.toolUseId);
     if (!tool) continue;
+    if (workflow?.callId === tool.id && !result.isError) continue;
     if (tool.name === "Bash") noteCommandOutputPath(live, rec, tool.id, result.text);
     if (isAgentToolName(tool.name) && isBackgroundedAgentTool(live, tool.id)) {
       continue;
@@ -1549,6 +1569,71 @@ function handleUser(live: Live, rec: Record<string, unknown>): void {
     }
     if (isAgentToolName(tool.name)) settleInlineAgentTask(live, tool.id);
   }
+}
+
+function watchWorkflow(live: Live, reference: ClaudeWorkflowReference): void {
+  if (live.workflowWatches.has(reference.taskId)) return;
+  const providerSessionId = live.claudeSessionId;
+  const outputWork = captureNativeOutputWork({ additionalInput: true });
+  const emit = nativeOutputSink(outputWork, live.onEvent);
+  let stopped = false;
+  let finalStatus: string | undefined;
+  let reading = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const snapshotCache = new Map<string, string>();
+  const poll = async () => {
+    if (stopped || reading) return;
+    reading = true;
+    const final = finalStatus !== undefined;
+    try {
+      await loadClaudeWorkflowArtifacts({
+        cwd: live.cwd,
+        providerAccountId: live.providerAccountId,
+        providerSessionId,
+        runId: reference.runId,
+        callId: reference.callId,
+        snapshotCache,
+        onEvent: (event) => {
+          if (!stopped) emit(event);
+        },
+        ...(finalStatus !== undefined
+          ? {
+              status:
+                finalStatus === "completed" ? ("completed" as const) : ("interrupted" as const),
+            }
+          : {}),
+      });
+    } catch {
+      /* Artifact discovery is best effort; the workflow itself remains authoritative. */
+    }
+    reading = false;
+    if (stopped) return;
+    if (final) {
+      live.workflowWatches.delete(reference.taskId);
+      return;
+    }
+    if (finalStatus !== undefined) {
+      void poll();
+      return;
+    }
+    timer = scheduleNativeOutputCallback(() => {
+      void poll();
+    }, 2_000);
+  };
+  live.workflowWatches.set(reference.taskId, {
+    stop: () => {
+      stopped = true;
+      cancelNativeOutputCallback(timer);
+    },
+    finish: (status) => {
+      finalStatus = status;
+      cancelNativeOutputCallback(timer);
+      void poll();
+    },
+  });
+  const outcome = live.workflowOutcomes.get(reference.taskId);
+  if (outcome !== undefined) finalStatus = outcome;
+  void poll();
 }
 
 /**
@@ -1821,6 +1906,7 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
     live.backgroundTasks.set(started.taskId, {
       description: started.description,
       toolUseId: started.toolUseId,
+      taskType: started.taskType,
       outputPath:
         stringField(rec, "output_file") ||
         (started.toolUseId ? live.toolsById.get(started.toolUseId)?.outputPath : undefined),
@@ -1841,6 +1927,8 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
   const progress = parseTaskProgress(rec);
   if (progress) {
     const task = live.agentTasks.get(progress.taskId);
+    const source = progress.toolUseId ? live.toolsById.get(progress.toolUseId) : undefined;
+    if (!task && (!source || !isAgentToolName(source.name))) return true;
     const title = progress.description || task?.description || "Subagent";
     const detail =
       progress.summary ||
@@ -1865,6 +1953,8 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
     }
     if (isTerminalAgentTaskStatus(updated.status)) {
       settleBackgroundRow(live, updated.taskId, updated.status ?? "completed", updated.error);
+      settleWorkflow(live, updated.taskId, updated.status ?? "completed", updated.error);
+      live.workflowWatches.get(updated.taskId)?.finish(updated.status ?? "completed");
       finishBackgroundTask(live, updated.taskId);
       completeAgentTask(
         live,
@@ -1880,6 +1970,8 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
   if (notice) {
     if (!notice.ambient) {
       noteTaskNotification(live, notice);
+      settleWorkflow(live, notice.taskId, notice.status, notice.summary || undefined);
+      live.workflowWatches.get(notice.taskId)?.finish(notice.status);
       finishBackgroundTask(live, notice.taskId);
       completeAgentTask(
         live,
@@ -1924,6 +2016,19 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
   maybeFinishTurn(live);
   syncBackgroundWait(live);
   return true;
+}
+
+function settleWorkflow(live: Live, taskId: string, status: string, detail?: string): void {
+  const background = live.backgroundTasks.get(taskId);
+  const callId = background?.taskType === "local_workflow" ? background.toolUseId : undefined;
+  if (background?.taskType === "local_workflow") live.workflowOutcomes.set(taskId, status);
+  if (!callId || live.muteUpdates) return;
+  live.onEvent({
+    type: "tool.updated",
+    callId,
+    status: taskOutcome(live, taskId, status),
+    ...(detail ? { detail } : {}),
+  });
 }
 
 function handleToolProgress(live: Live, rec: Record<string, unknown>): void {
@@ -2271,6 +2376,8 @@ function noteCommandOutputPath(
 function stopOutputWatches(live: Live): void {
   for (const watch of live.outputWatches.values()) watch.stop();
   live.outputWatches.clear();
+  for (const watch of live.workflowWatches.values()) watch.stop();
+  live.workflowWatches.clear();
 }
 
 /** Consecutive missing-file polls (about a second each) before the row says it is still waiting. */

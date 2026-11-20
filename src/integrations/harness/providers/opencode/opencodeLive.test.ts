@@ -37,6 +37,9 @@ const harnessHttp = vi.fn(
     body?: string;
   }): Promise<{ status: number; body: string }> => {
     const url = new URL(input.url);
+    if (input.method === "POST" && url.pathname === "/api/session/session_1/generate") {
+      return { status: 200, body: JSON.stringify({ data: { text: "answer" } }) };
+    }
     // v2 reports a session's folder only under `location`.
     const v2Session = (id: string, directory: string) => ({
       status: 200,
@@ -268,6 +271,115 @@ beforeEach(() => {
 afterEach(async () => {
   await stopOpenCodeSession("opencode-live");
   __openCodeTestReset();
+});
+
+it("fails closed before starting or steering an unisolated chat-only session", async () => {
+  const input = {
+    sessionId: "chat-only",
+    cwd: "/scratch",
+    model: "opencode:provider/model",
+    runtimeMode: "supervised" as const,
+    modelSettings: { leanContext: "on" },
+    text: "private brief",
+    attachments: [],
+    onEvent: () => {},
+  };
+  await expect(sendOpenCodeTurn(input)).rejects.toThrow(
+    "OpenCode chat-only history is unavailable",
+  );
+  await expect(steerOpenCodeTurn(input)).rejects.toThrow(
+    "OpenCode chat-only generation cannot be steered",
+  );
+  await expect(compactOpenCodeContext(input)).rejects.toThrow(
+    "does not support provider compaction",
+  );
+  await expect(rewindOpenCodeLastTurn(input)).rejects.toThrow("does not support provider rewind");
+  expect(spawnChild).not.toHaveBeenCalled();
+  expect(harnessHttp).not.toHaveBeenCalled();
+});
+
+it("uses tool-free v2 generation with Host history for chat-only replies", async () => {
+  openCodeVersion = "opencode 2.3.2";
+  const events: HarnessEvent[] = [];
+  const input = {
+    sessionId: "opencode-live",
+    cwd: "/scratch",
+    model: "opencode:provider/model",
+    runtimeMode: "supervised" as const,
+    modelSettings: { leanContext: "on" },
+    chatOnlyHistory: "User: earlier\nAssistant: first answer",
+    text: "follow up",
+    attachments: [],
+    onEvent: (event: HarnessEvent) => events.push(event),
+  };
+  await sendOpenCodeTurn(input);
+  const calls = harnessHttp.mock.calls.map(([request]) => request);
+  const create = calls.find(
+    (request) => request.method === "POST" && new URL(request.url).pathname === "/api/session",
+  );
+  expect(JSON.parse(create?.body ?? "{}").permissions).toEqual([
+    { action: "*", resource: "*", effect: "deny" },
+  ]);
+  const generated = calls.find((request) => new URL(request.url).pathname.endsWith("/generate"));
+  expect(JSON.parse(generated?.body ?? "{}").prompt).toContain(
+    "Assistant: first answer\n\nCurrent user message:\nfollow up",
+  );
+  expect(calls.some((request) => new URL(request.url).pathname.endsWith("/prompt"))).toBe(false);
+  expect(events).toContainEqual({ type: "message.delta", text: "answer" });
+  await sendOpenCodeTurn({ ...input, chatOnlyHistory: "", text: "fresh" });
+  const generations = harnessHttp.mock.calls
+    .map(([request]) => request)
+    .filter((request) => new URL(request.url).pathname.endsWith("/generate"));
+  expect(JSON.parse(generations[1].body ?? "{}").prompt).toBe("fresh");
+});
+
+it("refuses chat-only generation on OpenCode v1 before creating a session", async () => {
+  await expect(
+    sendOpenCodeTurn({
+      sessionId: "opencode-live",
+      cwd: "/scratch",
+      model: "opencode:provider/model",
+      runtimeMode: "supervised",
+      modelSettings: { leanContext: "on" },
+      chatOnlyHistory: "",
+      text: "brief",
+      attachments: [],
+      onEvent: () => {},
+    }),
+  ).rejects.toThrow("requires OpenCode 2");
+  expect(spawnChild).not.toHaveBeenCalled();
+  expect(harnessHttp).not.toHaveBeenCalled();
+});
+
+it("does not deliver a late chat-only result after cancellation", async () => {
+  openCodeVersion = "opencode 2.3.2";
+  const original = harnessHttp.getMockImplementation()!;
+  let settle: ((value: { status: number; body: string }) => void) | undefined;
+  harnessHttp.mockImplementation((request) =>
+    new URL(request.url).pathname.endsWith("/generate")
+      ? new Promise((resolve) => {
+          settle = resolve;
+        })
+      : original(request),
+  );
+  const events: HarnessEvent[] = [];
+  const pending = sendOpenCodeTurn({
+    sessionId: "opencode-live",
+    cwd: "/scratch",
+    model: "opencode:provider/model",
+    runtimeMode: "supervised",
+    modelSettings: { leanContext: "on" },
+    chatOnlyHistory: "",
+    text: "brief",
+    attachments: [],
+    onEvent: (event) => events.push(event),
+  });
+  await waitFor(() => settle !== undefined, "chat-only generation");
+  await cancelOpenCodeTurn("opencode-live");
+  settle!({ status: 200, body: JSON.stringify({ data: { text: "late answer" } }) });
+  await pending;
+  expect(events).not.toContainEqual({ type: "message.delta", text: "late answer" });
+  harnessHttp.mockImplementation(original);
 });
 
 it("isolates v1 compaction settings and resumes the same conversation on changes and reset", async () => {

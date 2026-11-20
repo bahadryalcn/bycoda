@@ -30,7 +30,8 @@ vi.mock("../model/remoteHealth", async (importOriginal) => ({
 }));
 vi.mock("../model/phonePairingApi", () => ({ phonePairingApi: api }));
 vi.mock("../model/pairedDevices", () => devices);
-vi.mock("../../../shared/ui/Modal", () => ({
+vi.mock("../../../shared/ui/Modal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../shared/ui/Modal")>()),
   ModalActions: ({ children }: { children?: ReactNode }) =>
     createElement("div", { "data-modal-actions": "" }, children),
   Modal: ({

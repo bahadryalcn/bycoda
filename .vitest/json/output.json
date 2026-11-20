@@ -1,10 +1,10 @@
 {
-  "numTotalTestSuites": 8,
-  "numPassedTestSuites": 8,
+  "numTotalTestSuites": 2,
+  "numPassedTestSuites": 2,
   "numFailedTestSuites": 0,
   "numPendingTestSuites": 0,
-  "numTotalTests": 14,
-  "numPassedTests": 14,
+  "numTotalTests": 6,
+  "numPassedTests": 6,
   "numFailedTests": 0,
   "numPendingTests": 0,
   "numTodoTests": 0,
@@ -24,198 +24,83 @@
     "updated": 0,
     "didUpdate": false
   },
-  "startTime": 1795124266285,
+  "startTime": 1795133637873,
   "success": true,
   "testResults": [
     {
       "assertionResults": [
         {
-          "ancestorTitles": [],
-          "fullName": "translates the shell labels and includes their keys in every desktop locale",
+          "ancestorTitles": ["Grok tool-free API"],
+          "fullName": "Grok tool-free API requires explicit opt-in, a default account, and exact supported API model",
           "status": "passed",
-          "title": "translates the shell labels and includes their keys in every desktop locale",
-          "duration": 88.12309999999997,
+          "title": "requires explicit opt-in, a default account, and exact supported API model",
+          "duration": 1.856899999999996,
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         },
         {
-          "ancestorTitles": [],
-          "fullName": "uses distinct icons for opening, returning, and pending window moves",
+          "ancestorTitles": ["Grok tool-free API"],
+          "fullName": "Grok tool-free API sends bounded prior context and no tools to the fixed xAI endpoint",
           "status": "passed",
-          "title": "uses distinct icons for opening, returning, and pending window moves",
-          "duration": 0.7294999999999732,
+          "title": "sends bounded prior context and no tools to the fixed xAI endpoint",
+          "duration": 23.06639999999993,
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         },
         {
-          "ancestorTitles": [],
-          "fullName": "keeps the update notice wrapper visible in the compact project rail",
+          "ancestorTitles": ["Grok tool-free API"],
+          "fullName": "Grok tool-free API refuses attachments and incomplete or tool-call responses",
           "status": "passed",
-          "title": "keeps the update notice wrapper visible in the compact project rail",
-          "duration": 0.7624000000000137,
+          "title": "refuses attachments and incomplete or tool-call responses",
+          "duration": 5.904799999999909,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["Grok tool-free API"],
+          "fullName": "Grok tool-free API rejects an unsupported effort before sending instead of ignoring the ceiling",
+          "status": "passed",
+          "title": "rejects an unsupported effort before sending instead of ignoring the ceiling",
+          "duration": 0.7001000000000204,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["Grok tool-free API"],
+          "fullName": "Grok tool-free API bounds response bytes and never echoes provider errors",
+          "status": "passed",
+          "title": "bounds response bytes and never echoes provider errors",
+          "duration": 3.6782000000000608,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["Grok tool-free API"],
+          "fullName": "Grok tool-free API cancels only the captured operation and never leaks transport errors",
+          "status": "passed",
+          "title": "cancels only the captured operation and never leaks transport errors",
+          "duration": 0.9095999999999549,
           "failureMessages": [],
           "meta": {},
           "tags": [],
           "benchmarks": []
         }
       ],
-      "startTime": 1795124266766,
-      "endTime": 1795124266854.7625,
+      "startTime": 1795133638941,
+      "endTime": 1795133638977.9097,
       "status": "passed",
       "message": "",
-      "name": "G:/Projects/my_projects/monocode/src/app/shell/ShellIssueSweep.test.ts"
-    },
-    {
-      "assertionResults": [
-        {
-          "ancestorTitles": ["isSidebarUpdateActionable"],
-          "fullName": "isSidebarUpdateActionable only claims sidebar space for an update the user can act on",
-          "status": "passed",
-          "title": "only claims sidebar space for an update the user can act on",
-          "duration": 2.1505999999999403,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["SidebarUpdateFooter errors"],
-          "fullName": "SidebarUpdateFooter errors keeps a failed update without a version visible in the rail",
-          "status": "passed",
-          "title": "keeps a failed update without a version visible in the rail",
-          "duration": 10.610800000000381,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["SidebarUpdate"],
-          "fullName": "SidebarUpdate offers the install action for an available version",
-          "status": "passed",
-          "title": "offers the install action for an available version",
-          "duration": 2.5510999999996784,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["SidebarUpdate"],
-          "fullName": "SidebarUpdate reports download progress and blocks a second click",
-          "status": "passed",
-          "title": "reports download progress and blocks a second click",
-          "duration": 1.23279999999977,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["SidebarUpdate"],
-          "fullName": "SidebarUpdate ignores a second click while readAppVersion is still pending",
-          "status": "passed",
-          "title": "ignores a second click while readAppVersion is still pending",
-          "duration": 2.0024999999996,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["SidebarUpdateFooter"],
-          "fullName": "SidebarUpdateFooter stays silent while the automatic probe has nothing to offer",
-          "status": "passed",
-          "title": "stays silent while the automatic probe has nothing to offer",
-          "duration": 0.3500999999996566,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["SidebarUpdateFooter"],
-          "fullName": "SidebarUpdateFooter still shows the post-install card without an update row",
-          "status": "passed",
-          "title": "still shows the post-install card without an update row",
-          "duration": 2.644000000000233,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        }
-      ],
-      "startTime": 1795124271082,
-      "endTime": 1795124271104.644,
-      "status": "passed",
-      "message": "",
-      "name": "G:/Projects/my_projects/monocode/src/app/shell/SidebarUpdate.test.ts"
-    },
-    {
-      "assertionResults": [
-        {
-          "ancestorTitles": [],
-          "fullName": "shares one check and one download across both entry points and retains install errors",
-          "status": "passed",
-          "title": "shares one check and one download across both entry points and retains install errors",
-          "duration": 272.66420000000016,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "checks periodically, preserves available updates, and clears its timer on unmount",
-          "status": "passed",
-          "title": "checks periodically, preserves available updates, and clears its timer on unmount",
-          "duration": 9.718600000000151,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        }
-      ],
-      "startTime": 1795124272150,
-      "endTime": 1795124272432.7185,
-      "status": "passed",
-      "message": "",
-      "name": "G:/Projects/my_projects/monocode/src/app/shell/SidebarUpdatePolling.test.ts"
-    },
-    {
-      "assertionResults": [
-        {
-          "ancestorTitles": [],
-          "fullName": "snoozes an available update only when the reminder action is selected",
-          "status": "passed",
-          "title": "snoozes an available update only when the reminder action is selected",
-          "duration": 184.48800000000028,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": [],
-          "fullName": "shows a versionless failure and lets the user close it without snoozing",
-          "status": "passed",
-          "title": "shows a versionless failure and lets the user close it without snoozing",
-          "duration": 24.294400000000678,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        }
-      ],
-      "startTime": 1795124272150,
-      "endTime": 1795124272359.2944,
-      "status": "passed",
-      "message": "",
-      "name": "G:/Projects/my_projects/monocode/src/app/shell/SidebarUpdatePrompt.test.ts"
+      "name": "G:/Projects/my_projects/monocode/host/providers/grok-chat-only.test.ts"
     }
   ]
 }

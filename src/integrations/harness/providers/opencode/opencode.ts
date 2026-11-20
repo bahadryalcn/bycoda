@@ -32,6 +32,7 @@ import {
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { TurnNotReadyError } from "../../core/types";
+import { leanContext } from "../../core/nativeToolLimits";
 import { nativeSessionCapability } from "../../core/controlTurn";
 import {
   compactedText,
@@ -199,6 +200,7 @@ type Live = {
   openCodeSessionId: string;
   autoCompact?: string;
   cwd: string;
+  chatOnly: boolean;
   runtimeMode: RuntimeMode;
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
@@ -275,6 +277,10 @@ export async function sendOpenCodeTurn(input: SendTurnInput): Promise<void> {
   const hostControlRun = input.operationContext?.hostControlRun;
 
   try {
+    if (leanContext(input.modelSettings) && typeof input.chatOnlyHistory !== "string")
+      throw new Error("OpenCode chat-only history is unavailable for this session.");
+    if (leanContext(input.modelSettings) && socialAcpSessions.has(input.sessionId))
+      throw new Error("OpenCode chat-only generation cannot adopt an existing ACP session.");
     const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
     if (original) {
       captureHttpOperation(original, input.operationContext);
@@ -287,7 +293,9 @@ export async function sendOpenCodeTurn(input: SendTurnInput): Promise<void> {
       async () => {
         // The shared v2 service has no per-session child environment. Its documented
         // private ACP process preserves the session-scoped social grant instead.
-        const program = await socialAcpProgram(input);
+        const program = leanContext(input.modelSettings)
+          ? undefined
+          : await socialAcpProgram(input);
         if (program) return sendGenericAcpTurn(input, program);
         let live: Live;
         try {
@@ -307,11 +315,12 @@ export async function sendOpenCodeTurn(input: SendTurnInput): Promise<void> {
           if (live.handle) beginProviderOperation(input.operationContext, live.handle);
           live.onEvent = input.onEvent;
           live.planning = input.intent === "plan";
-          await applySessionPolicy(live, input, client);
+          if (!live.chatOnly) await applySessionPolicy(live, input, client);
           live.cancelled = false;
           live.muteUpdates = false;
           try {
-            await runTurn(live, input, client);
+            if (live.chatOnly) await runChatOnlyTurn(live, input, client);
+            else await runTurn(live, input, client);
           } catch (error) {
             if (live.cancelled) return;
             throw error;
@@ -333,6 +342,8 @@ export async function compactOpenCodeContext(input: CompactContextInput): Promis
   const hostControlRun = input.operationContext?.hostControlRun;
 
   try {
+    if (leanContext(input.modelSettings))
+      throw new Error("OpenCode chat-only generation does not support provider compaction.");
     const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
     if (original) {
       captureHttpOperation(original, input.operationContext);
@@ -394,6 +405,8 @@ export async function rewindOpenCodeLastTurn(
   const hostControlRun = input.operationContext?.hostControlRun;
 
   try {
+    if (leanContext(input.modelSettings))
+      throw new Error("OpenCode chat-only generation does not support provider rewind.");
     const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
     if (original) {
       captureHttpOperation(original, input.operationContext);
@@ -470,6 +483,11 @@ async function latestOpenCodeUserMessageId(live: Live, client = live.client): Pr
 
 export async function steerOpenCodeTurn(input: SteerTurnInput): Promise<void> {
   assertProviderOperation(input.operationContext);
+
+  if (leanContext(input.modelSettings))
+    throw new TurnNotReadyError(
+      "OpenCode chat-only generation cannot be steered; wait or stop the turn.",
+    );
 
   input = { ...input };
   const hostRun = input.operationContext?.hostRun;
@@ -776,6 +794,7 @@ async function ensureLive(
   if (
     existing &&
     existing.cwd === input.cwd &&
+    existing.chatOnly === leanContext(input.modelSettings) &&
     existing.autoCompact === input.modelSettings?.autoCompact
   ) {
     if (existing.handle) observeProviderProcess(input, existing.handle);
@@ -798,6 +817,8 @@ async function ensureLive(
     const { path } = await resolveOpenCodeBinaryImpl();
     checkStartup();
     const generation = await assertOpenCodeVersion(path, input.cwd);
+    if (leanContext(input.modelSettings) && generation !== "v2")
+      throw new Error("OpenCode chat-only generation requires OpenCode 2.");
     const autoCompact = input.modelSettings?.autoCompact;
     if (generation === "v2" && (autoCompact === "on" || autoCompact === "off")) {
       throw new Error(
@@ -833,7 +854,8 @@ async function ensureLive(
     }
 
     const resume = resumeByThread.get(input.sessionId);
-    const canResume = resume != null && resume.cwd === input.cwd;
+    const canResume =
+      resume != null && resume.cwd === input.cwd && !leanContext(input.modelSettings);
     if (resume && resume.cwd !== input.cwd) {
       resumeByThread.delete(input.sessionId);
     }
@@ -923,7 +945,9 @@ async function ensureLive(
       bootstrapClient,
       {
         resume: canResume ? resume : undefined,
-        permission: openCodeTurnRules(input),
+        permission: leanContext(input.modelSettings)
+          ? [{ permission: "*", pattern: "*", action: "deny" }]
+          : openCodeTurnRules(input),
         cwd: input.cwd,
       },
       hostControlRun
@@ -957,6 +981,7 @@ async function ensureLive(
       openCodeSessionId: openCodeSession.id,
       autoCompact,
       cwd: input.cwd,
+      chatOnly: leanContext(input.modelSettings),
       runtimeMode: input.runtimeMode,
       planning: input.intent === "plan",
       onEvent: input.onEvent,
@@ -1144,6 +1169,46 @@ async function runTurn(live: Live, input: SendTurnInput, client = live.client): 
     live.awaitedInbox = null;
     live.turnDone = null;
     live.turnFailed = null;
+  }
+}
+
+async function runChatOnlyTurn(
+  live: Live,
+  input: SendTurnInput,
+  client: OpenCodeClient,
+): Promise<void> {
+  const model = parseOpenCodeModelSlug(nativeModelId(input.model));
+  if (!model) throw new Error("OpenCode models use provider/model ids.");
+  if (input.attachments?.length)
+    throw new Error("OpenCode chat-only generation does not support attachments.");
+  const history = input.chatOnlyHistory;
+  if (typeof history !== "string")
+    throw new Error("OpenCode chat-only history is unavailable for this session.");
+  const prompt = history ? `${history}\n\nCurrent user message:\n${input.text}` : input.text;
+  if (new TextEncoder().encode(prompt).length > 1024 * 1024)
+    throw new Error("OpenCode chat-only conversation exceeds the generation limit.");
+  live.activeTurn = true;
+  try {
+    const result = await client.prompt({
+      sessionID: live.openCodeSessionId,
+      model,
+      variant: input.modelSettings?.variant,
+      parts: [{ type: "text", text: prompt }],
+      timeoutMs: COMPACTION_TIMEOUT_MS,
+    });
+    if (live.cancelled || live.muteUpdates) return;
+    const text = (result.parts ?? [])
+      .map((part) => {
+        const record = asRecord(part);
+        return record?.type === "text" ? (stringField(record, "text") ?? "") : "";
+      })
+      .join("");
+    if (!text) throw new Error("OpenCode returned empty output.");
+    input.onAccepted?.();
+    live.onEvent({ type: "message.delta", text });
+    live.onEvent({ type: "message.completed" });
+  } finally {
+    live.activeTurn = false;
   }
 }
 

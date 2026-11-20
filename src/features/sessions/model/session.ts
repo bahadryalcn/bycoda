@@ -217,6 +217,8 @@ export type AgentStep = {
   outputTruncated?: boolean;
 };
 
+export type WorkflowAgentParent = { callId: string; phase?: string };
+
 /**
  * The inside of a delegated run: what the subagent is called, and the trail it
  * left. Held on the parent Agent tool block so the transcript can open it
@@ -227,6 +229,8 @@ export type AgentRunMeta = {
   name: string;
   /** Provider agent type, e.g. "code-reviewer". */
   agentType?: string;
+  /** The provider Workflow call that launched this native subagent. */
+  workflow?: WorkflowAgentParent;
   /** Model reported for the child, which may differ from its parent. */
   model?: string;
   /** What the subagent was asked to do, bounded. Absent when the provider does not expose it. */

@@ -420,15 +420,22 @@ describe("ActivityDock", () => {
       expect(onStopAll).toHaveBeenCalled();
     });
 
-    it("offers Stop all background work where tasks stop one by one", () => {
+    it("offers Stop all background work in the expanded list where tasks stop one by one", async () => {
+      const onStopAll = vi.fn(async () => {});
       render({
         busy: true,
         blocks: [user, agent],
+        sessionId: "s-stop-all",
         perItemStop: true,
         onStopAgent: async () => {},
-        onStopAll: async () => {},
+        onStopAll,
       });
-      expect(visibleSessionTestText(container)).toContain("Stop all background work");
+      expect(container.querySelector("[data-dock-stop-all]")).toBeNull();
+      expand();
+      const stopAll = container.querySelector<HTMLButtonElement>("[data-dock-stop-all]")!;
+      expect(visibleSessionTestText(stopAll)).toBe("Stop all background work");
+      await act(async () => stopAll.click());
+      expect(onStopAll).toHaveBeenCalledOnce();
     });
 
     it("shows a stopped agent as stopped by you, with nothing left to stop", () => {

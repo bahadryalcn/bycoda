@@ -215,14 +215,15 @@ tasks or a pull request watch show **Waiting**, keep their own group and do not 
 as running. The panel header counts all conversations;
 when collapsed, it retains an attention count. Last Sessions keeps the complete list.
 
-Above the composer, expanded background work shows the reported model and provider
-icon above each subagent's title. Hover or focus the information icon to see status
-counts in a card; click or tap to keep it open. The separate arrow toggles the list.
-Steps, failed steps and elapsed time sit beside
-the opening chevron. Animated bars mark running work; a green check marks completed
-work, a red cross marks failure, and warning icons distinguish stopped and interrupted
-runs. Hover or focus a row for its full identity and status. Missing child-model
-metadata stays unspecified rather than borrowing the parent conversation's model.
+Above the composer, **Background work** shows a labeled count for each status.
+Open it to see subagents and commands. Subagent rows show the title first, the
+reported model and provider below it, and step counts and elapsed time beside the
+opening chevron. Animated bars mark running work, a green check marks completed
+work, a red cross marks failure, and warning icons distinguish stopped and
+interrupted runs. Select a row to inspect the run. When available, the action
+to stop all work appears above the expanded list. Its tooltip explains whether it stops
+background work only or interrupts the whole turn. Missing child-model metadata
+stays unspecified.
 
 Tooltip content is chosen by each control: readable labels stay quiet on hover,
 while hints explain icons, missing shortcuts and additional context. Overflow

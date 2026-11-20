@@ -21,7 +21,8 @@ vi.mock("../model/microphoneAccess", () => ({
   canOpenMicrophoneSettings: () => true,
   isMicrophoneBlocked: (message: string) => message === "OS denied",
 }));
-import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
+import { VoiceRecoveryAction } from "./MicrophoneRecoveryAction";
+import { OPEN_SETTINGS_EVENT } from "../../settings/public/settingsLink";
 let root: Root | undefined;
 let container: HTMLDivElement;
 afterEach(async () => {
@@ -36,7 +37,7 @@ async function render(message: string) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root!.render(createElement(MicrophoneRecoveryAction, { message })));
+  await act(async () => root!.render(createElement(VoiceRecoveryAction, { message })));
 }
 const button = (name: string) =>
   Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
@@ -70,3 +71,25 @@ it.each(["webview denied", "No microphone was found."])(
     expect(container.querySelector("button")).toBeNull();
   },
 );
+
+it("takes a Host setup refusal to voice settings", async () => {
+  const opened = vi.fn();
+  window.addEventListener(OPEN_SETTINGS_EVENT, opened, { once: true });
+  try {
+    await render(
+      "Host rejected request: Voice setup is incomplete: Whisper model. Open Settings → Chat → Voice companion.",
+    );
+    const details = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Technical details"]',
+    );
+    expect(details).not.toBeNull();
+    await act(async () => details!.click());
+    expect(document.body.textContent).toContain("Whisper model");
+    expect(document.body.textContent).not.toContain("Chat → Voice companion");
+    await act(async () => button("Voice settings")!.click());
+    expect(opened).toHaveBeenCalledWith(expect.objectContaining({ detail: "voice" }));
+    expect(native.open).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener(OPEN_SETTINGS_EVENT, opened);
+  }
+});

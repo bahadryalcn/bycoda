@@ -11,13 +11,21 @@ type Props = {
   onChange: (mode: RuntimeMode) => void;
   onClose?: () => void;
   busy?: boolean;
+  compactWhenClosed?: boolean;
   /** Modes the harness cannot honour, with why. They show, but cannot be picked. */
   unavailable?: Partial<Record<RuntimeMode, string>>;
 };
 
 const MENU_WIDTH = 288;
 
-export function AccessPicker({ value, onChange, onClose, busy = false, unavailable }: Props) {
+export function AccessPicker({
+  value,
+  onChange,
+  onClose,
+  busy = false,
+  compactWhenClosed = false,
+  unavailable,
+}: Props) {
   const t = useT();
   const current = runtimeModeCopy(t, value);
   return (
@@ -45,9 +53,10 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
         onClose={(restoreFocus) => {
           if (restoreFocus) onClose?.();
         }}
-        tooltip={current.hint}
+        tooltip={compactWhenClosed ? current.label : current.hint}
         triggerProps={{
           "data-access-picker-trigger": "",
+          "data-access-picker-compact": compactWhenClosed || undefined,
           "aria-label": current.label,
           onMouseDown: (event) => event.preventDefault(),
         }}

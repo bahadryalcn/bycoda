@@ -22,7 +22,7 @@ vi.mock("../model/voiceWakeAdapters", () => ({
 }));
 import { claimVoiceConversationActivity } from "../model/voiceActivity";
 import { reportDictation } from "../model/dictationActivity";
-import { loadVoiceSettings } from "../model/voiceSettings";
+import { loadVoiceSettings, saveVoiceSettings } from "../model/voiceSettings";
 import { useVoiceWake } from "./useVoiceWake";
 import { VOICE_WAKE_EVENT } from "./useVoiceTalkEvent";
 
@@ -128,10 +128,14 @@ it("starts Talk once on a match, with the capture already released", async () =>
   expect(talk).toHaveBeenCalledTimes(1);
 });
 
-it("turns the feature off in one click", async () => {
+it("toggles the saved wake preference without replacing the saved phrase", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), wakePhrase: "Hello Arif" });
   await render();
-  seen.turnOff();
+  seen.setEnabled(true);
+  expect(loadVoiceSettings().wakeEnabled).toBe(true);
+  seen.setEnabled(false);
   expect(loadVoiceSettings().wakeEnabled).toBeUndefined();
+  expect(loadVoiceSettings().wakePhrase).toBe("Hello Arif");
 });
 
 it("stops for dictation, rejects late ASR and rearms after dictation ends", async () => {

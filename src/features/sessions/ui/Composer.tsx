@@ -13,6 +13,7 @@ export { ComposerAction } from "./ComposerAction";
 import { MessageQueue } from "./MessageQueue";
 import { RemoteOriginMark } from "./RemoteOriginMark";
 import { ComposerHighlight } from "./ComposerHighlight";
+import { mayHaveComposerMarkdown } from "./ComposerMarkdown";
 import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
 import { DeliveryProgressIndicator } from "./DeliveryProgressNotice";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -49,7 +50,7 @@ import { extractChatCitations, withChatCitations, type ChatCitation } from "../m
 import { TranslationResultDialog } from "./TranslationResultDialog";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { useT } from "../../../shared/i18n";
-import { MicrophoneRecoveryAction } from "../../voice/ui/MicrophoneRecoveryAction";
+import { isVoiceSetupError, VoiceRecoveryAction } from "../../voice/ui/MicrophoneRecoveryAction";
 import type { QueueAction } from "../model/queueAction";
 import { useComposerSpelling } from "../../settings/public/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
@@ -68,7 +69,6 @@ import {
   AiIdea,
   CircleDashed,
   CursorMagicSelection,
-  Eye,
   FilePlus,
   Plus,
   Share,
@@ -197,7 +197,6 @@ import { HandoffMiniCard } from "./HandoffMiniCard";
 import { ModelPicker } from "./ModelPicker";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Button } from "../../../shared/ui/Button";
-import { UserMessageMarkdown } from "./UserTextPreview";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { ComposerQuestionForm } from "./ComposerQuestionForm";
 import { ComposerSuggestions } from "./ComposerSuggestions";
@@ -854,7 +853,6 @@ export const Composer = memo(function Composer({
     () => (sessionId ? takeComposerNotice(sessionId) : undefined) ?? null,
   );
   const [plusOpen, setPlusOpen] = useState(false);
-  const [markdownPreviewOpen, setMarkdownPreviewOpen] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
   const workMode = useComposerWorkMode(sessionId);
   const [planSelected, setPlanSelected] = workMode.plan;
@@ -1070,6 +1068,7 @@ export const Composer = memo(function Composer({
   // the native text once, avoiding a second full wrapping layout in the overlay.
   const plainDraft =
     !leadingMode &&
+    !mayHaveComposerMarkdown(draft) &&
     !/[/@$]/.test(draft) &&
     !((attachments.length || citations.length) && draft.includes("["));
   useLayoutEffect(() => {
@@ -3139,10 +3138,10 @@ export const Composer = memo(function Composer({
         onUsageLimitDismiss={onUsageLimitDismiss}
         onSelectProviderAccount={onSelectProviderAccount}
         onSwitchModel={() => setModelPickerRequest((count) => count + 1)}
-        pasteError={pasteError}
-        pasteErrorAction={
-          pasteError ? <MicrophoneRecoveryAction message={pasteError} /> : undefined
+        pasteError={
+          pasteError && isVoiceSetupError(pasteError) ? t("Dictation setup is needed") : pasteError
         }
+        pasteErrorAction={pasteError ? <VoiceRecoveryAction message={pasteError} /> : undefined}
         sessionFolderError={sessionFolderError}
         sessionFolderMutationBlocked={sessionFolderMutationBlocked}
         sessionFolderPending={sessionFolderPending}
@@ -3503,11 +3502,6 @@ export const Composer = memo(function Composer({
             />
           ) : null}
 
-          {markdownPreviewOpen && hasText ? (
-            <div data-composer-markdown-preview className="max-h-40 overflow-auto px-3 py-2">
-              <UserMessageMarkdown text={draft} attachments={attachments} citations={citations} />
-            </div>
-          ) : null}
           <div className="relative">
             {subagentList && onOpenSubagent ? (
               <div className="absolute top-1.5 right-1.5 z-1 flex">
@@ -3651,6 +3645,7 @@ export const Composer = memo(function Composer({
                   <AccessPicker
                     value={runtimeMode}
                     busy={busy}
+                    compactWhenClosed
                     unavailable={unavailableRuntimeModes(harness)}
                     onChange={(...args) =>
                       mutateParentInput(parentChanged, () => onRuntimeModeChange(...args))
@@ -3918,17 +3913,6 @@ export const Composer = memo(function Composer({
               className="composer-send-controls flex shrink-0 items-center gap-1"
               data-usage-guide="send-controls"
             >
-              {hasText ? (
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Markdown preview")}
-                  aria-expanded={markdownPreviewOpen}
-                  onClick={() => setMarkdownPreviewOpen(!markdownPreviewOpen)}
-                >
-                  <Eye className="icon-sm" />
-                </Button>
-              ) : null}
               {!hideTopBar ? (
                 <ContextMeter
                   usage={context}

@@ -109,7 +109,7 @@ for (const theme of ["light", "dark"])
     });
 
 for (const theme of ["light", "dark"])
-  for (const width of [800, 1280])
+  for (const width of [390, 800, 1280])
     test(`subagent caller visual ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -118,10 +118,37 @@ for (const theme of ["light", "dark"])
         name: "Turn activity",
         exact: true,
       });
-      await dock.locator("button[data-dock-toggle]").click();
+      const toggle = dock.locator("button[data-dock-toggle]");
+      await expect(toggle).toContainText("Background work");
+      for (const label of ["1 running", "1 done", "1 failed", "1 stopped", "1 interrupted"]) {
+        await expect(toggle.locator("[data-tone]", { hasText: label })).toBeVisible();
+      }
+      expect(
+        await toggle.evaluate((button) => {
+          const trigger = button.getBoundingClientRect();
+          return [...button.querySelectorAll("[data-tone][data-variant]")].every((badge) => {
+            const box = badge.getBoundingClientRect();
+            return (
+              box.left >= trigger.left &&
+              box.right <= trigger.right &&
+              box.top >= trigger.top &&
+              box.bottom <= trigger.bottom
+            );
+          });
+        }),
+      ).toBe(true);
+      await expect(dock.locator("[data-dock-stop-all]")).toHaveCount(0);
+      await dock.screenshot({
+        animations: "disabled",
+        path: `temp/verification/activity-dock/summary-${theme}-${width}.png`,
+      });
+      await toggle.click();
       await expect(dock.locator("[data-dock-agent]")).toHaveCount(5);
-      await page.screenshot({
-        path: `temp/verification/sessions-callers/activity-dock-${theme}-${width}.png`,
+      await expect(dock.getByRole("button", { name: "Stop all", exact: true })).toBeVisible();
+      await page.mouse.move(0, 0);
+      await dock.screenshot({
+        animations: "disabled",
+        path: `temp/verification/activity-dock/details-${theme}-${width}.png`,
       });
       await page.goto(`/tests/browser/chat/subagent-relay.html?layout&theme=${theme}`);
       await page.getByRole("button", { name: "Open reviewer", exact: true }).click();
@@ -467,3 +494,36 @@ for (const theme of ["light", "dark"])
       await expect(panel).toContainText("Release audit: working through it.");
       await expect(panel.locator("[data-nested-subagent]")).toHaveCount(2);
     });
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [800, 1280]) {
+    test(`Workflow subagent phases and transcripts ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?workflow&theme=${theme}`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: /Background work.*Show list/ }).click();
+      await expect(page.getByText("Workflow · Research", { exact: true })).toBeVisible();
+      await expect(page.getByText("Workflow · Review", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/subagent-visibility/workflow-running-${theme}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "Finish fixture workflow" }).click();
+      await page.getByRole("button", { name: "Session subagents: 2", exact: true }).click();
+      await expect(page.getByText("Workflow · Research", { exact: true })).toBeVisible();
+      await expect(page.getByText("Workflow · Review", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/subagent-visibility/workflow-history-${theme}-${width}.png`,
+      });
+      await page.getByRole("menuitem", { name: /Research agent.*Done/ }).click();
+      const panel = page.getByRole("dialog");
+      await expect(panel.getByText("Research transcript fixture")).toBeVisible();
+      await expect(panel.getByRole("button", { name: /Stop|Relay/ })).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/subagent-visibility/workflow-transcript-${theme}-${width}.png`,
+      });
+    });
+  }
+}

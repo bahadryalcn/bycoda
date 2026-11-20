@@ -74,48 +74,48 @@ export function TunnelStartForm({
   const selected = overview?.providers.find((entry) => entry.provider === provider);
   return (
     <div className="external-tunnel-form">
-      <Field label={t("What to share")}>
-        <SegmentedControl
-          label={t("Tunnel target")}
-          value={target}
-          onValueChange={(value) => {
-            if (!state.pending) setTarget(value as TunnelTarget);
-          }}
-          options={[
-            { value: "dev-server", label: t("Dev server") },
-            { value: "host", label: t("bycoda host") },
-          ]}
-        />
-      </Field>
-      <Field label={t("Provider")}>
-        <SegmentedControl
-          label={t("Tunnel provider")}
-          value={provider}
-          onValueChange={(value) => {
-            if (!state.pending) setProvider(value as TunnelProvider);
-          }}
-          options={[
-            { value: "cloudflare", label: "Cloudflare" },
-            { value: "ngrok", label: "ngrok" },
-          ]}
-        />
-      </Field>
-      <div className="external-tunnel-actions">
-        {overview?.automaticHostAccess !== undefined &&
-        target === "host" &&
-        provider === "cloudflare" ? (
-          <Switch
-            label={t("Access from outside the network (Cloudflare Quick Tunnel)")}
-            description={t(
-              "Free temporary URL. Restarts automatically and updates your account when it changes.",
-            )}
-            checked={overview.automaticHostAccess === true}
-            disabled={!ready || state.pending}
-            onCheckedChange={(enabled) =>
-              void run("automatic", () => controller.automatic(enabled))
-            }
+      <div className="external-tunnel-choices">
+        <Field label={t("What to share")}>
+          <SegmentedControl
+            label={t("Tunnel target")}
+            value={target}
+            onValueChange={(value) => {
+              if (!state.pending) setTarget(value as TunnelTarget);
+            }}
+            options={[
+              { value: "dev-server", label: t("Dev server") },
+              { value: "host", label: t("bycoda host") },
+            ]}
           />
-        ) : null}
+        </Field>
+        <Field label={t("Provider")}>
+          <SegmentedControl
+            label={t("Tunnel provider")}
+            value={provider}
+            onValueChange={(value) => {
+              if (!state.pending) setProvider(value as TunnelProvider);
+            }}
+            options={[
+              { value: "cloudflare", label: "Cloudflare" },
+              { value: "ngrok", label: "ngrok" },
+            ]}
+          />
+        </Field>
+      </div>
+      {overview?.automaticHostAccess !== undefined &&
+      target === "host" &&
+      provider === "cloudflare" ? (
+        <Switch
+          label={t("Access from outside the network (Cloudflare Quick Tunnel)")}
+          description={t(
+            "Free temporary URL. Restarts automatically and updates your account when it changes.",
+          )}
+          checked={overview.automaticHostAccess === true}
+          disabled={!ready || state.pending}
+          onCheckedChange={(enabled) => void run("automatic", () => controller.automatic(enabled))}
+        />
+      ) : null}
+      <div className="external-tunnel-actions">
         {selected && (selected.installed || provider === "ngrok") ? (
           <Badge variant="dot" tone={selected.installed ? "success" : "neutral"}>
             {t(selected.installed ? "{p0} CLI ready" : "{p0} CLI needed", {

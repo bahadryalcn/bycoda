@@ -16,6 +16,11 @@ import {
 import { refusedVoiceCancel } from "./realtimeVoiceErrors";
 import { voiceSeedItems } from "./voiceOpenWork";
 import { openMicrophone } from "./microphoneAccess";
+import {
+  VOICE_AUDIO_STEP_MS,
+  VOICE_MICROPHONE_STEP_MS,
+  voiceConnectionStep,
+} from "./voiceConnectionStep";
 import { t } from "../../../shared/i18n";
 import { voiceTranscriptionHint } from "./voiceFeatureLexicon";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
@@ -408,7 +413,7 @@ export class RealtimeVoice {
           throw new Error(
             t("Microphone access requires the desktop app or a secure browser context."),
           );
-        this.stream = await openMicrophone({
+        const opening = openMicrophone({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
@@ -417,6 +422,22 @@ export class RealtimeVoice {
           },
           video: false,
         });
+        try {
+          this.stream = await voiceConnectionStep(
+            "microphone",
+            this.provider,
+            opening,
+            VOICE_MICROPHONE_STEP_MS,
+            t("Voice could not start: microphone did not respond."),
+          );
+        } catch (cause) {
+          // A stream granted after the deadline must not keep the microphone open.
+          void opening.then(
+            (late) => late.getTracks().forEach((track) => track.stop()),
+            () => undefined,
+          );
+          throw cause;
+        }
         if (this.closed) {
           this.stream.getTracks().forEach((track) => track.stop());
           return;
@@ -432,9 +453,22 @@ export class RealtimeVoice {
         // Capture at the provider's PCM rate; play at the device rate.
         this.input = new AudioContext({ sampleRate: 24000 });
         this.output = new AudioContext();
-        await this.input.resume();
+        const audioStalled = t("Voice could not start: audio did not initialize.");
+        await voiceConnectionStep(
+          "audio-resume",
+          this.provider,
+          this.input.resume(),
+          VOICE_AUDIO_STEP_MS,
+          audioStalled,
+        );
         requireDisclosure();
-        await this.input.audioWorklet.addModule(captureUrl);
+        await voiceConnectionStep(
+          "audio-worklet",
+          this.provider,
+          this.input.audioWorklet.addModule(captureUrl),
+          VOICE_AUDIO_STEP_MS,
+          audioStalled,
+        );
         requireDisclosure();
         this.source = this.input.createMediaStreamSource(this.stream);
         this.vad = new VoiceVad(

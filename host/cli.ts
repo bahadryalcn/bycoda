@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
+import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -369,6 +370,10 @@ Connect another computer using an SSH forward to the loopback port.`);
       }
     }
     throw new Error(`Host did not start. See ${join(directory, "host.log")}`);
+  }
+  if (command === "serve" && process.platform === "win32") {
+    // Use Windows trust for outbound TLS, preserving bundled and explicitly configured CAs.
+    setDefaultCACertificates([...getCACertificates("default"), ...getCACertificates("system")]);
   }
   const diagnostics: HostDiagnostics | undefined =
     command === "serve" ? startHostDiagnostics({ dataDir: directory, version }) : undefined;

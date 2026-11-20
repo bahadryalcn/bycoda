@@ -184,7 +184,7 @@ export function createManagementRuntime(
       if (action === "mobile.access.status")
         return args.mode === "lan"
           ? dependencies.mobileLan.status()
-          : dependencies.mobileAccess.status();
+          : dependencies.mobileAccess.status({ fresh: true });
       if (action === "history.import.status") {
         if (principal.kind !== "session")
           throw new Error("Choose a real focused session for history import status.");

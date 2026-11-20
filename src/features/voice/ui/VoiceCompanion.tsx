@@ -25,12 +25,17 @@ import { useOverlay } from "../../../shared/ui/overlay";
 import { GripVertical } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { voiceError } from "../model/voiceAssistantNotices";
+import { VOICE_HOST_STEP_MS, voiceConnectionStep } from "../model/voiceConnectionStep";
 import { voiceInterruptedTurnNotice } from "../model/voiceInstructions";
 import { invalidateFeatureHosts } from "../../connections/model/hostFeatureClient";
 import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
 import { VoiceCompanionView } from "./companion/VoiceCompanionView";
-import { VoiceLauncher, VoiceReturnButton } from "./companion/VoiceLauncher";
+import {
+  VoiceLauncher,
+  VoiceReturnButton,
+  type VoiceWakeControls,
+} from "./companion/VoiceLauncher";
 import { useVoiceChatTurns, useVoiceTranscript } from "./companion/useVoiceChatTurns";
 import { voiceJobsNeedReview } from "./companion/voiceJobAutoStart";
 import { useVoicePushToTalk } from "./useVoicePushToTalk";
@@ -214,7 +219,7 @@ export type VoiceCompanionProps = {
   ensureToolSession?: (projectPath: string) => Promise<string>;
   assistantSession?: Session;
 };
-export function VoiceCompanion(props: VoiceCompanionProps) {
+export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: VoiceWakeControls }) {
   const locale = useLocale();
   useSyncExternalStore(subscribeGroupLock, getGroupLockView);
   const { snapshot: assistantSnapshot } = useAssistantSnapshot();
@@ -2522,10 +2527,26 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       capturedHistory?.current?.() !== false &&
       (!connectionScope || connectionScope.current());
     let runtimeRegistrationPending = false;
+    // Every await before the socket is bounded, so "connecting" always ends in live or an error.
+    const step = <T,>(name: string, work: Promise<T>, ms: number, message: string) =>
+      voiceConnectionStep(name, provider, work, ms, message);
+    // Best effort: a stalled step degrades to the fallback instead of failing the connection.
+    const soft = <T,>(name: string, work: Promise<T>, fallback: T) =>
+      step(name, work, VOICE_HOST_STEP_MS, "").catch(() => fallback);
+    const contextStalled = t("Voice could not start: the conversation did not respond.");
     try {
-      const secret = await realtimeSecret(provider);
+      const secret = await step(
+        "secret",
+        realtimeSecret(provider),
+        VOICE_HOST_STEP_MS,
+        t("Voice could not start: the voice key was not issued."),
+      );
       if (generation.current !== epoch) return;
-      const scope = await capturedHistory?.scope?.().catch(() => undefined);
+      const scope = await soft(
+        "scope",
+        capturedHistory?.scope?.() ?? Promise.resolve(undefined),
+        undefined,
+      );
       connectionScope = scope;
       if (generation.current !== epoch) return;
       if (capturedHistory?.current && !capturedHistory.current()) {
@@ -2535,18 +2556,33 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       let seed: import("../../../shared/model/host-contracts/assistant").AssistantMessage[] = [];
       let seededSummary: ReturnType<typeof voiceThreadSummary>;
       try {
-        await transcriptStore.current?.retry();
+        await step(
+          "transcript-retry",
+          Promise.resolve(transcriptStore.current?.retry()),
+          VOICE_HOST_STEP_MS,
+          contextStalled,
+        );
       } catch {
         if (generation.current === epoch) setHistoryNotice(t("Conversation was not saved. Retry."));
       }
       try {
-        const stored = await capturedHistory?.open();
+        const stored = await step(
+          "history-open",
+          Promise.resolve(capturedHistory?.open()),
+          VOICE_HOST_STEP_MS,
+          contextStalled,
+        );
         if (stored && scope?.current()) {
-          const page = await capturedHistory!.request({
-            op: "threads.messages",
-            threadId: stored.thread.id,
-            limit: 6,
-          });
+          const page = await step(
+            "history-seed",
+            capturedHistory!.request({
+              op: "threads.messages",
+              threadId: stored.thread.id,
+              limit: 6,
+            }),
+            VOICE_HOST_STEP_MS,
+            contextStalled,
+          );
           seed =
             page.messages?.filter((message) => voiceHistoryMessageVisible(message, scope)) ?? [];
           if (page.thread?.id === stored.thread.id)
@@ -2572,27 +2608,44 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       retainCausalGeneration(causal);
       const summary = seededSummary?.text ?? "";
       runtimeRegistrationPending = true;
-      await beginVoiceRuntime(voice, provider === "xai" ? "grok" : "openai");
+      await step(
+        "runtime-register",
+        beginVoiceRuntime(voice, provider === "xai" ? "grok" : "openai"),
+        VOICE_HOST_STEP_MS,
+        t("Voice could not start: the voice runtime did not register."),
+      );
       if (!disclosureCurrent()) {
         closeVoiceRuntimeEvidence(voice, voice.retire());
         return;
       }
       if (!capturedHistory) throw new Error("Voice runtime source unavailable.");
-      const [sourceHistory, sourceEnvironment] = await Promise.all([
-        capturedHistory.open(),
-        capturedHistory.environmentId?.(),
-      ]);
+      const [sourceHistory, sourceEnvironment] = await step(
+        "runtime-source",
+        Promise.all([capturedHistory.open(), capturedHistory.environmentId?.()]),
+        VOICE_HOST_STEP_MS,
+        contextStalled,
+      );
       if (!sourceEnvironment || !disclosureCurrent())
         throw new Error("Voice runtime source unavailable.");
       const { isTauri } = await import("@tauri-apps/api/core");
       if (isTauri())
-        await waitForAssistantControlSource(
-          sourceHistory.thread.id,
-          sourceEnvironment,
-          disclosureCurrent,
+        await step(
+          "control-source",
+          waitForAssistantControlSource(
+            sourceHistory.thread.id,
+            sourceEnvironment,
+            disclosureCurrent,
+          ),
+          VOICE_HOST_STEP_MS,
+          contextStalled,
         );
       if (!disclosureCurrent()) throw new Error("Voice runtime source changed.");
-      await causal.bindRuntimeIdentity(capturedHistory);
+      await step(
+        "runtime-identity",
+        causal.bindRuntimeIdentity(capturedHistory),
+        VOICE_HOST_STEP_MS,
+        contextStalled,
+      );
       if (!disclosureCurrent()) {
         closeVoiceRuntimeEvidence(voice, voice.retire());
         return;
@@ -2600,7 +2653,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       runtimeRegistrationPending = false;
       await voice.connect(secret, safeTurns, {
         summary,
-        openWork: await assistantControls.current!.openWork(disclosureCurrent),
+        openWork: await soft(
+          "open-work",
+          assistantControls.current!.openWork(disclosureCurrent),
+          "",
+        ),
         disclosureCurrent,
         ...(settings.microphoneId ? { deviceId: settings.microphoneId } : {}),
       });
@@ -2680,7 +2737,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       }
       // Only the profile gates start; a full snapshot would make the Host prove every
       // project referenced by recent Room history before voice could connect.
-      const { profile: currentProfile } = await assistantRequest({ op: "profile.get" });
+      const { profile: currentProfile } = await voiceConnectionStep(
+        "profile",
+        loadVoiceSettings().mode,
+        assistantRequest({ op: "profile.get" }),
+        VOICE_HOST_STEP_MS,
+        t("Voice could not start: the assistant did not respond."),
+      );
       if (generation.current !== epoch) return;
       if (currentProfile && snapshotRef.current)
         snapshotRef.current = { ...snapshotRef.current, profile: currentProfile };
@@ -2697,7 +2760,13 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       threadSummary.current = "";
       recentTurns.current = [];
       try {
-        const stored = await opening;
+        const stored = await voiceConnectionStep(
+          "conversation-open",
+          loadVoiceSettings().mode,
+          opening,
+          VOICE_HOST_STEP_MS,
+          t("Voice could not start: the conversation did not respond."),
+        );
         if (generation.current !== epoch) return;
         transcriptStore.current?.bind(stored.thread, selected.historySessionId, stored.request);
         setHistoryNotice("");
@@ -3062,16 +3131,24 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       ? "Drag outside the app to float it. Use arrow keys to reposition."
       : "Use arrow keys to reposition.",
   );
-  if (open && detached) return <VoiceReturnButton ref={launcher} onReturn={dock} />;
-  if (!open)
-    return (
+  if (open && detached && !props.wakeControls)
+    return <VoiceReturnButton ref={launcher} onReturn={dock} />;
+  const launcherControl =
+    !open || props.wakeControls ? (
       <VoiceLauncher
         ref={launcher}
         visual={settings.visual}
         name={identity.name}
         avatar={assistantSnapshot?.profile.avatar}
         state={visualState}
+        returnToWindow={open && detached}
+        wakeControls={props.wakeControls}
         onOpen={() => {
+          if (open) {
+            if (detached) dock();
+            else panel.current?.focus();
+            return;
+          }
           try {
             const saved = JSON.parse(localStorage.getItem("bycoda:voice-position") ?? "null") as {
               x?: unknown;
@@ -3090,7 +3167,8 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
           setOpen(true);
         }}
       />
-    );
+    ) : null;
+  if (!open || detached) return <>{launcherControl}</>;
   const handle = (
     <Button
       touchTarget="control"
@@ -3118,7 +3196,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       )}
     </Button>
   );
-  return (
+  const companionPanel = (
     <Text
       as="section"
       size="caption"
@@ -3297,5 +3375,11 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         onManualChange={setManualTurnEnd}
       />
     </Text>
+  );
+  return (
+    <>
+      {launcherControl}
+      {companionPanel}
+    </>
   );
 }

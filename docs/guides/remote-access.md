@@ -65,8 +65,9 @@ When a continued Codex conversation is archived in Codex, sending a follow-up as
 
 ## Free access outside your network
 
-In **Settings → Connections → External tunnels**, enable **Access from outside
-the network (Cloudflare Quick Tunnel)** for the selected Host. It is off by default.
+In **Settings → Connections → Sharing**, choose **Create link**, select the computer,
+then choose **bycoda host** and **Cloudflare**. Enable **Access from outside the network
+(Cloudflare Quick Tunnel)** for that Host. It is off by default.
 No Cloudflare account, token or paid service is needed. bycoda uses an installed
 cloudflared or downloads a pinned, checksum-verified copy into its private data
 directory. The URL changes whenever the tunnel starts. The Host starts it again
@@ -409,6 +410,10 @@ Prerequisites:
 - Windows provider discovery supports native `.exe` installations and npm-generated `.cmd` shims. The host reads a shim's target without running `cmd.exe`: Node scripts run with the bundled Node runtime, installer shims with their own `node.exe`, and native targets directly. Targets outside the shim's directory and custom `.cmd` wrappers with other commands are not supported. Registry ACP agent installs use npm from the user's Node.js installation or PATH. SSH aliases can supply Windows domain/user names through the normal SSH config.
 
 SSH host verification and password/passphrase prompts appear in Settings. Changed host keys are rejected by OpenSSH. Passwords/passphrases are used only for the current authentication, not saved. When key/agent authentication is available, opening the remote view restores a lost tunnel automatically. If SSH needs another prompt, use **Reconnect** in Settings. Reconnecting uses the saved device credential and checks the host's identity.
+
+In **Settings → Connections → Computers**, open a computer's actions and choose
+**Edit name and address…**. A name change saves immediately. Address or port
+changes use **Save and reconnect** and show connection progress on the Computers tab.
 
 A machine can be reached at more than one address, for example its Tailscale address and its home-network address. Besides the address you saved and its optional other address, a connected host reports its own home-network and Tailscale IPv4 addresses, and the desktop remembers them for that machine. Each connection checks all of these addresses at once and uses the saved address when it answers, otherwise the first one that does. So a Mac saved under its Tailscale address still connects over the home network while Tailscale is signed out. A remembered address is only a hint: it must present the saved address's SSH host key and answer as the same host, so another computer that takes over that address later is never used. Saved addresses never change, and each new report from the host replaces the addresses it reported before. When a connection had to use a later address, the desktop checks the preferred ones every minute and moves to the best one that signs in completely; requests in progress then continue over the new connection. An address that stays silent or fails is checked less often, up to every 30 minutes. **Connections** settings lists every address under **Addresses**, in the order a connection tries them: the SSH address, the other address and the ones the host found. Each row shows its kind (home network or Tailscale), whether its SSH port responds right now, and which one is in use. The SSH and other address are always available as candidates; change them with **Edit name and address…**. An address the host found can be turned off, for example one on a VPN or virtual adapter that this computer cannot reach; it is then never tried, and a connection already using it moves to another address within a minute. Turning an address on or off never reorders the list. **Try first** chooses whether the SSH address, home-network addresses or Tailscale addresses are tried first. These choices are kept when the host reports its addresses again. Hosts do not report addresses on adapters named as virtual (Hyper-V, WSL, Docker, VPN).
 

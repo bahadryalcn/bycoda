@@ -153,7 +153,7 @@ for (const state of ["error", "loading"]) {
       await expect(
         page.getByText("Could not load transcription models. Retry to refresh the catalog."),
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
     } else {
       await expect(page.getByText("Loading transcription models…")).toBeVisible();
     }
@@ -379,7 +379,7 @@ for (const platform of ["macOS", "Windows", "Linux"])
             await expect(recovery).toBeVisible();
             await recovery.click();
             const guide = page.getByRole("dialog", { name: "Microphone", exact: true });
-            await guide.getByRole("button", { name: "Open Settings", exact: true }).click();
+            await guide.getByRole("button", { name: "Open settings", exact: true }).click();
             await expect(guide).toContainText(
               "Couldn’t open the permission prompt or settings. Follow the steps above, then check again.",
             );

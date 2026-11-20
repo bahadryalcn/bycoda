@@ -196,8 +196,9 @@ export function PairedDevicesPanel({
   }, [active, coordinator]);
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       <SectionLabel
+        as="h2"
         actions={
           <>
             <Button
@@ -226,40 +227,51 @@ export function PairedDevicesPanel({
       >
         {t("Devices with access")}
       </SectionLabel>
-      {loaded && !loading && ordered.length === 0 ? (
-        <EmptyState
-          kind="empty"
-          title={t("No computer connected")}
-          description={t("Your local host is not connected yet. Check again after bycoda starts.")}
-          action={{ label: t("Check again"), onClick: () => void onRefresh() }}
-        />
-      ) : null}
-      {ordered.map((machine) => (
-        <ComputerDevices
-          key={machine.id}
-          machine={machine}
-          entry={entries[entryKey(machine)]}
-          onChanged={refresh}
-        />
-      ))}
-      <Group title={t("Phone access")}>
-        {local ? <LocalNetworkAccessRow machine={local} active={active} /> : null}
-        <Row
-          label={t("Let my signed-in phones find this computer")}
-          info={t(
-            "Phones signed in to your account can ask to connect, and you approve each one here. Needs bycoda open and your account signed in; route addresses are stored in your account.",
-          )}
-          disabled={!signedIn}
-          disabledReason={t("Sign in to your account first")}
-        >
-          <Switch
-            checked={accountConnect && signedIn}
-            disabled={!signedIn}
-            onCheckedChange={setPhoneConnectEnabled}
-            aria-label={t("Let my signed-in phones find this computer")}
-          />
-        </Row>
-      </Group>
+      <div className="connections-management-grid">
+        <div className="settings-topics">
+          {!loaded && loading && ordered.length === 0 ? (
+            <LoadingText>{t("Loading devices…")}</LoadingText>
+          ) : null}
+          {loaded && !loading && ordered.length === 0 ? (
+            <EmptyState
+              kind="empty"
+              title={t("No computer connected")}
+              description={t(
+                "Your local host is not connected yet. Check again after bycoda starts.",
+              )}
+              action={{ label: t("Check again"), onClick: () => void onRefresh() }}
+            />
+          ) : null}
+          {ordered.map((machine) => (
+            <ComputerDevices
+              key={machine.id}
+              machine={machine}
+              entry={entries[entryKey(machine)]}
+              onChanged={refresh}
+            />
+          ))}
+        </div>
+        <div>
+          <Group title={t("Phone access")}>
+            {local ? <LocalNetworkAccessRow machine={local} active={active} /> : null}
+            <Row
+              label={t("Let my signed-in phones find this computer")}
+              info={t(
+                "Phones signed in to your account can ask to connect, and you approve each one here. Needs bycoda open and your account signed in; route addresses are stored in your account.",
+              )}
+              disabled={!signedIn}
+              disabledReason={t("Sign in to your account first")}
+            >
+              <Switch
+                checked={accountConnect && signedIn}
+                disabled={!signedIn}
+                onCheckedChange={setPhoneConnectEnabled}
+                aria-label={t("Let my signed-in phones find this computer")}
+              />
+            </Row>
+          </Group>
+        </div>
+      </div>
       {pairing && state.stage !== "closed" ? (
         <PhonePairingDialog
           machines={ordered}

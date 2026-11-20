@@ -10,6 +10,8 @@ import { SubagentAuditFixture, seedSubagentAudit } from "./subagent-audit";
 import { SubagentSheet, useSubagentSheet } from "../../../src/features/sessions/ui/SubagentSheet";
 import { useSubagentRelay } from "../../../src/features/sessions/ui/useSubagentRelay";
 import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
+import { SessionSubagentsMenu } from "../../../src/features/sessions/ui/SessionSubagentsMenu";
+import { sessionSubagents } from "../../../src/features/sessions/model/sessionSubagents";
 import { SubagentStack } from "../../../src/features/sessions/ui/SubagentCards";
 import { SubagentStateLine } from "../../../src/features/sessions/ui/SubagentAnatomy";
 import { Button } from "../../../src/shared/ui/Button";
@@ -124,6 +126,57 @@ const statusBlocks: Block[] = [
   },
   ...statusAgents,
 ];
+
+function WorkflowFixture() {
+  const [busy, setBusy] = useState(true);
+  const blocks: Block[] = [
+    { id: "workflow-user", role: "user", text: "Review findings" },
+    { id: "workflow", role: "tool", text: "Workflow", tool: { callId: "workflow", kind: "other" } },
+    ...["Research", "Review"].map((phase): Block => ({
+      id: phase,
+      role: "tool",
+      text: `${phase} agent`,
+      tool: {
+        callId: `workflow:workflow:${phase}`,
+        kind: "agent",
+        status: busy ? "in_progress" : "completed",
+      },
+      agentRun: {
+        name: `${phase} agent`,
+        workflow: { callId: "workflow", phase },
+        steps: [{ id: "report", kind: "message", text: `${phase} transcript fixture` }],
+      },
+    })),
+  ];
+  const sheet = useSubagentSheet(blocks, true);
+  return (
+    <main className="relative flex h-dvh flex-col justify-end bg-background-base p-4 text-content">
+      <div data-composer className="mx-auto w-full max-w-4xl">
+        {busy ? (
+          <ActivityDock
+            sessionId="workflow-fixture"
+            harness="claude"
+            blocks={blocks}
+            busy
+            visible
+            atEnd
+            pendingQuestion={false}
+            onOpenAgent={(row) => sheet.open(row.blockId)}
+          />
+        ) : null}
+        <SessionSubagentsMenu
+          agents={sessionSubagents(blocks, busy)}
+          onOpen={(row) => sheet.open(row.blockId)}
+        />
+        {busy ? <Button onClick={() => setBusy(false)}>Finish fixture workflow</Button> : null}
+      </div>
+      {sheet.block ? (
+        <SubagentSheet block={sheet.block} busy={busy} visible onClose={sheet.close} />
+      ) : null}
+    </main>
+  );
+}
+
 function Fixture() {
   const params = new URLSearchParams(location.search);
   const statusColors = params.has("status-colors");
@@ -208,6 +261,7 @@ function Fixture() {
               visible
               atEnd
               onOpenAgent={(entry) => sheet.open(entry.blockId)}
+              onStopAll={async () => {}}
             />
           </div>
         </div>
@@ -251,9 +305,18 @@ await flushHostSessionBindings();
 const nested = new URLSearchParams(location.search).has("nested");
 const retention = nested || new URLSearchParams(location.search).has("retention");
 const audit = new URLSearchParams(location.search).has("audit");
+const workflow = new URLSearchParams(location.search).has("workflow");
 if (nested) seedNestedDelegation();
 else if (retention) seedDelegatedRetention();
 if (audit) seedSubagentAudit();
 createRoot(document.getElementById("root")!).render(
-  audit ? <SubagentAuditFixture /> : retention ? <DelegatedRetentionFixture /> : <Fixture />,
+  workflow ? (
+    <WorkflowFixture />
+  ) : audit ? (
+    <SubagentAuditFixture />
+  ) : retention ? (
+    <DelegatedRetentionFixture />
+  ) : (
+    <Fixture />
+  ),
 );

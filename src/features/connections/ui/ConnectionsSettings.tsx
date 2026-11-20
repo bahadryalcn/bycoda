@@ -10,6 +10,7 @@ import {
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Modal } from "../../../shared/ui/Modal";
 import { Surface } from "../../../shared/ui/Surface";
 import "./connections-settings.css";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -396,7 +397,6 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         else void begin();
       }}
       onCancel={closeForm}
-      framed={Boolean(editing)}
     />
   ) : null;
   return (
@@ -425,6 +425,30 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           </InlineMessage>
         ) : null}
         <TabPanel value="machines" keepMounted tabIndex={-1} className="connections-view">
+          <SectionLabel
+            as="h2"
+            count={shownMachines.length || undefined}
+            actions={
+              <>
+                <Button
+                  stableWidth
+                  iconOnly
+                  label={t("Refresh")}
+                  variant="ghost"
+                  disabled={busy || loading}
+                  onClick={() => void refresh()}
+                >
+                  <RefreshCw aria-hidden className="icon-md" />
+                </Button>
+                <Button variant="primary" disabled={busy} aria-haspopup="dialog" onClick={startAdd}>
+                  <Plus aria-hidden className="icon-sm" />
+                  {t("Add a computer")}
+                </Button>
+              </>
+            }
+          >
+            {t("Your computers")}
+          </SectionLabel>
           {loadError ? (
             <RemoteDataStatus
               label={t("machines")}
@@ -498,88 +522,76 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             </div>
           ) : null}
           {notice && <InlineMessage tone="success">{notice}</InlineMessage>}
-          <section aria-label={t("Your computers")} className="flex flex-col gap-2">
-            <SectionLabel
-              count={shownMachines.length || undefined}
-              actions={
-                <>
-                  <Button
-                    stableWidth
-                    iconOnly
-                    label={t("Refresh")}
-                    variant="ghost"
-                    disabled={busy || loading}
-                    onClick={() => void refresh()}
-                  >
-                    <RefreshCw aria-hidden className="icon-md" />
-                  </Button>
-                  <Button
-                    variant="primary"
-                    disabled={busy}
-                    aria-haspopup="dialog"
-                    onClick={startAdd}
-                  >
-                    <Plus aria-hidden className="icon-sm" />
-                    {t("Add a computer")}
-                  </Button>
-                </>
-              }
-            >
-              {t("Your computers")}
-            </SectionLabel>
-            {shownMachines.length > 0 ? (
-              <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
-                {shownMachines.map((machine) => (
-                  <MachineRow
-                    key={machine.id}
-                    machine={machine}
-                    machines={machines}
-                    probed={status[machine.id]}
-                    version={versions[machine.id]}
-                    needsUpdate={Boolean(needsUpdate[machine.id])}
-                    showDetails={
-                      detailMachine === machine.id ||
-                      status[machine.id] === "offline" ||
-                      Boolean(needsUpdate[machine.id])
-                    }
-                    editing={editing?.id === machine.id}
-                    busy={busy}
-                    revoking={revoking}
-                    menuOpen={rowMenu?.machine.id === machine.id}
-                    onUpdateHost={() => void begin(machine, true)}
-                    onReconnect={() => void begin(machine)}
-                    onSyncNow={() => void syncNow(machine.id)}
-                    onToggleDetails={() =>
-                      setDetailMachine((current) =>
-                        current === machine.id ? undefined : machine.id,
-                      )
-                    }
-                    onToggleMenu={(anchor) =>
-                      setRowMenu(
-                        rowMenu?.machine.id === machine.id ? undefined : { machine, anchor },
-                      )
-                    }
+          <section aria-label={t("Your computers")}>
+            <div className="connections-management-grid">
+              {shownMachines.length > 0 ? (
+                <Surface variant="card" padding="none" dividers="card" className="min-w-0">
+                  {shownMachines.map((machine) => (
+                    <MachineRow
+                      key={machine.id}
+                      machine={machine}
+                      machines={machines}
+                      probed={status[machine.id]}
+                      version={versions[machine.id]}
+                      needsUpdate={Boolean(needsUpdate[machine.id])}
+                      showDetails={
+                        detailMachine === machine.id ||
+                        status[machine.id] === "offline" ||
+                        Boolean(needsUpdate[machine.id])
+                      }
+                      editing={editing?.id === machine.id}
+                      busy={busy}
+                      revoking={revoking}
+                      menuOpen={rowMenu?.machine.id === machine.id}
+                      onUpdateHost={() => void begin(machine, true)}
+                      onReconnect={() => void begin(machine)}
+                      onSyncNow={() => void syncNow(machine.id)}
+                      onToggleDetails={() =>
+                        setDetailMachine((current) =>
+                          current === machine.id ? undefined : machine.id,
+                        )
+                      }
+                      onToggleMenu={(anchor) =>
+                        setRowMenu(
+                          rowMenu?.machine.id === machine.id ? undefined : { machine, anchor },
+                        )
+                      }
+                    />
+                  ))}
+                </Surface>
+              ) : loaded && !loading && !loadError ? (
+                needle ? (
+                  <EmptyState
+                    size="inline"
+                    kind="filtered"
+                    description={t("No matches")}
+                    onReset={() => setQuery("")}
                   />
-                ))}
-              </Surface>
-            ) : loaded && !loading && !loadError ? (
-              needle ? (
-                <EmptyState
-                  size="inline"
-                  kind="filtered"
-                  description={t("No matches")}
-                  onReset={() => setQuery("")}
-                />
+                ) : (
+                  <EmptyState
+                    kind="empty"
+                    title={t("No computers yet")}
+                    action={{ label: t("Add a computer"), onClick: startAdd, disabled: busy }}
+                  />
+                )
               ) : (
-                <EmptyState
-                  kind="empty"
-                  title={t("No computers yet")}
-                  action={{ label: t("Add a computer"), onClick: startAdd, disabled: busy }}
-                />
-              )
-            ) : null}
-            {editing ? machineForm : null}
+                <div>{loading ? <LoadingText /> : null}</div>
+              )}
+              <div>
+                <RemoteReconnectGroup />
+              </div>
+            </div>
           </section>
+          {editing && view === "machines" ? (
+            <Modal
+              title={t("Edit {p0}", { p0: editing.name })}
+              size="md"
+              closeDisabled={busy}
+              onClose={closeForm}
+            >
+              {machineForm}
+            </Modal>
+          ) : null}
           {adding && !editing && view === "machines" ? (
             <AddComputerDialog
               saved={machines}
@@ -656,7 +668,6 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               onConfirm={(revoke) => void remove(removingMachine, revoke)}
             />
           ) : null}
-          <RemoteReconnectGroup />
         </TabPanel>
         {visited.includes("phone") ? (
           <TabPanel

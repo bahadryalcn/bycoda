@@ -24,6 +24,7 @@ use crate::native_provider_output::{
 };
 use crate::passwd_identity;
 
+pub(crate) mod claude_workflow;
 mod launch_env;
 pub(crate) mod management_authority;
 #[cfg(windows)]
@@ -3049,16 +3050,21 @@ fn harness_spawn_blocking(
 
     let mut scratch =
         crate::control::configure_child(&app, &session_id, &mut cmd, control_turn.as_ref());
+    let pi_without_tools = binary_provider.as_deref() == Some("pi")
+        && ["--no-tools", "--no-extensions", "--no-mcp"]
+            .iter()
+            .all(|flag| args.iter().any(|arg| arg == flag));
     let conversation_granted = tool_grants::configure_optional_tool_grants(
         &app,
         &session_id,
         &mut cmd,
         (epoch, kill_all),
-        tool_grants::sessionless(
-            management_input_policy.is_some(),
-            &authority_target,
-            &source_target,
-        ),
+        pi_without_tools
+            || tool_grants::sessionless(
+                management_input_policy.is_some(),
+                &authority_target,
+                &source_target,
+            ),
         binary_provider.as_deref().unwrap_or("generic"),
     );
     let launch_args = if conversation_granted {
@@ -5327,6 +5333,8 @@ fn exec_args_allowed(binary_provider: Option<&str>, args: &[String]) -> bool {
     let matches = |a: &&[&str]| a.len() == args.len() && a.iter().zip(args).all(|(x, y)| x == y);
     EXEC_ALLOWED_ARGS.iter().any(matches)
         || (binary_provider == Some("opencode") && OPENCODE_EXEC_ALLOWED_ARGS.iter().any(matches))
+        || (binary_provider == Some("pi")
+            && args == ["--no-extensions", "--no-mcp", "--no-approve", "--help"])
         || (binary_provider == Some("grok")
             && args.len() == 4
             && args[0] == "--no-auto-update"
@@ -9065,6 +9073,14 @@ mod exec_allowlist_tests {
             assert!(exec_args_allowed(provider, &args(&["status", "--json"])));
             assert!(exec_args_allowed(provider, &args(&["agent", "list"])));
         }
+    }
+
+    #[test]
+    fn allows_only_the_restricted_pi_help_probe() {
+        let probe = args(&["--no-extensions", "--no-mcp", "--no-approve", "--help"]);
+        assert!(exec_args_allowed(Some("pi"), &probe));
+        assert!(!exec_args_allowed(Some("omp"), &probe));
+        assert!(!exec_args_allowed(Some("pi"), &args(&["--help"])));
     }
 
     #[test]

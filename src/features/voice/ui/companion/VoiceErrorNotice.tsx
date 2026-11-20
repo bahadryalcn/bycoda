@@ -2,7 +2,7 @@ import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { TriangleAlert } from "../../../../shared/ui/icons";
-import { MicrophoneRecoveryAction } from "../MicrophoneRecoveryAction";
+import { isVoiceSetupError, VoiceRecoveryAction } from "../MicrophoneRecoveryAction";
 
 /** Errors whose text is already the owner's next step; every other error is a technical detail. */
 export function isActionableVoiceError(error: string | undefined) {
@@ -15,6 +15,7 @@ export function isActionableVoiceError(error: string | undefined) {
 
 /** What the header mark is called: the next step itself, or the generic attention line. */
 export function voiceErrorTitle(error: string) {
+  if (isVoiceSetupError(error)) return t("Voice setup is needed");
   return isActionableVoiceError(error) ? error : t("Voice needs attention");
 }
 
@@ -63,10 +64,12 @@ export function VoiceErrorNotice({ error, onDismiss }: { error: string; onDismis
           {title}
         </Text>
       )}
-      <Text as="p" size="inherit" tone="secondary" className="break-words select-text">
-        {error}
-      </Text>
-      <MicrophoneRecoveryAction message={error} />
+      {!isVoiceSetupError(error) ? (
+        <Text as="p" size="inherit" tone="secondary" className="break-words select-text">
+          {error}
+        </Text>
+      ) : null}
+      <VoiceRecoveryAction message={error} />
       <div className="flex justify-end">
         <Button variant="primary" onClick={onDismiss}>
           {t("Dismiss")}

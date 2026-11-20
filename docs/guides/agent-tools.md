@@ -423,11 +423,31 @@ that message instead of failing silently.
 
 A delegated child starts only bycoda's own tools (Claude with strict MCP config, Codex with
 the owner's other MCP servers disabled for that thread; no config file is changed) and gets
-a short bycoda hint without the owner's persona. The main model may pass `files: false` for
-discussion, research or writing: the child (Claude or Codex) then runs in an empty scratch
-folder under the Host's state directory, read-only and supervised, without project
-instructions, skills listing, provider memory or git context. The folder is removed with the
-run's record.
+a short bycoda hint without the owner's persona. Normal subagents use the parent project's
+folder or worktree and its runtime permissions. Omit `files` or set `files: true` for a
+normal session. When tools are unnecessary or unavailable, give the child enough context
+to answer from the brief. Use `files: false` only when the owner asks for scratch mode and the selected
+model's `filesFalse.available` in `agents.options` is true. Claude and Codex run read-only in
+an empty scratch folder under
+the Host's state directory, with reduced context. Stock Pi uses a tool-free scratch session
+when its installed CLI supports the required isolation flags; older versions are rejected.
+OpenCode 2 uses tool-free generation with the selected OpenCode model and prior messages
+from the Host conversation. A reply keeps the conversation history. Active generation can
+be stopped, and another message can be sent after it ends.
+
+Grok and Gemini use tool-free requests to their respective APIs. Enable them in the Host
+environment with `BYCODA_GROK_CHAT_ONLY_API=1` and `XAI_API_KEY` or
+`BYCODA_GEMINI_CHAT_ONLY_API=1` and `GEMINI_API_KEY`. Select the default account and a
+supported model in the provider catalog. Gemini 3.8 Flash selections in the Antigravity
+catalog keep their Low, Medium or High thinking level. Named accounts are unavailable on
+these API paths. Requests use
+the supplied API key's quota, and replies keep the Host conversation history.
+File attachments are unavailable on these three generation paths.
+
+These modes do not provide OS file-read isolation. Claude and Codex tools may still read
+paths outside scratch. `repositoryReadIsolation` reports that limit.
+The folder is removed with the run's record. Unsupported models are rejected; they never
+fall back to a normal project run.
 
 Each run uses the quota of its own provider account. A subagent on a Codex model
 consumes Codex usage, not the main model's allowance.
@@ -504,6 +524,12 @@ all `agents.*` tools. Execution also rejects Host delegation. A child may use it
 provider's built-in subagents. Its panel lists running and past native runs with
 their names, models and status; expand a run to read its steps during execution or
 after it finishes. These runs stay under the child, outside the parent's composer menu.
+
+Claude Workflow subagents appear under their Workflow phase in the activity dock
+and session subagent menu. On mobile, phases appear in the Agents sheet. Open an
+agent to read the captured transcript steps. The Workflow owns its child tasks,
+so stop the Workflow to interrupt them together. Workflow is available when the
+session permits Claude's automatic native model selection and has write access.
 
 ## Terminal log capture
 

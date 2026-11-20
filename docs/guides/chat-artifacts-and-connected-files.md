@@ -1,7 +1,7 @@
 # Inspect chat output and connected-machine files
 
-Use **Markdown preview** beside the chat composer to see formatting update above the draft as you
-type. Sent messages display Markdown, and **Show full content** opens long
+Markdown formatting appears in the chat composer as you type. Move the caret onto a Markdown
+marker to see and edit it. Sent messages display Markdown, and **Show full content** opens long
 messages with the same formatting. **Copy message** and **Save as note** use the original Markdown.
 
 Markdown replies and document previews up to 131,072 characters parse without a background worker. Longer content, including 1 MiB documents, parses in a background worker. Documents with many blocks fill in progressively while the rendering indicator remains visible; completed blocks stay selectable. If parsing fails, the complete source text remains visible with a warning. Closing the failed preview allows a fresh worker attempt when another preview opens.

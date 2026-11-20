@@ -18,6 +18,38 @@ import { planComposerSwitch, withHarnessChoice } from "../../../features/session
 
 let now = 0;
 
+it("keeps late Workflow subagent steps under their owning call without ending current prose", () => {
+  const before: Session = {
+    ...newSession("claude", "/repo"),
+    blocks: [
+      { id: "workflow", role: "tool", text: "Workflow", tool: { callId: "workflow-call" } },
+      { id: "next-user", role: "user", text: "Next task" },
+      { id: "prose", role: "assistant", text: "Current stream", streaming: true },
+    ],
+  };
+  const workflow = { callId: "workflow-call", phase: "Review" };
+  const status = {
+    type: "tool.updated",
+    callId: "workflow-child",
+    kind: "agent",
+    title: "Reviewer",
+    status: "completed",
+    workflow,
+  } as const;
+  const step = {
+    type: "agent.step",
+    callId: "workflow-child",
+    stepId: "report",
+    kind: "message",
+    text: "Done",
+  } as const;
+  const after = applyHarnessEvents(before, [status, step, status]);
+  expect(after.blocks).toHaveLength(4);
+  expect(after.blocks[1].agentRun).toMatchObject({ workflow, steps: [{ id: "report" }] });
+  expect(after.blocks[3]).toBe(before.blocks[2]);
+  expect(applyHarnessEvent(before, { ...status, workflow: { callId: "unrelated" } })).toBe(before);
+});
+
 it("retains cumulative provider metrics on the root turn without changing a clarification reply's author", () => {
   const root = {
       id: "metrics-root",

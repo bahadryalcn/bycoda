@@ -3,6 +3,7 @@ import {
   type PendingNotification,
 } from "./notifications/assistant-notifications";
 import { hostModelRoutingService } from "../model-routing/runtime";
+import { HostDomainRefusalError } from "../domains/context";
 import type { AssistantObservation } from "./observations/assistant-observation-journal";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -3902,8 +3903,15 @@ export class HostAssistant {
       }
       case "threads.sendStatus": {
         this.owner(principal);
+        // A refusal, not an unknown outcome: clients otherwise saw "connection interrupted, check the
+        // result" for the very check that reads it, after every Host restart.
         if (input.expectedHostInstance !== this.nativeSendInstance)
-          throw new Error("The original Host instance changed.");
+          throw new HostDomainRefusalError(
+            "CONTEXT_CHANGED",
+            "conflict",
+            false,
+            "The original Host instance changed.",
+          );
         await this.require<AssistantThread>("threads", input.threadId);
         const key = `reply:${input.threadId}:${input.idempotencyKey}`;
         const receipt = await this.runtime<{
@@ -3945,7 +3953,12 @@ export class HostAssistant {
       case "threads.send": {
         this.owner(principal);
         if (input.expectedHostInstance && input.expectedHostInstance !== this.nativeSendInstance)
-          throw new Error("The original Host instance changed.");
+          throw new HostDomainRefusalError(
+            "CONTEXT_CHANGED",
+            "conflict",
+            false,
+            "The original Host instance changed.",
+          );
         if (!this.ports.reply)
           throw new Error("Conversation replies are unavailable on this Host.");
         const profile = await this.profile();

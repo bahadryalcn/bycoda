@@ -15,6 +15,7 @@ import { ModeCommandText, type ModeCommandToken } from "./modeCommands";
 import { workItemMentionParts } from "./ChatCitationText";
 import { ComposerWorkItemToken } from "./WorkItemMentionChip";
 import { ComposerSkillGroupHover, type ComposerSkillGroup } from "./ComposerSkillGroupHover";
+import { ComposerMarkdown, mayHaveComposerMarkdown } from "./ComposerMarkdown";
 
 const NO_GROUPS: readonly { invocation: string; name: string; members: readonly string[] }[] = [];
 
@@ -60,6 +61,50 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   const groups = new Map<string, ComposerSkillGroup>(
     skillGroups.map((group) => [group.invocation, group]),
   );
+  const renderText = (text: string) => (
+    <ComposerAttachmentHighlight
+      text={text}
+      attachments={attachments}
+      citations={citations}
+      renderText={(text) => (
+        <LinkRuns
+          text={text}
+          edited={edited}
+          wrap={wrap}
+          renderText={(plain) =>
+            skillParts(plain, names).map((part, index) => {
+              const name = part.text.slice(1);
+              const group = part.skill ? groups.get(name) : undefined;
+              return group ? (
+                <DraftToken
+                  key={index}
+                  prefix={part.text[0]}
+                  icon={<SkillGroupIcon />}
+                  label={`${group.name} · ${group.members.length}`}
+                  className="text-skill"
+                  data-composer-skill-token=""
+                  data-composer-skill-group={name}
+                  data-composer-skill-group-prefix={part.text[0]}
+                >
+                  {name}
+                </DraftToken>
+              ) : part.skill ? (
+                <span
+                  key={index}
+                  className={`text-skill ${styles.skill}`}
+                  data-composer-skill-token=""
+                >
+                  {part.text}
+                </span>
+              ) : (
+                <MentionRuns key={index} text={part.text} mentions={mentions} mcpTags={mcpTags} />
+              );
+            })
+          }
+        />
+      )}
+    />
+  );
   return (
     <>
       {groups.size ? <ComposerSkillGroupHover field={field} groups={groups} /> : null}
@@ -71,52 +116,16 @@ export const ComposerHighlight = memo(function ComposerHighlight({
           iconClassName={modeIconClassName}
         />
       ) : null}
-      <ComposerAttachmentHighlight
-        text={rest}
-        attachments={attachments}
-        citations={citations}
-        renderText={(text) => (
-          <LinkRuns
-            text={text}
-            edited={edited}
-            wrap={wrap}
-            renderText={(plain) =>
-              skillParts(plain, names).map((part, index) => {
-                const name = part.text.slice(1);
-                const group = part.skill ? groups.get(name) : undefined;
-                return group ? (
-                  <DraftToken
-                    key={index}
-                    prefix={part.text[0]}
-                    icon={<SkillGroupIcon />}
-                    label={`${group.name} · ${group.members.length}`}
-                    className="text-skill"
-                    data-composer-skill-token=""
-                    data-composer-skill-group={name}
-                    data-composer-skill-group-prefix={part.text[0]}
-                  >
-                    {name}
-                  </DraftToken>
-                ) : part.skill ? (
-                  // The source text itself, at body size: every skill chip reads the same and
-                  // stays one space from its neighbours.
-                  <span
-                    key={index}
-                    className={`text-skill ${styles.skill}`}
-                    data-composer-skill-token=""
-                  >
-                    {part.text}
-                  </span>
-                ) : (
-                  // Skill tokens always end on whitespace, so each remaining run still
-                  // starts on a boundary `@mention` matching can rely on.
-                  <MentionRuns key={index} text={part.text} mentions={mentions} mcpTags={mcpTags} />
-                );
-              })
-            }
-          />
-        )}
-      />
+      {mayHaveComposerMarkdown(rest) ? (
+        <ComposerMarkdown
+          text={rest}
+          offset={mode?.end ?? 0}
+          field={field}
+          renderText={renderText}
+        />
+      ) : (
+        renderText(rest)
+      )}
       {text.endsWith("\n") ? "\n" : null}
     </>
   );

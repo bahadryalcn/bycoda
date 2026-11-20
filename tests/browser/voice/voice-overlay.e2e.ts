@@ -6,6 +6,9 @@ import { expect, test, type Locator } from "@playwright/test";
 // always-on-top and dragging across applications need the desktop app.
 const captures = join(process.cwd(), "temp/verification/voice-overlay");
 // Replies are chat bubbles in the companion's "Conversation" list; the newest one is last.
+// The transcript sits behind the call screen's Conversation toggle; it exists once voice is live.
+const showConversation = (panel: Locator) =>
+  panel.getByRole("button", { name: "Conversation", exact: true }).click();
 const lastReply = (panel: Locator) =>
   panel
     .getByRole("list", { name: "Conversation", exact: true })
@@ -264,6 +267,7 @@ for (const theme of ["light", "dark"])
       await panel.screenshot({ path: join(output, `${theme}-${width}-ready.png`) });
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect.poll(() => page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(1);
+      await showConversation(panel);
       await page.evaluate(() =>
         (window as any).fixtureVoice.speech("Keep my full request together."),
       );
@@ -420,6 +424,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
       const panel = page.locator("section[data-voice-state]");
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await showConversation(panel);
       await page.evaluate(() => (window as any).fixtureVoice.speech("Sözümü kesme."));
       await expect(panel.getByText("Rule save is pending. Retry.", { exact: true })).toBeVisible();
       await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toHaveCount(0);
@@ -490,6 +495,7 @@ for (const theme of ["light", "dark"])
       });
       expect(sourceGuard).toEqual({ environmentId: "fixture-host", frozen: true, rejected: true });
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await showConversation(panel);
       await page.evaluate(() => (window as any).fixtureVoice.speech("delete recovery job"));
       // The question shows beside its icon (aria-hidden) and names the answer group.
       await expect(
@@ -668,6 +674,7 @@ for (const theme of ["light", "dark"])
       const panel = page.locator("section[data-voice-state]");
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect(panel).toHaveAttribute("data-voice-state", "listening");
+      await showConversation(panel);
       await page.evaluate(() => (window as any).fixtureVoice.speech("show choices"));
       // The question shows beside its icon (aria-hidden) and names the answer group.
       await expect(

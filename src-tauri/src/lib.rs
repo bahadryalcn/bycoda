@@ -1007,6 +1007,8 @@ pub fn run() {
             harness::harness_resolve_configured,
             harness::harness_runtime_binary_paths,
             harness::harness_resolve_claude,
+            harness::claude_workflow::harness_claude_workflow_artifacts,
+            harness::claude_workflow::harness_claude_workflow_resolve,
             harness::claude_mcp_list,
             harness::codex_mcp_list,
             mcp::mcp_discover,

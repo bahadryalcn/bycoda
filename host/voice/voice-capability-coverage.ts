@@ -196,6 +196,11 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     remaining:
       "Personal Room notebook has no project; project notes keep target scope. Revision, exact native review and delete recovery retained.",
   },
+  ollama: {
+    tools: [],
+    remaining:
+      "Local Ollama status, service startup, model downloads, port changes and OpenCode configuration belong to owner settings.",
+  },
   preferences: {
     tools: ["preferences.read", "preferences.patch"],
     remaining:

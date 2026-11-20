@@ -267,11 +267,6 @@ async function click(text: string) {
   await act(async () => button!.click());
 }
 async function openLocate() {
-  const more = document.querySelector<HTMLButtonElement>(
-    'button[aria-label="More voice setup actions"]',
-  );
-  expect(more).not.toBeNull();
-  await act(async () => more!.click());
   await click("Locate existing");
 }
 it("does not check or install until enabled; shows only the next actions for missing setup", async () => {
@@ -311,6 +306,63 @@ it("keeps locations behind a dialog, saves a picked folder and discards stale de
     ttsPath: "G:\\Models\\VoxCPM2",
   });
   expect(backend.setup).not.toHaveBeenCalled();
+});
+
+it("finds an existing installation without using or clearing saved paths until it is ready", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), python: "old-python", whisperPath: "old-model" });
+  await setup();
+  await advance();
+  await click("Locate existing");
+
+  backend.inspect.mockResolvedValueOnce({ ready: false, missing: ["Whisper model"] });
+  await click("Automatic detection");
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true });
+  expect(loadVoiceSettings()).toMatchObject({ python: "old-python", whisperPath: "old-model" });
+  expect(backend.setup).not.toHaveBeenCalled();
+
+  backend.inspect.mockResolvedValue({
+    ready: true,
+    missing: [],
+    python: "existing-python",
+    whisperPath: "existing-model",
+  });
+  await click("Automatic detection");
+  expect(loadVoiceSettings()).toMatchObject({
+    python: "existing-python",
+    whisperPath: "existing-model",
+  });
+  await advance();
+  expect(container.textContent).toContain("Voice is ready");
+});
+
+it("offers automatic processing when the selected GPU is unavailable", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), device: "gpu" });
+  backend.inspect.mockResolvedValueOnce({ ready: false, missing: ["NVIDIA GPU"] });
+  await setup();
+  await advance();
+  await click("Use automatic selection");
+  expect(loadVoiceSettings().device).toBe("auto");
+  await advance();
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true });
+});
+
+it("ignores an automatic search result after the location dialog closes", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), python: "saved-python" });
+  await setup();
+  await advance();
+  await openLocate();
+  let found!: (result: { ready: boolean; missing: string[]; python: string }) => void;
+  backend.inspect.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        found = resolve;
+      }),
+  );
+  await click("Automatic detection");
+  await click("Done");
+  await act(async () => found({ ready: true, missing: [], python: "late-python" }));
+  expect(loadVoiceSettings().python).toBe("saved-python");
+  expect(container.textContent).toContain("Voice setup is needed");
 });
 
 it("keeps installation reachable while detection is stalled and ignores the stale check", async () => {

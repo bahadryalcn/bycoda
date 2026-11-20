@@ -12,7 +12,8 @@ import {
   type PiRpcWriterView,
 } from "../turnWriter";
 
-import { killChild } from "../../core/child";
+import { execChild, killChild } from "../../core/child";
+import { leanContext } from "../../core/nativeToolLimits";
 import {
   assertOptionalProviderProbeError,
   createProviderRetirementLedger,
@@ -74,6 +75,7 @@ import {
   assistantDeltaFromEvent,
   buildPiPrompt,
   buildPiSpawnArgs,
+  supportsPiChatOnly,
   buildPiSteer,
   contextFromSessionStats,
   contextFromUsage,
@@ -154,6 +156,7 @@ type Live = {
   bindingTracked?: boolean;
   bindingRetired?: boolean;
   skillPolicyKey?: string;
+  chatOnly: boolean;
   rpc: PiRpc;
   cwd: string;
   providerSessionId: string;
@@ -776,6 +779,7 @@ async function ensureLive(
     existing &&
     existing.cwd === input.cwd &&
     existing.planning === wantPlanning &&
+    existing.chatOnly === leanContext(input.modelSettings) &&
     (flavor.id !== "omp" || existing.autoCompact === input.modelSettings?.autoCompact) &&
     existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
   ) {
@@ -812,7 +816,8 @@ async function ensureLive(
       } catch (error) {
         attempt.controller.signal.throwIfAborted();
         assertOptionalProviderProbeError(error);
-        if (!canResume || error instanceof OmpCompactionError) throw error;
+        if (!canResume || leanContext(input.modelSettings) || error instanceof OmpCompactionError)
+          throw error;
         resumeByThread.delete(input.sessionId);
         attempt.handle = retirementsFor(flavor).admit(
           createChildProcessHandle(input.sessionId, input.nativeControlTurn),
@@ -850,6 +855,25 @@ async function startLive(
   try {
     attempt.handle = handle;
     const { path } = await startupWait(attempt, state.resolveBinary());
+    const chatOnly = leanContext(input.modelSettings);
+    if (chatOnly) {
+      if (flavor.id !== "pi") throw new Error("Chat-only mode requires stock Pi.");
+      const help = await startupWait(
+        attempt,
+        execChild(
+          path,
+          ["--no-extensions", "--no-mcp", "--no-approve", "--help"],
+          input.cwd,
+          "pi",
+          null,
+          "utility",
+        ),
+      );
+      if (!supportsPiChatOnly(help))
+        throw new Error(
+          "This Pi version cannot enforce chat-only mode. Update Pi to use files:false.",
+        );
+    }
     if (
       flavor.id === "omp" &&
       ["on", "off"].includes(input.modelSettings?.autoCompact ?? "") &&
@@ -877,6 +901,7 @@ async function startLive(
       operation: input.operationContext?.operation,
       handle,
       skillPolicyKey: JSON.stringify(input.skillPolicy),
+      chatOnly,
       rpc,
       cwd: input.cwd,
       providerSessionId: resume ?? "",
@@ -913,6 +938,7 @@ async function startLive(
     liveRef.current = live;
     let skillPaths: string[] | undefined;
     if (
+      !chatOnly &&
       input.skillPolicy &&
       (input.skillPolicy.disabledNames.length || input.skillPolicy.disabledPaths.length)
     ) {
@@ -965,6 +991,7 @@ async function startLive(
         buildPiSpawnArgs(flavor, {
           resume,
           model: modelRef ? native : undefined,
+          ...(chatOnly ? { chatOnlyCwd: input.cwd } : {}),
           plan: input.intent === "plan",
           ...(skillPaths ? { skillPaths } : {}),
         }),

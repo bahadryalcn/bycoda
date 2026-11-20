@@ -2801,15 +2801,16 @@ html.is-reordering {
   cursor: grabbing !important;
 }
 
-.composer-toolbar {
-  container: composer-toolbar / inline-size;
+[data-access-picker-compact][data-state="closed"] {
+  inline-size: var(--ui-control-height-compact);
+  justify-content: center;
+  padding-inline: 0;
+  border-width: 0;
 }
 
-@container composer-toolbar (width < 220px) {
-  [data-access-picker-trigger] > span:not([aria-hidden]),
-  [data-access-picker-trigger] > svg:last-child {
-    display: none;
-  }
+[data-access-picker-compact][data-state="closed"] > span:not([aria-hidden]),
+[data-access-picker-compact][data-state="closed"] > svg:last-child {
+  display: none;
 }
 
 /* The whole controls row narrows in steps: secondary text goes first, then
@@ -2834,14 +2835,6 @@ html.is-reordering {
     display: none;
   }
 }
-/* Collapse access before it pushes the model onto a separate toolbar row. */
-@container composer-controls (width < 560px) {
-  [data-access-picker-trigger] > span:not([aria-hidden]),
-  [data-access-picker-trigger] > svg:last-child {
-    display: none;
-  }
-}
-
 /* An overflowing draft shows the themed scrollbar (the global rules above); the highlight layer
    reserves the same gutter, so both wrap text at one width whether or not a scrollbar is shown. */
 .composer-field,

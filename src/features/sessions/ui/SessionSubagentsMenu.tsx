@@ -1,11 +1,15 @@
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import {
+  DropdownMenu,
+  type DropdownMenuAction,
+  type DropdownMenuItem,
+} from "../../../shared/ui/DropdownMenu";
 import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { MemberAvatar, memberTraits } from "../../crews/public/mentions";
-import type { DockAgent } from "../model/activityDock";
+import { groupDockAgents, type DockAgent } from "../model/activityDock";
 import { AgentStatusDot } from "./ActivityDock";
 import { formatElapsed } from "./useElapsedFrom";
 
@@ -37,7 +41,7 @@ export function SessionSubagentsMenu({
     stopped: t("Stopped by you"),
     interrupted: t("Interrupted"),
   };
-  const items: DropdownMenuItem[] = agents.map((agent) => {
+  const row = (agent: DockAgent): DropdownMenuAction => {
     const elapsed =
       agent.startedAt !== undefined && agent.endedAt !== undefined
         ? formatElapsed(Math.max(0, agent.endedAt - agent.startedAt))
@@ -58,7 +62,17 @@ export function SessionSubagentsMenu({
         </span>
       ),
     };
-  });
+  };
+  const { standalone, phases } = groupDockAgents(agents);
+  const items: DropdownMenuItem[] = [
+    ...standalone.map(row),
+    ...phases.map(({ id, phase, agents }): DropdownMenuItem => ({
+      kind: "group",
+      id,
+      label: phase ? `${t("Workflow")} · ${phase}` : t("Workflow"),
+      items: agents.map(row),
+    })),
+  ];
   const label =
     running > 0
       ? t("Session subagents: {p0} running of {p1}", { p0: running, p1: agents.length })

@@ -62,6 +62,7 @@ import { ignoreMissingControlMethod } from "../../core/acpControlRejection";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { JsonRpcResponseError } from "../../core/jsonRpc";
 import { resolveGrokBinary, spawnChild, watchChild } from "../../core/child";
+import { leanContext } from "../../core/nativeToolLimits";
 import {
   grokAuthHelp,
   askQuestionResponse,
@@ -424,6 +425,12 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
 async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
   assertProviderOperation(input.operationContext);
+
+  // ACP has no documented switch that suppresses configured plugins and MCP servers.
+  if (leanContext(input.modelSettings))
+    throw new Error(
+      "Grok files:false is unavailable: its ACP launch cannot disable configured plugins and MCP servers.",
+    );
 
   const want = grokSpawnShape(input);
   const accountId = input.providerAccountId ?? "default";

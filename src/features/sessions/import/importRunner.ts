@@ -31,7 +31,7 @@ import {
   isPersistableId,
   type SessionSummary,
 } from "../data/sessionStore";
-import { buildImportedSession } from "../model/claudeSessionImport";
+import { buildImportedSession, hydrateImportedClaudeWorkflows } from "../model/claudeSessionImport";
 import { newSession, titleFromPrompt, type Block, type Session } from "../model/session";
 import { buildCodexSession } from "./codexTranscript";
 import { candidateKey, importedSessionId, isAlreadyImported } from "./importModel";
@@ -100,6 +100,7 @@ export type ImportDeps = {
   storedKeys: () => Promise<string[]>;
   /** Replay records a resume binding for the id it ran under; drop it. */
   forgetReplay: (sessionId: string) => void;
+  hydrateClaudeWorkflows?: typeof hydrateImportedClaudeWorkflows;
   /** Give the webview a turn between conversations. */
   yieldToUi: () => Promise<void>;
 };
@@ -113,6 +114,7 @@ const defaultDeps: ImportDeps = {
   forgetReplay: (sessionId) => {
     void forgetHarnessSession("claude", sessionId).catch(() => undefined);
   },
+  hydrateClaudeWorkflows: hydrateImportedClaudeWorkflows,
   yieldToUi: () => new Promise((resolve) => setTimeout(resolve, 0)),
 };
 
@@ -232,6 +234,13 @@ async function buildSession(
       providerSessionId: candidate.providerSessionId,
     });
     deps.forgetReplay(base.id);
+    built =
+      (await deps.hydrateClaudeWorkflows?.({
+        session: built,
+        transcript: transcript.text,
+        cwd: target.original,
+        providerSessionId: candidate.providerSessionId,
+      })) ?? built;
     truncated = transcript.truncated || transcript.oversizeSkipped > 0;
   } else {
     const transcript = await deps.readCodex(candidate.path, MAX_TRANSCRIPT_BYTES);

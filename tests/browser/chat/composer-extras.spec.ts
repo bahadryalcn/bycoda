@@ -590,14 +590,13 @@ test("custom context signal exposes completed TPS and compact and respects reduc
       // The card is the only hint: no second tooltip repeats its heading.
       await expect(page.getByRole("tooltip")).toHaveCount(0);
       await expect(panel.getByRole("meter")).toHaveAttribute("aria-valuenow", "50");
-      await expect(panel).toContainText("50.0 TPS");
       await expect(panel).not.toContainText("Speed scale");
-      const info = panel.getByRole("region", {
-        name: "Response speed",
-        exact: true,
-      });
-      await expect(info).toBeVisible();
-      await expect(info).toContainText("Average over the full turn");
+      const speed = panel.getByRole("term").filter({ hasText: /^Response speed$/ });
+      await expect(speed).toBeVisible();
+      await expect(speed.locator("..").getByRole("definition")).toHaveText("50.0 TPS");
+      await expect(
+        panel.getByText("Average speed includes tools and waiting.", { exact: true }),
+      ).toBeVisible();
       await expect(panel.getByRole("button", { name: "Compact now", exact: true })).toBeEnabled();
       await expect(trigger.locator(".context-signal")).toBeVisible();
       await trigger.screenshot({
@@ -1129,13 +1128,16 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
   }
 });
 
-test("access label collapses before narrow composer controls wrap", async ({ page }) => {
+test("composer access shows only the selected icon until opened", async ({ page }) => {
   await initializeChatLayout(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/tests/browser/chat/composer-extras.html?chat-layout&workspace-footer");
   const access = page.locator("[data-access-picker-trigger]");
   await access.click();
   await page.getByRole("option", { name: /^Full access / }).click();
+  const label = access.locator(":scope > span:not([aria-hidden])");
+  const chevron = access.locator(":scope > svg");
+  await expectHint(page, access, /^Full access$/, null);
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   await input.fill("Keep this draft");
   for (const theme of ["dark", "light"]) {
@@ -1149,14 +1151,14 @@ test("access label collapses before narrow composer controls wrap", async ({ pag
       }, width);
       await expect(access).toHaveAccessibleName("Full access");
       await expect(access.locator(":scope > span[aria-hidden]")).toBeVisible();
+      await expect(label).toBeHidden();
+      await expect(chevron).toBeHidden();
+      await expect(access).toHaveCSS("border-top-width", "0px");
       await page.mouse.move(0, 0);
       await page.screenshot({
-        path: `temp/verification/composer-narrow/${theme}-${width}.png`,
+        path: `temp/verification/composer-access/${theme}-${width}-closed.png`,
         animations: "disabled",
       });
-      const label = access.locator(":scope > span:not([aria-hidden])");
-      if (width < 560) await expect(label).toBeHidden();
-      else await expect(label).toBeVisible();
       const model = page
         .locator('[data-composer-model-controls] button[aria-haspopup="dialog"]')
         .first();
@@ -1167,16 +1169,33 @@ test("access label collapses before narrow composer controls wrap", async ({ pag
       ).toBeLessThan(2);
       await expect(input).toHaveValue("Keep this draft");
       await expect(access).toBeInViewport();
+      if (width >= 800) {
+        await access.click();
+        await expect(label).toHaveText("Full access");
+        await expect(label).toBeVisible();
+        await expect(chevron).toBeVisible();
+        await expect(access).toHaveCSS("border-top-width", "1px");
+        await expect(page.getByRole("option", { name: /^Full access / })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        );
+        await page.screenshot({
+          path: `temp/verification/composer-access/${theme}-${width}-open.png`,
+          animations: "disabled",
+        });
+        await page.keyboard.press("Escape");
+      }
     }
   }
   await page.locator("main").evaluate((main) => {
     main.style.inlineSize = "458px";
   });
-  await expect(access.locator(":scope > span:not([aria-hidden])")).toBeHidden();
   await access.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("option", { name: /^Full access / })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await page.getByRole("option", { name: /^Supervised / }).click();
+  await expect(access).toHaveAccessibleName("Supervised");
+  await expect(label).toBeHidden();
+  await expect(input).toHaveValue("Keep this draft");
 });
 
 test("chat busy actions explain steering and queuing without losing the draft", async ({
@@ -2373,25 +2392,46 @@ for (const theme of ["light", "dark"])
   }
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
-    test(`draft Markdown updates while editing (${theme}, ${width}px)`, async ({ page }) => {
+    test(`draft Markdown formats in one editor (${theme}, ${width}px)`, async ({
+      page,
+      browserName,
+    }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/chat/composer-extras.html?chat-layout&theme=${theme}`);
       const draft = page.getByRole("textbox", { name: "Message", exact: true });
+      await draft.fill("Plain draft");
+      await expect(draft).toHaveAttribute("data-composer-plain", "true");
       const source = "## Plan\n\n- **First step**\n- `pnpm test`";
       await draft.fill(source);
-      const toggle = page.getByRole("button", { name: "Markdown preview", exact: true });
-      await toggle.click();
-      const preview = page.locator("[data-composer-markdown-preview]");
-      await expect(preview.getByRole("heading", { name: "Plan" })).toBeVisible();
-      const emphasis = preview.locator('li [data-streamdown="strong"]');
-      await expect(emphasis).toHaveText("First step");
-      await draft.fill(source.replace("First", "Next"));
-      await expect(emphasis).toHaveText("Next step");
-      await page.screenshot({
-        animations: "disabled",
-        path: `temp/verification/user-message-markdown/composer-${theme}-${width}.png`,
-      });
-      await toggle.click();
-      await expect(preview).toHaveCount(0);
-      await expect(draft).toHaveValue(source.replace("First", "Next"));
+      const overlay = page.locator(".composer-highlight");
+      await expect(overlay.locator('[data-draft-markdown="heading"]')).toContainText("Plan");
+      const emphasis = overlay.locator('[data-draft-markdown="strong"]');
+      await expect(emphasis).toContainText("First step");
+      await expect(overlay.locator('[data-draft-markdown="code"]')).toContainText("pnpm test");
+      await expect(page.getByRole("button", { name: "Markdown preview", exact: true })).toHaveCount(
+        0,
+      );
+      await expect(page.locator("[data-composer-markdown-preview]")).toHaveCount(0);
+      await expect(draft).toBeFocused();
+      const headerMark = overlay.locator(
+        '[data-draft-markdown="heading"] [data-draft-markdown="mark"]',
+      );
+      await expect(headerMark).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+      await draft.evaluate((field: HTMLTextAreaElement) => field.setSelectionRange(1, 1));
+      await expect(headerMark).toHaveAttribute("data-editing-mark", "");
+      await draft.evaluate((field: HTMLTextAreaElement) =>
+        field.setSelectionRange(field.value.length, field.value.length),
+      );
+      await draft.press("End");
+      await draft.press("Backspace");
+      await expect(overlay.locator('[data-draft-markdown="code"]')).toHaveCount(0);
+      await draft.press("`");
+      await expect(overlay.locator('[data-draft-markdown="code"]')).toHaveCount(1);
+      await expect(draft).toHaveValue(source);
+      if (browserName === "chromium") {
+        await page.screenshot({
+          animations: "disabled",
+          path: `temp/verification/composer-inline-markdown/${theme}-${width}.png`,
+        });
+      }
     });

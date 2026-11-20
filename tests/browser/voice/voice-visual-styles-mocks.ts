@@ -214,14 +214,18 @@ export async function discoverVoiceTools() {
 export async function callVoiceTool() {
   throw new Error("This fixture does not execute Host tools.");
 }
+const wakeScenario = new URLSearchParams(location.search).get("wake-quick-settings");
 export const localVoiceBackend = {
-  inspect: async () => ({
-    ready: true,
-    missing: [],
-    python: "/fixture/python",
-    whisperPath: "/fixture/whisper",
-    ttsPath: "/fixture/tts",
-  }),
+  inspect: async () => {
+    if (wakeScenario === "error") throw new Error("Fixture wake listener failure");
+    return {
+      ready: wakeScenario !== "pack",
+      missing: wakeScenario === "pack" ? ["faster-whisper"] : [],
+      python: "/fixture/python",
+      whisperPath: "/fixture/whisper",
+      ttsPath: "/fixture/tts",
+    };
+  },
   setupStatus: async () => ({ state: "idle" }),
   cloudStatus: async () => ({ elevenlabs: false }),
 };

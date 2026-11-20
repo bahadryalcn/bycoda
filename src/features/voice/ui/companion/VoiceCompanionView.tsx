@@ -13,6 +13,7 @@ import { VoiceOptionsMenu } from "../VoicePanelChoices";
 import { VoiceToolActivityPanel } from "../VoiceToolActivityPanel";
 import { VoiceVisualizer } from "../VoiceVisualizer";
 import styles from "../VoiceCompanion.module.css";
+import { VoiceCallScene } from "./VoiceCallScene";
 import { VoiceChatTranscript } from "./VoiceChatTranscript";
 import { VoiceCompanionControls } from "./VoiceCompanionControls";
 import { VoiceCompanionMoreMenu } from "./VoiceCompanionMoreMenu";
@@ -101,6 +102,14 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   const caption = p.chatTurns[p.chatTurns.length - 1]?.text ?? "";
   return (
     <>
+      {!p.compact && !chatShown && (
+        <VoiceCallScene
+          part="backdrop"
+          state={p.visualState}
+          level={audioLevel}
+          className={styles.stageLight}
+        />
+      )}
       <header
         {...surfaceAttributes(
           { frame: p.compact ? "none" : p.error ? "danger" : "pane", edge: "block-end" },
@@ -218,7 +227,11 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
       {/* Unmounted when compact so open menus and popovers close with the expanded panel. */}
       {!p.compact && (
         <>
-          <div className={styles.body}>
+          <div
+            className={styles.body}
+            data-call-stage={!chatShown || undefined}
+            data-call-live={live || undefined}
+          >
             <VoiceCompanionStatus
               visualState={p.visualState}
               working={p.working}
@@ -264,7 +277,12 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               {p.jobReview}
             </VoiceSidePanel>
           ) : null}
-          <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.actions)}>
+          <div
+            {...surfaceAttributes(
+              { frame: chatShown ? "pane" : "none", edge: "block-start" },
+              styles.actions,
+            )}
+          >
             <VoiceCompanionControls
               status={p.status}
               startDisabled={p.startDisabled}

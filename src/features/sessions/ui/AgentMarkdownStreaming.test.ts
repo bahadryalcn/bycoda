@@ -96,7 +96,7 @@ it("updates a 5200-block conversation without remounting its completed visible a
     );
     expect(answer!.isConnected).toBe(true);
     expect(container.textContent).toContain("Answer 2599 with appended output");
-    expect(container.textContent).toContain("Load earlier");
+    expect(container.textContent).not.toContain("Question 0");
   } finally {
     act(() => root.unmount());
     container.remove();

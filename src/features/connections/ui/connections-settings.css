@@ -1,3 +1,6 @@
+/* Hallmark · shape: app screen · theme: bycoda design system · signature: active computer routes */
+/* Keep primary actions aligned across tabs. Put access and recovery alongside the lists when space allows. */
+
 .connections-settings,
 .connections-view {
   min-inline-size: 0;
@@ -5,16 +8,32 @@
 
 .connections-settings {
   inline-size: 100%;
+  max-inline-size: 72rem;
+  margin-inline: auto;
 }
 
 .connections-view {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  container-type: inline-size;
 }
 
 .connections-view[hidden] {
   display: none;
+}
+
+.connections-management-grid {
+  display: grid;
+  align-items: start;
+  gap: 1.25rem;
+}
+
+@container (min-width: 54rem) {
+  .connections-management-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(15rem, 28%);
+    gap: 1.5rem;
+  }
 }
 
 .connection-details {

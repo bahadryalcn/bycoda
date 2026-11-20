@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { TranscriptHistoryNotice } from "./TranscriptHistoryNotice";
 
 let root: ReturnType<typeof createRoot>;
@@ -33,10 +34,17 @@ const retry = () =>
   [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry");
 
 it("names the first read as the conversation and a later read as earlier messages", async () => {
-  await show({ initial: true, loading: true });
-  expect(host.textContent).toContain("Loading conversation…");
-  await show({ initial: false, loading: true });
-  expect(host.textContent).toContain("Loading earlier messages…");
+  vi.useFakeTimers();
+  try {
+    await show({ initial: true, loading: true });
+    expect(host.textContent).toBe("");
+    await act(async () => vi.advanceTimersByTime(LOADING_DELAY_MS));
+    expect(host.textContent).toContain("Loading conversation…");
+    await show({ initial: false, loading: true });
+    expect(host.textContent).toContain("Loading earlier messages…");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("tells a failed first load from a failed earlier read, and retries only the read", async () => {

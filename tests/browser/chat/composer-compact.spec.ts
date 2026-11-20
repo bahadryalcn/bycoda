@@ -107,6 +107,19 @@ for (const light of [true, false])
       await page.goto(url({ "context-sections": "" }, light));
       await page.getByRole("button").first().click();
       const dialog = page.getByRole("dialog", { name: "Context usage" });
+      await expect(dialog.getByText("18%", { exact: true })).toBeVisible();
+      await expect(dialog.getByText("184K / 1M tokens")).toBeVisible();
+      await expect(dialog.getByText("70.0 TPS")).toBeVisible();
+      const rows = dialog.locator(".context-meter-metrics > div");
+      await expect(rows).toHaveCount(3);
+      for (const row of await rows.all()) {
+        const { term, value } = await row.evaluate((node) => ({
+          term: node.querySelector("dt")!.getBoundingClientRect().toJSON(),
+          value: node.querySelector("dd")!.getBoundingClientRect().toJSON(),
+        }));
+        expect(value.top).toBeCloseTo(term.top, 0);
+        expect(value.left).toBeGreaterThan(term.right);
+      }
       for (const section of ["agents", "stats", "actions"]) {
         const node = dialog.locator(`.context-meter-${section}`);
         await expect(node).toBeVisible();
@@ -122,9 +135,9 @@ for (const light of [true, false])
         expect(actual.width).toBe("1px");
         expect(actual.color).toBe(actual.expected);
       }
-      await page.screenshot({
+      await dialog.screenshot({
         animations: "disabled",
-        path: `temp/verification/feature-controls/context-sections-${light ? "light" : "dark"}-${width}.png`,
+        path: `temp/verification/context-meter/${test.info().project.name}-${light ? "light" : "dark"}-${width}.png`,
       });
     });
 

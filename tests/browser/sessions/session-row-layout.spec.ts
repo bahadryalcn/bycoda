@@ -562,7 +562,7 @@ for (const light of [false, true]) {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(
-        `/tests/browser/sessions/session-row-layout.html?wide&${light ? "light" : "dark"}`,
+        `/tests/browser/sessions/session-row-layout.html?wide&rail-header&${light ? "light" : "dark"}`,
         {
           waitUntil: "domcontentloaded",
         },
@@ -572,9 +572,34 @@ for (const light of [false, true]) {
         .filter({ hasText: /^Last sessions$/ });
       await lastSessions.click();
       await expect(lastSessions).toHaveAttribute("aria-current", "page");
-      await expect(
-        page.getByRole("button", { name: "Last sessions", exact: true, expanded: true }),
-      ).toBeVisible();
+      const header = page.locator("[data-rail-section-header]").filter({ has: lastSessions });
+      const toggle = header.getByRole("button", { name: "Last sessions", expanded: true });
+      const count = header.getByRole("button", { name: /^Sessions shown:/ });
+      const options = header.getByRole("button", { name: "Last sessions section options" });
+      await expect(toggle).toBeVisible();
+      await expect(count).toBeVisible();
+      const headerEvidence = path.resolve("temp/verification/last-sessions-header");
+      const capture = (state: string) =>
+        header.screenshot({
+          path: path.join(headerEvidence, `${light ? "light" : "dark"}-${width}-${state}.png`),
+        });
+      await count.hover();
+      await capture("selected-hover");
+      await expect(header).not.toHaveCSS("background-image", "none");
+      for (const control of [lastSessions, toggle, count, options]) {
+        await control.hover();
+        await expect(control).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      }
+      await lastSessions.focus();
+      await page.keyboard.press("Tab");
+      await expect(count).toBeFocused();
+      await expect(count).toHaveCSS("outline-style", "solid");
+      await expect(count).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await capture("keyboard-focus");
+      await page.keyboard.press("Enter");
+      await expect(count).toHaveAttribute("aria-expanded", "true");
+      await expect(count).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await page.keyboard.press("Escape");
       await expect(page.locator('[data-session-card="row-demo"]')).toBeVisible();
       await expect(page.getByRole("status", { name: "Last Sessions mode" })).toHaveText("true");
       await page.screenshot({

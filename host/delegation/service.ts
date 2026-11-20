@@ -53,7 +53,7 @@ import { advisorBrief, subagentBrief, replyBrief } from "./prompts";
 import { modelEffortSetting } from "../../src/features/sessions/model/models";
 import { logWaitMaxTimeoutSeconds } from "../execution/runtime-log-wait";
 import { childModelSettings } from "./child-settings";
-import { CHAT_ONLY_PROVIDERS } from "./child-native";
+import { chatOnlyAvailable } from "./child-native";
 import { delegationBudgetScope, delegationWorkRoot } from "./work-root";
 import { cancelSessionWorkOccurrence } from "../work/session-adapter";
 import { refuseSingleSlotChild } from "./capacity";
@@ -354,6 +354,10 @@ export class ConversationDelegation {
         model: ref.model,
         label: model?.name ?? ref.model,
         available: model !== undefined,
+        filesFalse: {
+          available: model !== undefined && chatOnlyAvailable({ ...ref, model: model.id }),
+          repositoryReadIsolation: false,
+        },
         effortLevels: effort?.options.map((option) => option.value) ?? [],
         ...(effort ? { defaultEffort: effort.value } : {}),
       };
@@ -467,8 +471,10 @@ export class ConversationDelegation {
       if (args.files !== undefined && typeof args.files !== "boolean")
         throw new Error("Field files must be a boolean.");
       const chatOnly = args.files === false;
-      if (chatOnly && !CHAT_ONLY_PROVIDERS.has(ref.harness))
-        throw new Error("files:false needs a Claude or Codex model; omit it for this model.");
+      if (chatOnly && !chatOnlyAvailable({ ...ref, model: model.id }))
+        throw new Error(
+          "files:false is unavailable for this model; check agents.options before choosing a model.",
+        );
       const runId = existing?.runId ?? randomUUID();
       const rootWorkId =
         existing?.rootWorkId ??
@@ -719,6 +725,13 @@ export class ConversationDelegation {
       );
       try {
         const child = await this.deps.engine.store.session(record.childSessionId);
+        if (
+          (record.chatOnly || record.modelSettings?.[DELEGATION_CHAT_ONLY_KEY] === "on") &&
+          child.session.cwd !== (await this.store.scratchDir(record.runId))
+        )
+          throw new Error(
+            "Chat-only child no longer uses its scratch folder; cannot resume safely.",
+          );
         const catalog = await this.deps.models(caller.projectId);
         const model = this.resolve(record.model, catalog);
         const previousSettings = record.modelSettings ?? child.session.modelSettings;

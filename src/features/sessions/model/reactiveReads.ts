@@ -7,7 +7,7 @@ import {
 } from "../../../shared/lib/paths";
 import {
   deriveActivityDock,
-  dockCountLabel,
+  dockCountParts,
   dockStateLabel,
   type ActivityDock,
   type ActivityDockInput,
@@ -226,10 +226,10 @@ export function useNestedDelegationOwner(childId: string | undefined): Session |
   );
 }
 
-export function useDockCountLabel(dock: ActivityDock): string {
+export function useDockCountParts(dock: ActivityDock) {
   const locale = useLocale();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => dockCountLabel(dock), [dock, locale]);
+  return useMemo(() => dockCountParts(dock), [dock, locale]);
 }
 
 /** The stop-all control; its wording is read through getters, so it is rebuilt

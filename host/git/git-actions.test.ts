@@ -16,6 +16,7 @@ import { WorkspaceCommands } from "../workspaces/workspace-commands";
 import {
   BranchCache,
   GIT_ACTION_COMMANDS,
+  headBranchFromFiles,
   parseHistoryLog,
   runGitAction,
   type GitActionCommand,
@@ -968,6 +969,23 @@ describe("BranchCache", () => {
     expect(await cache.get("/a")).toBe("");
     cache.clear();
     expect(await cache.get("/a")).toBe("feature");
+  });
+
+  // Regression: session lists poll every folder; a non-repo scratch folder or a
+  // subfolder fell through to spawning git each time, blocking the Host loop.
+  it("answers subfolders and non-repositories from files, without spawning git", async () => {
+    const { cwd, git } = repo();
+    git("commit", "-q", "--allow-empty", "-m", "init");
+    const nested = join(cwd, "src", "deep");
+    mkdirSync(nested, { recursive: true });
+    expect(await headBranchFromFiles(nested)).toBe("main");
+    expect(await headBranchFromFiles(temp("bycoda-not-a-repo-"))).toBe("");
+    const linked = join(temp("bycoda-linked-parent-"), "wt");
+    git("worktree", "add", "-q", "-b", "linked", linked);
+    mkdirSync(join(linked, "sub"));
+    expect(await headBranchFromFiles(join(linked, "sub"))).toBe("linked");
+    git("checkout", "-q", "--detach");
+    expect(await headBranchFromFiles(nested)).toBe("");
   });
 
   it("stays bounded, dropping expired entries first", async () => {

@@ -68,7 +68,15 @@ describe("transcript first paint", () => {
     expect(renderedTurns()).toBe(3);
 
     await vi.waitFor(() => expect(renderedTurns()).toBe(20));
-    expect(container.textContent).toContain("Load earlier messages");
+    expect(container.textContent).not.toContain("Question 0");
+
+    const scroller = container.querySelector<HTMLElement>(".agent-transcript")!;
+    scroller.scrollTop = 0;
+    flushSync(() =>
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40, bubbles: true })),
+    );
+    await vi.waitFor(() => expect(renderedTurns()).toBe(30));
+    expect(container.textContent).toContain("Question 0");
   });
 
   it("stays pinned to the end while the window grows above it", async () => {

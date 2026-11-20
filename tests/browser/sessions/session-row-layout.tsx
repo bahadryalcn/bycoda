@@ -315,7 +315,16 @@ function Fixture() {
           onTabChange={setTab}
           filesSearchOpen={false}
           onFilesSearchOpenChange={() => {}}
-          recentSessions={{ history, live: [] }}
+          recentSessions={{
+            history,
+            live: params.has("rail-header")
+              ? history.map((session) => ({
+                  ...session,
+                  status: "done" as const,
+                  activityAt: session.updatedAt,
+                }))
+              : [],
+          }}
           recents={[
             { path: cwd, openedAt: now },
             { path: demoCwd, openedAt: now },

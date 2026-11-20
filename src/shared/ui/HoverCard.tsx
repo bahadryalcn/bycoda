@@ -28,6 +28,8 @@ export type HoverCardOptions = {
   maxHeight?: number;
   /** `"scroll"` when the card can outgrow its bound: the pointer may cross into it, so wheel and touch must reach it. */
   flow?: PopoverFlow;
+  /** Paint the card with the opaque Popover backdrop. */
+  solid?: boolean;
   /** Pointer rest time before opening. Default {@link HOVER_CARD_OPEN_MS} (300 ms). */
   openDelay?: number;
   /** Grace period after the pointer leaves the trigger or card. Default {@link HOVER_CARD_CLOSE_MS} (150 ms). */
@@ -74,6 +76,7 @@ export function useHoverCard({
   size,
   maxHeight,
   flow,
+  solid,
   openDelay = HOVER_CARD_OPEN_MS,
   closeDelay = HOVER_CARD_CLOSE_MS,
   disabled = false,
@@ -140,6 +143,7 @@ export function useHoverCard({
         size={size}
         maxHeight={maxHeight}
         flow={flow}
+        solid={solid}
         restoreFocus={false}
         aria-label={ariaLabel}
         data-hover-card=""

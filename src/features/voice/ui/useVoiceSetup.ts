@@ -4,6 +4,7 @@ import { t } from "../../../shared/i18n";
 import { checkFailure, setupConfigKey, stageLabel, type Failure } from "./voiceSetupPresentation";
 import {
   localVoiceBackend,
+  type VoiceRuntimeConfig,
   type VoiceRuntimeStatus,
   type VoiceSetupStatus,
 } from "../model/localVoiceClient";
@@ -26,6 +27,7 @@ export function useVoiceSetup(
   const [error, setError] = useState<Failure>();
   const [checkedKey, setCheckedKey] = useState("");
   const [locating, setLocating] = useState(false);
+  const [locateError, setLocateError] = useState<Failure>();
   const [browsing, setBrowsing] = useState<PathKey | null>(null);
   const browsePending = useRef(false);
   // Bumped when the Locate dialog closes or voice is turned off, so a picker that
@@ -59,30 +61,62 @@ export function useVoiceSetup(
   const fail = useCallback((cause: unknown) => {
     if (mounted.current) setError(checkFailure(cause));
   }, []);
-  const checkNow = useCallback(async () => {
-    const id = ++request.current;
-    setCheckedKey(configKey);
-    setBusy(true);
-    setError(undefined);
-    setResult(undefined);
-    // Native host discovery can stall before an RPC timeout exists. Keep a
-    // recovery action reachable and discard an eventual answer to this check.
-    const timeout = setTimeout(() => {
-      if (!mounted.current || id !== request.current) return;
-      request.current++;
-      setError(checkFailure(new Error("Voice setup check timed out.")));
-      setBusy(false);
-    }, 20_000);
-    try {
-      const found = await localVoiceBackend.inspect(JSON.parse(configKey));
-      if (mounted.current && id === request.current) setResult(found);
-    } catch (cause) {
-      if (mounted.current && id === request.current) setError(checkFailure(cause));
-    } finally {
-      clearTimeout(timeout);
-      if (mounted.current && id === request.current) setBusy(false);
-    }
-  }, [configKey]);
+  const checkNow = useCallback(
+    async (findExisting = false) => {
+      const id = ++request.current;
+      const owner = browseOwner.current;
+      setBusy(true);
+      if (findExisting) setLocateError(undefined);
+      else {
+        setCheckedKey(configKey);
+        setError(undefined);
+        setResult(undefined);
+      }
+      const report = (failure: Failure) => {
+        if (!findExisting) setError(failure);
+        else if (browseOwner.current === owner) setLocateError(failure);
+      };
+      // Native host discovery can stall before an RPC timeout exists. Keep a
+      // recovery action reachable and discard an eventual answer to this check.
+      const timeout = setTimeout(() => {
+        if (!mounted.current || id !== request.current) return;
+        request.current++;
+        report(checkFailure(new Error("Voice setup check timed out.")));
+        setBusy(false);
+      }, 20_000);
+      try {
+        const config: VoiceRuntimeConfig = JSON.parse(configKey);
+        if (findExisting) {
+          delete config.python;
+          delete config.whisperPath;
+          delete config.ttsPath;
+        }
+        const found = await localVoiceBackend.inspect(config);
+        if (!mounted.current || id !== request.current || currentKey.current !== configKey) return;
+        if (findExisting) {
+          if (browseOwner.current !== owner) return;
+          if (!found.ready) {
+            report({ message: t("Enter the location below."), detail: found.missing.join(", ") });
+            return;
+          }
+          change({
+            python: found.python ?? "",
+            whisperPath: found.whisperPath ?? "",
+            ...(config.engine === "voxcpm2" ? { ttsPath: found.ttsPath ?? "" } : {}),
+          });
+          setJob({ state: "idle" });
+          setLocating(false);
+        }
+        setResult(found);
+      } catch (cause) {
+        if (mounted.current && id === request.current) report(checkFailure(cause));
+      } finally {
+        clearTimeout(timeout);
+        if (mounted.current && id === request.current) setBusy(false);
+      }
+    },
+    [change, configKey],
+  );
   useEffect(() => {
     request.current++;
     if (!speechEnabled || installing) return;
@@ -207,12 +241,18 @@ export function useVoiceSetup(
   }
   const closeLocate = () => {
     browseOwner.current++;
+    setLocateError(undefined);
     setLocating(false);
   };
   /** Forgets a finished or failed job so the next check reflects the current choices. */
   const resetJob = () => setJob({ state: "idle" });
   const checked = checkedKey === configKey;
   const ready = Boolean(checked && result?.ready && !installing && !error);
+  const gpuUnavailable =
+    checked &&
+    !busy &&
+    settings.device === "gpu" &&
+    Boolean(result?.missing.includes("NVIDIA GPU"));
   const visibleError = installing || checked ? error : undefined;
   const setupFailed = job.state === "error";
   const pythonMissing = setupFailed && job.error === "python_missing";
@@ -270,14 +310,17 @@ export function useVoiceSetup(
     pythonMissing,
     message,
     gpuUpgrade,
+    gpuUnavailable,
     detail,
     setupError: Boolean(visibleError) || setupFailed,
     working: installing || busy || !checked,
     setupHint,
     check: () => void checkNow().catch(fail),
+    findExisting: () => void checkNow(true).catch(fail),
     install: () => void installNow().catch(fail),
     resetJob,
     locating,
+    locateError,
     setLocating,
     closeLocate,
     browsing,

@@ -952,3 +952,9 @@
 .control[data-button-text-decoration="rest-underline"]:hover {
   text-decoration: none;
 }
+/* Rail section headers share one fill across disclosure, navigation and menu controls. */
+:global([data-section-label][data-action-host][data-compact-rail])
+  .control[data-button-hierarchy][data-button-tone] {
+  background: transparent;
+  border-color: transparent;
+}

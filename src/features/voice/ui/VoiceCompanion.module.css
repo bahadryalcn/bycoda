@@ -14,6 +14,19 @@
 .launcherSlot:not([data-compact]) {
   flex: 0 1 auto;
 }
+.launcherControls {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+.launcherControls > :first-child {
+  flex: 0 1 auto;
+}
+.wakeMenu {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
 .launcherButton[data-docked] {
   min-inline-size: 0;
   max-inline-size: 100%;
@@ -39,6 +52,11 @@
   position: absolute;
   inset-inline-end: -1px;
   inset-block-end: -1px;
+}
+.launcherWakeDot {
+  position: absolute;
+  inset-inline-end: -1px;
+  inset-block-start: -1px;
 }
 .launcherAvatar:is(
     [data-state="listening"],
@@ -78,10 +96,56 @@
   width: var(--voice-panel-width, min(360px, calc(100vw - 16px)));
   height: var(--voice-panel-height, auto);
   max-width: calc(100vw - 16px);
-  /* Keep the top edge 8px below the viewport: the panel's bottom offset is part of its height.
-     VoicePanelResize clamps with the same 8px margin (PANEL_TOP_MARGIN). */
-  max-height: calc(100dvh - var(--voice-panel-bottom) - 8px);
+  /* VoicePanelResize clamps with the same top margin (PANEL_TOP_MARGIN). */
+  --voice-panel-max-height: calc(100dvh - var(--voice-panel-bottom) - 8px);
+  max-height: var(--voice-panel-max-height);
   overflow: hidden;
+}
+.panel:has(> .body[data-call-stage]) {
+  /* Keep the call stage and its dock together when a saved panel is taller than both. */
+  grid-template-rows:
+    [header] auto minmax(0, 1fr) [stage] minmax(0, max-content)
+    [question] auto [controls] auto minmax(0, 1fr);
+  isolation: isolate;
+}
+.stageLight {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  inline-size: 100%;
+  block-size: 100%;
+  pointer-events: none;
+}
+@media (forced-colors: active) {
+  .stageLight {
+    visibility: hidden;
+  }
+}
+.panel:has(> .body[data-call-stage]) > .header {
+  grid-row: header;
+}
+.body[data-call-stage] {
+  grid-row: stage;
+  /* Use the panel's height limit without changing how its fixed side panel is positioned. */
+  --voice-stage-height: min(var(--voice-panel-height, 100dvh), var(--voice-panel-max-height));
+  --voice-call-chrome-height: 196px;
+  --voice-core-stage-size: clamp(
+    48px,
+    calc(var(--voice-stage-height) - var(--voice-call-chrome-height)),
+    260px
+  );
+  padding-block: 0;
+}
+.body[data-call-stage][data-call-live] {
+  /* The live dock also includes the turn-ending control. */
+  --voice-call-chrome-height: 240px;
+}
+.panel:has(> .body[data-call-stage]) > section {
+  grid-row: question;
+}
+.panel:has(> .body[data-call-stage]) > .actions {
+  grid-row: controls;
+  padding-block: 8px 12px;
 }
 /* Docked in the sidebar, the open panel starts above that footer instead of the far corner.
    VoiceCompanion sets data-dock from the slot it docks into; only the offset changes here, and

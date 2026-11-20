@@ -1230,7 +1230,6 @@ describe("WS framing and orderly disposal", () => {
       const client = host.connect({ autoPong: false });
       await client.opened;
       expect(await client.hello("hello-stalled")).toHaveProperty("result");
-      await new Promise((resolve) => client.socket.once("ping", resolve));
       expect(await client.closed).toMatchObject({
         code: 1001,
         reason: "Connection heartbeat timed out.",

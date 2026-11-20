@@ -2,6 +2,110 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 const captures = join(process.cwd(), "temp/verification/voice-visual-styles");
+for (const [theme, width] of [
+  ["light", 1280],
+  ["dark", 800],
+] as const)
+  test(`call particles and light follow voice ${theme} ${width}`, async ({ page }) => {
+    await mkdir(captures, { recursive: true });
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
+    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+    const panel = page.locator("section[data-voice-state]");
+    const orb = panel.locator('canvas[data-call-art="orb"]');
+    const light = panel.locator('canvas[data-call-art="backdrop"]');
+    const pixels = (part: typeof orb) =>
+      part.evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
+    const capture = (state: string) =>
+      panel.screenshot({ path: join(captures, `${theme}-${width}-call-${state}.png`) });
+    const check = async (state: string, animated: boolean) => {
+      await expect(orb).toHaveAttribute("data-state", state);
+      await expect(light).toHaveAttribute("data-state", state);
+      await expect(orb).toHaveAttribute("data-animating", String(animated));
+      await expect(light).toHaveAttribute("data-animating", String(animated));
+      const before = [await pixels(orb), await pixels(light)];
+      if (animated) {
+        await expect.poll(() => pixels(orb)).not.toBe(before[0]);
+        await expect.poll(() => pixels(light)).not.toBe(before[1]);
+      }
+      await capture(state === "assistant" && !animated ? "assistant-reduced" : state);
+      return before;
+    };
+    await check("off", false);
+    await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+    const listening = await check("listening", true);
+    await page.evaluate(() => {
+      const voice = (window as any).fixtureVoice;
+      voice.audioLevel.current = 0.9;
+      voice.callbacks.state("speaking");
+    });
+    await check("user", true);
+    await page.evaluate(() => (window as any).fixtureVoice.callbacks.state("transcribing"));
+    const thinking = await check("thinking", true);
+    expect(thinking[1]).not.toBe(listening[1]);
+    await page.evaluate(() => (window as any).fixtureVoice.callbacks.playback(true));
+    const reply = await check("assistant", true);
+    expect(reply[1]).not.toBe(thinking[1]);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const still = await check("assistant", false);
+    expect(await pixels(orb)).toBe(still[0]);
+    expect(await pixels(light)).toBe(still[1]);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await panel.getByRole("button", { name: "Stop speaking", exact: true }).click();
+    await expect(panel).not.toHaveAttribute("data-voice-state", "assistant");
+    await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
+    await check("muted", false);
+    await panel.getByRole("button", { name: "Disconnect voice", exact: true }).click();
+    await check("off", false);
+  });
+for (const theme of ["light", "dark"])
+  for (const [width, height] of [
+    [800, 286],
+    [1280, 720],
+  ])
+    test(`call stage fits saved panel ${theme} ${width}`, async ({ page }) => {
+      await mkdir(captures, { recursive: true });
+      await page.addInitScript((height) => {
+        localStorage.setItem("bycoda:voice-size", JSON.stringify({ width: 450, height }));
+      }, height);
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&state=connecting`,
+      );
+      await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+      const panel = page.locator("section[data-voice-state]");
+      const stage = panel.locator('[data-layout="stage"]');
+      const orb = stage.locator('canvas[data-call-art="orb"]');
+      await expect(panel).toHaveAttribute("data-sized", "");
+      const assertStage = async (action: string) => {
+        const button = panel.getByRole("button", { name: action, exact: true });
+        await expect(button).toBeVisible();
+        await expect(stage).toBeInViewport({ ratio: 0.99 });
+        await expect(orb).toBeInViewport({ ratio: 0.99 });
+        expect((await orb.boundingBox())!.width).toBeGreaterThanOrEqual(height < 300 ? 84 : 220);
+        const stageBounds = (await stage.boundingBox())!;
+        const buttonBounds = (await button.boundingBox())!;
+        expect(buttonBounds.y - (stageBounds.y + stageBounds.height)).toBeLessThan(32);
+        await panel.screenshot({ path: join(captures, `${theme}-${width}-stage-${action}.png`) });
+      };
+      await assertStage("Start voice");
+      await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await expect(panel).toHaveAttribute("data-voice-state", "connecting");
+      await assertStage("Cancel");
+      await panel.getByRole("button", { name: "Cancel", exact: true }).click();
+      await assertStage("Start voice");
+      if (height < 300) {
+        await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
+        await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+        await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+        await expect(panel).toHaveAttribute("data-voice-state", "listening");
+        await expect(stage).toBeInViewport({ ratio: 0.99 });
+        await expect(
+          panel.getByRole("button", { name: "Disconnect voice", exact: true }),
+        ).toBeInViewport({ ratio: 0.99 });
+        await panel.screenshot({ path: join(captures, `${theme}-${width}-stage-live-short.png`) });
+      }
+    });
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
     test(`bounded voice motion on high-refresh display ${theme} ${width}`, async ({
@@ -28,7 +132,10 @@ for (const theme of ["light", "dark"])
         await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
         await page.getByRole("button", { name: "Start voice", exact: true }).click();
         await expect(page.locator("html")).toHaveAttribute("data-decorative-motion", "off");
-        await moving("[data-turn]");
+        const orb = page.locator('canvas[data-call-art="orb"]');
+        const frame = () => orb.evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
+        const before = await frame();
+        await expect.poll(frame).not.toBe(before);
         await page.screenshot({ path: join(output, `${theme}-${width}-listening.png`) });
         for (const visual of ["mark", "wave", "dots", "orb"]) {
           await page.goto(
@@ -281,9 +388,7 @@ for (const theme of ["light", "dark"])
           const panel = await open(page, visual, state, theme, width);
           const actualState = state === "working" ? "listening" : state;
           await expect(
-            panel
-              .locator(`span[data-state="${actualState}"]`)
-              .filter({ has: page.locator("[data-spoke]") }),
+            panel.locator(`canvas[data-call-art="orb"][data-state="${actualState}"]`),
           ).toBeVisible();
           expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
           await panel.screenshot({
@@ -339,7 +444,8 @@ test("keyboard move, drag, compact double click, viewport clamp, Escape and redu
 }) => {
   const panel = await open(page);
   const grip = panel.getByRole("button", {
-    name: "Move voice window. Use arrow keys to reposition.",
+    name: "Move voice window",
+    exact: true,
   });
   const before = (await panel.boundingBox())!;
   await grip.press("ArrowLeft");
@@ -366,15 +472,16 @@ test("keyboard move, drag, compact double click, viewport clamp, Escape and redu
     })
     .toBe(true);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const core = panel.locator("span[data-state]").filter({ has: page.locator("[data-spoke]") });
-  const still = await core.innerHTML();
+  const core = panel.locator('canvas[data-call-art="orb"]');
+  const frame = () => core.evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
+  const still = await frame();
   await page.evaluate(
     () =>
       new Promise<void>((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
   );
-  expect(await core.innerHTML()).toBe(still);
+  expect(await frame()).toBe(still);
   await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
   await expect(panel.locator("[data-visual]")).toHaveAttribute("data-animating", "false");
   await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
@@ -492,6 +599,69 @@ test("voice surface computed probe", async ({ page }) => {
     console.log(JSON.stringify({ theme, assistant, activity, normal, focus, danger }));
   }
 });
+
+test("wake phrase status and toggle stay with the assistant avatar", async ({ page }) => {
+  await page.goto("/tests/browser/voice/voice-visual-styles.html?wake-quick-settings=pack");
+  await expect(page.getByRole("button", { name: "Talk to Arif", exact: true })).toBeVisible();
+  const trigger = page.getByRole("button", { name: "Voice settings", exact: true });
+  await trigger.click();
+  const popup = page.getByRole("dialog", { name: "Voice settings" });
+  const toggle = popup.getByRole("switch", { name: "Wake and sleep phrases" });
+  const settingsToggle = page
+    .locator("main")
+    .getByRole("switch", { name: "Wake and sleep phrases" });
+  await expect(toggle).toBeFocused();
+  await expect(toggle).not.toBeChecked();
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  await expect(popup.getByText("Wake phrase needs the local voice pack")).toBeVisible();
+  await expect(popup.getByRole("button", { name: "Set up voice" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await expect(settingsToggle).toBeChecked();
+  await expect(page.getByText("Wake phrase needs the local voice pack")).toHaveCount(0);
+  await expect(page.locator('[data-wake-status="pack"][data-tone="warning"]')).toBeVisible();
+  await page.reload();
+  await trigger.click();
+  await expect(toggle).toBeChecked();
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await expect(page.locator("[data-wake-status]")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(settingsToggle).not.toBeChecked();
+  await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Voice companion" })).toBeVisible();
+  await trigger.click();
+  await expect(toggle).not.toBeChecked();
+});
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`wake phrase quick settings ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 620 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/voice/voice-visual-styles.html?wake-quick-settings=error&theme=${theme}${width === 800 ? "&compact-rail" : ""}`,
+      );
+      const slot = page.locator("[data-voice-launcher-slot]");
+      const trigger = slot.getByRole("button", { name: "Voice settings", exact: true });
+      const popup = page.getByRole("dialog", { name: "Voice settings" });
+      const message = "Wake phrase stopped listening. Check the microphone.";
+      await trigger.click();
+      await popup.getByRole("switch", { name: "Wake and sleep phrases" }).click();
+      await expect(popup.getByText(message)).toBeInViewport({ ratio: 1 });
+      await expect(slot.locator('[data-wake-status="error"][data-tone="warning"]')).toBeVisible();
+      const directory = join(process.cwd(), "temp/verification/voice-wake-quick-settings");
+      await mkdir(directory, { recursive: true });
+      const clip = { x: 0, y: 440, width: 320, height: 180 };
+      await page.screenshot({ path: join(directory, `${theme}-${width}-open.png`), clip });
+      await page.keyboard.press("Escape");
+      await expect(page.getByText(message)).toHaveCount(0);
+      await page.mouse.move(width / 2, 600);
+      await page.screenshot({ path: join(directory, `${theme}-${width}-closed.png`), clip });
+    });
+  }
+}
 
 test("floating launcher surface computed baseline", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });

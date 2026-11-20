@@ -52,6 +52,8 @@ for (const theme of ["light", "dark"])
       await expect(dialog).toBeVisible();
       await expect(dialog.getByLabel("Companion name", { exact: true })).toHaveCount(0);
       await expect(dialog.getByLabel("Ground rules", { exact: true })).toHaveCount(0);
+      // Style-only mode keeps Tasks in a collapsed disclosure row.
+      await dialog.locator("summary", { hasText: "Tasks" }).click();
       await dialog.getByRole("checkbox", { name: "Explain code and decisions" }).check();
       await dialog.getByLabel("Tone", { exact: true }).click();
       await page.getByRole("option", { name: "Calm and patient", exact: true }).click();

@@ -57,8 +57,8 @@ pub(super) fn respawn_restores_tools(app: &AppHandle, session: &str) -> bool {
     {
         return false;
     }
-    let Some(deadline) = crate::session_tools_bridge::optional_host_deadline() else {
-        return false;
+    let Some(deadline) = crate::session_tools_bridge::optional_host_recovery_deadline() else {
+        return crate::session_tools_bridge::optional_host_recent_recovery();
     };
     let answered = crate::remote::NativeServiceChannel::connect_until(app, Some(deadline))
         .and_then(|service| {
@@ -67,7 +67,7 @@ pub(super) fn respawn_restores_tools(app: &AppHandle, session: &str) -> bool {
             })
         })
         .is_ok();
-    crate::session_tools_bridge::note_optional_host_outcome(deadline, answered);
+    crate::session_tools_bridge::note_optional_host_recovery(deadline, answered);
     answered
 }
 

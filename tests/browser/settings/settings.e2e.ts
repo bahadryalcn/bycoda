@@ -104,9 +104,11 @@ for (const theme of ["dark", "light"])
         window.dispatchEvent(new Event("fixture-complete-appearance-drawings")),
       );
       await expect(launcher).toHaveAttribute("aria-description", "Ready");
-      await expect(page.getByRole("tab", { name: "Motion", exact: true })).toBeInViewport({
-        ratio: 1,
-      });
+      // The tab strip scrolls when the launcher and tabs outgrow the toolbar (wider Linux fonts at
+      // 800px): the last tab must stay reachable, not necessarily visible without scrolling.
+      const motionTab = page.getByRole("tab", { name: "Motion", exact: true });
+      await motionTab.scrollIntoViewIfNeeded();
+      await expect(motionTab).toBeInViewport({ ratio: 1 });
       await page.screenshot({
         path: info.outputPath(`appearance-ai-closed-${theme}-${width}.png`),
         animations: "disabled",

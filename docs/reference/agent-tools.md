@@ -161,7 +161,7 @@ contract is in `src/shared/model/host-contracts/delegation.ts`, and the service 
 `host/delegation/service.ts`.
 
 - `agents.options` takes no input. It returns the selected `subagents` and
-  `advisor` refs with `available`, `effortLevels` and `defaultEffort` when offered, the current `running` counts and `limits`.
+  `advisor` refs with `available`, `filesFalse` (`available` and `repositoryReadIsolation`), `effortLevels` and `defaultEffort` when offered, the current `running` counts and `limits`. Pi checks CLI flags and OpenCode checks for CLI version 2 at launch. Grok and Gemini require an explicitly enabled Host API path, a key, the default account and a supported API model. See the [agent tools guide](../guides/agent-tools.md) for setup. `repositoryReadIsolation` reports whether the Host blocks OS-level reads outside scratch. Unsupported models reject `files: false`.
 - `agents.delegate` takes `requestId`, `title` and `prompt`, plus `model` (a ref
   key from `agents.options`). `model` is required when more than one subagent model
   is selected. The assistant chooses `effort` by the task's difficulty; the closest offered level is used, and omitted uses the model default. It returns at once with the run.

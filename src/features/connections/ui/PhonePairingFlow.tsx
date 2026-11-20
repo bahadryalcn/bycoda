@@ -18,6 +18,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { CheckCircle, ExternalLink, RefreshCw } from "../../../shared/ui/icons";
 import { isLocalSyncMachine } from "../model/localSync";
 import type {
@@ -135,6 +136,11 @@ export function PhonePairingFlow({
         label={t("Local network access")}
       />
     ) : null;
+  const showCode = (
+    <Button stableWidth type="button" onClick={onCreate} variant="primary">
+      {t("Show QR code")}
+    </Button>
+  );
 
   return (
     <div
@@ -206,15 +212,13 @@ export function PhonePairingFlow({
             <InlineMessage tone="info">{t(state.access.reason)}</InlineMessage>
           ) : null}
           {state.access.state === "ready" ? (
-            <Button
-              stableWidth
-              type="button"
-              className={inline ? "self-start" : undefined}
-              onClick={onCreate}
-              variant="primary"
-            >
-              {t("Show QR code")}
-            </Button>
+            inline ? (
+              <div className="self-start">{showCode}</div>
+            ) : (
+              <ModalFooter>
+                <ModalActions>{showCode}</ModalActions>
+              </ModalFooter>
+            )
           ) : (
             <>
               <InlineMessage tone="info">
@@ -293,6 +297,9 @@ export function PhonePairingFlow({
 
       {state.stage === "qr" ? (
         <div className="phone-pairing-code">
+          <Text as="p" size="secondary" className="text-center">
+            {t("On your phone, open Connections and choose Scan QR code.")}
+          </Text>
           <div
             {...surfaceAttributes({ frame: "card", radius: "card", variant: "on-solid" }, "p-2")}
           >
@@ -312,7 +319,6 @@ export function PhonePairingFlow({
             leading="normal"
             className="phone-pairing-instructions"
           >
-            <p>{t("On your phone, open Connections and choose Scan QR code.")}</p>
             <div className="flex items-center justify-center gap-2">
               <Badge size="sm" minWidth="8ch">
                 {t("{p0}s left", { p0: state.remainingSeconds })}
@@ -416,9 +422,12 @@ export function PhonePairingFlow({
           {localToggle}
           {children}
         </>
-      ) : (
-        localToggle
-      )}
+      ) : localToggle ? (
+        <>
+          <Divider />
+          {localToggle}
+        </>
+      ) : null}
       {confirmDisable ? (
         <ConfirmDialog
           request={{

@@ -169,7 +169,9 @@ file with the website and the account portal. Keep article IDs stable because th
 are used as permanent URLs and as links from the interactive Guide.
 
 - **Steps.** Every topic lists a few short steps (Chat with agents has four, including
-  choosing the access mode). A step shows ✓ when it is finished:
+  choosing the access mode). In the chat composer, hover over or focus the access mode
+  icon to see its name. Open the picker to see the available modes and their descriptions.
+  A step shows ✓ when it is finished:
   automatically when the app already shows it (a project is open, several projects
   exist, a project is pinned, a session already has a message, you opened a diff, a
   commit or all changes for review, you opened a terminal), when you use the topic's

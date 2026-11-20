@@ -134,6 +134,7 @@ import { assertShellOwnershipAvailable, reserveShellOwnership } from "./executio
 import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
 import { prepareHostSkillPrompt } from "./skills/prompt-skills";
 import { DELEGATION_PARENT_KEY } from "../src/shared/model/host-contracts/delegation";
+import { delegatedChatOnlyHistory } from "./delegation/child-native";
 import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
 import { bykitHint } from "./bykit/bykit-hint";
 import {
@@ -4436,7 +4437,11 @@ export class HostEngine {
               contextEvents.complete();
               forgetRuntimeHint(session.id);
             } else {
+              const chatOnlyHistory = delegatedChatOnlyHistory(session, userBlockId);
+              if (chatOnlyHistory !== undefined && attachments?.length)
+                throw new Error("This chat-only provider accepts text without attachments.");
               const preparedPrompt =
+                chatOnlyHistory === undefined &&
                 !promptPrepared &&
                 (prompt.includes("bycoda-citation:") ||
                   /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt)) &&
@@ -4454,7 +4459,10 @@ export class HostEngine {
                 harness: session.harness,
                 providerAccountId: session.providerAccountId,
               };
-              const hint = pendingRuntimeHint(session.id, thread, await this.turnHint(session));
+              const hint =
+                chatOnlyHistory === undefined
+                  ? pendingRuntimeHint(session.id, thread, await this.turnHint(session))
+                  : "";
               const codex = session.harness === "codex";
               // Codex parses /goal only as the first token; carry replayed
               // context as runtime instructions instead of prefixing it.
@@ -4476,6 +4484,7 @@ export class HostEngine {
               };
               const providerInput: SendTurnInput = {
                 ...input,
+                ...(chatOnlyHistory === undefined ? {} : { chatOnlyHistory }),
                 onAccepted: () => {
                   markHint();
                   this.queueEvent(session.id, acceptReplay, active);

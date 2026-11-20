@@ -165,7 +165,8 @@ export async function handleDevicesRpc(
       request.result =
         request.params.mode === "lan"
           ? await dependencies.mobileLan.status()
-          : await dependencies.mobileAccess.status();
+          : // The owner's explicit check: bypass the probe cache environment.describe uses.
+            await dependencies.mobileAccess.status({ fresh: true });
       break;
     case "mobile.access.enable":
       if (

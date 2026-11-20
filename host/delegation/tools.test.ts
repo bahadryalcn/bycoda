@@ -12,8 +12,11 @@ describe("files: false schema", () => {
     expect(AGENT_TOOL_SCHEMAS["agents.reply"].properties).not.toHaveProperty("files");
   });
 
-  it("tells the parent when to use it, in one short sentence", () => {
-    expect(describeAgentTool("agents.delegate")).toContain("files:false");
+  it("directs the parent to use normal project access by default", () => {
+    const description = describeAgentTool("agents.delegate");
+    expect(description).toContain("Omit files or set files:true for normal project access");
+    expect(description).toContain("When tools are unnecessary or unavailable");
+    expect(description).toContain("files:false only when the owner explicitly asks");
   });
 });
 

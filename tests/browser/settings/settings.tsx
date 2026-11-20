@@ -54,6 +54,14 @@ type FixtureEntry = { key: string; version: number; value: unknown };
 const canonicalPage = crypto.randomUUID();
 const canonicalScopes = new Map<string, { revision: number; entries: Map<string, FixtureEntry> }>();
 const canonicalReceipts = new Map<string, { request: string; result: unknown }>();
+if (new URLSearchParams(location.search).get("connections") === "1") {
+  canonicalScopes.set("remote-outbox.v2", {
+    revision: 1,
+    entries: new Map([
+      ["migration:complete", { key: "migration:complete", version: 1, value: true }],
+    ]),
+  });
+}
 function canonicalFixture(command: string, args: Record<string, unknown>): unknown {
   if (command === "canonical_store_page_token") return canonicalPage;
   if (command === "canonical_store_session_guard_ready") return true;
@@ -70,6 +78,9 @@ function canonicalFixture(command: string, args: Record<string, unknown>): unkno
       revision: store.revision,
       entries: (args.keys as string[]).flatMap((key) => (entry(key) ? [entry(key)] : [])),
     });
+  if (scope === "remote-outbox.v2" && command === "canonical_store_list_bounded") {
+    return { revision: store.revision, entries: [], hasMore: false };
+  }
   if (command === "canonical_store_list") {
     if (args.expectedRevision != null && args.expectedRevision !== store.revision)
       throw new Error("Fixture canonical snapshot changed");
@@ -562,44 +573,50 @@ mockIPC(
             endpoint: "https://cloud.example.com",
           },
         );
-        const routeSet: Record<string, unknown> = {
-          "fixture-remote": {
-            prefer: "saved",
-            active: "192.168.1.30",
-            routes: [
-              { address: "owner@studio.local", kind: "name", source: "saved", enabled: true },
-              { address: "100.97.82.4", kind: "tailscale", source: "other", enabled: true },
-              { address: "192.168.1.30", kind: "lan", source: "reported", enabled: true },
-            ],
-          },
-          "fixture-cloud": {
-            prefer: "saved",
-            active: "calm-river.trycloudflare.com",
-            routes: [
-              {
-                address: "calm-river.trycloudflare.com",
-                kind: "tunnel",
-                source: "account",
-                enabled: true,
-              },
-            ],
-          },
-        };
-        if (command === "remote_machine_routes") {
-          const id = args.machineId as string;
-          return (
-            routeSet[id] ?? {
-              prefer: "saved",
-              active: null,
-              routes: [
-                { address: "192.168.1.40", kind: "lan", source: "saved", enabled: true },
-                { address: "100.97.82.9", kind: "tailscale", source: "reported", enabled: true },
-              ],
-            }
-          );
-        }
-        if (command === "remote_machine_route_check") return [];
       }
+      const routeSet: Record<string, unknown> = {
+        "fixture-remote": {
+          prefer: "saved",
+          active: "192.168.1.30",
+          routes: [
+            { address: "owner@studio.local", kind: "name", source: "saved", enabled: true },
+            { address: "100.97.82.4", kind: "tailscale", source: "other", enabled: true },
+            { address: "192.168.1.30", kind: "lan", source: "reported", enabled: true },
+          ],
+        },
+        "fixture-cloud": {
+          prefer: "saved",
+          active: "calm-river.trycloudflare.com",
+          routes: [
+            {
+              address: "calm-river.trycloudflare.com",
+              kind: "tunnel",
+              source: "account",
+              enabled: true,
+            },
+          ],
+        },
+      };
+      if (command === "remote_machine_routes") {
+        const id = args.machineId as string;
+        return (
+          routeSet[id] ?? {
+            prefer: "saved",
+            active: null,
+            routes: [
+              { address: "192.168.1.40", kind: "lan", source: "saved", enabled: true },
+              { address: "100.97.82.9", kind: "tailscale", source: "reported", enabled: true },
+            ],
+          }
+        );
+      }
+      if (command === "remote_machine_route_check")
+        return statusFixture
+          ? []
+          : [
+              { address: "100.97.82.4", reachable: false },
+              { address: "192.168.1.30", reachable: true },
+            ];
       // Machines found on this computer that are not added yet, for the Add list.
       if (command === "discover_machine_candidates")
         return [
@@ -710,6 +727,8 @@ mockIPC(
                 ? ["tunnels.manage"]
                 : [
                     "workspace.run",
+                    "workspaces.managed.v1",
+                    "workspaces.policy.v1",
                     "git.worktreeCreate",
                     "tunnels.manage",
                     "devices.paired",

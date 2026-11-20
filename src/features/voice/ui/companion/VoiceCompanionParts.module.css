@@ -8,16 +8,17 @@
   margin-block-end: 10px;
   padding: 10px;
 }
-/* The call stage: everything centred under a large core, on a tint of whoever has the floor. */
 .stage[data-layout="stage"] {
   justify-items: center;
-  padding-block: 20px 12px;
+  gap: 8px;
+  margin-block-end: 0;
+  padding-block: 4px;
   text-align: center;
 }
 .stage[data-layout="stage"] .status {
   flex-direction: column;
-  gap: 10px;
-  max-inline-size: 100%;
+  gap: 8px;
+  inline-size: 100%;
 }
 .stage[data-layout="stage"] .statusText {
   justify-items: center;
@@ -25,6 +26,7 @@
 }
 .stage[data-layout="stage"] .statusLine {
   justify-content: center;
+  min-block-size: 20px;
 }
 .stage[data-layout="stage"] .statusEnd {
   margin-inline-start: 0;
@@ -37,7 +39,7 @@
 }
 /* The words in flight on the call stage; long replies stay readable in the transcript. */
 .spoken {
-  max-inline-size: 100%;
+  max-inline-size: min(100%, 36ch);
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -223,6 +225,11 @@
 }
 .resizeEdge[data-resize-direction*="w"] {
   left: 0;
+}
+/* The edge is already a 6px hit area on the panel's border box; the sash's ±3px pseudo-element
+   would only add scrollable overflow past the clipped panel. */
+.resizeEdge[data-resize-direction][data-orientation]::before {
+  inset: 0;
 }
 /* The side panel is the question's surface; drop the card frame inside it. */
 .side:has([data-question-form]) {

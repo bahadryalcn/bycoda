@@ -173,26 +173,36 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
             </InfoPopover>
           </div>
         </div>
-        {ssh && routes.routes.length > 1 ? (
-          <div className="w-48">
-            <Select
-              label={t("Try first")}
-              fieldSize="sm"
-              value={routes.prefer}
-              disabled={saving}
-              onValueChange={(value) => {
-                if (!saving) save(disabled, value as RoutePreference);
-              }}
-              options={[
-                { value: "saved", label: t("SSH address") },
-                { value: "lan", label: t("Home network") },
-                { value: "tailscale", label: t("Tailscale") },
-              ]}
-            />
-          </div>
-        ) : null}
+        <div className="flex flex-wrap items-end gap-2">
+          {ssh && routes.routes.length > 1 ? (
+            <div className="w-48">
+              <Select
+                label={t("Try first")}
+                fieldSize="sm"
+                value={routes.prefer}
+                disabled={saving}
+                onValueChange={(value) => {
+                  if (!saving) save(disabled, value as RoutePreference);
+                }}
+                options={[
+                  { value: "saved", label: t("SSH address") },
+                  { value: "lan", label: t("Home network") },
+                  { value: "tailscale", label: t("Tailscale") },
+                ]}
+              />
+            </div>
+          ) : null}
+          <Button
+            size="sm"
+            disabled={saving}
+            loading={loading}
+            onClick={() => setRetry((value) => value + 1)}
+          >
+            {readError || probeError ? t("Retry") : t("Check again")}
+          </Button>
+        </div>
       </div>
-      <Surface as="ul" variant="card" padding="none" dividers="card" className="flex flex-col">
+      <Surface as="ul" padding="none" dividers="pane" className="flex flex-col">
         {shown.routes.map((route) => {
           const inUse = route.address === routes.active;
           const reachable = checks?.[route.address];
@@ -200,7 +210,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
             <li
               key={route.address}
               data-route={route.address}
-              className="flex min-w-0 items-center gap-3 px-3 py-2"
+              className="flex min-w-0 flex-wrap items-center gap-2 py-2"
             >
               <div className={`min-w-0 flex-1 ${route.enabled ? "" : "opacity-60"}`}>
                 <Text as="div" size="secondary" tone="inherit" truncate className="font-mono">
@@ -245,9 +255,6 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
       {error ? <InlineError>{error}</InlineError> : null}
       {readError ? <InlineError>{t("Addresses could not be loaded.")}</InlineError> : null}
       {probeError ? <InlineError>{t("Address check unavailable.")}</InlineError> : null}
-      <Button disabled={saving} loading={loading} onClick={() => setRetry((value) => value + 1)}>
-        {readError || probeError ? t("Retry") : t("Check again")}
-      </Button>
     </section>
   );
 }

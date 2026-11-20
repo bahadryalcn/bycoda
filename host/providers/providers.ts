@@ -41,6 +41,9 @@ import { readSkillPolicy } from "../skills/skill-policy";
 import { crewDeniedSkills, crewNativeInput } from "../crews/crew-native-tools";
 import { withSubagentSelection } from "./subagent-selection";
 import { withSkillPolicy } from "../../src/integrations/harness/core/skillPolicy";
+import { leanContext } from "../../src/integrations/harness/core/nativeToolLimits";
+import { cancelGrokChatOnly, sendGrokChatOnly } from "./grok-chat-only";
+import { cancelGeminiChatOnly, sendGeminiChatOnly } from "./gemini-chat-only";
 import {
   getReportedCommands,
   reportedSkillRestrictions,
@@ -137,10 +140,19 @@ const providers: Record<RemoteProvider, HostProvider> = {
     generateTitle: generateCursorSessionTitle,
   },
   grok: {
-    send: grok.sendGrokTurn,
-    compact: grok.compactGrokContext,
-    cancel: grok.cancelGrokTurn,
-    stop: grok.forgetGrokSession,
+    send: (input) =>
+      leanContext(input.modelSettings) ? sendGrokChatOnly(input) : grok.sendGrokTurn(input),
+    compact: async (input) => {
+      if (leanContext(input.modelSettings))
+        throw new Error("Chat-only Grok uses Host transcript replay.");
+      await grok.compactGrokContext(input);
+    },
+    cancel: async (id, context) => {
+      if (!cancelGrokChatOnly(id, context)) await grok.cancelGrokTurn(id, context);
+    },
+    stop: async (id, context) => {
+      if (!cancelGrokChatOnly(id, context)) await grok.forgetGrokSession(id, context);
+    },
     bind: grok.bindGrokSession,
     approve: grok.respondGrokApproval,
     answer: grok.respondGrokQuestion,
@@ -201,9 +213,16 @@ const providers: Record<RemoteProvider, HostProvider> = {
   },
   // The adapter picks ACP or agy's headless stream-json from the resolved binary.
   antigravity: {
-    send: antigravityAdapter.sendTurn,
-    cancel: antigravityAdapter.cancelTurn,
-    stop: antigravityAdapter.forgetSession!,
+    send: (input) =>
+      leanContext(input.modelSettings)
+        ? sendGeminiChatOnly(input)
+        : antigravityAdapter.sendTurn(input),
+    cancel: async (id, context) => {
+      if (!cancelGeminiChatOnly(id, context)) await antigravityAdapter.cancelTurn(id, context);
+    },
+    stop: async (id, context) => {
+      if (!cancelGeminiChatOnly(id, context)) await antigravityAdapter.forgetSession!(id, context);
+    },
     bind: antigravityAdapter.bindSession!,
     approve: antigravity.respondAntigravityApproval,
     answer: unsupportedQuestion,
