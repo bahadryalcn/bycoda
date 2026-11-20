@@ -11,8 +11,18 @@ pub(super) fn run(
     if Instant::now() >= deadline {
         return None;
     }
-    let mut child = command.spawn().ok()?;
+    let child = command.spawn().ok()?;
     drop(turn);
+    collect(child, args, max_bytes, cancel, deadline)
+}
+
+pub(super) fn collect(
+    mut child: std::process::Child,
+    args: &[&str],
+    max_bytes: usize,
+    cancel: Option<&AtomicBool>,
+    deadline: Instant,
+) -> Option<(Vec<u8>, bool)> {
     let Some(mut stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();

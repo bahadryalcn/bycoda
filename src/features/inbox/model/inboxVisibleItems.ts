@@ -7,6 +7,7 @@ import { applyInboxFilters, type InboxFilters, type InboxSource } from "./inboxF
 export type VisibleInboxItemsInput = {
   items: readonly InboxItem[];
   pullRequestsOnly: boolean;
+  githubKind?: "issue" | "pr" | null;
   prSort: string;
   filters: InboxFilters;
   search: string;
@@ -31,6 +32,7 @@ export type VisibleInboxItemsInput = {
 export function visibleInboxItems({
   items,
   pullRequestsOnly,
+  githubKind,
   prSort,
   filters,
   search,
@@ -42,9 +44,10 @@ export function visibleInboxItems({
   now,
 }: VisibleInboxItemsInput): InboxItem[] {
   if (!sourceAvailable) return [];
+  const kind = pullRequestsOnly ? "pr" : source === "github" ? githubKind : null;
   const visible = filterCodeHostScopes(
     applyInboxFilters(
-      pullRequestsOnly ? items.filter((item) => item.kind === "pr") : items,
+      kind ? items.filter((item) => item.kind === kind) : items,
       filters,
       search,
       now,
@@ -54,16 +57,19 @@ export function visibleInboxItems({
     codeScopes.scopes,
     codeScopes.hidden,
   );
-  if (pullRequestsOnly)
-    return [...visible].sort((a, b) =>
-      prSort === "title"
-        ? a.title.localeCompare(b.title)
-        : Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-    );
-  if (!target || source !== "github") return visible;
+  const ordered =
+    pullRequestsOnly || githubKind
+      ? [...visible].sort((a, b) =>
+          prSort === "title"
+            ? a.title.localeCompare(b.title)
+            : Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
+        )
+      : visible;
+  if (pullRequestsOnly || !target || source !== "github" || (kind && target.kind !== kind))
+    return ordered;
   const targeted =
     items.find((item) => inboxItemMatchesLinkedWorkItem(item, target)) ??
     (targetItem && inboxItemMatchesLinkedWorkItem(targetItem, target) ? targetItem : null);
-  if (!targeted || visible.includes(targeted)) return visible;
-  return [targeted, ...visible];
+  if (!targeted || ordered.includes(targeted)) return ordered;
+  return [targeted, ...ordered];
 }

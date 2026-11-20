@@ -58,6 +58,53 @@ it("limits global time choices and clears back to seven days", async () => {
   await act(async () => root.unmount());
 });
 
+it("keeps the menu open after toggling Archived and Settled like other filters", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onChange = vi.fn();
+  const onClose = vi.fn();
+  function Fixture() {
+    const [filters, setFilters] = useState(DEFAULT_SESSION_SIDEBAR_FILTERS);
+    return createElement(SessionFiltersMenu, {
+      x: 0,
+      y: 0,
+      harnesses: [],
+      local: false,
+      settled: true,
+      filters,
+      onChange: (next: SessionSidebarFilters) => {
+        onChange(next);
+        setFilters(next);
+      },
+      onClose,
+    });
+  }
+  const button = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent?.trim() === label,
+    );
+  await act(async () => root.render(createElement(Fixture)));
+  await act(async () => button("Archived")!.click());
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...DEFAULT_SESSION_SIDEBAR_FILTERS,
+    showArchived: true,
+  });
+  expect(button("Archived")?.getAttribute("aria-checked")).toBe("true");
+  await act(async () => button("Settled")!.click());
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...DEFAULT_SESSION_SIDEBAR_FILTERS,
+    showArchived: true,
+    showSettled: true,
+  });
+  expect(button("Settled")?.getAttribute("aria-checked")).toBe("true");
+  await act(async () => button("Working")!.click());
+  expect(button("Working")?.getAttribute("aria-checked")).toBe("true");
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+});
+
 it("offers the Settled filter only for this computer's sessions", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");

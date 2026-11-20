@@ -8,7 +8,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { t } from "../../../../shared/i18n";
 import { placeVoiceSidePanel, type VoiceSidePlacement } from "../../model/voiceSidePanel";
 import styles from "./VoiceCompanionParts.module.css";
 
@@ -19,10 +18,13 @@ import styles from "./VoiceCompanionParts.module.css";
  */
 export function VoiceSidePanel({
   panel,
+  label,
   openKey,
   children,
 }: {
   panel: RefObject<HTMLElement | null>;
+  /** Names the panel's content (a question or the job review), for its landmark. */
+  label: string;
   /** Changes when a different question or review opens; scrolls the new one to its actions. */
   openKey: string;
   children: ReactNode;
@@ -72,12 +74,13 @@ export function VoiceSidePanel({
   if (!placement) return null;
   if (placement.side === "inline")
     return (
-      <div
-        ref={scroller as RefObject<HTMLDivElement>}
+      <section
+        ref={scroller}
+        aria-label={label}
         {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.dock)}
       >
         {children}
-      </div>
+      </section>
     );
   const appearance = surfaceAttributes(
     { frame: "pane", edge: "all", radius: "panel", variant: "floating", elevation: "floating" },
@@ -86,7 +89,7 @@ export function VoiceSidePanel({
   return (
     <aside
       ref={scroller}
-      aria-label={t("Question")}
+      aria-label={label}
       {...appearance}
       {...motionAttributes(
         {

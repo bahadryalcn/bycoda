@@ -42,6 +42,8 @@ type Props = {
   codeHostProjects?: CodeHostScope[];
   hiddenCodeHostProjects?: string[];
   codeHostError?: string | null;
+  /** The project list is partial: the Host kept what it loaded and says why it stopped. */
+  codeHostIncomplete?: string | null;
   onCodeHostProjectsChange?: (ids: string[]) => void;
   x: number;
   y: number;
@@ -114,6 +116,7 @@ export function InboxFiltersMenu({
   codeHostProjects = [],
   hiddenCodeHostProjects = [],
   codeHostError,
+  codeHostIncomplete,
   onCodeHostProjectsChange,
   x,
   y,
@@ -173,7 +176,7 @@ export function InboxFiltersMenu({
       width={INBOX_FILTER_MENU_WIDTH}
       maxHeight={480}
       onDismiss={onClose}
-      role="dialog"
+      kind="dialog"
       aria-label={t("Filter inbox")}
       onContextMenu={(event) => event.preventDefault()}
       className="overflow-y-auto overscroll-none p-3"
@@ -292,7 +295,7 @@ export function InboxFiltersMenu({
           onValueChange={(value) => setTime(value as InboxTimeFilter)}
         />
 
-        {!tracker ? (
+        {!tracker && source !== "github" ? (
           <div className="grid min-w-0 gap-1.5">
             <SectionLabel variant="menu">{t("Type")}</SectionLabel>
             {KIND_OPTIONS.map((option) => (
@@ -384,6 +387,7 @@ export function InboxFiltersMenu({
         {source === "gitlab" || source === "azuredevops" ? (
           <div className="grid min-w-0 gap-1.5">
             {codeHostError ? <Alert tone="danger">{codeHostError}</Alert> : null}
+            {codeHostIncomplete ? <Alert tone="warning">{codeHostIncomplete}</Alert> : null}
             {codeHostProjects.length ? (
               <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
             ) : null}

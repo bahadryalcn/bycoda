@@ -1,5 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
+/** After a kill signal, wait this long for a graceful exit before SIGKILL and giving up. */
+const KILL_GRACE_MS = 2000;
+/** After `exit`, wait this long for buffered output before a leaked pipe holder is ignored. */
+const EXIT_DRAIN_MS = 500;
+
 /** Hidden, argument-array-only subprocess. Hard time and output bounds. */
 export function deviceCommand(
   command: string,
@@ -29,26 +34,32 @@ export function deviceBinaryCommand(
     let diagnostic = "";
     let bytes = 0;
     let failure: Error | undefined;
-    const timer = setTimeout(() => {
-      failure = new Error("Device command timed out");
-      child.kill();
-    }, options.timeoutMs ?? 30_000);
-    const collect = (chunk: Buffer, stderr: boolean) => {
-      bytes += chunk.length;
-      if (bytes > maxBytes) {
-        failure = new Error(`Device command output exceeds ${maxBytes / (1024 * 1024)} MiB`);
-        child.kill();
-      } else if (stderr) diagnostic = `${diagnostic}${chunk.toString()}`.slice(-2000);
-      else output.push(chunk);
+    let settled = false;
+    const timers = new Set<NodeJS.Timeout>();
+    const later = (action: () => void, ms: number) => {
+      const timer = setTimeout(action, ms);
+      timers.add(timer);
     };
-    child.stdout?.on("data", (chunk: Buffer) => collect(chunk, false));
-    child.stderr?.on("data", (chunk: Buffer) => collect(chunk, true));
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
+    // `close` waits for every stdio pipe, so a grandchild that inherited them
+    // (adb's background server) or a tool that ignores SIGTERM would never
+    // settle this promise. Every path funnels here and frees the pipes.
+    const settle = (finish: () => void) => {
+      if (settled) return;
+      settled = true;
+      timers.forEach(clearTimeout);
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      finish();
+    };
+    const fail = (error: Error) => {
+      failure ??= error;
+      child.kill();
+      later(() => {
+        child.kill("SIGKILL");
+        settle(() => reject(failure));
+      }, KILL_GRACE_MS);
+    };
+    const exitResult = (code: number | null) => {
       if (failure) reject(failure);
       else if (code !== 0)
         reject(
@@ -57,7 +68,23 @@ export function deviceBinaryCommand(
           ),
         );
       else resolve(Buffer.concat(output));
+    };
+    later(() => fail(new Error("Device command timed out")), options.timeoutMs ?? 30_000);
+    const collect = (chunk: Buffer, stderr: boolean) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        fail(new Error(`Device command output exceeds ${maxBytes / (1024 * 1024)} MiB`));
+      } else if (stderr) diagnostic = `${diagnostic}${chunk.toString()}`.slice(-2000);
+      else output.push(chunk);
+    };
+    child.stdout?.on("data", (chunk: Buffer) => collect(chunk, false));
+    child.stderr?.on("data", (chunk: Buffer) => collect(chunk, true));
+    child.once("error", (error) => settle(() => reject(error)));
+    child.once("exit", (code) => {
+      if (failure) settle(() => reject(failure));
+      else later(() => settle(() => exitResult(code)), EXIT_DRAIN_MS);
     });
+    child.once("close", (code) => settle(() => exitResult(code)));
   });
 }
 export async function stopDeviceChild(child: ChildProcess): Promise<void> {

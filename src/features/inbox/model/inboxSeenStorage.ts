@@ -9,6 +9,10 @@ const validSeed = (value: unknown) =>
   (typeof value === "string" &&
     /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value));
 
+/** A stored seen time, or `undefined` when the record is absent or malformed. */
+const readableTime = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
 export type InboxSeenSnapshot = { seeded: boolean; items: Record<string, number> };
 
 let opening: Promise<IDBDatabase> | undefined;
@@ -61,15 +65,8 @@ export async function mergeInboxSeenStorage(snapshot: InboxSeenSnapshot): Promis
     for (const [key, timestamp] of Object.entries(snapshot.items)) {
       const get = items.get(key);
       get.onsuccess = () => {
-        const previous = get.result;
-        if (
-          previous !== undefined &&
-          (typeof previous !== "number" || !Number.isFinite(previous))
-        ) {
-          transaction.abort();
-          return;
-        }
-        items.put(Math.max(previous ?? 0, timestamp), key);
+        // A malformed stored value counts as absent, so this write repairs it.
+        items.put(Math.max(readableTime(get.result) ?? 0, timestamp), key);
       };
     }
     if (snapshot.seeded) {
@@ -147,14 +144,7 @@ export async function seedInboxSeenStorage(items: Record<string, number>): Promi
       for (const [key, timestamp] of Object.entries(items)) {
         const previous = store.get(key);
         previous.onsuccess = () => {
-          if (
-            previous.result !== undefined &&
-            (typeof previous.result !== "number" || !Number.isFinite(previous.result))
-          ) {
-            transaction.abort();
-            return;
-          }
-          store.put(Math.max(previous.result ?? 0, timestamp), key);
+          store.put(Math.max(readableTime(previous.result) ?? 0, timestamp), key);
         };
       }
       meta.put(true, "seeded");
@@ -241,14 +231,8 @@ export async function readInboxSeenStorage(
           stagedReady = !initial;
         const update = () => {
           if (!regularReady || !stagedReady) return;
-          const valuesToMerge = [regular, staged].filter((value) => value !== undefined);
-          if (valuesToMerge.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
-            transaction.abort();
-            return;
-          }
-          const numbers = valuesToMerge.filter(
-            (value): value is number => typeof value === "number",
-          );
+          // Malformed values read as absent; the next mark-seen overwrites them.
+          const numbers = [regular, staged].flatMap((value) => readableTime(value) ?? []);
           values.set(key, numbers.length ? Math.max(...numbers) : undefined);
         };
         request.onsuccess = () => {

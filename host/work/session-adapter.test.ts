@@ -237,6 +237,41 @@ it("rechecks Work stop intent between session creation and provider dispatch", a
   expect((await runtime.work.list())[0]?.stopRequested).toBe(true);
 });
 
+it("counts a running session during Work admission without loading any transcripts", async () => {
+  const { store, engine, project, id } = await setup();
+  bindSessionWork(store, engine);
+  await new HostLimits(store).save({ maxRunningTasks: 1 });
+  const idle = await store.session(id);
+  await store.save(
+    {
+      ...idle,
+      revision: 1,
+      status: "running",
+      runId: "external-turn",
+      session: { ...idle.session, id: "external-session" },
+    },
+    { type: "test" },
+  );
+
+  const loadSession = vi.spyOn(store, "session");
+  const result = await launchSessionRun(store, engine, {
+    projectId: project.id,
+    harness: "codex",
+    model: "codex:test",
+    modelSettings: {},
+    runtimeMode: "supervised",
+    title: "Wait for capacity",
+    prompt: "Read only.",
+    workspaceMode: "current",
+    work: { kind: "automation", id: "waiting", occurrence: "first" },
+  });
+  expect(result).toEqual({
+    deferred: true,
+    wait: { code: "capacity", message: "Waiting for a free work slot." },
+  });
+  expect(loadSession).not.toHaveBeenCalled();
+});
+
 it("queues an automation behind a task and resumes the same durable occurrence", async () => {
   const { store, engine, project, turns, waitForTurnStart } = await setup();
   const runtime = bindSessionWork(store, engine);

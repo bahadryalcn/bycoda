@@ -20,6 +20,7 @@ import { unreadReviewNotes } from "../model/taskReviewNotes";
 import { resolveModel } from "../../sessions/public/models";
 import { TaskActions, type TaskActionHandlers } from "./TaskCardActions";
 import { VerificationSummary } from "./TaskCardVerification";
+import { taskCardKeyIntent } from "./taskCardKeys";
 import "./task-board.css";
 
 export { TaskActions, VerificationSummary };
@@ -132,9 +133,25 @@ function TaskCardBody({
       aria-busy={actions.pending || undefined}
       aria-current={selected || undefined}
       tabIndex={0}
+      aria-keyshortcuts={
+        actions.onEarlier || actions.onLater ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+      }
       onClick={onOpen}
       onKeyDown={(event) => {
-        if (event.target === event.currentTarget && event.key === "Enter") onOpen();
+        const intent = taskCardKeyIntent({
+          key: event.key,
+          altKey: event.altKey,
+          ownTarget: event.target === event.currentTarget,
+          canMoveEarlier: Boolean(actions.onEarlier),
+          canMoveLater: Boolean(actions.onLater),
+          busy: actions.busy,
+        });
+        if (!intent) return;
+        // Space and Alt+Arrow would otherwise scroll the board.
+        event.preventDefault();
+        if (intent === "open") onOpen();
+        else if (intent === "earlier") actions.onEarlier?.();
+        else actions.onLater?.();
       }}
       {...surfaceAttributes({ radius: "row" }, "task-board-card cursor-pointer")}
     >

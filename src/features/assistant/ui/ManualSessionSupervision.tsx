@@ -241,7 +241,7 @@ export function ManualSessionSupervision({
         <Row
           label={t("Supervise my conversations")}
           descriptionVisible
-          description={t("Only conversations you enroll in selected projects are supervised.")}
+          description={t("Only enrolled conversations in selected projects are supervised.")}
         >
           {off}
           {!draftMode && refresh}

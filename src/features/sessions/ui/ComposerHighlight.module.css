@@ -83,3 +83,67 @@
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+
+/* Keep glyph advances and the line box aligned with the native textarea. */
+.markdownText:is([data-draft-markdown="strong"], [data-draft-markdown="heading"]) {
+  -webkit-text-stroke: 0.026em currentColor;
+}
+
+.markdownText[data-draft-markdown="heading"] {
+  color: var(--color-markdown-heading);
+}
+
+.markdownText[data-draft-markdown="emphasis"] {
+  font-style: oblique;
+}
+
+.markdownText[data-draft-markdown="strike"] {
+  text-decoration: line-through;
+}
+
+.markdownText[data-draft-markdown="link"] {
+  color: var(--ui-tone-info-fg);
+  text-decoration: underline;
+}
+
+.markdownText:is([data-draft-markdown="code"], [data-draft-markdown="fence"]) {
+  background: var(--ui-tone-neutral-subtle);
+  border-radius: var(--ui-radius-control);
+  box-decoration-break: clone;
+}
+
+.markdownText[data-draft-markdown="quote"] {
+  color: var(--ui-text-secondary);
+}
+
+.markdownMarker {
+  position: relative;
+  color: transparent;
+  text-decoration: none;
+}
+
+.markdownMarker[data-editing-mark] {
+  color: var(--ui-text-muted);
+}
+
+.markdownMarker:not([data-editing-mark])::after {
+  position: absolute;
+  inset-inline-start: 0;
+  color: var(--ui-text-secondary);
+}
+
+.markdownMarker[data-draft-markdown="bullet"]:not([data-editing-mark])::after {
+  content: "•";
+}
+
+.markdownMarker[data-draft-markdown="quote-mark"]:not([data-editing-mark])::after {
+  content: "│";
+}
+
+.markdownMarker[data-draft-markdown="task-open"]:not([data-editing-mark])::after {
+  content: "☐";
+}
+
+.markdownMarker[data-draft-markdown="task-done"]:not([data-editing-mark])::after {
+  content: "☑";
+}

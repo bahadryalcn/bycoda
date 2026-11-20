@@ -8,6 +8,8 @@ import {
   type Text,
 } from "@codemirror/state";
 import { EditorView, GutterMarker, gutter } from "@codemirror/view";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { textAttributes, type TextRoles } from "../../../shared/ui/Text";
 import type { GitBlameLine, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { blameByLine, mapBlameLines } from "../../source-control/public/blameMapping";
 import {
@@ -16,6 +18,7 @@ import {
   formatRelativeTime,
 } from "../../source-control/public/gitGraphDisplay";
 import { editorDocChanges } from "./editorDoc";
+import "./editorBlame.css";
 
 /**
  * A blame gutter: per line, the commit that last changed it, drawn on the
@@ -142,17 +145,43 @@ let cardOwner: HTMLElement | null = null;
 
 function showCard(anchor: HTMLElement, entry: GitBlameLine) {
   card ??= document.createElement("div");
-  card.className = "cm-blameCard";
+  const { className, ...surface } = surfaceAttributes(
+    { variant: "floating", frame: "pane", radius: "popup", elevation: "floating" },
+    "cm-blameCard",
+  );
+  const { className: textClass, ...typography } = textAttributes({
+    size: "caption",
+    tone: "primary",
+    leading: "normal",
+  });
+  card.className = `${className} ${textClass}`;
+  for (const [name, value] of Object.entries({ ...surface, ...typography })) {
+    if (value !== undefined) card.setAttribute(name, String(value));
+  }
   card.setAttribute("role", "tooltip");
   card.replaceChildren(
-    ...[
-      ["cm-blameCardSha", entry.shortSha],
-      ["cm-blameCardAuthor", entry.author],
-      ["cm-blameCardDate", entry.timestamp > 0 ? formatAbsoluteTime(entry.timestamp) : ""],
-      ["cm-blameCardSubject", entry.summary],
-    ].map(([className, text]) => {
+    ...(
+      [
+        {
+          text: entry.shortSha,
+          roles: { size: "micro", tone: "muted" },
+          className: "cm-blameCardSha",
+        },
+        { text: entry.author, roles: { weight: "medium" }, className: "cm-blameCardAuthor" },
+        {
+          text: entry.timestamp > 0 ? formatAbsoluteTime(entry.timestamp) : "",
+          roles: { tone: "secondary" },
+          className: "cm-blameCardDate",
+        },
+        { text: entry.summary, roles: { wrap: "anywhere" }, className: "cm-blameCardSubject" },
+      ] satisfies { text: string; roles: TextRoles; className: string }[]
+    ).map(({ className, text, roles }) => {
       const row = document.createElement("div");
-      row.className = className;
+      const { className: textClass, ...typography } = textAttributes(roles, className);
+      row.className = textClass;
+      for (const [name, value] of Object.entries(typography)) {
+        if (value !== undefined) row.setAttribute(name, String(value));
+      }
       row.textContent = text;
       return row;
     }),

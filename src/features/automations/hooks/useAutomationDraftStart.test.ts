@@ -41,5 +41,10 @@ it.each([true, false])(
     expect(setDraft.mock.lastCall?.[0].modelChoice).toEqual(
       supported ? { kind: "default" } : undefined,
     );
+    expect(setDraft.mock.lastCall?.[0].hostCreateId).toEqual(expect.any(String));
+    start.beginBlank();
+    const blankId = setDraft.mock.lastCall?.[0].hostCreateId;
+    start.beginBlank();
+    expect(setDraft.mock.lastCall?.[0].hostCreateId).not.toBe(blankId);
   },
 );

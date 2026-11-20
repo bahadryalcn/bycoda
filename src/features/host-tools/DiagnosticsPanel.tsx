@@ -1,4 +1,6 @@
+import { errorText } from "../../shared/lib/errors";
 import { Text } from "../../shared/ui/Text";
+import { LiveText } from "../../shared/ui/LiveText";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
@@ -8,7 +10,10 @@ import { Meter } from "../../shared/ui/Meter";
 import { Surface } from "../../shared/ui/Surface";
 import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { RefreshCw } from "../../shared/ui/icons";
-import { t, useLocale, getLocale } from "../../shared/i18n/technical";
+import { t, useLocale, getLocale, dateTimeFormat } from "../../shared/i18n/technical";
+import { formatBytes } from "../../shared/i18n/format";
+import { numberFormat } from "../../shared/i18n/numberFormat";
+import { RESOURCE_SAMPLE_LIMIT } from "../../shared/diagnostics/resourceSampleLimit";
 import { useEffect, useRef, useState } from "react";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
 import { hostToolTargetKey, type HostToolTarget } from "../connections/model/hostToolTarget";
@@ -18,6 +23,8 @@ import {
   writeToolsDraftPart,
 } from "./toolsDraftTransfer";
 import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
+import { Disclosure } from "../../shared/ui/Disclosure";
+import { DataTable, DataTableRow } from "../../shared/ui/SortableDataTable";
 import "./diagnostics-panel.css";
 
 export type DiagnosticsSample = {
@@ -44,9 +51,11 @@ type Props = {
   active?: boolean;
   transferScope?: import("./toolsDraftTransfer").ToolsDraftScope;
 };
-const mib = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
-const gib = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
-const time = (at: number) => new Date(at).toLocaleTimeString(getLocale());
+const mib = (bytes: number) => formatBytes(bytes, { locale: getLocale() });
+const percent = (value: number) =>
+  numberFormat(getLocale(), { style: "percent", maximumFractionDigits: 1 }).format(value / 100);
+const time = (at: number) =>
+  dateTimeFormat(getLocale(), { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(at);
 
 function ResourceChart({
   samples,
@@ -57,13 +66,25 @@ function ResourceChart({
   metric: "cpu" | "memory";
   label: string;
 }) {
+  const [tableOpen, setTableOpen] = useState(false);
   const values = samples.map((sample) =>
-    metric === "cpu" ? sample.process.cpuPercent : sample.process.rssBytes / 1024 ** 2,
+    metric === "cpu" ? sample.process.cpuPercent : sample.process.rssBytes,
   );
+  const formatAmount = (value: number) => (metric === "cpu" ? percent(value) : mib(value));
+  // Same text the data table shows: one unit per metric, a gap for missing CPU readings.
+  const formatValue = (value: number | null) =>
+    value === null ? t("CPU reading unavailable") : formatAmount(value);
+  const readings = values.filter((value): value is number => value !== null);
+  // The chart's accessible name is a short summary; every sample is in the table below.
+  const summary = readings.length
+    ? `${t("Latest")} ${formatValue(values[values.length - 1])}, ${t("Minimum")} ${formatValue(Math.min(...readings))}, ${t("Maximum")} ${formatValue(Math.max(...readings))}`
+    : samples.length
+      ? t("CPU reading unavailable")
+      : t("No samples yet");
   const ceiling =
     metric === "cpu"
       ? Math.max(100, ...values.map((value) => value ?? 0))
-      : Math.max(1, ...values.map((value) => value ?? 0)) * 1.2;
+      : Math.max(1024 ** 2, ...values.map((value) => value ?? 0)) * 1.2;
   const start = samples[0]?.at ?? 0;
   const span = (samples[samples.length - 1]?.at ?? start) - start;
   const points = values.map((value, index) =>
@@ -92,35 +113,17 @@ function ResourceChart({
       className={`resource-chart resource-chart-${metric}`}
     >
       <div className="resource-chart-scale" aria-hidden="true">
-        <span>{metric === "cpu" ? `${ceiling.toFixed(0)}%` : `${ceiling.toFixed(0)} MiB`}</span>
+        <span>{formatAmount(ceiling)}</span>
         <span>0</span>
       </div>
-      <svg viewBox="0 0 320 112" role="img" aria-label={label}>
-        <title>
-          {label}:{" "}
-          {samples.length
-            ? samples
-                .map(
-                  (sample, index) =>
-                    `${time(sample.at)}: ${values[index] === null ? t("CPU reading unavailable") : metric === "cpu" ? `${values[index]!.toFixed(1)}%` : mib(sample.process.rssBytes)}`,
-                )
-                .join("; ")
-            : t("No samples yet")}
-        </title>
+      <svg viewBox="0 0 320 112" role="img" aria-label={`${label}: ${summary}`}>
         {[12, 56, 100].map((y) => (
           <line key={y} x1="8" x2="312" y1={y} y2={y} className="resource-chart-grid" />
         ))}
         <path d={path} className="resource-chart-line" />
         {points.map((point, index) =>
           point ? (
-            <circle key={index} cx={point.x} cy={point.y} r="3" className="resource-chart-point">
-              <title>
-                {time(samples[index].at)} ·{" "}
-                {metric === "cpu"
-                  ? `${point.value.toFixed(1)}%`
-                  : mib(samples[index].process.rssBytes)}
-              </title>
-            </circle>
+            <circle key={index} cx={point.x} cy={point.y} r="3" className="resource-chart-point" />
           ) : null,
         )}
       </svg>
@@ -128,6 +131,20 @@ function ResourceChart({
         <span>{samples.length > 1 ? time(start) : "—"}</span>
         <span>{samples.length ? time(samples[samples.length - 1].at) : "—"}</span>
       </div>
+      <Disclosure
+        size="sm"
+        summary={t("Show as table")}
+        open={tableOpen}
+        onOpenChange={setTableOpen}
+      >
+        {tableOpen ? (
+          <DataTable caption={label} headers={[{ label: t("Time") }, { label: t("Value") }]}>
+            {samples.map((sample, index) => (
+              <DataTableRow key={index} cells={[time(sample.at), formatValue(values[index])]} />
+            ))}
+          </DataTable>
+        ) : null}
+      </Disclosure>
     </Text>
   );
 }
@@ -220,7 +237,7 @@ function ProjectDiagnosticsPanel({
         if (alive.current) setSamples(measured.samples);
       }
     } catch (cause) {
-      if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (alive.current) setError(errorText(cause));
     } finally {
       pending.current = false;
       if (alive.current) setBusy(false);
@@ -245,15 +262,11 @@ function ProjectDiagnosticsPanel({
         >
           <RefreshCw className="icon-sm" aria-hidden />
         </Button>
-        <Text
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          role="status"
-          className="resource-sample-status"
-        >
+        <Text size="caption" tone="secondary" leading="inherit" className="resource-sample-status">
           {busy ? t("Measuring…") : sample ? time(sample.at) : t("No samples yet")}
         </Text>
+        {/* Sample timestamps change on every measurement; only the start of a measurement is announced. */}
+        <LiveText className="sr-only" text={busy ? t("Measuring…") : ""} />
         <Text size="caption" tone="secondary" leading="inherit" className="resource-scope">
           {hostLabel ?? t("Host process")}
         </Text>
@@ -268,7 +281,8 @@ function ProjectDiagnosticsPanel({
           ) : null}
           <p>
             {t(
-              "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
+              "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to {p0} samples are retained.",
+              { p0: RESOURCE_SAMPLE_LIMIT },
             )}
           </p>
         </InfoPopover>
@@ -290,9 +304,7 @@ function ProjectDiagnosticsPanel({
             <Surface as="article" variant="page" className="resource-card">
               <SectionLabel as="h3">{t("bycoda host CPU")}</SectionLabel>
               <strong className="resource-value">
-                {sample?.process.cpuPercent != null
-                  ? `${sample.process.cpuPercent.toFixed(1)}%`
-                  : "—"}
+                {sample?.process.cpuPercent != null ? percent(sample.process.cpuPercent) : "—"}
               </strong>
               <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
             </Surface>
@@ -313,9 +325,7 @@ function ProjectDiagnosticsPanel({
               className="resource-memory-heading"
             >
               <SectionLabel as="h3">{t("Computer memory")}</SectionLabel>
-              <strong>
-                {memoryUsed !== null ? `${memoryUsed.toFixed(1)}% ${t("Used")}` : "—"}
-              </strong>
+              <strong>{memoryUsed !== null ? `${percent(memoryUsed)} ${t("Used")}` : "—"}</strong>
             </Text>
             <Meter label={t("Computer memory")} value={memoryUsed} warning={75} danger={90} />
             <Text
@@ -328,13 +338,13 @@ function ProjectDiagnosticsPanel({
               <span>
                 {t("Available")}{" "}
                 <Text size="inherit" tone="primary" weight="medium" leading="inherit" as="strong">
-                  {sample ? gib(sample.host.freeMemoryBytes) : "—"}
+                  {sample ? mib(sample.host.freeMemoryBytes) : "—"}
                 </Text>
               </span>
               <span>
                 {t("Total")}{" "}
                 <Text size="inherit" tone="primary" weight="medium" leading="inherit" as="strong">
-                  {sample ? gib(sample.host.totalMemoryBytes) : "—"}
+                  {sample ? mib(sample.host.totalMemoryBytes) : "—"}
                 </Text>
               </span>
             </Text>
@@ -350,7 +360,9 @@ function ProjectDiagnosticsPanel({
           className="resource-history-caption"
         >
           <span>{t("Sample history")}</span>
-          <span>{samples.length} / 60</span>
+          <span>
+            {samples.length} / {RESOURCE_SAMPLE_LIMIT}
+          </span>
         </Text>
       ) : null}
     </section>

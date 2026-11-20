@@ -8,6 +8,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Text } from "../../../shared/ui/Text";
+import { Plus } from "../../../shared/ui/icons";
 import { isLocalSyncMachine } from "../model/localSync";
 import type { RemoteMachine } from "../model/protocol";
 import { TunnelRows } from "./TunnelRows";
@@ -142,17 +143,24 @@ function MachineSharing({
   useEffect(() => onReport(key, { count, phase }), [key, count, phase, onReport]);
   const hasContent = count > 0 || !!state.issue || !!overview?.repair;
   return (
-    <div className="external-tunnel-group" aria-busy={state.pending || state.phase === "loading"}>
-      {grouped && hasContent ? (
-        <SectionLabel as="h3" count={count || null}>
-          {machineLabel(machine)}
-        </SectionLabel>
+    <>
+      {hasContent ? (
+        <div className="external-tunnel-group" aria-busy={state.pending || phase === "loading"}>
+          {grouped ? (
+            <SectionLabel as="h3" count={count || null}>
+              {machineLabel(machine)}
+            </SectionLabel>
+          ) : null}
+          <TunnelRows machine={machine} session={session} />
+          <TunnelNotices session={session} issue={!sharing} />
+        </div>
       ) : null}
-      <TunnelRows machine={machine} session={session} />
-      <TunnelNotices session={session} issue={!sharing} />
       {sharing ? (
         <Modal
-          title={t("Share from {p0}", { p0: machineLabel(machine) })}
+          title={t("Create link")}
+          description={
+            computerPicker ? undefined : t("Share from {p0}", { p0: machineLabel(machine) })
+          }
           size="md"
           onClose={onShareClose}
           footer={
@@ -185,7 +193,7 @@ function MachineSharing({
           </div>
         </Modal>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -241,10 +249,12 @@ export function ExternalTunnelsPanel({
           <Button
             variant="primary"
             type="button"
+            aria-haspopup="dialog"
             disabled={!loaded || loading || !ordered.length}
             onClick={share}
           >
-            {t("Share…")}
+            <Plus aria-hidden className="icon-sm" />
+            {t("Create link")}
           </Button>
         }
       >
@@ -262,9 +272,7 @@ export function ExternalTunnelsPanel({
           onReport={report}
         />
       ))}
-      {total === 0 && checking && ordered.length ? (
-        <LoadingText>{t("Checking tunnel access…")}</LoadingText>
-      ) : null}
+      {total === 0 && checking ? <LoadingText>{t("Checking tunnel access…")}</LoadingText> : null}
       {loaded && !loading && !ordered.length ? (
         <EmptyState
           size="inline"
@@ -273,7 +281,13 @@ export function ExternalTunnelsPanel({
         />
       ) : null}
       {total === 0 && settled && loaded && !loading ? (
-        <EmptyState context="panel" kind="empty" title={t("Nothing is shared")} />
+        <EmptyState
+          context="panel"
+          kind="empty"
+          title={t("No shared links")}
+          description={t("Create a link to share a dev server or bycoda Host.")}
+          showDescription
+        />
       ) : null}
     </section>
   );

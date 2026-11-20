@@ -27,6 +27,7 @@ import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TextField } from "../../../shared/ui/TextField";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { Switch } from "../../../shared/ui/Switch";
 import { Badge } from "../../../shared/ui/Badge";
 import { Alert } from "../../../shared/ui/Alert";
@@ -75,7 +76,6 @@ import {
   MoreHorizontal,
   Play,
   Plus,
-  Search,
   Sparkles,
   Trash2,
   Zap,
@@ -385,6 +385,11 @@ function AutomationsContent({
   const hasAutomations = automations.length > 0;
   const showList = !focusMode && ((!paused && loading) || hasAutomations);
   const filtered = !!query.trim() || statusFilter !== "all";
+  const activeFilterCount = (query.trim() ? 1 : 0) + (statusFilter !== "all" ? 1 : 0);
+  const resetFilters = () => {
+    setQuery("");
+    setStatusFilter("all");
+  };
   const [revealStatus, setRevealStatus] = useState<"" | "draft" | "filter" | "unavailable">("");
   const revealAttempt = useRef<number | undefined>(undefined);
   const revealDone = useRef<number | undefined>(undefined);
@@ -518,27 +523,23 @@ function AutomationsContent({
               <Text size="caption" tone="muted" className="automation-count px-1">
                 {t("Automations")} · {automations.length}
               </Text>
-              <Button
+              <FilterTrigger
                 ref={filterButton}
                 type="button"
-                size="sm"
-                variant="ghost"
-                iconOnly
                 label={t("Filter automations")}
-                selected={filtered}
+                activeCount={activeFilterCount}
+                onReset={resetFilters}
                 aria-haspopup="dialog"
                 aria-expanded={filterOpen}
                 onClick={() => setFilterOpen((open) => !open)}
-              >
-                <Search className="icon-sm" strokeWidth={1.75} />
-              </Button>
+              />
               {filterOpen ? (
                 <Popover
                   anchor={filterButton}
-                  role="dialog"
+                  kind="dialog"
                   aria-label={t("Filter automations")}
                   onDismiss={() => setFilterOpen(false)}
-                  width={280}
+                  size="md"
                   className="space-y-2 p-3"
                 >
                   <TextField
@@ -563,13 +564,7 @@ function AutomationsContent({
                     ]}
                     onChange={setStatusFilter}
                   />
-                  <Button
-                    onClick={() => {
-                      setQuery("");
-                      setStatusFilter("all");
-                    }}
-                    disabled={!query && statusFilter === "all"}
-                  >
+                  <Button onClick={resetFilters} disabled={!query && statusFilter === "all"}>
                     {t("Reset")}
                   </Button>
                 </Popover>
@@ -1040,7 +1035,9 @@ function AutomationPicker({
 }
 
 const RUN_GRID =
-  "grid grid-cols-[minmax(0,1.4fr)_9.5rem_6.75rem_3.5rem] items-center gap-x-4 gap-y-1 px-4";
+  "grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 px-4";
+/** Matches the bounded native run read; a full page means older runs may exist beyond it. */
+const RUN_HISTORY_LIMIT = 100;
 
 function RunRow({
   onOpenTask,
@@ -1078,7 +1075,7 @@ function RunRow({
           void onOpenSession(sessionId);
         }}
         variant="item"
-        className={[`${RUN_GRID} min-w-[480px] w-full`, "grid"].filter(Boolean).join(" ")}
+        className={[`${RUN_GRID} w-full`, "grid"].filter(Boolean).join(" ")}
       >
         <Text size="inherit" tone="neutral" className="flex min-w-0 items-center gap-2">
           <TriggerMark kind={trigger.kind} className="icon-sm shrink-0" tone="muted" />
@@ -1099,7 +1096,7 @@ function RunRow({
             <RunStatusPill status={run.status} />
           )}
         </span>
-        <Text size="inherit" tone="muted" className="text-right tabular-nums">
+        <Text size="inherit" tone="muted" className="text-end tabular-nums">
           {formatAutomationRunDuration(run)}
         </Text>
       </Button>
@@ -1482,9 +1479,8 @@ function AutomationEditor({
                   <div className="mt-2">
                     <SearchableSelect
                       hideLabel
-                      label={t("Add Trigger")}
+                      label={t("Add trigger")}
                       value=""
-                      placeholder={t("Add Trigger")}
                       options={triggerOptions}
                       onChange={selectTrigger}
                       disabled={
@@ -1540,12 +1536,9 @@ function AutomationEditor({
                     </SettingsRow>
                     {draft.runInBackground ? null : (
                       <>
-                        <SettingsRow
-                          label={t("Working copy")}
-                          hint="This repo, or a fresh worktree"
-                        >
+                        <SettingsRow label={t("Worktree")} hint="This repo, or a fresh worktree">
                           <SettingsSelect
-                            label={t("Working copy")}
+                            label={t("Worktree")}
                             value={
                               draft.workspaceMode === "existing"
                                 ? "current"
@@ -1666,21 +1659,16 @@ function AutomationEditor({
                 </InlineError>
               ) : null}
               {runs.length > 0 ? (
-                <Surface variant="card" padding="none" className="mt-3 overflow-x-auto">
-                  <Text
-                    as="div"
-                    size="micro"
-                    tone="muted"
-                    className={`${RUN_GRID} min-w-[480px] h-10`}
-                  >
+                <Surface variant="card" padding="none" className="mt-3">
+                  <Text as="div" size="micro" tone="muted" className={`${RUN_GRID} h-10`}>
                     <span>{t("Trigger")}</span>
                     <span>{t("Triggered")}</span>
                     <span>{t("Status")}</span>
-                    <span className="text-right">{t("Duration")}</span>
+                    <span className="text-end">{t("Duration")}</span>
                   </Text>
                   <Divider decorative />
                   <ul {...surfaceAttributes({ dividers: "pane" })}>
-                    {runs.slice(0, 100).map((run) => (
+                    {runs.slice(0, RUN_HISTORY_LIMIT).map((run) => (
                       <RunRow
                         key={run.id}
                         run={run}
@@ -1690,6 +1678,13 @@ function AutomationEditor({
                       />
                     ))}
                   </ul>
+                  {runs.length >= RUN_HISTORY_LIMIT ? (
+                    <Text as="div" size="micro" tone="muted" className="px-4 py-2">
+                      {t("Showing the latest {p0} runs. Older runs may not be shown.", {
+                        p0: RUN_HISTORY_LIMIT,
+                      })}
+                    </Text>
+                  ) : null}
                 </Surface>
               ) : !historyLoading && !historyError ? (
                 <EmptyState description={t("This automation has not run yet.")} />

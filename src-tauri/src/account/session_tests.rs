@@ -130,7 +130,7 @@ fn rejected_refresh_token_is_forgotten() {
 
 #[test]
 fn offline_or_service_errors_keep_the_session() {
-    let (session, store, _) = session(Err(TokenError::Network));
+    let (session, store, _) = session(Err(TokenError::Network("connection or TLS failed")));
     store.set(ACCOUNT, "kept").unwrap();
     assert_eq!(
         session.access_token(0).unwrap_err().kind,

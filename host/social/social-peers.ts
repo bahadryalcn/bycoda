@@ -35,6 +35,10 @@ function endpoint(value: unknown): string {
  * directly between the two hosts; neither renderer nor model ever receives it. */
 export class SocialPeers {
   readonly ready: Promise<void>;
+  // Mirror of social_peer_tokens keyed by token hash. This class is the only writer
+  // of that table, so the mirror is exact: a miss proves no peer token, without SQL.
+  // Device revocation is still checked against the devices table on every hit.
+  private readonly tokens = new Map<string, { peerId: string; deviceHash: string }>();
   constructor(
     private readonly service: SocialService,
     private readonly vault: SocialCredentialStore,
@@ -47,6 +51,13 @@ export class SocialPeers {
         await service.store.db.exec(
           "CREATE TABLE IF NOT EXISTS social_peers (id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS social_peer_tokens (hash TEXT PRIMARY KEY,peer_id TEXT NOT NULL,device_hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS social_peer_identities (id TEXT PRIMARY KEY, value TEXT NOT NULL)",
         );
+        for (const row of await service.store.db
+          .prepare("SELECT hash,peer_id,device_hash FROM social_peer_tokens")
+          .all())
+          this.tokens.set(String(row.hash), {
+            peerId: String(row.peer_id),
+            deviceHash: String(row.device_hash),
+          });
         service.setPeerResolver(
           (id) => this.identity(id),
           async (id) => await this.verify(id),
@@ -87,29 +98,33 @@ export class SocialPeers {
     if (!targetId || targetId === this.service.store.environmentId || targetId.length > 200)
       throw new Error("Invalid social authority.");
     const token = randomBytes(32).toString("base64url");
+    this.dropPeerTokens(targetId);
     await this.service.store.db
       .prepare("DELETE FROM social_peer_tokens WHERE peer_id=?")
       .run(targetId);
     await this.service.store.db
       .prepare("INSERT INTO social_peer_tokens VALUES (?,?,?)")
       .run(hash(token), targetId, deviceHash);
+    this.tokens.set(hash(token), { peerId: targetId, deviceHash });
     await this.vault.set(`social-peer:${targetId}`, { accessToken: token });
     return { token, environmentId: this.service.store.environmentId };
   }
   async authenticated(token: string): Promise<string | undefined> {
     await this.ready;
 
-    const row = await this.service.store.db
-      .prepare("SELECT peer_id,device_hash FROM social_peer_tokens WHERE hash=?")
-      .get(hash(token));
+    const row = this.tokens.get(hash(token));
     if (
       !row ||
       !(await this.service.store.db
         .prepare("SELECT id FROM devices WHERE hash=?")
-        .get(row.device_hash!))
+        .get(row.deviceHash))
     )
       return undefined;
-    return String(row.peer_id);
+    return row.peerId;
+  }
+  private dropPeerTokens(peerId: string) {
+    // Drop before the durable delete so a revoked token fails closed during the write.
+    for (const [key, row] of this.tokens) if (row.peerId === peerId) this.tokens.delete(key);
   }
   private async rpc<T>(peer: Peer, method: string, params: Record<string, unknown>): Promise<T> {
     const credential = await this.vault.get(`social-peer:${peer.environmentId}`);
@@ -185,12 +200,14 @@ export class SocialPeers {
       await this.service.store.project(to);
     }
     await this.save(environmentId, peer);
+    this.dropPeerTokens(environmentId);
     await this.service.store.db
       .prepare("DELETE FROM social_peer_tokens WHERE peer_id=?")
       .run(environmentId);
     await this.service.store.db
       .prepare("INSERT INTO social_peer_tokens VALUES (?,?,?)")
       .run(hash(String(input.token)), environmentId, deviceHash);
+    this.tokens.set(hash(String(input.token)), { peerId: environmentId, deviceHash });
     return { connected: true, environmentId, mapping };
   }
   async useAuthority(input: Record<string, unknown>) {
@@ -218,10 +235,12 @@ export class SocialPeers {
 
     await this.service.suspendLocalExecution();
     const authority = await this.get("authority");
-    if (authority)
+    if (authority) {
+      this.dropPeerTokens(authority.environmentId);
       await this.service.store.db
         .prepare("DELETE FROM social_peer_tokens WHERE peer_id=?")
         .run(authority.environmentId);
+    }
     await this.service.store.db.prepare("DELETE FROM social_peers WHERE id='authority'").run();
     return await this.status();
   }

@@ -203,7 +203,7 @@ test("workspace picker uses spare header width before clipping names", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/app-shell/compact-navigation.html?pickerWidth");
   const header = page.locator("[data-workspace-header]");
-  const picker = header.getByRole("button", { name: "Switch working copy", exact: true });
+  const picker = header.getByRole("button", { name: "Switch worktree", exact: true });
   await expect(picker).toContainText("main", { timeout: 90_000 });
   await page.getByRole("tab", { name: "Explorer", exact: true }).click();
   const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
@@ -239,7 +239,7 @@ test("workspace picker uses spare header width before clipping names", async ({
   }
   await page.getByRole("tab", { name: /^Sessions/ }).click();
   await header.getByRole("button", { name: "Search sessions", exact: true }).click();
-  const search = header.getByPlaceholder("Search conversations...");
+  const search = header.getByPlaceholder("Search sessions…");
   await expect(search).toBeVisible();
   await search.fill("retained query");
   for (const pane of ["wide", "narrow"]) {
@@ -552,33 +552,33 @@ test("workspace header keeps location before history and project controls", asyn
     await expect(header).toBeVisible({ timeout: 90_000 });
     const title = project
       ? header
-          .getByRole("button", { name: "Switch working copy", exact: true })
+          .getByRole("button", { name: "Switch worktree", exact: true })
           .getByText("bycoda", { exact: true })
       : header.getByText("Last sessions", { exact: true });
-    const toggle = page.getByRole("button", { name: "Expand projects", exact: true });
+    const toggle = page.getByRole("button", { name: "Toggle sidebar", exact: true });
     await expect(toggle).toHaveCount(1);
-    await expect(header.getByRole("button", { name: "Expand projects", exact: true })).toHaveCount(
+    await expect(header.getByRole("button", { name: "Toggle sidebar", exact: true })).toHaveCount(
       1,
     );
     await expect(
       page
         .locator("[data-compact-project-rail]")
-        .getByRole("button", { name: "Expand projects", exact: true }),
+        .getByRole("button", { name: "Toggle sidebar", exact: true }),
     ).toHaveCount(0);
     const titleFrame = header.locator("[data-pane-header-heading]");
     const workspacePane = page.locator('[data-side-pane="workspace"]');
     const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
-    const newSession = header.getByRole("button", { name: "New Session", exact: true });
+    const newSession = header.getByRole("button", { name: "New session", exact: true });
     if (project) {
       await page.setViewportSize({ width: 1280, height: 800 });
       await resize.press("Enter");
       await expect(newSession).toBeVisible({ timeout: 5_000 });
-      await expect(newSession.getByText("New Session", { exact: true })).toBeHidden();
+      await expect(newSession.getByText("New session", { exact: true })).toBeHidden();
       await newSession.press("Enter");
       await expect(page.getByLabel("Selected action")).toHaveText("New session");
       await header.getByRole("button", { name: "More actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
-      const search = header.getByPlaceholder("Search conversations...");
+      const search = header.getByPlaceholder("Search sessions…");
       await expect(search).toBeFocused();
       await expect(newSession).toBeInViewport();
       const actionBounds = (await newSession.boundingBox())!;
@@ -655,14 +655,14 @@ test("workspace header keeps location before history and project controls", asyn
             }));
             // A truncated project name must stay identifiable by its accessible name.
             if (titleWidth.content > titleWidth.available)
-              await expect(
-                header.getByRole("button", { name: /Switch working copy/ }),
-              ).toContainText("bycoda");
+              await expect(header.getByRole("button", { name: /Switch worktree/ })).toContainText(
+                "bycoda",
+              );
             else expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
           }
           // A narrow pane folds the session tools into "More actions".
           const sessionTools = constrained ? "More actions" : "Search sessions";
-          for (const name of ["Back", "Forward", "Expand projects", sessionTools]) {
+          for (const name of ["Back", "Forward", "Toggle sidebar", sessionTools]) {
             const control = header.getByRole("button", { name, exact: true });
             await expect(control).toBeInViewport();
             const bounds = (await control.boundingBox())!;
@@ -673,7 +673,7 @@ test("workspace header keeps location before history and project controls", asyn
             previousRight = bounds.x + bounds.width;
           }
           if (project) {
-            const label = newSession.getByText("New Session", { exact: true });
+            const label = newSession.getByText("New session", { exact: true });
             const showLabel = pane === "wide" && width === 1280;
             if (showLabel) await expect(label).toBeVisible();
             else await expect(label).toBeHidden();

@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { asRecord } from "../../../../shared/lib/records";
 import type {
   Attachment,
@@ -24,9 +25,10 @@ import type { HarnessEvent, HarnessFileChange } from "../../core/types";
 import { dollarTokenAt } from "../../../../features/skills/model/slashCommands";
 import { retainToolInspection } from "../../../../features/sessions/model/toolInspection";
 import { codexStructuredResultText } from "./codexStructuredResult";
+import { t } from "../../../../shared/i18n/core";
 import {
-  COMPACTED_TEXT,
-  COMPACTING_TEXT,
+  compactedText,
+  compactingText,
   COMPACTION_STATUS_KEY,
 } from "../../../../features/sessions/model/compactionStatus";
 
@@ -139,8 +141,9 @@ export function buildTurnStartParams(input: {
       : {}),
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
-    ...(input.serviceTier && input.serviceTier !== "default"
-      ? { serviceTier: input.serviceTier }
+    // A missing tier inherits the thread's last speed. Standard clears that override.
+    ...(input.serviceTier
+      ? { serviceTier: input.serviceTier === "default" ? null : input.serviceTier }
       : {}),
   };
 }
@@ -232,7 +235,7 @@ export function codexSkillStatesFromList(
 }
 
 export function isRecoverableThreadResumeError(error: unknown): boolean {
-  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  const message = errorText(error).toLowerCase();
   if (!message.includes("thread")) return false;
   return [
     "not found",
@@ -645,7 +648,7 @@ function mapTurnTerminal(method: string, rec: Record<string, unknown>): MappedCo
   if (status === "failed" && error) {
     events.push({ type: "session.error", message: error });
   } else if (status === "failed") {
-    events.push({ type: "session.error", message: "Codex turn failed." });
+    events.push({ type: "session.error", message: t("Codex turn failed.") });
   }
   return {
     events,
@@ -672,8 +675,8 @@ function mapItemLifecycle(method: string, rec: Record<string, unknown>): MappedC
     return {
       events: [
         completed
-          ? { type: "status", key: COMPACTION_STATUS_KEY, running: false, text: COMPACTED_TEXT }
-          : { type: "status", key: COMPACTION_STATUS_KEY, running: true, text: COMPACTING_TEXT },
+          ? { type: "status", key: COMPACTION_STATUS_KEY, running: false, text: compactedText() }
+          : { type: "status", key: COMPACTION_STATUS_KEY, running: true, text: compactingText() },
       ],
     };
   }

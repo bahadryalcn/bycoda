@@ -1,8 +1,12 @@
 import type { GitObjectStore } from "./git-object-store";
 
-/** Manifests read by one shared-key sweep; above this the sweep is skipped for that commit. */
-export const NATIVE_BUFFER_SWEEP_MANIFESTS = 2_000;
-/** Bytes of manifests and template descriptors read by one sweep. */
+/**
+ * Manifests or template descriptors read per `cat-file` batch. History is unbounded, so the
+ * sweep walks every remaining manifest in batches of this size instead of capping the count;
+ * only the digest sets stay in memory between batches.
+ */
+export const NATIVE_BUFFER_SWEEP_BATCH = 500;
+/** Bytes of manifests and template descriptors read by one batch. */
 export const NATIVE_BUFFER_SWEEP_BYTES = 256 * 1024 * 1024;
 
 const HISTORY = "native-activity/buffer-history";
@@ -38,8 +42,10 @@ const parse = (bytes: Buffer): Record<string, unknown> => {
  * Shared `chunks/` and `templates/` keys that no manifest remaining after `drop` references
  * (formats: native-buffer-reports.ts archive() and native-buffer-archive.ts persist()).
  * v1 manifests list chunks; v2 manifests reference `body`/`catalogBody` templates whose
- * descriptors list chunks. Fails safe: any unreadable, missing or over-budget input skips
- * the sweep (returns []), so nothing a reader may still need is deleted.
+ * descriptors list chunks. Liveness is proven over every remaining manifest (no count cap,
+ * read in bounded batches) before anything is reclaimed. Fails safe: any unreadable, missing
+ * or over-budget input skips the sweep (returns []), so nothing a reader may still need is
+ * deleted.
  */
 export async function unreferencedSharedKeys(
   git: GitObjectStore,
@@ -47,36 +53,37 @@ export async function unreferencedSharedKeys(
   added: Map<string, Buffer>,
   drop: Set<string>,
 ): Promise<string[]> {
-  let budget = NATIVE_BUFFER_SWEEP_BYTES;
-  const load = async (keys: string[]) => {
-    const fromBase = keys.filter((key) => !added.has(key));
-    if (fromBase.length && !base) throw new Skip("missing manifest or template");
-    const infos = await git.batchCheck(fromBase.map((key) => `${base}:${key}`));
-    for (const info of infos) {
-      if (!info || info.type !== "blob") throw new Skip("missing manifest or template");
-      budget -= info.size;
+  /** Parses `keys` in batches and hands each parsed body to `visit`; keeps no bodies around. */
+  const visitAll = async (keys: string[], visit: (value: Record<string, unknown>) => void) => {
+    for (let start = 0; start < keys.length; start += NATIVE_BUFFER_SWEEP_BATCH) {
+      const batch = keys.slice(start, start + NATIVE_BUFFER_SWEEP_BATCH);
+      const fromBase = batch.filter((key) => !added.has(key));
+      if (fromBase.length && !base) throw new Skip("missing manifest or template");
+      const specs = fromBase.map((key) => `${base}:${key}`);
+      const infos = specs.length ? await git.batchCheck(specs) : [];
+      let bytes = 0;
+      for (const info of infos) {
+        if (!info || info.type !== "blob") throw new Skip("missing manifest or template");
+        bytes += info.size;
+      }
+      if (bytes > NATIVE_BUFFER_SWEEP_BYTES) throw new Skip("byte budget exceeded");
+      const bodies = specs.length ? await git.catBatch(specs, bytes) : [];
+      const values = new Map(fromBase.map((key, index) => [key, bodies[index]]));
+      for (const key of batch) {
+        const body = added.get(key) ?? values.get(key);
+        if (!body) throw new Skip("missing manifest or template");
+        visit(parse(body));
+      }
     }
-    if (budget < 0) throw new Skip("byte budget exceeded");
-    const bodies = await git.catBatch(
-      fromBase.map((key) => `${base}:${key}`),
-      infos.reduce((sum, info) => sum + info!.size, 0),
-    );
-    const values = new Map(fromBase.map((key, index) => [key, bodies[index]]));
-    return keys.map((key) => {
-      const bytes = added.get(key) ?? values.get(key);
-      if (!bytes) throw new Skip("missing manifest or template");
-      return parse(bytes);
-    });
   };
   try {
     const listed = base ? await git.listFiles(base, [`${HISTORY}/reports/`]) : [];
     const manifests = [...new Set([...listed, ...added.keys()])].filter(
       (key) => MANIFEST.test(key) && !drop.has(key),
     );
-    if (manifests.length > NATIVE_BUFFER_SWEEP_MANIFESTS) throw new Skip("manifest cap exceeded");
     const chunks = new Set<string>(),
       templates = new Set<string>();
-    for (const manifest of await load(manifests)) {
+    await visitAll(manifests, (manifest) => {
       if (manifest.version === 1) chunkDigests(manifest).forEach((digest) => chunks.add(digest));
       else if (manifest.version === 2) {
         const receipts =
@@ -90,12 +97,11 @@ export async function unreferencedSharedKeys(
           templates.add(receipt.templateDigest);
         }
       } else throw new Skip("unknown manifest version");
-    }
-    const descriptors = await load(
+    });
+    await visitAll(
       [...templates].map((digest) => `${HISTORY}/templates/${digest}.json`),
+      (value) => chunkDigests(value).forEach((digest) => chunks.add(digest)),
     );
-    for (const descriptor of descriptors)
-      chunkDigests(descriptor).forEach((digest) => chunks.add(digest));
     const shared = base
       ? await git.listFiles(base, [`${HISTORY}/chunks/`, `${HISTORY}/templates/`])
       : [];

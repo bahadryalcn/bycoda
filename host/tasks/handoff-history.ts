@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rm, stat, unlink, utimes } from "node:fs/promises";
-import { mkdirSync, readFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
-import { writeFileAtomic, writeFileAtomicSync } from "../storage/atomic-write";
+import { writeFileAtomic } from "../storage/atomic-write";
 import type { HandoffHistory } from "../../src/features/sessions/model/handoffBudget";
 
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -103,6 +102,7 @@ function parseMetadata(text: string, sessionId: string): HandoffHistory & Record
  * Blobs and materializations are content-addressed; `collectUnreferenced` deletes the ones
  * no live manifest names, and `retireSession` drops a deleted session's manifest. */
 export class HandoffHistoryStore {
+  private legacyCache?: { path: string; mtimeMs: number; size: number; history: HandoffHistory };
   constructor(private readonly directory: string) {}
   private base(): string {
     return join(this.directory, "handoff-history");
@@ -124,50 +124,33 @@ export class HandoffHistoryStore {
   private exportPath(manifest: Manifest): string {
     return join(this.base(), "exports", `${digest(JSON.stringify(manifest))}.json`);
   }
-  private blobSync(hash: string): string {
-    return checked(readFileSync(this.blobPath(hash), "utf8"), hash);
-  }
   private async blob(hash: string): Promise<string> {
     return checked(await readFile(this.blobPath(hash), "utf8"), hash);
   }
-  private materialize(manifest: Manifest, sessionId: string): string {
+  /** Builds the full export from the blobs this save already holds in memory. */
+  private async materialize(
+    manifest: Manifest,
+    blobs: Map<string, string>,
+    sessionId: string,
+  ): Promise<string> {
     const path = this.exportPath(manifest);
-    const metadata = parseMetadata(this.blobSync(manifest.metadata), sessionId);
-    const messages = manifest.messages.map((hash) => parseMessage(this.blobSync(hash)));
+    const metadata = parseMetadata(blobs.get(manifest.metadata)!, sessionId);
+    const messages = manifest.messages.map((hash) => parseMessage(blobs.get(hash)!));
     const text = JSON.stringify({ ...metadata, messages });
     if (Buffer.byteLength(text) > MAX_BYTES) throw new Error("Handoff history exceeds 8 MiB");
     try {
-      if (readFileSync(path, "utf8") === text) return path;
+      if ((await readFile(path, "utf8")) === text) return path;
       throw new Error("Corrupt handoff history materialization");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    writeFileAtomicSync(path, text, { mode: 0o600 });
+    await writeFileAtomic(path, text, { mode: 0o600 });
     return path;
   }
-  private result(manifest: Manifest, sessionId: string): { path: string } {
-    // Defer the full JSON file until its path is actually consumed.
-    const materialize = () => this.materialize(manifest, sessionId);
-    return {
-      get path() {
-        return materialize();
-      },
-    };
-  }
-  private putSync(hash: string, text: string): void {
-    try {
-      if (this.blobSync(hash) !== text) throw new Error("Corrupt handoff history blob");
-      // Refresh the mtime so a concurrent sweep keeps a blob this save is about to reference.
-      utimesSync(this.blobPath(hash), new Date(), new Date());
-      return;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-    writeFileAtomicSync(this.blobPath(hash), text, { mode: 0o600 });
-  }
+  /** The file name is the content hash, so an existing blob only needs its mtime refreshed. */
   private async put(hash: string, text: string): Promise<void> {
     try {
-      if ((await this.blob(hash)) !== text) throw new Error("Corrupt handoff history blob");
+      // Refresh the mtime so a concurrent sweep keeps a blob this save is about to reference.
       const now = new Date();
       await utimes(this.blobPath(hash), now, now);
       return;
@@ -176,16 +159,6 @@ export class HandoffHistoryStore {
     }
     await writeFileAtomic(this.blobPath(hash), text, { mode: 0o600 });
   }
-  /** Command preparation runs inside the host's synchronous SQLite transaction. */
-  saveSync(history: HandoffHistory): { path: string } {
-    const { manifest, blobs } = prepare(history);
-    mkdirSync(join(this.base(), "blobs"), { recursive: true });
-    for (const [hash, text] of blobs) this.putSync(hash, text);
-    const manifestText = JSON.stringify(manifest);
-    if (!this.manifestUnchangedSync(history.sessionId, manifestText))
-      writeFileAtomicSync(this.manifestPath(history.sessionId), manifestText, { mode: 0o600 });
-    return this.result(manifest, history.sessionId);
-  }
   async save(history: HandoffHistory): Promise<{ path: string }> {
     const { manifest, blobs } = prepare(history);
     await mkdir(join(this.base(), "blobs"), { recursive: true });
@@ -193,15 +166,7 @@ export class HandoffHistoryStore {
     const manifestText = JSON.stringify(manifest);
     if (!(await this.manifestUnchanged(history.sessionId, manifestText)))
       await writeFileAtomic(this.manifestPath(history.sessionId), manifestText, { mode: 0o600 });
-    return this.result(manifest, history.sessionId);
-  }
-  private manifestUnchangedSync(sessionId: string, text: string): boolean {
-    try {
-      return readFileSync(this.manifestPath(sessionId), "utf8") === text;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw error;
-    }
+    return { path: await this.materialize(manifest, blobs, history.sessionId) };
   }
   private async manifestUnchanged(sessionId: string, text: string): Promise<boolean> {
     try {
@@ -269,6 +234,19 @@ export class HandoffHistoryStore {
     await sweep("exports", exports);
     return { removed };
   }
+  /** Parses a single-file archive once per file version so paging it is not quadratic. */
+  private async legacy(sessionId: string): Promise<HandoffHistory> {
+    const path = this.legacyPath(sessionId);
+    // The stamp is taken before the read, so a file replaced mid-read is parsed again next time.
+    const info = await stat(path);
+    const cached = this.legacyCache;
+    if (cached?.path === path && cached.mtimeMs === info.mtimeMs && cached.size === info.size)
+      return cached.history;
+    const history = JSON.parse(await readFile(path, "utf8")) as HandoffHistory;
+    // shortcut: one cached archive, replaced when another session is paged; add an LRU if two are paged at once.
+    this.legacyCache = { path, mtimeMs: info.mtimeMs, size: info.size, history };
+    return history;
+  }
   async read(
     sessionId: string,
     cursor = 0,
@@ -285,9 +263,7 @@ export class HandoffHistoryStore {
       manifest = parseManifest(await readFile(this.manifestPath(sessionId), "utf8"));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      const legacy = JSON.parse(
-        await readFile(this.legacyPath(sessionId), "utf8"),
-      ) as HandoffHistory;
+      const legacy = await this.legacy(sessionId);
       return {
         messages: legacy.messages.slice(start, end),
         ...(start === 0 && legacy.retainedContext

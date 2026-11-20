@@ -2,6 +2,7 @@ import { type ComponentProps } from "react";
 import { useLocale, useT } from "../i18n";
 import { formatRelativeTime } from "../i18n/format";
 import { dateTimeFormat } from "../lib/intl";
+import { useMinuteNow } from "../hooks/useMinuteNow";
 import { useToday } from "./arc/lib/use-today";
 import { parseTimestamp } from "../lib/time/timestamps";
 import { optionalTextAttributes, type TextRoles, type TextSize, type TextTone } from "./Text";
@@ -17,8 +18,9 @@ export type TimestampFormat =
 /**
  * Semantic `<time>` with a locale-formatted label and tabular digits. `auto` reads "Today 14:05" /
  * "Yesterday 09:30" or a full date and follows midnight, focus and resume through the shared day clock;
- * `relative` ("5 minutes ago"), `time` (clock), `time-seconds` (24-hour log clock), `date` (no year in
- * the current year) and `datetime-seconds` are computed on render. The full date is the title by default.
+ * `relative` ("5 minutes ago") follows the shared minute clock and pauses while the window is hidden;
+ * `time` (clock), `time-seconds` (24-hour log clock), `date` (no year in the current year) and
+ * `datetime-seconds` are computed on render. The full date is the title by default.
  * @group text
  * @use Show a past or scheduled point in time (last run, created, updated) as a date, clock or age.
  * @avoid Event history list: Timeline. Durations or numbers: format with src/shared/i18n helpers. Already formatted date text without time semantics: Text.
@@ -54,6 +56,8 @@ export function Timestamp({
   const t = useT();
   const locale = useLocale();
   const today = useToday();
+  // Only `relative` labels age; other formats leave the shared clock unsubscribed.
+  const minute = useMinuteNow(format === "relative");
   const date = parseTimestamp(value);
   if (!date) return null;
   const yesterday = today ? new Date(today) : undefined;
@@ -90,7 +94,7 @@ export function Timestamp({
         ? `${day} ${clock}`
         : full
       : format === "relative"
-        ? formatRelativeTime(date, { locale, style: relativeStyle })
+        ? formatRelativeTime(date, { locale, style: relativeStyle, now: minute })
         : format === "time"
           ? clock
           : format === "time-seconds"

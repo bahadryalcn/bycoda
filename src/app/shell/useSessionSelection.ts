@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useState } from "react";
+import { isImeComposition } from "../../shared/lib/keyboard";
 import {
   pruneSessionSelection,
   selectAllSessions,
@@ -200,6 +201,8 @@ export function useSessionSelection({
     if (!selecting) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        // An IME candidate or a control that already consumed Escape keeps it.
+        if (isImeComposition(event) || event.defaultPrevented) return;
         dismissFromWindow();
         return;
       }

@@ -60,7 +60,7 @@ export class RecoveryOpenError extends Error {
   ) {
     super(
       acknowledgmentFailed
-        ? "Conversation tabs are open, but the recovery update could not be saved."
+        ? "Session tabs are open, but the recovery update could not be saved."
         : "Some recovery entries could not be opened.",
     );
     this.name = "RecoveryOpenError";

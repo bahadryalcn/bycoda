@@ -1,8 +1,10 @@
 /** Different job: Cursor-anchored terminal overlay preserves terminal input and delegates its frame to Popover. */
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import type { Terminal } from "@xterm/xterm";
+import { observeResize } from "../../../shared/lib/observeResize";
 import { Popover } from "../../../shared/ui/Popover";
 import { localTerminalPrefix } from "../model/localTerminalCompletion";
+import { coalescedFrame } from "../runtime/coalescedFrame";
 
 /** Use the public buffer and rendered screen bounds; never xterm internals. */
 export function TerminalCursorPopover({
@@ -46,20 +48,27 @@ export function TerminalCursorPopover({
       );
     };
     update();
+    // Event bursts are measured once per frame, from the buffer as it is when the frame fires.
+    const frame = coalescedFrame(update);
+    // Only a scroll of the screen or one of its ancestors moves the anchor; other scrollers
+    // anywhere in the app are ignored.
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Node && event.target.contains(screen)) frame.schedule();
+    };
     const subscriptions = [
-      terminal.onRender(update),
-      terminal.onResize(update),
-      terminal.onScroll(update),
+      terminal.onRender(frame.schedule),
+      terminal.onResize(frame.schedule),
+      terminal.onScroll(frame.schedule),
     ];
-    const observer = new ResizeObserver(update);
-    observer.observe(screen);
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+    const stopObserving = observeResize(screen, frame.schedule);
+    window.addEventListener("resize", frame.schedule);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
+      frame.cancel();
       subscriptions.forEach((subscription) => subscription.dispose());
-      observer.disconnect();
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
+      stopObserving();
+      window.removeEventListener("resize", frame.schedule);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [terminal]);
   if (!anchor) return null;

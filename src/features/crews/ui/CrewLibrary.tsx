@@ -24,6 +24,7 @@ import { MoreHorizontal, Plus, Trash2 } from "../../../shared/ui/icons";
 import { Group } from "../../../shared/ui/settings";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import { memberOf } from "../model/crewMembership";
+import { groupNameTaken, groupUpdateParams } from "../model/crewGroups";
 import { parseCrewAgent, type CrewAgent, type SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
 import { useCrewModelPools } from "../model/crewModelPools";
@@ -123,7 +124,7 @@ export function CrewLibrary({
                   onChange={setGroup}
                 />
               ) : null}
-              {activeGroup && data.groupsSupported ? (
+              {activeGroup && data.groupUpdateSupported ? (
                 <Button
                   ref={groupTrigger}
                   variant="ghost"
@@ -516,38 +517,31 @@ function GroupDialog({
   const [name, setName] = useState(group);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [attempted, setAttempted] = useState(false);
   const gate = useRef(false);
   const members = data.agents.filter((agent) => agent.groups?.includes(group));
+  const next = truncateCodeUnits(name.trim(), 40);
+  // Renaming onto an existing group would silently merge the two, so it is refused.
+  const taken = kind === "rename" && groupNameTaken(data.agents, group, next);
   const apply = async () => {
     if (gate.current) return;
-    const next = truncateCodeUnits(name.trim(), 40);
     if (kind === "rename" && (!next || next === group)) return onClose();
+    if (taken) return;
     gate.current = true;
     setPending(true);
     setError("");
     try {
       const refreshed = await state.refetch();
       if (refreshed.error) throw refreshed.error;
-      const currentMembers = (refreshed.data ?? data).agents.filter((agent) =>
-        agent.groups?.includes(group),
+      // Groups are labels on each profile; members are never removed with a group. The Host
+      // moves every member in one transaction, so a failure leaves the group untouched.
+      await state.call(
+        "crews.agent.group.update",
+        groupUpdateParams(
+          (refreshed.data ?? data).agents,
+          group,
+          kind === "rename" ? next : undefined,
+        ),
       );
-      // Groups are labels on each profile; members are never removed with a group.
-      for (const agent of currentMembers) {
-        const groups = [
-          ...new Set(
-            (agent.groups ?? []).flatMap((item) =>
-              item !== group ? [item] : kind === "rename" ? [next] : [],
-            ),
-          ),
-        ];
-        const { updatedAt, ...profile } = agent;
-        setAttempted(true);
-        await state.call("crews.agent.save", {
-          agent: { ...profile, groups: groups.length ? groups : undefined },
-          expectedUpdatedAt: updatedAt,
-        });
-      }
       onDone(kind === "rename" ? next : undefined);
     } catch (reason) {
       setError(presentRemoteError(reason, { explicit: true }));
@@ -573,7 +567,7 @@ function GroupDialog({
             variant={kind === "delete" ? "secondary" : "primary"}
             tone={kind === "delete" ? "danger" : undefined}
             loading={pending}
-            disabled={pending || (kind === "rename" && !name.trim())}
+            disabled={pending || (kind === "rename" && (!name.trim() || taken))}
             onClick={() => void apply()}
           >
             {kind === "rename" ? t("Rename") : t("Delete group")}
@@ -587,9 +581,10 @@ function GroupDialog({
           <TextField
             label={t("Group name")}
             value={name}
-            disabled={pending || attempted}
+            disabled={pending}
             maxLength={40}
             autoFocus
+            error={taken ? t("A group with this name already exists") : undefined}
             onChange={(event) => setName(event.target.value)}
           />
         ) : (

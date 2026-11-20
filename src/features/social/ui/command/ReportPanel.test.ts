@@ -87,6 +87,24 @@ it("blocks a second request while a report is being created", () => {
   expect(onLoad).not.toHaveBeenCalled();
 });
 
+it("shows a suggestion failure alongside available report results", () => {
+  render({
+    report: {
+      period: "day",
+      data: {
+        done: ["Replied to 3 comments"],
+        results: [],
+        suggestions: [],
+        suggestionsError: "AI generation failed or stopped.",
+      },
+    },
+  });
+  expect(element.querySelector('[data-tone="warning"]')?.textContent).toContain(
+    "AI generation failed or stopped.",
+  );
+  expect(element.textContent).toContain("Replied to 3 comments");
+});
+
 it("labels generated period and warns when selection differs", () => {
   render({
     report: { period: "day", data: { done: ["Day results"], results: [], suggestions: [] } },

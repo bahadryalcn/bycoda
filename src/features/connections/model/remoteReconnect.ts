@@ -6,6 +6,7 @@ import {
 import { closeTurnedOffMachine } from "./machineTurnOff";
 import { isMachineFocused, subscribeMachineFocused } from "./machineFocus";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 import {
   knownRemoteMachine,
   recordRemoteCapabilities,
@@ -37,6 +38,7 @@ import {
   isCurrentConnectionAttempt,
   pauseConnectionRecovery,
   recordFeatureHealth,
+  resumeConnectionRecovery,
   setConnectionPhase,
   setConnectionRetry,
   subscribeConnectionInvalidated,
@@ -105,13 +107,18 @@ function reconnectFailureReason(reason: unknown): string {
   return presentRemoteError(reason, { explicit: true });
 }
 
+/** Longest wait for one reconnect's describe. Past it the attempt fails and the
+ * backoff schedules the next one; a late answer to the old request is ignored. */
+export const RECONNECT_DESCRIBE_TIMEOUT_MS = 30_000;
+
 /** One quiet attempt: never prompts. `fresh` skips the desktop's short memory
  * of a just-failed attempt. Attempts for one machine share a single request. */
 function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcome> {
   const running = attempts.get(environmentId);
   if (running && isCurrentConnectionAttempt(environmentId, running.token)) return running.promise;
   const token = beginConnectionAttempt(environmentId);
-  lastAttemptAt.set(environmentId, monotonicNow());
+  const startedAt = monotonicNow();
+  lastAttemptAt.set(environmentId, startedAt);
   setReconnecting(environmentId, true);
   let unregistered = false;
   const run = (async (): Promise<ReconnectOutcome> => {
@@ -134,11 +141,10 @@ function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcom
       return { ok: false, error: t("This machine is not connected on this computer.") };
     }
     try {
-      const host = await remoteRequest<{ capabilities?: unknown }>(
-        machine.id,
-        "environment.describe",
-        {},
-        fresh,
+      const host = await withTimeout(
+        remoteRequest<{ capabilities?: unknown }>(machine.id, "environment.describe", {}, fresh),
+        RECONNECT_DESCRIBE_TIMEOUT_MS,
+        "Machine reconnect",
       );
       if (!isCurrentConnectionAttempt(environmentId, token))
         return { ok: false, error: SUPERSEDED_CONNECTION };
@@ -152,7 +158,8 @@ function attempt(environmentId: string, fresh: boolean): Promise<ReconnectOutcom
     } catch (reason) {
       if (!isCurrentConnectionAttempt(environmentId, token))
         return { ok: false, error: SUPERSEDED_CONNECTION };
-      recordRemoteConnection(environmentId, reason);
+      // `startedAt` lets a deadline expiry count toward "unreachable" like any other timeout.
+      recordRemoteConnection(environmentId, reason, { startedAt });
       recordFeatureHealth(environmentId, "host", false);
       const status = readRemoteConnection(environmentId).status;
       setConnectionPhase(environmentId, needsSignIn(status) ? "waiting" : "failed", status);
@@ -176,7 +183,7 @@ export async function reconnectRemoteMachine(
   environmentId: string,
   options: { signIn?: boolean } = {},
 ): Promise<ReconnectOutcome> {
-  paused.delete(environmentId);
+  clearPause(environmentId);
   setRequested(environmentId, true);
   const pending = attempt(environmentId, true);
   // An attempt that replaced this one keeps the mark until it ends too.
@@ -200,6 +207,17 @@ export function cancelRemoteReconnect(environmentId: string) {
   invalidateConnection(environmentId);
   pauseConnectionRecovery(environmentId);
   paused.add(environmentId);
+  // A pause outlives a bad moment, not the machine's absence: automatic recovery resumes by itself.
+  clearTimeout(pauseTimers.get(environmentId));
+  pauseTimers.set(
+    environmentId,
+    setTimeout(() => {
+      pauseTimers.delete(environmentId);
+      if (!paused.delete(environmentId)) return;
+      resumeConnectionRecovery(environmentId);
+      if (stopRecovery) schedule();
+    }, PAUSE_RESUME_MS),
+  );
   attempts.delete(environmentId);
   setReconnecting(environmentId, false);
   clearTimeout(retries.get(environmentId));
@@ -215,7 +233,16 @@ const retryCounts = new Map<string, number>();
 const connectedAt = new Map<string, number>();
 /** Quiet attempts at a `connection-blocked` machine since it last answered. */
 const blockedRetryCounts = new Map<string, number>();
+/** Machines whose automatic recovery the user stopped, until they reconnect or this wait ends. */
 const paused = new Set<string>();
+const pauseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function clearPause(environmentId: string) {
+  paused.delete(environmentId);
+  clearTimeout(pauseTimers.get(environmentId));
+  pauseTimers.delete(environmentId);
+}
+/** How long "Stop reconnecting" holds automatic recovery off. */
+export const PAUSE_RESUME_MS = 10 * 60_000;
 let hiddenSince: number | undefined;
 /** While the computer reports no network, timers wait for it to return instead
  * of spending attempts on an unchanged condition. A Reconnect press still dials. */
@@ -265,10 +292,13 @@ function schedule() {
     if (pending || attempts.has(environmentId)) continue;
     const count =
       state.status === "connection-blocked" ? blocked : (retryCounts.get(environmentId) ?? 0);
-    setConnectionRetry(environmentId, now + autoRetryDelay(count));
+    // One jittered delay drives both the countdown label and the timer, so the
+    // label always names the moment the attempt actually runs.
+    const delay = autoRetryDelay(count);
+    setConnectionRetry(environmentId, now + delay);
     retries.set(
       environmentId,
-      setTimeout(() => void retry(environmentId, false), autoRetryDelay(count)),
+      setTimeout(() => void retry(environmentId, false), delay),
     );
   }
 }
@@ -359,7 +389,7 @@ export function startRemoteAutoRecovery(): () => void {
     connectedAt.delete(environmentId);
     blockedRetryCounts.delete(environmentId);
     lastAttemptAt.delete(environmentId);
-    paused.delete(environmentId);
+    clearPause(environmentId);
     attempts.delete(environmentId);
     setReconnecting(environmentId, false);
     setConnectionRetry(environmentId);
@@ -400,6 +430,8 @@ export function startRemoteAutoRecovery(): () => void {
     connectedAt.clear();
     blockedRetryCounts.clear();
     paused.clear();
+    pauseTimers.forEach((timer) => clearTimeout(timer));
+    pauseTimers.clear();
     for (const environmentId of attempts.keys()) invalidateConnection(environmentId);
     attempts.clear();
     reconnecting.clear();

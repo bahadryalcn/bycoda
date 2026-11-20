@@ -8,11 +8,19 @@ import { saveProjectGroups, saveProjectGroupAssignments } from "../../projects/m
 import { getGroupLockView, hideGroup, isProjectLocked, setLockPassword } from "../model/groupLock";
 import { GroupLockSettings, type GroupLockControls } from "./GroupLockSettings";
 
-const writes = vi.hoisted(() => ({ relock: vi.fn() }));
-vi.mock("../model/groupLock", async (original) => ({
-  ...(await original<typeof import("../model/groupLock")>()),
-  setRelockOnLaunch: writes.relock,
+const writes = vi.hoisted(() => ({
+  relock: vi.fn(),
+  restore: null as null | ((id: string, temporary: boolean) => Promise<boolean>),
 }));
+vi.mock("../model/groupLock", async (original) => {
+  const model = await original<typeof import("../model/groupLock")>();
+  return {
+    ...model,
+    setRelockOnLaunch: writes.relock,
+    restoreHiddenGroup: (id: string, temporary: boolean) =>
+      writes.restore ? writes.restore(id, temporary) : model.restoreHiddenGroup(id, temporary),
+  };
+});
 
 const controls: GroupLockControls = {
   Group: ({ id, title, description, children }) =>
@@ -33,6 +41,7 @@ beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("crypto", webcrypto);
   writes.relock.mockReset().mockResolvedValue(true);
+  writes.restore = null;
   localStorage.clear();
   window.dispatchEvent(new StorageEvent("storage", { key: null }));
   saveProjectGroups([{ id: "secret", name: "My secret project group", collapsed: false }]);
@@ -83,6 +92,41 @@ it("restores temporarily and permanently through Settings without the rail icon"
   expect(container.querySelector("#hidden-project-groups")?.textContent).toContain(
     "No hidden groups",
   );
+});
+
+it("names every row action by its group and explains why other rows are disabled during a write", async () => {
+  saveProjectGroups([
+    { id: "secret", name: "My secret project group", collapsed: false },
+    { id: "other", name: "Other private group", collapsed: false },
+  ]);
+  saveProjectGroupAssignments({ [pathKey("/private")]: "secret", [pathKey("/other")]: "other" });
+  await hideGroup("other");
+  await act(async () => root.render(createElement(GroupLockSettings, { controls })));
+  const named = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`#hidden-project-groups [aria-label="${label}"]`)!;
+  for (const name of ["My secret project group", "Other private group"]) {
+    expect(named(`Show temporarily: ${name}`)).not.toBeNull();
+    expect(named(`Make visible: ${name}`)).not.toBeNull();
+  }
+  let finish!: (saved: boolean) => void;
+  writes.restore = () =>
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
+  await act(async () => named("Show temporarily: My secret project group").click());
+  for (const label of [
+    "Show temporarily: Other private group",
+    "Make visible: Other private group",
+    "Make visible: My secret project group",
+  ]) {
+    const action = named(label);
+    expect(action.getAttribute("aria-disabled")).toBe("true");
+    expect(action.getAttribute("aria-description")).toBe(
+      "Wait for the current visibility change to finish.",
+    );
+  }
+  await act(async () => finish(true));
+  expect(named("Make visible: Other private group").hasAttribute("aria-disabled")).toBe(false);
 });
 
 it("conceals hidden names everywhere in Settings until the password dialog succeeds", async () => {

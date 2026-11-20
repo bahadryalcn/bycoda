@@ -10,6 +10,7 @@ import type { Sequence } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
 import { DisabledReason } from "../common/DisabledReason";
 import { LabeledSelect } from "./LabeledSelect";
+import { AudienceReportList } from "./AudienceReportList";
 import { addTag, addToList, addToSequence, type BulkResult } from "./audienceBulk";
 import { errorMessage } from "./audienceModel";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
@@ -19,7 +20,7 @@ export type BulkAction = "list" | "tag" | "sequence";
 export type BulkDialogProps = {
   client: SocialClient;
   action: BulkAction;
-  people: readonly Pick<SocialPerson, "id" | "tags">[];
+  people: readonly Pick<SocialPerson, "id" | "name" | "tags">[];
   lists: readonly SocialList[];
   onClose: () => void;
   /** Called after the action ran, so the table can reload. */
@@ -183,13 +184,18 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
             <InlineMessage tone={result.failed.length ? "warning" : "success"}>
               {summaryOf(result)}
             </InlineMessage>
-            {result.failed.length ? (
-              <ul className="audience-list">
-                {result.failed.slice(0, 20).map((item) => (
-                  <li key={item.personId}>{item.reason}</li>
-                ))}
-              </ul>
-            ) : null}
+            <AudienceReportList
+              items={result.failed}
+              renderRow={(item) => {
+                const name = people.find((person) => person.id === item.personId)?.name;
+                return (
+                  <li key={item.personId}>
+                    {name ? t("{p0}: {p1}", { p0: name, p1: item.reason }) : item.reason}
+                  </li>
+                );
+              }}
+              overflowLabel={(p0) => t("And {p0} more could not be updated.", { p0 })}
+            />
           </section>
         ) : null}
       </div>

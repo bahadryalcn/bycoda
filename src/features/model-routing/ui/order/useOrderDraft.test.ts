@@ -145,6 +145,68 @@ it("keeps unsaved edits on optimistic conflict and reloads latest only explicitl
   expect(editor.dirty).toBe(false);
 });
 
+it("treats the Host's machine-coded stale save as a conflict and hides the code", async () => {
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "30" }));
+  vi.mocked(remoteRequest).mockImplementation(async (_machine, method) => {
+    if (method === "modelRouting.save")
+      throw new Error("MODEL_ROUTING_CONFLICT: Model routing changed; reload before saving.");
+    return { state: hostState };
+  });
+  await act(() => editor.save());
+  expect(editor.conflict).toBe(true);
+  expect(editor.error).toBe("Model routing changed; reload before saving.");
+  expect(editor.draft.maxRunMinutes).toBe("30");
+});
+
+it("keeps Save for a routing failure that only mentions version or changed", async () => {
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "30" }));
+  vi.mocked(remoteRequest).mockImplementation(async (_machine, method) => {
+    if (method === "modelRouting.save") throw new Error("Host version changed its schema.");
+    return { state: hostState };
+  });
+  await act(() => editor.save());
+  expect(editor.conflict).toBe(false);
+  expect(editor.error).toBe("Host version changed its schema.");
+  expect(editor.draft.maxRunMinutes).toBe("30");
+  expect(editor.dirty).toBe(true);
+});
+
+it("never reports a failed work-limits save after routing was saved as a conflict", async () => {
+  await mount();
+  await act(() =>
+    editor.change({
+      ...editor.draft,
+      maxRunMinutes: "30",
+      limits: { maxRunningTasks: "3", dailyAgentMinutes: "120" },
+    }),
+  );
+  vi.mocked(saveMachineLimits).mockRejectedValue(
+    new Error("Unsupported Host version: the settings changed."),
+  );
+  await act(() => editor.save());
+  expect(editor.conflict).toBe(false);
+  expect(editor.error).toBe(
+    "Models saved; work limits were not saved. Unsupported Host version: the settings changed.",
+  );
+  expect(editor.draft.limits.maxRunningTasks).toBe("3");
+  expect(editor.dirty).toBe(true);
+});
+
+it("never reports a limits-only failure carrying the legacy conflict text as a conflict", async () => {
+  await mount();
+  await act(() =>
+    editor.change({ ...editor.draft, limits: { maxRunningTasks: "3", dailyAgentMinutes: "120" } }),
+  );
+  vi.mocked(saveMachineLimits).mockRejectedValue(
+    new Error("Model routing changed; reload before saving."),
+  );
+  await act(() => editor.save());
+  expect(editor.conflict).toBe(false);
+  expect(editor.dirty).toBe(true);
+});
+
 it("retains draft if conflict reload fails", async () => {
   await mount();
   await act(() => editor.change({ ...editor.draft, maxRunMinutes: "30" }));
@@ -275,7 +337,7 @@ it("keeps the submitted limit draft locked until Host acknowledgement", async ()
         release = resolve;
       }),
   );
-  let saving!: Promise<void>;
+  let saving!: Promise<unknown>;
   await act(async () => {
     saving = editor.save();
   });

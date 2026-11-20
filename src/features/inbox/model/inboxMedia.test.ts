@@ -216,6 +216,63 @@ describe("fetchInboxMedia", () => {
     expect((await fetchInboxMedia(url(200))).byteLength).toBe(8);
   });
 
+  it("cancels a queued request only after every signalled caller aborts", async () => {
+    let finish!: (buffer: ArrayBuffer) => void;
+    invoke.mockImplementation((command: string) =>
+      command === "cancel_inbox_media"
+        ? Promise.resolve()
+        : new Promise<ArrayBuffer>((resolve) => {
+            finish = resolve;
+          }),
+    );
+    const first = new AbortController();
+    const second = new AbortController();
+    const a = fetchInboxMedia(url(300), first.signal);
+    const b = fetchInboxMedia(url(300), second.signal);
+    const fetches = invoke.mock.calls.filter(([command]) => command === "fetch_inbox_media");
+    expect(fetches).toHaveLength(1);
+    const requestId = (fetches[0]![1] as { requestId: string }).requestId;
+    first.abort();
+    await expect(a).rejects.toMatchObject({ name: "AbortError" });
+    expect(invoke).not.toHaveBeenCalledWith("cancel_inbox_media", expect.anything());
+    second.abort();
+    await expect(b).rejects.toMatchObject({ name: "AbortError" });
+    expect(invoke).toHaveBeenCalledWith("cancel_inbox_media", { requestId });
+    finish(new ArrayBuffer(4));
+  });
+
+  it("never cancels a request an unsignalled caller still needs", async () => {
+    invoke.mockResolvedValue(new ArrayBuffer(4));
+    const controller = new AbortController();
+    const signalled = fetchInboxMedia(url(301), controller.signal);
+    const needed = fetchInboxMedia(url(301));
+    controller.abort();
+    await expect(signalled).rejects.toMatchObject({ name: "AbortError" });
+    expect((await needed).byteLength).toBe(4);
+    expect(invoke).not.toHaveBeenCalledWith("cancel_inbox_media", expect.anything());
+  });
+
+  it("starts a fresh request after a cancelled one and rejects an already aborted signal", async () => {
+    let calls = 0;
+    invoke.mockImplementation((command: string) => {
+      if (command === "cancel_inbox_media") return Promise.resolve();
+      calls += 1;
+      return calls === 1 ? new Promise<ArrayBuffer>(() => {}) : Promise.resolve(new ArrayBuffer(2));
+    });
+    const controller = new AbortController();
+    const cancelled = fetchInboxMedia(url(302), controller.signal);
+    controller.abort();
+    await expect(cancelled).rejects.toMatchObject({ name: "AbortError" });
+    expect((await fetchInboxMedia(url(302))).byteLength).toBe(2);
+    await expect(fetchInboxMedia(url(303), controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(invoke).not.toHaveBeenCalledWith("fetch_inbox_media", {
+      url: url(303),
+      requestId: expect.any(String),
+    });
+  });
+
   it("invalidates only the failed URL and fetches corrected bytes", async () => {
     const { invalidateInboxMedia } = await import("./inboxMedia");
     const bad = new Uint8Array([1]);

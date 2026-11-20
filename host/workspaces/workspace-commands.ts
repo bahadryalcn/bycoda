@@ -44,12 +44,13 @@ import { HostCheckpoints } from "../checkpoints/checkpoints";
 import { fileRevertGeneration } from "../sessions/session-file-revert";
 import { browseHostFolder } from "../browser/browse";
 import { formatWorkspaceText } from "../files/editor-format";
+import { parseTextSliceRequest, readTextSlice, type TextSlice } from "./workspace-text-slice";
 import { listHostClaudeCommands } from "../providers/claude-commands";
 import {
   deleteHostSkill,
   exportHostSkill,
   importHostSkill,
-  listHostSkills,
+  listHostSkillsAsync,
 } from "../skills/skills";
 import { withWorkspaceMutation } from "./workspace-mutations";
 import { inspectConversationPath } from "../conversation/conversation-file-mutations";
@@ -95,6 +96,7 @@ export const WORKSPACE_COMMANDS = [
   "read_folder_entry",
   "read_file_chunk",
   "read_file_preview",
+  "read_text_file_slice",
   "write_text_file",
   "stat_files",
   "create_path",
@@ -418,6 +420,8 @@ export class WorkspaceCommands {
         return await this.readFileChunk(input);
       case "read_file_preview":
         return await this.preview(input.path, input.maxLines, input.startLine);
+      case "read_text_file_slice":
+        return await this.readTextSlice(input);
       case "write_text_file":
         return await this.writeText(input.path, input.content);
       case "stat_files":
@@ -521,7 +525,7 @@ export class WorkspaceCommands {
           input.repository,
         );
       case "git_history":
-        return await this.gitHistory(input.cwd, input.limit, input.all === true);
+        return await this.gitHistory(input.cwd, input.limit, input.all === true, input.skip);
       case "git_commit_files":
         return await this.gitCommitFiles(input.cwd, input.sha);
       case "git_commit_file_diff":
@@ -538,8 +542,14 @@ export class WorkspaceCommands {
         return await this.gitCreateBranch(input.cwd, input.name);
       case "git_worktrees":
         return await this.gitWorktrees(input.cwd);
-      case "git_submodules":
-        return hostGitSubmodules(await this.gitRoot(input.cwd), input.includeRepositories === true);
+      case "git_submodules": {
+        const found = await hostGitSubmodules(
+          await this.gitRoot(input.cwd),
+          input.includeRepositories === true,
+        );
+        // Gitlink-only discovery has no size bound to report, so existing clients keep the plain list.
+        return input.includeRepositories === true ? found : found.paths;
+      }
       case "replace_project": {
         const options = input.options as Record<string, unknown> | undefined;
         const root = await this.gitRoot(options?.cwd);
@@ -554,11 +564,16 @@ export class WorkspaceCommands {
       case "cancel_project_search":
         return await this.cancelProjectSearch(input.cwd, input.searchId, owner);
       case "list_skills":
-        return await this.listSkills(input.cwd, input.disabledPaths, input.provider);
+        return await this.listSkills(
+          input.cwd,
+          input.disabledPaths,
+          input.provider,
+          input.withStatus,
+        );
       case "skill_policy_get":
-        return Promise.resolve().then(() => migrateSkillPolicy(input.legacyDisabledPaths));
+        return migrateSkillPolicy(input.legacyDisabledPaths);
       case "skill_policy_set":
-        return Promise.resolve().then(() => setSkillEnabled(input.name, input.enabled));
+        return setSkillEnabled(input.name, input.enabled);
       case "list_claude_commands":
         return this.existing(input.cwd, true).then(
           async ({ path }) => await listHostClaudeCommands(path),
@@ -712,6 +727,13 @@ export class WorkspaceCommands {
     if (info.size > limit)
       throw new Error(`File is too large to ${tooLarge} (maximum ${limit / 1024 / 1024} MB).`);
     return readFile(path);
+  }
+
+  /** One bounded page of a file too large to edit, for the paged read-only view. */
+  private async readTextSlice(input: Record<string, unknown>): Promise<TextSlice> {
+    const request = parseTextSliceRequest(input.offset, input.expected);
+    const { path } = await this.existing(input.path);
+    return await readTextSlice(path, request.offset, request.expected);
   }
 
   private async readText(input: unknown): Promise<string> {
@@ -1115,9 +1137,16 @@ export class WorkspaceCommands {
 
   /** This machine's skills for a project folder here; the desktop drops
    * the ones it hides, as it does for its own. */
-  private async listSkills(input: unknown, disabled: unknown, provider?: unknown) {
+  private async listSkills(
+    input: unknown,
+    disabled: unknown,
+    provider?: unknown,
+    withStatus?: unknown,
+  ) {
     if (provider !== undefined && (typeof provider !== "string" || provider.length > 64))
       throw new Error("Invalid skill provider.");
+    if (withStatus !== undefined && typeof withStatus !== "boolean")
+      throw new Error("Invalid skill list option.");
     if (
       disabled != null &&
       (!Array.isArray(disabled) ||
@@ -1127,10 +1156,16 @@ export class WorkspaceCommands {
       throw new Error("Invalid disabled skill paths.");
     const disabledPaths = (disabled ?? []) as string[];
     // An empty `cwd` is "no project": this machine's personal skills only.
-    if (input === "")
-      return listHostSkills(null, undefined, disabledPaths, provider as string | undefined);
-    const { path } = await this.existing(input, true);
-    return listHostSkills(path, undefined, disabledPaths, provider as string | undefined);
+    const project = input === "" ? null : (await this.existing(input, true)).path;
+    const listing = await listHostSkillsAsync(
+      project,
+      undefined,
+      disabledPaths,
+      provider as string | undefined,
+    );
+    // Older callers expect a bare array and cannot say the list is incomplete;
+    // only a caller that asks for the status receives the truncation flag.
+    return withStatus ? listing : listing.skills;
   }
 
   /** A listed skill's files. The skill may live in the home folder, outside
@@ -1324,8 +1359,9 @@ export class WorkspaceCommands {
     return resolved.trim();
   }
 
-  private async gitHistory(cwd: unknown, limit: unknown, all: boolean) {
-    const count = Number.isSafeInteger(limit) ? Math.min(500, Math.max(1, Number(limit))) : 200;
+  private async gitHistory(cwd: unknown, limit: unknown, all: boolean, skip?: unknown) {
+    const count = Number.isSafeInteger(limit) ? Math.min(5000, Math.max(1, Number(limit))) : 200;
+    const offset = Number.isSafeInteger(skip) ? Math.max(0, Number(skip)) : 0;
     const [head, upstream, index, refs] = await Promise.all([
       this.gitCommand(cwd, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
       this.gitCommand(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]).catch(() => ""),
@@ -1355,6 +1391,7 @@ export class WorkspaceCommands {
       "log",
       "--topo-order",
       `--max-count=${count}`,
+      ...(offset > 0 ? [`--skip=${offset}`] : []),
       HISTORY_FORMAT,
       ...tips,
     ]);

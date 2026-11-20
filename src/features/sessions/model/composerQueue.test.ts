@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDefaultQueueChord, queueShortcutApplies } from "./composerQueue";
+import { isDefaultQueueChord, queueChordConsumesKey, queueShortcutApplies } from "./composerQueue";
 
 const running = {
   busy: true,
@@ -20,6 +20,30 @@ describe("isDefaultQueueChord", () => {
     expect(isDefaultQueueChord({ ...key, shiftKey: false })).toBe(false);
     expect(isDefaultQueueChord({ ...key, ctrlKey: true })).toBe(false);
     expect(isDefaultQueueChord({ ...key, key: "Enter" })).toBe(false);
+  });
+});
+
+describe("queueChordConsumesKey", () => {
+  it("lets Shift+Tab move focus back when nothing can be queued", () => {
+    expect(queueChordConsumesKey(key, queueShortcutApplies({ ...running, busy: false }))).toBe(
+      false,
+    );
+    expect(queueChordConsumesKey(key, queueShortcutApplies({ ...running, text: "" }))).toBe(false);
+    expect(queueChordConsumesKey(key, queueShortcutApplies({ ...running, draftMode: true }))).toBe(
+      false,
+    );
+    expect(queueChordConsumesKey(key, queueShortcutApplies({ ...running, disabled: true }))).toBe(
+      false,
+    );
+  });
+
+  it("takes Shift+Tab only while it queues a message", () => {
+    expect(queueChordConsumesKey(key, queueShortcutApplies(running))).toBe(true);
+  });
+
+  it("always consumes a rebound non-Tab chord so it cannot fall through to send", () => {
+    expect(queueChordConsumesKey({ key: "Enter" }, false)).toBe(true);
+    expect(queueChordConsumesKey({ key: "Enter" }, true)).toBe(true);
   });
 });
 

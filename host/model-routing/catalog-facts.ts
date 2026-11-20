@@ -109,6 +109,8 @@ export function createCatalogFacts(options: Options) {
   let inflight: Promise<ModelRoutingCatalogFactsResult> | undefined;
   let failedAt = 0;
   let failure: string | undefined;
+  /** Disk is read and validated once; refresh replaces this with the cache it just wrote. */
+  let cached: Promise<Cache | undefined> | undefined;
 
   async function load(): Promise<Cache | undefined> {
     try {
@@ -118,6 +120,8 @@ export function createCatalogFacts(options: Options) {
       return undefined;
     }
   }
+
+  const current = () => (cached ??= load());
 
   const answer = (cache: Cache | undefined, error?: string): ModelRoutingCatalogFactsResult => ({
     source: "openrouter",
@@ -135,8 +139,9 @@ export function createCatalogFacts(options: Options) {
       if (!response.ok) throw new Error(`Catalog request failed (${response.status})`);
       const models = parseOpenRouterModels(JSON.parse(await readBounded(response)));
       if (!models.length) throw new Error("Catalog listed no priced models");
-      const fresh: Cache = { version: 1, fetchedAt: now(), models };
+      const fresh = CacheSchema.parse({ version: 1, fetchedAt: now(), models });
       failure = undefined;
+      cached = Promise.resolve(fresh);
       // A cache that cannot be written only costs the next refresh; the answer is still good.
       await writeFileAtomic(file, `${JSON.stringify(fresh)}\n`).catch(() => undefined);
       return answer(fresh);
@@ -150,7 +155,7 @@ export function createCatalogFacts(options: Options) {
   return {
     /** Fresh cache, else one deduplicated refresh; failure serves the last good list. */
     async read(): Promise<ModelRoutingCatalogFactsResult> {
-      const cache = await load();
+      const cache = await current();
       if (cache && now() - cache.fetchedAt < FRESH_MS) return answer(cache);
       if (failure && now() - failedAt < RETRY_MS) return answer(cache, failure);
       inflight ??= refresh(cache).finally(() => {

@@ -42,7 +42,15 @@ export function resolveInboxMediaUrl(value: string, base?: string): string | nul
 // instead of every image and video ever shown. Requests in flight are shared.
 const MEDIA_CACHE_BYTES = 32 * 1024 * 1024;
 const mediaCache = new Map<string, Uint8Array<ArrayBuffer>>();
-const mediaRequests = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
+type MediaRequest = {
+  promise: Promise<Uint8Array<ArrayBuffer>>;
+  requestId: string;
+  /** Callers that passed a signal and have not aborted yet. */
+  consumers: number;
+  /** A caller without a signal needs the bytes, so the request is never cancelled. */
+  pinned: boolean;
+};
+const mediaRequests = new Map<string, MediaRequest>();
 let mediaCacheBytes = 0;
 
 /** Discard one failed preview without disturbing other cached or in-flight media. */
@@ -97,27 +105,81 @@ export function sniffInboxMedia(bytes: Uint8Array): InboxMediaType | null {
   return sniffVideoType(bytes);
 }
 
-export function fetchInboxMedia(url: string): Promise<Uint8Array<ArrayBuffer>> {
+/**
+ * Fetch media through the native route, which queues requests past its running
+ * limit. Pass `signal` when the caller can go away: once every signalled caller
+ * of a request has aborted, a request still waiting in the native queue is
+ * cancelled; a request already running finishes and fills the cache.
+ */
+export function fetchInboxMedia(
+  url: string,
+  signal?: AbortSignal,
+): Promise<Uint8Array<ArrayBuffer>> {
   const key = url.trim();
+  if (signal?.aborted) return Promise.reject(abortError());
   const cached = mediaCache.get(key);
   if (cached) {
     mediaCache.delete(key);
     mediaCache.set(key, cached);
     return Promise.resolve(cached);
   }
-  const inFlight = mediaRequests.get(key);
-  if (inFlight) return inFlight;
-  const pending = invoke<ArrayBuffer>("fetch_inbox_media", { url: key }).then((buffer) => {
-    const bytes = new Uint8Array(buffer);
-    rememberMedia(key, bytes);
-    return bytes;
-  });
-  mediaRequests.set(key, pending);
+  const flight = mediaRequests.get(key) ?? startMediaRequest(key);
+  if (!signal) {
+    flight.pinned = true;
+    return flight.promise;
+  }
+  return joinMediaRequest(key, flight, signal);
+}
+
+function startMediaRequest(key: string): MediaRequest {
+  const requestId = crypto.randomUUID();
+  const promise = invoke<ArrayBuffer>("fetch_inbox_media", { url: key, requestId }).then(
+    (buffer) => {
+      const bytes = new Uint8Array(buffer);
+      rememberMedia(key, bytes);
+      return bytes;
+    },
+  );
+  const flight: MediaRequest = { promise, requestId, consumers: 0, pinned: false };
+  mediaRequests.set(key, flight);
   const settle = () => {
-    mediaRequests.delete(key);
+    if (mediaRequests.get(key) === flight) mediaRequests.delete(key);
   };
-  pending.then(settle, settle);
-  return pending;
+  promise.then(settle, settle);
+  return flight;
+}
+
+function joinMediaRequest(
+  key: string,
+  flight: MediaRequest,
+  signal: AbortSignal,
+): Promise<Uint8Array<ArrayBuffer>> {
+  flight.consumers += 1;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      flight.consumers -= 1;
+      reject(abortError());
+      if (flight.consumers > 0 || flight.pinned || mediaRequests.get(key) !== flight) return;
+      // Nobody wants these bytes: leave the native queue and let a later caller start fresh.
+      mediaRequests.delete(key);
+      invoke("cancel_inbox_media", { requestId: flight.requestId }).catch(() => {});
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    flight.promise.then(
+      (bytes) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(bytes);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+function abortError(): DOMException {
+  return new DOMException("Media request cancelled", "AbortError");
 }
 
 function rememberMedia(key: string, bytes: Uint8Array<ArrayBuffer>) {

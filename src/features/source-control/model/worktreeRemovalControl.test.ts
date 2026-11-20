@@ -94,7 +94,7 @@ it("requires native owner approval and uses canonical retained-session lifecycle
 it("rejects source worktree, unsupported force, wrong receipt scope and invalid source", async () => {
   const f = fixture();
   await expect(f.handle(f.context, "worktrees.removal.review", { path: "/repo" })).rejects.toThrow(
-    "base working copy",
+    "base worktree",
   );
   await expect(
     f.handle(f.context, "worktrees.removal.review", { path: "/trees/task", force: true }),

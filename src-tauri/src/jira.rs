@@ -10,7 +10,7 @@ mod mention_search;
 pub(crate) mod room_inbox;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -342,17 +342,59 @@ fn jira_authorization(config: &JiraConfig) -> String {
     crate::integrations::http::basic_authorization(config.email.trim(), config.token.trim())
 }
 
+/// Shown when an overall read budget runs out, so a partial list is never mistaken for a full one.
+const READ_TIMEOUT_MESSAGE: &str = "Jira took too long to answer. Try again.";
+
 #[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
 fn jira_get(config: &JiraConfig, path: &str) -> Result<Value, String> {
-    let agent = crate::integrations::http::agent(HTTP_TIMEOUT, None);
-    let result = retry_transport(true, || {
+    jira_get_with(&jira_agent(), config, path, None)
+}
+
+/// One agent per command: pages share its connection pool, and the credential still travels
+/// per request (`jira_get_with` sets the header), never in the agent.
+fn jira_agent() -> ureq::Agent {
+    crate::integrations::http::agent(HTTP_TIMEOUT, None)
+}
+
+/// `deadline` bounds the whole read: each attempt's timeout shrinks to what is left and no
+/// retry starts once its back-off would cross it.
+#[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
+fn jira_get_with(
+    agent: &ureq::Agent,
+    config: &JiraConfig,
+    path: &str,
+    deadline: Option<Instant>,
+) -> Result<Value, String> {
+    let result = retry_transport(true, deadline, || {
         agent
             .get(&format!("{}{path}", config.site))
+            .timeout(attempt_timeout(deadline))
             .set("Authorization", &jira_authorization(config))
             .set("Accept", "application/json")
             .call()
     });
+    if matches!(result, Err(ureq::Error::Transport(_))) && deadline.is_some_and(expired) {
+        return Err(READ_TIMEOUT_MESSAGE.into());
+    }
     read_jira_response(result)
+}
+
+fn expired(deadline: Instant) -> bool {
+    Instant::now() >= deadline
+}
+
+fn attempt_timeout(deadline: Option<Instant>) -> Duration {
+    deadline.map_or(HTTP_TIMEOUT, |deadline| {
+        // Never zero: some timeout implementations read a zero duration as "no timeout".
+        HTTP_TIMEOUT
+            .min(deadline.saturating_duration_since(Instant::now()))
+            .max(Duration::from_millis(1))
+    })
+}
+
+/// A retry only starts when its back-off still ends before the overall deadline.
+fn retry_fits(deadline: Option<Instant>, delay: Duration) -> bool {
+    deadline.is_none_or(|deadline| Instant::now() + delay < deadline)
 }
 
 #[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
@@ -360,7 +402,7 @@ fn jira_post(config: &JiraConfig, path: &str, body: &Value) -> Result<Value, Str
     let agent = crate::integrations::http::agent(HTTP_TIMEOUT, None);
     let payload = serde_json::to_string(body).map_err(|error| error.to_string())?;
     // The issue search is a read; every other POST (comments) may have been applied.
-    let result = retry_transport(path.ends_with("/search/jql"), || {
+    let result = retry_transport(path.ends_with("/search/jql"), None, || {
         agent
             .post(&format!("{}{path}", config.site))
             .set("Authorization", &jira_authorization(config))
@@ -386,13 +428,17 @@ fn transport_retryable(kind: ureq::ErrorKind, idempotent: bool) -> bool {
 #[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
 fn retry_transport(
     idempotent: bool,
+    deadline: Option<Instant>,
     attempt: impl Fn() -> Result<ureq::Response, ureq::Error>,
 ) -> Result<ureq::Response, ureq::Error> {
     let mut result = attempt();
     for delay_ms in [400u64, 1200] {
+        let delay = Duration::from_millis(delay_ms);
         match &result {
-            Err(ureq::Error::Transport(error)) if transport_retryable(error.kind(), idempotent) => {
-                std::thread::sleep(Duration::from_millis(delay_ms));
+            Err(ureq::Error::Transport(error))
+                if transport_retryable(error.kind(), idempotent) && retry_fits(deadline, delay) =>
+            {
+                std::thread::sleep(delay);
                 result = attempt();
             }
             _ => break,

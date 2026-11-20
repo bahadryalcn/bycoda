@@ -141,7 +141,18 @@ export function writeToolsDraftPart<K extends keyof ToolsDraftTransfer>(
   value: ToolsDraftTransfer[K],
 ): void {
   const id = key(scope);
-  snapshots.set(id, { ...snapshots.get(id), [domain]: structuredClone(value) });
+  snapshots.set(id, { ...snapshots.get(id), [domain]: cloneDraftPart(domain, value) });
+}
+// The logs buffer is replaced immutably (mergeRuntimeLogs, clearRuntimeLogs), so the store keeps it
+// by reference instead of deep-cloning up to MAX_RETAINED_RUNTIME_LOGS entries on every write.
+// Reads and restores still clone the whole snapshot, so no other window shares the buffer.
+function cloneDraftPart<K extends keyof ToolsDraftTransfer>(
+  domain: K,
+  value: ToolsDraftTransfer[K],
+): ToolsDraftTransfer[K] {
+  if (domain !== "logs" || !value) return structuredClone(value);
+  const { buffer, ...rest } = value as NonNullable<ToolsDraftTransfer["logs"]>;
+  return { ...structuredClone(rest), buffer } as ToolsDraftTransfer[K];
 }
 // Shallow update of primitive fields: high-frequency state (scroll) must not clone large parts.
 export function patchToolsDraftPart<K extends keyof ToolsDraftTransfer>(
@@ -173,4 +184,11 @@ export function subscribeToolsDraftTransfer(
     group.delete(listener);
     if (!group.size) listeners.delete(id);
   };
+}
+export function retireToolsDraftsForSession(sessionId: string): void {
+  for (const id of snapshots.keys()) {
+    const [, ownerSession] = JSON.parse(id) as [string, string, string];
+    if (ownerSession !== sessionId || pending.get(id)?.size || listeners.get(id)?.size) continue;
+    snapshots.delete(id);
+  }
 }

@@ -285,39 +285,25 @@ pub(crate) fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
         [], |row| row.get(0),
     )?;
     if !has_claim_owner {
+        // Backfill claims from pre-ledger run history once. The column is added last,
+        // so a crash in between repeats this idempotent pass on the next open instead
+        // of skipping it. Filtering in SQL keeps run blobs out of Rust, and the
+        // json_valid guard keeps invalid legacy rows from blocking the store.
+        conn.execute(
+            "INSERT OR IGNORE INTO automation_event_claims
+             (automation_id, event_key, created_at)
+             SELECT automation_id, event_key, created_at FROM (
+               SELECT automation_id, created_at,
+                      CASE WHEN json_valid(run_json)
+                           THEN json_extract(run_json, '$.eventKey') END AS event_key
+               FROM automation_runs
+             ) WHERE typeof(event_key) = 'text'",
+            [],
+        )?;
         // Unknown legacy ownership must never acquire retry authority.
         conn.execute(
             "ALTER TABLE automation_event_claims ADD COLUMN claim_owner TEXT",
             [],
-        )?;
-    }
-
-    // Backfill claims from pre-ledger run history. Invalid legacy rows should not
-    // prevent the session store from opening.
-    let mut statement =
-        conn.prepare("SELECT automation_id, created_at, run_json FROM automation_runs")?;
-    let rows = statement.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, String>(2)?,
-        ))
-    })?;
-    let mut claims = Vec::new();
-    for row in rows {
-        let (automation_id, created_at, raw) = row?;
-        if let Ok(run) = serde_json::from_str::<AutomationRun>(&raw) {
-            if let Some(event_key) = run.event_key {
-                claims.push((automation_id, event_key, created_at));
-            }
-        }
-    }
-    drop(statement);
-    for (automation_id, event_key, created_at) in claims {
-        conn.execute(
-            "INSERT OR IGNORE INTO automation_event_claims
-             (automation_id, event_key, created_at) VALUES (?1, ?2, ?3)",
-            params![automation_id, event_key, created_at],
         )?;
     }
     Ok(())
@@ -682,11 +668,29 @@ fn has_event_trigger(automation: &Automation, kind: &str, event: &str) -> bool {
 }
 
 fn list_runs(conn: &Connection, automation_id: &str) -> Result<Vec<AutomationRun>, String> {
+    read_runs(conn, automation_id, "run_json")
+}
+
+/// Run history for display: the launch prompt is dropped in SQL so large prompts are
+/// never copied out of SQLite.
+fn list_run_history(conn: &Connection, automation_id: &str) -> Result<Vec<AutomationRun>, String> {
+    read_runs(
+        conn,
+        automation_id,
+        "CASE WHEN json_valid(run_json) THEN json_remove(run_json, '$.prompt') ELSE run_json END",
+    )
+}
+
+fn read_runs(
+    conn: &Connection,
+    automation_id: &str,
+    column: &str,
+) -> Result<Vec<AutomationRun>, String> {
     let mut statement = conn
-        .prepare(
-            "SELECT run_json FROM automation_runs WHERE automation_id = ?1
-             ORDER BY created_at DESC LIMIT 100",
-        )
+        .prepare(&format!(
+            "SELECT {column} FROM automation_runs WHERE automation_id = ?1
+             ORDER BY created_at DESC LIMIT {MAX_RUNS_PER_AUTOMATION}"
+        ))
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([automation_id], |row| row.get::<_, String>(0))
@@ -740,36 +744,23 @@ fn claim_event_key(
 }
 
 fn trim_history(conn: &Connection, automation_id: &str) -> Result<(), String> {
-    let mut statement = conn
-        .prepare(
-            "SELECT id, run_json FROM automation_runs WHERE automation_id = ?1
-             ORDER BY created_at DESC, id DESC",
-        )
-        .map_err(|error| error.to_string())?;
-    let rows = statement
-        .query_map([automation_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
-        .map_err(|error| error.to_string())?;
-    let mut delete_ids = Vec::new();
-    for (index, row) in rows.enumerate() {
-        let (id, raw) = row.map_err(|error| error.to_string())?;
-        if index < MAX_RUNS_PER_AUTOMATION as usize {
-            continue;
-        }
-        let run: AutomationRun = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
-        if matches!(
-            run.status.as_str(),
-            "succeeded" | "failed" | "skipped" | "cancelled"
-        ) {
-            delete_ids.push(id);
-        }
-    }
-    drop(statement);
-    for id in delete_ids {
-        conn.execute("DELETE FROM automation_runs WHERE id = ?1", [id])
-            .map_err(|error| error.to_string())?;
-    }
+    // Only the rows beyond the newest page are touched, and only their status is read,
+    // in SQL. A row whose JSON is invalid or has no status can never be recovered or
+    // displayed, so it is removed with the terminal runs instead of failing the write
+    // transaction of every later claim and update.
+    // shortcut: a row that is valid JSON with a status but misses other required run
+    // fields is kept, upgrade if such rows ever appear.
+    conn.execute(
+        "DELETE FROM automation_runs WHERE id IN (
+           SELECT id FROM automation_runs WHERE automation_id = ?1
+           ORDER BY created_at DESC, id DESC LIMIT -1 OFFSET ?2
+         ) AND COALESCE(
+           CASE WHEN json_valid(run_json) THEN json_extract(run_json, '$.status') END,
+           'failed'
+         ) IN ('succeeded', 'failed', 'skipped', 'cancelled')",
+        params![automation_id, MAX_RUNS_PER_AUTOMATION],
+    )
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -936,13 +927,9 @@ pub fn automation_runs_list(
 ) -> Result<Vec<AutomationRun>, String> {
     validate_id(&automation_id, "automation")?;
     store.with_read_conn(|conn| {
-        let mut runs = list_runs(conn, &automation_id)?;
         // Launch prompts can be large and are only needed by restart recovery, not
         // by the run-history surface.
-        for run in &mut runs {
-            run.prompt = None;
-        }
-        Ok(runs)
+        list_run_history(conn, &automation_id)
     })
 }
 

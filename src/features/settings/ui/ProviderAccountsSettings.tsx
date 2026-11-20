@@ -18,6 +18,7 @@ import { HARNESS_TITLE, type HarnessId } from "../../sessions";
 import {
   newProviderAccount,
   providerAccounts,
+  providerAccountsStorageRevision,
   PROVIDER_ACCOUNT_PROVIDERS,
   removeProviderAccount,
   editProviderAccount,
@@ -30,7 +31,7 @@ import {
   supportsProviderAccounts,
   isSharedCliAccountProvider,
   SHARED_CLI_ACCOUNT_PROVIDERS,
-} from "../../providers/model/providerAccounts";
+} from "../../providers/public/providerAccounts";
 import {
   removeProviderAccountCredentials,
   signOutProviderAccountCredentials,
@@ -39,6 +40,12 @@ import {
   assertUniqueProviderAccount,
   registerProviderAccount,
 } from "../../providers/model/providerAccountRegistration";
+import {
+  ProviderAccountError,
+  providerAccountErrorText,
+  safeProviderAccountDetail,
+  type ProviderAccountAction,
+} from "../../providers/public/providerAccountError";
 import {
   duplicateAccountSignIns,
   identityKey,
@@ -54,7 +61,6 @@ import {
   accountStatus,
   usageRenewalPending,
   accountUsageKey,
-  needsProviderLogin,
   providerAccountSignedOut,
   useProviderAccountUsage,
 } from "../../providers/model/accountUsage";
@@ -80,10 +86,6 @@ const SETTINGS_HARNESSES: readonly HarnessId[] = [
   ...SHARED_CLI_ACCOUNT_PROVIDERS,
 ];
 
-/** Serialized account list: changes whenever any provider's accounts change in this or another window. */
-const providerAccountsSnapshot = () =>
-  JSON.stringify(PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts));
-
 export function ProviderAccountsSettings({
   harness,
   onBusyChange,
@@ -96,15 +98,19 @@ export function ProviderAccountsSettings({
   useLocale();
   const accountsRevision = useSyncExternalStore(
     subscribeProviderAccounts,
-    providerAccountsSnapshot,
-    providerAccountsSnapshot,
+    providerAccountsStorageRevision,
+    providerAccountsStorageRevision,
   );
   // Local refreshes cover sign-in and removal results the account list itself does not show.
   const [refreshes, setVersion] = useState(0);
   const version = `${refreshes}|${accountsRevision}`;
   const [editor, setEditorState] = useState<AccountEditor | null>(null);
   const [working, setWorking] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // The failure is kept as an error plus its action and presented at render, so a language
+  // change retranslates an open banner and the error's code is never flattened to text early.
+  const [error, setError] = useState<{ error: unknown; action: ProviderAccountAction } | null>(
+    null,
+  );
   const [confirmRemove, setConfirmRemove] = useState<ProviderAccount | null>(null);
   // The overflow menu and the colour popover share the row's menu button as their anchor.
   const [menu, setMenu] = useState<{
@@ -198,7 +204,7 @@ export function ProviderAccountsSettings({
     try {
       if (editor.accountId) {
         if (!editProviderAccount(provider, editor.accountId, editor))
-          throw new Error("Account no longer exists");
+          throw new ProviderAccountError("accountMissing", "Account no longer exists");
       } else {
         const account = pendingAccount.current ?? newProviderAccount(provider, editor.label);
         account.label = editor.label;
@@ -214,7 +220,7 @@ export function ProviderAccountsSettings({
         pendingAccount.current = null;
         setEditor(null);
       } else {
-        setError(caught instanceof Error ? caught.message : "Could not save this account");
+        setError({ error: caught, action: "save" });
       }
     } finally {
       registrationAbort.current = null;
@@ -240,13 +246,15 @@ export function ProviderAccountsSettings({
       clearCachedRateLimits(account.provider, account.id);
       if (account.provider === "grok") void refreshStandaloneCatalog("grok");
       const limits = await loadRateLimits(account.provider, account.id, true);
-      if (needsProviderLogin(limits)) {
-        throw new Error(
+      if (providerAccountSignedOut(limits)) {
+        throw new ProviderAccountError(
+          "signInUnverified",
           limits.error || `${HARNESS_TITLE[account.provider]} sign-in could not be verified`,
+          { harness: account.provider, detail: safeProviderAccountDetail(limits.error) },
         );
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not complete sign-in");
+      setError({ error: caught, action: "signIn" });
     } finally {
       setVersion((value) => value + 1);
       finish();
@@ -281,7 +289,7 @@ export function ProviderAccountsSettings({
         setEditor(null);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not remove this account");
+      setError({ error: caught, action: "remove" });
     } finally {
       finish();
     }
@@ -292,7 +300,7 @@ export function ProviderAccountsSettings({
     try {
       setDefaultProviderAccount(account.provider, account.id);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not set default account");
+      setError({ error: caught, action: "makeDefault" });
     } finally {
       finish();
     }
@@ -305,7 +313,7 @@ export function ProviderAccountsSettings({
       onStandaloneSignIn?.(provider);
       await refreshStandaloneCatalog(provider);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not complete sign-in");
+      setError({ error: caught, action: "signIn" });
     } finally {
       finish();
     }
@@ -382,7 +390,13 @@ export function ProviderAccountsSettings({
               </div>
             ) : undefined
           }
-          feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
+          feedback={
+            error ? (
+              <SettingsFeedback state="error">
+                {providerAccountErrorText(error.error, error.action)}
+              </SettingsFeedback>
+            ) : undefined
+          }
         >
           {PROVIDER_ACCOUNT_PROVIDERS.map((provider) => {
             const accounts = providerAccounts(provider);
@@ -528,9 +542,12 @@ export function ProviderAccountsSettings({
                             className="provider-account-note"
                             role="note"
                           >
-                            {t("Same sign-in as ")}
-                            {duplicateOf.label}
-                            {t(". Remove this account if you do not need it separately.")}
+                            {t(
+                              "Same sign-in as {p0}. Remove this account if you do not need it separately.",
+                              {
+                                p0: duplicateOf.label,
+                              },
+                            )}
                           </Text>
                         ) : null}
                       </div>
@@ -540,7 +557,7 @@ export function ProviderAccountsSettings({
                             {t("Signed out")}
                           </Badge>
                         ) : usageRenewalPending(limits) ? null : (
-                          <AccountStatusLabel status={status} className="shrink-0" />
+                          <AccountStatusLabel status={status} size="caption" />
                         )}
                       </div>
                       <div className="provider-account-actions">

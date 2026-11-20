@@ -6,8 +6,15 @@ import {
 } from "../model/models";
 import { isProviderHidden } from "../model/projectProviders";
 import { menuSettings } from "../model/modelPickerData";
-import { accountModelChoices } from "../model/accountModelChoices";
-import { providerAccounts } from "../../providers/public/providerAccounts";
+import {
+  accountModelChoices,
+  modelAccountIdentities,
+  type ModelAccountCatalog,
+} from "../model/accountModelChoices";
+import {
+  providerAccounts,
+  supportsProviderAccounts,
+} from "../../providers/public/providerAccounts";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import type { ModelSource } from "./modelSource";
 
@@ -33,6 +40,7 @@ export function pickerProviderAtRevision(
 export function menuSettingsAtRevision(
   input: Parameters<typeof menuSettings>[0],
   _revision: number,
+  _accountsSnapshot: string,
 ) {
   return menuSettings(input);
 }
@@ -46,6 +54,7 @@ export function visibleModelsAtSnapshot(
     query,
     hideSettings,
     accountChoices,
+    accountFor,
   }: {
     source: ModelSource;
     tab: ModelPickerTab;
@@ -54,11 +63,13 @@ export function visibleModelsAtSnapshot(
     query: string;
     hideSettings: boolean;
     accountChoices: boolean;
+    accountFor?: (harness: HarnessId) => string;
   },
   _catalogVersion: number,
-  _accountsSnapshot: string,
+  accountsSnapshot: string,
 ) {
   const needle = query.trim().toLowerCase();
+  const accounts = JSON.parse(accountsSnapshot) as ModelAccountCatalog;
   const pool =
     tab === "favorites"
       ? favorites
@@ -69,14 +80,45 @@ export function visibleModelsAtSnapshot(
           )
       : source.modelsFor(tab).filter((item) => isModelEnabled(item.id));
   // The panel lists each model once; the beside-picker flyout has one row per account.
-  const choices = hideSettings ? accountModelChoices(pool, accountChoices, source.accounts) : pool;
+  const choices = hideSettings
+    ? accountModelChoices(pool, accountChoices, source.accounts)
+    : tab === "favorites" && accountChoices
+      ? pool.map((model) => {
+          const account = modelAccountIdentityIn(
+            model.harness,
+            accountFor?.(model.harness),
+            accounts,
+          );
+          return account
+            ? {
+                ...model,
+                name: `${model.name} ${account.accountLabel}`,
+                accountId: account.id,
+                accountLabel: account.accountLabel,
+                accountNumber: account.accountNumber,
+                accountColor: account.accountColor,
+              }
+            : model;
+        })
+      : pool;
   return !needle
     ? choices
     : choices.filter((item) =>
-        `${item.name} ${HARNESS_TITLE[item.harness]} ${item.provider?.name ?? ""} ${item.provider?.id ?? ""}`
+        `${item.name} ${"accountLabel" in item ? (item.accountLabel ?? "") : ""} ${HARNESS_TITLE[item.harness]} ${item.provider?.name ?? ""} ${item.provider?.id ?? ""}`
           .toLowerCase()
           .includes(needle),
       );
+}
+
+export function modelAccountIdentityIn(
+  harness: HarnessId,
+  accountId: string | undefined,
+  catalog: ModelAccountCatalog,
+) {
+  if (!supportsProviderAccounts(harness)) return undefined;
+  return modelAccountIdentities(harness, catalog[harness] ?? []).find(
+    (item) => item.id === accountId,
+  );
 }
 
 export function providerAccountsAtSnapshot(

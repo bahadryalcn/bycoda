@@ -163,6 +163,8 @@ export function codexImages(
           finish = yes;
           rejectTurn = no;
         });
+        // An abort can arrive during thread setup, before the turn is awaited.
+        void completed.catch(() => undefined);
         on((method, p) => {
           if (
             method === "item/completed" &&
@@ -203,7 +205,8 @@ export function codexImages(
             config: { "features.shell_tool": false, mcp_servers: {} },
           });
           await input.checkpoint(thread.thread.id);
-          await rpc.request("turn/start", {
+          input.signal.throwIfAborted();
+          const started = rpc.request("turn/start", {
             threadId: thread.thread.id,
             approvalPolicy: "never",
             sandboxPolicy: { type: "readOnly" },
@@ -214,7 +217,8 @@ export function codexImages(
               },
             ],
           });
-          await completed;
+          await Promise.all([started, completed]);
+          input.signal.throwIfAborted();
           // Prefer the inline bytes: a savedPath may sit outside the allowed image roots.
           if (inlineImage) return decodeInlineCodexImage(inlineImage);
           if (!outputPath || !isAbsolute(outputPath))

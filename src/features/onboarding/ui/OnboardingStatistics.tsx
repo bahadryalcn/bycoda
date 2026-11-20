@@ -1,10 +1,13 @@
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
 import { OnboardingHeading } from "./OnboardingHeading";
-import { Text } from "../../../shared/ui/Text";
-import { getStatsChoice, setStatsChoice, subscribeAnonymousStats } from "../../account";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import {
+  getStatsChoice,
+  setStatsChoice,
+  statsDisclosure,
+  subscribeAnonymousStats,
+} from "../../account";
 
 /** Optional statistics question. Both answers are equal; skipping leaves it off and asks later. */
 export function OnboardingStatistics() {
@@ -12,38 +15,20 @@ export function OnboardingStatistics() {
   const choice = useSyncExternalStore(subscribeAnonymousStats, getStatsChoice);
   return (
     <>
-      <OnboardingHeading
-        title={t("Statistics")}
-        info={t(
-          "Once a day bycoda can send a small signal that helps count installs and plan support. It is off unless you say yes. You can change this any time in Settings → Account → Privacy & data, or in Settings → Privacy without an account.",
-        )}
-      />
+      <OnboardingHeading title={t("Statistics")} info={statsDisclosure()} />
       <div className="onboarding-scroll">
-        <Text as="ul" size="caption" tone="inherit" leading="inherit" className="onboarding-hint">
-          <li>
-            {t(
-              "Sent: a random install id, the app version, the operating system, the release channel and the date.",
-            )}
-          </li>
-          <li>
-            {t(
-              "Never sent: your sessions, prompts, code, file names, projects or account details.",
-            )}
-          </li>
-        </Text>
         <div className="onboarding-actions">
-          <Button variant="secondary" onClick={() => setStatsChoice("on")}>
-            {t("Share anonymous statistics")}
-          </Button>
-          <Button variant="secondary" onClick={() => setStatsChoice("off")}>
-            {t("Don't share")}
-          </Button>
+          <SegmentedControl
+            label={t("Statistics")}
+            value={choice ?? ""}
+            selectionRole="pressed"
+            onValueChange={(value) => setStatsChoice(value as "on" | "off")}
+            options={[
+              { value: "on", label: t("Share anonymous statistics") },
+              { value: "off", label: t("Don't share") },
+            ]}
+          />
         </div>
-        {choice ? (
-          <Alert tone="success">
-            {choice === "on" ? t("Thank you. Statistics are on.") : t("Statistics stay off.")}
-          </Alert>
-        ) : null}
       </div>
     </>
   );

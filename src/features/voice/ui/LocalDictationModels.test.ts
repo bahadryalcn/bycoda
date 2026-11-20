@@ -206,4 +206,37 @@ describe("model action recovery", () => {
     await render(change, "owned/small");
     expect(change).toHaveBeenCalledWith({ dictationLocalModelPath: "" });
   });
+  it("keeps observing a running job through a transient poll failure and clears the error on recovery", async () => {
+    job = { state: "working", id: "turbo", action: "download" };
+    await render();
+    expect(host.textContent).toContain("Whisper turbo: Downloading");
+    api.list.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(host.textContent).toContain("Could not load local models.");
+    expect(host.textContent).toContain("Whisper turbo: Downloading");
+    const callsAfterFailure = api.status.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(api.status.mock.calls.length).toBeGreaterThan(callsAfterFailure);
+    expect(host.textContent).not.toContain("Could not load local models.");
+    expect(host.textContent).toContain("Whisper turbo: Downloading");
+  });
+  it("stops polling after bounded retries and leaves Try again to re-arm observation", async () => {
+    job = { state: "working", id: "turbo", action: "download" };
+    await render();
+    api.list.mockRejectedValue(new Error("offline"));
+    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+    const callsAtLimit = api.status.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(api.status.mock.calls.length).toBe(callsAtLimit);
+    expect(host.textContent).toContain("Could not load local models.");
+    api.list.mockResolvedValue([
+      { id: "small", label: "Whisper small", path: "owned/small", installed: true },
+      { id: "turbo", label: "Whisper turbo", path: "owned/turbo", installed: true },
+    ]);
+    job = { state: "ready", id: "turbo", action: "download" };
+    await click("Try again", host);
+    expect(api.status.mock.calls.length).toBeGreaterThan(callsAtLimit);
+    expect(host.textContent).not.toContain("Could not load local models.");
+    expect(host.textContent).not.toContain("Whisper turbo: Downloading");
+  });
 });

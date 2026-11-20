@@ -14,6 +14,19 @@
 .launcherSlot:not([data-compact]) {
   flex: 0 1 auto;
 }
+.launcherControls {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+.launcherControls > :first-child {
+  flex: 0 1 auto;
+}
+.wakeMenu {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
 .launcherButton[data-docked] {
   min-inline-size: 0;
   max-inline-size: 100%;
@@ -40,6 +53,11 @@
   inset-inline-end: -1px;
   inset-block-end: -1px;
 }
+.launcherWakeDot {
+  position: absolute;
+  inset-inline-end: -1px;
+  inset-block-start: -1px;
+}
 .launcherAvatar:is(
     [data-state="listening"],
     [data-state="user"],
@@ -59,16 +77,11 @@
     animation: none;
   }
 }
-/* Docked in the sidebar, the open panel starts above that footer instead of the far corner. */
-:global(:root:has([data-voice-launcher-slot][data-active]:not([data-compact]))) .panel {
-  right: auto;
-  left: 12px;
-  bottom: 56px;
-}
-:global(:root:has([data-voice-launcher-slot][data-active][data-compact])) .panel {
-  right: auto;
-  left: 60px;
-  bottom: 12px;
+/* The launcher pulse stops its clock while the window is behind another app or decorative motion is off; the dot stays on screen. */
+:global(html:is([data-decorative-motion="off"], [data-window-focus="off"]))
+  .launcherAvatar
+  .launcherDot {
+  animation-play-state: paused;
 }
 .panel {
   display: grid;
@@ -76,14 +89,76 @@
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   position: fixed;
   right: 20px;
-  bottom: 36px;
+  --voice-panel-bottom: 36px;
+  bottom: var(--voice-panel-bottom);
   z-index: var(--layer-pane-sheet);
   /* The resize grip (VoicePanelResize) sets both sizes; otherwise the panel fits its content. */
   width: var(--voice-panel-width, min(360px, calc(100vw - 16px)));
   height: var(--voice-panel-height, auto);
   max-width: calc(100vw - 16px);
-  max-height: calc(100dvh - 16px);
+  /* VoicePanelResize clamps with the same top margin (PANEL_TOP_MARGIN). */
+  --voice-panel-max-height: calc(100dvh - var(--voice-panel-bottom) - 8px);
+  max-height: var(--voice-panel-max-height);
   overflow: hidden;
+}
+.panel:has(> .body[data-call-stage]) {
+  /* Keep the call stage and its dock together when a saved panel is taller than both. */
+  grid-template-rows:
+    [header] auto minmax(0, 1fr) [stage] minmax(0, max-content)
+    [question] auto [controls] auto minmax(0, 1fr);
+  isolation: isolate;
+}
+.stageLight {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  inline-size: 100%;
+  block-size: 100%;
+  pointer-events: none;
+}
+@media (forced-colors: active) {
+  .stageLight {
+    visibility: hidden;
+  }
+}
+.panel:has(> .body[data-call-stage]) > .header {
+  grid-row: header;
+}
+.body[data-call-stage] {
+  grid-row: stage;
+  /* Use the panel's height limit without changing how its fixed side panel is positioned. */
+  --voice-stage-height: min(var(--voice-panel-height, 100dvh), var(--voice-panel-max-height));
+  --voice-call-chrome-height: 196px;
+  --voice-core-stage-size: clamp(
+    48px,
+    calc(var(--voice-stage-height) - var(--voice-call-chrome-height)),
+    260px
+  );
+  padding-block: 0;
+}
+.body[data-call-stage][data-call-live] {
+  /* The live dock also includes the turn-ending control. */
+  --voice-call-chrome-height: 240px;
+}
+.panel:has(> .body[data-call-stage]) > section {
+  grid-row: question;
+}
+.panel:has(> .body[data-call-stage]) > .actions {
+  grid-row: controls;
+  padding-block: 8px 12px;
+}
+/* Docked in the sidebar, the open panel starts above that footer instead of the far corner.
+   VoiceCompanion sets data-dock from the slot it docks into; only the offset changes here, and
+   .panel reads it for both its position and its height cap. */
+.panel[data-dock="footer"] {
+  right: auto;
+  left: 12px;
+  --voice-panel-bottom: 56px;
+}
+.panel[data-dock="rail"] {
+  right: auto;
+  left: 60px;
+  --voice-panel-bottom: 12px;
 }
 .header {
   display: flex;

@@ -64,3 +64,53 @@ it("keeps composer focus and ignores stationary pointer events after keyboard na
   expect(onPick).toHaveBeenCalledExactlyOnceWith(files[0]);
   editor.remove();
 });
+
+it("bounds the suggestion list to the shared composer picker height without adding a close control", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  act(() =>
+    root.render(
+      createElement(FileMentionPicker, {
+        files: [],
+        query: "",
+        active: 0,
+        onActive: vi.fn(),
+        onPick: vi.fn(),
+      }),
+    ),
+  );
+  expect(host.querySelector('[data-list-height="standard"]')).not.toBeNull();
+  expect(host.querySelector('button[aria-label="Close"]')).toBeNull();
+});
+
+it("says the file index is incomplete instead of a bare no-match result", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const render = (indexNotice?: "incomplete" | "unknown", loading = false) =>
+    act(() =>
+      root.render(
+        createElement(FileMentionPicker, {
+          files: [],
+          active: -1,
+          query: "late/path.ts",
+          indexNotice,
+          loading,
+          onActive: vi.fn(),
+          onPick: vi.fn(),
+        }),
+      ),
+    );
+
+  render();
+  expect(host.textContent).not.toContain("File index");
+
+  render("incomplete");
+  expect(host.textContent).toContain("No matching files or folders");
+  expect(host.textContent).toContain("File index is incomplete; some files may not appear.");
+
+  render("unknown");
+  expect(host.textContent).toContain(
+    "File index completeness is unknown; some files may not appear.",
+  );
+
+  render("incomplete", true);
+  expect(host.textContent).not.toContain("File index");
+});

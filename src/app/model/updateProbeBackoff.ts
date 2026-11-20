@@ -3,7 +3,7 @@
 // Explicit checks never consult this state: they always reach the feed.
 import { elapsedSince, monotonicNow } from "../../shared/lib/time/timestamps";
 
-const BASE_DELAY_MS = 30 * 60 * 1000;
+const BASE_DELAY_MS = 5 * 60 * 1000;
 const MAX_DELAY_MS = 8 * 60 * 60 * 1000;
 
 /** Wait before the next background probe after `failures` consecutive failed checks. */

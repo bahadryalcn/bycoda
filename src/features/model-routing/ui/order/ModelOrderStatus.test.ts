@@ -22,7 +22,13 @@ vi.mock("../../../tasks/public/hostSettings", async (original) => ({
   saveMachineLimits: vi.fn(),
 }));
 vi.mock("../../../sessions/public/modelSource", () => ({
-  useModelSource: () => ({ resolve: () => ({ harness: "codex", id: "test" }) }),
+  useModelSource: () => ({
+    id: "host",
+    resolve: () => ({ harness: "codex", id: "test" }),
+    available: () => false,
+    probed: () => true,
+    modelsFor: () => [],
+  }),
 }));
 vi.mock("../../../sessions/public/ModelPicker", () => ({ ModelPicker: () => null }));
 vi.mock("../../../sessions/public/ModelLabel", () => ({ ModelLabel: () => null }));
@@ -74,7 +80,7 @@ it("shows failed quota refresh beside retained data and retries to valid unknown
     );
     expect(element.textContent).toContain("42% left");
     const retry = [...element.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Retry"),
+      button.textContent?.includes("Try again"),
     )!;
     await act(async () => retry.click());
     await vi.waitFor(() => expect(element.textContent).toContain("Limit unknown"));

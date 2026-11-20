@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { readBuildIdentity } from "./scripts/build/build-info.mjs";
+import { bootAppPreload } from "./scripts/build/boot-preload.mjs";
 import { reactCompiler } from "./scripts/build/react-compiler";
 import { workerRuntimePlugins } from "./scripts/build/worker-runtime.mjs";
 import { fmt, lint } from "./scripts/checks/lint-config.mjs";
@@ -32,6 +33,7 @@ export default defineConfig(async ({ mode }) => {
       react(),
       reactCompiler(),
       tailwindcss(),
+      bootAppPreload(),
       {
         name: "bycoda-build-identity",
         generateBundle() {

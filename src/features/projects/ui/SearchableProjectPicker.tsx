@@ -265,7 +265,7 @@ export function SearchableProjectPicker({
             size="md"
             autoFocus={false}
             label={t("Search projects")}
-            placeholder={t("Search projects...")}
+            placeholder={t("Search projects…")}
             value={query}
             onValueChange={(next) => {
               setQuery(next);

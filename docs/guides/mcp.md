@@ -58,6 +58,11 @@ while authorization is pending. For a connection already reported as Connected o
 Signed in, the row's action menu offers **Sign in again**. If the provider's CLI is
 not installed, the page says so instead of starting a sign-in.
 
+If a configuration file exists but cannot be read, for example while a provider is
+rewriting `~/.claude.json` or after a syntax error, the page names the file and the
+reason instead of showing "No MCP servers configured". Its servers are not listed until
+it is readable again; choose **Retry**. Nothing in the file is changed.
+
 **Configured** means the configuration was found. It does not confirm a connection
 or a successful login. Opening settings reads configuration only. Choose **Refresh**
 to run provider health checks; these may start configured MCP helpers. Claude Code

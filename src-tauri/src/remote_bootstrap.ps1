@@ -37,6 +37,24 @@ function Download-Bycoda([string] $Url, [string] $Destination) {
   } finally { $client.Dispose(); $handler.Dispose() }
 }
 
+function Move-BycodaRuntime([string] $Source, [string] $Destination) {
+  for ($attempt = 1; ; $attempt++) {
+    try {
+      # Both paths live under runtimeRoot. Move-Item can fall back to moving
+      # individual files when Windows refuses to rename a locked directory.
+      [IO.Directory]::Move($Source, $Destination)
+      return
+    } catch [IO.IOException], [UnauthorizedAccessException] {
+      # An open child such as node.exe can also surface as access denied on
+      # the parent directory. Give short-lived version probe and scanner locks
+      # time to clear while keeping the entire package staged.
+      $code = $_.Exception.GetBaseException().HResult
+      if ($attempt -ge 20 -or $code -notin @(0x80070005, 0x80070020, 0x80070021)) { throw }
+      Start-Sleep -Milliseconds 250
+    }
+  }
+}
+
 New-Item -ItemType Directory -Force -Path $base | Out-Null
 Protect-BycodaDirectory $base
 $lock = $null
@@ -120,7 +138,7 @@ try {
         })
         [IO.File]::WriteAllText((Join-Path $unpacked '.package-files.json'), (ConvertTo-Json -InputObject $inventory), (New-Object Text.UTF8Encoding($false)))
       }
-      Move-Item -LiteralPath $unpacked -Destination $runtime
+      Move-BycodaRuntime $unpacked $runtime
     }
     $bin = Join-Path $base 'bin'
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
@@ -188,5 +206,6 @@ try {
   }
 } finally {
   if ($null -ne $lock) { $lock.Dispose() }
-  if ($temporary -and (Test-Path -LiteralPath $temporary)) { Remove-Item -LiteralPath $temporary -Recurse -Force }
+  # A lock that outlasts promotion can also block removal of the staged copy.
+  if ($temporary -and (Test-Path -LiteralPath $temporary)) { Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue }
 }

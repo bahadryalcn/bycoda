@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import {
   queueProviderOperation,
   retireProviderEpoch,
@@ -48,7 +49,7 @@ import type {
   TaskListItem,
   TaskListMeta,
 } from "../../../../features/sessions/model/session";
-import { loadClaudeHooks } from "../../../../features/settings/model/settings";
+import { loadClaudeHooks } from "../../../../features/settings/model/claudeHooksSetting";
 import {
   resolveClaudeBinary,
   spawnChild,
@@ -56,6 +57,11 @@ import {
   writeChild,
   readHarnessTaskOutput,
 } from "../../core/child";
+import {
+  loadClaudeWorkflowArtifacts,
+  workflowReference,
+  type ClaudeWorkflowReference,
+} from "./claudeWorkflowArtifacts";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import {
   askUserQuestionAllowInput,
@@ -126,13 +132,21 @@ import { claudeNativeLaunch } from "./claudeNativeLaunch";
 import { bycodaMcpOnly, leanContext } from "../../core/nativeToolLimits";
 import { compactionPhaseFromSystem } from "./claudeCompaction";
 import {
-  COMPACTING_TEXT,
+  compactingText,
   COMPACTION_STATUS_KEY,
 } from "../../../../features/sessions/model/compactionStatus";
+import {
+  compactionFailedText,
+  messageStoppedBeforeSentText,
+  savedConversationUnavailableText,
+  turnFinishedFollowUpText,
+} from "../../core/providerNotices";
+import { t } from "../../../../shared/i18n/core";
 import { agentFallbackCallId, resolveStopTargets, settledTaskStatus } from "./claudeStopTask";
 import { isAgentToolName } from "../../core/preview";
 import { forgetSessionCommands, reportSessionCommands } from "../../core/reportedCommands";
 import { snapshotRemainder } from "../../core/streamText";
+import { withTimeout } from "../../../../shared/lib/withTimeout";
 import {
   questionPromptTitle,
   questionsFromUnknown,
@@ -188,6 +202,7 @@ type BackgroundTask = {
   description: string;
   toolUseId?: string;
   outputPath?: string;
+  taskType?: string;
 };
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
@@ -224,6 +239,8 @@ type Live = {
   /** Rows shown for tasks still running when Claude yielded, by task id. */
   backgroundRows: Map<string, string>;
   outputWatches: Map<string, { stop: () => void; finish: () => void }>;
+  workflowWatches: Map<string, { stop: () => void; finish: (status: string) => void }>;
+  workflowOutcomes: Map<string, string>;
   /** Tasks the user asked to stop, and the calls that stand for them. */
   stoppedTasks: Set<string>;
   stoppedCalls: Set<string>;
@@ -329,7 +346,7 @@ export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
           throw error;
         }
         if (cancelledThreads.delete(input.sessionId)) {
-          input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+          input.onEvent({ type: "status", text: messageStoppedBeforeSentText() });
           return;
         }
 
@@ -342,7 +359,7 @@ export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
         live.turns = continueAfterFailure(live.turns, async () => {
           const writer = await bindWriter();
           if (cancelEpochByThread.get(input.sessionId) !== cancelEpoch) {
-            input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+            input.onEvent({ type: "status", text: messageStoppedBeforeSentText() });
             return;
           }
           live.queryFence.assertReady();
@@ -385,7 +402,7 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
           live = await ensureLive(input);
         }
         if (cancelledThreads.delete(input.sessionId)) {
-          input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+          input.onEvent({ type: "status", text: messageStoppedBeforeSentText() });
           return;
         }
 
@@ -398,7 +415,7 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
         live.turns = continueAfterFailure(live.turns, async () => {
           const writer = await bindWriter();
           if (cancelEpochByThread.get(input.sessionId) !== cancelEpoch) {
-            input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+            input.onEvent({ type: "status", text: messageStoppedBeforeSentText() });
             return;
           }
           live.queryFence.assertReady();
@@ -443,8 +460,7 @@ export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
   input = { ...input };
 
   const live = liveByThread.get(input.sessionId);
-  if (!live?.activeTurn)
-    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  if (!live?.activeTurn) throw new Error(turnFinishedFollowUpText());
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
     throw new Error("Provider operation replaced before steer");
 
@@ -826,6 +842,8 @@ function newLiveState(input: {
     backgroundTasks: new Map(),
     backgroundRows: new Map(),
     outputWatches: new Map(),
+    workflowWatches: new Map(),
+    workflowOutcomes: new Map(),
     stoppedTasks: new Set(),
     stoppedCalls: new Set(),
     awaitingResume: null,
@@ -1047,7 +1065,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       resumeByThread.delete(input.sessionId);
       input.onEvent({
         type: "status",
-        text: "The saved provider conversation is unavailable. Starting a new session; the app will restore conversation context.",
+        text: savedConversationUnavailableText(),
       });
       return ensureLive(input);
     }
@@ -1112,7 +1130,7 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   } catch (error) {
     if (live.cancelled) return;
     const failure = live.exitError ?? error;
-    reportTurnError(live, failure instanceof Error ? failure.message : String(failure));
+    reportTurnError(live, errorText(failure));
     throw failure;
   } finally {
     live.turnDone = null;
@@ -1272,7 +1290,7 @@ function handleLine(sessionId: string, live: Live, line: string): void {
           type: "status",
           key: COMPACTION_STATUS_KEY,
           running: true,
-          text: COMPACTING_TEXT,
+          text: compactingText(),
         });
         return;
       }
@@ -1282,9 +1300,7 @@ function handleLine(sessionId: string, live: Live, line: string): void {
       if (compaction.phase === "failed") {
         live.onEvent({
           type: "status",
-          text: compaction.error
-            ? `Could not compact context: ${compaction.error}`
-            : "Could not compact context",
+          text: compactionFailedText(compaction.error || undefined),
         });
       }
       return;
@@ -1497,9 +1513,19 @@ function handleUser(live: Live, rec: Record<string, unknown>): void {
     noteSubagentResults(live, rec);
     return;
   }
+  const workflow = workflowReference(rec);
+  if (
+    workflow &&
+    live.handle &&
+    live.claudeSessionId &&
+    live.toolsById.get(workflow.callId)?.name === "Workflow"
+  ) {
+    watchWorkflow(live, workflow);
+  }
   for (const result of toolResultsFromUserMessage(rec)) {
     const tool = live.toolsById.get(result.toolUseId);
     if (!tool) continue;
+    if (workflow?.callId === tool.id && !result.isError) continue;
     if (tool.name === "Bash") noteCommandOutputPath(live, rec, tool.id, result.text);
     if (isAgentToolName(tool.name) && isBackgroundedAgentTool(live, tool.id)) {
       continue;
@@ -1543,6 +1569,71 @@ function handleUser(live: Live, rec: Record<string, unknown>): void {
     }
     if (isAgentToolName(tool.name)) settleInlineAgentTask(live, tool.id);
   }
+}
+
+function watchWorkflow(live: Live, reference: ClaudeWorkflowReference): void {
+  if (live.workflowWatches.has(reference.taskId)) return;
+  const providerSessionId = live.claudeSessionId;
+  const outputWork = captureNativeOutputWork({ additionalInput: true });
+  const emit = nativeOutputSink(outputWork, live.onEvent);
+  let stopped = false;
+  let finalStatus: string | undefined;
+  let reading = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const snapshotCache = new Map<string, string>();
+  const poll = async () => {
+    if (stopped || reading) return;
+    reading = true;
+    const final = finalStatus !== undefined;
+    try {
+      await loadClaudeWorkflowArtifacts({
+        cwd: live.cwd,
+        providerAccountId: live.providerAccountId,
+        providerSessionId,
+        runId: reference.runId,
+        callId: reference.callId,
+        snapshotCache,
+        onEvent: (event) => {
+          if (!stopped) emit(event);
+        },
+        ...(finalStatus !== undefined
+          ? {
+              status:
+                finalStatus === "completed" ? ("completed" as const) : ("interrupted" as const),
+            }
+          : {}),
+      });
+    } catch {
+      /* Artifact discovery is best effort; the workflow itself remains authoritative. */
+    }
+    reading = false;
+    if (stopped) return;
+    if (final) {
+      live.workflowWatches.delete(reference.taskId);
+      return;
+    }
+    if (finalStatus !== undefined) {
+      void poll();
+      return;
+    }
+    timer = scheduleNativeOutputCallback(() => {
+      void poll();
+    }, 2_000);
+  };
+  live.workflowWatches.set(reference.taskId, {
+    stop: () => {
+      stopped = true;
+      cancelNativeOutputCallback(timer);
+    },
+    finish: (status) => {
+      finalStatus = status;
+      cancelNativeOutputCallback(timer);
+      void poll();
+    },
+  });
+  const outcome = live.workflowOutcomes.get(reference.taskId);
+  if (outcome !== undefined) finalStatus = outcome;
+  void poll();
 }
 
 /**
@@ -1815,6 +1906,7 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
     live.backgroundTasks.set(started.taskId, {
       description: started.description,
       toolUseId: started.toolUseId,
+      taskType: started.taskType,
       outputPath:
         stringField(rec, "output_file") ||
         (started.toolUseId ? live.toolsById.get(started.toolUseId)?.outputPath : undefined),
@@ -1835,6 +1927,8 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
   const progress = parseTaskProgress(rec);
   if (progress) {
     const task = live.agentTasks.get(progress.taskId);
+    const source = progress.toolUseId ? live.toolsById.get(progress.toolUseId) : undefined;
+    if (!task && (!source || !isAgentToolName(source.name))) return true;
     const title = progress.description || task?.description || "Subagent";
     const detail =
       progress.summary ||
@@ -1859,6 +1953,8 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
     }
     if (isTerminalAgentTaskStatus(updated.status)) {
       settleBackgroundRow(live, updated.taskId, updated.status ?? "completed", updated.error);
+      settleWorkflow(live, updated.taskId, updated.status ?? "completed", updated.error);
+      live.workflowWatches.get(updated.taskId)?.finish(updated.status ?? "completed");
       finishBackgroundTask(live, updated.taskId);
       completeAgentTask(
         live,
@@ -1874,6 +1970,8 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
   if (notice) {
     if (!notice.ambient) {
       noteTaskNotification(live, notice);
+      settleWorkflow(live, notice.taskId, notice.status, notice.summary || undefined);
+      live.workflowWatches.get(notice.taskId)?.finish(notice.status);
       finishBackgroundTask(live, notice.taskId);
       completeAgentTask(
         live,
@@ -1918,6 +2016,19 @@ function handleAgentLifecycle(live: Live, rec: Record<string, unknown>): boolean
   maybeFinishTurn(live);
   syncBackgroundWait(live);
   return true;
+}
+
+function settleWorkflow(live: Live, taskId: string, status: string, detail?: string): void {
+  const background = live.backgroundTasks.get(taskId);
+  const callId = background?.taskType === "local_workflow" ? background.toolUseId : undefined;
+  if (background?.taskType === "local_workflow") live.workflowOutcomes.set(taskId, status);
+  if (!callId || live.muteUpdates) return;
+  live.onEvent({
+    type: "tool.updated",
+    callId,
+    status: taskOutcome(live, taskId, status),
+    ...(detail ? { detail } : {}),
+  });
 }
 
 function handleToolProgress(live: Live, rec: Record<string, unknown>): void {
@@ -2265,12 +2376,24 @@ function noteCommandOutputPath(
 function stopOutputWatches(live: Live): void {
   for (const watch of live.outputWatches.values()) watch.stop();
   live.outputWatches.clear();
+  for (const watch of live.workflowWatches.values()) watch.stop();
+  live.workflowWatches.clear();
 }
 
 /** Consecutive missing-file polls (about a second each) before the row says it is still waiting. */
 const OUTPUT_WAIT_REPORT_AFTER = 30;
 /** Extra attempts after the last read of a finished task fails. */
 const OUTPUT_FINAL_RETRIES = 3;
+/** Poll interval while output keeps changing, and the cap it backs off to while it stays unchanged. */
+const OUTPUT_POLL_MIN_MS = 1_000;
+const OUTPUT_POLL_MAX_MS = 5_000;
+/** One stalled read (a remote Host that stopped answering) must not stop later polls. */
+const OUTPUT_READ_TIMEOUT_MS = 15_000;
+
+/** Back off while a running command prints nothing new; the task notification still finishes at once. */
+export function nextOutputPollDelay(current: number, changed: boolean): number {
+  return changed ? OUTPUT_POLL_MIN_MS : Math.min(OUTPUT_POLL_MAX_MS, Math.round(current * 1.5));
+}
 
 function watchCommandOutput(live: Live, taskId: string, reportedTask?: BackgroundTask): void {
   const task = reportedTask ?? live.backgroundTasks.get(taskId);
@@ -2293,6 +2416,7 @@ function watchCommandOutput(live: Live, taskId: string, reportedTask?: Backgroun
   let lastOutput = "";
   let failures = 0;
   let finalFailures = 0;
+  let pollDelay = OUTPUT_POLL_MIN_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const emitOutput = nativeOutputSink(outputWork, (text: string) => {
     if (stopped || live.cancelled || live.muteUpdates || text === last) return;
@@ -2309,16 +2433,24 @@ function watchCommandOutput(live: Live, taskId: string, reportedTask?: Backgroun
     const finalRead = finished;
     let failed = false;
     try {
-      const output = await readHarnessTaskOutput(path, taskId);
+      // A read that never settles is abandoned; its late result is ignored.
+      const output = await withTimeout(
+        readHarnessTaskOutput(path, taskId),
+        OUTPUT_READ_TIMEOUT_MS,
+        "Claude task output read",
+      );
       failures = 0;
-      lastOutput = output.truncated
+      const next = output.truncated
         ? `[Earlier output omitted]
 ${output.text}`
         : output.text;
+      pollDelay = nextOutputPollDelay(pollDelay, next !== lastOutput);
+      lastOutput = next;
       emitOutput(lastOutput);
     } catch (error) {
       failed = true;
       failures += 1;
+      pollDelay = OUTPUT_POLL_MIN_MS;
       // A missing file is normal until the provider creates it, so it is only
       // reported once the command has finished or has been missing for a long
       // while. Any other read error is reported after a few retries.
@@ -2349,7 +2481,7 @@ ${note}`
           live.outputWatches.delete(taskId);
           if (failed) outputWork?.fail("claude-file-output-failed");
           else outputWork?.finish();
-        } else timer = setTimeout(() => void poll(), finished ? 0 : 1000);
+        } else timer = setTimeout(() => void poll(), finished ? 0 : pollDelay);
       } else outputWork?.fail("claude-file-output-retired");
     }
   };
@@ -2401,7 +2533,7 @@ function noteTaskNotification(live: Live, notice: ClaudeAgentTaskNotification): 
   const tool = notice.toolUseId ? live.toolsById.get(notice.toolUseId) : null;
   const agent = (tool && isAgentToolName(tool.name)) || live.agentTasks.has(notice.taskId);
   if (!agent || !live.turnResultSeen) return;
-  live.taskNotes.push(notice.summary || "Subagent finished.");
+  live.taskNotes.push(notice.summary || t("Subagent finished."));
 }
 
 function clearAwaitingResume(live: Live): void {

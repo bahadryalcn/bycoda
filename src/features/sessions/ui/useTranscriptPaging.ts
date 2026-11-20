@@ -20,9 +20,15 @@ import { useReleasedTail } from "./useReleasedTail";
 const INITIAL_TURNS = 20;
 const FIRST_PAINT_TURNS = 3;
 const TURN_PAGE_SIZE = 20;
+const EARLIER_SCROLL_THRESHOLD = 320;
 export const MAX_TRANSCRIPT_WINDOW_TURNS = 60;
 export type Window = { firstId?: string; offset: number; count: number; tail: boolean };
-type Anchor = { id?: string; offset: number; edge: "start" | "end" };
+type Anchor = {
+  id?: string;
+  offset: number;
+  row?: { id: string; offset: number };
+  edge: "start" | "end";
+};
 type Options = {
   turns: Block[][];
   blockCount: number;
@@ -36,7 +42,10 @@ type Options = {
   onRevealReady?: (reveal: ((blockId: string) => boolean) | null) => void;
 };
 
-/** The remote history request and what must run however it ends; kept out of the hook for the compiler. */
+/**
+ * The remote history request and what must run however it ends; kept out of the hook for the compiler.
+ * A load that added nothing failed and reported it itself, so the window, cursor and scroll stay put.
+ */
 export async function runRemoteLoad({
   load,
   stale,
@@ -53,8 +62,8 @@ export async function runRemoteLoad({
   setPagingError: (error: string | null) => void;
 }): Promise<void> {
   try {
-    await load();
-    if (stale()) return;
+    const added = await load();
+    if (stale() || added === 0) return;
     apply();
   } catch (error) {
     // A dropped link is covered by the shared connection notice; the page can be requested again.
@@ -154,6 +163,7 @@ export function useTranscriptPaging({
   const navigationRef = useRef(0);
   const [pagingLoading, setPagingLoading] = useState(false);
   const [pagingError, setPagingError] = useState<string | null>(null);
+  const previousScrollTop = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
     turnsRef.current = turns;
     rangeRef.current = { first: firstVisibleTurn, last: lastVisibleTurn, count };
@@ -180,9 +190,19 @@ export function useTranscriptPaging({
         [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
           (turn) => turn.getBoundingClientRect().bottom > top,
         );
+      // A page can extend the first turn and change its key. An existing message
+      // in that turn still identifies the reader's position.
+      const row =
+        node &&
+        [...node.querySelectorAll<HTMLElement>("[data-transcript-virtual-block-id]")].find(
+          (block) => block.getBoundingClientRect().bottom > top,
+        );
+      const rowId = row?.dataset.transcriptVirtualBlockId;
       anchorRef.current = {
         id: node?.dataset.transcriptTurn,
         offset: node ? node.getBoundingClientRect().top - top : 0,
+        row:
+          row && rowId ? { id: rowId, offset: row.getBoundingClientRect().top - top } : undefined,
         edge,
       };
       prependHeightRef.current = null;
@@ -198,12 +218,21 @@ export function useTranscriptPaging({
     if (anchor) {
       anchorRef.current = null;
       firstBlockRef.current = previous.current?.firstId;
-      const node = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
-        (turn) => turn.dataset.transcriptTurn === anchor.id,
-      );
+      const row =
+        anchor.row &&
+        el.querySelector<HTMLElement>(
+          `[data-transcript-virtual-block-id="${CSS.escape(anchor.row.id)}"]`,
+        );
+      const node =
+        row ??
+        [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
+          (turn) => turn.dataset.transcriptTurn === anchor.id,
+        );
       if (node)
         el.scrollTop +=
-          node.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset;
+          node.getBoundingClientRect().top -
+          el.getBoundingClientRect().top -
+          (row ? anchor.row!.offset : anchor.offset);
       else el.scrollTop = anchor.edge === "end" ? el.scrollHeight - el.clientHeight : 0;
       distanceFromBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight;
       return;
@@ -291,6 +320,13 @@ export function useTranscriptPaging({
       setPagingError,
     });
   }, [captureAnchor, moveWindow, remoteHistoryHasMore, onLoadRemoteHistory]);
+  const onHistoryScroll = (scrollTop: number, directInput = false, readerMoved = true) => {
+    const previousTop = previousScrollTop.current;
+    previousScrollTop.current = scrollTop;
+    if (!readerMoved || pagingError || loadingRef.current || scrollTop > EARLIER_SCROLL_THRESHOLD)
+      return;
+    if (directInput || (previousTop !== undefined && scrollTop < previousTop)) void loadEarlier();
+  };
   const loadNewer = useCallback(() => {
     const range = rangeRef.current;
     const first = Math.min(
@@ -346,6 +382,7 @@ export function useTranscriptPaging({
     lastVisibleTurn,
     visibleTurns,
     loadEarlier,
+    onHistoryScroll,
     loadNewer,
     jumpLatest,
     revealBlock,

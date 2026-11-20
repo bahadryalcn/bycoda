@@ -1,5 +1,6 @@
 import { Component, Fragment, type ErrorInfo, type ReactNode } from "react";
 import { t } from "../i18n";
+import { errorText } from "../lib/errors";
 import { FailureState, isModuleLoadError } from "./FailureState";
 
 export const LAST_RENDER_ERROR_KEY = "bycoda.diagnostics.lastRenderError";
@@ -8,7 +9,7 @@ const LAST_RENDER_ERROR_MAX_CHARS = 8000;
 /** Keeps the newest render failure so a release build without component names stays diagnosable. */
 function recordRenderError(error: unknown, componentStack: string) {
   try {
-    const message = error instanceof Error ? error.message : String(error ?? "");
+    const message = errorText(error ?? "");
     const record = JSON.stringify({
       message: message.slice(0, 1000),
       componentStack: componentStack.slice(0, LAST_RENDER_ERROR_MAX_CHARS - 1500),

@@ -10,6 +10,34 @@ import {
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
+    test(`queued send details ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&delivery-progress&queue-state=waiting&theme=${theme}`,
+      );
+      const notice = page.locator('[data-delivery-progress="waiting"]');
+      await expect(notice).toContainText("The message stays queued and is retried automatically.");
+      await expect(notice).not.toContainText("The technical reason is in the details.");
+      const trigger = notice.getByRole("button", { name: /^Details:/ });
+      await trigger.press("Enter");
+      const details = page.getByRole("dialog", { name: /^Details:/ });
+      await expect(details.getByLabel("Error details")).toContainText("RPC_WS_DEADLINE");
+      await expect(details.getByRole("button", { name: "Copy details" })).toBeInViewport();
+      const noticeBox = (await notice.boundingBox())!;
+      expect((await details.boundingBox())!.y).toBeGreaterThanOrEqual(
+        noticeBox.y + noticeBox.height,
+      );
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/error-details/queue-${theme}-${width}.png`,
+      });
+      await page.keyboard.press("Escape");
+      await expect(details).toBeHidden();
+      await expect(trigger).toBeFocused();
+    });
+
     test(`workspace footer spacing and scoped refresh ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -19,8 +47,11 @@ for (const theme of ["light", "dark"]) {
       );
       const bar = page.locator("[data-workspace-footer]");
       await expect(bar.getByRole("button", { name: "Refresh usage", exact: true })).toHaveCount(0);
+      // Wide footers keep the window-wide controls inline (refresh, sounds, full screen).
+      const refresh = bar.getByRole("button", { name: "Refresh current view", exact: true });
+      await expect(refresh).toHaveCount(1);
       await expect(
-        bar.getByRole("button", { name: "Refresh current view", exact: true }),
+        bar.getByRole("button", { name: "Workspace controls", exact: true }),
       ).toHaveCount(0);
       await page.evaluate(() => {
         (window as unknown as { refreshEvents: number }).refreshEvents = 0;
@@ -28,13 +59,12 @@ for (const theme of ["light", "dark"]) {
           (window as unknown as { refreshEvents: number }).refreshEvents += 1;
         });
       });
-      await bar.getByRole("button", { name: "Workspace controls", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Refresh current view", exact: true }).click();
+      await refresh.click();
       expect(
         await page.evaluate(() => (window as unknown as { refreshEvents: number }).refreshEvents),
       ).toBe(1);
       const actions = bar.locator(
-        'nav button, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"], button[aria-label="Notifications"]',
+        'nav button:visible, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"], button[aria-label="Notifications"]',
       );
       await expect(actions).toHaveCount(6);
       const boxes = await actions.evaluateAll((buttons) =>
@@ -416,6 +446,8 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
     await expect(progress).toHaveAttribute("data-delivery-progress", "rejected");
     // The outcome is a dismissible pane card, not part of the queue card.
     await expect(progress).toHaveAttribute("role", "alert");
+    // It takes space in the pane flow (#283): an overlay would cover the transcript and Find.
+    await expect(page.locator("[data-delivery-notice-slot]")).toHaveCSS("position", "static");
     await expect(
       progress.getByText("Queue paused: the last message was not accepted"),
     ).toBeVisible();
@@ -558,14 +590,13 @@ test("custom context signal exposes completed TPS and compact and respects reduc
       // The card is the only hint: no second tooltip repeats its heading.
       await expect(page.getByRole("tooltip")).toHaveCount(0);
       await expect(panel.getByRole("meter")).toHaveAttribute("aria-valuenow", "50");
-      await expect(panel).toContainText("50.0 TPS");
       await expect(panel).not.toContainText("Speed scale");
-      const info = panel.getByRole("region", {
-        name: "Response speed",
-        exact: true,
-      });
-      await expect(info).toBeVisible();
-      await expect(info).toContainText("Average over the full turn");
+      const speed = panel.getByRole("term").filter({ hasText: /^Response speed$/ });
+      await expect(speed).toBeVisible();
+      await expect(speed.locator("..").getByRole("definition")).toHaveText("50.0 TPS");
+      await expect(
+        panel.getByText("Average speed includes tools and waiting.", { exact: true }),
+      ).toBeVisible();
       await expect(panel.getByRole("button", { name: "Compact now", exact: true })).toBeEnabled();
       await expect(trigger.locator(".context-signal")).toBeVisible();
       await trigger.screenshot({
@@ -1097,13 +1128,16 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
   }
 });
 
-test("access label collapses before narrow composer controls wrap", async ({ page }) => {
+test("composer access keeps the icon button size when opened", async ({ page }) => {
   await initializeChatLayout(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/tests/browser/chat/composer-extras.html?chat-layout&workspace-footer");
   const access = page.locator("[data-access-picker-trigger]");
   await access.click();
   await page.getByRole("option", { name: /^Full access / }).click();
+  const label = access.locator(":scope > span:not([aria-hidden])");
+  const chevron = access.locator(":scope > svg");
+  await expectHint(page, access, /^Full access$/, null);
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   await input.fill("Keep this draft");
   for (const theme of ["dark", "light"]) {
@@ -1117,14 +1151,14 @@ test("access label collapses before narrow composer controls wrap", async ({ pag
       }, width);
       await expect(access).toHaveAccessibleName("Full access");
       await expect(access.locator(":scope > span[aria-hidden]")).toBeVisible();
+      await expect(label).toBeHidden();
+      await expect(chevron).toBeHidden();
+      await expect(access).toHaveCSS("border-top-width", "0px");
       await page.mouse.move(0, 0);
       await page.screenshot({
-        path: `temp/verification/composer-narrow/${theme}-${width}.png`,
+        path: `temp/verification/composer-access/${theme}-${width}-closed.png`,
         animations: "disabled",
       });
-      const label = access.locator(":scope > span:not([aria-hidden])");
-      if (width < 560) await expect(label).toBeHidden();
-      else await expect(label).toBeVisible();
       const model = page
         .locator('[data-composer-model-controls] button[aria-haspopup="dialog"]')
         .first();
@@ -1135,16 +1169,34 @@ test("access label collapses before narrow composer controls wrap", async ({ pag
       ).toBeLessThan(2);
       await expect(input).toHaveValue("Keep this draft");
       await expect(access).toBeInViewport();
+      if (width >= 800) {
+        await access.click();
+        await expect(access).toHaveAttribute("aria-expanded", "true");
+        await expect(label).toBeHidden();
+        await expect(chevron).toBeHidden();
+        await expect(access).toHaveCSS("border-top-width", "0px");
+        expect(await access.boundingBox()).toEqual(accessBounds);
+        await expect(page.getByRole("option", { name: /^Full access / })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        );
+        await page.screenshot({
+          path: `temp/verification/composer-access/${theme}-${width}-open.png`,
+          animations: "disabled",
+        });
+        await page.keyboard.press("Escape");
+      }
     }
   }
   await page.locator("main").evaluate((main) => {
     main.style.inlineSize = "458px";
   });
-  await expect(access.locator(":scope > span:not([aria-hidden])")).toBeHidden();
   await access.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("option", { name: /^Full access / })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await page.getByRole("option", { name: /^Supervised / }).click();
+  await expect(access).toHaveAccessibleName("Supervised");
+  await expect(label).toBeHidden();
+  await expect(input).toHaveValue("Keep this draft");
 });
 
 test("chat busy actions explain steering and queuing without losing the draft", async ({
@@ -1180,11 +1232,15 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   for (const width of [320, 420, 1000]) {
     await page.setViewportSize({ width, height: 800 });
     await expect(send).toBeInViewport();
-    expect(
-      await page
-        .locator("[data-composer-box]")
-        .evaluate((box) => box.scrollWidth <= box.clientWidth + 1),
-    ).toBe(true);
+    // The composer collapses controls from a resize observer, a frame after the viewport changes,
+    // so the width is read until it settles instead of once.
+    await expect
+      .poll(() =>
+        page
+          .locator("[data-composer-box]")
+          .evaluate((box) => box.scrollWidth <= box.clientWidth + 1),
+      )
+      .toBe(true);
   }
   await expect(page.locator("[data-activity-dock]")).toBeVisible();
   // The summary row never paints a patch over the dock it sits in: it is transparent (or matches).
@@ -1414,7 +1470,8 @@ test("model picker names and selects accounts and session shows its active agent
   await expect(panel).toBeVisible();
   // Two accounts: a segmented control in the list header names both; each model is listed once.
   const account = panel.getByRole("radiogroup", { name: "Account", exact: true });
-  await expect(account.getByRole("radio")).toHaveText(["personal", "work"]);
+  await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeVisible();
+  await expect(account.getByRole("radio", { name: "work", exact: true })).toBeVisible();
   await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeChecked();
   const opus = panel.getByRole("option", { name: "Claude Opus 5.5", exact: true });
   await expect(opus).toHaveCount(1);
@@ -1426,7 +1483,8 @@ test("model picker names and selects accounts and session shows its active agent
   await expect(panel).toBeVisible();
   await account.getByRole("radio", { name: "work", exact: true }).click();
   await expect(account.getByRole("radio", { name: "work", exact: true })).toBeChecked();
-  await expect(main).toContainText("Opus 5.5 work");
+  await expect(main).toContainText("Opus 5.5");
+  await expect(main.locator("[data-model-account]")).toHaveText("work");
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   await expect(page.locator("[data-session-agent]")).toContainText(
@@ -1526,11 +1584,10 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
   await expect(page.getByRole("button", { name: "Extras", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
   const advisorField = settingsColumn.getByRole("button", { name: /^Advisor\b/ });
-  // Advisor and Subagents open a picker in the settings column; the provider heading carries
-  // the "Claude Code · " prefix, so options are named by model alone.
+  // Advisor opens beside the models. The batch editor uses the browser column.
   const delegate = async (name: "Advisor" | "Subagents", label: RegExp) => {
     await openPanel("agents");
-    const picker = settingsColumn.locator("[data-model-setting-picker]");
+    const picker = panel.locator("[data-model-setting-picker]");
     if (name === "Advisor") await advisorField.click();
     else {
       // Automatic has no manual list yet. Custom opens the shared model picker.
@@ -1541,7 +1598,7 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
     const choice = picker.getByRole("option", { name: label });
     await choice.click();
     if (name === "Subagents")
-      await picker.getByRole("button", { name: "Done", exact: true }).click();
+      await picker.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(picker).toHaveCount(0);
   };
   await delegate("Advisor", /^Claude Opus 5\.5\b/);
@@ -1630,12 +1687,21 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
   await page.keyboard.press("Escape");
   await expect(main).toContainText("High");
   await expect(page.getByTestId("choice")).toContainText('"serviceTier":"fast"');
-  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.setViewportSize({ width: 1280, height: 800 });
   await openPanel();
+  await choose("Service Tier", "Ultrafast");
+  await expect(page.getByTestId("choice")).toContainText('"serviceTier":"ultrafast"');
+  await expect(option("Service Tier", "Ultrafast")).toHaveAttribute("aria-checked", "true");
   await page.screenshot({
-    path: testInfo.outputPath("chat-codex-settings-wide.png"),
+    path: testInfo.outputPath("chat-codex-ultrafast-dark.png"),
     animations: "disabled",
   });
+  await page.evaluate(() => document.documentElement.classList.add("theme-light"));
+  await page.screenshot({
+    path: testInfo.outputPath("chat-codex-ultrafast-light.png"),
+    animations: "disabled",
+  });
+  await page.evaluate(() => document.documentElement.classList.remove("theme-light"));
   // Models and settings share one panel; its search drives the listbox, so it is a combobox.
   await expect(panel.getByRole("listbox", { name: "Models", exact: true })).toBeVisible();
   await expect(panel.getByRole("combobox", { name: "Search models", exact: true })).toBeVisible();
@@ -1776,7 +1842,7 @@ test("independent scalar model settings preserve the draft caret and sibling val
   await page.keyboard.press("End");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
-  await expect(page.getByTestId("scalar-settings")).toContainText('"serviceTier":"fast"');
+  await expect(page.getByTestId("scalar-settings")).toContainText('"serviceTier":"ultrafast"');
   await expect(draft).toHaveValue("Preserve this draft");
   await expect(draft).toBeFocused();
 });
@@ -1915,6 +1981,80 @@ test("model picker selects image models under Agents in both themes and widths",
     await page.screenshot({
       path: `temp/verification/image-models/picker-${width}-${scheme}.png`,
     });
+  }
+});
+
+test("model picker shows account identity and applies subagent picks as a batch", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [1280, 800]) {
+    for (const theme of ["light", "dark"]) {
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts=3&theme=${theme}`,
+      );
+      await page
+        .getByRole("button", { name: /^Claude Code/ })
+        .first()
+        .click();
+      const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+      await expect(panel).toBeVisible();
+      const opus = panel.getByRole("option", { name: "Claude Opus 5.5", exact: true });
+      await opus.hover();
+      await opus.locator("..").getByRole("button", { name: "Add to favorites" }).click();
+      await panel.locator("[data-model-account-menu]").click();
+      await expect(panel.locator("[data-model-account-list]")).toBeVisible();
+      await expect(opus).toBeVisible();
+      await panel.screenshot({
+        path: `temp/verification/model-picker-rollout/accounts-${width}-${theme}.png`,
+      });
+      await panel.getByRole("radio", { name: /^work/ }).click();
+      await panel.getByRole("tab", { name: "Favorites" }).click();
+      const favorite = panel.getByRole("option", { name: /Opus 5\.5, Claude Code, work/ });
+      await expect(favorite.locator("[data-model-account-number]")).toHaveText("2");
+      await expect(favorite).not.toContainText("Claude Code");
+      await panel.screenshot({
+        path: `temp/verification/model-picker-rollout/favorites-${width}-${theme}.png`,
+      });
+      await panel.getByRole("tab", { name: "Agents", exact: true }).click();
+      const advisor = panel.locator('[data-setting-id="crossAdvisor"] button');
+      await advisor.click();
+      const advisorChoice = panel
+        .locator('[data-model-setting-picker="crossAdvisor"]')
+        .getByRole("option", { name: /^Claude Opus 5\.5/ });
+      await expect(advisorChoice.locator("img, svg").first()).toBeVisible();
+      await panel.screenshot({
+        path: `temp/verification/model-picker-rollout/advisor-${width}-${theme}.png`,
+      });
+      await advisorChoice.click();
+      await expect(advisor.locator("img").first()).toBeVisible();
+      await panel.getByRole("radio", { name: "Custom", exact: true }).click();
+      const editor = panel.locator("[data-model-subagent-editor]");
+      const pickerOptions = editor.getByRole("option");
+      await expect(editor.getByRole("combobox", { name: "Search models" })).toBeFocused();
+      const filter = editor.getByRole("button", { name: /^Accounts:/ });
+      await filter.click();
+      const accounts = page.getByRole("listbox", { name: "Accounts", exact: true });
+      await expect(accounts).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(accounts).toHaveCount(0);
+      await expect(panel).toBeVisible();
+      await filter.click();
+      await accounts.getByRole("option", { name: "Claude Code · personal" }).click();
+      await pickerOptions.first().click();
+      await filter.click();
+      await accounts.getByRole("option", { name: "Claude Code · work" }).click();
+      await pickerOptions.first().click();
+      await expect(editor.getByText("2 selected")).toBeVisible();
+      await expect(page.getByTestId("choice")).not.toContainText('"crossSubagents":"[');
+      await panel.screenshot({
+        path: `temp/verification/model-picker-rollout/bulk-${width}-${theme}.png`,
+      });
+      await editor.getByRole("button", { name: "Apply", exact: true }).click();
+      await expect(page.getByTestId("choice")).toContainText('"crossSubagents":"[');
+    }
   }
 });
 
@@ -2239,7 +2379,11 @@ for (const theme of ["light", "dark"])
         theme === "light",
       );
       const editor = page.getByRole("textbox", { name: "External picker editor" });
-      await editor.focus();
+      // A loaded runner can move focus after the first call (mount effects), so retry until held.
+      await expect(async () => {
+        await editor.focus();
+        await expect(editor).toBeFocused({ timeout: 1000 });
+      }).toPass();
       const skills = page.getByRole("listbox", { name: "Commands and skills" });
       await expect(skills.getByRole("option")).toHaveCount(2);
       await skills.getByRole("option").first().click();
@@ -2322,3 +2466,48 @@ for (const theme of ["light", "dark"])
       await expect(page.getByLabel("Picker activation")).toHaveText("fixture-chat-a");
     });
   }
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`draft Markdown formats in one editor (${theme}, ${width}px)`, async ({
+      page,
+      browserName,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/chat/composer-extras.html?chat-layout&theme=${theme}`);
+      const draft = page.getByRole("textbox", { name: "Message", exact: true });
+      await draft.fill("Plain draft");
+      await expect(draft).toHaveAttribute("data-composer-plain", "true");
+      const source = "## Plan\n\n- **First step**\n- `pnpm test`";
+      await draft.fill(source);
+      const overlay = page.locator(".composer-highlight");
+      await expect(overlay.locator('[data-draft-markdown="heading"]')).toContainText("Plan");
+      const emphasis = overlay.locator('[data-draft-markdown="strong"]');
+      await expect(emphasis).toContainText("First step");
+      await expect(overlay.locator('[data-draft-markdown="code"]')).toContainText("pnpm test");
+      await expect(page.getByRole("button", { name: "Markdown preview", exact: true })).toHaveCount(
+        0,
+      );
+      await expect(page.locator("[data-composer-markdown-preview]")).toHaveCount(0);
+      await expect(draft).toBeFocused();
+      const headerMark = overlay.locator(
+        '[data-draft-markdown="heading"] [data-draft-markdown="mark"]',
+      );
+      await expect(headerMark).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+      await draft.evaluate((field: HTMLTextAreaElement) => field.setSelectionRange(1, 1));
+      await expect(headerMark).toHaveAttribute("data-editing-mark", "");
+      await draft.evaluate((field: HTMLTextAreaElement) =>
+        field.setSelectionRange(field.value.length, field.value.length),
+      );
+      await draft.press("End");
+      await draft.press("Backspace");
+      await expect(overlay.locator('[data-draft-markdown="code"]')).toHaveCount(0);
+      await draft.press("`");
+      await expect(overlay.locator('[data-draft-markdown="code"]')).toHaveCount(1);
+      await expect(draft).toHaveValue(source);
+      if (browserName === "chromium") {
+        await page.screenshot({
+          animations: "disabled",
+          path: `temp/verification/composer-inline-markdown/${theme}-${width}.png`,
+        });
+      }
+    });

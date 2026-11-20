@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+
 export const OPEN_PROJECT_CHANGES_EVENT = "bycoda:open-project-changes";
 
 /** One project of a group, as far as its working tree is known. */
@@ -93,7 +95,7 @@ export async function fetchAllProjects(
       results.push({
         path,
         status: "failed",
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
       });
     }
   }

@@ -39,6 +39,19 @@ describe("normalizeProjectPath", () => {
     await vi.waitFor(() => expect(normalizeProjectPath(alias)).toBe(normalizeProjectPath(b)));
   });
 
+  it("keeps a working set larger than the old 512-entry cache so a list pass never re-resolves", () => {
+    const { a, b, alias, link } = retargetable();
+    vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    const first = normalizeProjectPath(alias);
+    expect(first).toBe(normalizeProjectPath(a));
+    for (let i = 0; i < 1_200; i++)
+      normalizeProjectPath(join(tmpdir(), `bycoda-project-path-working-set-${i}`));
+    unlinkSync(alias);
+    link(b);
+    // Still inside the TTL: an evicted entry would be resolved again, now to b.
+    expect(normalizeProjectPath(alias)).toBe(first);
+  });
+
   it("compares a missing folder as written", () => {
     const missing = join(tmpdir(), "bycoda-project-path-missing", "Proj\\");
     expect(normalizeProjectPath(missing, "linux")).toBe(

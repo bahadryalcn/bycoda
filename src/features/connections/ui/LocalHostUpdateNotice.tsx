@@ -12,6 +12,7 @@ import { localHostCompatibility } from "../model/buildCompatibility";
 import type { HostDescriptor, RemoteMachine } from "../model/protocol";
 import { updateBundledHostNow, useBundledHostStatus } from "../model/bundledHostStatus";
 import { localHostNotice, type LocalHostCompatibility } from "../model/localHostNotice";
+import { errorText } from "../../../shared/lib/errors";
 
 /**
  * Explains a host update the app could not apply yet and lets the owner install it now,
@@ -81,7 +82,7 @@ export function LocalHostUpdateNotice() {
     try {
       await updateBundledHostNow();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorText(reason));
     } finally {
       setUpdating(false);
     }

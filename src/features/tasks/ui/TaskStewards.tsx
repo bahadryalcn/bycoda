@@ -30,6 +30,7 @@ import {
   type StewardDraft,
   stewardProjectName,
 } from "../model/stewardClient";
+import { isConfigurationConflict } from "../model/configurationConflict";
 import type { TaskBoardOperations } from "./useTaskBoardOperations";
 import { machineName } from "./TaskFormFields";
 import { StewardForm } from "./TaskStewardForm";
@@ -259,6 +260,8 @@ export function useTaskStewards({
       const message = presentRemoteError(reason, { explicit: true });
       setError(message);
       setSaveError(message);
+      // The draft stays open with its edits; the board shows what the other client saved.
+      if (isConfigurationConflict(reason)) void refresh();
     } finally {
       setSaving(false);
     }

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
@@ -32,6 +33,7 @@ import {
   pickAttachments,
   revokeAttachment,
 } from "../model/attachments";
+import { collectSkippedAttachments } from "../model/attachmentSkips";
 import { attachmentTokens } from "../model/attachmentTokens";
 import {
   addDraftAttachments,
@@ -105,7 +107,7 @@ async function finishCollect(steps: {
   try {
     steps.apply(await steps.read());
   } catch (reason) {
-    if (steps.isAlive()) steps.setError(reason instanceof Error ? reason.message : String(reason));
+    if (steps.isAlive()) steps.setError(errorText(reason));
   } finally {
     steps.release();
   }
@@ -318,7 +320,7 @@ function QueueEditContent({
     if (files.length > 0) {
       event.preventDefault();
       if (!canAttach) return;
-      void collect(() => attachmentsFromFiles(files));
+      void attachBlobs(files);
       return;
     }
     // A webview reports a pasted screenshot or copied file as text only (or
@@ -380,6 +382,16 @@ function QueueEditContent({
       });
     });
   };
+
+  /** Pasted and dropped files: valid ones attach, skipped blobs are named instead of vanishing. */
+  const attachBlobs = (files: File[]) =>
+    collect(async () => {
+      const skips = collectSkippedAttachments();
+      const attached = await attachmentsFromFiles(files, { onSkipped: skips.onSkipped });
+      const notice = skips.notice();
+      if (alive.current && notice) setError(notice);
+      return attached;
+    });
 
   const hasFiles = (event: DragEvent) =>
     Array.from(event.dataTransfer?.types ?? []).includes("Files");
@@ -486,7 +498,7 @@ function QueueEditContent({
           event.preventDefault();
           if (!canAttach) return;
           const files = [...event.dataTransfer.files];
-          void collect(() => attachmentsFromFiles(files));
+          void attachBlobs(files);
         }}
       >
         {/* One field frame like the composer: attachments on top, the attach action below. */}

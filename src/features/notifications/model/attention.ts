@@ -102,18 +102,50 @@ function firstLine(text: string, max = SUMMARY_MAX): string {
 
 export type SessionPhase = "idle" | "working" | "waiting" | "background" | "needs-input";
 
+type PhaseInputs = {
+  busy: boolean;
+  pendingQuestion: boolean;
+  pendingOwnerApproval: boolean | undefined;
+  backgroundTasks: string[] | undefined;
+  backgroundAgents: number | undefined;
+};
+
+// The dock walks every block, so the phase rides on the immutable block array's
+// identity plus the other dock inputs: a flush that changed another session
+// (or only this one's title) does not rescan this transcript.
+const phaseScans = new WeakMap<Block[], { inputs: PhaseInputs; phase: SessionPhase }>();
+
+function samePhaseInputs(a: PhaseInputs, b: PhaseInputs): boolean {
+  return (
+    a.busy === b.busy &&
+    a.pendingQuestion === b.pendingQuestion &&
+    a.pendingOwnerApproval === b.pendingOwnerApproval &&
+    a.backgroundAgents === b.backgroundAgents &&
+    (a.backgroundTasks === b.backgroundTasks ||
+      (a.backgroundTasks?.length === b.backgroundTasks?.length &&
+        (a.backgroundTasks ?? []).every((task, i) => task === b.backgroundTasks?.[i])))
+  );
+}
+
 /** The composer dock's state for a session, without the "done" afterglow. */
 export function sessionPhase(session: Session): SessionPhase {
-  const { state } = deriveActivityDock({
-    blocks: session.blocks,
+  const inputs: PhaseInputs = {
     busy: dockTurnOpen(session),
     pendingQuestion: session.pendingQuestion != null,
     pendingOwnerApproval: session.pendingOwnerApproval,
     backgroundTasks: session.backgroundTasks,
     backgroundAgents: session.backgroundAgents,
-    unseenDone: false,
+  };
+  const cached = phaseScans.get(session.blocks);
+  if (cached && samePhaseInputs(cached.inputs, inputs)) return cached.phase;
+  const { state } = deriveActivityDock({ blocks: session.blocks, ...inputs, unseenDone: false });
+  const phase = state === "done" ? "idle" : state;
+  phaseScans.set(session.blocks, {
+    // Copy the task list: a later in-place edit must not make a stale entry look equal.
+    inputs: { ...inputs, backgroundTasks: inputs.backgroundTasks?.slice() },
+    phase,
   });
-  return state === "done" ? "idle" : state;
+  return phase;
 }
 
 /**

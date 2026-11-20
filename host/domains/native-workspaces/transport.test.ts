@@ -177,6 +177,10 @@ async function fixture(deadline?: number) {
     expire: () => {
       clock += NATIVE_BUFFER_UPLOAD_LIMITS.ttlMs + 1;
     },
+    /** Moves the clock without passing the 60 s commit deadline. */
+    advance: (ms: number) => {
+      clock += ms;
+    },
     revoke: () => {
       permitted = false;
     },
@@ -208,7 +212,8 @@ it("honors an explicit deadline ceiling while retaining the exact accepted commi
     code: RPC_ERROR_CODES.deadlineExceeded,
     data: { delivery: "unknown", retryable: false },
   });
-  f.expire();
+  // The transport deadline only ends the wait; the commit keeps running inside its own limit.
+  f.advance(1_000);
   expect(
     (await client.request("native.buffers.upload.status", { uploadId: "upload-a" })).result.state,
   ).toBe("committing");
@@ -216,6 +221,28 @@ it("honors an explicit deadline ceiling while retaining the exact accepted commi
   expect(
     (await client.request("native.buffers.upload.commit", { uploadId: "upload-a" })).result,
   ).toMatchObject({ state: "completed", result: { acknowledged: true } });
+  expect(f.update).toHaveBeenCalledTimes(1);
+});
+
+it("reports an unknown delivery once the commit limit passes and never rewrites it as completed (#1380)", async () => {
+  const f = await fixture(),
+    client = await f.connect();
+  await f.stage(client);
+  const commit = client.request("native.buffers.upload.commit", { uploadId: "upload-a" });
+  await f.started.promise;
+  f.expire();
+  expect(
+    (await client.request("native.buffers.upload.status", { uploadId: "upload-a" })).result,
+  ).toMatchObject({ state: "failed", outcome: { delivery: "unknown" } });
+  f.finish.resolve();
+  expect((await commit).result).toMatchObject({
+    state: "failed",
+    outcome: { delivery: "unknown" },
+  });
+  // A late success of the single update must not change the receipt or run again.
+  expect(
+    (await client.request("native.buffers.upload.status", { uploadId: "upload-a" })).result,
+  ).toMatchObject({ state: "failed", outcome: { delivery: "unknown" } });
   expect(f.update).toHaveBeenCalledTimes(1);
 });
 
@@ -234,7 +261,7 @@ it("returns authoritative null for missing/expired/foreign uploads but rejects r
   expect(f.update).not.toHaveBeenCalled();
   const commit = owner.request("native.buffers.upload.commit", key);
   await f.started.promise;
-  f.expire();
+  f.advance(1_000);
   expect((await owner.request("native.buffers.upload.status", key)).result.state).toBe(
     "committing",
   );

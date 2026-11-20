@@ -24,7 +24,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { DateTimeRangePicker } from "../../../shared/ui/DateTimeRangePicker";
-import { ArrowDownCircle, ListFilter, RefreshCw } from "../../../shared/ui/icons";
+import { ArrowDownCircle, Calendar, ListFilter, RefreshCw } from "../../../shared/ui/icons";
 import {
   PROVIDER_ACCOUNT_PROVIDERS,
   providerAccounts,
@@ -172,6 +172,9 @@ export function UsageOverview({
   const setDimension = view === "projects" ? setProjectDimension : setOverviewDimension;
   const [resolution, setResolution] = useState<UsageResolution>("day");
   const [openFilters, setOpenFilters] = useState(false);
+  // The date range has one owner: the preset Select. Its picker opens from there.
+  const [openDateRange, setOpenDateRange] = useState(false);
+  const dateAnchor = useRef<HTMLDivElement>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showProjectTable, setShowProjectTable] = useState(false);
   const [reload, setReload] = useState(0);
@@ -587,19 +590,41 @@ export function UsageOverview({
           ) : null}
         </div>
         <div className="usage-analytics-actions">
-          <Select
-            hideLabel
-            label={t("Date range")}
-            value={preset}
-            options={Object.entries(presetLabels)
-              .filter(([key]) => key !== "custom" || preset === "custom")
-              .map(([value, label]) => ({ value, label: t(label) }))}
-            onValueChange={(v) => {
-              setPreset(v as Preset);
-              setInterval(presetWindow(v as Preset, Date.now()));
-            }}
-          />
-
+          <div className="usage-controls" ref={dateAnchor}>
+            <Select
+              hideLabel
+              label={t("Date range")}
+              value={preset}
+              options={Object.entries(presetLabels).map(([value, label]) => ({
+                value,
+                label: t(label),
+              }))}
+              onValueChange={(v) => {
+                if (v === "custom") {
+                  // Keeps the current interval; the picker edits it.
+                  setPreset("custom");
+                  setOpenDateRange(true);
+                  return;
+                }
+                setOpenDateRange(false);
+                setPreset(v as Preset);
+                setInterval(presetWindow(v as Preset, Date.now()));
+              }}
+            />
+            {preset === "custom" && (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Edit date range")}
+                selected={openDateRange}
+                aria-haspopup="dialog"
+                aria-expanded={openDateRange}
+                onClick={() => setOpenDateRange(!openDateRange)}
+              >
+                <Calendar aria-hidden className="icon-sm" strokeWidth={1.75} />
+              </Button>
+            )}
+          </div>
           <Button
             ref={filterAnchor}
             variant="ghost"
@@ -612,7 +637,7 @@ export function UsageOverview({
           >
             <ListFilter aria-hidden className="icon-sm" strokeWidth={1.75} />
           </Button>
-          {!limitsOnly && view !== "limits" && !unavailable && !partial && (
+          {!limitsOnly && view !== "limits" && (
             <Button
               variant="ghost"
               iconOnly
@@ -625,18 +650,16 @@ export function UsageOverview({
           )}
         </div>
       </div>
-      {openFilters && (
+      {openDateRange && preset === "custom" && (
         <Popover
-          anchor={filterAnchor}
-          align="end"
+          anchor={dateAnchor}
+          align="start"
           width={350}
-          role="dialog"
-          aria-label={t("Filters")}
-          onDismiss={() => setOpenFilters(false)}
-          autoFocus
+          kind="dialog"
+          aria-label={t("Custom date and time")}
+          onDismiss={() => setOpenDateRange(false)}
         >
           <div className="usage-filter-panel">
-            <SectionLabel>{t("Filters")}</SectionLabel>
             <DateTimeRangePicker
               required
               minuteStep={15}
@@ -649,53 +672,20 @@ export function UsageOverview({
                 setSelectedSession(null);
               }}
             />
-            {!limitsOnly && view !== "limits" && (
-              <>
-                <SectionLabel>{t("Chart options")}</SectionLabel>
-                <div className="usage-controls">
-                  <Select
-                    hideLabel
-                    label={t("Chart metric")}
-                    value={metric}
-                    onValueChange={(v) => setMetric(v as UsageMetric)}
-                    options={Object.entries(metricNames).map(([value, label]) => ({
-                      value,
-                      label: t(label),
-                    }))}
-                  />
-                  {view !== "time" && (
-                    <Select
-                      hideLabel
-                      label={t("Group by")}
-                      value={dimension}
-                      onValueChange={(v) => setDimension(v as UsageDimension)}
-                      options={(["provider", "account", "model", "project"] as const).map(
-                        (value) => ({
-                          value,
-                          label: t(names[value]),
-                        }),
-                      )}
-                    />
-                  )}
-                  {view === "overview" && (
-                    <>
-                      <Select
-                        hideLabel
-                        label={t("Resolution")}
-                        value={resolution}
-                        onValueChange={(v) => setResolution(v as UsageResolution)}
-                        options={[
-                          { value: "15m", label: t("15 minutes") },
-                          { value: "hour", label: t("Hourly") },
-                          { value: "day", label: t("Daily") },
-                          { value: "week", label: t("Weekly") },
-                        ]}
-                      />
-                    </>
-                  )}
-                </div>
-              </>
-            )}
+          </div>
+        </Popover>
+      )}
+      {openFilters && (
+        <Popover
+          anchor={filterAnchor}
+          align="end"
+          width={350}
+          kind="dialog"
+          aria-label={t("Filters")}
+          onDismiss={() => setOpenFilters(false)}
+        >
+          <div className="usage-filter-panel">
+            <SectionLabel>{t("Filters")}</SectionLabel>
             {filterKeys.map((key) => (
               <SearchableSelect
                 key={key}
@@ -756,9 +746,6 @@ export function UsageOverview({
                 "Recorded session logs could not be read. Duration and session totals may be incomplete.",
             )}
           </p>
-          <Button variant="secondary" loading={refreshing} onClick={refreshData}>
-            {t("Refresh usage")}
-          </Button>
         </Alert>
       )}
       {view !== "limits" && partial && (
@@ -781,9 +768,6 @@ export function UsageOverview({
               {t("Session data is limited to the latest 50,000 turns. Select a shorter interval.")}
             </p>
           ) : null}
-          <Button variant="ghost" loading={refreshing} onClick={refreshData}>
-            {t("Refresh usage")}
-          </Button>
         </Alert>
       )}
       {view !== "limits" && showAnalytics && (
@@ -864,7 +848,9 @@ export function UsageOverview({
                                   ? "Recorded turn elapsed time"
                                   : "tokens",
                             )
-                          : `${change >= 0 ? "+" : ""}${formatUsagePercent(change)} ${t("vs previous period")}`}
+                          : t("{p0} vs previous period", {
+                              p0: `${change >= 0 ? "+" : ""}${formatUsagePercent(change)}`,
+                            })}
                       </Text>
                     </div>
                   );
@@ -936,6 +922,46 @@ export function UsageOverview({
                   : "No usage recorded in this period.",
               )}
             </Alert>
+          )}
+          {!limitsOnly && view !== "limits" && (
+            <div className="usage-controls usage-chart-options">
+              <Select
+                hideLabel
+                label={t("Chart metric")}
+                value={metric}
+                onValueChange={(v) => setMetric(v as UsageMetric)}
+                options={Object.entries(metricNames).map(([value, label]) => ({
+                  value,
+                  label: t(label),
+                }))}
+              />
+              {view !== "time" && (
+                <Select
+                  hideLabel
+                  label={t("Group by")}
+                  value={dimension}
+                  onValueChange={(v) => setDimension(v as UsageDimension)}
+                  options={(["provider", "account", "model", "project"] as const).map((value) => ({
+                    value,
+                    label: t(names[value]),
+                  }))}
+                />
+              )}
+              {view === "overview" && (
+                <Select
+                  hideLabel
+                  label={t("Resolution")}
+                  value={resolution}
+                  onValueChange={(v) => setResolution(v as UsageResolution)}
+                  options={[
+                    { value: "15m", label: t("15 minutes") },
+                    { value: "hour", label: t("Hourly") },
+                    { value: "day", label: t("Daily") },
+                    { value: "week", label: t("Weekly") },
+                  ]}
+                />
+              )}
+            </div>
           )}
           {view === "overview" && !metricUnavailable && (
             <>

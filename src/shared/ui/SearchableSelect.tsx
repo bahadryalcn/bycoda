@@ -41,6 +41,7 @@ import { ComboboxItem, ComboboxList, ComboboxStatus } from "./arc/combobox/combo
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { PickerChoice } from "./picker/PickerChoice";
 import { PickerFooter } from "./picker/PickerList";
+import { usePointerMovement, type PointerMovement } from "./picker/usePointerMovement";
 import {
   ALL_GROUPS,
   filterByGroup,
@@ -264,6 +265,7 @@ const OptionRow = memo(function OptionRow({
   controlDisabled,
   onPick,
   onHover,
+  pointerMoved,
 }: {
   option: SearchableSelectOption;
   index: number;
@@ -277,6 +279,8 @@ const OptionRow = memo(function OptionRow({
   controlDisabled: boolean;
   onPick: (value: string) => void;
   onHover: (index: number) => void;
+  /** The list's shared guard: stationary pointer entry after keyboard scrolling must not take the highlight. */
+  pointerMoved: PointerMovement;
 }) {
   const title = option.description ? `${option.label} ${option.description}` : option.label;
   return (
@@ -297,8 +301,8 @@ const OptionRow = memo(function OptionRow({
       data-active={highlighted || undefined}
       data-highlighted={highlighted || undefined}
       onMouseDown={(event) => event.preventDefault()}
-      onMouseEnter={() => {
-        if (!option.disabled) onHover(index);
+      onPointerMove={(event) => {
+        if (pointerMoved(event) && !option.disabled) onHover(index);
       }}
       onClick={() => onPick(option.value)}
       className={option.pinned ? styles.pinnedOption : undefined}
@@ -338,6 +342,9 @@ function optionSections(options: readonly SearchableSelectOption[]) {
   });
   return sections;
 }
+
+const COMPACT_TRIGGER_CLASS =
+  "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-ui-caption hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]";
 
 function SearchableSelectMenu({
   label,
@@ -410,6 +417,7 @@ function SearchableSelectMenu({
   const [active, setActive] = useState(0);
   const [groupKey, setGroupKey] = useState(ALL_GROUPS);
   const [menuWidth, setMenuWidth] = useState<number>();
+  const pointerMoved = usePointerMovement();
   // A disabled picker cannot stay open: close during render so re-enabling does not reopen it.
   if ((disabled || readOnly) && (open || query)) {
     setOpen(false);
@@ -711,11 +719,9 @@ function SearchableSelectMenu({
             // disabled roles); the compact variants are deliberate toolbar shapes with their own utilities.
             framed
               ? `bycoda-arc-select text-left ${variant === "transparent" ? "bg-transparent" : ""}`
-              : variant === "row"
-                ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]"
-                : variant === "panel"
-                  ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-[14px] font-medium hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.995]"
-                  : "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]",
+              : variant === "panel"
+                ? "flex h-[max(var(--ui-control-height-panel),calc(var(--ui-control-height-lg)+var(--space-5)))] w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-ui-body font-medium hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)] active:scale-[0.995]"
+                : COMPACT_TRIGGER_CLASS,
           ]
             .filter(Boolean)
             .join(" ")}
@@ -881,6 +887,7 @@ function SearchableSelectMenu({
                       controlDisabled={disabled}
                       onPick={pickLatest}
                       onHover={setActive}
+                      pointerMoved={pointerMoved}
                     />
                   );
                 });

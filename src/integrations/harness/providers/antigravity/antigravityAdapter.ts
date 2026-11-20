@@ -17,9 +17,11 @@ import {
   stopAntigravityStreamSession,
 } from "./antigravityStream";
 import { resolveAntigravityBinary } from "../../core/child";
+import { leanContext } from "../../core/nativeToolLimits";
 import type { SendTurnInput } from "../../core/types";
 import { registerHarness, type HarnessAdapter } from "../../core/registry";
 import { settleProviderRetirements } from "../../core/providerRetirement";
+import { assertProviderOperation, finishProviderOperation } from "../turnWriter";
 
 /**
  * Transport comes from the binary the host found, not the platform: ACP where
@@ -27,6 +29,13 @@ import { settleProviderRetirements } from "../../core/providerRetirement";
  * A session only ever uses one, so lifecycle calls reach both safely.
  */
 async function sendTurn(input: SendTurnInput): Promise<void> {
+  if (leanContext(input.modelSettings)) {
+    assertProviderOperation(input.operationContext);
+    finishProviderOperation(input.operationContext);
+    throw new Error(
+      "Antigravity chat-only mode is unavailable: its active agent still exposes tools.",
+    );
+  }
   const binary = await resolveAntigravityBinary();
   if (binary.transport === "stream-json") {
     return sendAntigravityStreamTurn(input, binary);

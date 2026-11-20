@@ -5,11 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DragDropEvent } from "@tauri-apps/api/webview";
 import { useExternalFileDrop } from "./useExternalFileDrop";
 
-const native = vi.hoisted(() => ({ listen: vi.fn(), directory: vi.fn() }));
+const native = vi.hoisted(() => ({ listen: vi.fn(), directory: vi.fn(), toast: vi.fn() }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: native.listen }),
 }));
 vi.mock("../../../platform/tauri/fs", () => ({ isLocalDirectory: native.directory }));
+vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: native.toast } }));
 vi.mock("../../../features/files/ui/FileEditor", () => ({ FileEditor: () => null }));
 vi.mock("../../../shared/lib/dragPoint", () => ({
   dragPointToClient: (x: number, y: number) => ({ x: x / 2, y: y / 2 }),
@@ -143,6 +144,48 @@ describe("external native file drops", () => {
     await act(async () => root.unmount());
     await act(async () => resolve(false));
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it("explains an ignored folder and still opens its file siblings", async () => {
+    native.directory.mockImplementation(async (path) => path === "C:/folder");
+    await drop(["C:/folder", "C:/file.txt"]);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0][0]).toBe("C:/file.txt");
+    expect(native.toast).toHaveBeenCalledTimes(1);
+    expect(native.toast).toHaveBeenCalledWith({
+      id: "external-file-drop-ignored",
+      tone: "warning",
+      message: "Folders can't be opened as files.",
+    });
+  });
+
+  it("explains invalid or remote paths once, combined with folder reasons", async () => {
+    native.directory.mockImplementation(async (path) => path === "C:/folder");
+    await drop(["C:/folder", "relative.txt", "remote://mac/file.txt"]);
+    expect(open).not.toHaveBeenCalled();
+    expect(native.toast).toHaveBeenCalledTimes(1);
+    expect(native.toast.mock.calls[0][0].message).toBe(
+      "Folders can't be opened as files. Only local files can be opened by dropping them here.",
+    );
+  });
+
+  it("reports a failed metadata check without blocking the other dropped files", async () => {
+    native.directory.mockImplementation(async (path) => {
+      if (path === "C:/broken.pdf") throw new Error("metadata unavailable");
+      return false;
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await drop(["C:/broken.pdf", "C:/ready.txt"]);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0][0]).toBe("C:/ready.txt");
+    expect(native.toast.mock.calls[0][0].message).toBe("Couldn't open a dropped file.");
+    error.mockRestore();
+  });
+
+  it("stays silent when every dropped file opens", async () => {
+    await drop(["C:/a.txt", "C:/b.pdf"]);
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(native.toast).not.toHaveBeenCalled();
   });
 
   it("opens a ready file without waiting for another dropped path's slow metadata", async () => {

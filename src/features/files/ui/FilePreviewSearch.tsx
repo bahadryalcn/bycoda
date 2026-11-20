@@ -4,6 +4,7 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/technical";
+import { findControlLabels } from "../../../shared/i18n/findLabels";
 import {
   useCallback,
   useEffect,
@@ -154,9 +155,9 @@ export function FilePreviewSearch({
   children: ReactNode;
 }) {
   useLocale();
+  const labels = findControlLabels(t);
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const previewOwnerRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const focusFrameRef = useRef<number | null>(null);
   const activeRef = useRef(active);
@@ -180,13 +181,6 @@ export function FilePreviewSearch({
   const [mutationVersion, setMutationVersion] = useState(0);
   activeRef.current = active;
   openRef.current = open;
-
-  useLayoutEffect(() => {
-    // Accessible names are translated; find and keyboard recovery share the
-    // actual document scroll owner instead of looking up its English label.
-    previewOwnerRef.current =
-      contentRef.current?.querySelector<HTMLElement>(".markdown-preview") ?? contentRef.current;
-  }, [active, contentVersion]);
 
   const cancelFocus = useCallback(() => {
     if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
@@ -218,7 +212,7 @@ export function FilePreviewSearch({
     focusFrameRef.current = requestAnimationFrame(() => {
       focusFrameRef.current = null;
       if (!activeRef.current) return;
-      previewOwnerRef.current?.focus({ preventScroll: true });
+      previewScrollOwner(contentRef.current)?.focus({ preventScroll: true });
     });
   }, [cancelFocus]);
 
@@ -229,7 +223,7 @@ export function FilePreviewSearch({
     currentRef.current = next;
     setCurrent(next);
     paintHighlights(ownerRef.current, matches, next);
-    revealRange(matches[next], previewOwnerRef.current);
+    revealRange(matches[next], previewScrollOwner(contentRef.current));
   }, []);
 
   useLayoutEffect(() => {
@@ -319,7 +313,7 @@ export function FilePreviewSearch({
       setResult({ capped: search.capped, invalid: search.invalid, timedOut: search.timedOut });
       paintHighlights(ownerRef.current, search.matches, nextCurrent);
       if (revealRef.current && nextCurrent >= 0) {
-        revealRange(search.matches[nextCurrent], previewOwnerRef.current);
+        revealRange(search.matches[nextCurrent], previewScrollOwner(contentRef.current));
       }
       revealRef.current = false;
     });
@@ -425,21 +419,21 @@ export function FilePreviewSearch({
           </SearchInputGroup>
           <FindToggle
             label={t("Aa")}
-            title={t("Match Case")}
+            title={labels.matchCase}
             shortcut="Alt+C"
             pressed={caseSensitive}
             onClick={() => toggle(setCaseSensitive)}
           />
           <FindToggle
             label={t("ab")}
-            title={t("Match Whole Word")}
+            title={labels.matchWholeWord}
             shortcut="Alt+W"
             pressed={wholeWord}
             onClick={() => toggle(setWholeWord)}
           />
           <FindToggle
             label=".*"
-            title={t("Use Regular Expression")}
+            title={labels.useRegex}
             shortcut="Alt+R"
             pressed={regexp}
             onClick={() => toggle(setRegexp)}
@@ -448,7 +442,7 @@ export function FilePreviewSearch({
             size="sm"
             variant="ghost"
             iconOnly
-            label={t("Previous Match")}
+            label={labels.previousMatch}
             shortcut="Mod+Shift+G"
             disabled={total === 0}
             onMouseDown={(event) => event.preventDefault()}
@@ -460,7 +454,7 @@ export function FilePreviewSearch({
             size="sm"
             variant="ghost"
             iconOnly
-            label={t("Next Match")}
+            label={labels.nextMatch}
             shortcut="Mod+G"
             disabled={total === 0}
             onMouseDown={(event) => event.preventDefault()}
@@ -552,6 +546,12 @@ function previewTextRuns(root: HTMLElement): TextRun[] {
     run.segments.push({ node, from, to: run.text.length });
   }
   return runs;
+}
+
+const PREVIEW_SCROLL_OWNER = ".markdown-preview, [data-preview-scroll]";
+
+function previewScrollOwner(root: HTMLElement | null): HTMLElement | null {
+  return root?.querySelector<HTMLElement>(PREVIEW_SCROLL_OWNER) ?? root ?? null;
 }
 
 function blockContainer(element: Element, root: HTMLElement): Element {

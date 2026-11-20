@@ -29,16 +29,16 @@ import {
 } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 import { LocalTerminalSuggestions } from "./LocalTerminalSuggestions";
-import { TerminalCursorPopover } from "./TerminalCursorPopover";
 import styles from "./TerminalTools.module.css";
 import type { SshShellController } from "../model/sshShellIntegration";
-import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
-import { localTerminalPrefix } from "../model/localTerminalCompletion";
 import { useHideWhileTyping } from "./useHideWhileTyping";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
 const SEARCH_RESULT_LIMIT = 1000;
+// Output-driven refresh window: a flowing process refreshes the count at most
+// this often instead of re-scanning the whole scrollback on every write.
+const SEARCH_OUTPUT_REFRESH_MS = 750;
 
 export function TerminalTools({
   terminalId,
@@ -63,7 +63,10 @@ export function TerminalTools({
   onModeChange: (mode: TerminalTool) => void;
   ready: boolean;
   suggestionsAllowed?: boolean;
-  remoteShell?: SshShellController;
+  remoteShell?: Pick<
+    SshShellController,
+    "automatic" | "source" | "waiting" | "request" | "dismiss" | "setSource" | "setAutomatic"
+  >;
   onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
   onSavedCommands?: () => void;
   onStartupReview?: () => Promise<void>;
@@ -88,23 +91,7 @@ export function TerminalTools({
   const helpAnchor = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  // undefined: not measured yet; null: the prompt line cannot be read.
-  const [promptPrefix, setPromptPrefix] = useState<string | null>();
-  const retaining = !!remoteShell?.preview && mode === null;
   const [overlayRef, typing] = useHideWhileTyping<HTMLDivElement>();
-
-  // Presentation only: narrows the retained passive list to the echoed prompt
-  // text while the next native snapshot is pending. Never used for insertion.
-  useEffect(() => {
-    if (!terminal || !retaining) return;
-    const sync = () => setPromptPrefix(localTerminalPrefix(terminal));
-    sync();
-    const subscription = terminal.onWriteParsed(sync);
-    return () => {
-      subscription.dispose();
-      setPromptPrefix(undefined);
-    };
-  }, [terminal, retaining]);
 
   useEffect(() => {
     if (!terminal) return;
@@ -147,6 +134,27 @@ export function TerminalTools({
         setFound(true);
       }
     };
+    // Output refresh keeps the user's position: findNext would advance from the
+    // selection end, so re-run the search from the selection start instead, and
+    // restore the viewport the addon may have scrolled away from.
+    const refreshWhileStreaming = () => {
+      const addon = searchRef.current;
+      if (!query || !addon) return;
+      const buffer = terminal.buffer.active;
+      const following = buffer.viewportY >= buffer.baseY;
+      const viewportY = buffer.viewportY;
+      const options = { decorations: searchDecorations };
+      if (terminal.hasSelection()) {
+        // Clearing the cached term makes the addon search from the selection start,
+        // so the current match is re-selected and the count is recomputed.
+        addon.clearDecorations();
+        setFound(addon.findPrevious(query, options));
+      } else {
+        setFound(addon.findNext(query, options));
+      }
+      if (following) terminal.scrollToBottom();
+      else if (terminal.buffer.active.viewportY !== viewportY) terminal.scrollToLine(viewportY);
+    };
     refresh();
     // xterm clears its selection when the grid resizes, including when this
     // compact toolbar wraps in a narrow split pane. Restore the active search.
@@ -159,8 +167,8 @@ export function TerminalTools({
       if (!query || pendingRefresh !== undefined) return;
       pendingRefresh = setTimeout(() => {
         pendingRefresh = undefined;
-        refresh();
-      }, 150);
+        refreshWhileStreaming();
+      }, SEARCH_OUTPUT_REFRESH_MS);
     });
     return () => {
       clearTimeout(pendingRefresh);
@@ -385,26 +393,6 @@ export function TerminalTools({
       ) : null}
     </div>
   );
-  // Before the first measurement the screen still shows the retained prefix.
-  const shownPrefix = promptPrefix === undefined ? remoteShell?.preview?.prefix : promptPrefix;
-  const preview =
-    retaining && remoteShell?.preview && shownPrefix != null
-      ? {
-          prefix: shownPrefix,
-          suggestions: remoteShell.preview.suggestions.filter(
-            (value) => value.startsWith(shownPrefix) && value !== shownPrefix,
-          ),
-        }
-      : undefined;
-  const showRemote =
-    terminal &&
-    remoteShell &&
-    !alternate &&
-    (mode === "remote" ||
-      (mode === null &&
-        remoteShell.automatic &&
-        ((remoteShell.state?.status === "suggestions" && !!remoteShell.state.suggestions?.length) ||
-          !!preview?.suggestions.length)));
   const overlayAppearance = actionContentAttributes(
     { phase: "hover-overlay", hidden: typing, open: mode === "search" || menuOpen || helpOpen },
     styles.overlay,
@@ -487,11 +475,9 @@ export function TerminalTools({
                     anchor={menuAnchor}
                     align="end"
                     width={300}
-                    autoFocus
                     solid
-                    role="dialog"
+                    kind="dialog"
                     aria-label={t("Terminal pane actions")}
-                    tabIndex={-1}
                     onDismiss={() => setMenuOpen(false)}
                   >
                     <div className={styles.menuBody}>
@@ -593,7 +579,7 @@ export function TerminalTools({
         <Popover
           anchor={helpAnchor}
           align="end"
-          role="dialog"
+          kind="dialog"
           aria-label={t("About shell suggestions")}
           width={340}
           onDismiss={() => setHelpOpen(false)}
@@ -619,25 +605,6 @@ export function TerminalTools({
           explicit={mode === "command"}
           onClose={() => changeMode(null)}
         />
-      ) : null}
-      {showRemote ? (
-        <>
-          <TerminalCursorPopover
-            terminal={terminal}
-            onDismiss={() => {
-              remoteShell.dismiss();
-              changeMode(null);
-            }}
-          >
-            <RemoteShellSuggestions
-              shell={remoteShell}
-              terminal={terminal}
-              preview={preview}
-              selectionMode={mode === "remote"}
-              onClose={() => changeMode(null)}
-            />
-          </TerminalCursorPopover>
-        </>
       ) : null}
     </>
   );

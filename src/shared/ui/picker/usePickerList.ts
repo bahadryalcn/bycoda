@@ -17,6 +17,8 @@ export type PickerOption = {
   title: ReactNode;
   /** Typeahead and accessible text when `title` is not a string. */
   textValue?: string;
+  /** Names a visual identity, such as a provider logo, that has no visible text. */
+  accessibleLabel?: string;
   /** Leading glyph, logo, avatar or colour dot (icon-sm/icon-md). */
   icon?: ReactNode;
   /** Short secondary text on the title line, end-aligned (path, account, current value). */
@@ -32,6 +34,8 @@ export type PickerOption = {
   disabledReason?: string;
   /** Action row ("New terminal", "Manage servers…"): runs this instead of changing the selection, no check mark. */
   onAction?: () => void;
+  /** Action row that opens a popup listbox (flyout): announced as its trigger and linked to that list. */
+  popup?: { listId: string; expanded: boolean };
   /** Pointer context menu and Shift+F10/ContextMenu key on the active option. */
   onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
 };

@@ -31,6 +31,12 @@
   max-inline-size: 100%;
   margin: 0;
 }
+/* The project path is visible text under the heading (not hover-only), so keyboard and
+   touch users see which folder the new session runs in. Long paths wrap; nothing is cut. */
+.bycoda-empty .bycoda-task-path {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
 .bycoda-empty .bycoda-task-brief h2 {
   max-inline-size: 100%;
   white-space: normal;
@@ -46,6 +52,7 @@
 }
 .bycoda-entry-composer {
   position: relative;
+  z-index: 1;
   min-inline-size: 0;
   max-inline-size: 896px;
   margin-inline: auto;

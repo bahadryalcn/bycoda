@@ -10,7 +10,7 @@ export const REVEAL_LABEL = IS_MAC
   ? "Reveal in Finder"
   : IS_WIN
     ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+    : "Open containing folder";
 
 /** Menu item ids that mutate the filesystem or start another operation: disabled while one runs. */
 export const BUSY_MENU_ITEMS = [
@@ -64,7 +64,7 @@ export function explorerItems(
       kind: "item",
       id: "new-folder",
       get label() {
-        return t("New Folder");
+        return t("New folder");
       },
       description: createIn,
     },
@@ -109,7 +109,7 @@ export function explorerItems(
       kind: "item",
       id: "copy-path",
       get label() {
-        return t("Copy Path");
+        return t("Copy path");
       },
       shortcut: `${MOD}${SHIFT}C`,
     },
@@ -117,7 +117,7 @@ export function explorerItems(
       kind: "item",
       id: "copy-relative-path",
       get label() {
-        return t("Copy Relative Path");
+        return t("Copy relative path");
       },
     },
     { kind: "sep" },
@@ -226,7 +226,7 @@ export function explorerHeaderItems(
     {
       kind: "item",
       id: "new-folder",
-      label: t("New Folder"),
+      label: t("New folder"),
       disabled: Boolean(busyReason),
       description: busyReason,
       icon: icon("new-folder"),

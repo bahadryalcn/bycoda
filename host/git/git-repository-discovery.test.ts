@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { nestedRepositoryCandidates } from "./git-repository-discovery";
 
 const roots: string[] = [];
@@ -61,4 +61,77 @@ it("revalidates a queued directory before the Node enumerator opens it", async (
     "Repository discovery directory changed",
   );
   expect(readFileSync(join(f.outside, "sentinel"), "utf8")).toBe("outside data");
+});
+
+const repository = (root: string, ...parts: string[]) => {
+  const path = join(root, ...parts);
+  mkdirSync(join(path, ".git"), { recursive: true });
+  return path;
+};
+
+// The default scan uses PowerShell on Windows; the Node fallback is exercised on every platform.
+const scanners = [
+  ["platform scanner", false],
+  ["Node fallback", true],
+] as const;
+
+describe.each(scanners)("size limits with the %s", (_name, fallback) => {
+  const scan = (root: string, limits: Parameters<typeof nestedRepositoryCandidates>[2]) => {
+    if (fallback) {
+      const nodeProcess = Object.create(process);
+      Object.defineProperty(nodeProcess, "platform", { value: "linux" });
+      vi.stubGlobal("process", nodeProcess);
+    }
+    return nestedRepositoryCandidates(root, () => 10_000, limits);
+  };
+
+  it("reports a complete scan without a limit", async () => {
+    const f = fixture();
+    const found = [repository(f.root, "a"), repository(f.root, "b", "c")];
+    const result = await scan(f.root, {});
+    expect(result.limit).toBeNull();
+    expect([...result.repositories].sort()).toEqual(found.sort());
+  });
+
+  it("keeps the repositories found before the repository limit", async () => {
+    const f = fixture();
+    const all = ["a", "b", "c"].map((name) => repository(f.root, name));
+    const result = await scan(f.root, { repositories: 2 });
+    expect(result.limit).toBe("repositories");
+    expect(result.repositories).toHaveLength(2);
+    for (const path of result.repositories) expect(all).toContain(path);
+  });
+
+  it("keeps the repositories found before the entry limit", async () => {
+    const f = fixture();
+    const all = ["a", "b", "c"].map((name) => repository(f.root, name));
+    const result = await scan(f.root, { entries: 2 });
+    expect(result.limit).toBe("entries");
+    expect(result.repositories).toHaveLength(2);
+    for (const path of result.repositories) expect(all).toContain(path);
+  });
+
+  it("keeps the repositories found before the directory limit", async () => {
+    const f = fixture();
+    const all = ["a", "b", "c"].map((name) => repository(f.root, name));
+    const result = await scan(f.root, { directories: 2 });
+    expect(result.limit).toBe("directories");
+    expect([...result.repositories].sort()).toEqual(all.sort());
+  });
+
+  it("skips directories below the depth limit and keeps scanning their siblings", async () => {
+    const f = fixture();
+    const shallow = repository(f.root, "a");
+    repository(f.root, "b", "deep");
+    const result = await scan(f.root, { depth: 1 });
+    expect(result).toEqual({ repositories: [shallow], limit: "depth" });
+  });
+
+  it("still fails when a deadline passes, because the rest of the tree is unknown", async () => {
+    const f = fixture();
+    repository(f.root, "a");
+    await expect(nestedRepositoryCandidates(f.root, () => 0)).rejects.toThrow(
+      "Repository discovery timed out",
+    );
+  });
 });

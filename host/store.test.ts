@@ -618,6 +618,52 @@ describe("incremental project summaries", () => {
       await writer.close();
     }
   });
+  it("reparses only the summary an external writer changed on a cache miss", async () => {
+    const path = join(open(), "summary-reuse.db"),
+      store = new HostStore(path);
+    cleanups.push(async () => await store.close());
+    const project = await store.addProject("/summary-reuse", "Reuse");
+    await store.save(session("stable", project.id), {});
+    const moving = await store.save(session("moving", project.id), {});
+    expect(await store.summaries(project.id)).toHaveLength(2);
+    const writer = new DatabaseSync(path);
+    try {
+      writer
+        .prepare("UPDATE session_state SET summary=? WHERE id=?")
+        .run(JSON.stringify({ ...summary(moving), title: "external" }), "moving");
+      const parse = vi.spyOn(JSON, "parse");
+      try {
+        const list = await store.summaries(project.id);
+        expect(list.find((row) => row.id === "moving")?.title).toBe("external");
+        expect(parse.mock.calls.some(([text]) => String(text).includes('"id":"moving"'))).toBe(
+          true,
+        );
+        expect(
+          parse.mock.calls.filter(([text]) => String(text).includes('"id":"stable"')),
+        ).toHaveLength(0);
+      } finally {
+        parse.mockRestore();
+      }
+    } finally {
+      await writer.close();
+    }
+  });
+  it("keeps the cached row count equal to the rows held across projects", async () => {
+    const store = new HostStore(join(open(), "summary-row-count.db"));
+    cleanups.push(async () => await store.close());
+    const first = await store.addProject("/summary-row-count-a", "A");
+    const second = await store.addProject("/summary-row-count-b", "B");
+    await store.save(session("a1", first.id), {});
+    await store.save(session("a2", first.id), {});
+    await store.save(session("b1", second.id), {});
+    const counted = () => (store as unknown as { summaryRowCount: number }).summaryRowCount;
+    await store.summaries(first.id);
+    await store.summaries(second.id);
+    expect(counted()).toBe(3);
+    await store.save(session("a3", first.id), {});
+    expect(await store.summaries(first.id)).toHaveLength(3);
+    expect(counted()).toBe(4);
+  });
 });
 describe("project filesystem identity", () => {
   it("reuses a project for equivalent folder spellings without emitting changes", async () => {
@@ -1161,6 +1207,8 @@ it("keeps session revisions in bounded metadata memory after the first indexed r
   cleanups.push(async () => await reopened.close());
   const prepare = vi.spyOn(reopened.db, "prepare");
   expect(await reopened.sessionStateMetadata("metadata")).toEqual({
+    projectId: project.id,
+    createdAt: saved.createdAt,
     revision: saved.revision,
     status: "idle",
     desktop: false,
@@ -1196,6 +1244,65 @@ function session(id: string, projectId: string, extra: Partial<HostSession> = {}
     ...extra,
   } as unknown as HostSession;
 }
+
+it("persists conversation image reservations across reopening and removes them with the session", async () => {
+  const directory = open();
+  const path = join(directory, "image-budget.db");
+  const first = new HostStore(path);
+  try {
+    const project = await first.addProject(directory, "Test");
+    await first.save(session("image-session", project.id), {});
+    await expect(first.reserveConversationImage("image-session", 3)).resolves.toBe(1);
+  } finally {
+    await first.close();
+  }
+
+  const reopened = new HostStore(path);
+  cleanups.push(() => reopened.close());
+  await expect(reopened.conversationImagesUsed("image-session")).resolves.toBe(1);
+  expect(
+    await Promise.all([
+      reopened.reserveConversationImage("image-session", 3),
+      reopened.reserveConversationImage("image-session", 3),
+      reopened.reserveConversationImage("image-session", 3),
+    ]),
+  ).toEqual([2, 3, undefined]);
+  await expect(reopened.conversationImagesUsed("image-session")).resolves.toBe(3);
+  await reopened.deleteSession("image-session");
+  await expect(reopened.conversationImagesUsed("image-session")).resolves.toBe(0);
+});
+
+it("uses pending run identities ahead of checkpointed session metadata", async () => {
+  const directory = open();
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(() => store.close());
+  const { id: projectId } = await store.addProject(directory, "Test");
+  const event = { type: "test" };
+  await store.save(session("finishing", projectId), event);
+  await store.save(session("starting", projectId), event);
+  await store.save(
+    session("finishing", projectId, { revision: 2, status: "running", runId: "checkpointed" }),
+    event,
+    { journal: true },
+  );
+  await store.save(session("no-run-id", projectId, { status: "running" }), event);
+  expect(await store.runningSessionRuns()).toEqual([
+    { sessionId: "finishing", projectId, runId: "checkpointed" },
+  ]);
+
+  await store.transaction(async () => {
+    await store.save(session("finishing", projectId, { revision: 3 }), event, { deferred: true });
+    await store.save(
+      session("starting", projectId, { revision: 2, status: "running", runId: "pending" }),
+      event,
+      { deferred: true },
+    );
+    expect(await store.runningSessionRuns()).toEqual([
+      { sessionId: "starting", projectId, runId: "pending" },
+    ]);
+  });
+});
+
 describe("HostStore.adopted", () => {
   it("lists only desktop-shared sessions and tracks updates", async () => {
     const directory = open();
@@ -1351,6 +1458,7 @@ describe("HostStore.adopted", () => {
             revision: 9,
             updatedAt: 90,
             status: "running",
+            runId: "legacy-run",
           }),
         ),
       );
@@ -1362,6 +1470,9 @@ describe("HostStore.adopted", () => {
     await raw.close();
     const store = new HostStore(path);
     cleanups.push(async () => await store.close());
+    expect(await store.runningSessionRuns()).toEqual([
+      { sessionId: "late", projectId: project.id, runId: "legacy-run" },
+    ]);
     expect((await store.summaries(project.id)).map((entry) => entry.id).sort()).toEqual([
       "a",
       "b",
@@ -1397,6 +1508,23 @@ describe("HostStore.adopted", () => {
     const store = new HostStore(path);
     cleanups.push(async () => await store.close());
     expect(await store.adopted()).toMatchObject([{ id: "a", desktopUpdatedAt: 3 }]);
+  });
+  it("retires a deleted session's change counters and still moves the project scope", async () => {
+    const directory = open();
+    const store = new HostStore(join(directory, "host.db"));
+    cleanups.push(async () => await store.close());
+    const project = await store.addProject(directory, "Test");
+    await store.save(session("a", project.id), { type: "t" });
+    const seenSession = store.versions.session("a", false);
+    const seenScope = store.versions.scope(project.id, false);
+    expect(seenSession).toBeGreaterThan(0);
+    await store.deleteSession("a");
+    // Deletion delivery: the project scope a session stream watches still moves.
+    expect(store.versions.scope(project.id, false)).toBeGreaterThan(seenScope);
+    // A reader holding the old per-session counter sees it change, not a stale match.
+    expect(store.versions.session("a", false)).not.toBe(seenSession);
+    expect(store.versions.session("a", false)).toBe(0);
+    expect(store.versions.lastStep("a")).toBe(1);
   });
 });
 describe("HostStore device credentials", () => {

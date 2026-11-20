@@ -1,15 +1,14 @@
 import { killChild } from "../../core/child";
 import { humanizeModelId } from "../../../../shared/model/modelNameFromId";
 import {
-  assertOptionalProviderProbeError,
   createProviderRetirementLedger,
   withProviderRetirement,
 } from "../../core/providerRetirement";
+import { applyProbedCatalog } from "../../core/catalogProbe";
 import { homeDir } from "../../../../platform/tauri/fs";
 import { defaultHarnessAccount } from "../../core/auth";
 import { PRODUCT_IDENTITY } from "../../../../shared/lib/productIdentity";
 import {
-  setHarnessModels,
   withAutoCompactSettings,
   type AgentModel,
   type ModelSetting,
@@ -46,13 +45,7 @@ let inflight: Promise<void> | null = null;
 export function refreshCodexCatalog(): Promise<void> {
   if (inflight) return inflight;
   inflight = discoverCodexModels()
-    .then((models) => {
-      if (models.length > 0) setHarnessModels("codex", models);
-    })
-    .catch((error: unknown) => {
-      assertOptionalProviderProbeError(error);
-      console.debug("[bycoda] codex catalog", error);
-    })
+    .then((models) => applyProbedCatalog("codex", models))
     .finally(() => {
       inflight = null;
     });

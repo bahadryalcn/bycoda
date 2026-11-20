@@ -339,9 +339,14 @@ export function formatGitGraphAbsoluteTime(
   }).format(date);
 }
 
-export function formatCooldown(ms: number): string {
-  const seconds = Math.ceil(ms / 1000);
-  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
-  const minutes = Math.ceil(seconds / 60);
-  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+/**
+ * "30 seconds", "2 minutes" for a remaining wait, rounded up so a lock never reads as
+ * free early. Units and plural forms come from `Intl`, so every app language reads naturally.
+ * Negative input reads as zero.
+ */
+export function formatCooldown(ms: number, locale: Locale = getLocale()): string {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  const unit = seconds < 60 ? "second" : "minute";
+  const count = unit === "second" ? seconds : Math.ceil(seconds / 60);
+  return numberFormat(locale, { style: "unit", unit, unitDisplay: "long" }).format(count);
 }

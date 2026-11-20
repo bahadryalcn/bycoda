@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { exportSkill, importSkill, type DiscoveredSkill } from "../../../platform/tauri/fs";
 import { runMachineCommand } from "../../connections/model/remoteCommands";
 import { invalidateSkills, SKILLS_CHANGE_EVENT } from "./skills";
@@ -44,7 +45,7 @@ export async function transferSkill(input: {
         })) as string)
       : await importSkill(input.targetCwd, bundle, input.overwrite);
   } catch (reason) {
-    const message = reason instanceof Error ? reason.message : String(reason);
+    const message = errorText(reason);
     if (message.includes(SKILL_EXISTS)) throw new SkillExistsError(bundle.name);
     throw reason;
   }

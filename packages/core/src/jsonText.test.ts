@@ -31,6 +31,14 @@ describe("parseJsonObject", () => {
   it("returns null when no complete JSON object exists", () => {
     expect(parseJsonObject("An unfinished { and another {")).toBeNull();
   });
+
+  it("keeps large replies parseable without keyed table selection", () => {
+    const body = JSON.stringify({ subject: "Fix search", body: "x".repeat(70_000) });
+    expect(parseJsonObject(body)).toEqual({ subject: "Fix search", body: "x".repeat(70_000) });
+    expect(parseJsonObject(`${"noise ".repeat(12_000)}{"title":"Fix search"}`)).toEqual({
+      title: "Fix search",
+    });
+  });
 });
 
 const legacyObject = (raw: string): Record<string, unknown> | null => {

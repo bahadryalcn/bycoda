@@ -356,6 +356,24 @@ it("cancels on Escape or blur without writing and leaves no badge, mark or grab 
   expect(invoke).not.toHaveBeenCalledWith("jira_issue_transition", expect.anything());
   expect(invoke).not.toHaveBeenCalledWith("jira_board_move", expect.anything());
 });
+it("takes Escape for the drag before a later window listener that would leave the view", async () => {
+  await showTwoReadyIssues();
+  await dragIssue("ENG-1", () => column("Working"));
+  expect(hint()).not.toBeNull();
+  // Registered after the drag started, the way the Inbox's own listener may be.
+  const seen: boolean[] = [];
+  const later = (event: KeyboardEvent) => seen.push(event.defaultPrevented);
+  window.addEventListener("keydown", later);
+  await act(async () => {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  window.removeEventListener("keydown", later);
+  expect(seen).toEqual([true]);
+  expect(hint()).toBeNull();
+  await pointer(handle("ENG-1"), "pointerup", { clientX: 60, clientY: 60 });
+});
 it("releases over another column through the same transition rule and clears the feedback", async () => {
   await showTwoReadyIssues();
   await dragIssue("ENG-1", () => column("Working"));

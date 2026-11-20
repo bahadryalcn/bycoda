@@ -45,6 +45,7 @@ const review = (action: "merge" | "publish", publication?: unknown) =>
   ({
     token: "sha-bound-review",
     expiresAt: Date.now() + 600000,
+    expiresInMs: 600000,
     workspaceId: workspace.id,
     expectedRevision: workspace.revision,
     sourceBranchRef: workspace.branchRef,

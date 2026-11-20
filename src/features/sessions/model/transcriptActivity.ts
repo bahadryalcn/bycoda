@@ -13,7 +13,7 @@ import { displayPath, pathKey, resolveWorkspacePath } from "../../../shared/lib/
 import { delegatedChildIdOf } from "./delegatedBlockId";
 import { isTurnInterruptMessage } from "./inFlight";
 import { isSessionErrorBlock } from "./sessionIssue";
-import { COMPACTING_TEXT, isRunningCompaction } from "./compactionStatus";
+import { compactingText, isRunningCompaction } from "./compactionStatus";
 import { isStartupStatusBlock } from "./startupStatus";
 import type { AgentStep, Block, ToolPreview } from "./session";
 import { bycodaWorkSummary } from "./bycodaToolCall";
@@ -1005,8 +1005,16 @@ function currentWorkKind(steps: Block[]): ActivityWorkKind | undefined {
 export function workSummaryLine(steps: Block[], live = false): string {
   // While context compacts, say so instead of a bare "Working"/"Thinking".
   if (live && steps.length > 0 && isRunningCompaction(steps[steps.length - 1])) {
-    return COMPACTING_TEXT;
+    return compactingText();
   }
+  return summarizeWork(steps, live);
+}
+
+export function settledWorkSummaryLine(steps: Block[]): string {
+  return summarizeWork(steps, false);
+}
+
+function summarizeWork(steps: Block[], live: boolean): string {
   const appSummary = bycodaWorkSummary(steps, live);
   if (appSummary) return appSummary;
   const tally = tallySteps(steps);

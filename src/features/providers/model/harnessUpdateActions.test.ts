@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emit } from "@tauri-apps/api/event";
-import { inspectHarnessBinary, updateHarnessCli } from "../../../integrations/harness/core/child";
-import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
+import {
+  cancelHarnessUpdate,
+  inspectHarnessBinary,
+  updateHarnessCli,
+} from "../../../integrations/harness/core/child";
+import { refreshHarnessCatalogsStrict } from "../../../integrations/harness/core/registry";
 import { toast } from "../../../shared/ui/ToastRegion";
+import type { HarnessId } from "../../sessions/model/session";
 
 const probe = vi.hoisted(() => {
   const finishers: Array<() => void> = [];
@@ -16,20 +21,23 @@ vi.mock("../../../integrations/harness/core/availability", () => ({
   isHarnessAvailable: () => false,
 }));
 vi.mock("../../../integrations/harness/core/child", () => ({
+  cancelHarnessUpdate: vi.fn(),
   inspectHarnessBinary: vi.fn(),
   updateHarnessCli: vi.fn(),
 }));
 vi.mock("../../../integrations/harness/core/registry", () => ({
-  refreshHarnessCatalogs: vi.fn(),
+  refreshHarnessCatalogsStrict: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn(), listen: vi.fn() }));
 
 import {
+  cancelHarnessUpdateRun,
   checkInstalledHarnessVersions,
   getHarnessUpdateSnapshot,
   runHarnessUpdate,
 } from "./harnessUpdateActions";
+import { HARNESS_UPDATE_BUSY_ERROR, HARNESS_UPDATE_CANCELLED_ERROR } from "./harnessUpdateFailure";
 
 async function settle() {
   for (let i = 0; i < 5; i += 1) await Promise.resolve();
@@ -82,6 +90,22 @@ describe("update failure diagnostics", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  it("keeps the updater instructions when an exit-zero update leaves Grok on the old version", async () => {
+    const detail = "Update with winget upgrade xAI.Grok";
+    vi.mocked(updateHarnessCli).mockResolvedValueOnce(detail);
+    vi.mocked(inspectHarnessBinary).mockResolvedValueOnce({
+      path: "grok.exe",
+      version: "1.0.82",
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(
+      runHarnessUpdate({ harness: "grok", installed: "1.0.82", latest: "1.0.83" }),
+    ).resolves.toEqual({
+      status: "failed",
+      failure: { kind: "stillOn", version: "1.0.82", detail },
+    });
+  });
+
   it("preserves the version probe error rather than claiming the old version is still installed", async () => {
     const announce = vi.spyOn(toast, "show");
     vi.mocked(updateHarnessCli).mockResolvedValueOnce(undefined);
@@ -92,13 +116,18 @@ describe("update failure diagnostics", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await expect(runHarnessUpdate(update)).resolves.toEqual({
       status: "failed",
-      error: "opencode version check: Failed to run opencode: access denied",
+      failure: {
+        kind: "stage",
+        stage: "version check",
+        detail: "Failed to run opencode: access denied",
+      },
     });
     expect(updateHarnessCli).toHaveBeenCalledWith("opencode", "2.1.3");
     expect(announce).toHaveBeenCalledWith(
       expect.objectContaining({
         tone: "danger",
-        message: "opencode version check: Failed to run opencode: access denied",
+        message:
+          "OpenCode updated, but its version could not be verified. Failed to run opencode: access denied",
       }),
     );
     expect(warning).toHaveBeenCalledWith(
@@ -111,7 +140,11 @@ describe("update failure diagnostics", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await expect(runHarnessUpdate(update)).resolves.toEqual({
       status: "failed",
-      error: "opencode updater: Could not detect the installation method",
+      failure: {
+        kind: "stage",
+        stage: "updater",
+        detail: "Could not detect the installation method",
+      },
     });
   });
 });
@@ -120,7 +153,7 @@ describe("OpenCode migration and V2 updates", () => {
   beforeEach(() => {
     vi.mocked(updateHarnessCli).mockReset().mockResolvedValue(undefined);
     vi.mocked(inspectHarnessBinary).mockReset();
-    vi.mocked(refreshHarnessCatalogs).mockReset();
+    vi.mocked(refreshHarnessCatalogsStrict).mockReset().mockResolvedValue(new Set());
     vi.mocked(emit).mockReset().mockResolvedValue(undefined);
   });
   afterEach(() => vi.restoreAllMocks());
@@ -134,10 +167,10 @@ describe("OpenCode migration and V2 updates", () => {
         version: "opencode v2.1.4",
       });
       let finishRefresh!: () => void;
-      vi.mocked(refreshHarnessCatalogs).mockImplementationOnce(
+      vi.mocked(refreshHarnessCatalogsStrict).mockImplementationOnce(
         () =>
-          new Promise<void>((resolve) => {
-            finishRefresh = resolve;
+          new Promise<Set<HarnessId>>((resolve) => {
+            finishRefresh = () => resolve(new Set());
           }),
       );
 
@@ -145,7 +178,9 @@ describe("OpenCode migration and V2 updates", () => {
       await settle();
       expect(updateHarnessCli).toHaveBeenCalledExactlyOnceWith("opencode", "2.1.4");
       expect(inspectHarnessBinary).toHaveBeenCalledExactlyOnceWith("opencode");
-      expect(refreshHarnessCatalogs).toHaveBeenCalledExactlyOnceWith(["opencode"], { force: true });
+      expect(refreshHarnessCatalogsStrict).toHaveBeenCalledExactlyOnceWith(["opencode"], {
+        force: true,
+      });
       expect(getHarnessUpdateSnapshot().runs.opencode?.status).toBe("updating");
       expect(emit).not.toHaveBeenCalled();
 
@@ -182,11 +217,54 @@ describe("OpenCode migration and V2 updates", () => {
       }),
     ).resolves.toEqual({
       status: "failed",
-      error: "opencode version check: Still on 1.18.33 after updating.",
+      failure: { kind: "stillOn", version: "1.18.33" },
     });
     expect(updateHarnessCli).toHaveBeenCalledExactlyOnceWith("opencode", "2.1.4");
     expect(getHarnessUpdateSnapshot().runs.opencode?.status).toBe("failed");
-    expect(refreshHarnessCatalogs).not.toHaveBeenCalled();
+    expect(refreshHarnessCatalogsStrict).not.toHaveBeenCalled();
     expect(emit).not.toHaveBeenCalled();
+  });
+});
+
+describe("cancelling and joining the CLI updater", () => {
+  const codex = { harness: "codex" as const, installed: "1.0.0", latest: "1.0.1" };
+
+  beforeEach(() => {
+    vi.mocked(updateHarnessCli).mockReset();
+    vi.mocked(cancelHarnessUpdate).mockReset();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("reports a cancelled updater as cancelled, not as a CLI failure, and shows no toast", async () => {
+    let stopUpdater!: (error: unknown) => void;
+    vi.mocked(updateHarnessCli).mockImplementationOnce(
+      () => new Promise<string | undefined>((_, reject) => (stopUpdater = reject)),
+    );
+    vi.mocked(cancelHarnessUpdate).mockResolvedValueOnce(true);
+    const show = vi.spyOn(toast, "show");
+
+    const run = runHarnessUpdate(codex);
+    await settle();
+    await expect(cancelHarnessUpdateRun("codex")).resolves.toBe(true);
+    expect(cancelHarnessUpdate).toHaveBeenCalledExactlyOnceWith("codex");
+    stopUpdater(HARNESS_UPDATE_CANCELLED_ERROR);
+
+    await expect(run).resolves.toEqual({ status: "failed", failure: { kind: "cancelled" } });
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it("starts nothing and reports false when no updater is running", async () => {
+    await expect(cancelHarnessUpdateRun("codex")).resolves.toBe(false);
+    expect(cancelHarnessUpdate).not.toHaveBeenCalled();
+  });
+
+  it("reports an update already running in another window as busy", async () => {
+    vi.mocked(updateHarnessCli).mockRejectedValueOnce(HARNESS_UPDATE_BUSY_ERROR);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(runHarnessUpdate(codex)).resolves.toEqual({
+      status: "failed",
+      failure: { kind: "busy" },
+    });
   });
 });

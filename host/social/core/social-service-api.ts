@@ -110,4 +110,7 @@ export interface SocialServiceApi {
   ): Promise<void>;
   setting(key: string): Promise<string | undefined>;
   setSetting(key: string, value: string): Promise<void>;
+  /** Keys that start with `prefix`, for retention sweeps over one settings family. */
+  settingKeys(prefix: string): Promise<string[]>;
+  deleteSetting(key: string): Promise<void>;
 }

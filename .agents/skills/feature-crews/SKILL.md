@@ -22,11 +22,12 @@ Keep saved teams, reusable member profiles and executing run snapshots distinct.
 
 ## Preserve
 
-- Scheduler reads use a transactionally backfilled SQLite active-run projection maintained by metadata insert/update/delete triggers, including legacy writers. Invalid source fails closed; history remains canonical. Delivery updates keep original coordinator and persisted command identity. SQLite JSON write/trigger traversal still scales with canonical state; active payloads are never truncated.
+- Scheduler reads use a transactionally backfilled SQLite active-run projection maintained by metadata insert/update/delete triggers, including legacy writers. Invalid source fails closed; history remains canonical. Delivery updates keep original coordinator and persisted command identity. SQLite JSON write/trigger traversal still scales with canonical state; active payloads are never truncated. Full-state writes persist only runs that differ from the read they came from, and refuse (retry) if another writer put a different run at a row; reordered, shrunk or unread run lists use the full rewrite. Finished history has no retention: pruning must first prove history queries, finish sequence, receipts and recovery stay intact.
 
 - Owner-started work runs with the crew's `policy.runtimeMode` (default supervised, capability `crews.access.v1`); task-started work keeps the task's mode and members follow the run's mode.
 - A member tool profile (`crews.tools.v1`) only narrows; the Host writes it into session model settings at start. `host/crews/crew-tools.ts` checks Host Conversation Tools before the existing authorization; `host/crews/crew-native-tools.ts` maps it onto provider-native tools (Claude, Codex; other providers refuse a read-only member), the MCP hub allowlist and the skill policy at the Host provider boundary.
 - Retain every role/instruction, fixed/custom and automatic model choices, independent model settings, scope/groups and defaults tombstones.
+- `useProjectCrews` polls only `crews.list`; the model catalog is a separate scoped read (`useRemoteModelCatalog`: Host, environment and project key, cached, bounded pending/error polling) with an explicit `refreshCatalog`. Never fold `models.list` back into the run poll.
 - Members select Default, Pool or Fixed through [model routing](../feature-model-routing/SKILL.md). Pools reference the Host-wide order. Resolve at run start and keep running snapshots fixed.
 - Keep roster rows focused on name, role, model and groups; full instructions belong in the member form, not repeated instruction-heading previews.
 - Saved-definition edits do not rewrite existing run/member/model snapshots. Device-local appearance must not change execution settings.

@@ -14,7 +14,7 @@ import { ArrowDown, ArrowUp, FolderTree, Plus, X } from "../../../../shared/ui/i
 import { ModelLabel } from "../../../sessions/public/ModelLabel";
 import { resolveModel } from "../../../sessions/public/models";
 import { includablePools, setPoolMembers, type OrderDraft } from "../../model/modelRoutingDraft";
-import { useEntryAccount } from "./useEntryAccount";
+import { entryProviderAccount, useEntryAccount } from "./useEntryAccount";
 
 type Members = { entryIds: string[]; poolIds: string[] };
 
@@ -121,12 +121,25 @@ export function PoolMembers({
             kind: "group" as const,
             id: "models",
             label: t("Models"),
-            items: addableEntries.map((entry) => ({
-              kind: "item" as const,
-              id: `entry:${entry.id}`,
-              label: entryName(entry),
-              content: <ModelLabel model={entry.model} harness={entry.harness} />,
-            })),
+            items: addableEntries.map((entry) => {
+              // Same model on two accounts must read apart: the account is part of the row.
+              const account = entryProviderAccount(entry)?.label;
+              return {
+                kind: "item" as const,
+                id: `entry:${entry.id}`,
+                label: account ? `${entryName(entry)} · ${account}` : entryName(entry),
+                content: (
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <ModelLabel model={entry.model} harness={entry.harness} />
+                    {account ? (
+                      <Text as="span" size="caption" tone="secondary" truncate>
+                        {account}
+                      </Text>
+                    ) : null}
+                  </span>
+                ),
+              };
+            }),
           },
         ]
       : []),

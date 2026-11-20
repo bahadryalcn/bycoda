@@ -11,14 +11,27 @@ child while suspended, observes its original members and retains their kernel
 handles through termination and drain. `as_handle()` borrows the job handle;
 the API does not accept raw handles or transfer ownership to callers.
 The shared `create_job` and `resume_child` helpers also serve the desktop's
-existing managed-child path. Resume still uses the original suspended child's
-thread snapshot; this extraction adds no process/thread-handle-from-birth proof.
+existing managed-child path. Resume finds the suspended child's primary thread
+through its own process (ntdll `NtGetNextThread`), not a machine-wide thread
+snapshot; this adds no process/thread-handle-from-birth proof.
 
 Actual Windows API failures remain sticky operational failures. Missing member
 coverage remains a separate uncertainty. `drain()` can return actual drain
 observations without issuing retirement proof; `JobDrain::require_verified()`
 and `settle()` keep strict retirement semantics. An empty active-process count
 alone never establishes complete descendant retirement.
+
+`drain()` and every member wait end within a fixed deadline: a member that
+cannot be terminated yields an unverified or failed drain (Unknown retirement),
+never a hang. Capture grows its process-list buffer on demand and retains one
+handle per process the job has held, up to a ceiling, because a held handle is
+what keeps a PID from being recycled inside the proof.
+
+A failed provider start reports a bounded `detail` (failing step, `ErrorKind`
+name, raw OS code) on the `failed` reply; it never contains paths or messages.
+On every Unix the provider leads its own process group and stop or parent EOF
+signals that group; only Linux also has parent-death kill, and no Unix retirement
+is verified.
 
 The runtime and protocol modules own the private guardian stream, provider I/O
 and actual child/writer cleanup. A result frame, process construction identity

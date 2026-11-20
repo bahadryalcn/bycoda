@@ -459,9 +459,6 @@
   .table:not(.staticTable) th[data-numeric] .sortInner {
     flex-direction: row;
   }
-  .sortButton:focus-visible {
-    --focus-outline-offset: 1px;
-  }
   .table:not(.staticTable) tbody {
     display: block;
     width: 100%;

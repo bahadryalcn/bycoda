@@ -7,8 +7,6 @@ import { useConfirm, type ConfirmRequest } from "../../../shared/ui/ConfirmDialo
 import { resetForgottenPassword } from "../model/groupLock";
 import { incompleteMessage } from "./PasswordPromptDialog";
 
-const PHRASE = "reset lock";
-
 type Props = { onClose: () => void };
 
 export function ForgotLockPasswordDialog({ onClose }: Props) {
@@ -18,6 +16,7 @@ export function ForgotLockPasswordDialog({ onClose }: Props) {
   const generation = useRef(0);
   const closed = useRef(false);
   callbacks.current = onClose;
+  const phrase = t("reset lock");
   // Dismissal reaches the owner synchronously so the gate re-renders in the same tick; the
   // promise below is the fallback and must not close twice.
   const closeOnce = () => {
@@ -30,7 +29,7 @@ export function ForgotLockPasswordDialog({ onClose }: Props) {
     title: t("Reset lock password"),
     message: t("Removes the password and every group lock."),
     confirmLabel: t("Reset lock"),
-    requireText: { text: PHRASE, label: `${t("Type “")}${PHRASE}${t("” to confirm")}` },
+    requireText: { text: phrase },
     body: (
       <>
         <Text as="p" size="caption" tone="inherit" leading="snug">
@@ -39,9 +38,9 @@ export function ForgotLockPasswordDialog({ onClose }: Props) {
           )}
         </Text>
         <Alert tone="warning">
-          {PRODUCT_IDENTITY.displayName}
           {t(
-            " cannot check who you are, so anyone using this computer can do this. The lock is a privacy screen, not a security boundary.",
+            "{p0} cannot check who you are, so anyone using this computer can do this. The lock is a privacy screen, not a security boundary.",
+            { p0: PRODUCT_IDENTITY.displayName },
           )}
         </Alert>
       </>

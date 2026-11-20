@@ -16,7 +16,7 @@ import { NumberField } from "../../../shared/ui/NumberField";
 import { TextField } from "../../../shared/ui/TextField";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { errorText } from "./serverActionFeedback";
+import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
 import {
@@ -109,8 +109,13 @@ export function ServerForwards({
           const status = statuses.find((item) => item.id === runtimeId);
           const stopping = status?.state === "stopping";
           const unknown = status?.state === "unknown";
+          const reconnecting = status?.state === "reconnecting";
           const running =
-            status?.state === "running" || status?.state === "starting" || stopping || unknown;
+            status?.state === "running" ||
+            status?.state === "starting" ||
+            reconnecting ||
+            stopping ||
+            unknown;
           return (
             <div
               key={rule.id}
@@ -133,6 +138,10 @@ export function ServerForwards({
                 {!verified || stopping || unknown ? (
                   <Badge size="sm" tone="neutral">
                     {t(verified && stopping ? "Stopping" : "Status unknown")}
+                  </Badge>
+                ) : reconnecting ? (
+                  <Badge size="sm" tone="neutral">
+                    {t("Reconnecting…")}
                   </Badge>
                 ) : running ? (
                   <StatusBadge status="running" />

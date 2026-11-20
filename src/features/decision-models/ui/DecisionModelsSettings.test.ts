@@ -10,6 +10,11 @@ import type { DecisionRouting, DecisionSource, DiscoveryCandidate } from "../mod
 
 import { DecisionModelsSettings } from "./DecisionModelsSettings";
 
+vi.mock("../../../platform/tauri/platform", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../platform/tauri/platform")>();
+  return { ...actual, IS_WIN: true, IS_MAC: false, IS_LINUX: false };
+});
+
 import {
   bodyText,
   buttonByText,
@@ -404,6 +409,35 @@ describe("DecisionModelsSettings found on this computer", () => {
     });
 
     expect(mocks.scan).not.toHaveBeenCalled();
+  });
+
+  it("does not scan again when the Host already confirmed nothing was found", async () => {
+    const { mocks } = await renderSettings({
+      results: async () => ({ found: [], scannedAt: 1_000_000 }),
+    });
+
+    expect(mocks.scan).not.toHaveBeenCalled();
+    expect(buttonByText("Scan again")).toBeDefined();
+  });
+
+  it("keeps an incomplete empty scan visible without scanning on open", async () => {
+    const { mocks } = await renderSettings({
+      results: async () => ({ found: [], incomplete: true, scannedAt: 1_000_000 }),
+    });
+
+    expect(mocks.scan).not.toHaveBeenCalled();
+    expect(bodyText()).toContain("The scan is incomplete");
+  });
+
+  it("scans again only when the user asks after a confirmed empty result", async () => {
+    const { mocks } = await renderSettings({
+      results: async () => ({ found: [], scannedAt: 1_000_000 }),
+    });
+
+    clickButton("Scan again");
+    await settleDecisionUi();
+
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
   });
 
   it("keeps earlier results visible until cancellation settles the original scan", async () => {
@@ -805,6 +839,48 @@ it("tests all models and keeps each result visible after stale list refresh", as
   expect(rows[1].textContent).toContain("Failed");
 });
 
+it("runs Test all two at a time and summarizes every failed source without a top error", async () => {
+  const { mocks } = await renderSettings({
+    sources: ["a", "b", "c", "d", "e"].map((id) =>
+      source({ id, name: `Fake ${id}`, status: "unknown" }),
+    ),
+  });
+
+  let inFlight = 0;
+
+  let maxInFlight = 0;
+
+  mocks.test.mockImplementation(async (params?: unknown) => {
+    const { id } = params as { id: string };
+
+    inFlight += 1;
+
+    maxInFlight = Math.max(maxInFlight, inFlight);
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    inFlight -= 1;
+
+    if (id === "b") throw new Error("fake rejection for b");
+
+    return { sourceId: id, ok: id !== "d", durationMs: 3 };
+  });
+
+  clickButton("Test all");
+
+  await vi.waitFor(async () => {
+    await settleDecisionUi();
+
+    expect(bodyText()).toContain("2 of 5 connection tests failed");
+  });
+
+  expect(mocks.test).toHaveBeenCalledTimes(5);
+
+  expect(maxInFlight).toBe(2);
+
+  expect(bodyText()).not.toContain("This did not work. Try again.");
+});
+
 it("keeps local runtime Stop available after a failed connection test", async () => {
   const { mocks } = await renderSettings({ sources: [source()] });
 
@@ -838,7 +914,7 @@ it("keeps full model paths available through Details without repeating them in e
 
   await settleDecisionUi();
 
-  act(() => menuItemByText("Details")!.click());
+  act(() => menuItemByText("Show details")!.click());
 
   await settleDecisionUi();
 
@@ -1280,6 +1356,74 @@ it("retains Host routing and scan drafts after a section remount", async () => {
     "0.74",
   );
   expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("D:\\NewModels");
+});
+
+it("names the remote Host while its scan is running", async () => {
+  let finish!: (result: { found: DiscoveryCandidate[] }) => void;
+  const waiting = new Promise<{ found: DiscoveryCandidate[] }>((resolve) => {
+    finish = resolve;
+  });
+  const { client } = createClient({ scan: async () => waiting });
+
+  mounted = mountDecisionUi(
+    createElement(DecisionModelsSettings, { client, hostName: "Remote A", remote: true }),
+  );
+
+  await settleDecisionUi();
+
+  expect(bodyText()).toContain("Scanning Host Remote A");
+  expect(bodyText()).not.toContain("Scanning this computer");
+
+  act(() => finish({ found: [] }));
+
+  await settleDecisionUi();
+});
+
+it("uses a neutral folder example and error for a remote Host", async () => {
+  const { client, mocks } = createClient({});
+
+  mounted = mountDecisionUi(
+    createElement(DecisionModelsSettings, { client, hostName: "Remote A", remote: true }),
+  );
+
+  await settleDecisionUi();
+
+  const folders = document.querySelector<HTMLTextAreaElement>(
+    'textarea[placeholder="Folder path, one per line"]',
+  );
+
+  if (!folders) throw new Error("folder field not found");
+
+  setInputValue(folders, "models\\gguf");
+
+  clickButton("Save and scan");
+
+  await settleDecisionUi();
+
+  expect(bodyText()).toContain("Enter full folder paths, one per line.");
+
+  expect(mocks.settingsSet).not.toHaveBeenCalled();
+});
+
+it("names the Windows folder example for a local scan on Windows", async () => {
+  const { mocks } = await renderSettings();
+
+  // A CSS attribute selector would read the backslash as an escape, so match the value directly.
+  const folders = Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea")).find(
+    (field) => field.placeholder === "D:\\Models",
+  );
+
+  if (!folders) throw new Error("folder field not found");
+
+  setInputValue(folders, "models");
+
+  clickButton("Save and scan");
+
+  await settleDecisionUi();
+
+  expect(bodyText()).toContain("Enter full folder paths, for example D:\\Models.");
+
+  expect(mocks.settingsSet).not.toHaveBeenCalled();
 });
 
 it("retains pending scan save and failure across Host remount and isolates another Host", async () => {

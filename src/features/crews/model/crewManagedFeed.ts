@@ -19,11 +19,22 @@ import {
 } from "./crewManagedSessions";
 
 const MAX_FEED_PROJECTS = 12;
+/** Poll cadence while a project may own crew-managed sessions, or has not answered yet. */
 const FEED_REFRESH_MS = 10_000;
+/**
+ * Poll cadence once a project answered with no managed session. A run that starts later is found
+ * within this window, or at once after this app's own Crew calls invalidate the feed.
+ */
+const IDLE_FEED_REFRESH_MS = 30_000;
+
+/** Refetch interval for one project's feed: slow only once it has confirmed no managed session. */
+export function feedRefetchInterval(data: readonly CrewManagedSession[] | undefined): number {
+  return data?.length === 0 ? IDLE_FEED_REFRESH_MS : FEED_REFRESH_MS;
+}
 
 /**
- * Keeps the managed-session index current for the projects the window shows. Mount once; each
- * project costs one lightweight `crews.list` every ten seconds and nothing when no host has Crews.
+ * Keeps the managed-session index current for the projects the window shows. Mount once. A project
+ * with managed sessions costs one `crews.list` every ten seconds; a confirmed-idle one every thirty.
  */
 export function useCrewManagedSessionsFeed(cwds: readonly string[], enabled = true) {
   const keys = [...new Set(cwds.filter((cwd) => cwd && cwd !== "~"))].slice(0, MAX_FEED_PROJECTS);
@@ -32,7 +43,8 @@ export function useCrewManagedSessionsFeed(cwds: readonly string[], enabled = tr
       queryKey: [HOST_CREWS, "managed", cwd],
       enabled,
       staleTime: 5000,
-      refetchInterval: FEED_REFRESH_MS,
+      refetchInterval: (query: { state: { data: CrewManagedSession[] | undefined } }) =>
+        feedRefetchInterval(query.state.data),
       retry: false,
       queryFn: async () => {
         const machine = backgroundMachineFor(await backgroundMachines(HOST_CREWS), cwd);

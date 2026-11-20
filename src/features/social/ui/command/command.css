@@ -1,5 +1,6 @@
 /* Command screen. Colors, type and radii come from semantic tokens only. */
 .command-screen {
+  container: command-screen / inline-size;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -180,7 +181,7 @@
   min-width: 0;
 }
 
-@media (max-width: 800px) {
+@container command-screen (max-width: 800px) {
   .command-layout {
     grid-template-columns: minmax(0, 1fr);
   }

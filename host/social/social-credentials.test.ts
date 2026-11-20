@@ -84,3 +84,53 @@ it("retains prior ciphertext and allows retry after a failed durable write", asy
     fail.mockRestore();
   }
 });
+
+it("bounds OS key load retries to one helper attempt per cooldown window", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    const path = mkdtempSync(join(tmpdir(), "social-key-retry-test-"));
+    paths.push(path);
+    const vault = new OsSocialCredentials(path, "owner");
+    const loadKey = vi.fn(async (): Promise<Buffer> => {
+      throw new Error("OS credential store unavailable.");
+    });
+    Object.defineProperty(vault, "loadKey", { value: loadKey });
+    await expect(vault.get("id")).rejects.toThrow("OS credential store unavailable.");
+    await expect(Promise.all([vault.get("id"), vault.get("id")])).rejects.toThrow(
+      "OS credential store unavailable.",
+    );
+    expect(loadKey).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(Date.now() + 30_000);
+    await expect(vault.get("id")).rejects.toThrow("OS credential store unavailable.");
+    expect(loadKey).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("returns independent credential copies to concurrent readers", async () => {
+  const path = mkdtempSync(join(tmpdir(), "social-copy-test-"));
+  paths.push(path);
+  const vault = new OsSocialCredentials(path, "owner");
+  Object.defineProperty(vault, "loadKey", { value: async () => Buffer.alloc(32, 4) });
+  await vault.set("id", { accessToken: "first" });
+  const [a, b] = await Promise.all([vault.get("id"), vault.get("id")]);
+  expect(a).not.toBe(b);
+  a!.accessToken = "mutated";
+  expect(b?.accessToken).toBe("first");
+  expect((await vault.get("id"))?.accessToken).toBe("first");
+});
+
+it("never serves a pre-write read to a get that starts after the write", async () => {
+  const path = mkdtempSync(join(tmpdir(), "social-stale-read-test-"));
+  paths.push(path);
+  const vault = new OsSocialCredentials(path, "owner");
+  Object.defineProperty(vault, "loadKey", { value: async () => Buffer.alloc(32, 6) });
+  await vault.set("id", { accessToken: "first" });
+  const pending = vault.get("id");
+  await vault.set("id", { accessToken: "second" });
+  expect((await vault.get("id"))?.accessToken).toBe("second");
+  await pending;
+  await vault.delete("id");
+  expect(await vault.get("id")).toBeUndefined();
+});

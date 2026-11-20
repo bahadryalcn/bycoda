@@ -113,7 +113,8 @@ it("preserves host interruption authority and send restrictions", async () => {
   expect(container.querySelector("button")).toBeNull();
   await render({ interruptedTurn: true, blockedReason: "Host unavailable" });
   const button = container.querySelector("button")!;
-  expect(button.disabled).toBe(true);
+  // A disabled action with a reason stays focusable: aria-disabled, presses swallowed.
+  expect(button.getAttribute("aria-disabled")).toBe("true");
   await act(async () => button.click());
   expect(onContinue).not.toHaveBeenCalled();
   await render({ session: { ...session, continuingElsewhere: true } });

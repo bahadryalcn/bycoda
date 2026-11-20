@@ -2,6 +2,7 @@
 //! Observed output, physical work completion and retirement proof stay separate.
 
 pub mod build_receipt;
+pub mod diagnostic;
 pub mod protocol;
 pub mod runtime;
 #[cfg(windows)]

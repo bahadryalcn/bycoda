@@ -90,6 +90,11 @@ function MeasuredTranscriptRows({
       owner ? owner.measurementsFor(listId) : new Map<string, { width: number; height: number }>(),
     [owner, listId],
   );
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- The compiler skips the virtualizer, and the list must retain the same fold map for its mounted owner and ID.
+  const folds = useMemo(
+    () => (owner ? owner.codeFoldsFor(listId) : new Map<string, Record<string, boolean>>()),
+    [owner, listId],
+  );
   const anchorId = scroll ? owner?.anchorId(scroll) : undefined;
   const pins = useMemo(
     () => pinnedRowIndexes(rows, owner, target, anchorId, activeVersion),
@@ -138,24 +143,13 @@ function MeasuredTranscriptRows({
     };
     measure(true);
     if (!virtualized) return;
-    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    const mutations =
-      typeof MutationObserver === "undefined" ? null : new MutationObserver(measure);
-    for (let node: HTMLElement | null = element; node; node = node.parentElement) {
-      resize?.observe(node);
-      mutations?.observe(node, { attributes: true, attributeFilter: ["class", "style"] });
-      const parent: HTMLElement | null = node.parentElement;
-      if (parent)
-        for (const sibling of parent.children as HTMLCollectionOf<Element>)
-          if (sibling !== node) resize?.observe(sibling);
-      if (node === scroll || node.classList.contains("agent-transcript")) break;
-    }
+    // The owner shares one observer per node among all lists and coalesces the re-measures.
+    const unwatch = owner?.layout.watch(element, scroll, measure);
     return () => {
       commitWidth.cancel();
-      resize?.disconnect();
-      mutations?.disconnect();
+      unwatch?.();
     };
-  }, [scroll, virtualized]);
+  }, [owner, scroll, virtualized]);
   useLayoutEffect(() => {
     if (!scroll || !owner || !virtualized) return;
     const acquired = owner.acquire(scroll, owningTurn(root.current));
@@ -203,8 +197,14 @@ function MeasuredTranscriptRows({
     };
   }, [id, rows.length, virtualized]);
   useLayoutEffect(() => {
-    owner?.retainMeasurements(listId, new Set(rows.map((row) => row.id)));
+    owner?.retainRows(listId, new Set(rows.map((row) => row.id)));
   }, [rows, owner, listId]);
+  // Holding ties the list's sizes and folds to its mount: unmounting drops them, and a strict-mode
+  // replay re-holds the same maps so rows that wrote into them still reach the owner.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Register the list's caches with the transcript owner for the lifetime of its mounted rows.
+  useLayoutEffect(() => {
+    if (owner) return owner.holdList(listId, sizes, folds);
+  }, [owner, listId, sizes, folds]);
 
   useLayoutEffect(() => {
     if (!virtualized && rows.length > TRANSCRIPT_VIRTUAL_THRESHOLD) {
@@ -264,7 +264,7 @@ function MeasuredTranscriptRows({
               row={rows[item.index]}
               index={item.index}
               ownerId={id}
-              listId={listId}
+              folds={folds}
               measure={virtualized ? virtual.measureElement : noMeasure}
               scroll={scroll}
             />
@@ -304,23 +304,23 @@ const MeasuredRow = memo(function MeasuredRow({
   row,
   index,
   ownerId,
-  listId,
+  folds,
   measure,
   scroll,
 }: {
   row: TranscriptVirtualRow;
   index: number;
   ownerId: string;
-  listId: string;
+  folds: Map<string, Record<string, boolean>>;
   measure: (node: HTMLDivElement | null) => void;
   scroll: HTMLElement | null;
 }) {
   const owner = useContext(TranscriptVirtualizationContext);
-  const key = JSON.stringify([listId, row.id]);
+  const rowId = row.id;
   const { element, setNode } = useRowNode(owner, measure, scroll);
   useLayoutEffect(() => {
     const node = element.current;
-    const saved = owner?.codeFolds.get(key);
+    const saved = folds.get(rowId);
     const restored = new Set<string>();
     const restore = () => {
       if (!node || !saved) return;
@@ -340,9 +340,10 @@ const MeasuredRow = memo(function MeasuredRow({
     return () => {
       observer?.disconnect();
       const shells = node ? ownCodeShells(node) : [];
+      // A row whose code blocks are gone (edited away) has no fold state left to keep.
       if (shells.length)
-        owner?.codeFolds.set(
-          key,
+        folds.set(
+          rowId,
           Object.fromEntries(
             [...stableCodeDisclosureIdentity(shells)].map(([shell, identity]) => [
               identity,
@@ -350,8 +351,9 @@ const MeasuredRow = memo(function MeasuredRow({
             ]),
           ),
         );
+      else if (node) folds.delete(rowId);
     };
-  }, [owner, key, element]);
+  }, [folds, rowId, element]);
   const attributes: TranscriptVirtualElement = {
     ref: setNode,
     "data-index": index,

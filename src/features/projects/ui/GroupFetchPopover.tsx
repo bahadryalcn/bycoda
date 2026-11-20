@@ -68,7 +68,7 @@ export function GroupFetchPopover({
       anchor={{ x, y }}
       gap={0}
       width={320}
-      role="dialog"
+      kind="dialog"
       aria-label={t("Fetch all in {p0}", { p0: name })}
       aria-live="polite"
       onDismiss={onClose}

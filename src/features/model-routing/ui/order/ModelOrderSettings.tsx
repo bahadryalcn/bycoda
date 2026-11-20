@@ -13,6 +13,7 @@ import {
 } from "../../../providers/public/providerAccounts";
 import { loadUsageLimitFailover } from "../../../settings/public/settings";
 import { useModelRoutingStatus } from "../../model/modelRoutingClient";
+import { hostProvidersFrom } from "../../model/hostProviders";
 import {
   groupEntriesByKind,
   unavailableOrderEntryId,
@@ -190,6 +191,7 @@ function OrderSettingsForm({
                 machine={settings.limits.data?.machine}
                 draft={draft}
                 usage={settings.limits.data?.state ?? initial.limits}
+                hostProviders={hostProvidersFrom(settings.catalog)}
                 onChange={change}
                 onFieldInvalid={editor.fieldInvalid}
               />

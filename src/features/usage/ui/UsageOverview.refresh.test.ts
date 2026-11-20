@@ -168,7 +168,7 @@ it("advances workspace refresh across a bucket and midnight, keeping charts and 
 });
 it("preserves explicit custom intervals during workspace refresh", async () => {
   await render(0);
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
+  await selectPreset("custom");
   const button = [...document.querySelectorAll("button")].find(
     (b) => b.textContent === "Set custom interval",
   )!;
@@ -178,6 +178,29 @@ it("preserves explicit custom intervals during workspace refresh", async () => {
   vi.setSystemTime(new Date(2026, 9, 21, 12));
   await render(1);
   expect(until()).toBe(original);
+});
+
+it("keeps one date owner and chart options outside the Filters popover", async () => {
+  await render(0);
+  expect(host.querySelector('[aria-label="Chart metric"]')).toBeTruthy();
+  expect(host.querySelector('[aria-label="Group by"]')).toBeTruthy();
+  expect(host.querySelector('[aria-label="Resolution"]')).toBeTruthy();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
+  expect(
+    [...document.querySelectorAll("button")].find((b) => b.textContent === "Set custom interval"),
+  ).toBeUndefined();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
+  await selectPreset("custom");
+  expect(
+    [...document.querySelectorAll("button")].find((b) => b.textContent === "Set custom interval"),
+  ).toBeTruthy();
+});
+
+it("keeps the header Refresh available in partial states", async () => {
+  invoke.mockRejectedValue(new Error("unavailable"));
+  await render(0);
+  expect(host.textContent).toContain("Duration and session totals may be incomplete");
+  expect(host.querySelector('[aria-label="Refresh usage"]')).toBeTruthy();
 });
 
 it("keeps loading distinct from trustworthy zero usage", async () => {
@@ -210,7 +233,7 @@ it("shows an actionable failure without zero metrics or empty charts", async () 
   expect(host.textContent).not.toContain("No usage matches");
   expect(host.querySelector(".usage-metrics")).toBeNull();
   expect(chart).not.toHaveBeenCalled();
-  expect(host.querySelector('[role="alert"] button')).toBeTruthy();
+  expect(host.querySelector('[aria-label="Refresh usage"]')).toBeTruthy();
 });
 
 it("labels retained results after a failed refresh", async () => {

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
@@ -297,7 +298,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
     try {
       await fn();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorText(reason));
     } finally {
       inFlight.current = false;
       setPending(false);

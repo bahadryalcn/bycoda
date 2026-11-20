@@ -53,7 +53,7 @@ it("retains uncertain original identity on replacement Host and refuses before e
   });
   await expect(
     refreshAssistantSummary(saved, "original-host", "thread", request, () => active),
-  ).rejects.toThrow("not confirmed");
+  ).rejects.toThrow("could not be confirmed");
   expect(hasAssistantSummaryRefresh(saved, "original-host", "thread")).toBe(true);
   expect(hasAssistantSummaryRefresh(saved, "replacement-host", "thread")).toBe(false);
   const denied = vi.fn();

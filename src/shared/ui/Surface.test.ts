@@ -273,7 +273,7 @@ it("supports opt-in mixed settings rows and nested advanced boundaries", () => {
 it("supports a combined logical start corner frame", () => {
   expect(surfaceAttributes({ frame: "pane", edge: "start" })["data-surface-edge"]).toBe("start");
   expect(css).toMatch(
-    /\[data-surface-edge="start"\][^{]*\{[^}]*border-width: 0;[^}]*border-block-start-width: 1px;[^}]*border-inline-start-width: 1px/s,
+    /\[data-surface-edge="start"\][^{]*\{[^}]*border-width: 0;[^}]*border-block-start-width: 1px;[^}]*border-inline-start-width: calc\(var\(--surface-frame-inline-start-visible, 1\) \* 1px\);/,
   );
 });
 

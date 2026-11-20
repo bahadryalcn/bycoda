@@ -20,6 +20,10 @@ type Entry = {
   dependencyKeys: readonly string[];
   bytes: Buffer;
   touched: number;
+  /** Idle expiry: slides forward each time the owner reads a chunk, never past `hardDeadline`. */
+  deadline: number;
+  /** Absolute end of life, so an abandoned or endlessly polled transfer is still reclaimed. */
+  hardDeadline: number;
   authorities: readonly (() => Promise<boolean>)[];
   users: number;
   retained: boolean;
@@ -61,6 +65,7 @@ export class HostBulkTransfers {
         maxSnapshotBytes: number;
         maxLeases: number;
         ttlMs: number;
+        maxLifetimeMs: number;
         chunkBytes: number;
       }>;
     },
@@ -71,7 +76,10 @@ export class HostBulkTransfers {
       maxBytes: 128 * 1024 * 1024,
       maxSnapshotBytes: 32 * 1024 * 1024,
       maxLeases: WS_LIMITS.maxReadJobs + WS_LIMITS.maxControlJobs,
+      // Idle window between chunk reads. The descriptor carries the hard deadline.
       ttlMs: 120_000,
+      // Hard cap from creation: a slow link can keep a download alive, never forever.
+      maxLifetimeMs: 15 * 60_000,
       chunkBytes: WS_LIMITS.streamChunkBytes,
       ...options.limits,
     };
@@ -172,6 +180,8 @@ export class HostBulkTransfers {
         entry.descriptor.sha256 === sha256
       ) {
         entry.touched = this.now();
+        // A fresh request for the same content renews the idle window.
+        this.slide(entry);
         return { $bulk: entry.descriptor };
       }
     while (
@@ -193,6 +203,8 @@ export class HostBulkTransfers {
       }
       this.remove(oldest.descriptor.transferId);
     }
+    const created = this.now();
+    const hardDeadline = created + Math.max(this.limits.maxLifetimeMs, this.limits.ttlMs);
     const descriptor = BulkDescriptorSchema.parse({
       kind: "bulk",
       transferId: randomUUID(),
@@ -200,7 +212,8 @@ export class HostBulkTransfers {
       totalBytes: bytes.length,
       chunkBytes: this.limits.chunkBytes,
       sha256,
-      expiresAt: this.now() + this.limits.ttlMs,
+      // Clients use this as a ceiling for the whole download. Idle expiry is enforced here.
+      expiresAt: hardDeadline,
     });
     this.entries.set(descriptor.transferId, {
       descriptor,
@@ -208,7 +221,9 @@ export class HostBulkTransfers {
       resource: lease.resource,
       dependencyKeys: lease.dependencyKeys,
       bytes,
-      touched: this.now(),
+      touched: created,
+      deadline: created + this.limits.ttlMs,
+      hardDeadline,
       authorities,
       users: 0,
       retained: true,
@@ -281,9 +296,17 @@ export class HostBulkTransfers {
         this.now() - entry.lastServed < DOWNLOAD_PIN_MS)
     );
   }
+  /** Slide the idle expiry forward; only an owner-scoped, fully authorized read reaches this. */
+  private slide(entry: Entry): void {
+    entry.deadline = Math.min(
+      entry.hardDeadline,
+      Math.max(entry.deadline, this.now() + this.limits.ttlMs),
+    );
+  }
   private copyChunk(entry: Entry, offset: number): Buffer {
     entry.touched = this.now();
     entry.lastServed = entry.touched;
+    this.slide(entry);
     entry.finished = offset + entry.descriptor.chunkBytes >= entry.bytes.length;
     // Never expose the retained backing buffer to callers.
     return Buffer.from(entry.bytes.subarray(offset, offset + entry.descriptor.chunkBytes));
@@ -312,8 +335,7 @@ export class HostBulkTransfers {
     this.entries.delete(id);
   }
   private prune(): void {
-    for (const [id, entry] of this.entries)
-      if (entry.descriptor.expiresAt <= this.now()) this.remove(id);
+    for (const [id, entry] of this.entries) if (entry.deadline <= this.now()) this.remove(id);
   }
 }
 

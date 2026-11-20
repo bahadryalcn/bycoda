@@ -1,4 +1,3 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Heading } from "../../../shared/ui/Heading";
 import { useT } from "../../../shared/i18n";
 import { type ReactNode, useSyncExternalStore } from "react";
@@ -14,6 +13,7 @@ import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { CrewScene } from "./crewSurface";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Button } from "../../../shared/ui/Button";
 import { FolderOpen } from "../../../shared/ui/icons";
 import { runGuideAction } from "../../onboarding/model/guide";
@@ -58,14 +58,13 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
         // z-10: in-pane stacking above sibling layers; no in-pane layer scale exists, so the literal stays.
         <div className="bycoda-entry-workbench pointer-events-none relative z-(--layer-pane-sheet) mx-auto flex w-full flex-1 flex-col">
           <div className="bycoda-entry-heading">
-            <div className="bycoda-wordmark" aria-label={PRODUCT_IDENTITY.displayName}>
-              <img src={PRODUCT_IDENTITY.logoSrc} alt="" />
-              <img className="bycoda-brand-lettering" src={PRODUCT_IDENTITY.wordmarkSrc} alt="" />
+            <div className="bycoda-wordmark" role="img" aria-label={PRODUCT_IDENTITY.displayName}>
+              <BrandMark />
+              <BrandMark variant="wordmark" className="bycoda-brand-lettering" />
             </div>
             <div className="bycoda-task-brief pointer-events-auto">
-              <Tooltip label={project ? cwd : undefined} asChild>
-                <Heading size="page">{title}</Heading>
-              </Tooltip>
+              <Heading size="page">{title}</Heading>
+              {project ? <p className="bycoda-task-path">{cwd}</p> : null}
               {project ? null : (
                 <div className="bycoda-entry-actions bycoda-arc">
                   <Button

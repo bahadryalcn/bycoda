@@ -28,6 +28,14 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ArrowUp, ExternalLink, FolderOpen } from "../../../shared/ui/icons";
 import { FileTypeIcon } from "./FileTypeIcon";
 import type { OpenFileFn } from "../../search/model/search";
+import { TREE_WINDOW_CHUNK, windowEntries } from "../model/fileTree";
+
+/** Folders first, then by name; run once per loaded listing, not per render. */
+function sortFolderEntries(entries: FolderListing["entries"]) {
+  return [...entries].sort(
+    (a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name),
+  );
+}
 
 /** Browse folders belonging to another machine without granting file access. */
 export function ChatFolderBrowser({
@@ -54,6 +62,7 @@ export function ChatFolderBrowser({
   const [editingMapping, setEditingMapping] = useState(false);
   const [remoteRoot, setRemoteRoot] = useState(path);
   const [localRoot, setLocalRoot] = useState("");
+  const [limit, setLimit] = useState(TREE_WINDOW_CHUNK);
   const revealRequested = useRef(false);
   const copyAbort = useRef<AbortController | null>(null);
   const revealLabel = IS_MAC
@@ -62,6 +71,8 @@ export function ChatFolderBrowser({
       ? "Reveal in File Explorer"
       : "Open in File Manager";
   const entries = listing?.entries;
+  // Large folders render a first chunk; the listing itself is already sorted.
+  const { shown, hidden } = windowEntries(entries ?? [], limit, []);
   const parentDir = parentPath(directory);
   const parent = listing?.parent ?? (parentDir !== directory ? parentDir : undefined);
 
@@ -161,9 +172,10 @@ export function ChatFolderBrowser({
     let cancelled = false;
     setListing(null);
     setError(undefined);
+    setLimit(TREE_WINDOW_CHUNK);
     void browseDirectory(directory).then(
       (folder) => {
-        if (!cancelled) setListing(folder);
+        if (!cancelled) setListing({ ...folder, entries: sortFolderEntries(folder.entries) });
       },
       (reason) => {
         if (!cancelled) setError(String(reason));
@@ -350,55 +362,64 @@ export function ChatFolderBrowser({
               </Text>
             ) : null}
             <ul aria-label={t("Folder contents")} className="max-h-80 overflow-auto py-2">
-              {[...entries]
-                .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
-                .map((entry) => (
-                  <li key={entry.path} className="flex min-w-0 items-center gap-1">
+              {shown.map((entry) => (
+                <li key={entry.path} className="flex min-w-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    motion="none"
+                    type="button"
+                    disabled={busy || (!entry.isDir && (!listing?.canOpenFiles || !onOpenFile))}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-not-allowed"
+                    onClick={() => {
+                      if (entry.isDir) setDirectory(entry.path);
+                      else {
+                        onOpenFile?.(entry.path, undefined, { exact: true });
+                        onClose();
+                      }
+                    }}
+                  >
+                    {entry.isDir ? (
+                      <FolderOpen className="icon-md shrink-0" />
+                    ) : (
+                      <FileTypeIcon name={entry.name} isDir={false} size="md" />
+                    )}
+                    <Tooltip label={displayPath(entry.path, directory)} asChild>
+                      <Text truncate size="body" tone="inherit" className="min-w-0">
+                        {entry.name}
+                      </Text>
+                    </Tooltip>
+                  </Button>
+                  {!entry.isDir && listing?.canOpenFiles ? (
                     <Button
+                      iconOnly
+                      label={`${t("Open local copy")}: ${entry.name}`}
                       variant="ghost"
                       motion="none"
                       type="button"
-                      disabled={busy || (!entry.isDir && (!listing?.canOpenFiles || !onOpenFile))}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-not-allowed"
-                      onClick={() => {
-                        if (entry.isDir) setDirectory(entry.path);
-                        else {
-                          onOpenFile?.(entry.path, undefined, { exact: true });
-                          onClose();
-                        }
-                      }}
-                    >
-                      {entry.isDir ? (
-                        <FolderOpen className="icon-md shrink-0" />
-                      ) : (
-                        <FileTypeIcon name={entry.name} isDir={false} size="md" />
-                      )}
-                      <Tooltip label={displayPath(entry.path, directory)} asChild>
-                        <Text truncate size="body" tone="inherit" className="min-w-0">
-                          {entry.name}
-                        </Text>
-                      </Tooltip>
-                    </Button>
-                    {!entry.isDir && listing?.canOpenFiles ? (
-                      <Button
-                        iconOnly
-                        label={`${t("Open local copy")}: ${entry.name}`}
-                        variant="ghost"
-                        motion="none"
-                        type="button"
-                        disabled={busy}
-                        loading={pendingAction === `copy:${entry.path}`}
-                        tooltip={t("Open local copy")}
-                        aria-label={`${t("Open local copy")}: ${entry.name}`}
+                      disabled={busy}
+                      loading={pendingAction === `copy:${entry.path}`}
+                      tooltip={t("Open local copy")}
+                      aria-label={`${t("Open local copy")}: ${entry.name}`}
 
-                        onClick={() => void openLocalCopy(entry.path)}
-                      >
-                        <ExternalLink className="icon-md" />
-                      </Button>
-                    ) : null}
-                  </li>
-                ))}
+                      onClick={() => void openLocalCopy(entry.path)}
+                    >
+                      <ExternalLink className="icon-md" />
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
             </ul>
+            {hidden > 0 ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                motion="none"
+                type="button"
+                onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}
+              >
+                {t("Show {p0} more…", { p0: Math.min(TREE_WINDOW_CHUNK, hidden) })}
+              </Button>
+            ) : null}
           </>
         )}
       </div>

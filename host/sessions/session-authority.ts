@@ -93,7 +93,7 @@ export type SessionAuthorityResolver = {
  * before Host admission, and fail closed if it changed before the fresh checks. */
 export function createSessionAuthorityResolver(
   store: HostStore,
-  desktop: Pick<DesktopSessions, "metadataAsync" | "fingerprint" | "samePath">,
+  desktop: Pick<DesktopSessions, "metadataAsync" | "fingerprintAsync" | "samePath">,
   providers: readonly string[],
 ): SessionAuthorityResolver {
   const prepared = new Map<
@@ -106,11 +106,11 @@ export function createSessionAuthorityResolver(
       if (await store.sessionAuthority(id)) return;
       // Only authentication preparation is retried, before any business operation.
       for (let attempt = 0; attempt < 2; attempt++) {
-        const fingerprint = desktop.fingerprint();
+        const fingerprint = await desktop.fingerprintAsync();
         const value = await desktop.metadataAsync(id);
         // The second read stands even if the database moved again: a running
         // desktop keeps writing, and the read itself is one consistent snapshot.
-        if (attempt === 0 && desktop.fingerprint() !== fingerprint) continue;
+        if (attempt === 0 && (await desktop.fingerprintAsync()) !== fingerprint) continue;
         if (!value) throw sessionNotFound();
         prepared.delete(id);
         prepared.set(id, { fingerprint, cwd: value.cwd, provider: value.harness, at: Date.now() });
@@ -126,14 +126,16 @@ export function createSessionAuthorityResolver(
       // A running desktop writes its database all the time, so the fingerprint
       // moves while this call waits for Host SQL. A change right after the read is
       // normal activity; only a read that is no longer fresh is repeated.
-      const stale = () =>
+      // A fresh read needs no stat at all.
+      const stale = async () =>
         !value ||
-        (desktop.fingerprint() !== value.fingerprint && Date.now() - value.at > PREPARED_FRESH_MS);
-      if (!value || stale()) throw new SessionAuthorityUnavailable();
+        (Date.now() - value.at > PREPARED_FRESH_MS &&
+          (await desktop.fingerprintAsync()) !== value.fingerprint);
+      if (!value || (await stale())) throw new SessionAuthorityUnavailable();
       const project = (await store.projects()).find((project) =>
         desktop.samePath(project.cwd, value.cwd),
       );
-      if (stale()) throw new SessionAuthorityUnavailable();
+      if (await stale()) throw new SessionAuthorityUnavailable();
       // Not the typed refusal: this check is also repeated after an effect ran.
       if (!project || (value.provider !== "acp" && !providers.includes(value.provider)))
         throw new Error("Session not found on this machine");

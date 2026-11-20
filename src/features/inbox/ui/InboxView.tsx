@@ -15,6 +15,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { InboxGithubListControls, type InboxListLayout } from "./InboxGithubListControls";
 import { Sash } from "../../../shared/ui/Sash";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -29,7 +30,7 @@ import { useInboxProviderScopes } from "../hooks/useInboxProviderScopes";
 import { useInboxSourceSelection } from "../hooks/useInboxSourceSelection";
 import { useLinkedTarget, useLinkedTargetItem } from "../hooks/useLinkedTarget";
 import { visibleInboxItems } from "../model/inboxVisibleItems";
-import { hasActiveOverlay } from "../../../shared/ui/overlay";
+import { shouldHandleGlobalEscape } from "../../../shared/ui/overlay";
 import {
   ChevronsUpDown,
   ChevronLeft,
@@ -61,6 +62,7 @@ import { WindowControls } from "../../../app/shell/WindowControls";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
+import { releaseGithubReadBlock } from "../model/githubReadGate";
 import {
   inboxItemKey,
   inboxProjectsForRail,
@@ -193,12 +195,30 @@ export function InboxView({
   const [refresh, setRefresh] = useState(0);
   const requestRefresh = (action: "toolbar" | "retry", retryFailedOnly = false) => {
     if (refreshActionRef.current) return;
+    // Both actions are explicit: a pause GitHub did not time may be probed again. A reset time
+    // GitHub stated still holds, so the read fails at once with that time and spends no request.
+    if (source === "github") releaseGithubReadBlock();
     refreshActionRef.current = action;
     collection.setRetryFailedOnly(retryFailedOnly);
     setRefreshAction(action);
     setRefresh((value) => value + 1);
   };
   const [detailOpen, setDetailOpen] = useState(false);
+  const [githubListKind, setGithubListKind] = useRetainedState<"issue" | "pr">(
+    `${viewStateKey}:github-kind`,
+    () => {
+      const { hiddenKinds } = loadInboxFilters();
+      return hiddenKinds.includes("issue") && !hiddenKinds.includes("pr") ? "pr" : "issue";
+    },
+  );
+  const [listLayout, setListLayout] = useRetainedState<InboxListLayout>(
+    `inbox:${projectKey(cwd)}:github-list-layout`,
+    "compact",
+  );
+  const [splitView, setSplitView] = useRetainedState(
+    `inbox:${projectKey(cwd)}:github-split-view`,
+    true,
+  );
   const [jiraView, setJiraView] = useRetainedState<"list" | "board">(
     `${viewStateKey}:jira-view`,
     "list",
@@ -248,18 +268,39 @@ export function InboxView({
     },
   });
   const { targetSelectionKey } = linked;
+  const githubKind =
+    source === "github" && !pullRequestsOnly
+      ? linked.pinnedKey && target
+        ? target.kind
+        : githubListKind
+      : null;
   const searchInput = linked.searchPinned ? "" : retainedSearch;
   const deferredSearch = useDeferredValue(searchInput);
-  const [retainedKey, setSelectedKey] = useRetainedState<string | null>(
+  const [sourceKey, setSourceKey] = useRetainedState<string | null>(
     `${viewStateKey}:${source}:selected`,
-    targetSelectionKey,
+    null,
   );
+  const [githubPrKey, setGithubPrKey] = useRetainedState<string | null>(
+    `${viewStateKey}:github:pr:selected`,
+    null,
+  );
+  const [githubIssueKey, setGithubIssueKey] = useRetainedState<string | null>(
+    `${viewStateKey}:github:issue:selected`,
+    null,
+  );
+  const [retainedKey, setSelectedKey] =
+    githubKind === "pr"
+      ? [githubPrKey, setGithubPrKey]
+      : githubKind === "issue"
+        ? [githubIssueKey, setGithubIssueKey]
+        : [sourceKey, setSourceKey];
   // The selection stays the user's own choice; a linked target only pins it.
   const selectedKey = linked.pinnedKey ?? retainedKey;
   /** Hands the pinned target over to the user's retained selection and search. */
   const releaseTarget = () => {
     if (!linked.pinnedKey) return;
     setSelectedKey(linked.pinnedKey);
+    if (githubKind) setGithubListKind(githubKind);
     setRetainedSearch("");
     linked.releaseTarget();
   };
@@ -283,15 +324,16 @@ export function InboxView({
 
   const projects = useMemo(() => inboxProjectsForRail(recents, cwd), [cwd, recents]);
   const projectOptions = useMemo(() => inboxProjectOptions(projects, logos), [logos, projects]);
+  const isGithubSource = source === "github";
   const activeFilters = useMemo(
     () =>
       pruneInboxFilters(
-        filters,
+        isGithubSource ? { ...filters, hiddenKinds: [] } : filters,
         projects.map((project) => project.path),
       ),
-    [filters, projects],
+    [filters, projects, isGithubSource],
   );
-  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraScope, linearScope])}`;
+  const listScope = `${viewStateKey}:${JSON.stringify([source, githubKind, activeFilters, jiraScope, linearScope])}`;
   const filtersActive =
     codeScopes.hidden.length > 0 ||
     hasActiveInboxFilters(activeFilters, source, linearHiddenTeamIds, jiraHiddenProjectIds);
@@ -371,9 +413,30 @@ export function InboxView({
     },
   });
 
+  const visibleSources = visibleInboxSources(connections).filter(
+    (source) => !pullRequestsOnly || !isTrackerSource(source),
+  );
+  const connectableSources = connectableInboxSources(connections);
+  const sourceAvailable = visibleSources.includes(source);
+  const noSourcesConnected = visibleSources.length === 0;
+  const hasMessaging = messaging.accounts.length > 0;
+  const messagesOpen = hasMessaging && (messagesChosen || noSourcesConnected);
+  const connectMessages = !pullRequestsOnly && messaging.loaded && !hasMessaging;
+  const boardDetailOpen =
+    boardIssue !== null && !messagesOpen && source === "jira" && jiraView === "board";
+
   useEffect(() => {
+    // Jira drag cancellation and controls that consume Escape run first. An
+    // unhandled Escape in an editable field still belongs to that field.
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || hasActiveOverlay()) return;
+      if (!shouldHandleGlobalEscape(event)) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          "input, textarea, select, [contenteditable]:not([contenteditable=false])",
+        )
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
       if (filterMenu) {
@@ -384,21 +447,15 @@ export function InboxView({
         setConnectMenuOpen(false);
         return;
       }
+      if (boardDetailOpen) {
+        closeBoardIssue();
+        return;
+      }
       onCloseRef.current?.();
     };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [connectMenuOpen, filterMenu]);
-
-  const visibleSources = visibleInboxSources(connections).filter(
-    (source) => !pullRequestsOnly || !isTrackerSource(source),
-  );
-  const connectableSources = connectableInboxSources(connections);
-  const sourceAvailable = visibleSources.includes(source);
-  const noSourcesConnected = visibleSources.length === 0;
-  const hasMessaging = messaging.accounts.length > 0;
-  const messagesOpen = hasMessaging && (messagesChosen || noSourcesConnected);
-  const connectMessages = !pullRequestsOnly && messaging.loaded && !hasMessaging;
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [boardDetailOpen, connectMenuOpen, filterMenu]);
 
   const collection = useInboxCollection({
     projects,
@@ -414,7 +471,7 @@ export function InboxView({
   const { items, providerErrors } = collection;
   const loading = collection.loading || collection.pendingProviders.includes(source);
   const showCollectionTools = loading || items.length > 0 || narrowed;
-  const linearProjects = useMemo(() => linearProjectOptions(items), [items]);
+  const linearProjects = linearProjectOptions(items);
 
   const { targetItem, patchTargetItem } = useLinkedTargetItem({ target, cwd, items });
 
@@ -434,7 +491,12 @@ export function InboxView({
     setMessagesChosen(false);
     selectSource(item.provider);
     setSearchInput(item.identifier || String(item.number));
-    setSelectedKey(inboxItemKey(item));
+    if (item.provider === "github" && (item.kind === "issue" || item.kind === "pr")) {
+      setGithubListKind(item.kind);
+      (item.kind === "pr" ? setGithubPrKey : setGithubIssueKey)(inboxItemKey(item));
+    } else {
+      setSelectedKey(inboxItemKey(item));
+    }
     setDetailOpen(true);
   });
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- store listener for chat work-item chips; a request sent before mount waits in the store.
@@ -467,6 +529,7 @@ export function InboxView({
       visibleInboxItems({
         items,
         pullRequestsOnly,
+        githubKind,
         prSort,
         filters: activeFilters,
         search: deferredSearch,
@@ -477,12 +540,13 @@ export function InboxView({
           scopes: codeScopesLoaded,
           hidden: codeScopesHidden,
         },
-        target,
+        target: linked.pinnedKey ? target : null,
         targetItem,
         now: Date.now(),
       }),
     [
       pullRequestsOnly,
+      githubKind,
       prSort,
       activeFilters,
       items,
@@ -490,6 +554,7 @@ export function InboxView({
       source,
       sourceAvailable,
       target,
+      linked.pinnedKey,
       targetItem,
       codeScopesProvider,
       codeScopesLoaded,
@@ -497,24 +562,14 @@ export function InboxView({
     ],
   );
 
-  const inboxSeenTick = useInboxSeenTick();
+  useInboxSeenTick();
   const seenStorageStatus = inboxSeenStatus();
-  const sourceEntries = useMemo(
-    () =>
-      sourceAvailable
-        ? items
-            .filter((item) => item.provider === source)
-            .map((item) => ({
-              key: inboxItemKey(item),
-              updatedAt: item.updatedAt,
-            }))
-        : [],
-    [items, source, sourceAvailable],
-  );
-  const sourceHasUnseen = useMemo(
-    () => inboxHasUnseenItems(sourceEntries),
-    [inboxSeenTick, sourceEntries],
-  );
+  const sourceEntries = sourceAvailable
+    ? items
+        .filter((item) => item.provider === source)
+        .map((item) => ({ key: inboxItemKey(item), updatedAt: item.updatedAt }))
+    : [];
+  const sourceHasUnseen = inboxHasUnseenItems(sourceEntries);
 
   const sourceError = providerErrors[source] ?? null;
   // Full pages mean older items may not be loaded; the list reads have no total.
@@ -524,7 +579,9 @@ export function InboxView({
   // selected identity from allowed loaded data before considering a default.
   const allowedItems = sourceAvailable
     ? filterCodeHostScopes(
-        items.filter((item) => item.provider === source),
+        items.filter(
+          (item) => item.provider === source && (!githubKind || item.kind === githubKind),
+        ),
         codeScopes.provider,
         codeScopes.scopes,
         codeScopes.hidden,
@@ -554,7 +611,7 @@ export function InboxView({
 
   const onFiltersChange = (next: InboxFilters) => {
     const pruned = pruneInboxFilters(
-      next,
+      source === "github" ? { ...next, hiddenKinds: filters.hiddenKinds } : next,
       projects.map((project) => project.path),
     );
     setFilters(pruned);
@@ -564,7 +621,7 @@ export function InboxView({
   const onSourceChange = (next: InboxSource) => {
     setDetailOpen(false);
     releaseTarget();
-    setSelectedKey(null);
+    if (!githubKind) setSelectedKey(null);
     setBoardIssue(null);
     setMessagesChosen(false);
     selectSource(next);
@@ -698,6 +755,24 @@ export function InboxView({
       )}
     >
       {sourceRow}
+      {sourceAvailable && source === "github" ? (
+        <InboxGithubListControls
+          kind={githubKind}
+          layout={listLayout}
+          onLayoutChange={setListLayout}
+          splitView={splitView}
+          onSplitViewChange={(value) => {
+            setSplitView(value);
+            setDetailOpen(false);
+          }}
+          onKindChange={(kind) => {
+            releaseTarget();
+            setGithubListKind(kind);
+            setDetailOpen(false);
+            setDiscussionOpen(false);
+          }}
+        />
+      ) : null}
       {noSourcesConnected ? null : (
         <div className="inbox-collection-toolbar flex shrink-0 flex-wrap items-center gap-2 px-2 py-1.5">
           {showCollectionTools ? (
@@ -708,18 +783,22 @@ export function InboxView({
                   focusOwner="group"
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder={t("Filter issues")}
+                  placeholder={
+                    githubKind === "pr" || pullRequestsOnly
+                      ? t("Filter loaded items")
+                      : t("Filter issues")
+                  }
                   aria-label={t("Filter loaded items")}
                   spellCheck={false}
                   autoComplete="off"
                 />
               </SearchInputGroup>
-              {pullRequestsOnly ? (
+              {pullRequestsOnly || githubKind ? (
                 <>
                   <Button
                     iconOnly
                     ref={sortButtonRef}
-                    label={t("Sort pull requests")}
+                    label={githubKind === "issue" ? t("Sort") : t("Sort pull requests")}
                     variant="ghost"
                     type="button"
                     aria-haspopup="menu"
@@ -731,7 +810,7 @@ export function InboxView({
                   {sortMenuOpen ? (
                     <DropdownMenu
                       anchor={sortButtonRef}
-                      label={t("Sort pull requests")}
+                      label={githubKind === "issue" ? t("Sort") : t("Sort pull requests")}
                       returnFocusRef={sortButtonRef}
                       onClose={() => setSortMenuOpen(false)}
                       items={[
@@ -884,12 +963,18 @@ export function InboxView({
             onRetry={collection.jiraContinuation.loadMore}
             fill
             className="p-1.5 overscroll-none"
-            label={t("Inbox")}
+            label={
+              githubKind === "issue"
+                ? t("Issues")
+                : githubKind === "pr"
+                  ? t("Pull requests")
+                  : t("Inbox")
+            }
             items={visibleItems}
             stateKey={`inbox:${listScope}`}
             itemKey={inboxItemKey}
             requiredKey={selected ? inboxItemKey(selected) : null}
-            estimateSize={48}
+            estimateSize={source === "github" && listLayout === "comfortable" ? 76 : 48}
             renderItem={(item) => {
               const key = inboxItemKey(item);
               const relatedSessionCount = sessionCounts.get(key) ?? 0;
@@ -900,6 +985,7 @@ export function InboxView({
                     active={selected != null && key === inboxItemKey(selected)}
                     relatedSessionCount={relatedSessionCount}
                     onSelect={selectItem}
+                    comfortable={source === "github" && listLayout === "comfortable"}
                   />
                 </div>
               );
@@ -919,7 +1005,7 @@ export function InboxView({
         {...resize.sashProps}
         appearance="hidden"
         label={t("Resize inbox list")}
-        className="absolute inset-y-0 -right-px"
+        className="inbox-list-sash absolute inset-y-0 -right-px"
       />
     </div>
   );
@@ -930,6 +1016,7 @@ export function InboxView({
       codeHostProjects={codeScopes.scopes?.projects}
       hiddenCodeHostProjects={codeScopes.hidden}
       codeHostError={codeScopes.error}
+      codeHostIncomplete={codeScopes.scopes?.incomplete ?? null}
       onCodeHostProjectsChange={codeScopes.save}
       x={filterMenu.x}
       y={filterMenu.y}
@@ -1056,12 +1143,6 @@ export function InboxView({
                   "jira-board-detail",
                 )}
                 aria-label={boardIssue.identifier}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && !hasActiveOverlay()) {
-                    event.preventDefault();
-                    closeBoardIssue();
-                  }
-                }}
               >
                 <Button
                   variant="ghost"
@@ -1092,6 +1173,7 @@ export function InboxView({
         <div
           className="inbox-list-detail flex min-h-0 min-w-0 flex-1"
           data-detail-open={detailOpen}
+          data-list-only={source === "github" && !splitView}
         >
           {list}
           <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">

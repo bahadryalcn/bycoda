@@ -1,11 +1,7 @@
-.session-recovery-dialog .modal-panel > div {
-  display: flex;
-  overflow-y: auto;
-}
 .session-recovery,
 .recovery-pane {
   inline-size: 100%;
-  max-block-size: min(640px, calc(100dvh - 110px));
+  max-block-size: 640px;
 }
 /* One recovery layout for conversations, file drafts and earlier reports: the toolbar, the
    counts and the footer keep their place; only the list scrolls. */

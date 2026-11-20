@@ -1,9 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
-import {
-  getHarnessAvailabilitySnapshot,
-  isHarnessAvailable,
-  subscribeHarnessAvailability,
-} from "../../../../integrations/harness/core/availability";
+import { useState } from "react";
 import { useT } from "../../../../shared/i18n";
 import { HARNESS_TITLE } from "../../../../shared/model/harnessIdentity";
 import { SessionProviderSchema } from "../../../../shared/model/host-contracts/session-commands";
@@ -20,6 +15,7 @@ import { DataTable, DataTableRow } from "../../../../shared/ui/SortableDataTable
 import { Group, Row } from "../../../../shared/ui/settings";
 import { formatAgentMinutes, type MachineLimits } from "../../../tasks/public/hostSettings";
 import type { CapDraft, OrderDraft } from "../../model/modelRoutingDraft";
+import { limitedProviders, type HostProviders } from "../../model/hostProviders";
 
 const EMPTY_CAPS: CapDraft = {
   daily: { tokens: "", costUsd: "" },
@@ -57,22 +53,21 @@ function hasCap(caps: CapDraft | undefined, metrics: ("tokens" | "costUsd")[]): 
 export function ModelOrderLimits({
   draft,
   usage,
+  hostProviders,
   onChange,
   onFieldInvalid,
 }: {
   draft: OrderDraft;
   usage: MachineLimits;
+  /** The edited Host's providers; without them only providers with saved values show. */
+  hostProviders?: HostProviders;
   onChange: (draft: OrderDraft) => void;
   /** Token fields report by key whether they hold an unparsable value, which blocks Save. */
   onFieldInvalid?: (key: string, invalid: boolean) => void;
 }) {
   const t = useT();
-  useSyncExternalStore(
-    subscribeHarnessAvailability,
-    getHarnessAvailabilitySnapshot,
-    getHarnessAvailabilitySnapshot,
-  );
   const [costOverride, setCostOverride] = useState<boolean | null>(null);
+  const hosted: HostProviders = hostProviders ?? { status: "loading" };
   const headers = {
     "daily-tokens": t("Daily tokens"),
     "daily-costUsd": t("Daily cost (USD)"),
@@ -83,9 +78,10 @@ export function ModelOrderLimits({
   } as const;
   const scopes: CapScope[] = [
     "total",
-    ...SessionProviderSchema.options.filter(
+    ...limitedProviders(
+      SessionProviderSchema.options,
+      hosted,
       (provider) =>
-        isHarnessAvailable(provider as Parameters<typeof isHarnessAvailable>[0]) ||
         hasCap(draft.workCaps.providers[provider], ["tokens", "costUsd"]) ||
         Boolean(draft.workCaps.reserve[provider]),
     ),
@@ -104,11 +100,14 @@ export function ModelOrderLimits({
           ? { ...draft.workCaps, total: next }
           : { ...draft.workCaps, providers: { ...draft.workCaps.providers, [scope]: next } },
     });
-  const used = `${usage.stale ? `${t("Out of date")} · ` : ""}${formatAgentMinutes(usage.usedMinutes)}${
+  const usedText =
     usage.dailyAgentMinutes > 0
-      ? t(" of {p0}", { p0: formatAgentMinutes(usage.dailyAgentMinutes) })
-      : ""
-  }`;
+      ? t("{p0} of {p1}", {
+          p0: formatAgentMinutes(usage.usedMinutes),
+          p1: formatAgentMinutes(usage.dailyAgentMinutes),
+        })
+      : formatAgentMinutes(usage.usedMinutes);
+  const used = usage.stale ? t("{p0} · {p1}", { p0: t("Out of date"), p1: usedText }) : usedText;
   return (
     <Group
       title={t("Work limits")}
@@ -171,12 +170,13 @@ export function ModelOrderLimits({
           }
         />
       </Row>
-      <Row label={t("Daily agent minutes")} info={t("0 means no limit.")}>
+      <Row label={t("Daily agent minutes")}>
         <NumberField
           label={t("Daily agent minutes")}
           hideLabel
           min={0}
           step={1}
+          placeholder={t("No limit")}
           value={draft.limits.dailyAgentMinutes}
           onChange={(event) =>
             onChange({
@@ -186,16 +186,14 @@ export function ModelOrderLimits({
           }
         />
       </Row>
-      <Row
-        label={t("Default maximum run minutes")}
-        info={t("For one unattended run. Empty means no limit.")}
-      >
+      <Row label={t("Default maximum run minutes")} info={t("For one unattended run.")}>
         <NumberField
           label={t("Default maximum run minutes")}
           hideLabel
           min={1}
           max={10080}
           step={1}
+          placeholder={t("No limit")}
           value={draft.maxRunMinutes}
           onChange={(event) => onChange({ ...draft, maxRunMinutes: event.currentTarget.value })}
         />
@@ -206,11 +204,7 @@ export function ModelOrderLimits({
             {t("Token and cost limits")}
           </Text>
           <InfoPopover>
-            <p>
-              {t(
-                "Empty or 0 means no limit. Limits apply before new turns and may be exceeded by a running turn.",
-              )}
-            </p>
+            <p>{t("Limits apply before new turns and may be exceeded by a running turn.")}</p>
           </InfoPopover>
           <Button
             variant="ghost"
@@ -223,6 +217,18 @@ export function ModelOrderLimits({
             {t("Cost limits")}
           </Button>
         </div>
+        {hosted.status === "loading" ? (
+          <Text size="secondary" tone="secondary">
+            {t("Loading…")}
+          </Text>
+        ) : null}
+        {hosted.status === "failed" ? (
+          <InlineError>
+            {t(
+              "Providers on this Host could not be read. Only providers with saved limits are shown.",
+            )}
+          </InlineError>
+        ) : null}
         <DataTable
           caption={t("Token and cost limits")}
           headers={[

@@ -11,6 +11,7 @@ import {
   ATTACHMENT_MISSING_MESSAGE,
   MAX_REMOTE_ATTACHMENT_BYTES,
   collectAttachmentGarbage,
+  resolveAttachments,
 } from "./attachments";
 import { HostDomainRefusalError } from "../domains/context";
 import { attachmentMissingOnHost } from "../../src/features/connections/model/remoteAttachmentPreviews";
@@ -125,6 +126,55 @@ it("reads non-image files only after session acceptance and ignores client-suppl
   );
   await expect(
     readAttachmentChunk(store, { sessionId: "owner", id: "../secret", offset: 0 }),
+  ).rejects.toThrow("not found");
+});
+it("loads the session once per download and again when a download restarts", async () => {
+  const { store, id } = fixture();
+  const bytes = Buffer.alloc(1_200_000, 7);
+  await writeAttachmentChunk(store, {
+    id,
+    size: bytes.length,
+    offset: 0,
+    data: bytes.subarray(0, 300_000).toString("base64"),
+  });
+  for (let offset = 300_000; offset < bytes.length; offset += 300_000)
+    await writeAttachmentChunk(store, {
+      id,
+      size: bytes.length,
+      offset,
+      data: bytes.subarray(offset, offset + 300_000).toString("base64"),
+    });
+  const sessionFor = vi.fn(
+    async () =>
+      ({
+        session: {
+          blocks: [
+            {
+              attachments: [
+                { id, name: "a.bin", kind: "file", mimeType: "x/y", size: bytes.length },
+              ],
+            },
+          ],
+        },
+      }) as unknown as Awaited<ReturnType<HostStore["session"]>>,
+  );
+  let offset = 0;
+  while (offset < bytes.length) {
+    const chunk = await readAttachmentChunk(store, { sessionId: "s", id, offset }, sessionFor);
+    offset = chunk.offset;
+  }
+  expect(sessionFor).toHaveBeenCalledTimes(1);
+  await readAttachmentChunk(store, { sessionId: "s", id, offset: 0 }, sessionFor);
+  expect(sessionFor).toHaveBeenCalledTimes(2);
+  await expect(
+    readAttachmentChunk(
+      store,
+      { sessionId: "other", id, offset: 3 },
+      async () =>
+        ({
+          session: { blocks: [] },
+        }) as unknown as Awaited<ReturnType<HostStore["session"]>>,
+    ),
   ).rejects.toThrow("not found");
 });
 it("preserves generated-image ownership and metadata size bounds", async () => {
@@ -379,4 +429,29 @@ it("collects old orphans only with complete references and preserves queue, othe
   await collectAttachmentGarbage(store, () => new Set(ids), Date.now());
   await upload;
   expect(readFileSync(attachmentPath(store, current), "utf8")).toBe("abc");
+});
+it("resolves send references asynchronously and keeps the size and ID authority", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "remote-resolve-test-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(async () => {
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  await writeAttachmentChunk(store, {
+    id,
+    offset: 0,
+    size: 3,
+    data: Buffer.from("abc").toString("base64"),
+  });
+  const ref = { id, name: "note.txt", mimeType: "text/plain", kind: "file" as const, size: 3 };
+  const pending = resolveAttachments(store, [ref]);
+  expect(pending).toBeInstanceOf(Promise);
+  await expect(pending).resolves.toEqual([{ ...ref, path: attachmentPath(store, id) }]);
+  await expect(resolveAttachments(store, [{ ...ref, size: 4 }])).rejects.toThrow(
+    "Attachment note.txt is incomplete",
+  );
+  await expect(resolveAttachments(store, [{ ...ref, id: "not-a-uuid" }])).rejects.toThrow(
+    "Invalid attachment ID",
+  );
 });

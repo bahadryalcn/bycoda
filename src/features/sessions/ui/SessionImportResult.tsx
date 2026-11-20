@@ -4,7 +4,20 @@ import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Surface } from "../../../shared/ui/Surface";
 import { Progress } from "../../../shared/ui/Progress";
 import { candidateKey } from "../import/importModel";
-import type { ImportProgress, ImportSummary } from "../import/importRunner";
+import type { ImportFailureReason, ImportProgress, ImportSummary } from "../import/importRunner";
+
+/** Translated text for an import failure the app raised; provider errors stay raw. */
+export function importFailureMessage(
+  t: (message: string) => string,
+  reason: ImportFailureReason,
+): string {
+  switch (reason) {
+    case "noMessages":
+      return t("The conversation has no messages to import");
+    case "unsupportedId":
+      return t("Unsupported conversation id");
+  }
+}
 
 /** Complete count labels: translators own number placement and noun forms. */
 export function importCount(
@@ -103,7 +116,7 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
                   {failure.candidate.firstPrompt}
                 </Text>
                 {" — "}
-                {failure.error}
+                {failure.reason ? importFailureMessage(t, failure.reason) : failure.error}
               </Text>
             ))}
           </ul>

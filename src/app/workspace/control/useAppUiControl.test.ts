@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { setCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import { requestAppUi } from "../../model/appUiControl";
 import { useAppUiControl, type AppUiControlDeps } from "./useAppUiControl";
 
@@ -139,6 +140,93 @@ it("reports Servers foreground and its actual mount instead of a retained conver
     await act(() => root.unmount());
     container.remove();
     panel.remove();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reports Crews and auxiliary tool pages by their own view names", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const crewsPanel = document.createElement("section");
+  crewsPanel.dataset.appCrews = "";
+  document.body.append(crewsPanel);
+  vi.spyOn(crewsPanel, "getClientRects").mockReturnValue([{}] as unknown as DOMRectList);
+  const deps: AppUiControlDeps = {
+    surface: {
+      settingsOpen: false,
+      searchViewOpen: false,
+      inboxViewOpen: false,
+      notesViewOpen: false,
+      serversViewOpen: true,
+      automationsViewOpen: false,
+      socialBoardShown: false,
+      taskBoardShown: false,
+      auxiliaryTool: null,
+      settingsSection: "connections",
+      projectCwd: "/project",
+      activeTab: {
+        kind: "session",
+        focusedId: "owner",
+      } as AppUiControlDeps["surface"]["activeTab"],
+      sessionSidebarOpen: false,
+      sidebarTab: "sessions",
+      dockVisible: false,
+    },
+    actions: {
+      setSettingsOpen: vi.fn(),
+      setSearchViewOpen: vi.fn(),
+      setInboxViewOpen: vi.fn(),
+      setNotesViewOpen: vi.fn(),
+      setAutomationsViewOpen: vi.fn(),
+      setServersViewOpen: vi.fn(),
+      setSessionSidebarOpen: vi.fn(),
+      setSidebarTab: vi.fn(),
+      onShowProjectTerminal: vi.fn(),
+      onHideProjectTerminal: vi.fn(),
+      onOpenNotes: vi.fn(),
+      onOpenInbox: vi.fn(),
+      onOpenAutomations: vi.fn(),
+      onOpenTasks: vi.fn(),
+      onOpenSearch: vi.fn(),
+      openSettings: vi.fn(),
+    },
+    focusOpenSession: vi.fn(),
+    isDetachedSessionWindow: () => false,
+  };
+  const context = { cwd: "/project", sessionId: "owner", title: "Owner" };
+  const root = createRoot(container);
+  function Harness() {
+    useAppUiControl(deps);
+    return null;
+  }
+  try {
+    setCrewsPageOpen(true);
+    await act(() => root.render(createElement(Harness)));
+    await expect(requestAppUi(context, "ui.workspace.status", {})).resolves.toMatchObject({
+      view: "crews",
+      mounted: true,
+    });
+    setCrewsPageOpen(false);
+    deps.surface.serversViewOpen = false;
+    deps.surface.automationsViewOpen = true;
+    deps.surface.auxiliaryTool = "assistant";
+    await act(() => root.render(createElement(Harness)));
+    await expect(requestAppUi(context, "ui.workspace.status", {})).resolves.toMatchObject({
+      view: "assistant",
+      mounted: true,
+    });
+    deps.surface.auxiliaryTool = "terminal";
+    await act(() => root.render(createElement(Harness)));
+    await expect(requestAppUi(context, "ui.workspace.status", {})).resolves.toMatchObject({
+      view: "terminal",
+    });
+  } finally {
+    setCrewsPageOpen(false);
+    await act(() => root.unmount());
+    container.remove();
+    crewsPanel.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   }

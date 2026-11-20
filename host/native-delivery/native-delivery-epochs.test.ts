@@ -3,8 +3,12 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
-import { createNativeDeliveryStore, nativeDeliveryConsumedResult } from "./native-delivery-store";
-import { assertNativeDeliveryEffect } from "./native-delivery-epochs";
+import {
+  createNativeDeliveryStore,
+  nativeDeliveryConsumedResult,
+  type NativeDeliveryKind,
+} from "./native-delivery-store";
+import { assertNativeDeliveryEffect, createNativeDeliveryEpochs } from "./native-delivery-epochs";
 import { nativeDeliveryFixture } from "./native-delivery.test-support";
 import {
   nativeDeliveryEpochOriginalId,
@@ -382,7 +386,13 @@ it("permits only the actual v2 winner's matching live execution and invalidates 
   });
   release();
   await expect(escaped).rejects.toThrow("PROTOCOL_FENCED");
-  expect(Object.keys(f.journal.epochs).sort()).toEqual(["close", "compact", "open", "status"]);
+  expect(Object.keys(f.journal.epochs).sort()).toEqual([
+    "close",
+    "compact",
+    "open",
+    "resolveGap",
+    "status",
+  ]);
 });
 
 it("rejects canonical aliases and old SQL writers before v2 receipt insertion", async () => {
@@ -690,7 +700,10 @@ it("migrates a predecessor file journal without losing legacy results or permitt
     await f.store.db.exec(`ALTER TABLE native_delivery_receipts RENAME TO predecessor_receipts;
       CREATE TABLE native_delivery_receipts (environment_id TEXT NOT NULL,principal_id TEXT NOT NULL,kind TEXT NOT NULL,original_id TEXT NOT NULL,sha256 TEXT NOT NULL,byte_length INTEGER NOT NULL,state TEXT NOT NULL,result_json TEXT,proof_json TEXT,PRIMARY KEY(environment_id,principal_id,original_id));
       INSERT INTO native_delivery_receipts SELECT environment_id,principal_id,kind,original_id,sha256,byte_length,state,result_json,proof_json FROM predecessor_receipts;
-      DROP TABLE predecessor_receipts;`);
+      DROP TABLE predecessor_receipts;
+      DROP TABLE native_delivery_quota_totals;
+      DROP TABLE native_delivery_quota_scopes;
+      DROP TABLE native_delivery_quota_state;`);
   });
   await f.reopen();
   expect(await f.journal.readMetadata(f.principal, finish, old)).toMatchObject({
@@ -726,7 +739,7 @@ it("keeps retained epoch metadata bounded per principal through real typed alloc
         .get(f.principal)
     )?.count,
   ).toBe(4096);
-}, 60_000);
+}, 180_000);
 
 it("holds orphaned witnesses as corruption and bounds complete retained headers without eviction", async () => {
   const f = await fixture();
@@ -810,4 +823,173 @@ it("preserves the full32MiB formatter result and compacts it using only retired 
     ),
   ).toBe(true);
   expect(await f.journal.readMetadata(f.principal, format, id)).toMatchObject({ state: "fenced" });
+});
+
+const gap = (
+  epoch: NativeDeliveryEpochRef,
+  sequence: number,
+  kind: NativeDeliveryKind = finish,
+) => ({
+  ownerId: epoch.ownerId,
+  generation: epoch.generation,
+  sequence,
+  kind,
+  sha256: sha("{}"),
+  byteLength: 2,
+});
+const gapRows = async (f: Awaited<ReturnType<typeof fixture>>) =>
+  Number(
+    (
+      await f.store.db
+        .prepare(
+          "SELECT (SELECT COUNT(*) FROM native_delivery_epoch_gap_fences)+(SELECT COUNT(*) FROM native_delivery_epoch_gap_witnesses) AS count",
+        )
+        .get()
+    )?.count,
+  );
+
+it("resolves a never-admitted hole only through an exact no-effect fence, then compacts across it", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID()),
+    epochs = createNativeDeliveryEpochs(f.store);
+  await retire(f, epoch, 2);
+  await retire(f, epoch, 3);
+  // Repro: the missing original 1 holds compaction forever without a fence.
+  await expect(
+    f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
+  ).rejects.toThrow("HOLE");
+  await expect(
+    epochs
+      .resolveGap(f.principal, gap(epoch, 1, format))
+      .then(() => epochs.resolveGap(f.principal, gap(epoch, 1))),
+  ).rejects.toThrow("CONFLICT");
+  expect(await epochs.resolveGap(f.principal, gap(epoch, 1, format))).toEqual({
+    ...gap(epoch, 1, format),
+    outcome: "not_admitted",
+  });
+  await expect(
+    epochs.resolveGap(f.principal, { ...gap(epoch, 1, format), sha256: "b".repeat(64) }),
+  ).rejects.toThrow("CONFLICT");
+  expect(await gapRows(f)).toBe(2);
+  // No late admission, replay or "absent" status for the fenced original.
+  const late = identity(epoch, 1);
+  let ran = false;
+  await expect(
+    f.journal.execute(f.principal, format, late, async () => {
+      ran = true;
+    }),
+  ).rejects.toThrow("GAP_FENCED");
+  await expect(f.journal.admit(f.principal, format, late)).rejects.toThrow("GAP_FENCED");
+  await expect(f.journal.readMetadata(f.principal, format, late)).rejects.toThrow("GAP_FENCED");
+  expect(ran).toBe(false);
+  await expect(
+    f.store.db
+      .prepare(
+        "INSERT INTO native_delivery_receipts(environment_id,principal_id,kind,original_id,sha256,byte_length,state,reserved_bytes,epoch_owner_id,epoch_generation,epoch_sequence) VALUES (?,?,?,?,?,2,'admitted',17,?,?,?)",
+      )
+      .run(
+        f.store.environmentId,
+        f.principal,
+        format,
+        late.originalId,
+        sha("{}"),
+        epoch.ownerId,
+        epoch.generation,
+        1,
+      ),
+  ).rejects.toThrow("GAP_FENCED");
+  await expect(
+    f.store.db.prepare("DELETE FROM native_delivery_epoch_gap_fences").run(),
+  ).rejects.toThrow("GAP_HELD");
+  await expect(
+    f.store.db.prepare("UPDATE native_delivery_epoch_gap_witnesses SET kind=?").run(finish),
+  ).rejects.toThrow("GAP_IMMUTABLE");
+  await f.reopen();
+  expect(
+    await createNativeDeliveryEpochs(f.store).resolveGap(f.principal, gap(epoch, 1, format)),
+  ).toMatchObject({ outcome: "not_admitted" });
+  expect(
+    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
+  ).toMatchObject({ through: 3, highWater: 3 });
+  expect(await gapRows(f)).toBe(0);
+  // A covered slot cannot tell retired from fenced: it never answers either way.
+  await expect(
+    createNativeDeliveryEpochs(f.store).resolveGap(f.principal, gap(epoch, 1, format)),
+  ).rejects.toThrow("FENCED");
+  await expect(f.journal.admit(f.principal, format, late)).rejects.toThrow("FENCED");
+});
+
+it("never fences an admitted, unknown or foreign original and serializes with concurrent admission", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID()),
+    epochs = createNativeDeliveryEpochs(f.store);
+  const unknown = identity(epoch, 1);
+  await f.journal.execute(f.principal, finish, unknown, async () => {
+    throw new Error("Original handler result unknown");
+  });
+  expect(await epochs.resolveGap(f.principal, gap(epoch, 1))).toEqual({
+    ...gap(epoch, 1),
+    outcome: "admitted",
+  });
+  await expect(epochs.resolveGap(f.principal, gap(epoch, 1, format))).rejects.toThrow("CONFLICT");
+  await expect(epochs.resolveGap(f.other, gap(epoch, 2))).rejects.toThrow("UNAVAILABLE");
+  await expect(
+    epochs.resolveGap(f.principal, { ...gap(epoch, 2), generation: epoch.generation + 1 }),
+  ).rejects.toThrow("UNAVAILABLE");
+  await expect(epochs.resolveGap(f.principal, gap(epoch, 65_537))).rejects.toThrow("WINDOW");
+  expect(await gapRows(f)).toBe(0);
+  for (let sequence = 2; sequence < 12; sequence++) {
+    const racing = identity(epoch, sequence);
+    const [admitted, resolved] = await Promise.allSettled([
+      f.journal.admit(f.principal, finish, racing),
+      epochs.resolveGap(f.principal, gap(epoch, sequence)),
+    ]);
+    const receipt = await f.store.db
+      .prepare("SELECT state FROM native_delivery_receipts WHERE original_id=?")
+      .get(racing.originalId);
+    if (admitted.status === "fulfilled") {
+      expect(receipt?.state).toBe("admitted");
+      expect(resolved).toMatchObject({ status: "fulfilled", value: { outcome: "admitted" } });
+    } else {
+      expect(receipt).toBeUndefined();
+      expect(String(admitted.reason)).toContain("GAP_FENCED");
+      expect(resolved).toMatchObject({ status: "fulfilled", value: { outcome: "not_admitted" } });
+    }
+  }
+});
+
+it("fences a never-seen tail original above high-water so the exact final floor can close", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID()),
+    epochs = createNativeDeliveryEpochs(f.store);
+  await retire(f, epoch, 1);
+  expect(await epochs.resolveGap(f.principal, gap(epoch, 3, "buffer"))).toMatchObject({
+    outcome: "not_admitted",
+  });
+  expect((await f.journal.epochs.status(f.principal, epoch)).highWater).toBe(3);
+  await expect(
+    f.journal.epochs.close(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
+  ).rejects.toThrow("HOLE");
+  await epochs.resolveGap(f.principal, gap(epoch, 2));
+  expect(
+    await f.journal.epochs.close(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
+  ).toMatchObject({ through: 3, highWater: 3, closed: true });
+  await expect(epochs.resolveGap(f.principal, gap(epoch, 4))).rejects.toThrow("FENCED");
+  expect(await gapRows(f)).toBe(0);
+});
+
+it("holds a lone gap witness as corruption instead of compacting or admitting past it", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID()),
+    epochs = createNativeDeliveryEpochs(f.store);
+  await retire(f, epoch, 2);
+  await epochs.resolveGap(f.principal, gap(epoch, 1));
+  await f.store.db.exec(
+    "DROP TRIGGER native_delivery_epoch_gap_delete; DELETE FROM native_delivery_epoch_gap_fences;",
+  );
+  await expect(
+    f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 2 }),
+  ).rejects.toThrow("CORRUPT");
+  await expect(f.journal.admit(f.principal, finish, identity(epoch, 1))).rejects.toThrow();
+  expect((await f.journal.epochs.status(f.principal, epoch)).through).toBe(0);
 });

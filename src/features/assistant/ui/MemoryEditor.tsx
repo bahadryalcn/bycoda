@@ -54,7 +54,7 @@ export function MemoryEditor({
           .filter(Boolean),
       });
       if (!result.memory)
-        throw new Error(t("The memory save was not confirmed. Keep this draft and retry."));
+        throw new Error(t("The memory save could not be confirmed. Keep this draft and retry."));
       setOriginal(result.memory);
       const current = currentDraft.current;
       if (

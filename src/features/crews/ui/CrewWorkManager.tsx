@@ -102,6 +102,15 @@ export function CrewWorkManager({
   // The filter belongs to the dialog, so polling and the edit/start pages never reset it.
   const [query, setQuery] = useState("");
   const data = state.data;
+  // A run opened by id before the list loaded picks its tab once, when the list first arrives;
+  // after that the tab is only the owner's choice.
+  const [initialViewPending, setInitialViewPending] = useState(!!initialRunId && !state.data);
+  if (initialViewPending && data) {
+    setInitialViewPending(false);
+    if (data.runs.find((run) => run.id === initialRunId)?.status === "finished") {
+      setView("finished");
+    }
+  }
   const refreshShownCentrally = useConnectionErrorShownCentrally(state.error);
   // Another machine has its own crews and work; nothing selected here applies there.
   if (scopedCwd !== cwd) {
@@ -116,25 +125,37 @@ export function CrewWorkManager({
   for (const run of data?.runs ?? []) {
     if (!crews.some((item) => item.id === run.definition.id)) crews.push(run.definition);
   }
-  const crew = crews.find((item) => item.id === crewId) ?? crews[0];
+  // A run opened by id belongs to its own crew even when no crew was named.
+  const pinnedCrewId = data?.runs.find((run) => run.id === selectedId)?.definition.id;
+  const crew = crews.find((item) => item.id === (crewId || pinnedCrewId)) ?? crews[0];
   const savedCrew = !!data?.definitions.some((item) => item.id === crew?.id);
   const all = [...(data?.runs ?? [])]
     .filter((run) => run.definition.id === crew?.id)
     .sort((a, b) => b.updatedAt - a.updatedAt);
-  const pinned = all.find((run) => run.id === selectedId);
-  const selectedView = pinned ? (pinned.status === "finished" ? "finished" : "ongoing") : view;
-  if (selectedView !== view) setView(selectedView);
+  // The tab is the owner's choice: a poll that finishes the open run never switches it.
   const listed = all.filter((run) =>
-    selectedView === "finished" ? run.status === "finished" : run.status !== "finished",
+    view === "finished" ? run.status === "finished" : run.status !== "finished",
   );
-  // Selection resolves from the whole view; the filter only narrows what the list shows.
+  // The filter only narrows what the list shows.
   const visible = listed.filter((run) => crewRunMatchesQuery(run, query));
-  const selected = listed.find((run) => run.id === selectedId) ?? listed[0];
+  // The open run is looked up in the whole crew, not the tab, so a status change keeps it open.
+  // An explicit selection that vanished is reported ("gone"), never replaced by another run.
+  // A selection that belongs to another crew (the crew changed) falls back to this crew's first run.
+  const pinned = selectedId ? all.find((run) => run.id === selectedId) : undefined;
+  const gone = !!data && !!selectedId && !data.runs.some((run) => run.id === selectedId);
+  const selected = pinned ?? (gone ? undefined : listed[0]);
   const resolvedRunId = selected?.id;
   const resolvedCrewId = crew?.id;
-  // Reconcile removed records during render so a poll cannot replace an unpinned selection.
+  // Pin the default (first listed) run once, so later polls cannot swap it under the owner.
   if (resolvedRunId && resolvedRunId !== selectedId) setSelectedId(resolvedRunId);
   if (resolvedCrewId && resolvedCrewId !== crewId) setCrewId(resolvedCrewId);
+  // Why the open run is not in the tab the owner is looking at.
+  const movedNotice =
+    selected && (selected.status === "finished") !== (view === "finished")
+      ? selected.status === "finished"
+        ? t("This work finished. It stays open here until you choose other work.")
+        : t("This work is ongoing again. It stays open here until you choose other work.")
+      : undefined;
   const act = async (key: string, label: string, operation: () => Promise<unknown>) => {
     if (pendingGate.current) return;
     pendingGate.current = true;
@@ -202,7 +223,8 @@ export function CrewWorkManager({
   const noWork = all.length === 0;
   // A single piece of work needs no list column; its detail is the whole view.
   const needsList = all.length > 1;
-  const hideListNarrow = needsList && !!selected && pane === "detail";
+  const hasDetail = !!selected || gone;
+  const hideListNarrow = needsList && hasDetail && pane === "detail";
   const hideDetailNarrow = needsList && pane === "list";
   const content = (
     <>
@@ -287,7 +309,6 @@ export function CrewWorkManager({
                 context="panel"
                 title={t("Could not load crews")}
                 error={state.error}
-                retryLabel={t("Retry")}
                 onRetry={() => state.refetch()}
               />
             ) : (
@@ -328,14 +349,14 @@ export function CrewWorkManager({
           </div>
         ) : (
           <div
-            className={`grid min-w-0 ${needsList && selected ? "@min-[640px]/crew-management:grid-cols-[264px_minmax(0,1fr)]" : ""}`}
+            className={`grid min-w-0 ${needsList && hasDetail ? "@min-[640px]/crew-management:grid-cols-[264px_minmax(0,1fr)]" : ""}`}
           >
             {needsList ? (
               <div
-                className={`[&>nav]:h-full ${hideListNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
+                className={`[&>div]:h-full ${hideListNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
               >
                 <CrewWorkList
-                  view={selectedView}
+                  view={view}
                   ongoingCount={all.filter((run) => run.status !== "finished").length}
                   runs={visible}
                   listedCount={listed.length}
@@ -361,11 +382,11 @@ export function CrewWorkManager({
                 />
               </div>
             ) : null}
-            {selected || data.catalogError || (state.error && !refreshShownCentrally) || error ? (
+            {hasDetail || data.catalogError || (state.error && !refreshShownCentrally) || error ? (
               <div
                 className={`min-w-0 p-4 @min-[640px]/crew-management:min-h-64 ${hideDetailNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
               >
-                {needsList && selected ? (
+                {needsList && hasDetail ? (
                   <div className="-mt-1 mb-2 @min-[640px]/crew-management:hidden">
                     <Button
                       variant="ghost"
@@ -406,6 +427,19 @@ export function CrewWorkManager({
                       sessionId: selected.coordinatorSessionId,
                     })}
                   </div>
+                ) : null}
+                {gone ? (
+                  <InlineMessage
+                    tone="neutral"
+                    action={{ label: t("Choose other work"), onClick: () => setSelectedId("") }}
+                  >
+                    {t("This work no longer exists.")}
+                  </InlineMessage>
+                ) : null}
+                {movedNotice ? (
+                  <InlineMessage tone="neutral" className="pb-2">
+                    {movedNotice}
+                  </InlineMessage>
                 ) : null}
                 {selected ? (
                   <CrewWorkDetail

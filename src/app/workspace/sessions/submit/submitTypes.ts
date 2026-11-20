@@ -47,6 +47,7 @@ export interface SubmitDeps {
   refs: SubmitRefs;
   /** Read lazily: the submit ref is declared after the hook call in `Workspace`. */
   getSubmitSessionRef: () => MutableRefObject<Submit>;
+  ensureSessionHistoryForExecution?: (sessionId: string) => Promise<boolean>;
   workspaceNavigation: ReturnType<typeof useWorkspaceNavigation>;
   applyProjectLocationChange: ReturnType<
     typeof useProjectLocationChange

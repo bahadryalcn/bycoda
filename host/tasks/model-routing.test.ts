@@ -250,7 +250,6 @@ it("routes goal planner and final review separately and copies goal choice into 
   expect(routingRun(goal).plannerTarget?.model).toBe("claude:planner");
   const internal = f.goals as unknown as {
     start(goal: unknown, now: number): Promise<unknown>;
-    startFinalReview(goal: unknown, now: number): Promise<void>;
     finalReviewOwnsSession(goal: unknown): Promise<boolean>;
     finalWorkspaceFingerprint(): Promise<string>;
   };
@@ -286,8 +285,7 @@ it("routes goal planner and final review separately and copies goal choice into 
   for (const task of await f.tasks.list())
     await (f.tasks as unknown as TaskContext).write({ ...task, status: "done" });
   vi.spyOn(internal, "finalWorkspaceFingerprint").mockResolvedValue("snapshot");
-  const current = (await f.goals.list())[0];
-  await internal.startFinalReview(current, 1002);
+  await f.tick();
   const final = (await f.goals.list())[0];
   expect({ status: final.status, error: final.error, final: final.finalAcceptance }).toMatchObject({
     status: "running",

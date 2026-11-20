@@ -19,7 +19,14 @@ vi.mock("../model/harnessUpdateActions", () => ({
       codex: updateState.updating
         ? { status: "updating" }
         : updateState.failed
-          ? { status: "failed", error: "Version verification failed" }
+          ? {
+              status: "failed",
+              failure: {
+                kind: "stage",
+                stage: "version check",
+                detail: "Version verification failed",
+              },
+            }
           : { status: "updated", version: "0.95.0", catalogRefresh: updateState.catalogRefresh },
     },
     checks: [
@@ -117,7 +124,8 @@ it("uses failure glyph with a retained successful version check", () => {
       }),
     );
     expect(html).toContain("Update failed");
-    expect(html).toContain("Version verification failed");
+    expect(html).toContain("Codex updated, but its version could not be verified.");
+    expect(html).not.toContain("Version verification failed");
     expect(html).toContain("lucide-circle-x");
     expect(html).not.toContain("lucide-check");
   } finally {

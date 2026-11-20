@@ -60,14 +60,29 @@ function tabItems(): { value: AccountTabId; label: string; icon: ReactNode }[] {
   ];
 }
 
-/** True while the element is at least `min` pixels wide; true without ResizeObserver. */
+/** Content width, the same measure the observer's `contentRect` reports (box minus horizontal padding). */
+function contentWidth(element: Element): number {
+  const style = getComputedStyle(element);
+  return (
+    element.getBoundingClientRect().width -
+    (parseFloat(style.paddingLeft) || 0) -
+    (parseFloat(style.paddingRight) || 0)
+  );
+}
+
+/**
+ * True while the element's content is at least `min` pixels wide. The first value is measured in
+ * the layout effect, before the first paint, so a narrow window never paints the wide layout; the
+ * shared observer then follows later resizes.
+ */
 function useWide(min: number, mountKey: string) {
   const ref = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(true);
   // Keep keyboard navigation orientation aligned with the available account width.
   useLayoutEffect(() => {
     const element = ref.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
+    if (!element) return;
+    setWide(contentWidth(element) >= min);
     return observeResize(element, (entry) => setWide(entry.contentRect.width >= min));
   }, [min, mountKey]);
   return { ref, wide };

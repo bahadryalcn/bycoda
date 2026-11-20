@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import fs from "node:fs";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -365,4 +366,24 @@ it("hides while its anchor is not rendered and returns once the anchor shows aga
   await frame();
   expect(surface.style.visibility).not.toBe("hidden");
   expect(Number.parseFloat(surface.style.left)).toBe(40);
+});
+
+it("blurs only the frosted hover card, never the opaque floating surface", async () => {
+  await act(async () =>
+    root.render(createElement(Popover, { anchor }, createElement("p", null, "x"))),
+  );
+  const backdrop = document.body.querySelector(".popover-backdrop");
+  expect(backdrop).not.toBeNull();
+  expect(backdrop!.className).not.toContain("backdrop-blur");
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, frosted: true }, createElement("p", null, "x"))),
+  );
+  expect(document.body.querySelector(".popover-frosted")!.className).not.toContain("backdrop-blur");
+
+  const css = fs.readFileSync("src/styles/index.css", "utf8");
+  // A bare .popover-backdrop rule that sets a filter would blur every opaque popover, menu and dialog.
+  expect(css).not.toMatch(/(^|\n)\.popover-backdrop \{[^}]*backdrop-filter/);
+  expect(css).toMatch(
+    /\.popover-backdrop\.popover-frosted,[^{]*\{[^}]*backdrop-filter: var\(--ui-frosted-filter\)/,
+  );
 });

@@ -89,3 +89,26 @@ it("reports how many items wait so the screen can show a count", async () => {
   });
   expect(onCountChange).toHaveBeenLastCalledWith(2);
 });
+
+it("shows a refresh failure after a previously empty queue and recovers", async () => {
+  vi.useFakeTimers();
+  try {
+    const { client, list } = clientWith([]);
+    await render(client);
+    expect(element.textContent).toContain("Nothing is waiting for you.");
+
+    list.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(element.textContent).toContain("Waiting items could not be refreshed.");
+    expect(element.textContent).not.toContain("Nothing is waiting for you.");
+
+    const retry = [...element.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Try again"),
+    );
+    expect(retry).toBeDefined();
+    await act(async () => retry?.click());
+    expect(element.textContent).toContain("Nothing is waiting for you.");
+  } finally {
+    vi.useRealTimers();
+  }
+});

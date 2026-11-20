@@ -47,6 +47,7 @@ export function AccountSignIn({
     return (
       <Group
         title={t("Finish signing in")}
+        descriptionVisible
         description={t(
           "Complete the sign-in in the browser window that opened, then return to bycoda.",
         )}

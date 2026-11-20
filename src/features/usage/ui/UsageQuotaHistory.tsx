@@ -16,6 +16,7 @@ import {
 } from "../../providers/model/providerAccounts";
 import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";
 import type { UsageFilters, UsageWindow } from "../model/usageAnalytics";
+import { quotaPlotPoints } from "../model/quotaPlotPoints";
 import { usageLabel } from "./UsageVisualizations";
 import { UsageProviderIdentity, usageProviderLabel } from "./UsageProviderIdentity";
 import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
@@ -48,6 +49,8 @@ export function QuotaHistory({
   const history = useRateLimitHistory();
   const [selectedKind, setKind] = useState<string | null>(null);
   const [account, setAccount] = useState("");
+  // The shared Disclosure keeps closed bodies mounted, so the table is only built while open.
+  const [tableOpen, setTableOpen] = useState(false);
   const knownAccounts = useMemo(
     () =>
       accounts.filter(
@@ -71,6 +74,8 @@ export function QuotaHistory({
     if (row.at >= (latest.get(row.account)?.at ?? -Infinity)) latest.set(row.account, row);
   }
   const width = window.end - window.start;
+  // The plot is bounded to one reading per account and column; the table and legend keep every sample.
+  const plotted = quotaPlotPoints(rows, window);
   return (
     <section
       {...surfaceAttributes(
@@ -157,28 +162,27 @@ export function QuotaHistory({
             <Text size="caption" tone="secondary" leading="inherit" className="usage-quota-zero">
               0%
             </Text>
-            {rows.map((row) => (
-              <Tooltip
-                key={`${row.account}:${row.kind}:${row.at}`}
-                label={`${accountLabel(accountMap.get(row.account)!)} · ${observationTime(row.at)}: ${percent(row.used)}`}
-                asChild
-              >
-                <span
-                  {...surfaceAttributes({ variant: "user-color" }, "usage-quota-point")}
+            {plotted.map((row) => {
+              const rowAccount = accountMap.get(row.account)!;
+              return (
+                <Tooltip
                   key={`${row.account}:${row.kind}:${row.at}`}
-
-                  style={
-                    {
-                      "--surface-user-color": providerAccountColorValue(
-                        accountMap.get(row.account)!,
-                      ),
-                      "--usage-point-time": `${((row.at - window.start) / width) * 100}%`,
-                      "--usage-point-value": `${row.used}%`,
-                    } as CSSProperties
-                  }
-                />
-              </Tooltip>
-            ))}
+                  label={`${accountLabel(rowAccount)} · ${observationTime(row.at)}: ${percent(row.used)}`}
+                  asChild
+                >
+                  <span
+                    {...surfaceAttributes({ variant: "user-color" }, "usage-quota-point")}
+                    style={
+                      {
+                        "--surface-user-color": providerAccountColorValue(rowAccount),
+                        "--usage-point-time": `${((row.at - window.start) / width) * 100}%`,
+                        "--usage-point-value": `${row.used}%`,
+                      } as CSSProperties
+                    }
+                  />
+                </Tooltip>
+              );
+            })}
           </div>
           <Text as="p" leading="inherit" className="usage-quota-axis usage-muted">
             <span>{observationTime(window.start)}</span>
@@ -186,62 +190,71 @@ export function QuotaHistory({
               {t("Used (%)")} · {observationTime(window.end)}
             </span>
           </Text>
-          <Disclosure size="sm" summary={t("Show as table")}>
-            <Text as="div" leading="inherit">
-              <div
-                className="usage-history-table"
-                role="region"
-                aria-label={t("Limit history")}
-                tabIndex={0}
-              >
-                <SortableDataTable
-                  caption={t("Limit history")}
-                  rowKey="key"
-                  rows={rows
-                    .slice(-100)
-                    .reverse()
-                    .map((s) => ({
-                      key: `${s.account}:${s.kind}:${s.at}`,
-                      account: accountLabel(accountMap.get(s.account)!),
-                      at: s.at,
-                      time: s.at,
-                      used: s.used,
-                      minutes: s.minutes,
-                      reset: s.resetsAt ?? null,
-                    }))}
-                  columns={[
-                    { key: "account", label: t("Account") },
-                    {
-                      key: "time",
-                      label: t("Time"),
-                      render: (v) => observationTime(Number(v)),
-                    },
-                    {
-                      key: "used",
-                      label: t("Used (%)"),
-                      numeric: true,
-                      render: (v) => percent(Number(v)),
-                    },
-                    {
-                      key: "minutes",
-                      label: t("Window (minutes)"),
-                      numeric: true,
-                      render: (value) =>
-                        `${Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`} (${value})`,
-                    },
-                    {
-                      key: "reset",
-                      label: t("Reset"),
-                      render: (v) =>
-                        v == null ? t("Reset time unavailable") : observationTime(Number(v)),
-                    },
-                  ]}
-                />
-              </div>
-            </Text>
-            <Text as="p" leading="inherit" className="usage-muted">
-              {t("Latest 100 samples in the selected interval.")}
-            </Text>
+          <Disclosure
+            size="sm"
+            summary={t("Show as table")}
+            open={tableOpen}
+            onOpenChange={setTableOpen}
+          >
+            {tableOpen ? (
+              <>
+                <Text as="div" leading="inherit">
+                  <div
+                    className="usage-history-table"
+                    role="region"
+                    aria-label={t("Limit history")}
+                    tabIndex={0}
+                  >
+                    <SortableDataTable
+                      caption={t("Limit history")}
+                      rowKey="key"
+                      rows={rows
+                        .slice(-100)
+                        .reverse()
+                        .map((s) => ({
+                          key: `${s.account}:${s.kind}:${s.at}`,
+                          account: accountLabel(accountMap.get(s.account)!),
+                          at: s.at,
+                          time: s.at,
+                          used: s.used,
+                          minutes: s.minutes,
+                          reset: s.resetsAt ?? null,
+                        }))}
+                      columns={[
+                        { key: "account", label: t("Account") },
+                        {
+                          key: "time",
+                          label: t("Time"),
+                          render: (v) => observationTime(Number(v)),
+                        },
+                        {
+                          key: "used",
+                          label: t("Used (%)"),
+                          numeric: true,
+                          render: (v) => percent(Number(v)),
+                        },
+                        {
+                          key: "minutes",
+                          label: t("Window (minutes)"),
+                          numeric: true,
+                          render: (value) =>
+                            `${Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`} (${value})`,
+                        },
+                        {
+                          key: "reset",
+                          label: t("Reset"),
+                          render: (v) =>
+                            v == null ? t("Reset time unavailable") : observationTime(Number(v)),
+                        },
+                      ]}
+                    />
+                  </div>
+                </Text>
+                <Text as="p" leading="inherit" className="usage-muted">
+                  {t("Latest 100 samples in the selected interval.")}
+                </Text>
+              </>
+            ) : null}
           </Disclosure>
         </>
       ) : (

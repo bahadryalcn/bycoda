@@ -62,3 +62,26 @@ it.each(["history", "blame"] as const)(
     expect(beforeSwitch).not.toHaveBeenCalled();
   },
 );
+
+// Regression for #1272: a long author name must be able to shrink so the subject keeps its width.
+it("lets a long author name shrink and truncate instead of crushing the commit subject", async () => {
+  const author = "A very long author name that would otherwise take the whole history row";
+  reads.history.mockResolvedValue([{ ...commit, author }]);
+  await act(async () => root.render(createElement(GitFileInspector, { onOpenCommit: vi.fn() })));
+  await act(async () =>
+    requestGitFileInspect({ kind: "history", cwd: "/repo", relative: "file.ts" }),
+  );
+  const row = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+    (item) => item.textContent?.includes(commit.subject),
+  )!;
+  const name = [...row.querySelectorAll<HTMLElement>("*")].find(
+    (node) => node.children.length === 0 && node.textContent === author,
+  )!;
+  expect(name.className).toContain("min-w-0");
+  expect(name.className).toContain("max-w-32");
+  expect(name.className).not.toContain("shrink-0");
+  const subject = [...row.querySelectorAll<HTMLElement>("*")].find(
+    (node) => node.textContent === commit.subject,
+  )!;
+  expect(subject.className).toContain("flex-1");
+});

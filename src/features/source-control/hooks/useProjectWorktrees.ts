@@ -1,4 +1,5 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useMachineAvailability } from "../../connections/public/machineAvailability";
 import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
@@ -106,9 +107,11 @@ function start(entry: Entry) {
  * never clears the last successful result, including across unmounts. */
 export function useProjectWorktrees(cwd: string, enabled = true) {
   const active = enabled && !!cwd && cwd !== "~";
+  // The last worktrees stay shown, but a machine that cannot be asked is not read.
+  const readable = useMachineAvailability(cwd).available;
   const subscribe = useCallback(
     (listener: () => void) => {
-      if (!active) return () => {};
+      if (!active || !readable) return () => {};
       const entry = entryFor(cwd);
       const unsubscribe = entry.listeners.subscribe(listener);
       if (entry.listeners.size === 1) start(entry);
@@ -121,12 +124,12 @@ export function useProjectWorktrees(cwd: string, enabled = true) {
         entries.prune();
       };
     },
-    [active, cwd],
+    [active, readable, cwd],
   );
   const getSnapshot = useCallback(() => (active ? entryFor(cwd).snapshot : EMPTY), [active, cwd]);
   const refresh = useCallback(() => {
-    return active ? load(entryFor(cwd), true) : Promise.resolve(false);
-  }, [active, cwd]);
+    return active && readable ? load(entryFor(cwd), true) : Promise.resolve(false);
+  }, [active, readable, cwd]);
   return {
     ...useSyncExternalStore(subscribe, getSnapshot, getSnapshot),
     refresh,

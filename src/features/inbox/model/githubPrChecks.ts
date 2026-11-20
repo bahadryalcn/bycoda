@@ -149,6 +149,15 @@ export function describeCheckCounts(
   return parts.length > 0 ? parts.join(", ") : null;
 }
 
+export function describeCheckSummary(
+  counts: Record<GithubPrCheckState, number>,
+  translate: typeof t = english,
+  formatNumber = englishNumber,
+): string | null {
+  const list = describeCheckCounts(counts, translate, formatNumber);
+  return list ? translate("{p0}.", { p0: list }) : null;
+}
+
 export type GithubPrChecksOverall =
   | { kind: "loading"; description: string }
   | { kind: "error"; description: string }

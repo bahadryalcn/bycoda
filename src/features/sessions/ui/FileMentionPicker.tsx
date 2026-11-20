@@ -1,6 +1,7 @@
 import { Surface } from "../../../shared/ui/Surface";
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { useT } from "../../../shared/i18n";
+import { Text } from "../../../shared/ui/Text";
 import { StickyNote } from "../../../shared/ui/icons";
 import type { RankedFile } from "../../files";
 import { isNoteMentionPath } from "../../notes";
@@ -18,6 +19,8 @@ type Props = {
   loading?: boolean;
   /** The project file listing failed to load; shows a retry row instead of the loading text. */
   failed?: boolean;
+  /** The file index may be missing files; the picker says so instead of "no matches". */
+  indexNotice?: "incomplete" | "unknown";
   onRetry?: () => void;
   includeNotes?: boolean;
   includeWorkItems?: boolean;
@@ -33,6 +36,7 @@ export function FileMentionPicker({
   active,
   loading,
   failed,
+  indexNotice,
   onRetry,
   includeNotes = false,
   includeWorkItems = false,
@@ -143,8 +147,16 @@ export function FileMentionPicker({
                 ? t("No files or notes found")
                 : t("No files or folders found")
         }
-        className="max-h-[min(240px,40vh)] overflow-y-auto overscroll-none"
+        listHeight="standard"
+        className="overflow-y-auto overscroll-none"
       />
+      {indexNotice && !loading ? (
+        <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
+          {indexNotice === "incomplete"
+            ? t("File index is incomplete; some files may not appear.")
+            : t("File index completeness is unknown; some files may not appear.")}
+        </Text>
+      ) : null}
     </Surface>
   );
 }

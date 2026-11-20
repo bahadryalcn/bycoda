@@ -2,6 +2,32 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`commit shows Push 1 during status refresh in ${theme} at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/source-control/git-workspace.html?commit-transition");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page
+        .getByRole("textbox", { name: "Commit message", exact: true })
+        .fill("Update README");
+      await page.getByRole("button", { name: "Commit", exact: true }).click();
+      const primary = page.locator('[data-split-part="primary"]');
+      await expect(primary).toHaveText(/^Push\s*1$/);
+      await expect(primary).toBeEnabled();
+      const evidence = "temp/verification/git-commit-controls";
+      mkdirSync(evidence, { recursive: true });
+      await page.screenshot({
+        path: `${evidence}/push-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+
+for (const theme of ["light", "dark"])
   test(`file names share typography and paths stay secondary ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(
@@ -91,7 +117,7 @@ for (const theme of ["light", "dark"] as const)
         document.documentElement.classList.toggle("theme-light", light);
         document.documentElement.style.fontSize = "20px";
       }, theme === "light");
-      const list = page.getByRole("listbox", { name: "Changes", exact: true });
+      const list = page.getByRole("grid", { name: "Changes", exact: true });
       await expect(list.locator("[data-git-file]")).toHaveCount(2);
       const toList = page.getByRole("button", { name: "View as List", exact: true }).first();
       if (await toList.isVisible()) await toList.click();
@@ -101,7 +127,7 @@ for (const theme of ["light", "dark"] as const)
           .first()
           .evaluate(
             (button) =>
-              getComputedStyle(button.closest("li")!.querySelector("[data-action-host]")!)
+              getComputedStyle(button.closest("[role=row]")!.querySelector("[data-action-host]")!)
                 .paddingInlineStart,
           );
       await expect.poll(filePadding).toBe("10px");
@@ -110,7 +136,9 @@ for (const theme of ["light", "dark"] as const)
       await list.screenshot({ path: `${folder}/list-${theme}-${width}.png` });
       await page.getByRole("button", { name: "View as Tree", exact: true }).first().click();
       await expect.poll(filePadding).toBe("20px");
-      const directory = list.locator("li:not([role='option']) > [data-action-host]").first();
+      const directory = list
+        .locator("[role=row]:not(:has([data-git-file])) > [data-action-host]")
+        .first();
       await expect
         .poll(() => directory.evaluate((node) => getComputedStyle(node).paddingInlineStart))
         .toBe("10px");
@@ -140,7 +168,7 @@ for (const theme of ["light", "dark"] as const)
       await page.goto("/tests/browser/source-control/git-workspace.html");
       await page.getByRole("button", { name: "Open full graph", exact: true }).click();
       await applyTheme();
-      const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Commit graph", exact: true });
       await expect(
         dialog.getByRole("button", { name: "Working tree actions", exact: true }),
       ).toBeVisible();
@@ -181,7 +209,7 @@ test("Git actions show progress in place without losing focus or repeating mutat
   await page.locator("#root > div.border-r").evaluate((node) => {
     node.style.width = "100%";
   });
-  const sync = page.getByRole("button").filter({ hasText: "Sync Changes" });
+  const sync = page.getByRole("button").filter({ hasText: "Sync changes" });
   await sync.focus();
   await sync.press("Enter");
   await expect(sync).toHaveAttribute("aria-busy", "true");
@@ -467,8 +495,8 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   const message = module.getByRole("textbox", { name: "Commit message", exact: true });
   await parentMessage.fill("Parent draft stays here");
   await message.fill("Commit only the submodule");
-  await module.getByRole("button", { name: "Stage All Changes", exact: true }).click();
-  await expect(module.getByRole("button", { name: "Stage All Changes", exact: true })).toHaveCount(
+  await module.getByRole("button", { name: "Stage all changes", exact: true }).click();
+  await expect(module.getByRole("button", { name: "Stage all changes", exact: true })).toHaveCount(
     0,
   );
   // Commit leads; Commit & Push is one menu choice away.
@@ -512,7 +540,7 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
 // A single checkout's choice lives in the panel header's merged trigger: it opens on Branches
 // when a branch is known and holds the Worktrees tab for switching checkouts.
 const checkoutTrigger = (page: Page) =>
-  page.getByRole("button", { name: /^Working copy [^:]/ }).first();
+  page.getByRole("button", { name: /^Worktree [^:]/ }).first();
 const pickCheckout = async (page: Page, option: string | RegExp) => {
   await checkoutTrigger(page).click();
   await page.getByRole("tab", { name: /^Worktrees/ }).click();
@@ -651,8 +679,8 @@ test("compact checkout header and branch fetch remain usable across widths and t
         light,
       );
       // One header row: the merged trigger, Manage worktrees and Refresh share a line, and the
-      // removed top "Working copy:" select is gone.
-      await expect(page.getByRole("button", { name: /^Working copy:/ })).toHaveCount(0);
+      // removed top "Worktree:" select is gone.
+      await expect(page.getByRole("button", { name: /^Worktree:/ })).toHaveCount(0);
       await expect(branch).toContainText("fixture · main");
       const manage = page.getByRole("button", { name: "Manage worktrees…", exact: true }).first();
       const refresh = page
@@ -670,7 +698,7 @@ test("compact checkout header and branch fetch remain usable across widths and t
       );
       // The switch hint is the shared tooltip (no native title).
       await branch.hover();
-      await expect(page.getByRole("tooltip")).toContainText("Working copy");
+      await expect(page.getByRole("tooltip")).toContainText("Worktree");
       await page.mouse.move(0, 0);
       await expect(page.getByRole("tooltip")).toHaveCount(0);
       await branch.focus();
@@ -793,7 +821,7 @@ test("checkout panels preserve identity, keyboard expansion and searchable selec
       exact: true,
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Working copy: All checkouts", exact: true }).click();
+  await page.getByRole("button", { name: "Worktree: All checkouts", exact: true }).click();
   await page.getByRole("combobox").fill("audit");
   await page
     .getByRole("option")
@@ -801,7 +829,7 @@ test("checkout panels preserve identity, keyboard expansion and searchable selec
     .click();
   await expect(list).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: /^Working copy very-long-worktree-folder-name · / }),
+    page.getByRole("button", { name: /^Worktree very-long-worktree-folder-name · / }),
   ).toBeVisible();
 });
 
@@ -875,15 +903,15 @@ for (const theme of ["light", "dark"])
           await overview.evaluate((element) => element.scrollWidth <= element.clientWidth),
         ).toBe(true);
       }
-      await mobile.getByRole("button", { name: "Stage All Changes", exact: true }).click();
+      await mobile.getByRole("button", { name: "Stage all changes", exact: true }).click();
       await expect(
-        mobile.getByRole("button", { name: "Stage All Changes", exact: true }),
+        mobile.getByRole("button", { name: "Stage all changes", exact: true }),
       ).toHaveCount(0);
       await expect(
-        main.getByRole("button", { name: "Stage All Changes", exact: true }),
+        main.getByRole("button", { name: "Stage all changes", exact: true }),
       ).toBeAttached();
       await expect(
-        worktree.getByRole("button", { name: "Stage All Changes", exact: true }),
+        worktree.getByRole("button", { name: "Stage all changes", exact: true }),
       ).toBeAttached();
       await expect(message(main)).toHaveValue("Main checkout draft stays here");
       await expect(message(worktree)).toHaveValue("Worktree draft stays here");
@@ -906,8 +934,8 @@ for (const theme of ["light", "dark"])
             call.args.includeRepositories === true,
         ),
       ).toBe(true);
-      // The overview keeps its own "Working copy:" select; a single checkout uses the header trigger.
-      await page.getByRole("button", { name: /^Working copy:/ }).click();
+      // The overview keeps its own "Worktree:" select; a single checkout uses the header trigger.
+      await page.getByRole("button", { name: /^Worktree:/ }).click();
       await page.getByRole("option").filter({ hasText: "/fixture/mobile" }).click();
       await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveValue(
         "Mobile draft stays here",

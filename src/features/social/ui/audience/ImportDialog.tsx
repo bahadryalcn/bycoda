@@ -1,4 +1,5 @@
 import { Text } from "../../../../shared/ui/Text";
+import { AudienceReportList } from "./AudienceReportList";
 import { useMemo, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -50,7 +51,6 @@ function fieldLabel(field: ImportField): string {
   }
 }
 const REQUIRED: readonly ImportField[] = ["platformId", "name"];
-const REPORT_LIMIT = 20;
 
 export type ImportDialogProps = {
   client: SocialClient;
@@ -288,29 +288,18 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                 <Heading size="item" id="import-issues-heading" className="audience-heading">
                   {t("Rows that need attention")}
                 </Heading>
-                <ul className="audience-list">
-                  {attention.slice(0, REPORT_LIMIT).map((check) => (
+                <AudienceReportList
+                  items={attention}
+                  renderRow={(check) => (
                     <li key={check.row}>
                       {t("Row {p0}: {p1}", {
                         p0: check.row,
                         p1: check.issues.join(" "),
                       })}
                     </li>
-                  ))}
-                </ul>
-                {attention.length > REPORT_LIMIT ? (
-                  <Text
-                    as="p"
-                    size="caption"
-                    tone="muted"
-                    leading="inherit"
-                    className="audience-muted"
-                  >
-                    {t("And {p0} more rows.", {
-                      p0: attention.length - REPORT_LIMIT,
-                    })}
-                  </Text>
-                ) : null}
+                  )}
+                  overflowLabel={(p0) => t("And {p0} more rows.", { p0 })}
+                />
               </section>
             ) : null}
           </>
@@ -325,15 +314,15 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                 })}
               </span>
             </InlineMessage>
-            {result.rejected.length ? (
-              <ul className="audience-list">
-                {result.rejected.slice(0, REPORT_LIMIT).map((item) => (
-                  <li key={`${item.row}:${item.reason}`}>
-                    {t("Row {p0}: {p1}", { p0: item.row, p1: item.reason })}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <AudienceReportList
+              items={result.rejected}
+              renderRow={(item) => (
+                <li key={item.row}>
+                  {t("Row {p0}: {p1}", { p0: item.row, p1: item.issues.join(" ") })}
+                </li>
+              )}
+              overflowLabel={(p0) => t("And {p0} more rows.", { p0 })}
+            />
           </section>
         ) : null}
       </div>

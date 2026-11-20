@@ -2,12 +2,16 @@ import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from
 import { Portal } from "../../../shared/ui/Portal";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { LAYER } from "../../../shared/lib/layers";
+import { observeResize } from "../../../shared/lib/observeResize";
 import { markHighlightSeen } from "../model/featureHighlights";
 import { usePendingHighlights } from "../model/useFeatureHighlights";
 import { findUsageGuideTarget } from "../model/usageGuideTargets";
 import "./featureHighlights.css";
 
 type Spot = { id: string; x: number; y: number };
+
+const TARGET_SELECTOR = "[data-usage-guide]";
+const OBSERVED_ATTRIBUTES = ["hidden", "aria-hidden", "inert", "data-usage-guide-active"];
 
 const sameSpots = (a: readonly Spot[], b: readonly Spot[]) =>
   a.length === b.length &&
@@ -31,6 +35,18 @@ export function FeatureHighlightMarkers() {
     // The controls found by the last measure, so a scroll can tell without
     // reading layout whether it moved any of them.
     const located = new Map<string, Element>();
+    const sized = new Map<Element, () => void>();
+    const watch = (elements: readonly Element[]) => {
+      const wanted = new Set(elements);
+      for (const [element, stop] of sized) {
+        if (wanted.has(element)) continue;
+        stop();
+        sized.delete(element);
+      }
+      for (const element of wanted) {
+        if (!sized.has(element)) sized.set(element, observeResize(element, schedule));
+      }
+    };
     const measure = () => {
       located.clear();
       const next = latest.current.flatMap((item): Spot[] => {
@@ -40,6 +56,7 @@ export function FeatureHighlightMarkers() {
         const rect = element.getBoundingClientRect();
         return [{ id: item.id, x: Math.round(rect.right), y: Math.round(rect.top) }];
       });
+      watch([...located.values()]);
       setSpots((previous) => (sameSpots(previous, next) ? previous : next));
     };
     const seen = (event: Event) => {
@@ -51,16 +68,36 @@ export function FeatureHighlightMarkers() {
     // Scrolling anywhere fires this, and measuring reads layout: coalesce the
     // events to one read per frame, and read nothing while the window is hidden.
     let frame = 0;
-    const schedule = () => {
+    function schedule() {
       if (frame || document.hidden) return;
       frame = window.requestAnimationFrame(() => {
         frame = 0;
         measure();
       });
+    }
+    const touches = (node: Node) => {
+      if (!(node instanceof Element)) return false;
+      if (node.matches(TARGET_SELECTOR) || node.querySelector(TARGET_SELECTOR)) return true;
+      for (const element of located.values()) {
+        if (node.contains(element)) return true;
+      }
+      return false;
     };
+    const mutations = new MutationObserver((records) => {
+      const changed = records.some(
+        (record) =>
+          record.type === "attributes" ||
+          [...record.addedNodes, ...record.removedNodes].some(touches),
+      );
+      if (changed) schedule();
+    });
     schedule();
-    // Controls move with layout, scrolling and remounts; one slow tick catches the rest.
-    const timer = window.setInterval(schedule, 1000);
+    mutations.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: OBSERVED_ATTRIBUTES,
+    });
     document.addEventListener("visibilitychange", schedule);
     window.addEventListener("resize", schedule);
     const onScroll = (event: Event) => {
@@ -82,7 +119,9 @@ export function FeatureHighlightMarkers() {
     document.addEventListener("focusin", seen, true);
     return () => {
       window.cancelAnimationFrame(frame);
-      window.clearInterval(timer);
+      mutations.disconnect();
+      for (const stop of sized.values()) stop();
+      sized.clear();
       document.removeEventListener("visibilitychange", schedule);
       window.removeEventListener("resize", schedule);
       window.removeEventListener("scroll", onScroll, true);

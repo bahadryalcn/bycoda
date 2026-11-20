@@ -3,8 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   configureFileAccess,
+  dismissFileAccessRecovery,
   getFileAccessMode,
+  getFileAccessRecoveries,
   type FileAccessMode,
+  type FileAccessRecovery,
 } from "../../../platform/tauri/fileAccess";
 import { Group, Row } from "../../../shared/ui/settings";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -12,14 +15,16 @@ import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RefreshCw } from "../../../shared/ui/icons";
+import { errorText } from "../../../shared/lib/errors";
 
 export function FileAccessSettings({ embedded = false }: { embedded?: boolean }) {
   useLocale();
   const [mode, setMode] = useState<FileAccessMode | null>(null);
   const [pending, setPending] = useState<"read" | "configure" | null>(null);
   const [error, setError] = useState("");
-  const [errorOperation, setErrorOperation] = useState<"read" | "configure">("read");
+  const [errorOperation, setErrorOperation] = useState<"read" | "configure" | "dismiss">("read");
   const [statusUnavailable, setStatusUnavailable] = useState(false);
+  const [recoveries, setRecoveries] = useState<FileAccessRecovery[]>([]);
   const active = useRef(false);
   const operation = useRef(false);
   const refresh = useCallback(async () => {
@@ -27,15 +32,16 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
     operation.current = true;
     setPending("read");
     try {
-      const value = await getFileAccessMode();
+      const [value, notices] = await Promise.all([getFileAccessMode(), getFileAccessRecoveries()]);
       if (active.current) {
         setMode(value);
+        setRecoveries(notices);
         setError("");
         setStatusUnavailable(false);
       }
     } catch (reason) {
       if (active.current) {
-        setError(String(reason));
+        setError(errorText(reason));
         setErrorOperation("read");
         setStatusUnavailable(true);
       }
@@ -55,6 +61,23 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
       window.removeEventListener("focus", onFocus);
     };
   }, [refresh]);
+  // The notice is one-time: dismissing removes it, while its corrupt copy stays on disk.
+  const dismiss = async (id: string) => {
+    if (operation.current) return;
+    operation.current = true;
+    setError("");
+    try {
+      await dismissFileAccessRecovery(id);
+      if (active.current) setRecoveries((current) => current.filter((item) => item.id !== id));
+    } catch (reason) {
+      if (active.current) {
+        setError(errorText(reason));
+        setErrorOperation("dismiss");
+      }
+    } finally {
+      operation.current = false;
+    }
+  };
   const review = async () => {
     if (operation.current) return;
     operation.current = true;
@@ -79,7 +102,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
         if (active.current) setStatusUnavailable(true);
       }
       if (active.current) {
-        setError(String(reason));
+        setError(errorText(reason));
         setErrorOperation("configure");
       }
     } finally {
@@ -133,28 +156,56 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
           </>
         }
         feedback={
-          error ? (
-            <SettingsFeedback
-              state="error"
-              action={{
-                label: t("Retry"),
-                disabled: pending !== null,
-                onClick: () => void refresh(),
-              }}
-            >
-              <p>
-                {errorOperation === "read"
-                  ? t("Could not read file access status. Retry to check current access.")
-                  : t(
-                      "Could not confirm the file access operation. Refresh the status before trying again.",
-                    )}
-              </p>
-              {error}
-            </SettingsFeedback>
-          ) : pending ? (
-            <SettingsFeedback state="loading" immediate={pending === "configure"}>
-              {pending === "configure" ? t("Waiting for approval…") : t("Loading…")}
-            </SettingsFeedback>
+          recoveries.length > 0 || error || pending ? (
+            <>
+              {recoveries.map((recovery) => (
+                <SettingsFeedback
+                  key={recovery.id}
+                  state="warning"
+                  action={{
+                    label: t("Dismiss"),
+                    disabled: pending !== null,
+                    onClick: () => void dismiss(recovery.id),
+                  }}
+                >
+                  <p>
+                    {recovery.kind === "mode"
+                      ? t(
+                          "Your saved file access choice could not be read, so access is off until you choose it again.",
+                        )
+                      : t(
+                          "Saved folder permissions could not be read, so folders need approval again.",
+                        )}
+                  </p>
+                  {t("Unreadable copy kept at {p0}", { p0: recovery.quarantine })}
+                </SettingsFeedback>
+              ))}
+              {error ? (
+                <SettingsFeedback
+                  state="error"
+                  action={{
+                    label: t("Retry"),
+                    disabled: pending !== null,
+                    onClick: () => void refresh(),
+                  }}
+                >
+                  <p>
+                    {errorOperation === "read"
+                      ? t("Could not read file access status. Retry to check current access.")
+                      : errorOperation === "dismiss"
+                        ? t("Could not dismiss the notice. Try again.")
+                        : t(
+                            "Could not confirm the file access operation. Refresh the status before trying again.",
+                          )}
+                  </p>
+                  {error}
+                </SettingsFeedback>
+              ) : pending ? (
+                <SettingsFeedback state="loading" immediate={pending === "configure"}>
+                  {pending === "configure" ? t("Waiting for approval…") : t("Loading…")}
+                </SettingsFeedback>
+              ) : null}
+            </>
           ) : null
         }
       >

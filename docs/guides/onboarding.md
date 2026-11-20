@@ -22,11 +22,12 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   later in Settings → Account. A cancelled or failed sign-in returns to the step with
   the reason and keeps the guest choice. Existing users are not asked.
 - Statistics (builds with accounts, until you have answered) asks whether to share anonymous
-  statistics: "Share anonymous statistics" or "Don't share", equal choices. It explains what is
-  sent (a random install id, app version, operating system, release channel and date, at most
-  once a day) and what never is (sessions, prompts, code, file names, projects, account
-  details). Statistics are off unless you say yes; change it any time in Settings → Account →
-  Privacy & data, or Settings → Privacy without an account. Installations that skip setup get
+  statistics: "Share anonymous statistics" or "Don't share", equal choices. The info icon holds
+  the shared statistics disclosure (`statsDisclosure` in `src/features/account`): what is sent
+  (a random install id, app version, operating system, release channel and date, at most once
+  a day), what never is (sessions, prompts, code, file names, projects, account details), that
+  it is off unless you say yes, and where to change it (Settings → Privacy). The consent toast
+  and Settings show the same text. Installations that skip setup get
   the same question once in a small notice that never blocks work.
 - Workspace selects Tasks, Automations, Inbox, Notes and Social Media navigation.
   Coding, files, terminal and Git remain available. Choices save immediately and
@@ -48,16 +49,24 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   or a custom color with an adjustable strength. Preview in app turns Settings
   into a side panel without dimming, so live backgrounds, the crew and glass can
   be judged on the real workspace; Escape returns to the full dialog.
-  The theme generator's dice fills the prompt with a new combination of scene, light
+  Open Generate with AI from the Appearance toolbar. Minimize puts generation status
+  at the bottom of the page. Close removes the dialog and dock, and the toolbar keeps
+  showing active work and new results. Reopen the dialog to see individual jobs or
+  cancel one. The theme generator's dice fills the prompt with a new combination of scene, light
   and finish. Generate themes and Random look show three suggestion cards; choosing a
   card applies the whole look: a suggestion without its own gradient switches the
   previous gradient off. Its image follows the image button (None, Codex or Gemini):
-  with a provider, choosing a card draws that card's image once and applies it when it
-  lands, unless another look was chosen meanwhile; with None, the previous background
-  image is removed. A finished image stays on its card, choosing the card again reuses
-  it, and the card's preview button opens it in the shared viewer. Failed images can be
-  retried, and a failed theme refresh keeps the previous suggestions. A saved look is
-  a snapshot of the current appearance, so it does not include a pending image.
+  with a provider, choosing a card draws its image after applying the theme. Generate
+  image can also draw it directly from a card. Preview opens the finished image in
+  the shared viewer. Change image draws another candidate and keeps the previous one
+  available while it runs. Use image applies the chosen drawing. With None, a theme
+  without an image clears the previous background image. Failed images can be
+  retried from generation activity, and a failed theme refresh keeps the previous suggestions.
+  Generation activity shows each request with its own status and Cancel action. A new
+  set of themes keeps earlier images visible in activity as they finish. Recent
+  activity lets you preview finished images even after their original cards are gone.
+  A saved look is
+  a snapshot of the current appearance and includes the image in use.
   Gradient generation uses the theme generator model and applies when ready unless a
   newer look supersedes it. Selecting a suggested or saved
   theme pre-fills its editable name when saving the current look. Palette and
@@ -160,7 +169,9 @@ file with the website and the account portal. Keep article IDs stable because th
 are used as permanent URLs and as links from the interactive Guide.
 
 - **Steps.** Every topic lists a few short steps (Chat with agents has four, including
-  choosing the access mode). A step shows ✓ when it is finished:
+  choosing the access mode). In the chat composer, hover over or focus the access mode
+  icon to see its name. Open the picker to see the available modes and their descriptions.
+  A step shows ✓ when it is finished:
   automatically when the app already shows it (a project is open, several projects
   exist, a project is pinned, a session already has a message, you opened a diff, a
   commit or all changes for review, you opened a terminal), when you use the topic's

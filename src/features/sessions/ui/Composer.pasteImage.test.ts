@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { MAX_ATTACHMENTS } from "../model/attachments";
+import { MAX_ATTACHMENTS, MAX_EMBED_BYTES } from "../model/attachments";
 import { Composer } from "./Composer";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -587,6 +587,51 @@ it("reports a clipboard it could not read instead of trying the image", async ()
   expect(invoke).not.toHaveBeenCalledWith("clipboard_image");
   // The URI is still withheld, so the error is what the user is left with.
   expect(event.defaultPrevented).toBe(true);
+});
+
+it("pastes valid files beside an oversized one and names the file left out", async () => {
+  const field = render("keep this draft");
+  const huge = new File(["x"], "backup.zip", { type: "application/zip" });
+  Object.defineProperty(huge, "size", { value: MAX_EMBED_BYTES + 1 });
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      getData: () => "",
+      files: [huge, new File(["notes"], "notes.txt", { type: "text/plain" })],
+      items: [],
+    },
+  });
+  act(() => {
+    field.dispatchEvent(event);
+  });
+  await waitForAttachments(1);
+
+  expect(alert()).toBe("backup.zip is larger than 20 MB and was not attached.");
+  expect(field.value).toContain("keep this draft");
+  expect(invoke).not.toHaveBeenCalledWith(
+    "write_attachment",
+    expect.objectContaining({ name: "backup.zip" }),
+  );
+  // The valid sibling and the draft still send.
+  await send();
+  expect(submit.mock.calls[0][1]).toMatchObject([{ name: "notes.txt" }]);
+});
+
+it("explains an all-oversized paste instead of attaching nothing silently", async () => {
+  const field = render();
+  const huge = new File(["x"], "backup.zip", { type: "application/zip" });
+  Object.defineProperty(huge, "size", { value: MAX_EMBED_BYTES + 1 });
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: { getData: () => "", files: [huge], items: [] },
+  });
+  act(() => {
+    field.dispatchEvent(event);
+  });
+  await waitForAlert();
+
+  expect(alert()).toBe("backup.zip is larger than 20 MB and was not attached.");
+  expect(chipCount()).toBe(0);
 });
 
 it("reports why a clipboard image could not be attached", async () => {

@@ -91,21 +91,50 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
-pub(crate) fn contains_working_dir(root: &Path, cwd: &Path) -> bool {
-    let root = crate::worktree_lifecycle::canonical_workspace_path(root)
-        .unwrap_or_else(|_| root.to_path_buf());
-    let cwd = crate::worktree_lifecycle::canonical_workspace_path(cwd)
-        .unwrap_or_else(|_| cwd.to_path_buf());
-    if cfg!(windows) {
-        let root = path_to_js(&root).to_lowercase();
-        let cwd = path_to_js(&cwd).to_lowercase();
-        cwd == root || cwd.starts_with(&format!("{}/", root.trim_end_matches('/')))
-    } else {
-        cwd.starts_with(root)
+/// A directory resolved once (symlinks, Windows case) so many containment
+/// checks cost string comparisons instead of one filesystem lookup per pair.
+struct WorkingDirKey {
+    canonical: PathBuf,
+    /// Windows only: lowercase `/` form, and the same with a trailing `/`.
+    folded: String,
+    folded_prefix: String,
+}
+
+impl WorkingDirKey {
+    fn new(path: &Path) -> Self {
+        let canonical = crate::worktree_lifecycle::canonical_workspace_path(path)
+            .unwrap_or_else(|_| path.to_path_buf());
+        let (folded, folded_prefix) = if cfg!(windows) {
+            let folded = path_to_js(&canonical).to_lowercase();
+            let prefix = format!("{}/", folded.trim_end_matches('/'));
+            (folded, prefix)
+        } else {
+            Default::default()
+        };
+        Self {
+            canonical,
+            folded,
+            folded_prefix,
+        }
+    }
+
+    fn contains(&self, cwd: &Self) -> bool {
+        if cfg!(windows) {
+            cwd.folded == self.folded || cwd.folded.starts_with(&self.folded_prefix)
+        } else {
+            cwd.canonical.starts_with(&self.canonical)
+        }
     }
 }
 
-fn session_ids(conn: &rusqlite::Connection, path: &Path) -> Result<Vec<String>, String> {
+pub(crate) fn contains_working_dir(root: &Path, cwd: &Path) -> bool {
+    WorkingDirKey::new(root).contains(&WorkingDirKey::new(cwd))
+}
+
+/// Raw `(session id, working directory)` of every session that still owns its
+/// directory. Only this query runs against the connection; path resolution
+/// happens afterwards so no store connection waits on the filesystem.
+fn session_working_dirs(conn: &rusqlite::Connection) -> Result<Vec<(String, String)>, String> {
     let mut query = conn
         .prepare("SELECT id, COALESCE(NULLIF(worktree_cwd, ''), cwd) FROM sessions WHERE worktree_removed = 0")
         .map_err(|e| e.to_string())?;
@@ -114,20 +143,125 @@ fn session_ids(conn: &rusqlite::Connection, path: &Path) -> Result<Vec<String>, 
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|e| e.to_string())?;
-    let mut ids = Vec::new();
-    for row in rows {
-        let (id, cwd) = row.map_err(|e| e.to_string())?;
-        let cwd = expand_home(&cwd);
-        if contains_working_dir(path, &cwd) {
-            ids.push(id);
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())
+}
+
+/// Session directories resolved once each, grouped so every worktree is matched
+/// with comparisons only (sessions sharing a directory are resolved together).
+struct SessionDirs {
+    keys: Vec<WorkingDirKey>,
+    sessions: Vec<(String, usize)>,
+}
+
+impl SessionDirs {
+    fn new(rows: Vec<(String, String)>) -> Self {
+        let mut indexes: std::collections::HashMap<String, usize> = Default::default();
+        let mut keys = Vec::new();
+        let mut sessions = Vec::with_capacity(rows.len());
+        for (id, cwd) in rows {
+            let index = *indexes.entry(cwd).or_insert_with_key(|cwd| {
+                keys.push(WorkingDirKey::new(&expand_home(cwd)));
+                keys.len() - 1
+            });
+            sessions.push((id, index));
         }
+        Self { keys, sessions }
     }
-    Ok(ids)
+
+    /// Ids in store row order, as the per-worktree query returned them.
+    fn ids_under(&self, root: &WorkingDirKey) -> Vec<String> {
+        self.sessions
+            .iter()
+            .filter(|(_, index)| root.contains(&self.keys[*index]))
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+}
+
+fn session_ids(conn: &rusqlite::Connection, path: &Path) -> Result<Vec<String>, String> {
+    Ok(SessionDirs::new(session_working_dirs(conn)?).ids_under(&WorkingDirKey::new(path)))
+}
+
+/// Git status scans are disk-bound; a few at a time keep a repository with many
+/// working copies responsive without starting one process per worktree at once.
+const STATUS_PARALLELISM: usize = 4;
+
+/// Runs `work` over `items` on at most `limit` threads, returning results in
+/// item order. A panicking worker fails the call instead of losing items.
+fn map_bounded<T: Sync, R: Send>(
+    items: &[T],
+    limit: usize,
+    work: impl Fn(&T) -> R + Sync,
+) -> Result<Vec<R>, String> {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut done: Vec<(usize, R)> = Vec::with_capacity(items.len());
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..limit.max(1).min(items.len()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut local = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(item) = items.get(index) else { break };
+                        local.push((index, work(item)));
+                    }
+                    local
+                })
+            })
+            .collect();
+        for worker in workers {
+            done.extend(
+                worker
+                    .join()
+                    .map_err(|_| "A worktree status worker failed".to_string())?,
+            );
+        }
+        Ok::<(), String>(())
+    })?;
+    done.sort_unstable_by_key(|(index, _)| *index);
+    Ok(done.into_iter().map(|(_, result)| result).collect())
 }
 
 fn default_root(main: &Path) -> PathBuf {
     let name = main.file_name().unwrap_or_default().to_string_lossy();
     main.with_file_name(format!("{name}-worktrees"))
+}
+
+struct WorktreeProbe {
+    missing: bool,
+    dirty: Option<bool>,
+    unpushed: Option<u64>,
+}
+
+/// Read-only state of one working copy. A failed Git read stays unknown (`None`),
+/// never clean. `--no-renames` skips rename detection, which cannot change
+/// whether anything is dirty; untracked files still count, as in removal review.
+fn probe_worktree(path: &Path) -> WorktreeProbe {
+    if !path.is_dir() {
+        return WorktreeProbe {
+            missing: true,
+            dirty: None,
+            unpushed: None,
+        };
+    }
+    WorktreeProbe {
+        missing: false,
+        dirty: git(
+            path,
+            &[
+                "status",
+                "--porcelain",
+                "--untracked-files=normal",
+                "--no-renames",
+            ],
+        )
+        .ok()
+        .map(|status| !status.is_empty()),
+        unpushed: git(path, &["rev-list", "--count", "HEAD", "--not", "--remotes"])
+            .ok()
+            .and_then(|count| count.trim().parse().ok()),
+    }
 }
 
 #[tauri::command]
@@ -137,23 +271,19 @@ pub async fn git_worktrees(app: tauri::AppHandle, cwd: String) -> Result<Worktre
         let mut worktrees = list(&expand_home(&cwd))?;
         let main = worktrees.first().ok_or("No working copies found")?;
         let default_root = path_to_js(&default_root(Path::new(&main.path)));
-        {
-            let conn = store.lock_conn()?;
-            for tree in &mut worktrees {
-                tree.session_ids = session_ids(&conn, Path::new(&tree.path))?;
-            }
-        }
-        for tree in &mut worktrees {
-            let path = Path::new(&tree.path);
-            tree.missing = !path.is_dir();
-            if !tree.missing {
-                tree.dirty = git(path, &["status", "--porcelain", "--untracked-files=normal"])
-                    .ok()
-                    .map(|status| !status.is_empty());
-                tree.unpushed = git(path, &["rev-list", "--count", "HEAD", "--not", "--remotes"])
-                    .ok()
-                    .and_then(|count| count.trim().parse().ok());
-            }
+        // One short query on the WAL reader; this listing never writes, so it
+        // must not queue behind or block the writer connection.
+        let sessions = SessionDirs::new(store.with_read_conn(session_working_dirs)?);
+        let paths: Vec<PathBuf> = worktrees
+            .iter()
+            .map(|tree| PathBuf::from(&tree.path))
+            .collect();
+        let probes = map_bounded(&paths, STATUS_PARALLELISM, |path| probe_worktree(path))?;
+        for (tree, probe) in worktrees.iter_mut().zip(probes) {
+            tree.session_ids = sessions.ids_under(&WorkingDirKey::new(Path::new(&tree.path)));
+            tree.missing = probe.missing;
+            tree.dirty = probe.dirty;
+            tree.unpushed = probe.unpushed;
         }
         Ok(Worktrees {
             worktrees,
@@ -876,6 +1006,13 @@ fn recover_remnants(root: &Path, path: &Path) -> Result<(), String> {
         if !same_path(path, Path::new(&saved.path)) {
             continue;
         }
+        // Nothing is left to delete. The recovery-branch check below guards removing
+        // remnants; a branch deleted later must not keep the receipt (and the startup
+        // retry with its Git processes) pending forever.
+        if !path.try_exists().map_err(|e| e.to_string())? {
+            finish_native_removal_receipts(root, path)?;
+            return Ok(());
+        }
         let branch = format!("refs/heads/{}", saved.branch);
         if git(
             root,
@@ -1237,59 +1374,121 @@ fn finish_removal(
     tx.commit().map_err(|e| e.to_string())
 }
 
-pub(crate) fn reconcile_removals(conn: &rusqlite::Connection) -> Result<(), String> {
-    let pending = conn
-        .prepare("SELECT path, sessions_json FROM worktree_removals")
+fn pending_removals(conn: &rusqlite::Connection) -> Result<Vec<(String, String)>, String> {
+    conn.prepare("SELECT path, sessions_json FROM worktree_removals")
         .map_err(|e| e.to_string())?
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|e| e.to_string())?;
-    for (path, json) in pending {
-        let (project, saved) = serde_json::from_str::<SessionRemovalJournal>(&json)
-            .map_err(|e| e.to_string())?
-            .into_parts();
-        if let Some(project) = project {
-            let root = Path::new(&project);
-            match native_removal_receipts(root, Path::new(&path)) {
-                Ok(receipts) if !receipts.is_empty() => {
-                    crate::worktree_lifecycle::block_removal_recovery(Path::new(&path));
-                    // Registered partial removals need a fresh explicit review;
-                    // never force through new source changes during startup.
-                    let registered = list(root)?.iter().any(|entry| entry.path == path);
-                    if registered {
-                        continue;
-                    }
-                    if let Err(error) = recover_remnants(root, Path::new(&path)) {
-                        log::warn!("Worktree cleanup remains pending: {error}");
-                        continue;
-                    }
-                    crate::worktree_lifecycle::finish_removal_recovery(Path::new(&path));
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    crate::worktree_lifecycle::block_removal_recovery(Path::new(&path));
-                    log::warn!("Cannot reconcile pending worktree cleanup: {error}");
-                    continue;
-                }
-            }
+        .map_err(|e| e.to_string())
+}
+
+/// Startup half of removal recovery: only a database read. Every pending
+/// project worktree refuses new processes until the background pass decides it.
+pub(crate) fn block_pending_removals(conn: &rusqlite::Connection) -> Result<(), String> {
+    for (path, json) in pending_removals(conn)? {
+        // An unreadable journal stays blocked; a project-less one never touches Git.
+        let blocked = serde_json::from_str::<SessionRemovalJournal>(&json)
+            .map_or(true, |journal| journal.into_parts().0.is_some());
+        if blocked {
+            crate::worktree_lifecycle::block_removal_recovery(Path::new(&path));
         }
-        // A surviving Git link means removal did not finish. If the link/folder
-        // is gone, the already-persisted detached sessions are the final state.
-        let restore = if Path::new(&path)
-            .join(".git")
-            .try_exists()
-            .map_err(|e| e.to_string())?
-        {
-            saved
-        } else {
-            Vec::new()
-        };
-        finish_removal(conn, &path, &restore)?;
     }
     Ok(())
+}
+
+/// Finishes interrupted removals off the launch path. Git and filesystem work
+/// runs without the session store lock, and a row that cannot be decided now
+/// (missing project, Git failure, busy worktree) stays pending for a later launch.
+pub(crate) fn start_removal_recovery(app: &tauri::AppHandle) {
+    let app = app.clone();
+    let spawned = std::thread::Builder::new()
+        .name("worktree-removal-recovery".into())
+        .spawn(move || {
+            let store = app.state::<SessionStore>();
+            if let Err(error) = reconcile_removals_with(|| store.lock_conn().map(StoreConn)) {
+                log::warn!("Worktree cleanup recovery failed: {error}");
+            }
+        });
+    if let Err(error) = spawned {
+        log::warn!("worktree removal recovery thread: {error}");
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn reconcile_removals(conn: &rusqlite::Connection) -> Result<(), String> {
+    reconcile_removals_with(|| Ok(conn))
+}
+
+fn reconcile_removals_with<G: std::ops::Deref<Target = rusqlite::Connection>>(
+    db: impl Fn() -> Result<G, String>,
+) -> Result<(), String> {
+    let pending = pending_removals(&*db()?)?;
+    for (path, json) in pending {
+        if let Err(error) = reconcile_removal(&db, &path, &json) {
+            log::warn!("Worktree cleanup remains pending: {error}");
+        }
+    }
+    Ok(())
+}
+
+fn reconcile_removal<G: std::ops::Deref<Target = rusqlite::Connection>>(
+    db: &impl Fn() -> Result<G, String>,
+    path: &str,
+    json: &str,
+) -> Result<(), String> {
+    let worktree = Path::new(path);
+    let (project, saved) = serde_json::from_str::<SessionRemovalJournal>(json)
+        .map_err(|e| e.to_string())?
+        .into_parts();
+    let Some(project) = project else {
+        return finish_detached_removal(&*db()?, path, saved);
+    };
+    let root = Path::new(&project);
+    // A user removal of the same folder owns it meanwhile; retry next launch.
+    let _reservation = crate::worktree_lifecycle::reserve_removal(worktree)?;
+    crate::fs::with_git_mutation(root, || {
+        match native_removal_receipts(root, worktree) {
+            Ok(receipts) if !receipts.is_empty() => {
+                // Registered partial removals need a fresh explicit review;
+                // never force through new source changes during startup.
+                let registered = list(root)?.iter().any(|entry| entry.path == path);
+                if registered {
+                    return Ok(());
+                }
+                recover_remnants(root, worktree)?;
+                crate::worktree_lifecycle::finish_removal_recovery(worktree);
+            }
+            Ok(_) => crate::worktree_lifecycle::finish_removal_recovery(worktree),
+            Err(error) => {
+                return Err(format!(
+                    "Cannot reconcile pending worktree cleanup: {error}"
+                ))
+            }
+        }
+        finish_detached_removal(&*db()?, path, saved)
+    })
+}
+
+fn finish_detached_removal(
+    conn: &rusqlite::Connection,
+    path: &str,
+    saved: Vec<SessionBeforeRemoval>,
+) -> Result<(), String> {
+    // A surviving Git link means removal did not finish. If the link/folder
+    // is gone, the already-persisted detached sessions are the final state.
+    let restore = if Path::new(path)
+        .join(".git")
+        .try_exists()
+        .map_err(|e| e.to_string())?
+    {
+        saved
+    } else {
+        Vec::new()
+    };
+    finish_removal(conn, path, &restore)
 }
 
 /// Each database phase takes its own short lock: Git and filesystem removal can take

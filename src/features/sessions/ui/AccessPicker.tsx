@@ -1,7 +1,9 @@
 import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
-import { RUNTIME_MODE_HINT, RUNTIME_MODE_LABEL, type RuntimeMode } from "../model/session";
+import type { RuntimeMode } from "../model/session";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { runtimeModeCopy } from "./runtimeModeCopy";
 import { runtimeModeOptions } from "./runtimeModeOptions";
 
 type Props = {
@@ -9,14 +11,23 @@ type Props = {
   onChange: (mode: RuntimeMode) => void;
   onClose?: () => void;
   busy?: boolean;
+  iconOnly?: boolean;
   /** Modes the harness cannot honour, with why. They show, but cannot be picked. */
   unavailable?: Partial<Record<RuntimeMode, string>>;
 };
 
 const MENU_WIDTH = 288;
 
-export function AccessPicker({ value, onChange, onClose, busy = false, unavailable }: Props) {
+export function AccessPicker({
+  value,
+  onChange,
+  onClose,
+  busy = false,
+  iconOnly = false,
+  unavailable,
+}: Props) {
   const t = useT();
+  const current = runtimeModeCopy(t, value);
   return (
     <div data-usage-guide="access-mode">
       <SearchableSelect
@@ -28,7 +39,7 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
         menuMinWidth={MENU_WIDTH}
         menuAttributes={{ "data-access-picker": "" }}
         value={value}
-        options={runtimeModeOptions(unavailable).map((option) => ({
+        options={runtimeModeOptions(unavailable, t).map((option) => ({
           value: option.value,
           label: String(option.title),
           icon: option.icon,
@@ -42,17 +53,20 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
         onClose={(restoreFocus) => {
           if (restoreFocus) onClose?.();
         }}
-        tooltip={`${RUNTIME_MODE_HINT[value]}${busy ? ` ${t("Access changes apply to the next turn. Stop and resend to apply them now.")}` : ""}`}
+        tooltip={iconOnly ? current.label : current.hint}
         triggerProps={{
           "data-access-picker-trigger": "",
-          "aria-label": RUNTIME_MODE_LABEL[value],
+          "data-access-picker-compact": iconOnly || undefined,
+          "aria-label": current.label,
           onMouseDown: (event) => event.preventDefault(),
         }}
         footer={
           busy ? (
-            <Text as="p" size="micro" weight="regular">
-              {t("Access changes apply to the next turn. Stop and resend to apply them now.")}
-            </Text>
+            <InfoPopover>
+              <Text as="p" size="secondary" leading="relaxed">
+                {t("Access changes apply to the next turn. Stop and resend to apply them now.")}
+              </Text>
+            </InfoPopover>
           ) : undefined
         }
       />

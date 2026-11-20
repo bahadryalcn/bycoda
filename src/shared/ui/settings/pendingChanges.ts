@@ -23,7 +23,12 @@ export type PendingSource = {
   canSave: boolean;
   /** A storage request is already committing; neither save nor discard may interrupt it. */
   pending?: boolean;
-  save: () => unknown;
+  /**
+   * Resolves `true` only once storage or the Host durably acknowledged every change listed when
+   * the save began. A refusal, a failure or an edit that landed while saving resolves `false`
+   * (or throws) and keeps the draft; the editor shows its own error.
+   */
+  save: () => boolean | Promise<boolean>;
   discard: () => void;
 };
 
@@ -36,22 +41,35 @@ function publish() {
   listeners.forEach((listener) => listener());
 }
 
-const signature = (source: PendingSource | undefined) =>
-  source
-    ? JSON.stringify([
-        source.title,
-        source.canSave,
-        source.pending,
-        source.changes.map((change) => [change.id, change.label, change.scope, change.detail]),
-      ])
-    : "";
+/** Same changes in the same order by what the owner sees; a rebuilt array of equal changes is not a change. */
+const sameChanges = (a: readonly PendingChange[], b: readonly PendingChange[]) =>
+  a.length === b.length &&
+  a.every((change, index) => {
+    const other = b[index];
+    return (
+      other !== undefined &&
+      change.id === other.id &&
+      change.label === other.label &&
+      change.scope === other.scope &&
+      change.detail === other.detail
+    );
+  });
+
+const sameVisible = (before: PendingSource | undefined, source: PendingSource | undefined) =>
+  before === source ||
+  (!!before &&
+    !!source &&
+    before.title === source.title &&
+    before.canSave === source.canSave &&
+    before.pending === source.pending &&
+    sameChanges(before.changes, source.changes));
 
 function setSource(id: string, source: PendingSource | undefined) {
   const before = sources.get(id);
   if (source) sources.set(id, source);
   else sources.delete(id);
   // Callbacks change every render; only what the owner sees triggers a re-render.
-  if (signature(before) !== signature(source)) publish();
+  if (!sameVisible(before, source)) publish();
 }
 
 export function subscribePendingSources(listener: () => void): () => void {
@@ -81,7 +99,8 @@ export function usePendingSource(source: PendingSource | null) {
     if (!id || !current) return;
     setSource(id, {
       ...current,
-      save: () => latest.current?.save(),
+      // A draft that already left the registry has nothing to acknowledge.
+      save: () => latest.current?.save() ?? false,
       discard: () => latest.current?.discard(),
       changes: current.changes,
     });
@@ -94,15 +113,39 @@ export function usePendingSource(source: PendingSource | null) {
   }, [id]);
 }
 
-/** Save every source that can save; resolves true when nothing unsaved remains. */
-export async function saveAllPending(): Promise<boolean> {
+let savingAll: Promise<boolean> | null = null;
+
+async function acknowledged(source: PendingSource): Promise<boolean> {
+  try {
+    return (await source.save()) === true;
+  } catch {
+    // The editor reports its own failure; the draft stays where it is.
+    return false;
+  }
+}
+
+async function saveEach(): Promise<boolean> {
   const current = pendingSources();
   if (current.some((source) => !source.canSave || source.pending)) return false;
-  for (const source of current) await source.save();
-  // Editors report a failed save through their own state, so read the registry once React has
-  // committed the results.
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
-  return pendingSources().length === 0;
+  const saving = new Set(current.map((source) => source.id));
+  for (const source of current) {
+    // The first save the editor did not acknowledge stops the chain; later drafts stay untouched.
+    if (!(await acknowledged(source))) return false;
+  }
+  // A draft that registered while saving was never part of the request, so leaving would drop it.
+  return pendingSources().every((source) => saving.has(source.id));
+}
+
+/**
+ * Saves every pending source in order. Resolves true only when each editor acknowledged its own
+ * durable save and no other draft appeared meanwhile; never on a timer or on the registry
+ * looking empty. A second call while one runs shares it, so the saves run once.
+ */
+export function saveAllPending(): Promise<boolean> {
+  savingAll ??= saveEach().finally(() => {
+    savingAll = null;
+  });
+  return savingAll;
 }
 
 export function discardAllPending() {

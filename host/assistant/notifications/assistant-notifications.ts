@@ -30,7 +30,7 @@ export async function readAssistantNotifications(
 ): Promise<AssistantNotification[]> {
   const rows = await ports.db
     .prepare(
-      "SELECT value FROM assistant_runtime WHERE id LIKE 'notification:%' AND deleted_at IS NULL AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL AND (?=1 OR json_extract(value,'$.value.kind') NOT IN ('task.done','task.needsInput')) ORDER BY updated_at,id LIMIT 100",
+      "SELECT value FROM assistant_runtime WHERE id>='notification:' AND id<'notification;' AND deleted_at IS NULL AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL AND (?=1 OR json_extract(value,'$.value.kind') NOT IN ('task.done','task.needsInput')) ORDER BY updated_at,id LIMIT 100",
     )
     .all(ports.taskNotificationAllowed ? 1 : 0);
   const presence = await ports.presence(),

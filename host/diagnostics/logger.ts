@@ -1,5 +1,5 @@
 import { appendFileSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
-import { appendFile } from "node:fs/promises";
+import { appendFile, mkdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   formatDiagnosticLine,
@@ -63,6 +63,8 @@ export class LogSink {
   private dropped = 0;
   private size: number | undefined;
   private writing: Promise<void> = Promise.resolve();
+  /** The one flush that has been chained but not yet started; later calls join it. */
+  private scheduled: Promise<void> | undefined;
   private timer: NodeJS.Timeout | undefined;
 
   constructor(private readonly options: LogSinkOptions) {
@@ -155,21 +157,60 @@ export class LogSink {
     }
   }
 
-  /** Appends queued lines asynchronously; calls are serialised. */
-  flush(): Promise<void> {
-    this.writing = this.writing.then(async () => {
-      const text = this.take();
-      if (!text) return;
+  /** Async twin of rotateIfNeeded for the timer path, so rotation never blocks the event loop. */
+  private async rotateAsync(incoming: number): Promise<void> {
+    if (this.size === undefined) {
       try {
-        mkdirSync(this.options.dir, { recursive: true, mode: 0o700 });
-        this.rotateIfNeeded(Buffer.byteLength(text));
-        await appendFile(this.path, text, { mode: 0o600 });
-        this.size = (this.size ?? 0) + Buffer.byteLength(text);
+        this.size = (await stat(this.path)).size;
       } catch {
-        // Logging must never take the Host down; the batch is lost.
+        this.size = 0;
       }
+    }
+    if (this.size === 0 || this.size + incoming <= this.maxBytes) return;
+    const numbered = (n: number) => join(this.options.dir, `host.${n}.log`);
+    try {
+      await rm(numbered(this.keep), { force: true });
+      for (let n = this.keep - 1; n >= 1; n--) {
+        try {
+          await rename(numbered(n), numbered(n + 1));
+        } catch {
+          // Missing link in the chain.
+        }
+      }
+      await rename(this.path, numbered(1));
+      this.size = 0;
+    } catch {
+      // In use by a reader: keep appending to the current file.
+    }
+  }
+
+  /**
+   * Appends queued lines asynchronously. Batches run one at a time in call order. A call made
+   * while a batch is still waiting to start joins that batch instead of chaining another, so at
+   * most one batch is pending behind the one writing.
+   */
+  flush(): Promise<void> {
+    if (this.scheduled) return this.scheduled;
+    const run = this.writing.then(async () => {
+      this.scheduled = undefined;
+      await this.writeBatch();
     });
-    return this.writing;
+    this.scheduled = run;
+    this.writing = run;
+    return run;
+  }
+
+  private async writeBatch(): Promise<void> {
+    const text = this.take();
+    if (!text) return;
+    try {
+      await mkdir(this.options.dir, { recursive: true, mode: 0o700 });
+      await this.rotateAsync(Buffer.byteLength(text));
+      await appendFile(this.path, text, { mode: 0o600 });
+      this.size = (this.size ?? 0) + Buffer.byteLength(text);
+    } catch {
+      // Logging must never take the Host down; the batch is lost.
+    }
   }
 
   /** Writes everything queued synchronously. For fatal paths and process exit. */

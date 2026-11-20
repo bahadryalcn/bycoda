@@ -7,6 +7,7 @@ import { Row } from "../../../shared/ui/settings";
 import { Switch } from "../../../shared/ui/Switch";
 import { phonePairingApi } from "../model/phonePairingApi";
 import type { RemoteMachine } from "../model/protocol";
+import { errorText } from "../../../shared/lib/errors";
 
 /**
  * This computer's local network listener for phones. Reading never enables anything;
@@ -51,7 +52,7 @@ export function LocalNetworkAccessRow({
         : await phonePairingApi.disable?.(machine);
       if (alive.current && next) setStatus(next);
     } catch (reason) {
-      if (alive.current) setError(reason instanceof Error ? reason.message : String(reason));
+      if (alive.current) setError(errorText(reason));
     } finally {
       if (alive.current) setPending(false);
     }

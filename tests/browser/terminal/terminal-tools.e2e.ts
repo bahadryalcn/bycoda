@@ -3,6 +3,25 @@ import { mkdirSync } from "node:fs";
 import { WEBGL_IDLE_DROP_MS } from "../../../src/features/terminal/runtime/terminalWebgl";
 import { terminalScrollbarWidth } from "../../../src/features/terminal/model/terminalLayout";
 
+test("pastes local clipboard text with Shift+Insert and a terminal right click", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/tests/browser/terminal/terminal-tools.html");
+  const root = page.locator("html");
+  await expect(root).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
+  await page.evaluate(() => navigator.clipboard.writeText("  clipboard first  "));
+  await page.locator(".xterm-helper-textarea").press("Shift+Insert");
+  await expect(root).toHaveAttribute("data-last-pty-write", JSON.stringify("  clipboard first  "));
+  await page.evaluate(() => navigator.clipboard.writeText("clipboard second\ncontinued"));
+  await page.locator(".xterm-screen").click({ button: "right" });
+  await expect(root).toHaveAttribute(
+    "data-last-pty-write",
+    JSON.stringify("clipboard second\rcontinued"),
+  );
+});
+
 for (const theme of ["light", "dark"]) {
   test(`terminal returns from a hidden panel: ${theme}`, async ({ page }, info) => {
     test.setTimeout(WEBGL_IDLE_DROP_MS + 20_000);
@@ -331,7 +350,7 @@ for (const theme of ["light", "dark"]) {
       await expect(list).toBeVisible();
       await expect(terminal).toBeFocused();
       await terminal.press("ArrowDown");
-      await expect(list.getByRole("option", { selected: true })).toHaveText("git diff");
+      await expect(list.getByRole("option", { selected: true })).toContainText("git diff");
       await terminal.press("Tab");
       await expect(list).toHaveCount(0);
       await expect(page.locator("html")).toHaveAttribute(

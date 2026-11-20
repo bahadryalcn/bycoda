@@ -368,6 +368,52 @@ async function setup(ports: AssistantPorts = {}) {
   return f;
 }
 describe("durable assistant ownership and supervision", () => {
+  it("ticks without loading settled job history and still reconciles incomplete usage", async () => {
+    const goalStatus = vi.fn(async (_id: string) => ({
+      status: "done" as const,
+      tokens: 12,
+      taskIds: [],
+      sessionIds: [],
+      progress: { done: 1, total: 1 },
+    }));
+    const f = await setup({ goalStatus });
+    await f.configure();
+    await f.request({ op: "briefing.schedule", enabled: false, time: "09:00" });
+    const insert = f.store.db.prepare(
+      "INSERT INTO assistant_jobs(id,value,version,updated_at) VALUES(?,?,1,1)",
+    );
+    for (const [id, tokensComplete] of [
+      ["settled", true],
+      ["incomplete", false],
+    ] as const)
+      await insert.run(
+        id,
+        JSON.stringify({
+          id,
+          version: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          status: "done",
+          kind: "project",
+          title: id,
+          projectId: "project",
+          goalId: `assistant-${id}`,
+          tokens: 0,
+          tokensComplete,
+        }),
+      );
+    const prepare = vi.spyOn(f.store.db, "prepare");
+    await f.service.tick();
+    expect(goalStatus.mock.calls.map(([id]) => id)).toEqual(["assistant-incomplete"]);
+    expect(
+      prepare.mock.calls
+        .filter(
+          ([sql]) => sql.startsWith("SELECT value FROM assistant_jobs") && sql.includes("ORDER BY"),
+        )
+        .map(([sql]) => sql),
+    ).toEqual([expect.stringContaining("tokensComplete")]);
+    prepare.mockRestore();
+  });
   it("keeps identity unset and validates core setup and optimistic versions", async () => {
     const f = await setup();
     const initial = await f.request({ op: "snapshot" });

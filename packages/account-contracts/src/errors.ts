@@ -29,16 +29,45 @@ export const ApiErrorEnvelope = z.object({
 });
 export type ApiErrorEnvelope = z.infer<typeof ApiErrorEnvelope>;
 
+export interface AccountApiErrorOptions {
+  /** Server-requested back-off from `Retry-After`, in milliseconds. */
+  retryAfterMs?: number;
+  /** Diagnostic detail (never response values or tokens). */
+  cause?: unknown;
+}
+
 export class AccountApiError extends Error {
   readonly status: number;
   readonly code: ErrorCode;
   readonly requestId: string;
+  readonly retryAfterMs?: number;
 
-  constructor(status: number, code: ErrorCode, message: string, requestId = "") {
-    super(message);
+  constructor(
+    status: number,
+    code: ErrorCode,
+    message: string,
+    requestId = "",
+    options: AccountApiErrorOptions = {},
+  ) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "AccountApiError";
     this.status = status;
     this.code = code;
     this.requestId = requestId;
+    if (options.retryAfterMs !== undefined) this.retryAfterMs = options.retryAfterMs;
+  }
+}
+
+/**
+ * A request or its body read exceeded the client deadline. It extends `TypeError` like a
+ * failed `fetch` and is not an `AccountApiError`, so existing offline handling covers it.
+ */
+export class AccountRequestTimeoutError extends TypeError {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super(`Account request timed out after ${timeoutMs} ms`);
+    this.name = "AccountRequestTimeoutError";
+    this.timeoutMs = timeoutMs;
   }
 }

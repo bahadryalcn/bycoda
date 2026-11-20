@@ -1,3 +1,4 @@
+import { bytesToBase64 } from "../../../shared/lib/base64";
 import { composerDraftOf } from "../../sessions/model/draftCache";
 import type { Attachment } from "../../sessions/model/session";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
@@ -153,13 +154,6 @@ function base64Bytes(data: string): Uint8Array {
   return Uint8Array.from(atob(data), (value) => value.charCodeAt(0));
 }
 
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += 8192)
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
-  return btoa(binary);
-}
-
 /**
  * Read an ID already in this session's unsent draft, never a model-supplied path.
  * The caller must first authorize the target session. Inline images become real
@@ -201,7 +195,7 @@ export async function readVoiceDraftAttachment(
         name: file.name,
         kind: "image",
         mimeType: file.mimeType.replace(/^image\/jpg$/i, "image/jpeg"),
-        dataUrl: `data:${file.mimeType.replace(/^image\/jpg$/i, "image/jpeg")};base64,${toBase64(bytes)}`,
+        dataUrl: `data:${file.mimeType.replace(/^image\/jpg$/i, "image/jpeg")};base64,${bytesToBase64(bytes)}`,
       };
     const format = voiceDocumentKind(file.name, file.mimeType);
     if (format) {

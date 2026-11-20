@@ -77,8 +77,8 @@ export function TurnOutputActions({
   if (items.length === 0) return null;
 
   const failures = [
-    copy.failed ? t("Copy failed. ") + (copy.error ?? "") : null,
-    save.failed ? t("Could not save note. ") + (save.error ?? "") : null,
+    copy.failed ? t("Copy failed. {p0}", { p0: copy.error ?? "" }) : null,
+    save.failed ? t("Could not save note. {p0}", { p0: save.error ?? "" }) : null,
   ].filter((message): message is string => message !== null);
 
   return (

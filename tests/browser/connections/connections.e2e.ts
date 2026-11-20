@@ -10,11 +10,25 @@ for (const theme of ["light", "dark"]) {
         `/tests/browser/settings/settings.html?section=connections&connections=1&theme=${theme}&lang=en`,
       );
       const root = page.locator("#setting-remote-machines");
+      const evidence = "temp/verification/connections-redesign";
+      mkdirSync(evidence, { recursive: true });
       await expect(root.getByText("Studio Mac", { exact: true })).toBeVisible();
       await expect(root.getByRole("button", { name: "Start tunnel", exact: true })).toHaveCount(0);
       await expect(root.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
       // Adding a computer happens in a dialog; the saved list stays uncluttered.
       const addComputer = root.getByRole("button", { name: "Add a computer", exact: true });
+      const actionPosition = (button: typeof addComputer) =>
+        button.evaluate((element) => {
+          const buttonBounds = element.getBoundingClientRect();
+          const sectionBounds = element
+            .closest("#setting-remote-machines")!
+            .getBoundingClientRect();
+          return {
+            right: Math.round(sectionBounds.right - buttonBounds.right),
+            top: Math.round(buttonBounds.top - sectionBounds.top),
+          };
+        });
+      const computersActionPosition = await actionPosition(addComputer);
       await addComputer.click();
       const addDialog = page.getByRole("dialog", { name: "Add a computer", exact: true });
       await expect(addDialog).toBeVisible();
@@ -39,9 +53,20 @@ for (const theme of ["light", "dark"]) {
       await expect(root.locator(".connection-details")).toHaveCount(0);
       await root.getByRole("button", { name: "Actions for Studio Mac", exact: true }).click();
       await page.getByRole("menuitem", { name: "Connection details", exact: true }).click();
-      await expect(root.locator(".connection-details").last()).toContainText(
-        "owner@studio-tailnet",
-      );
+      await expect(root.locator(".connection-details").last()).toContainText("100.97.82.4");
+      await expect(root.getByText("In use", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${evidence}/${theme}-${width}-machines.png` });
+      await root.getByRole("button", { name: "Actions for Studio Mac", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Edit name and address…", exact: true }).click();
+      const editDialog = page.getByRole("dialog", { name: "Edit Studio Mac", exact: true });
+      const editAddress = editDialog.getByRole("textbox", { name: "SSH address", exact: true });
+      await expect(editAddress).toBeFocused();
+      await expect(root.getByRole("form", { name: "Edit Studio Mac" })).toHaveCount(0);
+      await editAddress.fill("owner@new-studio");
+      await expect(editDialog.getByRole("button", { name: "Save and reconnect" })).toBeEnabled();
+      await page.screenshot({ path: `${evidence}/${theme}-${width}-edit.png` });
+      await page.keyboard.press("Escape");
+      await expect(editDialog).toHaveCount(0);
       await addComputer.click();
       // A reopened dialog starts on the found list and on SSH again.
       await addDialog.getByRole("tab", { name: "Enter address", exact: true }).click();
@@ -50,7 +75,7 @@ for (const theme of ["light", "dark"]) {
       await address.fill("owner@new-machine");
       await expect(
         addDialog.getByText(
-          "Installs bycoda Host over SSH so you can run agents on this machine.",
+          "Installs bycoda Host over SSH so you can run agents on this computer.",
           { exact: true },
         ),
       ).toBeVisible();
@@ -61,8 +86,6 @@ for (const theme of ["light", "dark"]) {
       await expect(
         addDialog.getByRole("textbox", { name: "Other address (optional)", exact: true }),
       ).toBeVisible();
-      const evidence = "temp/verification/2026-11-10-connections-redesign";
-      mkdirSync(evidence, { recursive: true });
       await page.screenshot({ path: `${evidence}/${theme}-${width}-add.png` });
       await help.click();
       await expect(page.getByText("A hostname works too", { exact: false })).toBeVisible();
@@ -74,7 +97,12 @@ for (const theme of ["light", "dark"]) {
 
       // Devices: pairing a phone opens a dialog; the access check runs by itself.
       await root.getByRole("tab", { name: "Devices", exact: true }).click();
-      await root.getByRole("button", { name: "Connect a phone", exact: true }).click();
+      const connectPhone = root.getByRole("button", { name: "Connect a phone", exact: true });
+      expect(await actionPosition(connectPhone)).toEqual(computersActionPosition);
+      await expect(root.getByRole("heading", { name: "Phone access", exact: true })).toBeVisible();
+      await expect(root.getByText("iPhone 16", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${evidence}/${theme}-${width}-devices.png` });
+      await connectPhone.click();
       const phone = page.getByRole("dialog", { name: "Connect your phone", exact: true });
       await expect(phone).toBeVisible();
       await expect(phone.getByRole("group", { name: "Phone network" })).toBeVisible();
@@ -93,8 +121,10 @@ for (const theme of ["light", "dark"]) {
       const tunnels = root.getByRole("region", { name: "External tunnels", exact: true });
       await expect(root.getByRole("button", { name: "Start tunnel", exact: true })).toHaveCount(0);
       // Starting a link happens in a share dialog; its draft survives closing.
-      await tunnels.getByRole("button", { name: "Share…", exact: true }).click();
-      const share = page.getByRole("dialog", { name: /^Share from / });
+      const createLink = tunnels.getByRole("button", { name: "Create link", exact: true });
+      expect(await actionPosition(createLink)).toEqual(computersActionPosition);
+      await createLink.click();
+      const share = page.getByRole("dialog", { name: "Create link", exact: true });
       await expect(share).toBeVisible();
       await expect(share.getByRole("button", { name: "Start sharing", exact: true })).toBeEnabled();
       await share.getByRole("textbox", { name: "Local URL or port" }).fill("4567");
@@ -103,16 +133,12 @@ for (const theme of ["light", "dark"]) {
       await expect(share).toHaveCount(0);
       await root.getByRole("tab", { name: "Computers", exact: true }).click();
       await root.getByRole("tab", { name: "Sharing", exact: true }).click();
-      await tunnels.getByRole("button", { name: "Share…", exact: true }).click();
+      await createLink.click();
       await expect(share.getByRole("textbox", { name: "Local URL or port" })).toHaveValue("4567");
       await share.getByRole("button", { name: "Cancel", exact: true }).click();
       expect(await root.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
       await page.screenshot({
         path: `${evidence}/${theme}-${width}-tunnels.png`,
-      });
-      await root.getByRole("tab", { name: "Computers", exact: true }).click();
-      await page.screenshot({
-        path: `${evidence}/${theme}-${width}-machines.png`,
       });
     });
   }

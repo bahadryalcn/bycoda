@@ -588,7 +588,7 @@ function applyStoredAppearance(key: string | null = null) {
   if (key === null || key === DIFF_PALETTE_KEY) applyDiffPalette(loadDiffPalette());
 }
 
-function applyStoredTheme() {
+export function applyStoredTheme() {
   applyAccentColor(loadAccentColor());
   applyThemeTint(loadThemeHue(), loadThemeSaturation());
   applyThemeDarkLightness(loadThemeDarkLightness());

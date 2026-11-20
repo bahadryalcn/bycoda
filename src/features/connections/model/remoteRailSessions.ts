@@ -4,6 +4,8 @@ import { wakeSourceWait, type SessionWait } from "../../sessions/public/sessionW
 import { sameProjectPath } from "../../projects/public/recents";
 import type { HostSessionSummary } from "./protocol";
 import type { RemoteCreateIntent } from "./remoteCreateIntent";
+import { classifyRemoteError } from "./remoteFailure";
+import { TIMEOUTS_BEFORE_UNREACHABLE } from "./remoteHealth";
 import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
 
 /** A host session of a remote project on the rail, as its machine last listed it.
@@ -13,6 +15,29 @@ export type RemoteRailSession = {
   session: HostSessionSummary;
   fresh?: boolean;
 };
+
+/** One project's list on the rail: `fresh` once its machine answered, `failures` in a row since. */
+export type RailListEntry = {
+  list: readonly HostSessionSummary[];
+  fresh: boolean;
+  failures: number;
+};
+
+/** A list whose status nothing vouches for: no session counts as running or waiting for input. */
+export function untrustedRailList(list: readonly HostSessionSummary[]): HostSessionSummary[] {
+  return list.map((session) => ({ ...session, status: "idle" as const, needsInput: false }));
+}
+
+/** What a failed read of a project's list does to its entry. The last known
+ * state stops counting as live once the machine stops answering: at once for a
+ * refusal or a lost link, after a run of them for a timeout or busy reply. */
+export function railEntryAfterFailure(entry: RailListEntry, reason: unknown): RailListEntry {
+  const failures = entry.failures + 1;
+  const transient = classifyRemoteError(reason).kind === "temporary";
+  if (!entry.fresh || (transient && failures < TIMEOUTS_BEFORE_UNREACHABLE))
+    return { ...entry, failures };
+  return { list: untrustedRailList(entry.list), fresh: false, failures };
+}
 
 /** Each project's listed sessions, cached or fresh. Delegated advisors and subagents
  * belong to their parent's activity panel, so no rail, list or recovery sees them. */

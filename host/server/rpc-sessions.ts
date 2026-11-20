@@ -1,5 +1,6 @@
+import { dirname } from "node:path";
 import { sessionWorkCwd, type LinkedWorkItem } from "../../src/features/sessions/model/session";
-import type { SyncOp } from "../../src/features/sync/model/syncProtocol";
+import { SYNC_PUSH_MAX_OPS, type SyncOp } from "../../src/features/sync/model/syncProtocol";
 import { parseGithubWorkItemUrl } from "../../src/shared/lib/githubWorkItem";
 import { SafeCounterSchema } from "../../src/shared/model/host-contracts/schemas";
 import {
@@ -25,6 +26,10 @@ import { recordRemoteActivity } from "./remote-activity-record";
 import { clientMessageCommand } from "../sessions/client-message-id";
 import { clientMessageQueue } from "../sessions/client-message-queue";
 import { SIDE_CHAT_RPC } from "../../src/shared/model/host-contracts/side-chat";
+import {
+  inlineVisualIds,
+  retireDeletedSessionVisuals,
+} from "../conversation/inline-visual-retention";
 import { askSideQuestion } from "../side-chat/side-question";
 export async function handleSessionsRpc(
   dependencies: Pick<
@@ -477,15 +482,22 @@ export async function handleSessionsRpc(
               )
                 throw new Error("Session authority changed; refresh before deleting");
               let historyCwd = cwd;
+              let deletedVisualIds: string[] = [];
               if (await dependencies.inHost(sessionId)) {
                 await dependencies.engine.store.assertAuthority(sessionId, authorityGeneration);
                 const current = await dependencies.engine.store.session(sessionId);
                 historyCwd = current.session.cwd || cwd;
                 if (current.projectId !== project.id)
                   throw new Error("Session does not belong to this project");
+                deletedVisualIds = inlineVisualIds(current.session);
                 await dependencies.engine.store.deleteSession(sessionId, authorityGeneration, {
                   staleRunning: !dependencies.engine.hasActiveRun(sessionId),
                 });
+                await retireDeletedSessionVisuals(
+                  dependencies.engine.store,
+                  dirname(dependencies.engine.store.attachmentDir),
+                  deletedVisualIds,
+                ).catch((error) => console.warn("Deleted session visual files retained:", error));
               }
               dependencies.invalidateSessionCopies(sessionId, project.id);
               await dependencies.sessionQueues.delete(sessionId);
@@ -507,9 +519,15 @@ export async function handleSessionsRpc(
             if (current.projectId !== request.params.projectId)
               throw new Error("Session does not belong to this project");
             await admittedDelete();
+            const deletedVisualIds = inlineVisualIds(current.session);
             await dependencies.engine.store.deleteSession(sessionId, authorityGeneration, {
               staleRunning: !dependencies.engine.hasActiveRun(sessionId),
             });
+            await retireDeletedSessionVisuals(
+              dependencies.engine.store,
+              dirname(dependencies.engine.store.attachmentDir),
+              deletedVisualIds,
+            ).catch((error) => console.warn("Deleted session visual files retained:", error));
             dependencies.invalidateSessionCopies(sessionId, current.projectId);
             await dependencies.sessionQueues.delete(sessionId);
             await dependencies.handoffHistory
@@ -560,6 +578,8 @@ export async function handleSessionsRpc(
       );
       // Input in a focused window disproves a stale idle or away reading.
       if (request.params.userActive === true) dependencies.assistant.refreshPresenceSoon();
+      // One window of one device: each bounded stage runs at most one copy per window.
+      const beatOwner = `${request.tokenHash}:${String(request.params.clientId ?? "")}`;
       // Sequential: an acknowledged command can change the turn the run leases read.
       const durableCommands = await measure("desktopLive.poll", () =>
         dependencies.withinBeat(
@@ -568,6 +588,7 @@ export async function handleSessionsRpc(
               assertDomainAuthority(request.domainContext),
             ),
           [],
+          { name: "desktopLive.poll", owner: beatOwner },
         ),
       );
       // Renew the reported epoch before queued busy bookkeeping can implicitly
@@ -576,7 +597,10 @@ export async function handleSessionsRpc(
         dependencies.renewRunLeases(request.params),
       );
       await measure("desktopLive.effects", () =>
-        dependencies.withinBeat(() => dependencies.heartbeatEffects, undefined),
+        dependencies.withinBeat(() => dependencies.heartbeatEffects, undefined, {
+          name: "desktopLive.effects",
+          owner: beatOwner,
+        }),
       );
       // These four touch separate state (deletion replies, provider inbox, adopted
       // rows, drain leases) and none reads another's writes from this beat, so they
@@ -584,12 +608,9 @@ export async function handleSessionsRpc(
       const [deletions, inbox, adopted, queueLeases, hostPush] = await Promise.all([
         measure("desktopLive.deletions", () =>
           dependencies.withinBeat(
-            () =>
-              dependencies.desktopDelete.beat(
-                `${request.tokenHash}:${String(request.params.clientId ?? "")}`,
-                request.params.deletions,
-              ),
+            () => dependencies.desktopDelete.beat(beatOwner, request.params.deletions),
             { jobs: [], acked: [] },
+            { name: "desktopLive.deletions", owner: beatOwner },
           ),
         ),
         measure("desktopLive.inbox", () =>
@@ -601,22 +622,28 @@ export async function handleSessionsRpc(
                 request.params.inbox,
               ),
             { jobs: [], acked: [] },
+            { name: "desktopLive.inbox", owner: beatOwner },
           ),
         ),
         measure("desktopLive.adopted", () =>
           dependencies.withinBeat(
             () => dependencies.adoptedChanges.changesSince(request.params.adoptedSeq),
             undefined,
+            { name: "desktopLive.adopted", owner: beatOwner },
           ),
         ),
         // The drain leases a desktop holds: `null` is one it no longer holds, and the
         // host drains that queue itself.
         measure("desktopLive.queueLeases", () =>
-          dependencies.withinBeat(() => dependencies.renewQueueLeases(request.params), undefined),
+          dependencies.withinBeat(() => dependencies.renewQueueLeases(request.params), undefined, {
+            name: "desktopLive.queueLeases",
+            owner: beatOwner,
+          }),
         ),
         dependencies.withinBeat(
           () => dependencies.pushNotifications.ownedEvents().catch(() => undefined),
           undefined,
+          { name: "desktopLive.hostPush", owner: beatOwner },
         ),
       ]);
       request.result = {
@@ -771,6 +798,7 @@ export async function handleSessionsRpc(
     }
     case "sync.push": {
       if (!Array.isArray(request.params.ops)) throw new Error("Invalid sync ops");
+      if (request.params.ops.length > SYNC_PUSH_MAX_OPS) throw new Error("Too many sync ops");
       request.result = await dependencies.engine.store.transaction(
         async () => await syncPush(dependencies.engine.store.db, request.params.ops as SyncOp[]),
         "checkpoint",

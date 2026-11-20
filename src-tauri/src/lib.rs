@@ -13,6 +13,7 @@ mod assistant_server_observation;
 pub(crate) mod assistant_session_observation;
 #[path = "assistant/standing_consent.rs"]
 mod assistant_standing_consent;
+mod attachment_export;
 mod automations;
 mod azure_devops;
 pub mod build_info;
@@ -146,6 +147,7 @@ mod sync_owner;
 mod system_permissions;
 mod terminal_completion;
 mod terminal_profiles;
+mod termius_command;
 mod termius_import;
 mod termius_keys;
 mod termius_reader;
@@ -510,6 +512,7 @@ pub fn run() {
                 remote_routes::init(&directory);
             }
             remote_routes::watch_better_routes(app.handle().clone());
+            remote_files::sweep_in_background(app.handle().clone());
             file_access::init(app.handle())?;
             package_smoke::prepare(app.handle())?;
             session_store::init(app.handle())?;
@@ -526,7 +529,7 @@ pub fn run() {
             tray::install(app.handle())?;
             desktop_shortcut::init(app.handle())?;
             if !package_smoke::active() {
-                desktop_control_window::init(app.handle()).map_err(std::io::Error::other)?;
+                desktop_control_window::init(app.handle());
                 assistant_presence::init(app.handle()).map_err(std::io::Error::other)?;
             }
             #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -616,6 +619,7 @@ pub fn run() {
             ssh_forward::ssh_forward_start,
             ssh_forward::ssh_forward_stop,
             ssh_forward::ssh_forward_list,
+            ssh_forward::ssh_forward_retry_now,
             ssh_security::ssh_config_preview,
             ssh_configuration::ssh_group_defaults_list,
             ssh_configuration::ssh_group_defaults_save,
@@ -644,6 +648,7 @@ pub fn run() {
             remote::remote_connect,
             inline_visual::inline_visual_read,
             local_host::local_host_connect,
+            local_host::local_host_reconnect,
             local_host::local_host_status,
             local_host::local_host_start,
             bundled_host::local_host_bundle_status,
@@ -774,10 +779,13 @@ pub fn run() {
             file_access::revoke_file_access,
             file_access::get_file_access_mode,
             file_access::configure_file_access,
+            file_access::get_file_access_recoveries,
+            file_access::dismiss_file_access_recovery,
             fs::open_path_with_default_app,
             fs::claude_sessions,
             session_transfer::provider_transfer_session,
             fs::list_dir,
+            fs::list_dir_stamp,
             fs::list_project_files,
             fs::git_diff_stats,
             fs::git_diff_index,
@@ -827,6 +835,7 @@ pub fn run() {
             fs::git_github_pr_checks,
             fs::git_github_check_details,
             inbox_media::fetch_inbox_media,
+            inbox_media::cancel_inbox_media,
             gitlab::checks::gitlab_pr_checks,
             gitlab::checks::gitlab_check_details,
             gitlab::checks::gitlab_list_projects,
@@ -955,6 +964,7 @@ pub fn run() {
             fs::clone_repo,
             fs::read_file_preview,
             fs::stat_files,
+            fs::list_windows_drives,
             fs::inspect_paths,
             fs::read_file_base64,
             fs::read_attachment_chunk,
@@ -970,6 +980,7 @@ pub fn run() {
             fs::question_attachment::retain_question_attachment,
             fs::question_attachment::release_question_attachment,
             fs::save_generated_image,
+            attachment_export::save_file_copy,
             fs::delete_generated_images,
             fs::large_text::read_text_file,
             fs::large_text::read_text_file_slice,
@@ -996,6 +1007,8 @@ pub fn run() {
             harness::harness_resolve_configured,
             harness::harness_runtime_binary_paths,
             harness::harness_resolve_claude,
+            harness::claude_workflow::harness_claude_workflow_artifacts,
+            harness::claude_workflow::harness_claude_workflow_resolve,
             harness::claude_mcp_list,
             harness::codex_mcp_list,
             mcp::mcp_discover,
@@ -1030,6 +1043,7 @@ pub fn run() {
             harness::harness_exec,
             harness::harness_auth_status,
             harness::harness_prepare_text_workspace,
+            harness::harness_remove_text_workspace,
             harness::harness_read_task_output,
             harness::run_shell_command,
             terminal_profiles::terminal_profiles,
@@ -1039,6 +1053,7 @@ pub fn run() {
             harness_updates::harness_latest_version,
             harness_updates::harness_update_check_claim,
             harness_updates::harness_update,
+            harness_updates::harness_update_cancel,
             harness::provider_account_remove,
             account_identity::provider_account_identity,
             account::commands::account_status,
@@ -1109,6 +1124,8 @@ pub fn run() {
             session_store::session_import,
             session_store::session_import_keys,
             session_store::session_list_by_project,
+            session_store::project_sessions::session_ids_by_project,
+            session_store::project_sessions::session_delete_by_project,
             session_store::session_rebase_project,
             session_store::session_list_linked,
             session_store::session_list_recent,
@@ -1186,6 +1203,7 @@ pub fn run() {
             desktop_control_window::desktop_control_indicator_stop,
             desktop_control_window::desktop_control_indicator_dismiss,
             desktop_control_window::desktop_control_indicator_fit,
+            desktop_control_window::desktop_control_indicator_watch,
             #[cfg(target_os = "macos")]
             menu::autosave_set_enabled,
             open_new_window,
@@ -1313,9 +1331,18 @@ pub fn run() {
                 .state::<remote::RemoteConnections>()
                 .detach_window(&label);
             ssh_window_lifecycle::close(&label);
-            handle
+            // Detach under the lock here; each reap waits for its ssh child to die,
+            // so it runs off the event loop. Exit joins this reaper.
+            let forwards = handle
                 .state::<ssh_forward::SshForwards>()
-                .kill_window(&label);
+                .detach_window(&label);
+            if !forwards.is_empty() {
+                spawn_tracked_reap(handle, move |handle| {
+                    handle
+                        .state::<ssh_forward::SshForwards>()
+                        .reap_detached(forwards);
+                });
+            }
             ssh_sftp::kill_window(&label);
             handle
                 .state::<ssh_http_proxy_credentials::HttpProxyCredentials>()
@@ -1391,41 +1418,57 @@ pub fn run() {
             window::request_quit(handle);
         }
         tauri::RunEvent::Exit => {
-            diagnostics::clear_recovered_on_exit();
-            diagnostics::flush_logs();
-            assistant_presence::shutdown(handle);
-            conversation_tools_bridge::shutdown_ssh_executions();
-            if handle
-                .try_state::<desktop_control_window::State>()
-                .is_some()
-            {
-                desktop_control_window::shutdown(handle);
-            }
-            if let Some(host) = handle.try_state::<harness::HarnessHost>() {
-                host.shutdown_provider_output();
-            }
-            native_authority_runtime::shutdown(handle);
-            let _ = native_workspace::retire_buffers(handle);
-            ssh_window_lifecycle::shutdown();
-            if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
-                state.shutdown();
-            }
-            ssh_sftp::shutdown();
-            handle
-                .state::<ssh_http_proxy_credentials::HttpProxyCredentials>()
-                .shutdown();
-            handle
-                .state::<std::sync::Arc<ssh_execution::SshExecutions>>()
-                .shutdown();
-            handle.state::<ssh_forward::SshForwards>().kill_all();
-            handle
-                .state::<ssh_agent_forwarding::AgentForwardingReviews>()
-                .kill_all();
-            handle.state::<remote::RemoteConnections>().shutdown();
-            finish_reaping_on_exit(handle);
+            // Teardown and child reaping run off the event loop under one deadline,
+            // so a wedged ssh child, lock or remote teardown cannot freeze quit.
+            let (teardown_app, reap_app) = (handle.clone(), handle.clone());
+            window::exit_shutdown::run_bounded(
+                move || teardown_on_exit(&teardown_app),
+                move || finish_reaping_on_exit(&reap_app),
+            );
         }
         _ => {}
     });
+}
+
+/// The ordered exit teardown, run on one thread by `window::exit_shutdown`. The
+/// order matters: provider output and the native authority stop before the native
+/// buffers retire, and buffer retirement needs the Host transport, so
+/// `RemoteConnections::shutdown` stays last.
+fn teardown_on_exit(handle: &tauri::AppHandle) {
+    diagnostics::clear_recovered_on_exit();
+    diagnostics::flush_logs();
+    assistant_presence::shutdown(handle);
+    conversation_tools_bridge::stop_desktop_relay();
+    conversation_tools_bridge::shutdown_ssh_executions();
+    if handle
+        .try_state::<desktop_control_window::State>()
+        .is_some()
+    {
+        desktop_control_window::shutdown(handle);
+    }
+    if let Some(host) = handle.try_state::<harness::HarnessHost>() {
+        host.shutdown_provider_output();
+    }
+    native_authority_runtime::shutdown(handle);
+    let _ = native_workspace::retire_buffers(handle);
+    ssh_window_lifecycle::shutdown();
+    if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
+        state.shutdown();
+    }
+    ssh_sftp::shutdown();
+    handle
+        .state::<ssh_http_proxy_credentials::HttpProxyCredentials>()
+        .shutdown();
+    handle
+        .state::<std::sync::Arc<ssh_execution::SshExecutions>>()
+        .shutdown();
+    handle
+        .state::<ssh_forward::SshForwards>()
+        .kill_all_within(ssh_forward::EXIT_REAP_BUDGET);
+    handle
+        .state::<ssh_agent_forwarding::AgentForwardingReviews>()
+        .kill_all();
+    handle.state::<remote::RemoteConnections>().shutdown();
 }
 
 /// Kills every harness and terminal child. Blocks on taskkill, so callers
@@ -1453,21 +1496,14 @@ pub(crate) fn spawn_tracked_reap(
     }
 }
 
-/// Exit must reap children before the process ends, but a wedged taskkill
-/// must not hang quit. The kills and the join of background reapers share one
-/// deadline; past it the process exits and the OS drops what is left.
+/// Exit must reap children before the process ends: kills every harness and
+/// terminal child, then joins the background reapers. `window::exit_shutdown`
+/// runs it under the exit deadline, so a wedged taskkill cannot hang quit.
 fn finish_reaping_on_exit(handle: &tauri::AppHandle) {
-    const EXIT_REAP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(3);
-    let (done, finished) = std::sync::mpsc::channel();
-    let app = handle.clone();
-    std::thread::spawn(move || {
-        reap_harness_children(&app);
-        if let Some(host) = app.try_state::<pty::PtyHost>() {
-            host.join_reapers();
-        }
-        let _ = done.send(());
-    });
-    let _ = finished.recv_timeout(EXIT_REAP_DEADLINE);
+    reap_harness_children(handle);
+    if let Some(host) = handle.try_state::<pty::PtyHost>() {
+        host.join_reapers();
+    }
 }
 
 #[cfg(all(debug_assertions, target_os = "macos"))]

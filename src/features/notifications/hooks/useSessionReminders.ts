@@ -12,6 +12,7 @@ import {
   subscribeNotificationPreferences,
 } from "../model/notificationPreferences";
 import { pathKey } from "../../../shared/lib/paths";
+import { describeLocalError } from "../../connections/public/remoteFailure";
 import { isProjectLocked } from "../../group-lock/public/projectLock";
 import { logNotification } from "../model/notificationLog";
 import {
@@ -129,12 +130,16 @@ export function useSessionReminders(
         await configure();
       }
     } catch (error) {
-      if (request === revision.current) setError(String(error));
+      if (request === revision.current) setError(localError(error));
     }
   }, [configure]);
 
   const report = (error: unknown) => {
-    toast.show({ tone: "danger", title: t("Reminder"), message: String(error) });
+    toast.show({
+      tone: "danger",
+      title: t("Reminder"),
+      message: describeLocalError(error, t("Could not update this reminder.")),
+    });
   };
 
   const schedule = useCallback(
@@ -193,7 +198,7 @@ export function useSessionReminders(
     const configureCurrent = () => {
       refreshPolicy();
       void configure().catch((error) => {
-        if (!disposed) setError(String(error));
+        if (!disposed) setError(localError(error));
       });
     };
     const takeOpen = async () => {
@@ -202,7 +207,7 @@ export function useSessionReminders(
         const request = await invoke<ReminderTarget | null>("reminder_take_open");
         if (request && !disposed) await openHere(request);
       } catch (error) {
-        if (!disposed) setError(String(error));
+        if (!disposed) setError(localError(error));
       }
     };
     const subscribe = async (event: string, handler: () => void) => {
@@ -226,7 +231,7 @@ export function useSessionReminders(
         await refresh();
         await takeOpen();
       } catch (error) {
-        if (!disposed) setError(String(error));
+        if (!disposed) setError(localError(error));
       }
     })();
     const onFocus = () => {
@@ -270,7 +275,7 @@ export function useSessionReminders(
   useEffect(() => {
     void invoke("reminder_register_window", {
       sessionIds: JSON.parse(sessionIdsKey),
-    }).catch((error) => setError(String(error)));
+    }).catch((error) => setError(localError(error)));
   }, [sessionIdsKey]);
 
   const open = useCallback(async (reminder: ReminderTarget) => {
@@ -327,6 +332,9 @@ export function useSessionReminders(
     open,
   };
 }
+
+/** A failed load or listener, as the inline reminder state shows it. */
+const localError = (error: unknown) => describeLocalError(error, t("Couldn’t load reminders."));
 
 function sameReminders(a: readonly SessionReminder[], b: readonly SessionReminder[]): boolean {
   return (

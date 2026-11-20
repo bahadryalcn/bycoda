@@ -7,6 +7,7 @@ import {
 } from "../../../shared/model/host-contracts/model-routing";
 import { machineCapabilities } from "../../automations/public/hostMachines";
 import { remoteRequest } from "../../connections/public/connections";
+import { retryOnLocalHostAvailable } from "../../connections/public/localHostRetry";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections/public/protocol";
 
@@ -79,4 +80,29 @@ export async function refreshLocalLiveCatalogFacts(maxWaitMs = 3000): Promise<vo
   } catch {
     // Continue with whatever is already loaded.
   }
+}
+
+/**
+ * Startup load of the live list. The local Host may still be booting, so an attempt that leaves
+ * nothing loaded retries on the shared bounded backoff and when a machine reports recovery.
+ * Returns a stop function.
+ */
+export function startLocalLiveCatalogFactsSync(maxWaitMs = 10_000): () => void {
+  let running = false;
+  const retry = retryOnLocalHostAvailable(() => {
+    void attempt();
+  });
+  const attempt = async () => {
+    if (running || facts.size) return;
+    running = true;
+    try {
+      await refreshLocalLiveCatalogFacts(maxWaitMs);
+    } finally {
+      running = false;
+    }
+    if (facts.size) retry.reset();
+    else retry.later();
+  };
+  void attempt();
+  return retry.stop;
 }

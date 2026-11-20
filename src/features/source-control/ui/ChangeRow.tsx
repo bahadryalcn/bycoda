@@ -36,7 +36,7 @@ export const ChangeRow = memo(function ChangeRow({
   depth,
   style,
   position,
-  total,
+  tabStop,
   onOpenFile,
   onOpenInEditor,
   onAction,
@@ -49,8 +49,11 @@ export const ChangeRow = memo(function ChangeRow({
   /** Set in tree view: nesting level, and the folder path moves to the tree. */
   depth?: number;
   style?: CSSProperties;
+  /** 1-based `aria-rowindex` among every row of the grid, so a virtualized list keeps its place. */
   position?: number;
-  total?: number;
+  /** The list's roving tab stop: only this row's open button is in the Tab order. The inline
+   *  actions are never tab stops; the list reaches them with ArrowRight/ArrowLeft. */
+  tabStop?: boolean;
   onOpenFile: (path: string, kind: GitFileDiffKind, pin?: boolean) => void;
   onAction: (file: GitChangedFile, action: "stage" | "unstage" | "discard") => void;
 }) {
@@ -108,17 +111,17 @@ export const ChangeRow = memo(function ChangeRow({
     ],
   });
   return (
-    <li
+    <div
       style={
         {
           ...style,
           "--control-padding-start": tree ? `${8 + depth * 12}px` : "0.5rem",
         } as CSSProperties
       }
-      role="option"
+      role="row"
+      data-git-row={file.path}
       aria-selected={selected}
-      aria-posinset={position}
-      aria-setsize={total}
+      aria-rowindex={position}
       onContextMenu={(event) => {
         selection?.select(file.path, {}, true);
         menuHandlers.onContextMenu(event);
@@ -135,64 +138,73 @@ export const ChangeRow = memo(function ChangeRow({
         padding={{ start: "md", end: "md" }}
         className="flex w-full items-center gap-1"
       >
-        <Button
-          size="sm"
-          controlHeight="fill"
-          variant="item"
-          motion="none"
-          type="button"
-          aria-label={file.relative}
-          data-git-file={file.path}
-          onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
-            event.currentTarget.focus({ preventScroll: true });
-            selection?.select(file.path, event);
-            if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-            onOpenFile(file.path, kind);
-          }}
-          onDoubleClick={(event) => {
-            if (!event.ctrlKey && !event.metaKey && !event.shiftKey)
-              onOpenFile(file.path, kind, true);
-          }}
-          className="flex min-w-0 flex-1 select-none items-center gap-1.5 text-left "
-        >
-          {tree ? <span className="size-4 shrink-0" /> : null}
-          <FileTypeIcon name={name} isDir={false} />
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <Text
-              size="secondary"
-              tone="primary"
-              weight="medium"
-              truncate
-              className={`max-w-full shrink-0 ${file.status === "deleted" ? "line-through" : ""}`}
-            >
-              {name}
-            </Text>
-            {dir ? (
+        <div role="gridcell" className="flex min-w-0 flex-1">
+          <Button
+            size="sm"
+            controlHeight="fill"
+            variant="item"
+            motion="none"
+            type="button"
+            aria-label={file.relative}
+            data-action-primary=""
+            data-git-file={file.path}
+            tabIndex={tabStop ? 0 : -1}
+            onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+              event.currentTarget.focus({ preventScroll: true });
+              selection?.select(file.path, event);
+              if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+              onOpenFile(file.path, kind);
+            }}
+            onDoubleClick={(event) => {
+              if (!event.ctrlKey && !event.metaKey && !event.shiftKey)
+                onOpenFile(file.path, kind, true);
+            }}
+            className="flex min-w-0 flex-1 select-none items-center gap-1.5 text-left "
+          >
+            {tree ? <span className="size-4 shrink-0" /> : null}
+            <FileTypeIcon name={name} isDir={false} />
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
               <Text
-                as="span"
-                size="inherit"
-                tone="inherit"
-                weight="regular"
-                className="flex min-w-0 flex-1"
+                size="secondary"
+                tone="primary"
+                weight="medium"
+                truncate
+                className={`max-w-full shrink-0 ${file.status === "deleted" ? "line-through" : ""}`}
               >
-                <MiddleTruncate
-                  mode="path"
-                  title={false}
-                  size="caption"
-                  tone="secondary"
-                  className="min-w-0 flex-1"
-                >
-                  {dir}
-                </MiddleTruncate>
+                {name}
               </Text>
-            ) : null}
-          </span>
-        </Button>
-        {busy ? <WorkingIndicator label={t("Working")} /> : null}
+              {dir ? (
+                <Text
+                  as="span"
+                  size="inherit"
+                  tone="inherit"
+                  weight="regular"
+                  className="flex min-w-0 flex-1"
+                >
+                  <MiddleTruncate
+                    mode="path"
+                    title={false}
+                    size="caption"
+                    tone="secondary"
+                    className="min-w-0 flex-1"
+                  >
+                    {dir}
+                  </MiddleTruncate>
+                </Text>
+              ) : null}
+            </span>
+          </Button>
+        </div>
+        {busy ? (
+          <div role="gridcell" className="flex shrink-0">
+            <WorkingIndicator label={t("Working")} />
+          </div>
+        ) : null}
         {/* Counts and status sit at the row end and yield to the actions on hover, keyboard
             focus or an open menu; they are as wide as the action slot so the actions never
             cover the file name. Discard shares the menu's selection scope and confirmation path. */}
         <Text
+          role="gridcell"
           data-action-yield=""
           size="micro"
           tone="primary"
@@ -221,26 +233,37 @@ export const ChangeRow = memo(function ChangeRow({
             </Text>
           </Tooltip>
         </Text>
+        {/* Independent actions are not tab stops: the list moves into them with ArrowRight. */}
         <div
+          role="gridcell"
           data-action-slot="collapse"
           className="flex shrink-0 items-center gap-1 pointer-fine:pr-2"
         >
           {kind === "unstaged" && !busy ? (
-            <InlineAction label={t("Discard Changes")} onClick={() => perform("discard")}>
+            <InlineAction
+              label={t("Discard Changes")}
+              tabIndex={-1}
+              onClick={() => perform("discard")}
+            >
               <Undo2 className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           ) : null}
           {busy ? null : kind === "staged" ? (
-            <InlineAction label={t("Unstage Changes")} onClick={() => perform("unstage")}>
+            <InlineAction
+              label={t("Unstage Changes")}
+              tabIndex={-1}
+              onClick={() => perform("unstage")}
+            >
               <Minus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           ) : (
-            <InlineAction label={t("Stage Changes")} onClick={() => perform("stage")}>
+            <InlineAction label={t("Stage Changes")} tabIndex={-1} onClick={() => perform("stage")}>
               <Plus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           )}
           <InlineMoreAction
             label={t("Actions for {p0}", { p0: file.relative })}
+            tabIndex={-1}
             expanded={menuOpen}
             onOpen={(anchor) => {
               selection?.select(file.path, {}, true);
@@ -250,7 +273,7 @@ export const ChangeRow = memo(function ChangeRow({
         </div>
       </ActionHost>
       {menu}
-    </li>
+    </div>
   );
 });
 

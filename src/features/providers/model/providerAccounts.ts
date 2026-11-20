@@ -9,9 +9,10 @@ const LEGACY_ACCOUNTS_KEY = "bycoda.providerAccounts.v1";
 const ACCOUNTS_KEY = "bycoda.providerAccounts.v2";
 const SHARED_CLI_ACCOUNTS_KEY = "bycoda.sharedCliAccounts.v1";
 const CHANGE_EVENT = "bycoda-provider-accounts-changed";
+const ACCOUNT_STORAGE_KEYS = [ACCOUNTS_KEY, LEGACY_ACCOUNTS_KEY, SHARED_CLI_ACCOUNTS_KEY] as const;
 const accountStore = createWindowStore({
   event: CHANGE_EVENT,
-  storageKeys: [ACCOUNTS_KEY, LEGACY_ACCOUNTS_KEY, SHARED_CLI_ACCOUNTS_KEY],
+  storageKeys: ACCOUNT_STORAGE_KEYS,
 });
 
 export const DEFAULT_PROVIDER_ACCOUNT_ID = "default";
@@ -148,6 +149,28 @@ export function providerAccountColorValue(
 }
 
 type StoredAccounts = Partial<Record<ProviderAccountProvider, ProviderAccount[]>>;
+
+/**
+ * Raw stored account records. Equal values mean `providerAccounts` would return the same
+ * content, so readers can skip parsing while nothing was written. Reading is not parsing.
+ */
+export function providerAccountsStorageVersion(): readonly (string | null)[] {
+  try {
+    return ACCOUNT_STORAGE_KEYS.map((key) => localStorage.getItem(key));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Primitive snapshot for `useSyncExternalStore`: changes exactly when a stored account record
+ * does, and costs string reads only, never a parse or a serialisation of every account.
+ */
+export function providerAccountsStorageRevision(): string {
+  return providerAccountsStorageVersion()
+    .map((value) => value ?? "\u0000")
+    .join("\u0001");
+}
 
 export function providerAccounts(provider: ProviderAccountProvider): ProviderAccount[] {
   const managed = readRecord<StoredAccounts>(ACCOUNTS_KEY);
@@ -409,7 +432,9 @@ export function defaultProviderAccountId(provider: ProviderAccountProvider): str
 }
 
 /** `defaultProviderAccountId` over an account list the caller already holds. */
-export function defaultProviderAccountIdIn(accounts: readonly ProviderAccount[]): string {
+export function defaultProviderAccountIdIn(
+  accounts: readonly Pick<ProviderAccount, "id" | "isDefault">[],
+): string {
   return accounts.find((account) => account.isDefault)?.id ?? DEFAULT_PROVIDER_ACCOUNT_ID;
 }
 

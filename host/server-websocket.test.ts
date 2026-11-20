@@ -736,6 +736,16 @@ describe("Host HTTP/WS read composition", () => {
     await closed;
   });
 
+  it("serves paired-device HTTP RPCs without querying social peer tokens (#819)", async () => {
+    const host = await setup();
+    const prepare = vi.spyOn(host.store.db, "prepare");
+
+    expect(await host.http("projects.list")).toContainEqual(
+      expect.objectContaining({ id: host.project.id }),
+    );
+    expect(prepare.mock.calls.filter(([sql]) => sql.includes("social_peer_tokens"))).toEqual([]);
+  });
+
   it.each(["ws", "http"] as const)(
     "sends live Stop through %s during SQLITE_FULL without inventing a receipt",
     async (transport) => {
@@ -762,7 +772,10 @@ describe("Host HTTP/WS read composition", () => {
         sessionId: value.session.id,
         text: "wait",
       });
-      await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+      expect(accepted).toMatchObject({
+        result: { commandId: "start-run", runId: expect.any(String) },
+      });
+      await vi.waitFor(() => expect(send).toHaveBeenCalledOnce(), { timeout: 10_000 });
       try {
         await host.store.db.exec("CREATE TABLE full_control_fixture(value BLOB)");
         const pages = (await host.store.db.prepare("PRAGMA page_count").get())?.page_count;

@@ -68,7 +68,7 @@ it("shares one check and one download across both entry points and retains insta
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(document.querySelector("details")?.textContent).toContain("Release details");
     const later = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent === "Later",
+      (button) => button.textContent === "Remind me tomorrow",
     )!;
     await act(async () => later.click());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -82,7 +82,7 @@ it("shares one check and one download across both entry points and retains insta
     await act(async () => manualTrigger.click());
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     const dismiss = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent === "Later",
+      (button) => button.textContent === "Remind me tomorrow",
     )!;
     await act(async () => dismiss.click());
     await act(async () =>
@@ -107,7 +107,8 @@ it("shares one check and one download across both entry points and retains insta
       finish();
       await download;
     });
-    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Update to 0.8.34"]')!;
+    // A failed install keeps the entry point, relabelled "Update failed", so the error stays reachable.
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Update failed"]')!;
     expect(trigger).not.toBeNull();
     await act(async () => trigger.click());
     expect(document.querySelector('[role="alert"]')?.textContent).toBe("Download failed");
@@ -125,18 +126,18 @@ it("checks periodically, preserves available updates, and clears its timer on un
   try {
     await act(async () => root.render(createElement(SidebarUpdateFooter)));
     expect(mocks.probe).toHaveBeenCalledTimes(1);
-    await act(async () => vi.advanceTimersByTimeAsync(30 * 60 * 1000));
+    await act(async () => vi.advanceTimersByTimeAsync(5 * 60 * 1000));
     expect(mocks.probe).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[aria-label="Update to 0.8.34"]')).not.toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     mocks.probe.mockResolvedValue({ version: "0.8.40" });
-    await act(async () => vi.advanceTimersByTimeAsync(30 * 60 * 1000));
+    await act(async () => vi.advanceTimersByTimeAsync(5 * 60 * 1000));
     expect(mocks.probe).toHaveBeenCalledTimes(3);
     expect(container.querySelector('[aria-label="Update to 0.8.40"]')).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
   }
   // The update prompt can schedule exit animations; only update polling must stop.
-  await act(async () => vi.advanceTimersByTimeAsync(30 * 60 * 1000));
+  await act(async () => vi.advanceTimersByTimeAsync(5 * 60 * 1000));
   expect(mocks.probe).toHaveBeenCalledTimes(3);
 });

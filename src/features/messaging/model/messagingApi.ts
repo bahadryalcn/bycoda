@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { dropMessagingAccount } from "./messagingCache";
 import type {
   BrowserSignInPoll,
   BrowserSignInPurpose,
@@ -10,6 +11,7 @@ import type {
   MicrosoftDeviceStart,
   SaveMessagingAccountInput,
   ThreadMessage,
+  ThreadMessagePage,
 } from "./messagingTypes";
 
 /** Fired after an account is added, edited or removed so Settings and Inbox stay in step. */
@@ -27,12 +29,15 @@ export async function saveMessagingAccount(
   input: SaveMessagingAccountInput,
 ): Promise<MessagingAccount> {
   const account = await invoke<MessagingAccount>("messaging_save_account", { input });
+  // A saved account may now be another identity or other credentials: its cached data goes.
+  dropMessagingAccount(account.id);
   notifyMessagingAccountsChange();
   return account;
 }
 
 export async function removeMessagingAccount(accountId: string): Promise<void> {
   await invoke("messaging_remove_account", { accountId });
+  dropMessagingAccount(accountId);
   notifyMessagingAccountsChange();
 }
 
@@ -40,8 +45,17 @@ export function listMessageThreads(accountId: string, limit?: number): Promise<M
   return invoke<MessageThread[]>("messaging_list_threads", { accountId, limit });
 }
 
-export function listThreadMessages(accountId: string, threadId: string): Promise<ThreadMessage[]> {
-  return invoke<ThreadMessage[]>("messaging_thread_messages", { accountId, threadId });
+/** The newest page of a conversation, or with `before` (a page's `earlier`) the page of older messages. */
+export function listThreadMessages(
+  accountId: string,
+  threadId: string,
+  before?: string,
+): Promise<ThreadMessagePage> {
+  return invoke<ThreadMessagePage>("messaging_thread_messages", {
+    accountId,
+    threadId,
+    before: before ?? null,
+  });
 }
 
 /** `requestId` must stay the same across retries of one send so it is never sent twice. */

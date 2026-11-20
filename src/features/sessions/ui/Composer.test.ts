@@ -34,7 +34,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
           ? mcpInvoke(command, args)
           : command === "list_question_attachment_drafts"
             ? Promise.resolve([])
-            : original.invoke(command, args),
+            : original.invoke(command, args as Parameters<typeof original.invoke>[1]),
   };
 });
 
@@ -56,6 +56,7 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
 }));
 
 import { Composer } from "./Composer";
+import { setLanguagePreference } from "../../../shared/i18n";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
 import { invalidateSkills } from "../../skills/model/skills";
 import { invalidateProjectFiles } from "../../files/model/fileIndex";
@@ -450,7 +451,7 @@ describe("Composer question focus", () => {
     expect(onNewSession).toHaveBeenCalledOnce();
     expect(onSubmit).not.toHaveBeenCalled();
     expect(textarea.value).toBe("");
-    expect(getComposerDraft("new-command")?.text ?? "").toBe("");
+    expect(getComposerDraft("new-command") ?? "").toBe("");
   });
 
   it("offers /new in the command picker for remote sessions", async () => {
@@ -508,7 +509,7 @@ describe("Composer question focus", () => {
       } else {
         expect(onSubmit).toHaveBeenCalledExactlyOnceWith("/clear", [], { intent: "default" });
         expect(textarea.value).toBe("");
-        expect(getComposerDraft("clear-command")?.text ?? "").toBe("");
+        expect(getComposerDraft("clear-command") ?? "").toBe("");
       }
     },
   );
@@ -751,7 +752,8 @@ describe("Composer question focus", () => {
 
     const list = document.querySelector<HTMLElement>('[data-mcp-picker] [role="listbox"]')!;
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
-    expect(list.parentElement?.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
+    // The shared picker list owns the four-row height through its `standard` list height.
+    expect(list.closest("[data-list-height]")?.getAttribute("data-list-height")).toBe("standard");
     expect(list.querySelector('[role="option"]')?.className).toMatch(/_row_/);
     const pickerDialog = document.querySelector("[data-mcp-picker]")?.closest('[role="dialog"]');
     expect(pickerDialog?.getAttribute("aria-label")).toBe("Choose an MCP server");
@@ -996,6 +998,45 @@ describe("Composer question focus", () => {
     await act(async () => root.render(createElement(Composer, { ...props, draftResetToken: 2 })));
     expect(document.querySelector("textarea")?.value).toBe("");
     expect(onDraftChange).toHaveBeenLastCalledWith("");
+  });
+
+  it("names the message textarea in the active language and lets a caller override the name", async () => {
+    const props = {
+      focused: true,
+      harness: "claude" as const,
+      model: "claude-sonnet",
+      runtimeMode: "supervised" as const,
+      executionCwd: "/repo",
+      hideProjectPicker: true,
+      hideBranchPicker: true,
+      initialDraft: "Keep this draft",
+      onFocus: vi.fn(),
+      onCwdChange: vi.fn(),
+      onModelChange: vi.fn(),
+      onRuntimeModeChange: vi.fn(),
+      onSubmit: vi.fn(),
+    };
+    const field = () => document.querySelector("textarea")!;
+    await setLanguagePreference("tr");
+    try {
+      await act(async () => root.render(createElement(Composer, props)));
+      expect(field().getAttribute("aria-label")).toBe("Mesaj");
+
+      // A state-dependent placeholder never becomes the accessible name.
+      await act(async () =>
+        root.render(createElement(Composer, { ...props, worktreeRemoved: true })),
+      );
+      expect(field().placeholder).toContain("bir dal veya çalışma ağacı seçin");
+      expect(field().getAttribute("aria-label")).toBe("Mesaj");
+
+      await act(async () =>
+        root.render(createElement(Composer, { ...props, inputAriaLabel: "Yan soru" })),
+      );
+      expect(field().getAttribute("aria-label")).toBe("Yan soru");
+      expect(field().value).toBe("Keep this draft");
+    } finally {
+      await setLanguagePreference("en");
+    }
   });
 
   it("keeps drafts and blocks sending until a working copy is selected", async () => {
@@ -1721,7 +1762,9 @@ describe("Composer question focus", () => {
     const onRecallLastTurn = vi.fn();
     let restoreMessage: ((value: typeof recalled) => void) | undefined;
     let recallLastTurn: (() => void) | undefined;
-    const onSubmit = vi.fn(() => true);
+    const onSubmit = vi.fn(
+      (_text: string, _files: Attachment[], _options?: ComposerTurnOptions) => true,
+    );
 
     await act(async () =>
       root.render(
@@ -2114,7 +2157,7 @@ describe("Composer question focus", () => {
 
     const workspace = document.querySelector('[aria-label="Workspace Worktree"]');
     expect(workspace?.tagName).toBe("DIV");
-    expect(document.querySelector('[aria-label="Choose working copy"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Choose worktree"]')).toBeNull();
     expect(document.querySelector('[aria-label="Branch mc/greeting"]')).not.toBeNull();
   });
 
@@ -2250,7 +2293,11 @@ describe("Composer question focus", () => {
     expect(container.textContent).toContain(
       "Update bycoda to create managed sessions on this remote Host.",
     );
-    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Send"]')?.disabled).toBe(true);
+    expect(
+      container
+        .querySelector<HTMLButtonElement>('[aria-label^="Send"]')
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
     const textarea = container.querySelector("textarea")!;
     await act(async () =>
       textarea.dispatchEvent(
@@ -2263,9 +2310,11 @@ describe("Composer question focus", () => {
       textarea.value = "/draft Keep this remote draft";
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Save draft"]')?.disabled).toBe(
-      true,
-    );
+    expect(
+      container
+        .querySelector<HTMLButtonElement>('[aria-label^="Save draft"]')
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
     await act(async () =>
       textarea.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),

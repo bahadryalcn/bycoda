@@ -14,12 +14,16 @@ export function sessionLifecycleClient(machineId: string) {
       remoteRequest<SessionLifecycleView>(machineId, "sessions.lifecycle.get", { sessionId }),
     list: () => remoteRequest<SessionLifecycleList>(machineId, "sessions.lifecycle.list", {}),
     settle: (sessionId: string) =>
-      remoteRequest<SessionLifecycleView>(machineId, "sessions.lifecycle.settle", { sessionId }),
+      confirmedMutation(
+        remoteRequest<SessionLifecycleView>(machineId, "sessions.lifecycle.settle", { sessionId }),
+      ),
     unsettle: (sessionId: string) =>
-      remoteRequest<SessionLifecycleView>(machineId, "sessions.lifecycle.unsettle", {
-        sessionId,
-      }),
-    configure: (settings: AutoSettleSettings) =>
+      confirmedMutation(
+        remoteRequest<SessionLifecycleView>(machineId, "sessions.lifecycle.unsettle", {
+          sessionId,
+        }),
+      ),
+    configure: (settings: Partial<AutoSettleSettings>) =>
       remoteRequest<AutoSettleSettings>(machineId, "sessions.lifecycle.configure", settings),
     taskFor: async (sessionId: string) =>
       (
@@ -47,21 +51,90 @@ function publish(next: Snapshot): void {
   for (const listener of listeners) listener();
 }
 
+/** Field by field: a repeated payload is the same record, whatever its object identity. */
+function sameView(a: SessionLifecycleView, b: SessionLifecycleView): boolean {
+  return (
+    a.sessionId === b.sessionId &&
+    a.state === b.state &&
+    a.settleRequestedAt === b.settleRequestedAt &&
+    a.settledAt === b.settledAt &&
+    a.settledBy === b.settledBy &&
+    a.keepActive === b.keepActive &&
+    a.participants.length === b.participants.length &&
+    a.participants.every(
+      (p, i) => p.userId === b.participants[i].userId && p.role === b.participants[i].role,
+    )
+  );
+}
+
+function sameAutoSettle(a: AutoSettleSettings | undefined, b: AutoSettleSettings): boolean {
+  return (
+    a !== undefined && a.afterDays === b.afterDays && a.archiveAfterDays === b.archiveAfterDays
+  );
+}
+
+/** Repeated records keep the stored object, so their subscribers and the snapshot stay unchanged. */
 export function setSessionLifecycle(view: SessionLifecycleView): void {
+  const current = snapshot.views.get(view.sessionId);
+  if (current && sameView(current, view)) return;
   publish({ ...snapshot, views: new Map(snapshot.views).set(view.sessionId, view) });
 }
 
-/** A full list holds every non-active record; any other known session is active now. */
+/**
+ * A full list holds every non-active record; any other known session is active now. A list that
+ * changes no record and no window keeps the snapshot object itself.
+ */
 export function setSessionLifecycleList(list: SessionLifecycleList): void {
   const views = new Map<string, SessionLifecycleView>();
-  for (const [id, view] of snapshot.views)
-    views.set(id, { sessionId: id, state: "active", participants: view.participants });
-  for (const record of list.records) views.set(record.sessionId, record);
+  for (const [id, view] of snapshot.views) {
+    const active: SessionLifecycleView = {
+      sessionId: id,
+      state: "active",
+      participants: view.participants,
+    };
+    views.set(id, sameView(view, active) ? view : active);
+  }
+  for (const record of list.records) {
+    const current = snapshot.views.get(record.sessionId);
+    views.set(record.sessionId, current && sameView(current, record) ? current : record);
+  }
+  const unchanged =
+    views.size === snapshot.views.size &&
+    [...views].every(([id, view]) => snapshot.views.get(id) === view) &&
+    sameAutoSettle(snapshot.autoSettle, list.autoSettle);
+  if (unchanged) return;
   publish({ views, autoSettle: list.autoSettle });
 }
 
 export function setAutoSettleSettings(autoSettle: AutoSettleSettings): void {
   publish({ ...snapshot, autoSettle });
+}
+
+let generation = 0;
+const confirmedAt = new Map<string, number>();
+
+async function confirmedMutation(request: Promise<SessionLifecycleView>) {
+  const view = await request;
+  confirmedAt.set(view.sessionId, ++generation);
+  return view;
+}
+
+const supersededBy = (sessionId: string, readAt: number) =>
+  (confirmedAt.get(sessionId) ?? 0) > readAt;
+
+export function beginLifecycleRead(): number {
+  return ++generation;
+}
+
+export function applyLifecycleViewRead(view: SessionLifecycleView, readAt: number): void {
+  if (supersededBy(view.sessionId, readAt)) return;
+  setSessionLifecycle(view);
+}
+
+export function applyLifecycleListRead(list: SessionLifecycleList, readAt: number): void {
+  const records = list.records.filter((record) => !supersededBy(record.sessionId, readAt));
+  for (const [id, view] of snapshot.views) if (supersededBy(id, readAt)) records.push(view);
+  setSessionLifecycleList({ ...list, records });
 }
 
 function subscribe(listener: () => void): () => void {

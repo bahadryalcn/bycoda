@@ -438,7 +438,7 @@ export function GitActionsMenu({
         return askName(
           {
             get title() {
-              return t("Create Branch");
+              return t("Create branch");
             },
             get description() {
               return t("Create a branch at HEAD and switch to it.");
@@ -449,14 +449,14 @@ export function GitActionsMenu({
             get placeholder() {
               return t("feature/my-branch");
             },
-            submitLabel: "Create Branch",
+            submitLabel: t("Create branch"),
           },
           (name) => gitCreateBranch(cwd, name),
         );
       case "branch-create-from":
         return choose(() => branchItems(false, false), {
           get title() {
-            return t("Create Branch From");
+            return t("Create branch from");
           },
           get placeholder() {
             return t("Filter branches");
@@ -468,7 +468,7 @@ export function GitActionsMenu({
             askName(
               {
                 get title() {
-                  return t("Create Branch");
+                  return t("Create branch");
                 },
                 get description() {
                   return t("Create a branch from {p0} and switch to it.", { p0: ref });
@@ -479,7 +479,7 @@ export function GitActionsMenu({
                 get placeholder() {
                   return t("feature/my-branch");
                 },
-                submitLabel: "Create Branch",
+                submitLabel: t("Create branch"),
               },
               (name) => gitCreateBranchFrom(cwd, name, ref),
             ),
@@ -489,7 +489,7 @@ export function GitActionsMenu({
         return askName(
           {
             get title() {
-              return t("Rename Branch");
+              return t("Rename branch");
             },
             get description() {
               return t("Rename {p0}.", { p0: branch });
@@ -589,13 +589,13 @@ export function GitActionsMenu({
       case "stash-apply-latest":
         return run(async () => {
           const entry = (await gitStashList(cwd))[0];
-          if (!entry) throw new Error("No stashes");
+          if (!entry) throw new Error(t("No stashes"));
           await gitStashAction(cwd, "apply", entry.index, entry.sha);
         });
       case "stash-pop-latest":
         return run(async () => {
           const entry = (await gitStashList(cwd))[0];
-          if (!entry) throw new Error("No stashes");
+          if (!entry) throw new Error(t("No stashes"));
           await gitStashAction(cwd, "pop", entry.index, entry.sha);
         });
       case "stash-apply":
@@ -698,9 +698,9 @@ export function GitActionsMenu({
       {toolbar
         ? [
             { id: "fetch", label: t("Fetch"), icon: ArrowDownCircle },
-            { id: "sync", label: t("Sync Changes"), icon: RefreshCw },
+            { id: "sync", label: t("Sync changes"), icon: RefreshCw },
             { id: "push", label: t("Push"), icon: CloudUpload },
-            { id: "stage-all", label: t("Stage All Changes"), icon: Plus },
+            { id: "stage-all", label: t("Stage all changes"), icon: Plus },
             { id: "commit", label: t("Commit"), icon: Check },
           ].map(({ id, label, icon: Icon }) => {
             const item = items
@@ -745,7 +745,7 @@ export function GitActionsMenu({
         <ExplorerMenu
           anchor={anchor}
           items={items}
-          ariaLabel="Branch actions"
+          ariaLabel={t("Branch actions")}
           width={232}
           onPick={(id) => {
             setAnchor(null);

@@ -101,6 +101,89 @@ it("filters other machines and malformed native events and releases listening on
   expect(unlisten).toHaveBeenCalledOnce();
 });
 
+it("applies a native batch array in order and isolates a malformed element", async () => {
+  let emit!: (payload: unknown) => void;
+  vi.mocked(listen).mockImplementation(async (_event, callback) => {
+    emit = (payload) => callback({ payload } as never);
+    return vi.fn<() => void>();
+  });
+  const listener = vi.fn();
+  const onRejected = vi.fn();
+  const release = await createTauriHostConnection("machine").listen(listener, onRejected);
+  const state = (generation: number, phase: string) => ({
+    kind: "state",
+    environmentId: "env",
+    generation,
+    phase,
+    category: null,
+  });
+  emit([
+    { machineId: "machine", event: state(1, "connecting") },
+    { machineId: "other", event: state(1, "ready") },
+    { machineId: "machine", event: state(1, "invented") },
+    { machineId: "machine", event: state(1, "ready") },
+    null,
+    { machineId: "machine", event: state(2, "retry-wait") },
+  ]);
+  expect(listener.mock.calls.map(([event]) => `${event.generation}:${event.phase}`)).toEqual([
+    "1:connecting",
+    "1:ready",
+    "2:retry-wait",
+  ]);
+  expect(onRejected).toHaveBeenCalledOnce();
+  // A single envelope from an older native shell is still accepted.
+  emit({ machineId: "machine", event: state(3, "ready") });
+  expect(listener).toHaveBeenCalledTimes(4);
+  release();
+});
+
+it("shares one native registration per window and routes each event only to its machine", async () => {
+  let emit!: (payload: unknown) => void;
+  const unlisten = vi.fn();
+  vi.mocked(listen).mockImplementation(async (_event, callback) => {
+    emit = (payload) => callback({ payload } as never);
+    return unlisten;
+  });
+  const [first, second, other] = [vi.fn(), vi.fn(), vi.fn()];
+  const [firstRejected, secondRejected, otherRejected] = [vi.fn(), vi.fn(), vi.fn()];
+  const [releaseFirst, releaseSecond, releaseOther] = await Promise.all([
+    createTauriHostConnection("a").listen(first, firstRejected),
+    createTauriHostConnection("a").listen(second, secondRejected),
+    createTauriHostConnection("b").listen(other, otherRejected),
+  ]);
+  expect(listen).toHaveBeenCalledOnce();
+  const state = {
+    kind: "state",
+    environmentId: "env",
+    generation: 1,
+    phase: "ready",
+    category: null,
+  };
+  emit({ machineId: "a", event: state });
+  expect(first).toHaveBeenCalledExactlyOnceWith(state);
+  expect(second).toHaveBeenCalledExactlyOnceWith(state);
+  expect(other).not.toHaveBeenCalled();
+  // A machine nobody listens to is ignored cheaply, even when its event is malformed.
+  emit({ machineId: "unknown", event: { ...state, phase: "invented" } });
+  emit({ machineId: 7, event: state });
+  emit(null);
+  // A malformed event reaches only its own machine's rejection recovery and is never applied.
+  emit({ machineId: "b", event: { ...state, phase: "invented" } });
+  expect(otherRejected).toHaveBeenCalledOnce();
+  expect(firstRejected).not.toHaveBeenCalled();
+  expect(secondRejected).not.toHaveBeenCalled();
+  expect(other).not.toHaveBeenCalled();
+  releaseFirst();
+  releaseFirst();
+  emit({ machineId: "a", event: state });
+  expect(first).toHaveBeenCalledOnce();
+  expect(second).toHaveBeenCalledTimes(2);
+  releaseSecond();
+  expect(unlisten).not.toHaveBeenCalled();
+  releaseOther();
+  expect(unlisten).toHaveBeenCalledOnce();
+});
+
 it("delivers a targeted Host event only to its window and propagates registration failure", async () => {
   const handlers = new Map<string, (event: never) => void>();
   vi.mocked(listen).mockImplementation(async (_name, callback, options) => {
@@ -141,7 +224,7 @@ it("validates canonical subscription envelopes before forwarding", async () => {
   let emit!: (payload: unknown) => void;
   vi.mocked(listen).mockImplementation(async (_event, callback) => {
     emit = (payload) => callback({ payload } as never);
-    return vi.fn();
+    return vi.fn<() => void>();
   });
   const listener = vi.fn();
   const release = await createTauriHostConnection("machine").listen(listener);

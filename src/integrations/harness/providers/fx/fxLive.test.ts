@@ -225,6 +225,115 @@ describe("fx live turn sequence", () => {
   });
 });
 
+describe("fx control requests before the prompt", () => {
+  const secret = "sk-abcdef1234567890abcdef";
+  const rpcError = (id: number, code: number, message: string) =>
+    onLine!(JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }));
+  const start = (sessionId: string, configOptions: unknown[], settings = {}) => {
+    sent.length = 0;
+    const turn = sendFxTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "fx:zai/glm-5.2",
+      modelSettings: settings,
+      runtimeMode: "supervised",
+      text: "hey",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+    const outcome = turn.then(
+      () => undefined,
+      (error: unknown) => error as Error & { code?: number },
+    );
+    const handshake = async () => {
+      await waitFor(() => parse().some((m) => m.method === "initialize"), "initialize");
+      reply(parse().find((m) => m.method === "initialize")!.id, { protocolVersion: 1 });
+      await waitFor(() => parse().some((m) => m.method === "session/new"), "session/new");
+      reply(parse().find((m) => m.method === "session/new")!.id, {
+        sessionId: "S1",
+        configOptions,
+      });
+    };
+    return { turn, outcome, handshake };
+  };
+  const pending = (method: string) => parse().find((m) => m.method === method);
+
+  it("fails the turn when an advertised model option is rejected", async () => {
+    const { outcome, handshake } = start("fx-reject-model", [
+      { id: "model", category: "model", currentValue: "other/model" },
+    ]);
+    await handshake();
+    await waitFor(() => !!pending("session/set_config_option"), "set_config_option");
+    rpcError(pending("session/set_config_option")!.id, -32602, `unknown model, token=${secret}`);
+    const error = await outcome;
+    expect(error).toBeInstanceOf(Error);
+    expect(error!.code).toBe(-32602);
+    expect(error!.message).toContain("set_config_option rejected: unknown model");
+    expect(error!.message).not.toContain(secret);
+    expect(pending("session/prompt")).toBeUndefined();
+    await stopFxSession("fx-reject-model");
+  });
+
+  it("fails the turn when a setting option is rejected", async () => {
+    const { outcome, handshake } = start(
+      "fx-reject-setting",
+      [
+        { id: "model", category: "model", currentValue: "zai/glm-5.2" },
+        { id: "effort", category: "thought_level", currentValue: "low" },
+      ],
+      { effort: "bogus" },
+    );
+    await handshake();
+    await waitFor(() => !!pending("session/set_config_option"), "set_config_option");
+    rpcError(pending("session/set_config_option")!.id, -32602, "invalid effort");
+    const error = await outcome;
+    expect(error!.message).toContain("invalid effort");
+    expect(pending("session/prompt")).toBeUndefined();
+    await stopFxSession("fx-reject-setting");
+  });
+
+  it("fails the turn when set_mode is rejected", async () => {
+    const { outcome, handshake } = start("fx-reject-mode", [
+      { id: "model", category: "model", currentValue: "zai/glm-5.2" },
+    ]);
+    await handshake();
+    await waitFor(() => !!pending("session/set_mode"), "set_mode");
+    rpcError(pending("session/set_mode")!.id, -32000, `permission denied Bearer ${secret}`);
+    const error = await outcome;
+    expect(error!.code).toBe(-32000);
+    expect(error!.message).toContain("set_mode rejected: permission denied");
+    expect(error!.message).not.toContain(secret);
+    expect(pending("session/prompt")).toBeUndefined();
+    await stopFxSession("fx-reject-mode");
+  });
+
+  it("still runs the turn when set_mode is not implemented (-32601)", async () => {
+    const { turn, handshake } = start("fx-missing-mode", [
+      { id: "model", category: "model", currentValue: "zai/glm-5.2" },
+    ]);
+    await handshake();
+    await waitFor(() => !!pending("session/set_mode"), "set_mode");
+    rpcError(pending("session/set_mode")!.id, -32601, "Method not found");
+    await waitFor(() => !!pending("session/prompt"), "prompt");
+    reply(pending("session/prompt")!.id, { stopReason: "end_turn" });
+    await turn;
+    await stopFxSession("fx-missing-mode");
+  });
+
+  it("treats a rejected model request as a probe when fx lists no model option", async () => {
+    const { turn, handshake } = start("fx-probe-model", []);
+    await handshake();
+    await waitFor(() => !!pending("session/set_config_option"), "set_config_option");
+    rpcError(pending("session/set_config_option")!.id, -32602, "unknown config option");
+    await waitFor(() => !!pending("session/set_mode"), "set_mode");
+    reply(pending("session/set_mode")!.id, {});
+    await waitFor(() => !!pending("session/prompt"), "prompt");
+    reply(pending("session/prompt")!.id, { stopReason: "end_turn" });
+    await turn;
+    await stopFxSession("fx-probe-model");
+  });
+});
+
 it("retains fx completion lineage from the real RPC response across its await", async () => {
   sent.length = 0;
   const sessionId = "fx-causal-response";
@@ -460,3 +569,48 @@ it.each([true, false])(
     }
   },
 );
+
+it("keeps an fx turn pending past the former 30 minute wall-clock cap", async () => {
+  sent.length = 0;
+  const events: HarnessEvent[] = [];
+  vi.useFakeTimers();
+  try {
+    const waitForMethod = async (method: string) => {
+      for (let i = 0; i < 200; i++) {
+        if (parse().some((m) => m.method === method))
+          return parse().find((m) => m.method === method)!;
+        await vi.advanceTimersByTimeAsync(5);
+      }
+      throw new Error(`timed out waiting for ${method}`);
+    };
+    const turn = sendFxTurn({
+      sessionId: "deadline-fx",
+      cwd: "/repo",
+      model: "fx:zai/glm-5.2",
+      modelSettings: {},
+      runtimeMode: "supervised" as const,
+      text: "long run",
+      attachments: [],
+      onEvent: (e: HarnessEvent) => events.push(e),
+    } as never);
+    const outcome = turn.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    reply((await waitForMethod("initialize")).id, { protocolVersion: 1 });
+    reply((await waitForMethod("session/new")).id, {
+      sessionId: "S-deadline",
+      configOptions: [{ id: "model", category: "model", currentValue: "zai/glm-5.2" }],
+    });
+    reply((await waitForMethod("session/set_mode")).id, {});
+    const prompt = await waitForMethod("session/prompt");
+    await vi.advanceTimersByTimeAsync(31 * 60_000);
+    reply(prompt.id, { stopReason: "end_turn" });
+    expect(await outcome).toBeUndefined();
+    expect(events.some((event) => event.type === "session.error")).toBe(false);
+    expect(events).toContainEqual({ type: "message.completed" });
+  } finally {
+    vi.useRealTimers();
+    await stopFxSession("deadline-fx");
+  }
+});

@@ -2,6 +2,8 @@
 
 Open **Settings → Account**. "Activity on this computer" shows what you did in bycoda on this computer, for today or the current week (Monday to now): sessions touched, agent run time, active time and cost as figures, agent run time by project as a ring, a bar chart (run time by day for the week, active time of the last 7 days for today) and a sortable table by project. It works signed out. Cost uses the same estimate as the Provider usage page and is API-equivalent, not a bill; a leading "≥" means some models have no known price. Projects in a locked group are hidden.
 
+The figures refresh by themselves about every five minutes and when you return to the window while it is visible, and move to the new day after local midnight. "Updated" beside the period switch shows when they were last read completely; the Refresh button reads right away. If a read fails, the last good figures stay on screen with a warning.
+
 Everything stays on this computer.
 
 ## Summarize

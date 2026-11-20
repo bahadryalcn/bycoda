@@ -95,11 +95,7 @@ test("settings expose advanced controls without opening a menu", async ({ page }
     // Keep this inventory exact so ordinary settings cannot silently move behind disclosures.
     const optionalDisclosures: Record<string, string[]> = {
       general: ["Build details"],
-      providers: [
-        "#setting-antigravity-account",
-        ".provider-cli-more",
-        "#setting-acp-registry > details",
-      ],
+      providers: ["#setting-antigravity-account", ".provider-cli-more"],
     };
     await expect
       .poll(async () =>
@@ -108,11 +104,9 @@ test("settings expose advanced controls without opening a menu", async ({ page }
             .map((summary) => {
               const details = summary.parentElement!;
               // Identify only these setup disclosures; their counts and subtitles can vary.
-              const providerSetup = [
-                "#setting-antigravity-account",
-                ".provider-cli-more",
-                "#setting-acp-registry > details",
-              ].find((selector) => details.matches(selector));
+              const providerSetup = ["#setting-antigravity-account", ".provider-cli-more"].find(
+                (selector) => details.matches(selector),
+              );
               return providerSetup ?? summary.textContent!.trim();
             })
             .sort(),
@@ -138,7 +132,7 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       await form.getByRole("button", { name: "Add a computer", exact: true }).first().click();
       const addDialog = page.getByRole("dialog", { name: "Add a computer", exact: true });
       await addDialog.getByRole("tab", { name: "Enter address", exact: true }).click();
-      const machineForm = addDialog.getByRole("form", { name: "Add a new machine", exact: true });
+      const machineForm = addDialog.getByRole("form", { name: "Add a new computer", exact: true });
       const hostUrl = machineForm.getByRole("radio", { name: "Host URL", exact: true });
       await hostUrl.focus();
       await hostUrl.press("Space");

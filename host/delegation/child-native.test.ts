@@ -8,7 +8,8 @@ import {
   leanContext,
   nativeReadOnly,
 } from "../../src/integrations/harness/core/nativeToolLimits";
-import { delegatedChildInput } from "./child-native";
+import { delegatedChatOnlyHistory, delegatedChildInput } from "./child-native";
+import { newSession } from "../../src/features/sessions/model/session";
 
 const child = { [DELEGATION_PARENT_KEY]: "{}" };
 
@@ -32,7 +33,7 @@ describe("delegatedChildInput", () => {
   });
 
   it("runs a chat-only child read-only, supervised and lean", () => {
-    for (const provider of ["claude", "codex"]) {
+    for (const provider of ["claude", "codex", "pi"]) {
       const out = delegatedChildInput(provider, {
         runtimeMode: "full-access",
         modelSettings: { ...child, [DELEGATION_CHAT_ONLY_KEY]: "on" },
@@ -49,7 +50,36 @@ describe("delegatedChildInput", () => {
       delegatedChildInput("cursor", {
         modelSettings: { ...child, [DELEGATION_CHAT_ONLY_KEY]: "on" },
       }),
-    ).toThrow("Claude or Codex");
+    ).toThrow("unavailable");
     expect(() => delegatedChildInput("cursor", { modelSettings: child })).not.toThrow();
   });
+});
+
+it("replays only prior chat text for the exact tool-free child turn", () => {
+  const session = {
+    ...newSession("opencode", "/scratch"),
+    modelSettings: {
+      [DELEGATION_CHAT_ONLY_KEY]: "on",
+      [DELEGATION_PARENT_KEY]: JSON.stringify({
+        parentSessionId: "parent",
+        model: "opencode:model",
+        runId: "run",
+        kind: "subagent",
+        startedAt: 1,
+      }),
+    },
+    blocks: [
+      { id: "old", role: "user" as const, text: "Previous question" },
+      { id: "reply", role: "assistant" as const, text: "Previous answer" },
+      { id: "tool", role: "tool" as const, text: "Tool output" },
+      { id: "current", role: "user" as const, text: "New prompt" },
+    ],
+  };
+  const replay = delegatedChatOnlyHistory(session, "current");
+  expect(replay).toContain("Previous question");
+  expect(replay).toContain("Previous answer");
+  expect(replay).not.toMatch(/New prompt|Tool output/);
+  expect(delegatedChatOnlyHistory(session, "old")).toBe("");
+  expect(() => delegatedChatOnlyHistory(session, "missing")).toThrow("current chat-only");
+  expect(delegatedChatOnlyHistory({ ...session, modelSettings: {} }, "current")).toBeUndefined();
 });

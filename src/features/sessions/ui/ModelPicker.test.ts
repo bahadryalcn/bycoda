@@ -10,6 +10,7 @@ const availability = vi.hoisted(() => ({
   grok: true,
   listeners: new Set<() => void>(),
 }));
+const refreshHarnessCatalogs = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("../../../integrations/harness/core/availability", () => ({
   getHarnessAvailabilitySnapshot: () => availability.version,
   hasProbedHarnessAvailability: () => true,
@@ -22,7 +23,7 @@ vi.mock("../../../integrations/harness/core/availability", () => ({
 }));
 
 vi.mock("../../../integrations/harness/core/registry", () => ({
-  refreshHarnessCatalogs: () => Promise.resolve(),
+  refreshHarnessCatalogs,
 }));
 
 vi.mock("../../../shared/ui/Popover", async () => ({
@@ -50,6 +51,7 @@ vi.mock("../../../shared/ui/Popover", async () => ({
     anchor?: unknown;
     side?: string;
     "aria-label"?: string;
+    "aria-activedescendant"?: string;
     "data-model-picker"?: boolean;
   }) =>
     createElement(
@@ -72,6 +74,7 @@ vi.mock("../../../shared/ui/Popover", async () => ({
             : "false",
         "data-side": props.side,
         "aria-label": props["aria-label"],
+        "aria-activedescendant": props["aria-activedescendant"],
         "data-model-picker": props["data-model-picker"] ? "" : undefined,
       },
       children,
@@ -138,6 +141,64 @@ async function inputText(input: HTMLInputElement, value: string) {
 }
 
 describe("model picker", () => {
+  it("refreshes Codex speed options on open even after the catalog loaded", async () => {
+    const model = {
+      id: "codex:gpt-6.2-sol",
+      harness: "codex" as const,
+      name: "GPT-6.2 Sol",
+      settings: [
+        {
+          id: "serviceTier",
+          label: "Service Tier",
+          kind: "select" as const,
+          value: "default",
+          options: [
+            { value: "default", label: "Standard" },
+            { value: "priority", label: "Fast" },
+          ],
+        },
+      ],
+    };
+    setHarnessModels("codex", [model]);
+    refreshHarnessCatalogs.mockClear();
+    const onSettingsChange = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(ModelPicker, {
+          harness: "codex",
+          model: model.id,
+          values: { serviceTier: "default" },
+          onChange: vi.fn(),
+          onSettingsChange,
+        }),
+      ),
+    );
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click(),
+    );
+    expect(refreshHarnessCatalogs).toHaveBeenCalledWith(["codex"], { force: true });
+
+    await act(async () =>
+      setHarnessModels("codex", [
+        {
+          ...model,
+          settings: [
+            {
+              ...model.settings[0],
+              options: [...model.settings[0].options, { value: "ultrafast", label: "Ultrafast" }],
+            },
+          ],
+        },
+      ]),
+    );
+    const ultrafast = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      (option) => option.textContent === "Ultrafast",
+    );
+    expect(ultrafast).toBeDefined();
+    await act(async () => ultrafast!.click());
+    expect(onSettingsChange).toHaveBeenCalledWith({ serviceTier: "ultrafast" });
+  });
+
   it("refreshes account labels and open account choices after account changes", async () => {
     renameProviderAccount("claude", "default", "personal");
     await act(async () =>
@@ -163,7 +224,9 @@ describe("model picker", () => {
     );
     expect(container.querySelector("[data-model-account]")?.textContent).toBe("personal");
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(count * 2);
-    expect(container.textContent).toContain("Opus 5 work");
+    expect(
+      container.querySelector('[role="option"][aria-label="Claude Opus 5, Claude Code, work"]'),
+    ).not.toBeNull();
   });
 
   it.each(["global", "project", "availability"])(
@@ -292,12 +355,13 @@ describe("model picker", () => {
       ),
     );
     const trigger = container.querySelector<HTMLButtonElement>("button")!;
-    expect(trigger.textContent).toContain("Opus 5.5 work");
+    expect(trigger.textContent).toContain("Opus 5.5");
+    expect(trigger.querySelector("[data-model-account]")?.textContent).toBe("work");
     await act(async () => trigger.click());
     const options = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="option"]'));
-    expect(options.map((item) => item.textContent?.trim())).toEqual([
-      "Opus 5.5 personal",
-      "Opus 5.5 work",
+    expect(options.map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Opus 5.5, Claude Code, personal",
+      "Opus 5.5, Claude Code, work",
     ]);
     expect(options.map((item) => item.getAttribute("aria-selected"))).toEqual(["false", "true"]);
     await inputText(container.querySelector<HTMLInputElement>("input")!, "personal");
@@ -520,6 +584,60 @@ describe("model picker", () => {
     expect(fastPill.getAttribute("aria-pressed")).toBe("false");
     await act(async () => fastPill.click());
     expect(onSettingsChange).toHaveBeenCalledWith({ fast: "true" });
+  });
+
+  it("gives a described pill the shared tooltip and never a native title", async () => {
+    setHarnessModels("cursor", [
+      {
+        id: "cursor:composer-2.5",
+        harness: "cursor",
+        name: "Composer 2.5",
+        nativeId: "composer-2.5",
+        settings: [
+          {
+            id: "serviceTier",
+            label: "Service Tier",
+            kind: "select",
+            value: "standard",
+            description: "Priority routing for faster responses.",
+            options: [
+              { value: "standard", label: "Standard" },
+              { value: "priority", label: "Priority" },
+            ],
+          },
+          {
+            id: "context",
+            label: "Context",
+            kind: "select",
+            value: "standard",
+            options: [
+              { value: "standard", label: "Standard" },
+              { value: "extended", label: "Extended" },
+            ],
+          },
+        ],
+      },
+    ]);
+    await act(async () =>
+      root.render(
+        createElement(ModelControlPills, {
+          harness: "cursor",
+          model: "cursor:composer-2.5",
+          values: { serviceTier: "standard", context: "standard" },
+          onSettingsChange: vi.fn(),
+        }),
+      ),
+    );
+
+    const describedPill = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Service Tier: Standard"]',
+    )!;
+    const plainPill = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Context: Standard"]',
+    )!;
+    expect(describedPill.hasAttribute("title")).toBe(false);
+    expect(plainPill.hasAttribute("title")).toBe(false);
+    expect(describedPill.textContent).toBe("Standard");
   });
 
   it("renders the OpenCode variant as a beside-picker pill", async () => {
@@ -1042,6 +1160,149 @@ describe("model picker", () => {
     expect(
       container.querySelector('[role="dialog"][aria-label="Model and settings"]'),
     ).not.toBeNull();
+  });
+
+  describe("recent-models quick switch from the keyboard", () => {
+    it.each([true, false])(
+      "skips unavailable recent models (Claude available: %s)",
+      async (claudeAvailable) => {
+        const models = [
+          { id: "grok:grok-4.6", name: "Grok", harness: "grok" as const },
+          { id: "claude:opus-5", name: "Opus", harness: "claude" as const },
+        ];
+        const source = {
+          modelsFor: (harness: string) => models.filter((model) => model.harness === harness),
+          resolve: () => models[0],
+          find: (id: string) => models.find((model) => model.id === id),
+          available: (harness: string) => harness === "claude" && claudeAvailable,
+          probed: () => false,
+          refresh: () => {},
+        };
+        const onChange = vi.fn();
+        saveRecentModelChoice("claude", "claude:opus-5");
+        await act(async () =>
+          root.render(
+            createElement(
+              ModelSourceContext.Provider,
+              { value: source },
+              createElement(ModelPicker, {
+                harness: "grok",
+                model: models[0].id,
+                values: {},
+                hotkeys: true,
+                onChange,
+                onSettingsChange: vi.fn(),
+              }),
+            ),
+          ),
+        );
+        const trigger = container.querySelector<HTMLButtonElement>(
+          'button[aria-haspopup="dialog"]',
+        )!;
+        await keyDown(trigger, "ContextMenu");
+        const menu = recentMenu()!;
+        const active = () => menu.getAttribute("aria-activedescendant");
+        if (claudeAvailable) {
+          const opus = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
+            (row) => row.textContent?.includes("Opus"),
+          )!;
+          expect(active()).toBe(opus.id);
+          await keyDown(menu, "ArrowDown");
+          expect(active()).toBe(opus.id);
+          await keyDown(menu, "Enter");
+          expect(onChange).toHaveBeenCalledWith("claude", "claude:opus-5");
+        } else {
+          expect(active()).toBeNull();
+          expect(menu.textContent).toContain("No available provider models found.");
+          await keyDown(menu, "ArrowDown");
+          await keyDown(menu, "Enter");
+          expect(onChange).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    const chords: { name: string; init: KeyboardEventInit }[] = [
+      { name: "Alt+ArrowDown", init: { key: "ArrowDown", altKey: true } },
+      { name: "ContextMenu", init: { key: "ContextMenu" } },
+      { name: "Shift+F10", init: { key: "F10", shiftKey: true } },
+    ];
+
+    async function renderRecentTrigger() {
+      saveRecentModelChoice("claude", "claude:opus-5");
+      saveRecentModelChoice("cursor", "cursor:composer-2.5");
+      await act(async () =>
+        root.render(
+          createElement(ModelPicker, {
+            harness: "grok",
+            model: "grok:grok-4.6",
+            values: { effort: "high" },
+            hotkeys: true,
+            onChange: vi.fn(),
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      );
+      return container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+    }
+
+    const recentMenu = () =>
+      container.querySelector<HTMLElement>('[role="menu"][aria-label="Recently used models"]');
+
+    it.each(chords)("opens the menu with $name on the model button", async ({ init }) => {
+      const trigger = await renderRecentTrigger();
+      trigger.focus();
+      expect(recentMenu()).toBeNull();
+      await act(async () => {
+        trigger.dispatchEvent(
+          new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true }),
+        );
+      });
+      expect(recentMenu()).not.toBeNull();
+      expect(
+        container.querySelector('[role="dialog"][aria-label="Model and settings"]'),
+      ).toBeNull();
+    });
+
+    it("leaves a plain ArrowDown alone and advertises the chords", async () => {
+      const trigger = await renderRecentTrigger();
+      trigger.focus();
+      await keyDown(trigger, "ArrowDown");
+      expect(recentMenu()).toBeNull();
+      expect(trigger.getAttribute("aria-keyshortcuts")).toContain("Alt+ArrowDown");
+    });
+
+    it("selects a recent model with the keyboard alone", async () => {
+      const onChange = vi.fn();
+      saveRecentModelChoice("cursor", "cursor:composer-2.5");
+      await act(async () =>
+        root.render(
+          createElement(ModelPicker, {
+            harness: "grok",
+            model: "grok:grok-4.6",
+            values: {},
+            hotkeys: true,
+            onChange,
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      );
+      const trigger = container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+      trigger.focus();
+      await act(async () => {
+        trigger.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "ArrowDown",
+            altKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      });
+      await keyDown(trigger, "ArrowDown");
+      await keyDown(trigger, "Enter");
+      expect(onChange).toHaveBeenCalledWith("cursor", "cursor:composer-2.5");
+      expect(recentMenu()).toBeNull();
+    });
   });
 });
 

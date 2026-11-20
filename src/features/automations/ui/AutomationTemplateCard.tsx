@@ -34,7 +34,6 @@ export function AutomationTemplateCard({
       variant="item"
       layout="stacked"
       className="automation-template"
-      tooltip={t(template.description)}
     >
       <span className="flex min-w-0 items-start gap-2">
         <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">

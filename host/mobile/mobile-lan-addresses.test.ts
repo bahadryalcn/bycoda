@@ -23,6 +23,7 @@ vi.mock("node:os", async (original) => ({
 }));
 
 const { reachableAddresses, localMobileAddresses, MobileLanAccess } = await import("./mobile-lan");
+// oxlint-disable-next-line no-restricted-imports -- reads the mocked adapters this file defines
 import { networkInterfaces } from "node:os";
 
 describe("reachableAddresses", () => {

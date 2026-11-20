@@ -54,6 +54,7 @@ it.each([false, true])("clears only the submitted job brief (newer edit=%s)", as
     jobReviewEnvironment: { current: undefined },
     jobBatch: { current: { start: vi.fn() } },
     jobIntents: { current: {} },
+    jobReviewWriter: { cancel: vi.fn(), clear: vi.fn() },
     selected: new Set(),
     projects: [],
     snapshot: undefined,

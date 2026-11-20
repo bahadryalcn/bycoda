@@ -103,9 +103,7 @@ it("freezes both source and document editing after an uncertain save without dis
   expect(editor.state.readOnly).toBe(true);
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => button("Document").click());
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Edit note block"]')!.click(),
-  );
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-note-block-edit]")!.click());
   expect(host.querySelector("[data-note-preview] .cm-editor")).toBeNull();
   expect(
     JSON.parse(localStorage.getItem("bycoda.assistant.note-draft:editor-note:record")!).intent.body,

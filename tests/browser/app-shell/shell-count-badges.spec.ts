@@ -77,8 +77,9 @@ test("shell counts stay compact and follow custom accents in both rail presentat
       const recovery = page.locator(expanded ? ".recovery-rail-number" : ".recovery-rail-count");
       await expect(working).toHaveText(String(Math.min(count, 9)));
       const workingCount = Math.min(count, 9);
-      await expect(working).toHaveAttribute(
-        "aria-label",
+      // The badge is decorative; a screen-reader-only live region carries the meaning.
+      await expect(working).toHaveAttribute("aria-hidden", "true");
+      await expect(page.getByText(/^\d+ working sessions?$/)).toHaveText(
         `${workingCount} working ${workingCount === 1 ? "session" : "sessions"}`,
       );
       await expect(working.locator('[data-size="xs"][aria-hidden="true"]')).toBeVisible();

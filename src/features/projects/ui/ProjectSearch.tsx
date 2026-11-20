@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -11,6 +12,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
+import { useFindControlLabels } from "../../../shared/i18n/findLabels";
 import {
   CaseSensitive,
   MoreHorizontal,
@@ -81,6 +83,7 @@ function ProjectSearchContent({
   search,
 }: Props) {
   const t = useT();
+  const labels = useFindControlLabels();
   const inputRef = useRef<HTMLInputElement>(null);
   const closeLatest = useStableCallback(onClose);
   const stateKey = `find-in-files:${pathKey(cwd)}`;
@@ -174,7 +177,7 @@ function ProjectSearchContent({
             request,
             matches: [],
             truncated: false,
-            error: err instanceof Error ? err.message : String(err),
+            error: errorText(err),
           });
         })
         .finally(() => {
@@ -210,13 +213,13 @@ function ProjectSearchContent({
           return;
         }
         const accepted = await confirmation.confirm({
-          title: t("Replace All"),
+          title: t("Replace all"),
           message: t("Replace {p0} occurrences across {p1} files with '{p2}'?", {
             p0: preview.replacements,
             p1: preview.filesChanged,
             p2: replacement,
           }),
-          confirmLabel: t("Replace All"),
+          confirmLabel: t("Replace all"),
         });
         if (!accepted) {
           return;
@@ -237,7 +240,7 @@ function ProjectSearchContent({
         setRefresh((value) => value + 1);
       })
       .catch((error: unknown) => {
-        setReplaceError(error instanceof Error ? error.message : String(error));
+        setReplaceError(errorText(error));
       })
       .finally(() => setReplacing(false));
   };
@@ -289,7 +292,7 @@ function ProjectSearchContent({
             motion="none"
             stretch
             className="w-4 shrink-0"
-            label={t("Toggle Replace")}
+            label={labels.toggleReplace}
             expanded={replaceExpanded}
             aria-controls={replaceId}
             onClick={() => setReplaceExpanded((value) => !value)}
@@ -310,21 +313,21 @@ function ProjectSearchContent({
               />
               <div className="flex shrink-0 items-center">
                 <Toggle
-                  label={t("Match case")}
+                  label={labels.matchCase}
                   active={caseSensitive}
                   onClick={() => setCaseSensitive((value) => !value)}
                 >
                   <CaseSensitive className="icon-sm" strokeWidth={1.75} />
                 </Toggle>
                 <Toggle
-                  label={t("Match whole word")}
+                  label={labels.matchWholeWord}
                   active={wholeWord}
                   onClick={() => setWholeWord((value) => !value)}
                 >
                   <WholeWord className="icon-sm" strokeWidth={1.75} />
                 </Toggle>
                 <Toggle
-                  label={t("Use regular expression")}
+                  label={labels.useRegex}
                   active={regex}
                   onClick={() => setRegex((value) => !value)}
                 >
@@ -349,7 +352,7 @@ function ProjectSearchContent({
                     variant="ghost"
                     iconOnly
                     inset
-                    label={t("Replace All")}
+                    label={t("Replace all")}
                     loading={replacing}
                     disabled={!matches.length || !request.query || replacing}
                     onClick={() => void replaceAll()}
@@ -366,7 +369,7 @@ function ProjectSearchContent({
             variant="ghost"
             iconOnly
             size="sm"
-            label={t("Toggle Search Details")}
+            label={t("Toggle search details")}
             aria-expanded={detailsExpanded}
             aria-controls={detailsId}
             onClick={toggleDetails}
@@ -377,8 +380,8 @@ function ProjectSearchContent({
         <div id={detailsId} className="ms-5" hidden={!detailsExpanded}>
           <div className="min-w-0 space-y-2">
             <TextField
-              label={t("files to include")}
-              aria-label={t("files to include")}
+              label={t("Files to include")}
+              aria-label={t("Files to include")}
               value={include}
               onChange={(event) => setInclude(event.target.value)}
               spellCheck={false}
@@ -388,8 +391,8 @@ function ProjectSearchContent({
               fieldClassName="min-w-0 w-full"
             />
             <TextField
-              label={t("files to exclude")}
-              aria-label={t("files to exclude")}
+              label={t("Files to exclude")}
+              aria-label={t("Files to exclude")}
               value={exclude}
               onChange={(event) => setExclude(event.target.value)}
               spellCheck={false}

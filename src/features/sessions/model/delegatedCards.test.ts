@@ -331,6 +331,154 @@ describe("failed children and dock summary", () => {
   });
 });
 
+describe("one placement index per projection", () => {
+  /** A user message whose text reads are counted: only the asking-turn lookup reads it. */
+  function countedUser(id: string, text: string, startedAt: number) {
+    const reads = { count: 0 };
+    const block: Block = { id, role: "user", text: "", startedAt };
+    Object.defineProperty(block, "text", {
+      enumerable: true,
+      get() {
+        reads.count += 1;
+        return text;
+      },
+    });
+    return { block, reads };
+  }
+  /** A delegate call whose result is read through a counter. */
+  function countedDelegate(id: string, sessionId: string) {
+    const reads = { count: 0 };
+    const tool = {
+      kind: "other" as const,
+      title: "bycoda-conversation:conversation_agents_delegate",
+      status: "completed",
+    };
+    Object.defineProperty(tool, "detail", {
+      enumerable: true,
+      get() {
+        reads.count += 1;
+        return JSON.stringify({ runId: "r", sessionId, status: "running" });
+      },
+    });
+    const block: Block = { id, role: "tool", text: tool.title, tool };
+    return { block, reads };
+  }
+  const textFrame = (previous: Block[], text: string): Block[] => {
+    const next = previous.slice();
+    next[next.length - 1] = { ...next[next.length - 1], text };
+    registerStreamingTextUpdate(previous, next, next.length - 1);
+    return next;
+  };
+
+  it("lets the dock read the plan the transcript already built", () => {
+    const asked = countedUser("u1", "go\n\nDelegated to @reviewer (task member-ask-9)", 1_000);
+    const blocks: Block[] = [asked.block, reply("a1")];
+    const children = [member("c1", {}, "member-ask-9")];
+    placeDelegatedCards(blocks, children);
+    const reads = asked.reads.count;
+    expect(reads).toBeGreaterThan(0);
+    expect([...cardedChildren(blocks, children)]).toEqual(["c1"]);
+    placeDelegatedCards(blocks, children);
+    expect(asked.reads.count).toBe(reads);
+  });
+
+  it("hands a caller its own set, so one reader cannot change another's", () => {
+    const blocks: Block[] = [user("u1", "go", 1_000), reply("a1")];
+    const children = [member("c1", {}, undefined, 1_500)];
+    const first = cardedChildren(blocks, children);
+    first.clear();
+    expect([...cardedChildren(blocks, children)]).toEqual(["c1"]);
+  });
+
+  it("parses a delegate call once however many projections read the block", () => {
+    const call = countedDelegate("d1", "c1");
+    const child = {
+      ...member("c1"),
+      modelSettings: {
+        [DELEGATION_PARENT_KEY]: member("c1").modelSettings![DELEGATION_PARENT_KEY],
+      },
+    } satisfies Session;
+    const first: Block[] = [user("u1", "audit", 1_000), call.block, reply("a1")];
+    placeDelegatedCards(first, [child]);
+    const reads = call.reads.count;
+    expect(reads).toBeGreaterThan(0);
+    // A structural frame: new array and new tail, the call block is the same object.
+    const second: Block[] = [first[0], call.block, reply("a2"), reply("a3")];
+    const placed = placeDelegatedCards(second, [child]);
+    expect(placed.map((block) => block.id)).toEqual(["u1", delegatedBlockId("c1"), "a2", "a3"]);
+    expect(call.reads.count).toBe(reads);
+  });
+
+  it("keeps child order within a turn and the fallback turn beside a call-placed card", () => {
+    const call = countedDelegate("d1", "c2");
+    const second = member("c2", {}, undefined, 1_500);
+    const first = member("c1", {}, undefined, 1_500);
+    const third = member("c3", {}, undefined, 1_500);
+    const blocks: Block[] = [user("u1", "audit", 1_000), call.block, reply("a1")];
+    const placed = placeDelegatedCards(blocks, [first, second, third]);
+    // c2 stands where its call was; c1 and c3 follow the asking message in child order.
+    expect(placed.map((block) => block.id)).toEqual([
+      "u1",
+      delegatedBlockId("c1"),
+      delegatedBlockId("c3"),
+      delegatedBlockId("c2"),
+      "a1",
+    ]);
+    expect([...cardedChildren(blocks, [first, second, third])].sort()).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("reuses the plan across a streamed text frame and keeps cards, order and the fast path", () => {
+    const asked = countedUser("u2", "go\n\nDelegated to @reviewer (task member-ask-9)", 3_000);
+    const base: Block[] = [
+      user("u1", "first", 1_000),
+      reply("a1"),
+      asked.block,
+      { id: "a2", role: "assistant", text: "He", streaming: true },
+    ];
+    const children = [member("c1", { busy: true }, "member-ask-9")];
+    const place = createCardPlacer();
+    const firstOutput = place(base, children);
+    cardedChildren(base, children);
+    const reads = asked.reads.count;
+    const frame = textFrame(base, "Hel");
+    const output = place(frame, children);
+    expect(streamingTextUpdate(firstOutput, output)).toBe(output.length - 1);
+    expect(output.find((block) => block.id === delegatedBlockId("c1"))).toBe(
+      firstOutput.find((block) => block.id === delegatedBlockId("c1")),
+    );
+    // The dock reads the new frame: neither it nor the placer asks the turn again.
+    expect([...cardedChildren(frame, children)]).toEqual(["c1"]);
+    expect(asked.reads.count).toBe(reads);
+    expect(output.map((block) => block.id)).toEqual([
+      "u1",
+      "a1",
+      "u2",
+      delegatedBlockId("c1"),
+      "a2",
+    ]);
+  });
+
+  it("re-plans when the streamed block is a tool call", () => {
+    const call = countedDelegate("d1", "c1");
+    const children = [
+      {
+        ...member("c1"),
+        modelSettings: {
+          [DELEGATION_PARENT_KEY]: member("c1").modelSettings![DELEGATION_PARENT_KEY],
+        },
+      } satisfies Session,
+    ];
+    const base: Block[] = [user("u1", "audit", 1_000), call.block];
+    const place = createCardPlacer();
+    place(base, children);
+    const frame = textFrame(base, "bycoda-conversation:conversation_agents_delegate");
+    expect(place(frame, children).map((block) => block.id)).toEqual(
+      placeDelegatedCards(frame, children).map((block) => block.id),
+    );
+    expect([...cardedChildren(frame, children)]).toEqual(["c1"]);
+  });
+});
+
 describe("cardedChildren", () => {
   it("names the children that get an inline card, and not those without a turn to follow", () => {
     const asked: Block = {

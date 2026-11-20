@@ -18,7 +18,6 @@ vi.mock("./rateLimitsFetch", () => ({
 import {
   accountHeadroom,
   accountStatus,
-  needsProviderLogin,
   usageRenewalPending,
   providerAccountSignedOut,
   bestAlternativeAccount,
@@ -137,46 +136,56 @@ describe("accountStatus", () => {
   });
 });
 
-describe("needsProviderLogin", () => {
+describe("providerAccountSignedOut", () => {
   it("does not mark an idle Claude account signed out while CLI renewal is pending", () => {
     const pending = limits(null, null, {
       status: "error",
       error: "Claude usage will update when this account is used again",
     });
-    expect(needsProviderLogin(pending)).toBe(false);
     expect(providerAccountSignedOut(pending)).toBe(false);
     expect(accountStatus(pending, now).tone).toBe("unknown");
   });
 
-  it("asks for sign-in when the account is expired or signed out", () => {
+  it("follows the structured reason for an expired or signed-out account", () => {
     expect(
-      needsProviderLogin(
+      providerAccountSignedOut(
+        limits(null, null, { status: "error", error: "Sign-in required", reason: "signedOut" }),
+      ),
+    ).toBe(true);
+    expect(
+      providerAccountSignedOut(
+        limits(null, null, { status: "unavailable", error: null, reason: "signedOut" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("never reads the error text for auth, whatever words it contains", () => {
+    for (const error of [
+      "Proxy authentication required",
+      "TLS certificate expired",
+      "Claude sign-in expired",
+      "Account not signed in",
+      "OpenCode Go not connected",
+    ]) {
+      expect(providerAccountSignedOut(limits(null, null, { status: "error", error }))).toBe(false);
+      expect(providerAccountSignedOut(limits(null, null, { status: "unavailable", error }))).toBe(
+        false,
+      );
+    }
+    expect(providerAccountSignedOut(limits(null, null, { status: "unavailable" }))).toBe(false);
+  });
+
+  it("offers no sign-in for a missing CLI or a healthy snapshot", () => {
+    expect(
+      providerAccountSignedOut(
         limits(null, null, {
-          status: "error",
-          error: "Claude sign-in expired",
+          status: "unavailable",
+          error: "Claude CLI not found",
+          reason: "cliMissing",
         }),
       ),
-    ).toBe(true);
-    expect(needsProviderLogin(limits(null, null, { status: "unavailable", error: null }))).toBe(
-      true,
-    );
-    expect(needsProviderLogin(limits(window(40)))).toBe(false);
-  });
-});
-
-describe("providerAccountSignedOut", () => {
-  it("treats expired sessions as signed out but not a missing CLI", () => {
-    expect(
-      providerAccountSignedOut(
-        limits(null, null, { status: "error", error: "Claude sign-in expired" }),
-      ),
-    ).toBe(true);
-    expect(
-      providerAccountSignedOut(
-        limits(null, null, { status: "unavailable", error: "Claude CLI not found" }),
-      ),
     ).toBe(false);
-    expect(providerAccountSignedOut(limits(window(40)))).toBe(false);
+    expect(providerAccountSignedOut(limits(window(40), null, { reason: "signedOut" }))).toBe(false);
   });
 });
 

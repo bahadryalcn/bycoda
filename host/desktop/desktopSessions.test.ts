@@ -383,6 +383,30 @@ describe("desktop sessions on the host", () => {
       }
     },
   );
+  it("parses a desktop row's management column once per list and snapshot builder", async () => {
+    const s = await setup();
+    s.seed({ id: "managed-once", cwd: s.projectDir });
+    const management = { assistant: true, jobId: "job", managedAt: 456 };
+    const managementText = JSON.stringify(management);
+    s.desktopDb.exec("ALTER TABLE sessions ADD COLUMN assistant_management_json TEXT");
+    s.desktopDb
+      .prepare("UPDATE sessions SET assistant_management_json=? WHERE id='managed-once'")
+      .run(managementText);
+    const desktop = new DesktopSessions(() => [s.dbPath]);
+    const parse = vi.spyOn(JSON, "parse");
+    const managementParses = () =>
+      parse.mock.calls.filter(([text]) => text === managementText).length;
+    try {
+      expect(desktop.list(s.projectDir, s.project.id, ["codex"])[0].managedBy).toEqual(management);
+      expect(managementParses()).toBe(1);
+      parse.mockClear();
+      expect(desktop.snapshot("managed-once", s.project.id)!.managedBy).toEqual(management);
+      expect(managementParses()).toBe(1);
+    } finally {
+      parse.mockRestore();
+      desktop.close();
+    }
+  });
   it("waits for desktop writer retirement before direct continuation and fences new local turns", async () => {
     const s = await setup();
     s.seed({ id: "warm", cwd: s.projectDir });

@@ -18,7 +18,10 @@ vi.mock("../../../../shared/ui/settings", () => ({
 }));
 vi.mock("../../../providers/public/providerAccounts", () => ({
   subscribeProviderAccounts: () => () => {},
-  providerAccounts: () => [{ id: "default", label: "Default account" }],
+  providerAccounts: () => [
+    { id: "default", label: "Personal" },
+    { id: "work", label: "Work" },
+  ],
   defaultProviderAccountId: () => "default",
   supportsProviderAccounts: (harness: string) => ["claude", "codex", "grok"].includes(harness),
 }));
@@ -95,13 +98,69 @@ it("adds a model not yet in the pool and an includable pool", async () => {
   )!;
   await act(() => add.click());
   const items = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
-  expect(items().map((item) => item.textContent)).toEqual(["c", "Inner"]);
+  expect(items().map((item) => item.getAttribute("data-menu-label"))).toEqual([
+    "c · Personal",
+    "Inner",
+  ]);
   await act(() =>
     items()
-      .find((item) => item.textContent === "Inner")!
+      .find((item) => item.getAttribute("data-menu-label") === "Inner")!
       .click(),
   );
   expect(applied.routing.pools[0]).toMatchObject({ entryIds: ["a", "b"], poolIds: ["p2"] });
+});
+
+// Regression for #1228: the same model on two accounts looked identical in the Add menu.
+it("tells same-model entries on different accounts apart and adds the one picked", async () => {
+  const twins = orderDraft(
+    {
+      ...EMPTY_MODEL_ROUTING,
+      version: 1,
+      updatedAt: 0,
+      entries: [
+        { ...entry("x"), model: "gpt-5", providerAccountId: "work" },
+        { ...entry("y"), model: "gpt-5", providerAccountId: "default" },
+        entry("z"),
+      ],
+      pools: [{ id: "p1", name: "Main", entryIds: ["z"] }],
+    },
+    limits,
+  );
+  await render(twins);
+  const add = [...main().querySelectorAll("button")].find(
+    (button) => button.textContent === "Add",
+  )!;
+  await act(() => add.click());
+  const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+  expect(items.map((item) => item.getAttribute("data-menu-label"))).toEqual([
+    "gpt-5 · Work",
+    "gpt-5 · Personal",
+  ]);
+  await act(() => items[1]!.click());
+  expect(applied.routing.pools[0]).toMatchObject({ entryIds: ["z", "y"] });
+});
+
+it("labels a cleared group's delete button with the same fallback name as its group", async () => {
+  await render({
+    ...draft,
+    routing: {
+      ...draft.routing,
+      pools: [{ id: "p3", name: "", entryIds: ["a"] }, ...draft.routing.pools.slice(1)],
+    },
+  });
+  expect(container.querySelector('[aria-label="Delete group Unnamed group"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="Delete group "]')).toBeNull();
+});
+
+it("removes a group only after the owner confirms the delete", async () => {
+  const inner = () => container.querySelector<HTMLElement>('[aria-label="Delete group Inner"]')!;
+  await act(async () => inner().click());
+  expect(applied).toBe(draft);
+  const confirmButton = [...document.querySelectorAll<HTMLElement>("button")].find(
+    (button) => button.textContent === "Delete",
+  )!;
+  await act(async () => confirmButton.click());
+  expect(applied.routing.pools.map((pool) => pool.id)).toEqual(["p1"]);
 });
 
 it("shows an included pool as a pool with its resolved model count", async () => {

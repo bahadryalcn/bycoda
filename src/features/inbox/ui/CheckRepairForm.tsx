@@ -5,6 +5,7 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { fetchCheckDetails } from "../model/prChecks";
+import { CiRepairStartError, presentCiRepairError } from "../model/ciRepairError";
 import type { CodeHostProvider } from "../model/githubPrChecks";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -95,7 +96,8 @@ export function CheckRepairForm({
     onClose();
     if (restoreFocus && anchor instanceof HTMLElement && anchor.isConnected) anchor.focus();
   }
-  const [error, setError] = useState<string | null>(null);
+  // The thrown value is kept and presented at render so the sentence follows the language.
+  const [error, setError] = useState<{ reason: unknown } | null>(null);
   const [accountChanged, setAccountChanged] = useState(false);
   const starting = useRef(false);
   const mounted = useRef(true);
@@ -110,7 +112,12 @@ export function CheckRepairForm({
     const changed = () => {
       generation.current += 1;
       setAccountChanged(true);
-      setError(t("Account changed; reload checks before repairing."));
+      setError({
+        reason: new CiRepairStartError(
+          "accountChanged",
+          "Account changed; reload checks before repairing.",
+        ),
+      });
     };
     window.addEventListener(event, changed);
     return () => window.removeEventListener(event, changed);
@@ -164,7 +171,7 @@ export function CheckRepairForm({
       );
       if (current()) onClose();
     } catch (reason) {
-      if (current()) setError(reason instanceof Error ? reason.message : String(reason));
+      if (current()) setError({ reason });
     } finally {
       starting.current = false;
       if (mounted.current) setBusy(false);
@@ -224,7 +231,7 @@ export function CheckRepairForm({
             ref={searchRef}
             autoFocus={false}
             label={t("Search project chats")}
-            placeholder={t("Search chats...")}
+            placeholder={t("Search chats…")}
             value={query}
             disabled={busy}
             onValueChange={setQuery}
@@ -234,7 +241,7 @@ export function CheckRepairForm({
       }
       footer={
         <>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {error ? <Alert tone="danger">{presentCiRepairError(error.reason)}</Alert> : null}
           {/* Always mounted so the message is announced when the fix becomes blocked. */}
           <LiveText
             size="caption"
@@ -256,7 +263,7 @@ export function CheckRepairForm({
               type="button"
               disabled={blocked || accountChanged}
               loading={busy}
-              loadingLabel={t("Preparing...")}
+              loadingLabel={t("Preparing…")}
               onClick={() => void start()}
               className="shrink-0"
             >

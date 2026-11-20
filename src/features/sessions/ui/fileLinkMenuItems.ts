@@ -6,7 +6,7 @@ const REVEAL_LABEL = IS_MAC
   ? "Reveal in Finder"
   : IS_WIN
     ? "Reveal in File Explorer"
-    : "Open Containing Folder";
+    : "Open containing folder";
 
 /** `t` from `useT()`, so the menu follows a language switch. */
 export function fileLinkMenuItems(
@@ -25,14 +25,14 @@ export function fileLinkMenuItems(
     {
       kind: "item",
       id: "open-default",
-      label: t("Open in Default App"),
+      label: t("Open in default app"),
       disabled: remote,
     },
     {
       kind: "item",
       id: "reveal",
       label: remote
-        ? t("Open Containing Folder in {p0}", { p0: PRODUCT_IDENTITY.displayName })
+        ? t("Open containing folder in {p0}", { p0: PRODUCT_IDENTITY.displayName })
         : t(REVEAL_LABEL),
     },
     ...(remote ? [{ kind: "item" as const, id: "reveal-local", label: t(REVEAL_LABEL) }] : []),
@@ -40,14 +40,14 @@ export function fileLinkMenuItems(
     {
       kind: "item",
       id: "copy-path",
-      label: t("Copy Path"),
+      label: t("Copy path"),
     },
     ...(canCopyRelativePath
       ? [
           {
             kind: "item" as const,
             id: "copy-relative-path",
-            label: t("Copy Relative Path"),
+            label: t("Copy relative path"),
           },
         ]
       : []),

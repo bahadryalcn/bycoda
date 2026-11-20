@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import {
   isValidElement,
   useCallback,
@@ -210,7 +211,7 @@ async function attemptConfirm(
     onSettle(true);
     return null;
   } catch (cause) {
-    return cause instanceof Error ? cause.message : String(cause);
+    return errorText(cause);
   }
 }
 

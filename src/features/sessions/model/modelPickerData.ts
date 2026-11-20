@@ -44,25 +44,35 @@ const SETTING_ORDER = [
   "effort",
 ];
 
-/** A row is locked while extras are frozen, or when its parent setting is off. */
-export function isSettingLocked(
+/** Why a row is locked: the English message the caller translates; absent when none is known. */
+export type SettingLock = { reason?: string };
+
+/**
+ * The lock on a row, or undefined while it is editable. Frozen extras lock every row with the
+ * caller's reason; otherwise a row locks when its parent setting is off.
+ */
+export function settingLock(
   setting: ModelSetting,
   current: AgentModel,
   values: Record<string, string>,
   extrasDisabled: boolean,
-): boolean {
+  extrasReason?: string,
+): SettingLock | undefined {
   const effectiveValue = (id: string) => {
     const dependent = current.settings?.find((item) => item.id === id);
     return dependent ? settingValue(dependent, values) : undefined;
   };
-  return (
-    extrasDisabled ||
-    (setting.id === "subagentPolicy" &&
-      (!effectiveValue("subagentModel") || effectiveValue("subagentModel") === "default") &&
-      values.crossSubagents !== "auto" &&
-      decodeSubagents(values.crossSubagents).length === 0) ||
-    (setting.id === "autoCompactWindow" && effectiveValue("autoCompact") === "off")
-  );
+  if (extrasDisabled) return { reason: extrasReason };
+  if (
+    setting.id === "subagentPolicy" &&
+    (!effectiveValue("subagentModel") || effectiveValue("subagentModel") === "default") &&
+    values.crossSubagents !== "auto" &&
+    decodeSubagents(values.crossSubagents).length === 0
+  )
+    return { reason: "Pick a subagent model or subagent list first." };
+  if (setting.id === "autoCompactWindow" && effectiveValue("autoCompact") === "off")
+    return { reason: "Turn on auto-compact to change its window." };
+  return undefined;
 }
 
 /** Menu/Extras grouping: delegation first, then Context and model options. */
@@ -114,7 +124,7 @@ export function fastSetting(model: AgentModel): ModelSetting | undefined {
 export function fastToggleValues(
   setting: ModelSetting | undefined,
 ): { on: string; off: string } | undefined {
-  if (!setting) return undefined;
+  if (!setting || setting.options.length !== 2) return undefined;
   const on = setting.options.find(
     (option) => /^(true|fast|priority)$/i.test(option.value) || /^(on|fast)$/i.test(option.label),
   )?.value;

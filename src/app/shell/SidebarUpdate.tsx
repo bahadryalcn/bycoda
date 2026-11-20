@@ -17,13 +17,12 @@ import { GithubStarPrompt } from "./GithubStarPrompt";
 import { Disclosure } from "../../shared/ui/Disclosure";
 
 // The update entry point only earns its space when there is something to act on: an
-// update waiting to be installed, one downloading, or an install error to retry.
+// update waiting to be installed, one downloading, or any updater error: a failed
+// install or check must stay visible even when no version was found.
 // Background checks stay silent; manual checks live in Settings and the app menu.
 export function isSidebarUpdateActionable(snapshot: UpdaterSnapshot): boolean {
   return (
-    snapshot.phase === "available" ||
-    snapshot.phase === "downloading" ||
-    (snapshot.phase === "error" && !!snapshot.availableVersion)
+    snapshot.phase === "available" || snapshot.phase === "downloading" || snapshot.phase === "error"
   );
 }
 
@@ -32,6 +31,7 @@ export function SidebarUpdateFooter({
   onOpenWhatsNew,
   onDismissUpdate,
   noticesOnly = false,
+  inlineNotice = false,
   icon = false,
   compact = false,
 }: {
@@ -39,6 +39,7 @@ export function SidebarUpdateFooter({
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
   noticesOnly?: boolean;
+  inlineNotice?: boolean;
   /** Legacy fixture option; repository prompts now live inside the update dialog. */
   repositoryPrompt?: boolean;
   /** Footer icon button: only the download icon (dot while an update waits) and its dialog. */
@@ -48,7 +49,10 @@ export function SidebarUpdateFooter({
   const t = useT();
   const [promptOpen, setPromptOpen] = useState(false);
   const { snapshot, notes, setSnapshot } = useAppUpdater();
-  const dismissPrompt = () => {
+  // Only the reminder action snoozes. Dismissal and failures leave reminders unchanged.
+  const canSnooze = snapshot.phase !== "error";
+  const closePrompt = () => setPromptOpen(false);
+  const onLaterPrompt = () => {
     snoozeUpdatePrompt();
     setPromptOpen(false);
   };
@@ -66,13 +70,20 @@ export function SidebarUpdateFooter({
 
   const card =
     update && onOpenWhatsNew && onDismissUpdate ? (
-      <UpdateRailCard update={update} onOpen={onOpenWhatsNew} onDismiss={onDismissUpdate} />
+      <UpdateRailCard
+        update={update}
+        onOpen={onOpenWhatsNew}
+        onDismiss={onDismissUpdate}
+        inline={inlineNotice}
+      />
     ) : null;
   const actionable = isSidebarUpdateActionable(snapshot);
   const actionLabel =
     snapshot.phase === "downloading"
       ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
-      : t("Update to {p0}", { p0: snapshot.availableVersion });
+      : snapshot.phase === "error"
+        ? t("Update failed")
+        : t("Update to {p0}", { p0: snapshot.availableVersion });
 
   if (noticesOnly) return card;
   if (!card && !actionable && !icon) return null;
@@ -145,23 +156,27 @@ export function SidebarUpdateFooter({
     >
       {promptOpen && actionable ? (
         <Modal
-          title={snapshot.phase === "error" ? t("Retry") : t("Update available")}
+          title={snapshot.phase === "error" ? t("Update failed") : t("Update available")}
           size="sm"
-          onClose={dismissPrompt}
+          onClose={closePrompt}
           footer={
             <ModalActions>
-              <Button variant="ghost" tooltip={t("24 hours")} onClick={dismissPrompt}>
-                {t("Later")}
+              <Button variant="ghost" onClick={canSnooze ? onLaterPrompt : closePrompt}>
+                {canSnooze ? t("Remind me tomorrow") : t("Close")}
               </Button>
-              <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />
+              {snapshot.availableVersion ? (
+                <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />
+              ) : null}
             </ModalActions>
           }
         >
           <div className="flex flex-col gap-3">
             <GithubStarPrompt oncePerVersion version={snapshot.currentVersion} />
-            <Text as="p" size="body" tone="primary">
-              v{snapshot.currentVersion} → v{snapshot.availableVersion}
-            </Text>
+            {snapshot.availableVersion ? (
+              <Text as="p" size="body" tone="primary">
+                v{snapshot.currentVersion} → v{snapshot.availableVersion}
+              </Text>
+            ) : null}
             {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
             {notes ? (
               <Disclosure summary={t("Release notes")} defaultOpen>

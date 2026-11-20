@@ -7,11 +7,9 @@ import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionE
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import {
-  MissingRemoteMachine,
-  RemoteSessionFrame,
-  RemoteSessionContent,
-} from "./RemoteSessionFrame";
+import { RemoteSessionFrame, RemoteSessionContent } from "./RemoteSessionFrame";
+import { FailureState } from "../../../shared/ui/FailureState";
+import { MachineUnavailable } from "./MachineUnavailable";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import { isLocalSyncMachine } from "../model/localSync";
 import { machineLabel } from "../model/machineIdentity";
@@ -133,7 +131,7 @@ import {
   loadRemoteSession,
   rememberRemotePendingWorktree,
   rememberRemoteSession,
-  REMOTE_HISTORY_CHANGE,
+  REMOTE_TAB_BINDING_CHANGE,
   remoteRequest,
   reportRemoteMachineStatus,
   remotePendingWorktree,
@@ -169,9 +167,20 @@ import {
   requestDeliveryReview,
 } from "../../sessions/public/deliveryReview";
 import { useRemoteRecovery } from "../model/useRemoteRecovery";
-import { reportRemoteConnection, subscribeRemoteRecovered } from "../model/remoteHealth";
+import {
+  recordRemoteConnection,
+  reportRemoteConnection,
+  subscribeRemoteRecovered,
+  TIMEOUTS_BEFORE_UNREACHABLE,
+} from "../model/remoteHealth";
 import { useRemoteConnection } from "../model/useRemoteConnection";
-import { classifyRemoteError, isConnectionFailure } from "../model/remoteFailure";
+import {
+  classifyRemoteError,
+  describeRemoteError,
+  isConnectionFailure,
+  remoteErrorText,
+} from "../model/remoteFailure";
+import { errorText } from "../../../shared/lib/errors";
 import { useQuietRetry } from "../model/useQuietRetry";
 import {
   classifyCommandFailure,
@@ -257,9 +266,25 @@ export function RemoteSession({
           (!owner || (entry.id === owner.machineId && isLocalSyncMachine(entry))),
       )
     : undefined;
-  if (!project || !machine)
+  if (!project)
     return (
-      <MissingRemoteMachine compact={compactPresentation} project={!!project} loaded={loaded} />
+      <FailureState
+        context={compactPresentation ? "list" : "page"}
+        role="status"
+        description={t(
+          "This project’s machine details are missing. Add the project again from the project rail.",
+        )}
+      />
+    );
+  if (!machine)
+    return loaded ? (
+      <MachineUnavailable
+        cwd={shell.cwd}
+        reason="not-added"
+        size={compactPresentation ? "panel" : "page"}
+      />
+    ) : (
+      <LoadingText>{t("Connecting to the machine…")}</LoadingText>
     );
   return (
     <DurableRemoteSessionGate
@@ -302,7 +327,7 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
         if (active) setState({ ready: true, pending: result.command });
       })
       .catch((error: unknown) => {
-        if (active) setState({ ready: false, error: String(error).replace(/^Error: /, "") });
+        if (active) setState({ ready: false, error: errorText(error) });
       });
     return () => {
       active = false;
@@ -482,9 +507,9 @@ function ConnectedRemoteSession({
       }
       setSessionId(next);
     };
-    window.addEventListener(REMOTE_HISTORY_CHANGE, changed);
+    window.addEventListener(REMOTE_TAB_BINDING_CHANGE, changed);
     changed();
-    return () => window.removeEventListener(REMOTE_HISTORY_CHANGE, changed);
+    return () => window.removeEventListener(REMOTE_TAB_BINDING_CHANGE, changed);
   }, [shell.id, machine.id, machine.environmentId]);
   const [snapshot, setSnapshot] = useState<HostSession | undefined>(() =>
     sessionId ? cachedSessionSnapshots.get(snapshotKey(machine.id, sessionId)) : undefined,
@@ -548,6 +573,7 @@ function ConnectedRemoteSession({
   const {
     catalog,
     error: catalogError,
+    loading: catalogLoading,
     refresh: refreshCatalog,
   } = useRemoteModelCatalog({
     scope: {
@@ -657,7 +683,7 @@ function ConnectedRemoteSession({
           if (active && version === generation) setPending(result.command);
         })
         .catch((reason: unknown) => {
-          if (active && version === generation) setError(String(reason).replace(/^Error: /, ""));
+          if (active && version === generation) setError(errorText(reason));
         });
     };
     const unsubscribe = subscribeOutbox(refresh);
@@ -1030,7 +1056,7 @@ function ConnectedRemoteSession({
               const currentData = remoteDataStateRef.current;
               publishRemoteDataState({
                 phase: currentData.updatedAt ? "stale" : "error",
-                error: String(reason).replace(/^Error: /, ""),
+                error: remoteErrorText(reason),
                 updatedAt: currentData.updatedAt,
               });
             },
@@ -1084,7 +1110,11 @@ function ConnectedRemoteSession({
                 snapshotRef.current = undefined;
                 forceTailRead.current = true;
                 historyGeneration.failed();
-                setError(t("History loading failed: {p0}. Retrying.", { p0: String(reason) }));
+                setError(
+                  t("History loading failed: {p0}. Retrying.", {
+                    p0: describeRemoteError(reason).message,
+                  }),
+                );
               },
               onPreviews: (preview) => {
                 const current = snapshotRef.current;
@@ -1200,16 +1230,23 @@ function ConnectedRemoteSession({
           readGeneration !== ownerResetGeneration
         )
           return;
-        const currentData = remoteDataStateRef.current;
-        publishRemoteDataState({
-          phase: "error",
-          error: String(reason).replace(/^Error: /, ""),
-          updatedAt: currentData.updatedAt,
-        });
-        setOnline(false);
-        reportRemoteMachineStatus(machine.id, false, reason);
-        described = false;
         failed++;
+        // One timeout or busy reply proves nothing: the shared connection state ignores it,
+        // so keep the last data and online status. Going offline on a blip would make the
+        // next success announce a recovery that reloads every view of this machine.
+        const blip =
+          classifyRemoteError(reason).kind === "temporary" && failed < TIMEOUTS_BEFORE_UNREACHABLE;
+        if (!blip) {
+          const currentData = remoteDataStateRef.current;
+          publishRemoteDataState({
+            phase: "error",
+            error: remoteErrorText(reason),
+            updatedAt: currentData.updatedAt,
+          });
+          setOnline(false);
+          reportRemoteMachineStatus(machine.id, false, reason);
+        } else recordRemoteConnection(machine.environmentId, reason); // a timeout here is counted by the request path
+        described = false;
       } finally {
         polling = false;
         contentRefreshInFlight.current = false;
@@ -1365,7 +1402,7 @@ function ConnectedRemoteSession({
         binding,
       );
     } catch (reason) {
-      setError(String(reason).replace(/^Error: /, ""));
+      setError(describeRemoteError(reason).message);
     }
   }, [
     shell.id,
@@ -1480,7 +1517,7 @@ function ConnectedRemoteSession({
       try {
         assertDesktopControlReceipts(command, descriptor?.capabilities);
       } catch (reason) {
-        const message = reason instanceof Error ? reason.message : String(reason);
+        const message = errorText(reason);
         lastRunFailure.current = message;
         setError(message);
         return undefined;
@@ -1515,7 +1552,7 @@ function ConnectedRemoteSession({
           )
         ).command?.commandId === command.commandId;
     } catch (reason) {
-      setError(String(reason).replace(/^Error: /, ""));
+      setError(errorText(reason));
       return undefined;
     }
     if (!alive.current || version !== bindingGen.version || sendingRef.current) return undefined;
@@ -1792,7 +1829,7 @@ function ConnectedRemoteSession({
           try {
             await settleDurableRemoteCommand(project.key, machine.environmentId, command);
           } catch (settlementError) {
-            setError(String(settlementError));
+            setError(errorText(settlementError));
             return undefined;
           }
         }
@@ -1808,14 +1845,14 @@ function ConnectedRemoteSession({
             ).command,
           );
         } catch (storageError) {
-          setError(String(storageError));
+          setError(errorText(storageError));
           return undefined;
         }
       }
       // Another computer runs a turn of this conversation: a wait, not an error.
       // The message goes to the queue and is sent when that turn is over.
       if (!isLeaseHeld(message) && !(persisted && failureClass !== "definitive"))
-        setError(message.replace(/^Error: /, ""));
+        setError(describeRemoteError(reason).message);
       return undefined;
     } finally {
       ownership?.finishJob(
@@ -1851,11 +1888,11 @@ function ConnectedRemoteSession({
       bindingGen.endDiscard();
       setRefresh((value) => value + 1);
       setRemovingDraft(undefined);
-      setError(String(reason).replace(/^Error: /, ""));
+      setError(describeRemoteError(reason).message);
     }
   };
 
-  // Not a reset for the REMOTE_HISTORY_CHANGE handler above: `bindingGen.session` is
+  // Not a reset for the REMOTE_TAB_BINDING_CHANGE handler above: `bindingGen.session` is
   // set first, so the binding it then reads is already ours and the optimistic
   // turn, `starting` and the snapshot survive our own bind.
   const openSession = (id: string) => {
@@ -2124,7 +2161,7 @@ function ConnectedRemoteSession({
         version === bindingGen.version &&
         generation === submissionGeneration.current
       ) {
-        setError(String(reason));
+        setError(describeRemoteError(reason).message);
         setStarting({ ...turn, failed: true });
       }
     } finally {
@@ -2274,7 +2311,7 @@ function ConnectedRemoteSession({
           version === bindingGen.version &&
           generation === submissionGeneration.current
         ) {
-          setError(String(reason).replace(/^Error: /, ""));
+          setError(describeRemoteError(reason).message);
           setStarting({ ...turn, failed: true });
         }
       })
@@ -2399,7 +2436,7 @@ function ConnectedRemoteSession({
     const failed = (reason: unknown) => {
       if (alive.current && version === bindingGen.version) {
         reportRemoteConnection(remotePath(machine.environmentId, project.cwd), "session", reason);
-        setError(String(reason).replace(/^Error: /, ""));
+        setError(describeRemoteError(reason).message);
       }
     };
     setError("");
@@ -2664,8 +2701,8 @@ function ConnectedRemoteSession({
             await holdFollowUp();
         } catch (reason) {
           if (alive.current && version === bindingGen.version) {
-            if (await holdFollowUp(undefined, String(reason)))
-              setError(t("Could not deliver the follow-up: {p0}", { p0: String(reason) }));
+            if (await holdFollowUp(undefined, errorText(reason)))
+              setError(t("Could not deliver the follow-up: {p0}", { p0: errorText(reason) }));
           }
         } finally {
           onAcceptance?.(accepted);
@@ -2917,7 +2954,9 @@ function ConnectedRemoteSession({
   };
 
   const catalogFailure = catalog?.errors[configuration.harness] ?? catalogError;
-  const catalogProblem = useQuietRetry(catalogFailure, refreshCatalog) ? undefined : catalogFailure;
+  const catalogProblem = useQuietRetry(catalogFailure, refreshCatalog, catalogLoading)
+    ? undefined
+    : catalogFailure;
   /** Settles or sends again the pending command. The Host's receipt settles it; with
    * no receipt the same command is sent again, except shell, cancel, approve and
    * answer, which only a receipt can settle. `automatic` checks run from the pending
@@ -2944,7 +2983,7 @@ function ConnectedRemoteSession({
         if (!automatic)
           setError(
             t("Couldn’t check whether the host accepted this request: {p0}", {
-              p0: String(reason).replace(/^Error: /, ""),
+              p0: describeRemoteError(reason).message,
             }),
           );
         return "retry";
@@ -3074,7 +3113,7 @@ function ConnectedRemoteSession({
   const waitingForReconnect =
     !!pending && !sending && !retryStopped && !online && !pendingNeedsConfirmation;
   // A busy host (deadline, overload) is read again quietly first; sending stays held meanwhile.
-  const queueRetrying = useQuietRetry(queue.error, queue.retry);
+  const queueRetrying = useQuietRetry(queue.error, queue.retryRead);
   const notice = queue.error
     ? queueRetrying
       ? undefined
@@ -3085,7 +3124,8 @@ function ConnectedRemoteSession({
           online,
           pendingNeedsConfirmation,
           error,
-          () => void retryPending().catch((reason) => setError(String(reason))),
+          () =>
+            void retryPending().catch((reason) => setError(describeRemoteError(reason).message)),
         )
       : starting?.failed
         ? {
@@ -3122,7 +3162,7 @@ function ConnectedRemoteSession({
                         version === bindingGen.version &&
                         generation === submissionGeneration.current
                       ) {
-                        setError(String(reason));
+                        setError(describeRemoteError(reason).message);
                         setStarting({ ...turn, failed: true });
                       }
                     })
@@ -3262,17 +3302,19 @@ function ConnectedRemoteSession({
       try {
         assertDesktopControlReceipts(command, descriptor?.capabilities);
       } catch (reason) {
-        setError(t("Could not stop the turn: {p0}", { p0: String(reason) }));
+        setError(t("Could not stop the turn: {p0}", { p0: errorText(reason) }));
         return;
       }
       void executionClient
         .dispatchCommand(command)
-        .catch((reason) => setError(t("Could not stop the turn: {p0}", { p0: String(reason) })));
+        .catch((reason) =>
+          setError(t("Could not stop the turn: {p0}", { p0: describeRemoteError(reason).message })),
+        );
     }
   };
   const stopTurn = () => {
     void stopTurnAsync().catch((reason) =>
-      setError(t("Could not stop the turn: {p0}", { p0: String(reason) })),
+      setError(t("Could not stop the turn: {p0}", { p0: describeRemoteError(reason).message })),
     );
   };
   const approve = (
@@ -3344,7 +3386,7 @@ function ConnectedRemoteSession({
         await readDurableRemoteCommand(project.key, machine.environmentId, sessionId, shell.id)
       ).command;
     } catch (reason) {
-      updateDelivery("failed", String(reason));
+      updateDelivery("failed", errorText(reason));
       return;
     }
     if (
@@ -3365,7 +3407,7 @@ function ConnectedRemoteSession({
     try {
       assertDesktopControlReceipts({ type: "answer", runId, commandId }, descriptor?.capabilities);
     } catch (reason) {
-      updateDelivery("failed", reason instanceof Error ? reason.message : String(reason));
+      updateDelivery("failed", errorText(reason));
       return;
     }
     updateDelivery("sending");
@@ -3430,10 +3472,7 @@ function ConnectedRemoteSession({
         );
       })
       .catch((error: unknown) => {
-        updateDelivery(
-          dispatched ? "unknown" : "failed",
-          error instanceof Error ? error.message : String(error),
-        );
+        updateDelivery(dispatched ? "unknown" : "failed", describeRemoteError(error).message);
       })
       .finally(() => ownership?.finishJob(`question:${commandId}`));
   };
@@ -3635,7 +3674,7 @@ function ConnectedRemoteSession({
         bindingGen.session === targetSessionId
       ) {
         reportRemoteConnection(remotePath(machine.environmentId, project.cwd), "session", reason);
-        setError(String(reason).replace(/^Error: /, ""));
+        setError(describeRemoteError(reason).message);
       }
       return false;
     } finally {
@@ -3817,7 +3856,7 @@ function ConnectedRemoteSession({
       if (alive.current && bindingGen.isCurrent(token) && historyPageRequest.current === request)
         setRemoteHistoryError(
           t("Couldn’t load earlier messages: {p0}", {
-            p0: String(reason).replace(/^Error: /, ""),
+            p0: describeRemoteError(reason).message,
           }),
         );
       return 0;
@@ -3864,7 +3903,7 @@ function ConnectedRemoteSession({
     } catch (reason) {
       if (alive.current && bindingGen.isCurrent(token))
         setRemoteHistoryError(
-          t("Couldn’t load full output: {p0}", { p0: String(reason).replace(/^Error: /, "") }),
+          t("Couldn’t load full output: {p0}", { p0: describeRemoteError(reason).message }),
         );
       throw reason;
     } finally {

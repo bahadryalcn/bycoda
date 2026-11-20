@@ -2,6 +2,7 @@ export {
   DEFAULT_PROVIDER_ACCOUNT_ID,
   PROVIDER_ACCOUNT_PROVIDERS,
   providerAccounts,
+  providerAccountsStorageRevision,
   supportsProviderAccounts,
   defaultProviderAccountId,
   providerAccountLabel,
@@ -10,6 +11,13 @@ export {
   sessionProviderAccountId,
   sharedCliAccount,
   saveSharedCliAccount,
+  editProviderAccount,
+  isSharedCliAccountProvider,
+  isTerminalProviderAccount,
+  newProviderAccount,
+  removeProviderAccount,
+  setDefaultProviderAccount,
+  SHARED_CLI_ACCOUNT_PROVIDERS,
 } from "../model/providerAccounts";
 export type {
   ProviderAccount,

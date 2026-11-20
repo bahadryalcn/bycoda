@@ -9,6 +9,7 @@ import type { AssistantJob } from "../../src/shared/model/host-contracts/assista
 
 import { type HostTask } from "../../src/features/tasks/model/hostTasks";
 import { sessionRunState } from "../sessions/sessionRuns";
+import { stallConfirmed } from "../execution/confirmed-silence";
 import { RETRY_FEEDBACK_LIMIT } from "./constants";
 import { OWNER_NOTICE_LIMIT } from "./constants";
 import { ownerNotice } from "./review-outcomes";
@@ -96,7 +97,12 @@ export async function captureAssistantRecovery(
     !Number.isSafeInteger(activity.lastActivityAt) ||
     activity.lastActivityAt < 0 ||
     activity.lastActivityAt > context.now() ||
-    context.now() - activity.lastActivityAt < Math.max(5, stall) * 60000
+    !stallConfirmed(
+      context.store,
+      activity.lastActivityAt,
+      Math.max(5, stall) * 60000,
+      context.now(),
+    )
   )
     throw new Error(
       "The current worker has no confirmed stalled activity; let its canonical task settle first.",

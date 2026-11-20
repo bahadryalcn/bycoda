@@ -43,7 +43,7 @@ async function setup() {
   });
   const executable = vi.fn(async () => "/test/provider");
   const probe = vi.fn(async () => true);
-  const install = vi.fn(async (): Promise<string> => {
+  const install = vi.fn(async (_signal?: AbortSignal): Promise<string> => {
     throw new Error("installation unavailable");
   });
   const dependencies = { credentials, executable, probe, launch, install };
@@ -79,6 +79,78 @@ describe("external tunnels host ownership", () => {
     expect(s.install).toHaveBeenCalledOnce();
     await s.service.close();
   });
+  it("keeps status and stop responsive while cloudflared downloads, then launches", async () => {
+    const s = await setup();
+    s.executable.mockResolvedValue(undefined as never);
+    let finish!: (program: string) => void;
+    s.install.mockImplementationOnce(() => new Promise<string>((resolve) => (finish = resolve)));
+    const starting = s.service.start(dev);
+    const overview = await s.service.status();
+    expect(overview.tunnels[0]).toMatchObject({ state: "starting", canStop: true });
+    expect(s.launch).not.toHaveBeenCalled();
+    // A repeated request joins the download instead of starting another one.
+    expect((await s.service.start(dev)).id).toBe(overview.tunnels[0].id);
+    expect(s.install).toHaveBeenCalledOnce();
+    finish("/private/cloudflared");
+    expect((await starting).state).toBe("starting");
+    expect(s.launch.mock.calls[0][0].program).toBe("/private/cloudflared");
+    await s.service.close();
+  });
+
+  it("stop cancels a download and fences the launch even if the download finishes", async () => {
+    const s = await setup();
+    s.executable.mockResolvedValue(undefined as never);
+    let finish!: (program: string) => void;
+    let signal!: AbortSignal;
+    s.install.mockImplementationOnce((given?: AbortSignal) => {
+      signal = given!;
+      return new Promise<string>((resolve) => (finish = resolve));
+    });
+    const starting = s.service.start(dev);
+    const { id } = (await s.service.status()).tunnels[0];
+    expect((await s.service.stop({ id })).state).toBe("stopped");
+    expect(signal.aborted).toBe(true);
+    finish("/private/cloudflared");
+    expect((await starting).state).toBe("stopped");
+    expect(s.launch).not.toHaveBeenCalled();
+    expect(s.probe).not.toHaveBeenCalled();
+    expect((await s.service.status()).tunnels[0]).toMatchObject({
+      state: "stopped",
+      canStop: false,
+    });
+    await s.service.close();
+  });
+
+  it("close cancels a pending download and never launches afterwards", async () => {
+    const s = await setup();
+    s.executable.mockResolvedValue(undefined as never);
+    let finish!: (program: string) => void;
+    s.install.mockImplementationOnce(() => new Promise<string>((resolve) => (finish = resolve)));
+    const starting = s.service.start(dev);
+    await s.service.status();
+    await s.service.close();
+    finish("/private/cloudflared");
+    expect((await starting).state).toBe("stopped");
+    expect(s.launch).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed download as a missing CLI and frees the slot", async () => {
+    const s = await setup();
+    s.executable.mockResolvedValue(undefined as never);
+    s.install.mockRejectedValueOnce(new Error("offline"));
+    const record = await s.service.start(dev);
+    expect(record.issue).toBe("cli-missing");
+    expect((await s.service.status()).tunnels[0]).toMatchObject({
+      state: "error",
+      issue: "cli-missing",
+      canStop: false,
+    });
+    s.install.mockResolvedValueOnce("/private/cloudflared");
+    expect((await s.service.start(dev)).state).toBe("starting");
+    expect(s.launch).toHaveBeenCalledOnce();
+    await s.service.close();
+  });
+
   it("defaults off and leaves manual tunnels interrupted across Host restart", async () => {
     const s = await setup();
     await s.service.boot();
@@ -126,6 +198,40 @@ describe("external tunnels host ownership", () => {
     await vi.advanceTimersByTimeAsync(15_000);
     expect(s.launch).toHaveBeenCalledTimes(3);
     await restarted.close();
+  });
+
+  it("backs off automatic Host access retries while starts keep failing", async () => {
+    const s = await setup();
+    vi.useFakeTimers();
+    s.probe.mockResolvedValue(false);
+    await s.service.start({ provider: "cloudflare", target: "host", automatic: true });
+    for (let second = 5; second <= 60; second += 5) {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await s.service.status();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    // The first start, then retries after 5, 10, 20 and 40 s; a fixed 5 s retry made 13.
+    expect(s.probe).toHaveBeenCalledTimes(5);
+    expect(s.launch).not.toHaveBeenCalled();
+    await s.service.close();
+  });
+
+  it("waits the longest time before running the cloudflared installer again", async () => {
+    const s = await setup();
+    vi.useFakeTimers();
+    s.executable.mockResolvedValue(undefined as never);
+    await s.service.start({ provider: "cloudflare", target: "host", automatic: true });
+    expect(s.install).toHaveBeenCalledTimes(1);
+    const tick = async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await s.service.status();
+      await vi.advanceTimersByTimeAsync(0);
+    };
+    for (let seconds = 5; seconds <= 300; seconds += 5) await tick();
+    expect(s.install).toHaveBeenCalledTimes(2);
+    for (let seconds = 305; seconds <= 600; seconds += 5) await tick();
+    expect(s.install).toHaveBeenCalledTimes(3);
+    await s.service.close();
   });
 
   it("does not replace a process whose retirement is unknown", async () => {

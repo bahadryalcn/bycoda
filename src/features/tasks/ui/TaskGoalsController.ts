@@ -2,7 +2,7 @@ import { t } from "../../../shared/i18n";
 import { type FormEvent, useMemo, useState } from "react";
 import { useSprintBoard } from "../model/sprintClient";
 import { taskMatchesProject, type TaskProjectScope } from "../model/taskBoardScope";
-import { TASK_MACHINE_ERROR } from "../model/taskClient";
+import { taskClientErrors } from "../model/taskClientErrors";
 import { backgroundMachineFor } from "../../automations/public/hostMachines";
 import type { RemoteMachine } from "../../connections";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
@@ -99,7 +99,7 @@ export function useTaskGoals({
       return;
     }
     if (projectFilter !== "all" && (!scopedCwd || isProjectLockedIn(lock, scopedCwd))) {
-      setError(TASK_MACHINE_ERROR);
+      setError(taskClientErrors.machine());
       return;
     }
     const project =
@@ -143,7 +143,7 @@ export function useTaskGoals({
       if (currentSprint && sprintBoard.supported) {
         const machine = machines.find((entry) => entry.id === saved.machineId);
         try {
-          if (!machine) throw new Error(TASK_MACHINE_ERROR);
+          if (!machine) throw new Error(taskClientErrors.machine());
           await sprintBoard.setGoalContext(machine.environmentId, saved.id, currentSprint.id);
         } catch (reason) {
           addRecovery({

@@ -19,6 +19,10 @@ import {
   type NativeDeviceMethod,
 } from "./native-devices";
 import { NATIVE_DELIVERY_RPC_SCHEMAS, type NativeDeliveryMethod } from "./native-delivery";
+import {
+  NATIVE_DELIVERY_EPOCH_GAP_CAPABILITY,
+  NATIVE_DELIVERY_EPOCH_GAP_METHOD,
+} from "./native-delivery-epochs";
 import { z } from "zod";
 import { AssistantRequestSchema, AssistantResponseSchema } from "./assistant";
 import { DesktopControlRequestSchema, DesktopControlResponseSchema } from "./desktop-control";
@@ -170,6 +174,8 @@ const queueOperation = (paramsSchema: z.ZodType): HostRpcMethodDefinition => ({
 });
 /** Healthy slow Host reads (git, files, session sync, project browse) must outlive the 12 s default. */
 const SLOW_READ_RESPONSE_TIMEOUT_MS = 30_000;
+/** Outlasts the phone's 120 s wait for an assistant reply, so the client, not the socket, decides. */
+export const ASSISTANT_REQUEST_RESPONSE_TIMEOUT_MS = 150_000;
 const GIT_ACTION_RESPONSE_TIMEOUT_MS = 600_000;
 const sessionRead = (
   params: z.ZodType,
@@ -385,15 +391,18 @@ const nativeDeliveryOperation = (method: NativeDeliveryMethod): HostRpcMethodDef
         NATIVE_DELIVERY_RPC_SCHEMAS[method].result,
       )),
   cost: "read",
-  requiredCapability: method.startsWith("native.delivery.epochs.")
-    ? "native.delivery.epochs.v2"
-    : method.endsWith(".ack")
-      ? method.startsWith("native.buffers.")
-        ? "native.buffers.delivery.ack.v1"
-        : "native.services.delivery.ack.v1"
-      : method.startsWith("native.buffers.")
-        ? "native.buffers.delivery.v1"
-        : "native.services.delivery.v1",
+  requiredCapability:
+    method === NATIVE_DELIVERY_EPOCH_GAP_METHOD
+      ? NATIVE_DELIVERY_EPOCH_GAP_CAPABILITY
+      : method.startsWith("native.delivery.epochs.")
+        ? "native.delivery.epochs.v2"
+        : method.endsWith(".ack")
+          ? method.startsWith("native.buffers.")
+            ? "native.buffers.delivery.ack.v1"
+            : "native.services.delivery.ack.v1"
+          : method.startsWith("native.buffers.")
+            ? "native.buffers.delivery.v1"
+            : "native.services.delivery.v1",
   responseTimeoutMs: 30_000,
 });
 /** A voice call owns its own socket; recognizer start and transcription may load a model first. */
@@ -412,11 +421,13 @@ export const HOST_RPC_METHODS = Object.freeze({
   "voice.local.speechNext": voiceOperation("voice.local.speechNext"),
   "voice.local.keepAlive": voiceOperation("voice.local.keepAlive"),
   "voice.local.release": voiceOperation("voice.local.release"),
-  "assistant.request": workflowOperation(
-    "assistant.v1",
-    AssistantRequestSchema,
-    AssistantResponseSchema,
-  ),
+  "assistant.request": {
+    ...workflowOperation("assistant.v1", AssistantRequestSchema, AssistantResponseSchema),
+    // A Room send waits for the assistant's reply, which routinely takes longer than the 12 s
+    // default: the socket cut every longer reply and the phone's voice call read it as "connection
+    // interrupted". Owner HTTP adds no deadline here; this outlasts the phone's own 120 s wait.
+    responseTimeoutMs: ASSISTANT_REQUEST_RESPONSE_TIMEOUT_MS,
+  },
   "desktop.request": workflowOperation(
     "desktop.control.v1",
     DesktopControlRequestSchema,
@@ -432,6 +443,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "native.delivery.epochs.status": nativeDeliveryOperation("native.delivery.epochs.status"),
   "native.delivery.epochs.compact": nativeDeliveryOperation("native.delivery.epochs.compact"),
   "native.delivery.epochs.close": nativeDeliveryOperation("native.delivery.epochs.close"),
+  [NATIVE_DELIVERY_EPOCH_GAP_METHOD]: nativeDeliveryOperation(NATIVE_DELIVERY_EPOCH_GAP_METHOD),
   "native.buffers.delivery.ack": nativeDeliveryOperation("native.buffers.delivery.ack"),
   "native.services.delivery.ack": nativeDeliveryOperation("native.services.delivery.ack"),
   "native.buffers.delivery.apply": nativeDeliveryOperation("native.buffers.delivery.apply"),
@@ -596,6 +608,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "crews.deleteRun": crewOperation("crews.deleteRun"),
   "crews.agent.save": crewOperation("crews.agent.save"),
   "crews.agent.delete": crewOperation("crews.agent.delete"),
+  "crews.agent.group.update": crewOperation("crews.agent.group.update"),
   "modelRouting.get": {
     ...read(
       modelRoutingDto.ModelRoutingGetParamsSchema,
@@ -866,7 +879,7 @@ export const HOST_RPC_METHODS = Object.freeze({
     devDto.DevServersBridgeStreamParamsSchema,
     devDto.DevServersBridgeCloseResultSchema,
   ),
-  // list reconciles progress/reviews and can write; it is not a retryable read.
+  // Keep the Goals RPC family's wait-only transport policy for snapshot reads.
   "goals.list": goalOperation(goalsDto.GoalsEmptyParamsSchema, goalsDto.GoalsListResultSchema),
   "goals.create": goalOperation(goalsDto.GoalsCreateParamsSchema, goalsDto.HostGoalSchema),
   "goals.finalReview.recheck": goalOperation(

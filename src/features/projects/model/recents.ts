@@ -139,8 +139,10 @@ export function newProjectPaths(before: Iterable<string>, after: readonly string
 export function rememberImportedProjects(
   entries: readonly { path: string; lastUsedAt: number }[],
 ): RecentProject[] {
-  const current = loadRecents();
-  const archived = loadArchivedProjects();
+  // Strict like `rememberProjectNow`: an unreadable value must fail the import,
+  // not look empty and be overwritten (recents) or let archived projects back in.
+  const current = loadRecents(true);
+  const archived = requireArchivedProjects();
   const added: RecentProject[] = [];
   for (const entry of [...entries].sort((a, b) => b.lastUsedAt - a.lastUsedAt)) {
     const path = normalize(entry.path);
@@ -157,6 +159,8 @@ export function rememberImportedProjects(
   if (added.length === 0) return current;
   const next = [...current, ...added].slice(0, MAX);
   save(next);
+  if (localStorage.getItem(KEY) !== JSON.stringify(next))
+    throw new Error("Could not save recent projects.");
   return next;
 }
 

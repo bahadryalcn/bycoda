@@ -33,6 +33,28 @@ describe("mobile project directory rebuilds", () => {
     expect(parse.mock.calls.length).toBeLessThanOrEqual(TICKS);
   });
 
+  // #1419: the live beat must not scan or read storage while nothing was written.
+  it("does not scan or read storage for unchanged inputs", () => {
+    const first = buildMobileProjectDirectory(paths);
+    const key = vi.spyOn(Storage.prototype, "key");
+    const read = vi.spyOn(Storage.prototype, "getItem");
+    for (let tick = 0; tick < TICKS; tick++) expect(buildMobileProjectDirectory(paths)).toBe(first);
+    expect(key).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds after a stored write from another window", () => {
+    const first = buildMobileProjectDirectory(paths);
+    localStorage.setItem("bycoda.sessionOrder", "{}");
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.sessionOrder" }));
+    expect(buildMobileProjectDirectory(paths)).not.toBe(first);
+  });
+
+  it("rebuilds after the paths change", () => {
+    const first = buildMobileProjectDirectory(paths);
+    expect(buildMobileProjectDirectory([...paths, "/work/extra"])).not.toBe(first);
+  });
+
   it("returns an equal directory for unchanged inputs", () => {
     const first = buildMobileProjectDirectory(paths);
     expect(first.projects.length).toBe(PROJECTS);

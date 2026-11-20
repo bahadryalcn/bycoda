@@ -4,6 +4,7 @@ export {
   saveTask,
   startTask,
   taskMachineFor,
+  type BoardTask,
   type TaskDraft,
 } from "../model/taskClient";
 export { TaskForm } from "../ui/TaskForm";

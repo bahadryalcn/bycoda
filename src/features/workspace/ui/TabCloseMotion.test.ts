@@ -287,16 +287,31 @@ describe.each(["workspace", "file"] as const)("%s stable tab measurements", (kin
     let measurements = 0;
     let width = 140;
     const callbacks: (() => void)[] = [];
+    const observed = new Set<Element>();
     vi.stubGlobal(
       "ResizeObserver",
       class {
         constructor(callback: ResizeObserverCallback) {
           created++;
-          callbacks.push(() => callback([], this as unknown as ResizeObserver));
+          // Like a native observer, report every observed element's current size.
+          callbacks.push(() =>
+            callback(
+              [...observed].map(
+                (target) =>
+                  ({ target, contentRect: target.getBoundingClientRect() }) as ResizeObserverEntry,
+              ),
+              this as unknown as ResizeObserver,
+            ),
+          );
         }
-        observe() {}
-        unobserve() {}
+        observe(target: Element) {
+          observed.add(target);
+        }
+        unobserve(target: Element) {
+          observed.delete(target);
+        }
         disconnect() {
+          observed.clear();
           disconnected++;
         }
       },

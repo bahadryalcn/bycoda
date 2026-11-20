@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import {
   clearJiraCache,
@@ -6,9 +7,16 @@ import {
   requireHiddenJiraProjectIds,
   loadAllowedJiraBoardIds,
   type JiraIssue,
+  type JiraProject,
 } from "./jira";
 
-export type JiraBoard = { id: number; name: string; kind: "scrum" | "kanban" };
+export type JiraBoard = {
+  id: number;
+  name: string;
+  kind: "scrum" | "kanban";
+  /** Owning project; absent for boards Jira does not attach to one. */
+  projectId?: string;
+};
 export type JiraColumn = { name: string; statusIds: string[] };
 export type JiraSprint = { id: number; name: string; state: "active" | "future"; goal: string };
 export type JiraBoardConfiguration = {
@@ -32,21 +40,39 @@ export type JiraMove = {
   afterKey?: string;
 };
 
-export const jiraErrorMessage = (reason: unknown) =>
-  reason instanceof Error ? reason.message : String(reason);
+export const jiraErrorMessage = (reason: unknown) => errorText(reason);
 
 async function visibleProjectIds() {
   const hidden = requireHiddenJiraProjectIds();
   return hidden.length ? jiraProjectIdsForFetch(await listJiraProjects(), hidden) : null;
 }
 
-export async function listJiraBoards(options?: { includeUnselected?: boolean }) {
+export async function listJiraBoards() {
   const allowed = loadAllowedJiraBoardIds();
-  if (!options?.includeUnselected && allowed.length === 0) return [];
+  if (allowed.length === 0) return [];
   const projectIds = await visibleProjectIds();
   if (projectIds?.length === 0) return [];
   const boards = await invoke<JiraBoard[]>("jira_list_boards", { projectIds });
-  return options?.includeUnselected ? boards : boards.filter((board) => allowed.includes(board.id));
+  return boards.filter((board) => allowed.includes(board.id));
+}
+
+/** Every board of the account, independent of project visibility, so Settings fetches once. */
+export const listJiraBoardCatalog = () =>
+  invoke<JiraBoard[]>("jira_list_boards", { projectIds: null });
+
+/**
+ * Narrows a catalog to the visible projects exactly as the native per-project fetch does:
+ * no effective hiding keeps every board, otherwise only boards owned by a visible project.
+ */
+export function jiraBoardsInVisibleProjects(
+  boards: readonly JiraBoard[],
+  projects: readonly JiraProject[],
+  hiddenIds: readonly string[],
+): JiraBoard[] {
+  const visible = jiraProjectIdsForFetch(projects, hiddenIds);
+  if (visible === null) return projects.length === 0 && hiddenIds.length > 0 ? [] : [...boards];
+  const ids = new Set(visible);
+  return boards.filter((board) => board.projectId !== undefined && ids.has(board.projectId));
 }
 export const jiraBoardConfiguration = (boardId: number) =>
   invoke<JiraBoardConfiguration>("jira_board_configuration", { boardId });

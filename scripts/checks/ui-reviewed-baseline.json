@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "reviewAuthority": "Source reviewed by migration implementers; owner review remains in the uncommitted diff. Never refresh this baseline from inventory counts alone.",
-  "historicalCandidateCount": 934,
+  "historicalCandidateCount": 930,
   "componentDecisions": {
     "columns": ["file","name","indexed","definition","line","sourceFingerprint","decision","owner","reasonIndex","reviewPackage"],
     "rows": [
@@ -589,8 +589,6 @@
       ["src/features/sessions/ui/UserTextPreview.tsx","TextCard",true,"current",10,"20e374c443dcd6dbc5cd696c7c4b06a7af38d73e793d9e61c6eea24b46d511a5","migrate","session domain composition",267,"W6a-SESSIONS"],
       ["src/features/sessions/ui/UserTextPreview.tsx","UserTextPreview",true,"current",139,"ab97a9e74085b26e2510ea8a4954a9e101358d7ba8b3a3fb2419dfbcd292513a","native-platform-editor-owner","session domain composition",245,"W6a-SESSIONS"],
       ["src/features/settings/ui/AntigravityAccountSettings.tsx","AntigravityAccountSettings",true,"current",18,"7a4e388e821e3ad6f33f5270e72a4707579469a97d24c9459341175cd0e86fb6","migrate","settingsControls shared facade",268,"W5b-AUX"],
-      ["src/features/settings/ui/AppearanceBehaviorSettings.tsx","CrewSettings",true,"current",66,"aa9710450674add4998c5a2090961cbcd23fb54187073ae08f4bbe7ecead0c35","migrate","settingsControls facade",269,"W5b-AUX"],
-      ["src/features/settings/ui/AppearanceBehaviorSettings.tsx","TabMotionSettings",true,"current",19,"361473a23472ee9bbad74cad05aab5b768f61cea6ebbfc7186185a502070831b","migrate","settingsControls facade",269,"W5b-AUX"],
       ["src/features/settings/ui/AppearancePreviews.tsx","AppearanceInterface",true,"current",195,"6f2bb0560d7af5503bf3a26c954cdf53b81f8f1a63cbbff1caba0b8d43d36dae","native-platform-editor-owner","appearance specimen preview",270,"W5b-AUX"],
       ["src/features/settings/ui/AppearancePreviews.tsx","AppearanceStudio",true,"current",80,"9d1e3f2144c1f784f7448c4f7b380f1f1952151cabae37ac4af6a20170046dfe","native-platform-editor-owner","appearance specimen preview",270,"W5b-AUX"],
       ["src/features/settings/ui/AppearancePreviews.tsx","AppearanceTypography",true,"current",344,"17402089654f82c15e5799acb8938d4202c65c5aff1eca68b067320219c857ec","native-platform-editor-owner","appearance specimen preview",270,"W5b-AUX"],
@@ -620,8 +618,6 @@
       ["src/features/settings/ui/LanguageSettings.tsx","LanguageSettings",true,"current",16,"d5a343bef901f0f4b7dda928e40d8621c133b016f00ea62d9d9a8d620ff4462a","migrate","settingsControls/shared search selection",281,"W5b-AUX"],
       ["src/features/settings/ui/LiveBackgroundCanvas.tsx","LiveBackgroundCanvas",true,"current",81,"63fa1df47f14834573786cec58d71629cbfe15a9db880547ea35fddac2794eba","native-platform-editor-owner","decorative canvas renderer",282,"W5b-AUX"],
       ["src/features/settings/ui/LiveBackgroundCanvas.tsx","LiveBackgroundLayer",true,"current",305,"df339523a94d8d33914a6a72750f997e9850c338e1cf58126f6d9967ef351441","native-platform-editor-owner","decorative canvas renderer",282,"W5b-AUX"],
-      ["src/features/settings/ui/LiveBackgroundPicker.tsx","LiveBackgroundPicker",true,"current",40,"f5b7193e20661f5eacd2d022519d19c508f84b4b6440ec36b436ade697cb8bfa","migrate","shared structural Button radio",283,"W5b-AUX"],
-      ["src/features/settings/ui/LiveBackgroundPicker.tsx","LiveBackgroundTile",true,"current",85,"717156dfa4db8e5a556ef85fb509d26a4aae3be6a6100381260a2344aa0879bd","migrate","shared structural Button radio",283,"W5b-AUX"],
       ["src/features/settings/ui/McpSettings.tsx","AddServerModal",true,"current",101,"096e7218570565a49272e996f93b8bc26aefd04afcdab221efca9a353f4c6a92","migrate","shared Select/Button/fields",284,"W5b-AUX"],
       ["src/features/settings/ui/McpSettings.tsx","McpConnections",true,"current",270,"fb4809888823667ce60b96935832c76c68ca4b8167a32c5a5a06edf8cf89d891","migrate","shared Select/Button/fields",284,"W5b-AUX"],
       ["src/features/settings/ui/McpSettings.tsx","McpPicker",true,"current",79,"6006b6a4918c11e9883c0e4939dee423e10ca3403f11861d825c2d28441a06c7","migrate","shared Select/Button/fields",284,"W5b-AUX"],
@@ -1215,7 +1211,6 @@
       ["src/features/sessions/ui/UserTextPreview.tsx","control-presentation","3b0f0ceb20af9205f5a0",1,"shared-composition","session domain composition",531],
       ["src/features/settings/ui/AppearanceSettings.tsx","control-presentation","f31036a3573ccdf120df",1,"shared-composition","settingsControls/shared fields",532],
       ["src/features/settings/ui/InboxSettings.tsx","native-interaction","401dd4a3a5ba6b5c1e7a",1,"shared-composition","shared fields/actions; OAuth state",533],
-      ["src/features/settings/ui/LiveBackgroundPicker.tsx","native-interaction","a93bfd8c22a165e8f3f7",1,"shared-composition","shared structural Button radio",534],
       ["src/features/settings/ui/McpSettings.tsx","native-control","3572da3ba5fc7a96ad11",1,"shared-composition","shared Select/Button/fields",284],
       ["src/features/settings/ui/McpSettings.tsx","native-control","af4fe242cd771d7a9f5e",1,"shared-composition","shared Select/Button/fields",284],
       ["src/features/settings/ui/McpSettings.tsx","native-control","8fbae8302d38bdd84d0f",1,"shared-composition","shared Select/Button/fields",284],

@@ -16,6 +16,15 @@ Email and Slack accounts marked **Configured** have stored credentials. This lab
 
 Jira token entry offers the shared show/hide control. When searching Jira projects, boards or Linear teams, **Select all shown** and **Clear shown selection** affect only matching rows; hidden selections stay selected.
 
+## GitHub issues and pull requests
+
+Open **Inbox**, select **GitHub**, then choose **Issues** or **Pull requests** above
+the search field. Each list keeps its own selected item and scroll position while
+the window stays open. Use **List view** to choose **Compact** for single-line
+titles or **Comfortable** for longer titles and visible labels. Turn off
+**Side by side** in the same menu to use the full width for the list. Select a
+row to open its details and use **Back** to return.
+
 ## Inbox attachments
 
 Jira, GitHub, GitLab, Azure DevOps and Linear comment drafts offer **Source**, **Split** and **Preview**. Split shows the

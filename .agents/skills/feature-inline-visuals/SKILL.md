@@ -25,6 +25,7 @@ Own the typed inline snapshot and its isolated renderer. Ordinary HTML attachmen
 ## Preserve
 
 - Keep the inline frame compact with one toolbar of accessible icon actions for source, reload, side-panel opening and expansion. Reuse the shared resizable Sheet for the side panel, keep the conversation usable, and retain the mounted preview during source disclosure.
+- One card owns one preview: a single HtmlPreview renders into one host element that moves between the card, panel and full-view slots (`inlineVisualFrameHost.ts`), so inline/panel/full transitions keep the same preview token and iframe element and the card keeps its snapshot height with a Close row in the slot. Never mount a second HtmlPreview per view, and never add frame authority to make the move work. Details and the per-platform limit: [decisions](references/decisions.md).
 - Keep proactive visual guidance in `src/integrations/harness/core/toolWorkflowGuidance.ts` and Host tool descriptions aligned: use visuals when they clarify an answer, with short subject-based titles and fitted content; simple replies stay text.
 
 - Accept exactly one inline HTML source or confined workspace HTML path. Recheck the original principal before returning a capture.

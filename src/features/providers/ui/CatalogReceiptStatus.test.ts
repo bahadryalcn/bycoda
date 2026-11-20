@@ -2,8 +2,13 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { formatNumber } from "../../../shared/i18n";
 import type { CatalogReceipt } from "../model/catalogReceipts";
-const state = vi.hoisted(() => ({ receipt: undefined as CatalogReceipt | undefined }));
+const state = vi.hoisted(() => ({
+  receipt: undefined as CatalogReceipt | undefined,
+  errorDetails: vi.fn((_props: { detail: string }) => null),
+}));
+vi.mock("../../../shared/ui/ErrorDetails", () => ({ ErrorDetails: state.errorDetails }));
 vi.mock("../model/catalogReceipts", () => ({
   getCatalogReceipt: () => state.receipt,
   getCatalogReceiptsSnapshot: () => 0,
@@ -28,15 +33,19 @@ it("keeps usable unchanged catalogs quiet, retains real errors and exposes refre
       state.receipt = {
         status: "error",
         at: 100,
-        count: 13,
-        error: "CLI discovery failed",
+        count: 1300,
+        error: "CLI discovery failed: Bearer fake-token-12345",
         retained,
       };
       await act(async () =>
         root.render(createElement(CatalogReceiptStatus, { harness: "claude", available: true })),
       );
-      expect(node.textContent).toContain("CLI discovery failed");
+      expect(node.textContent).not.toContain("CLI discovery failed");
+      expect(state.errorDetails.mock.lastCall?.[0]).toMatchObject({
+        detail: "CLI discovery failed: Bearer <redacted>",
+      });
       expect(node.textContent).toContain(retained ? "earlier list" : "built-in list");
+      expect(node.textContent).toContain(formatNumber(1300));
       expect(node.textContent).toContain("Retry");
     }
     await act(async () => root.render(createElement(CatalogRefreshButton, { harness: "claude" })));

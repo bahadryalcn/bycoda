@@ -7,6 +7,16 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(async () => undefined),
 }));
 
+vi.mock("../../connections/model/workspaceUrls", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../connections/model/workspaceUrls")>()),
+  openWorkspaceUrl: vi.fn(async () => undefined),
+}));
+
+vi.mock("../model/linkPreview", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../model/linkPreview")>()),
+  fetchLinkPreviewMetadata: vi.fn(async () => ({ title: null, faviconDataUrl: null })),
+}));
+
 vi.mock("../../inbox/model/githubTasks", () => ({
   formatRelativeTime: () => "2 hours ago",
   githubWorkItem: vi.fn(async () => ({
@@ -35,14 +45,17 @@ vi.mock("../../inbox/model/githubTasks", () => ({
 }));
 
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { setLanguagePreference } from "../../../shared/i18n";
+import { openWorkspaceUrl } from "../../connections/public/workspaceUrls";
 import {
   githubWorkItem,
   githubWorkItemDetails,
   peekGithubWorkItem,
   peekGithubWorkItemDetails,
 } from "../../inbox/model/githubTasks";
-import type { UserLink } from "../model/linkPreview";
+import { fetchLinkPreviewMetadata, type UserLink } from "../model/linkPreview";
 import { UserLinkPreview } from "./UserLinkPreview";
+import { UserTextPreview } from "./UserTextPreview";
 
 const link: UserLink = {
   url: "https://github.com/acme/widgets/pull/73",
@@ -69,6 +82,169 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("links in sent messages", () => {
+  const cwd = "remote://windows-host/G:/workspace";
+  const url = "http://localhost:3000/report?view=pdf#page";
+
+  it("opens a compact development link on its conversation Host", async () => {
+    await act(async () =>
+      root.render(
+        createElement(UserLinkPreview, {
+          link: { url, host: "localhost", displayUrl: "localhost/report" },
+          cwd,
+          compact: true,
+        }),
+      ),
+    );
+    await act(async () =>
+      container.querySelector<HTMLAnchorElement>("[data-user-link-preview]")!.click(),
+    );
+
+    expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url);
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("opens a linked document from a sent message on its owning Host", async () => {
+    const onOpenFile = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(UserTextPreview, {
+          parts: [{ text: "[Report](./report.pdf)", kind: "text", compact: false }],
+          cwd,
+          onOpenFile,
+          messageId: "message",
+          markdown: true,
+          renderActions: () => null,
+        }),
+      ),
+    );
+    await act(async () => container.querySelector<HTMLAnchorElement>("a[href]")!.click());
+
+    expect(onOpenFile).toHaveBeenCalledOnce();
+    expect(onOpenFile.mock.calls[0][0]).toBe(`${cwd}/report.pdf`);
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a failed Host open without opening a local address", async () => {
+    const failure = "No running development server in this project matches the link.";
+    vi.mocked(openWorkspaceUrl).mockRejectedValueOnce(new Error(failure));
+    await act(async () =>
+      root.render(
+        createElement(UserLinkPreview, {
+          link: { url, host: "localhost", displayUrl: "localhost/report" },
+          cwd,
+        }),
+      ),
+    );
+    await act(async () =>
+      container.querySelector<HTMLAnchorElement>("[data-user-link-preview]")!.click(),
+    );
+
+    expect(document.body.textContent).toContain(failure);
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    "keeps the Host scope for Markdown links (full content: %s)",
+    async (compact) => {
+      await act(async () =>
+        root.render(
+          createElement(UserTextPreview, {
+            parts: [{ text: `[Report](${url})`, kind: "text", compact }],
+            cwd,
+            messageId: "message",
+            markdown: true,
+            renderActions: () => null,
+          }),
+        ),
+      );
+      if (compact) {
+        await act(async () =>
+          container.querySelector<HTMLButtonElement>('[aria-label="Show full long text"]')!.click(),
+        );
+      }
+      const surface = compact ? document.querySelector('[role="dialog"]')! : container;
+      await act(async () => surface.querySelector<HTMLAnchorElement>(`a[href="${url}"]`)!.click());
+
+      expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url);
+      expect(openUrl).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("external link page metadata", () => {
+  const pageLink: UserLink = {
+    url: "https://example.com/article",
+    host: "example.com",
+    displayUrl: "example.com/article",
+  };
+  const chip = () => container.querySelector<HTMLAnchorElement>("[data-user-link-preview]")!;
+
+  it("does not contact the linked page when the message only mounts", async () => {
+    vi.useFakeTimers();
+    await act(async () => root.render(createElement(UserLinkPreview, { link: pageLink })));
+    await act(async () => vi.advanceTimersByTime(5000));
+
+    expect(fetchLinkPreviewMetadata).not.toHaveBeenCalled();
+    expect(chip().textContent).toBe("example.com");
+  });
+
+  it("loads the title once after the pointer rests on the chip", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchLinkPreviewMetadata).mockResolvedValueOnce({
+      title: "Example article",
+      faviconDataUrl: null,
+    });
+    await act(async () => root.render(createElement(UserLinkPreview, { link: pageLink })));
+
+    act(() => chip().dispatchEvent(new Event("pointerover", { bubbles: true })));
+    await act(async () => vi.advanceTimersByTime(299));
+    expect(fetchLinkPreviewMetadata).not.toHaveBeenCalled();
+
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(fetchLinkPreviewMetadata).toHaveBeenCalledExactlyOnceWith(pageLink.url);
+    expect(chip().textContent).toBe("Example article");
+  });
+
+  it("does not load when the pointer passes over without resting", async () => {
+    vi.useFakeTimers();
+    await act(async () => root.render(createElement(UserLinkPreview, { link: pageLink })));
+
+    act(() => chip().dispatchEvent(new Event("pointerover", { bubbles: true })));
+    act(() => chip().dispatchEvent(new Event("pointerout", { bubbles: true })));
+    await act(async () => vi.advanceTimersByTime(1000));
+
+    expect(fetchLinkPreviewMetadata).not.toHaveBeenCalled();
+  });
+
+  it("loads on keyboard focus and still opens the link normally", async () => {
+    await act(async () => root.render(createElement(UserLinkPreview, { link: pageLink })));
+
+    await act(async () => chip().focus());
+    expect(fetchLinkPreviewMetadata).toHaveBeenCalledExactlyOnceWith(pageLink.url);
+    expect(chip().getAttribute("href")).toBe(pageLink.url);
+
+    await act(async () => chip().click());
+    expect(openUrl).toHaveBeenCalledWith(pageLink.url);
+  });
+
+  it("never fetches a development address", async () => {
+    vi.useFakeTimers();
+    const local: UserLink = {
+      url: "http://localhost:3000/report",
+      host: "localhost",
+      displayUrl: "localhost/report",
+    };
+    await act(async () => root.render(createElement(UserLinkPreview, { link: local })));
+
+    act(() => chip().dispatchEvent(new Event("pointerover", { bubbles: true })));
+    await act(async () => vi.advanceTimersByTime(1000));
+    await act(async () => chip().focus());
+
+    expect(fetchLinkPreviewMetadata).not.toHaveBeenCalled();
+  });
+});
+
 describe("GitHub work item link preview", () => {
   it("uses the current project scope for cached GitHub previews", async () => {
     act(() => root.render(createElement(UserLinkPreview, { link, cwd: "/project-b" })));
@@ -83,9 +259,8 @@ describe("GitHub work item link preview", () => {
     act(() => root.render(createElement(UserLinkPreview, { link, cwd: "/workspace/widgets" })));
 
     const chip = container.querySelector<HTMLAnchorElement>('[data-github-work-item-chip="pr"]')!;
-    expect(chip.textContent).toContain("PR");
-    expect(chip.textContent).toContain("#73");
-    expect(chip.textContent).toBe("PR #73");
+    expect(chip.textContent).toBe("Pull request #73");
+    expect(chip.getAttribute("aria-label")).toBe("Open pull request #73 in acme/widgets");
 
     await act(async () => {
       chip.focus();
@@ -125,6 +300,35 @@ describe("GitHub work item link preview", () => {
     });
 
     expect(document.querySelector("[data-hover-card]")).not.toBeNull();
+  });
+
+  it("localizes visible and accessible labels for GitHub issues and pull requests", async () => {
+    const issueLink: UserLink = {
+      url: "https://github.com/acme/widgets/issues/9",
+      host: "github.com",
+      displayUrl: "github.com/acme/widgets/issues/9",
+      githubWorkItem: { kind: "issue", repo: "acme/widgets", number: 9 },
+    };
+    await setLanguagePreference("de");
+    try {
+      act(() =>
+        root.render([
+          createElement(UserLinkPreview, { key: "issue", link: issueLink }),
+          createElement(UserLinkPreview, { key: "pr", link }),
+        ]),
+      );
+      const issue = container.querySelector('[data-github-work-item-chip="issue"]');
+      const pr = container.querySelector('[data-github-work-item-chip="pr"]');
+
+      expect(issue?.textContent).toBe("Problem #9");
+      expect(issue?.getAttribute("aria-label")).toBe("Öffnen Sie das Problem #9 in acme/widgets");
+      expect(pr?.textContent).toBe("Pull-Anfrage #73");
+      expect(pr?.getAttribute("aria-label")).toBe(
+        "Öffnen Sie die Pull-Anfrage #73 in acme/widgets",
+      );
+    } finally {
+      await act(async () => setLanguagePreference("en"));
+    }
   });
 
   it("keeps the chip clickable and opens the original URL", () => {

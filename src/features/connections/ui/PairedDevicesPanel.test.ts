@@ -21,9 +21,17 @@ const devices = vi.hoisted(() => ({
   canRevokePairedDevices: vi.fn<(machine: RemoteMachine) => Promise<boolean>>(),
   revokePairedDevice: vi.fn<(machine: RemoteMachine, device: PairedDevice) => Promise<void>>(),
 }));
+const health = vi.hoisted(() => ({
+  read: vi.fn<(environmentId: string) => { status: string }>(),
+}));
+vi.mock("../model/remoteHealth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../model/remoteHealth")>()),
+  readRemoteConnection: health.read,
+}));
 vi.mock("../model/phonePairingApi", () => ({ phonePairingApi: api }));
 vi.mock("../model/pairedDevices", () => devices);
-vi.mock("../../../shared/ui/Modal", () => ({
+vi.mock("../../../shared/ui/Modal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../shared/ui/Modal")>()),
   ModalActions: ({ children }: { children?: ReactNode }) =>
     createElement("div", { "data-modal-actions": "" }, children),
   Modal: ({
@@ -75,6 +83,8 @@ beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   await setLanguagePreference("en");
   for (const mock of [...Object.values(api), ...Object.values(devices)]) mock.mockReset();
+  health.read.mockReset();
+  health.read.mockReturnValue({ status: "connected" });
   api.access.mockImplementation(async (_machine, mode) =>
     mode === "lan"
       ? {
@@ -187,6 +197,47 @@ it("never shows a previous Host's list after the connection is rebound to anothe
   await render({ machines: [{ ...local, environmentId: "other-environment" }] });
   expect(container.textContent).not.toContain("Pixel 9");
   expect(buttons().some((entry) => entry.textContent?.trim() === "Revoke")).toBe(false);
+});
+
+it("keeps the last good list when a refresh fails, marks it stale and retries on request", async () => {
+  await render({ machines: [local] });
+  devices.loadPairedDevices.mockRejectedValue(new Error("unreachable"));
+  await click("Refresh devices");
+  expect(container.textContent).toContain("Could not refresh. Showing the list from");
+  expect(container.textContent).not.toContain("Could not read the devices");
+  // The last good list stays, and so does revoking from it.
+  expect(container.textContent).toContain("Pixel 9");
+  const revoke = buttons().find((entry) => entry.textContent?.trim() === "Revoke")!;
+  expect(revoke.disabled).toBe(false);
+  devices.loadPairedDevices.mockResolvedValue({
+    state: "ready",
+    devices: [desktop, phone],
+    truncated: false,
+  });
+  await click("Try again");
+  expect(container.textContent).not.toContain("Could not refresh");
+  expect(container.textContent).toContain("Pixel 9");
+});
+
+it("leaves computers known to be down out of the periodic refresh", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  try {
+    await render();
+    health.read.mockImplementation((environmentId) => ({
+      status: environmentId === remote.environmentId ? "unreachable" : "connected",
+    }));
+    devices.loadPairedDevices.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(devices.loadPairedDevices).toHaveBeenCalledWith(local);
+    expect(devices.loadPairedDevices).not.toHaveBeenCalledWith(remote);
+    // Refresh asked for by the owner still reaches it.
+    await click("Refresh devices");
+    expect(devices.loadPairedDevices).toHaveBeenCalledWith(remote);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("keeps revoke disabled with a reason on a host that cannot revoke from here", async () => {

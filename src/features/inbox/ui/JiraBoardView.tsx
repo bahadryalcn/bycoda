@@ -1,4 +1,5 @@
 import { useJiraBoardPan } from "../hooks/useJiraBoardPan";
+import { useJiraDragEdgeScroll, type DragPoint } from "../hooks/useJiraDragEdgeScroll";
 import { JiraBoardToolbar } from "./JiraBoardToolbar";
 import { StatusText } from "../../../shared/ui/StatusText";
 import { Text } from "../../../shared/ui/Text";
@@ -108,6 +109,7 @@ export function JiraBoardView({
   );
   const suppressClick = useRef(false);
   const pan = useJiraBoardPan();
+  const dragScroll = useJiraDragEdgeScroll();
   const issuesLoaded = useRef(onIssuesLoaded);
   issuesLoaded.current = onIssuesLoaded;
   /** Commits settled groups and reports their issues from the same place. */
@@ -152,6 +154,7 @@ export function JiraBoardView({
     if (!dragging) return;
     // Escape and losing the window end the drag the way a cancelled pointer does.
     const cancel = () => {
+      dragScroll.stop();
       const p = pointer.current;
       if (!p) return;
       pointer.current = null;
@@ -179,18 +182,20 @@ export function JiraBoardView({
       announcedTarget.current = "";
       announceDrag(t("Drag cancelled"));
     };
+    // Capture phase: the Inbox's window listener leaves the view on Escape, so the drag
+    // must take (and mark) the key before it, whatever order the listeners registered in.
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       cancel();
     };
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     window.addEventListener("blur", cancel);
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("blur", cancel);
     };
-  }, [dragging]);
+  }, [dragging, dragScroll]);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,6 +250,7 @@ export function JiraBoardView({
     if (!changed) setGroups((old) => old.map((group) => ({ ...group, stale: true })));
     setPick(null);
     setMoveKey(null);
+    dragScroll.stop();
     pointer.current = null;
     if (dragged.current) setGrabbing(false);
     dragged.current = null;
@@ -357,7 +363,7 @@ export function JiraBoardView({
     return () => {
       generation.current++;
     };
-  }, [boardId, board?.kind, mode, scope, reload, revision, permissionsRevision]);
+  }, [boardId, board?.kind, mode, scope, reload, revision, permissionsRevision, dragScroll]);
 
   async function readDepth(
     definition: Pick<Group, "id" | "name" | "scope" | "state" | "goal">,
@@ -583,7 +589,7 @@ export function JiraBoardView({
       : { label, element: container, placement: "inside" };
   }
 
-  function showDropTarget(key: string, zone: HTMLElement | null, at: PointerEvent<HTMLElement>) {
+  function showDropTarget(key: string, zone: HTMLElement | null, at: DragPoint) {
     const issue = allIssues.find((i) => i.identifier === key);
     const preview = issue && zone ? dropPreview(issue, zone) : null;
     // The badge always names the dragged issue; with no valid target it says where to drop.
@@ -628,28 +634,18 @@ export function JiraBoardView({
     setDragKey(p.key);
     setNotice("");
     event.preventDefault();
-    const target = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest<HTMLElement>("[data-jira-drop]");
-    showDropTarget(p.key, target ?? null, event);
-    // Scroll the nearest board/list container while approaching an edge.
-    const scroll = target?.closest<HTMLElement>(".jira-board-column, .jira-board-planning");
-    if (scroll) {
-      const rect = scroll.getBoundingClientRect();
-      if (event.clientY < rect.top + 40) scroll.scrollTop -= 16;
-      if (event.clientY > rect.bottom - 40) scroll.scrollTop += 16;
-    }
-    const row = event.currentTarget.closest<HTMLElement>(".jira-board-columns");
-    if (row) {
-      const rect = row.getBoundingClientRect();
-      if (event.clientX < rect.left + 40) row.scrollLeft -= 16;
-      if (event.clientX > rect.right - 40) row.scrollLeft += 16;
-    }
+    // Target tracking and edge auto-scroll run on one frame loop, so a held pointer keeps scrolling.
+    dragScroll.track(
+      { clientX: event.clientX, clientY: event.clientY },
+      event.currentTarget,
+      (zone, at) => showDropTarget(p.key, zone, at),
+    );
   }
 
   function pointerEnd(event: PointerEvent<HTMLElement>, cancelled = false) {
     const p = pointer.current;
     if (!p || p.id !== event.pointerId) return;
+    dragScroll.stop();
     pointer.current = null;
     dragged.current = null;
     captured.current = null;

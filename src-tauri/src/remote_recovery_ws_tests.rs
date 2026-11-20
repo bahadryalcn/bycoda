@@ -39,7 +39,7 @@ impl Fixture {
         let state = Arc::new(RemoteConnections::default());
         state.observe_ws_capability(&machine, &json!({"environmentId":"host.1","capabilities":["transport.ws.read.v2","native.buffers.recovery.v1"]}));
         let recovery = RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
+            revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: endpoint,
         };
         Self {

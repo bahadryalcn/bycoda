@@ -116,24 +116,31 @@ fn menu_item(
     builder.build(app)
 }
 
-pub fn dispatch(app: &AppHandle, id: &str) {
+/// Canonical public destinations. The repository comes from Cargo.toml so the menu cannot
+/// drift from the published package metadata.
+const WEBSITE_URL: &str = "https://bycoda.codes";
+const REPOSITORY_URL: &str = env!("CARGO_PKG_REPOSITORY");
+
+fn help_url(id: &str) -> Option<String> {
     match id {
-        "help_website" => {
-            let _ = open::that("https://github.com/bahadryalcn/bycoda");
-        }
-        "help_github" => {
-            let _ = open::that("https://github.com/bahadryalcn/bycoda");
-        }
-        "help_report_bug" => {
-            let _ = open::that(
-                "https://github.com/bahadryalcn/bycoda/issues/new?template=bug_report.yml",
-            );
-        }
-        "help_request_feature" => {
-            let _ = open::that(
-                "https://github.com/bahadryalcn/bycoda/issues/new?template=feature_request.yml",
-            );
-        }
+        "help_website" => Some(WEBSITE_URL.to_owned()),
+        "help_github" => Some(REPOSITORY_URL.to_owned()),
+        "help_report_bug" => Some(format!(
+            "{REPOSITORY_URL}/issues/new?template=bug_report.yml"
+        )),
+        "help_request_feature" => Some(format!(
+            "{REPOSITORY_URL}/issues/new?template=feature_request.yml"
+        )),
+        _ => None,
+    }
+}
+
+pub fn dispatch(app: &AppHandle, id: &str) {
+    if let Some(url) = help_url(id) {
+        let _ = open::that(url);
+        return;
+    }
+    match id {
         "new_window" => {
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || {
@@ -281,7 +288,7 @@ fn build(
     let new_tab = menu_item(
         app,
         "new_tab",
-        "New Session",
+        "New session",
         "CmdOrCtrl+T",
         "Tab: New",
         overrides,
@@ -600,7 +607,29 @@ fn build(
 
 #[cfg(test)]
 mod dispatch_tests {
-    use super::focused_workspace_index;
+    use super::{focused_workspace_index, help_url};
+
+    #[test]
+    fn help_items_open_their_own_canonical_destinations() {
+        assert_eq!(
+            help_url("help_website").as_deref(),
+            Some("https://bycoda.codes")
+        );
+        assert_eq!(
+            help_url("help_github").as_deref(),
+            Some("https://github.com/bahadryalcn/bycoda")
+        );
+        assert_ne!(help_url("help_website"), help_url("help_github"));
+        assert_eq!(
+            help_url("help_report_bug").as_deref(),
+            Some("https://github.com/bahadryalcn/bycoda/issues/new?template=bug_report.yml")
+        );
+        assert_eq!(
+            help_url("help_request_feature").as_deref(),
+            Some("https://github.com/bahadryalcn/bycoda/issues/new?template=feature_request.yml")
+        );
+        assert_eq!(help_url("new_window"), None);
+    }
 
     #[test]
     fn actions_choose_one_focused_workspace_then_visible_fallback() {

@@ -187,7 +187,7 @@ it("does not override virtual folder and pinned header positioning", async () =>
 
 it("keeps select-all state while the large session window stays bounded", async () => {
   await render();
-  const select = container.querySelector<HTMLButtonElement>('[aria-label="Select conversations"]')!;
+  const select = container.querySelector<HTMLButtonElement>('[aria-label="Select sessions"]')!;
   await act(async () => select.click());
   const selectAll = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
     (button) => button.textContent === "Select all",

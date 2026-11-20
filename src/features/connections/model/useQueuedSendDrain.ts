@@ -10,6 +10,13 @@ import {
   remoteRequestPastRetryLimit,
 } from "./remoteOutbox";
 
+export const QUEUED_DRAIN_RETRY_MIN_MS = 250;
+export const QUEUED_DRAIN_RETRY_MAX_MS = 5_000;
+
+/** Wait before offering a refused queue head again: 250 ms doubling up to 5 s. */
+export const queuedDrainRetryDelay = (refusals: number): number =>
+  Math.min(QUEUED_DRAIN_RETRY_MIN_MS * 2 ** Math.min(refusals, 10), QUEUED_DRAIN_RETRY_MAX_MS);
+
 /** The model/mode a queued head asks for before it can be sent. */
 export type QueuedConfigurationChange = {
   providerAccountId?: string | null;
@@ -64,6 +71,22 @@ export function useQueuedSendDrain(input: {
   const [drainRetry, setDrainRetry] = useState(0);
   const submitRef = useRef(input.submit);
   submitRef.current = input.submit;
+  /** Consecutive refused submits of the current head; sets the next wait. */
+  const refusals = useRef(0);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reset the Host retry backoff when the pending send or its admission conditions change.
+  useEffect(() => {
+    refusals.current = 0;
+  }, [
+    next?.id,
+    saved?.harness,
+    saved?.model,
+    saved?.settings,
+    input.providers,
+    capabilities,
+    pageCacheOnly,
+    remoteDeleted,
+    input.authorityGeneration,
+  ]);
   useEffect(() => {
     if (!next || pageCacheOnly || remoteDeleted) return;
     if (!remoteIntentAuthorityMatches(next, { authorityGeneration: input.authorityGeneration })) {
@@ -115,7 +138,7 @@ export function useQueuedSendDrain(input: {
       });
       return;
     }
-    const timer = setTimeout(() => {
+    const attempt = () => {
       const currentQueue = queue.current();
       if (
         currentQueue.status === "paused" ||
@@ -133,9 +156,18 @@ export function useQueuedSendDrain(input: {
         undefined,
         next.id,
       );
-      if (accepted) queue.sent(next.id);
-      else setDrainRetry((value) => value + 1);
-    }, 0);
+      if (accepted) {
+        refusals.current = 0;
+        queue.sent(next.id);
+        return;
+      }
+      // A refusal (rewind, preparing, missing context replay) is tracked in refs that never
+      // re-render this hook, so look again later at a bounded pace instead of spinning. The
+      // head stays first in the queue and is offered again with the same id.
+      const delay = queuedDrainRetryDelay(refusals.current++);
+      timer = setTimeout(attempt, delay);
+    };
+    let timer = setTimeout(attempt, 0);
     return () => clearTimeout(timer);
   }, [
     next,
@@ -146,7 +178,14 @@ export function useQueuedSendDrain(input: {
     input.providers,
     capabilities,
     pageCacheOnly,
+    remoteDeleted,
     input.authorityGeneration,
   ]);
-  return { retryDrain: () => setDrainRetry((value) => value + 1) };
+  return {
+    retryDrain: () => {
+      // The owner asks for a fresh look (for example after a lease wait): start the pace over.
+      refusals.current = 0;
+      setDrainRetry((value) => value + 1);
+    },
+  };
 }

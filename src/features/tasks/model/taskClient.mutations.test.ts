@@ -10,14 +10,16 @@ import {
   parseHostTask,
 } from "./hostTasks";
 import {
+  draftFromTask,
   moveTask,
   newTaskDraft,
   saveTask,
   preflightTaskDraft,
   recordTaskEvaluation,
-  TASK_MACHINE_ERROR,
+  reorderTasks,
   type BoardTask,
 } from "./taskClient";
+import { taskClientErrors } from "./taskClientErrors";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../connections/model/connections", () => ({ remoteRequest: vi.fn() }));
@@ -214,7 +216,7 @@ it("rejects a reviewer clear on an older host before project registration or any
     title: "Checked work",
     reviewerConfig: undefined,
   };
-  await expect(saveTask([local], draft)).rejects.toThrow(TASK_MACHINE_ERROR);
+  await expect(saveTask([local], draft)).rejects.toThrow(taskClientErrors.machine());
   expect(remoteRequest).not.toHaveBeenCalled();
   expect(machineProjects).not.toHaveBeenCalled();
 });
@@ -245,6 +247,52 @@ it("sends an explicit reviewer clear only to a host that advertises support", as
     true,
   );
   expect(saved.reviewerConfig).toBeUndefined();
+});
+
+it("sends the task as the editor opened it on an edit, never on a create", async () => {
+  vi.mocked(machineCapabilities).mockResolvedValue([HOST_TASK_CONTINUATION]);
+  vi.mocked(remoteRequest).mockImplementation(async (_id, _method, params) => ({
+    ...(params as { task: object }).task,
+    status: "todo",
+    createdAt: 1,
+    updatedAt: 3,
+  }));
+  const opened: BoardTask = {
+    ...newTaskDraft("G:/app", "codex", "codex:test"),
+    id: "existing",
+    projectId: "p",
+    title: "Original",
+    maxRunMinutes: 0,
+    status: "todo",
+    createdAt: 1,
+    updatedAt: 2,
+    machineId: local.id,
+    machineName: "this computer",
+    stale: true,
+    workspaceControlsSupported: true,
+  };
+  const draft = { ...draftFromTask(opened), title: "My edit" };
+  expect(draft.expectedConfiguration).toMatchObject({ id: "existing", title: "Original" });
+  expect(draft.expectedConfiguration).not.toBe(opened);
+  for (const field of ["machineId", "machineName", "cwd", "stale", "workspaceControlsSupported"])
+    expect(draft.expectedConfiguration).not.toHaveProperty(field);
+
+  await saveTask([local], draft);
+  const sentCall = vi.mocked(remoteRequest).mock.lastCall;
+  expect(sentCall).toBeDefined();
+  const sent = (sentCall![2] as { task: any }).task;
+  expect(sent.title).toBe("My edit");
+  expect(sent.expectedConfiguration).toEqual(draft.expectedConfiguration);
+
+  // A create is keyed by its creation receipt; it must not carry an edit snapshot.
+  await saveTask([local], {
+    ...newTaskDraft("G:/app", "codex", "codex:test"),
+    expectedConfiguration: draft.expectedConfiguration,
+  });
+  const createCall = vi.mocked(remoteRequest).mock.lastCall;
+  expect(createCall).toBeDefined();
+  const created = (createCall![2] as { task: any }).task;
+  expect(created).not.toHaveProperty("expectedConfiguration");
 });
 
 it("checks preparation read-only and records owner evaluation against the current revision", async () => {
@@ -343,4 +391,46 @@ it("replaces cleared host fields immediately when a blocked task is restarted", 
   });
   for (const field of ["error", "needsInput", "reviewer", "verification", "stale"])
     expect(result).not.toHaveProperty(field);
+});
+
+it("sends the revisions it read with a reorder and ignores tasks the board does not hold", async () => {
+  const queued = (id: string, updatedAt: number, reorderGuardSupported?: boolean): BoardTask => ({
+    ...newTaskDraft("G:/app", "codex", "codex:test"),
+    id,
+    projectId: "p",
+    maxRunMinutes: 0,
+    status: "queued",
+    createdAt: 1,
+    updatedAt,
+    machineId: local.id,
+    machineName: "this computer",
+    reorderGuardSupported,
+  });
+  const {
+    reorderGuardSupported: _guard,
+    machineId: _id,
+    machineName: _name,
+    ...first
+  } = queued("first", 5);
+  vi.mocked(remoteRequest).mockResolvedValue([
+    { ...first, position: 0, updatedAt: 9 },
+    // A task hidden from this board that the Host renumbered.
+    { ...first, id: "hidden", position: 1, updatedAt: 9 },
+  ]);
+  const board = [queued("second", 7, true), queued("first", 5, true)];
+  const result = await reorderTasks(board);
+  expect(remoteRequest).toHaveBeenCalledWith(
+    local.id,
+    "tasks.reorder",
+    { taskIds: ["second", "first"], expectedUpdatedAt: { second: 7, first: 5 } },
+    false,
+    true,
+  );
+  expect(result.map((task) => task.id)).toEqual(["first"]);
+  expect(result[0]).toMatchObject({ updatedAt: 9, reorderGuardSupported: true });
+
+  // An older Host rejects unknown params, so it receives only the id list.
+  vi.mocked(remoteRequest).mockClear();
+  await reorderTasks([queued("second", 7, true), queued("first", 5)]);
+  expect(vi.mocked(remoteRequest).mock.calls[0][2]).toEqual({ taskIds: ["second", "first"] });
 });

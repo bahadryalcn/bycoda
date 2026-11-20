@@ -1,4 +1,5 @@
 import { withRoomPrivacyMutation } from "../../group-lock/public/roomPrivacy";
+import { t } from "../../../shared/i18n";
 import { parentPath, pathKey, slash } from "../../../shared/lib/paths";
 import { moveIdByStep, orderByIds, type MoveStep } from "../../../shared/lib/reorder";
 import { normalizeProjectMascotName } from "./projectMascots";
@@ -341,7 +342,7 @@ export function setProjectGroupAssignment(
     next[key] = groupId;
   }
   if (!saveProjectGroupAssignments(next))
-    throw new Error("Could not save project group assignment.");
+    throw new Error(t("Could not save project group assignment."));
   return next;
 }
 
@@ -357,7 +358,7 @@ export function rebaseProjectGroupAssignment(from: string, to: string): void {
   if (!(newKey in next)) next[newKey] = next[oldKey];
   delete next[oldKey];
   if (!saveProjectGroupAssignments(next))
-    throw new Error("Could not save project group assignment.");
+    throw new Error(t("Could not save project group assignment."));
 }
 
 /** False when the group does not exist or the change could not be saved. */
@@ -489,7 +490,7 @@ export function changeProjectGroupMembers(
   }
   for (const path of add) assignments[pathKey(path)] = id;
   if (!saveProjectGroupAssignments(assignments))
-    throw new Error("Could not save project group membership.");
+    throw new Error(t("Could not save project group membership."));
 }
 
 /** Paths (as stored keys) currently assigned to the group. */

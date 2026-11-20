@@ -108,12 +108,18 @@ export function candidateFromComputer(
   };
 }
 
-/** Identity tokens in priority order: environment id, tailscale address, ssh host. */
+/**
+ * Identity tokens in priority order: environment id, tailscale address, home-network address,
+ * ssh host. A home-network address can repeat on another network; a row joined by one keeps the
+ * account computer's environment id, and SSH setup refuses a Host that answers with another.
+ */
 function identityTokens(candidate: MachineCandidate): string[] {
   const tokens: string[] = [];
   if (candidate.environmentId) tokens.push(`env:${candidate.environmentId}`);
   for (const route of candidate.routes)
     if (route.kind === "tailscale") tokens.push(`ts:${hostOf(route.address)}`);
+  for (const route of candidate.routes)
+    if (route.kind === "lan") tokens.push(`lan:${hostOf(route.address)}`);
   for (const route of candidate.routes)
     if (route.kind === "name") tokens.push(`ssh:${hostOf(route.address)}`);
   return tokens;
@@ -216,6 +222,8 @@ export type SshAddPlan = {
   target: string;
   alternate: string | null;
   name: string;
+  /** The account computer this row is; SSH setup refuses a Host with another identity. */
+  environmentId?: string;
 };
 
 /** The SSH add this candidate allows, or null when it has no SSH route (account only). */
@@ -233,6 +241,7 @@ export function sshAddPlan(candidate: DiscoveredMachine): SshAddPlan | null {
     target: withUser(first.address),
     alternate: second ? withUser(second.address) : null,
     name: candidate.name,
+    ...(candidate.environmentId ? { environmentId: candidate.environmentId } : {}),
   };
 }
 

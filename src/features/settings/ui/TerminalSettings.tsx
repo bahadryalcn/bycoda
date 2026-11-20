@@ -23,6 +23,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { Group, Row, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
+import { errorText } from "../../../shared/lib/errors";
 import { HostShellRow, shellCount } from "./HostShellRow";
 import "./SettingsCollection.css";
 import "./TerminalSettings.css";
@@ -48,7 +49,7 @@ export function TerminalPage() {
       const result = await saveTerminalProfile(id);
       if (!result.mirrored) setUnmirrored({ id });
     } catch (error) {
-      setSaveProblem(error instanceof Error ? error.message : String(error));
+      setSaveProblem(errorText(error));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -62,7 +63,7 @@ export function TerminalPage() {
         if (generation === request.current) setListed(value);
       })
       .catch((error: unknown) => {
-        if (generation === request.current) setProblem(String(error));
+        if (generation === request.current) setProblem(errorText(error));
       })
       .finally(() => {
         if (generation === request.current) setScanning(false);
@@ -88,8 +89,6 @@ export function TerminalPage() {
       <Group
         id="host-shells"
         title={t("Default shell by machine")}
-        description={t("Each machine uses its own shell, wherever you send the command from.")}
-        descriptionVisible
         persistence={{ mode: "automatic" }}
         info={
           <InfoPopover className="shrink-0" label={t("How it works")} width={360}>
@@ -105,17 +104,7 @@ export function TerminalPage() {
             </p>
             <p>
               {t(
-                "`!commands` in this computer's synced sessions run on this computer, using the shell selected here.",
-              )}
-            </p>
-            <p>
-              {t(
                 "`!commands` in this server's sessions run on the remote server, using the shell selected here, even when you type them on this computer.",
-              )}
-            </p>
-            <p>
-              {t(
-                "Applies to new commands on this host. Already open terminals keep their current shell.",
               )}
             </p>
           </InfoPopover>
@@ -206,13 +195,7 @@ function CodeBlockSettings() {
       resetLabel={t("Reset code blocks")}
       onReset={() => saveCodeRunReport(CODE_RUN_REPORT_DEFAULT)}
     >
-      <Row
-        id="terminal-code-result"
-        label={t("Add result to chat when finished")}
-        description={t(
-          "When a code block you run from a chat finishes, its output is added to the message box for you to review and send.",
-        )}
-      >
+      <Row id="terminal-code-result" label={t("Add result to chat when finished")}>
         <Toggle
           label={t("Add result to chat when finished")}
           on={report}

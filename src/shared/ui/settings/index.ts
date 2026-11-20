@@ -25,9 +25,14 @@ export { Segmented, Select, Slider, Toggle, setToggleCue } from "./settingsInput
 export { SettingsSaveBar, type SettingsSaveBarProps } from "./SettingsSaveBar";
 export { useLeaveGuard } from "./useLeaveGuard";
 export {
+  useConfirmedPreferences,
+  type ConfirmedPreferenceRequest,
+} from "./useConfirmedPreferences";
+export {
   discardAllPending,
   pendingChangeCount,
   saveAllPending,
+  usePendingSource,
   usePendingSources,
   type PendingChange,
   type PendingSource,

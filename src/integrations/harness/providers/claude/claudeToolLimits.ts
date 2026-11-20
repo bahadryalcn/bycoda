@@ -23,5 +23,8 @@ export function claudeDisallowedTools(
     ...(input.nativeReadOnly ? CLAUDE_WRITE_TOOLS : []),
     ...(input.disabledSkills ?? []).map((name) => `Skill(${name})`),
     ...(input.subagentModel === "off" ? ["Agent", "Task"] : []),
+    ...(input.nativeReadOnly || (input.subagentModel && input.subagentModel !== "default")
+      ? ["Workflow"]
+      : []),
   ];
 }

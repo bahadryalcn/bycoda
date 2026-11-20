@@ -8,6 +8,8 @@ import { type NativeObservationCapture } from "../assistant/observations/assista
 import { withVoiceGenerationsRetired } from "../assistant/voice/assistant-voice-retirement";
 import { registerAssistantNarration } from "./assistant-narration";
 import type { ServerBindings } from "./bindings";
+/** Desktop reply when no live Room source is registered (`assistant_source_window` in control.rs). */
+const ROOM_SOURCE_CLOSED = "Open the Assistant Room on this Host";
 export function createAssistantDisclosureRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -564,9 +566,12 @@ export function createAssistantDisclosureRuntime(
             }
           }
         });
-      } catch {
+      } catch (error) {
         taskNotificationReadyUntil = 0;
         incomplete = true;
+        // Every project needs the same closed Room; asking again per project only adds
+        // desktop round trips and durable delivery rows on each idle tick.
+        if (error instanceof Error && error.message === ROOM_SOURCE_CLOSED) break;
       }
     }
     if (incomplete)

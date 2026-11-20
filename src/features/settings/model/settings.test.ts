@@ -3,6 +3,7 @@ import {
   AUTOSAVE_DEFAULT,
   COLLAPSED_PROJECT_RAIL_MODE_DEFAULT,
   searchSettings,
+  SETTINGS_SEARCH_LIMIT,
   SETTINGS_INDEX,
   SETTINGS_SECTIONS,
   settingsSectionsByGroup,
@@ -831,6 +832,15 @@ describe("settings search", () => {
     expect(searchSettings("   ")).toEqual([]);
   });
 
+  it.each(["wake up", "wake word", "uyandırma komutu"])(
+    "finds voice activation when searching for %s",
+    (query) => {
+      expect(searchSettings(query)).toContainEqual(
+        expect.objectContaining({ section: "voice", settingId: "voice-wake" }),
+      );
+    },
+  );
+
   it("ranks label matches over keyword matches, and pages last", () => {
     expect(searchSettings("glass").map((result) => result.label)).toEqual([
       "Main pane glass",
@@ -870,5 +880,12 @@ describe("settings search", () => {
 
   it("caps the result list", () => {
     expect(searchSettings("e", 4)).toHaveLength(4);
+  });
+
+  it("returns every match beyond the first eight up to the search limit", () => {
+    const all = searchSettings("e");
+    expect(all.length).toBeGreaterThan(8);
+    expect(all.length).toBeLessThanOrEqual(SETTINGS_SEARCH_LIMIT);
+    expect(searchSettings("e", SETTINGS_SEARCH_LIMIT + 1000).length).toBeGreaterThan(all.length);
   });
 });

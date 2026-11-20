@@ -33,7 +33,7 @@ export function PickerChoice({
   /** False only for action lists without a committed selection. */
   showSelection?: boolean;
 }) {
-  const check = selected ? <Check aria-hidden strokeWidth={2} /> : null;
+  const check = selected ? <Check aria-hidden /> : null;
   const checkSlot = (
     <span className={choice.choiceCheck} aria-hidden="true">
       {check}

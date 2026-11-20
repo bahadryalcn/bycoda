@@ -181,7 +181,9 @@ it("names Windows availability instead of an already-enabled desktop prerequisit
   permission.windows = false;
   await act(async () => root.render(createElement(NotificationAlerts)));
   const row = container.querySelector('[data-setting-id="notification-event-taskbar"]')!;
-  expect(row.textContent).toContain("Enable Desktop notifications first");
+  // Platform availability wins over the desktop-notifications prerequisite, before and after.
+  expect(row.textContent).toContain("Taskbar badges and flashing are available only on Windows.");
+  expect(row.textContent).not.toContain("Enable Desktop notifications first");
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Desktop notifications"]')!.click(),
   );

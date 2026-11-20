@@ -240,7 +240,7 @@ fn loopback_transport_preserves_host_and_reconnects() {
     assert_eq!(output.trim(), "remote-script-ok");
     let environment = required("BYCODA_TEST_ENVIRONMENT");
     for _ in 0..2 {
-        let tunnel = Tunnel::start_with_command(&target, None, None, make_command()).unwrap();
+        let tunnel = Tunnel::start_with_command(&target, None, None, make_command(), None).unwrap();
         let response = ureq::post(&format!("http://127.0.0.1:{}/rpc", tunnel.port))
             .set(
                 "Authorization",
@@ -422,6 +422,489 @@ fn a_slot_held_by_a_tunnel_start_reads_as_busy_without_waiting() {
     release_tx.send(()).unwrap();
     holder.join().unwrap();
 }
+
+fn adopt_tracked(port: u16) -> (Tunnel, Arc<Mutex<Child>>) {
+    let tunnel = Tunnel::adopt(long_lived_child(), port);
+    let child = tunnel.child.clone();
+    (tunnel, child)
+}
+fn stopped(child: &Arc<Mutex<Child>>) -> bool {
+    matches!(child.lock().unwrap().try_wait(), Ok(Some(_)))
+}
+
+#[test]
+fn detaching_a_tunnel_leaves_ssh_running_until_the_caller_drops_it() {
+    let (tunnels, events) = exit_events();
+    let (tunnel, child) = adopt_tracked(4321);
+    tunnels.insert("m".into(), "env", tunnel);
+    // What a command does while it holds the connection-store lock.
+    let retired = tunnels.detach("m");
+    assert!(tunnels.slots().get("m").is_none());
+    assert!(!stopped(&child), "detaching must not wait for ssh to stop");
+    // What it does after releasing that lock.
+    drop(retired);
+    assert!(stopped(&child));
+    assert!(
+        events.recv_timeout(Duration::from_millis(700)).is_err(),
+        "a tunnel closed on purpose reports nothing"
+    );
+}
+
+#[test]
+fn a_detached_tunnel_never_stops_its_replacement_or_authorizes_an_old_lease() {
+    let tunnels = Tunnels::default();
+    let target = SshTarget {
+        target: "fixture@host".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    let (old, old_child) = adopt_tracked(4321);
+    tunnels.insert("m".into(), "env", old);
+    let old_lease = tunnels.endpoint("m", "env", &target, false).unwrap();
+    let retired = tunnels.detach("m");
+    // A reconnect registers the replacement while the old ssh is still dying.
+    let (fresh, fresh_child) = adopt_tracked(4322);
+    drop(tunnels.insert("m".into(), "env", fresh));
+    drop(retired);
+    assert!(stopped(&old_child));
+    assert!(!stopped(&fresh_child), "the replacement is another process");
+    assert!(!tunnels.is_current("m", &old_lease));
+    let current = tunnels.endpoint("m", "env", &target, false).unwrap();
+    assert_eq!(current.endpoint, "http://127.0.0.1:4322");
+    assert!(tunnels.is_current("m", &current));
+}
+
+#[test]
+fn detaching_never_waits_for_a_slot_holder_and_ssh_stops_once_it_lets_go() {
+    let tunnels = Tunnels::default();
+    let (tunnel, child) = adopt_tracked(4321);
+    tunnels.insert("m".into(), "env", tunnel);
+    let slot = tunnels.slots().get("m").unwrap().clone();
+    // A lease pinned to the old slot keeps the slot alive, not the process.
+    let lease = TunnelLease {
+        endpoint: String::new(),
+        slot: slot.clone(),
+        generation: 1,
+    };
+    let held = slot.clone();
+    let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let holder = std::thread::spawn(move || {
+        let _guard = held.lock().unwrap();
+        locked_tx.send(()).unwrap();
+        let _ = release_rx.recv();
+    });
+    locked_rx.recv().unwrap();
+    let started = Instant::now();
+    let retired = tunnels.detach("m");
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "waited for the slot"
+    );
+    assert!(!stopped(&child));
+    assert!(!tunnels.is_current("m", &lease));
+    release_tx.send(()).unwrap();
+    holder.join().unwrap();
+    drop(retired);
+    assert!(stopped(&child));
+    let current = slot.lock().unwrap();
+    assert!(current.tunnel.is_none());
+    assert_eq!(
+        current.generation, 2,
+        "the old lease's generation is fenced"
+    );
+}
+
+#[test]
+fn replacing_a_tunnel_returns_the_old_one_for_the_caller_to_stop() {
+    let tunnels = Tunnels::default();
+    let (old, old_child) = adopt_tracked(4321);
+    tunnels.insert("m".into(), "env", old);
+    let (fresh, fresh_child) = adopt_tracked(4322);
+    let retired = tunnels.insert("m".into(), "env", fresh);
+    assert!(
+        !stopped(&old_child),
+        "insert must not stop ssh under a lock"
+    );
+    drop(retired);
+    assert!(stopped(&old_child));
+    assert!(!stopped(&fresh_child));
+}
+
+/// Runs `close` while a watcher waits for ssh's stop to begin (a tunnel marks
+/// itself settled first, then waits for the process) and reports whether the
+/// slot was free at that moment.
+fn slot_free_while_ssh_stops(
+    slot: Arc<Mutex<Slot>>,
+    settled: Arc<AtomicBool>,
+    close: impl FnOnce(),
+) -> bool {
+    let watcher = std::thread::spawn(move || {
+        let until = Instant::now() + Duration::from_secs(10);
+        while !settled.load(Ordering::SeqCst) && Instant::now() < until {
+            std::thread::yield_now();
+        }
+        slot.try_lock().is_ok()
+    });
+    close();
+    watcher.join().unwrap()
+}
+
+#[test]
+fn stopping_ssh_never_holds_the_machine_slot() {
+    let target = SshTarget {
+        target: "fixture@host".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    // A failed request closes its lease's tunnel.
+    let tunnels = Tunnels::default();
+    let (tunnel, _child) = adopt_tracked(4321);
+    let settled = tunnel.settled.clone();
+    tunnels.insert("m".into(), "env", tunnel);
+    let slot = tunnels.slots().get("m").unwrap().clone();
+    let lease = TunnelLease {
+        endpoint: String::new(),
+        slot: slot.clone(),
+        generation: 1,
+    };
+    assert!(slot_free_while_ssh_stops(slot, settled, || {
+        tunnels.invalidate("m", &lease)
+    }));
+    // A request that finds the tunnel stale or reconnect off drops it off the slot.
+    for allow_connect in [false, true] {
+        let tunnels = Tunnels::default();
+        let (mut tunnel, _child) = adopt_tracked(4321);
+        // Started for another address, so this request cannot reuse it.
+        tunnel.target = Some(SshTarget {
+            target: "fixture@elsewhere".into(),
+            ..target.clone()
+        });
+        let settled = tunnel.settled.clone();
+        tunnels.insert("m".into(), "env", tunnel);
+        let slot = tunnels.slots().get("m").unwrap().clone();
+        if allow_connect {
+            let mut current = slot.lock().unwrap();
+            current.failure = Some((Instant::now(), "recent".into()));
+            current.failed_target = Some(target.clone());
+            current.cooldown = Duration::from_secs(60);
+        }
+        assert!(slot_free_while_ssh_stops(slot, settled, || {
+            let result = tunnels.endpoint_with("m", "env", &target, allow_connect, |_, _| {
+                panic!("no ssh is started")
+            });
+            assert!(result.is_err());
+        }));
+    }
+}
+
+#[test]
+fn reconnect_does_not_queue_requests_or_publish_to_a_replaced_machine_slot() {
+    let tunnels = Tunnels::default();
+    let target = SshTarget {
+        target: "fixture@host".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    let result = tunnels.endpoint_with("m", "old-env", &target, true, |_, _| {
+        for allow_connect in [true, false] {
+            let error = tunnels
+                .endpoint("m", "old-env", &target, allow_connect)
+                .err()
+                .unwrap();
+            assert!(error.contains("in progress"));
+        }
+        tunnels.forget_failure("m");
+        tunnels.remove("m");
+        tunnels.insert(
+            "m".into(),
+            "new-env",
+            Tunnel::adopt(long_lived_child(), 4321),
+        );
+        Ok(Tunnel::adopt(long_lived_child(), 4322))
+    });
+    assert!(result.err().unwrap().contains("changed during reconnect"));
+    let lease = tunnels.endpoint("m", "new-env", &target, false).unwrap();
+    assert_eq!(lease.endpoint, "http://127.0.0.1:4321");
+    assert!(tunnels.is_current("m", &lease));
+}
+
+#[test]
+fn reconnect_preserves_failure_cooldown_and_explicit_retry() {
+    let tunnels = Tunnels::default();
+    let target = SshTarget {
+        target: "fixture@host".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    let first = tunnels.endpoint_with("m", "env", &target, true, |_, _| Err(SSH_TIMEOUT.into()));
+    assert_eq!(first.err().as_deref(), Some(SSH_TIMEOUT));
+    let cached = tunnels.endpoint_with("m", "env", &target, true, |_, _| {
+        panic!("a recent failure should be cached")
+    });
+    assert_eq!(cached.err().as_deref(), Some(SSH_TIMEOUT));
+    tunnels.forget_failure("m");
+    let retried = tunnels
+        .endpoint_with("m", "env", &target, true, |_, _| {
+            Ok(Tunnel::adopt(long_lived_child(), 4321))
+        })
+        .unwrap();
+    assert!(tunnels.is_current("m", &retried));
+}
+
+#[test]
+fn failure_cooldown_doubles_up_to_five_minutes() {
+    let seconds: Vec<u64> = [0, 1, 2, 3, 4, 5, 6, 7, 40, u32::MAX]
+        .map(|failures| failure_cooldown(failures, 1.0).as_secs())
+        .into();
+    assert_eq!(seconds, [10, 10, 20, 40, 80, 160, 300, 300, 300, 300]);
+}
+
+#[test]
+fn failure_cooldown_jitter_stays_between_half_and_all_of_the_ceiling() {
+    let halves: Vec<u64> = [1, 2, 3, 40]
+        .map(|failures| failure_cooldown(failures, 0.0).as_secs())
+        .into();
+    assert_eq!(halves, [5, 10, 20, 150]);
+    assert_eq!(failure_cooldown(3, 0.5), Duration::from_secs(30));
+    assert_eq!(failure_cooldown(1, 9.0), Duration::from_secs(10));
+}
+
+fn backoff_target(host: &str) -> SshTarget {
+    SshTarget {
+        target: host.into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    }
+}
+
+fn age_failure(tunnels: &Tunnels, id: &str, age: Duration) {
+    let slot = tunnels.slots().get(id).unwrap().clone();
+    let mut current = slot.lock().unwrap();
+    let (_, error) = current.failure.take().unwrap();
+    current.failure = Some((Instant::now().checked_sub(age).unwrap(), error));
+}
+
+#[test]
+fn repeated_failed_redials_back_off_and_stay_quiet_inside_the_window() {
+    let tunnels = Tunnels::default();
+    let target = backoff_target("fixture@host");
+    let dials = std::cell::Cell::new(0u32);
+    let fail = |_: &SshTarget, _: Instant| {
+        dials.set(dials.get() + 1);
+        Err::<Tunnel, _>(SSH_TIMEOUT.to_string())
+    };
+    let cooldown = || tunnels.slots().get("m").unwrap().lock().unwrap().cooldown;
+    // Each failure is remembered for its own jittered window: just inside it
+    // nothing is dialed, just past it the next dial happens.
+    assert!(tunnels
+        .endpoint_with("m", "env", &target, true, fail)
+        .is_err());
+    assert_eq!(dials.get(), 1);
+    for failures in 1..=3u32 {
+        let window = cooldown();
+        let ceiling = Duration::from_secs(10 << (failures - 1));
+        assert!(
+            window >= ceiling / 2 && window <= ceiling,
+            "{window:?} in {ceiling:?}"
+        );
+        age_failure(&tunnels, "m", window - Duration::from_millis(1));
+        assert!(tunnels
+            .endpoint_with("m", "env", &target, true, fail)
+            .is_err());
+        assert_eq!(dials.get(), failures, "window has not passed");
+        age_failure(&tunnels, "m", window + Duration::from_millis(1));
+        assert!(tunnels
+            .endpoint_with("m", "env", &target, true, fail)
+            .is_err());
+        assert_eq!(dials.get(), failures + 1);
+    }
+}
+
+#[test]
+fn explicit_retry_a_new_address_or_environment_and_success_reset_the_backoff() {
+    let tunnels = Tunnels::default();
+    let target = backoff_target("fixture@host");
+    let fail = |_: &SshTarget, _: Instant| Err::<Tunnel, _>(SSH_TIMEOUT.to_string());
+    let failures = |tunnels: &Tunnels| tunnels.slots().get("m").unwrap().lock().unwrap().failures;
+    for _ in 0..3 {
+        assert!(tunnels
+            .endpoint_with("m", "env", &target, true, fail)
+            .is_err());
+        age_failure(&tunnels, "m", Duration::from_secs(600));
+    }
+    assert_eq!(failures(&tunnels), 3);
+    // An explicit reconnect starts over.
+    tunnels.forget_failure("m");
+    assert_eq!(failures(&tunnels), 0);
+    // A changed address or identity file is not answered with the old memo.
+    assert!(tunnels
+        .endpoint_with("m", "env", &target, true, fail)
+        .is_err());
+    let edited = SshTarget {
+        identity_file: Some("C:/keys/other".into()),
+        ..target.clone()
+    };
+    let dialed = std::cell::Cell::new(false);
+    assert!(tunnels
+        .endpoint_with("m", "env", &edited, true, |_, _| {
+            dialed.set(true);
+            Err(SSH_TIMEOUT.into())
+        })
+        .is_err());
+    assert!(dialed.get());
+    assert_eq!(
+        failures(&tunnels),
+        1,
+        "the new address starts at one failure"
+    );
+    // So does a new environment.
+    let dialed = std::cell::Cell::new(false);
+    assert!(tunnels
+        .endpoint_with("m", "other-env", &edited, true, |_, _| {
+            dialed.set(true);
+            Err(SSH_TIMEOUT.into())
+        })
+        .is_err());
+    assert!(dialed.get());
+    assert_eq!(failures(&tunnels), 1);
+    // A successful dial forgets the failures.
+    age_failure(&tunnels, "m", Duration::from_secs(600));
+    let lease = tunnels
+        .endpoint_with("m", "other-env", &edited, true, |_, _| {
+            Ok(Tunnel::adopt(long_lived_child(), 4321))
+        })
+        .unwrap();
+    assert!(tunnels.is_current("m", &lease));
+    assert_eq!(failures(&tunnels), 0);
+    // Dropping the lease on purpose clears them too.
+    tunnels.invalidate("m", &lease);
+    assert_eq!(failures(&tunnels), 0);
+}
+
+#[test]
+fn another_machines_failures_do_not_delay_this_machine() {
+    let tunnels = Tunnels::default();
+    let target = backoff_target("fixture@host");
+    let fail = |_: &SshTarget, _: Instant| Err::<Tunnel, _>(SSH_TIMEOUT.to_string());
+    assert!(tunnels
+        .endpoint_with("down", "env", &target, true, fail)
+        .is_err());
+    let lease = tunnels
+        .endpoint_with("up", "env", &target, true, |_, _| {
+            Ok(Tunnel::adopt(long_lived_child(), 4321))
+        })
+        .unwrap();
+    assert!(tunnels.is_current("up", &lease));
+}
+
+#[test]
+fn reconnect_tries_another_route_only_while_the_original_budget_remains() {
+    let primary = SshTarget {
+        target: "fixture@primary".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    let alternate = SshTarget {
+        target: "fixture@alternate".into(),
+        ..primary.clone()
+    };
+    let dials = vec![primary.clone(), alternate.clone()];
+    let result = Tunnel::start_dials(
+        &primary,
+        None,
+        dials.clone(),
+        Some(Instant::now() + Duration::from_secs(5)),
+        |dial| {
+            if dial == &primary {
+                return Err("first dial failed".into());
+            }
+            Ok(Tunnel::adopt(long_lived_child(), 4321))
+        },
+    )
+    .unwrap();
+    assert_eq!(result.target.as_ref(), Some(&primary));
+    assert_eq!(result.dialed.as_ref(), Some(&alternate));
+
+    let deadline = Instant::now() + Duration::from_millis(200);
+    let expired = Tunnel::start_dials(&primary, None, dials, Some(deadline), |dial| {
+        assert_eq!(dial, &primary);
+        while Instant::now() < deadline {
+            std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+        }
+        Err(SSH_TIMEOUT.into())
+    });
+    assert_eq!(expired.err().as_deref(), Some(SSH_TIMEOUT));
+
+    // A process that never opens the forward must also honor the given deadline.
+    #[cfg(windows)]
+    let mut command = {
+        let mut command = Command::new("cmd");
+        command.args(["/C", "ping -n 30 127.0.0.1 >nul & rem"]);
+        command
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut command = Command::new("sh");
+        command.args(["-c", "exec sleep 30"]);
+        command
+    };
+    crate::hide_window_console(&mut command);
+    let started = Instant::now();
+    let result = Tunnel::start_with_command(
+        &primary,
+        None,
+        None,
+        command,
+        Some(started + Duration::from_millis(500)),
+    );
+    assert_eq!(result.err().as_deref(), Some(SSH_TIMEOUT));
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn reconnect_skips_silent_routes_but_keeps_unknown_routes_and_one_last_resort() {
+    let primary = SshTarget {
+        target: "fixture@primary".into(),
+        port: None,
+        remote_port: 3774,
+        alternate: None,
+        host_key_alias: None,
+        identity_file: None,
+    };
+    let alternate = SshTarget {
+        target: "fixture@alternate".into(),
+        ..primary.clone()
+    };
+    let learned = SshTarget {
+        target: "fixture@learned".into(),
+        ..primary.clone()
+    };
+    let dials = vec![primary.clone(), alternate.clone(), learned.clone()];
+    assert_eq!(
+        rank_dials(dials.clone(), vec![Some(false), None, Some(true)], true),
+        vec![learned, alternate]
+    );
+    assert_eq!(rank_dials(dials, vec![Some(false); 3], true), vec![primary]);
+}
 #[test]
 fn a_tunnel_dropped_after_its_ssh_died_still_reports_the_exit() {
     let (tunnels, events) = exit_events();
@@ -445,6 +928,12 @@ fn ssh_stderr_keeps_its_newest_bytes() {
     // The cut lands on a character boundary even inside multi-byte text.
     append_stderr_tail(&mut text, "é".repeat(6000).as_bytes());
     assert!(text.len() <= 8192 && text.ends_with('é'));
+}
+#[test]
+fn ssh_failure_text_drops_credential_lines_before_it_is_shown() {
+    let tail = stderr_tail("Permission denied\npassword=hunter2\nBearer abc\n\u{7}bell line\n");
+    assert_eq!(tail, "Permission denied\nbell line");
+    assert!(!tail.contains("hunter2"));
 }
 #[test]
 fn a_missing_tunnel_is_not_started_when_connecting_is_not_allowed() {
@@ -710,10 +1199,16 @@ fn the_other_address_is_checked_like_the_first() {
 fn tcp_reachability_and_failure_tags() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    assert!(tcp_reachable("127.0.0.1", port, Duration::from_secs(2)));
+    assert_eq!(
+        tcp_reachable("127.0.0.1", port, Duration::from_secs(2), None),
+        Some(true)
+    );
     // A released ephemeral port can be reused by another parallel test.
     // Port zero never has a listener, so the negative dial is deterministic.
-    assert!(!tcp_reachable("127.0.0.1", 0, Duration::from_secs(2)));
+    assert_eq!(
+        tcp_reachable("127.0.0.1", 0, Duration::from_secs(2), None),
+        Some(false)
+    );
     assert_eq!(
         failure_tag(Some(255), Some(true)),
         " (exit 255, host reachable)"
@@ -922,4 +1417,106 @@ fn a_tunnel_on_a_later_address_moves_to_a_preferred_one_only_while_unchanged() {
     );
     // The tunnel it saw is gone, so a second switch from the same check is refused.
     assert!(!tunnels.switch(&later[0], on("me@preferred-route.invalid")));
+}
+
+/// A pipe that delivers its chunks and then stays open until `close` is dropped,
+/// like a grandchild still holding ssh's stdout.
+struct OpenPipe {
+    chunks: std::collections::VecDeque<Vec<u8>>,
+    close: std::sync::mpsc::Receiver<()>,
+}
+impl Read for OpenPipe {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        match self.chunks.pop_front() {
+            Some(chunk) => {
+                buffer[..chunk.len()].copy_from_slice(&chunk);
+                Ok(chunk.len())
+            }
+            None => {
+                let _ = self.close.recv();
+                Ok(0)
+            }
+        }
+    }
+}
+fn open_pipe(chunks: &[&[u8]]) -> (OpenPipe, std::sync::mpsc::Sender<()>) {
+    let (close_send, close) = std::sync::mpsc::channel();
+    let chunks = chunks.iter().map(|chunk| chunk.to_vec()).collect();
+    (OpenPipe { chunks, close }, close_send)
+}
+
+#[test]
+fn capture_keeps_partial_output_while_the_pipe_stays_open() {
+    let (pipe, _held_open) = open_pipe(&[b"first line\n", b"Permission denied (publickey).\n"]);
+    let started = Instant::now();
+    let captured = capture(pipe);
+    let text = captured.finish(Instant::now() + Duration::from_millis(300));
+    assert_eq!(text, "first line\nPermission denied (publickey).\n");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the grace period bounds the wait"
+    );
+}
+
+#[test]
+fn capture_returns_at_once_when_the_pipe_ends() {
+    let (pipe, close) = open_pipe(&[b"{\"port\":3774}\n"]);
+    let captured = capture(pipe);
+    drop(close);
+    let started = Instant::now();
+    let text = captured.finish(Instant::now() + Duration::from_secs(30));
+    assert_eq!(text, "{\"port\":3774}\n");
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn capture_keeps_only_the_newest_bytes() {
+    let mut output = Vec::new();
+    for _ in 0..40 {
+        append_capped(&mut output, &[b'a'; 4096]);
+    }
+    append_capped(&mut output, b"last line\n");
+    assert_eq!(output.len(), CAPTURE_LIMIT);
+    assert!(output.ends_with(b"last line\n"));
+    // A pipe that keeps writing after the snapshot never grows the buffer.
+    let chunk = [b'x'; 4096];
+    let chunks: Vec<&[u8]> = vec![&chunk[..]; 40];
+    let (pipe, _held_open) = open_pipe(&chunks);
+    let text = capture(pipe).finish(Instant::now() + Duration::from_millis(300));
+    assert_eq!(text.len(), CAPTURE_LIMIT);
+}
+
+#[test]
+fn setup_failure_never_shows_credentials_or_an_empty_reason() {
+    let failure = setup_failure(
+        Some(1),
+        "me@host: Permission denied (publickey).\npassword=hunter2\nBearer abc\n",
+    );
+    assert_eq!(
+        failure,
+        "SSH setup failed: me@host: Permission denied (publickey)."
+    );
+    for secret in ["hunter2", "Bearer"] {
+        assert!(!failure.contains(secret));
+    }
+    for empty in ["", "  \n", "token=abc\n"] {
+        let failure = setup_failure(Some(255), empty);
+        assert!(
+            failure.contains("exit") && failure.contains("code 255"),
+            "{failure}"
+        );
+        assert!(!failure.trim_end().ends_with(':'));
+    }
+    assert!(setup_failure(None, "").contains("stopped"));
+}
+
+#[test]
+fn timeout_keeps_what_ssh_said_without_credentials() {
+    let message = "SSH setup timed out. Check the host's network connection and try again.";
+    assert_eq!(timeout_failure(message, ""), message);
+    let failure = timeout_failure(message, "Installing host…\ntoken=abc\nwaiting for lock\n");
+    assert_eq!(
+        failure,
+        format!("{message}\nInstalling host…\nwaiting for lock")
+    );
 }

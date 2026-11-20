@@ -390,7 +390,7 @@ it("reports an unconfirmed activity read as an error with retry, not as an empty
   expect(document.body.textContent).not.toContain("No activity yet");
   expect(
     [...document.querySelectorAll("button")].some(
-      (button) => button.textContent?.trim() === "Retry",
+      (button) => button.textContent?.trim() === "Try again",
     ),
   ).toBe(true);
 });

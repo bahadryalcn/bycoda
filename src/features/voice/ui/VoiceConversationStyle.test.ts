@@ -29,7 +29,7 @@ const button = (label: string) =>
     (node) => node.textContent?.trim() === label,
   )!;
 
-it("opening sleep and wake keeps opt-ins untouched and preserves an uncommitted phrase draft", async () => {
+it("opening the away settings leaves the saved microphone preferences untouched", async () => {
   saveVoiceSettings({
     ...loadVoiceSettings(),
     wakeEnabled: true,
@@ -38,20 +38,14 @@ it("opening sleep and wake keeps opt-ins untouched and preserves an uncommitted 
   });
   const saved = localStorage.getItem("bycoda.voice");
   await act(async () => root.render(createElement(Fixture)));
-  const disclosure = button("Sleep and wake");
+  const disclosure = button("When you step away");
   expect(disclosure.getAttribute("aria-expanded")).toBe("false");
   await act(async () => disclosure.click());
-  const input = host.querySelector<HTMLInputElement>(
-    '[data-setting-id="voice-wake-phrase"] input',
-  )!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "x");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await act(async () => disclosure.click());
-  await act(async () => disclosure.click());
-  expect(host.querySelector('[data-setting-id="voice-wake-phrase"] input')).toBe(input);
-  expect(input.value).toBe("x");
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    host.querySelector('[data-setting-id="voice-idle-sleep"]')?.closest("[hidden]"),
+  ).toBeNull();
+  expect(host.querySelector('[data-setting-id="voice-wake-phrase"]')).toBeNull();
   expect(localStorage.getItem("bycoda.voice")).toBe(saved);
   expect(change).not.toHaveBeenCalled();
 });

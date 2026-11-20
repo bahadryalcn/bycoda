@@ -1,16 +1,14 @@
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { Heading } from "../../../shared/ui/Heading";
-import { Badge } from "../../../shared/ui/Badge";
+import { useId } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { ModalActions } from "../../../shared/ui/Modal";
+import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { Surface } from "../../../shared/ui/Surface";
 import { TextField } from "../../../shared/ui/TextField";
 import { t } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -40,9 +38,11 @@ function SshHelp({ editing }: { editing: boolean }) {
     <InfoPopover label={t("Connection help")} width={360}>
       <p>
         {editing
-          ? t("Changes apply to this machine. To connect a different computer, choose Add machine.")
+          ? t(
+              "Changes apply to this computer. To connect a different computer, choose Add a computer.",
+            )
           : t(
-              "Connect a different computer with its own SSH address. Existing machines stay saved.",
+              "Connect a different computer with its own SSH address. Existing computers stay saved.",
             )}
       </p>
       <p>
@@ -132,9 +132,7 @@ function SshFields({
             variant="secondary"
             align="start"
           >
-            {t("Use ")}
-            {suggestion}
-            {t(" instead of the IP")}
+            {t("Use {p0} instead of the IP", { p0: suggestion })}
           </Button>
         )}
       </div>
@@ -182,7 +180,7 @@ function SshFields({
           label={t("Other address (optional)")}
           fieldClassName="min-w-0 flex-1"
         />
-        <div className="max-w-40">
+        <div className="max-w-56">
           <NumberField
             disabled={busy}
             min={1}
@@ -217,7 +215,6 @@ export function MachineForm({
   saveLabel,
   onSubmit,
   onCancel,
-  framed = true,
 }: {
   editing?: RemoteMachine;
   method: MachineMethod;
@@ -231,119 +228,105 @@ export function MachineForm({
   onTokenChange: (token: string) => void;
   busy: boolean;
   error: string;
-  saveLabel: string;
+  saveLabel: "Save" | "Save and reconnect";
   onSubmit: () => void;
   onCancel: () => void;
-  /** Inside a dialog the form drops its card and heading; the dialog supplies both. */
-  framed?: boolean;
 }) {
+  const formId = useId();
   const ssh = Boolean(editing) || method === "ssh";
-  const title = editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a new machine");
+  const title = editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a new computer");
+  const editAction = saveLabel === "Save" ? t("Save") : t("Save and reconnect");
+  const actions = (
+    <ModalActions inline={!editing}>
+      <Button stableWidth type="button" disabled={busy} onClick={onCancel} variant="ghost">
+        {t("Cancel")}
+      </Button>
+      <Button
+        stableWidth
+        reserveLabels={[t("Saving…"), t("Connecting…")]}
+        loading={busy}
+        disabled={busy || (ssh ? !draft.target.trim() : !url.trim() || !token)}
+        variant="primary"
+        type="submit"
+        form={formId}
+      >
+        {editing ? (busy ? t("Saving…") : editAction) : busy ? t("Connecting…") : t("Connect")}
+      </Button>
+    </ModalActions>
+  );
   return (
     <form
       key={editing?.id ?? "new-machine"}
+      id={formId}
       aria-label={title}
+      className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
       }}
     >
-      <Surface
-        variant={framed ? "card" : undefined}
-        padding={framed ? "lg" : "none"}
-        className="flex flex-col gap-4"
-      >
-        {framed ? (
-          <div className="flex items-center justify-between gap-2">
-            <Heading size="item">{title}</Heading>
-            {ssh ? (
-              <div className="flex items-center gap-1">
-                <Badge size="sm">{"SSH"}</Badge>
-                <SshHelp editing={Boolean(editing)} />
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {!editing ? (
-          <div className="flex items-center gap-1">
-            {/* In a dialog the method choice already says SSH; its help sits beside it. */}
-            <RadioGroup
-              variant="inline"
-              label={t("Connection method")}
-              disabled={busy}
-              value={method}
-              onValueChange={(next) => onMethodChange(next === "url" ? "url" : "ssh")}
-              options={[
-                { value: "ssh", label: t("SSH") },
-                { value: "url", label: t("Host URL") },
-              ]}
-            />
-            {!framed && ssh ? <SshHelp editing={false} /> : null}
-          </div>
-        ) : null}
+      {!editing ? (
+        <div className="flex items-center gap-1">
+          {/* In a dialog the method choice already says SSH; its help sits beside it. */}
+          <RadioGroup
+            variant="inline"
+            label={t("Connection method")}
+            disabled={busy}
+            value={method}
+            onValueChange={(next) => onMethodChange(next === "url" ? "url" : "ssh")}
+            options={[
+              { value: "ssh", label: t("SSH") },
+              { value: "url", label: t("Host URL") },
+            ]}
+          />
+          {ssh ? <SshHelp editing={false} /> : null}
+        </div>
+      ) : null}
+      <div className="flex items-start gap-2">
         <Text as="p" tone="muted">
           {editing
             ? saveLabel === "Save"
-              ? t("Saving changes the machine name without reconnecting.")
-              : t("Saving reconnects this machine with the updated address.")
+              ? t("Saving changes the computer name without reconnecting.")
+              : t("Saving reconnects this computer with the updated address.")
             : ssh
-              ? t("Installs bycoda Host over SSH so you can run agents on this machine.")
+              ? t("Installs bycoda Host over SSH so you can run agents on this computer.")
               : t("Enter the host URL and a device token issued by that host.")}
         </Text>
-        {ssh ? (
-          <SshFields
-            draft={draft}
-            editing={Boolean(editing)}
-            busy={busy}
-            suggestion={suggestion}
-            onChange={onDraftChange}
+        {editing ? <SshHelp editing /> : null}
+      </div>
+      {ssh ? (
+        <SshFields
+          draft={draft}
+          editing={Boolean(editing)}
+          busy={busy}
+          suggestion={suggestion}
+          onChange={onDraftChange}
+        />
+      ) : (
+        <>
+          <TextField
+            required
+            disabled={busy}
+            type="url"
+            autoComplete="url"
+            spellCheck={false}
+            value={url}
+            onChange={(event) => onUrlChange(event.target.value)}
+            label={t("Host URL")}
+            fieldClassName="min-w-0 flex-1"
           />
-        ) : (
-          <>
-            <TextField
-              required
-              disabled={busy}
-              type="url"
-              autoComplete="url"
-              spellCheck={false}
-              value={url}
-              onChange={(event) => onUrlChange(event.target.value)}
-              label={t("Host URL")}
-              fieldClassName="min-w-0 flex-1"
-            />
-            <PasswordField
-              label={t("Device token")}
-              required
-              disabled={busy}
-              autoComplete="off"
-              value={token}
-              onChange={(event) => onTokenChange(event.target.value)}
-            />
-          </>
-        )}
-        {error && <Alert tone="danger">{error}</Alert>}
-        <ModalActions inline>
-          <Button stableWidth type="button" disabled={busy} onClick={onCancel} variant="secondary">
-            {t("Cancel")}
-          </Button>
-          <Button
-            stableWidth
-            reserveLabels={[t("Saving…"), t("Connecting…")]}
-            loading={busy}
-            disabled={busy || (ssh ? !draft.target.trim() : !url.trim() || !token)}
-            variant="primary"
-            type="submit"
-          >
-            {editing
-              ? busy
-                ? t("Saving…")
-                : t(saveLabel)
-              : busy
-                ? t("Connecting…")
-                : t("Connect")}
-          </Button>
-        </ModalActions>
-      </Surface>
+          <PasswordField
+            label={t("Device token")}
+            required
+            disabled={busy}
+            autoComplete="off"
+            value={token}
+            onChange={(event) => onTokenChange(event.target.value)}
+          />
+        </>
+      )}
+      {error && <Alert tone="danger">{error}</Alert>}
+      {editing ? <ModalFooter>{actions}</ModalFooter> : actions}
     </form>
   );
 }

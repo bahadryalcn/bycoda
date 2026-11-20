@@ -1,6 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { useState, useSyncExternalStore } from "react";
 import { Alert } from "../../../shared/ui/Alert";
+import { errorText } from "../../../shared/lib/errors";
 import { DeliveryReviewChoice } from "../../sessions/public/DeliveryReviewChoice";
 import { resumeSharedLocalQueue, useLocalSharedQueueClient } from "../model/useSharedLocalQueues";
 import { t, useLocale } from "../../../shared/i18n";
@@ -57,7 +58,7 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
               : t("The queue is paused. Resume it only after checking the conversation."),
         );
     } catch (reason) {
-      setError(String(reason).replace(/^Error: /, ""));
+      setError(errorText(reason));
     } finally {
       setWorking(false);
     }

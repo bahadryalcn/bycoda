@@ -92,7 +92,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-@media (max-width: 540px) {
+@container assistant-room (max-width: 540px) {
   .header {
     align-items: stretch;
   }

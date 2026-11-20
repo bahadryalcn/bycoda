@@ -201,3 +201,102 @@ it("keeps the writer fence while a started effect settles even if its callback r
     rmSync(f.directory, { recursive: true, force: true });
   }
 });
+
+it("fails a retirement closed at the reader deadline and keeps the fence until the old reader settles", async () => {
+  const f = await setup();
+  try {
+    const owner = new AssistantNativeVoiceLeases(f.store, 20);
+    await owner.ready;
+    const entered = Promise.withResolvers<void>();
+    const settle = Promise.withResolvers<void>();
+    let signal!: AbortSignal;
+    const reader = owner.withRegistration(
+      f.input,
+      () => true,
+      async (_valid, abort) => {
+        signal = abort;
+        entered.resolve();
+        await settle.promise;
+      },
+    );
+    const settled = reader.catch((error: Error) => error);
+    await entered.promise;
+    const retire = vi.fn(async (_leases, effect) => effect(() => true));
+    await expect(owner.retireAll(retire, async () => "changed")).rejects.toThrow("in-flight");
+    expect(retire).not.toHaveBeenCalled();
+    expect(signal.aborted).toBe(true);
+    // The timeout must not hand out new authority while the old reader is still running.
+    await expect(
+      owner.withRegistration(
+        { ...f.input, generationKey: "new" },
+        () => true,
+        async () => "leak",
+      ),
+    ).rejects.toThrow("retirement");
+    await expect(
+      owner.retireAll(
+        async () => "unreachable",
+        async () => "unreachable",
+      ),
+    ).rejects.toThrow("in-flight");
+    settle.resolve();
+    expect(await settled).toMatchObject({ message: expect.stringContaining("uncertain") });
+    const rows = await f.store.db.prepare("SELECT value FROM assistant_native_voice_leases").all();
+    expect(rows.map((row) => JSON.parse(String(row.value)).state)).toEqual(["active"]);
+    const later = vi.fn(async (_leases, effect) => effect(() => true));
+    await expect(owner.retireAll(later, async () => "changed")).resolves.toBe("changed");
+    expect(later.mock.calls[0][0]).toHaveLength(1);
+    await expect(
+      owner.withRegistration(
+        { ...f.input, generationKey: "new" },
+        () => true,
+        async () => "ok",
+      ),
+    ).resolves.toBe("ok");
+  } finally {
+    await f.store.close();
+    rmSync(f.directory, { recursive: true, force: true });
+  }
+});
+
+it("selects only active or corrupt leases through the state index and keeps closed tombstones", async () => {
+  const f = await setup();
+  try {
+    await f.owner.withRegistration(
+      f.input,
+      () => true,
+      async () => undefined,
+    );
+    await f.owner.retireAll(
+      async (_leases, effect) => effect(() => true),
+      async () => "closed",
+    );
+    const plan = await f.store.db
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT id,value FROM assistant_native_voice_leases WHERE (CASE WHEN json_valid(value) THEN json_extract(value,'$.state') ELSE 'corrupt' END) IN ('active','corrupt')",
+      )
+      .all();
+    expect(plan.map((row) => String(row.detail)).join(" ")).toContain(
+      "assistant_native_voice_leases_state",
+    );
+    // A closed generation is never deleted, so it can never be registered again.
+    await expect(
+      f.owner.withRegistration(
+        f.input,
+        () => true,
+        async () => undefined,
+      ),
+    ).rejects.toThrow("source changed");
+    const retire = vi.fn();
+    await expect(f.owner.retireAll(retire, async () => "revoked")).resolves.toBe("revoked");
+    expect(retire).not.toHaveBeenCalled();
+    await f.store.db
+      .prepare("INSERT INTO assistant_native_voice_leases(id,value) VALUES(?,?)")
+      .run("corrupt", "{not json");
+    await expect(f.owner.retireAll(retire, async () => "revoked")).rejects.toThrow();
+    expect(retire).not.toHaveBeenCalled();
+  } finally {
+    await f.store.close();
+    rmSync(f.directory, { recursive: true, force: true });
+  }
+});

@@ -73,6 +73,34 @@ type PendingSwitch =
 const MENU_MIN_HEIGHT = 180;
 const MENU_MAX_HEIGHT = 280;
 
+const branchKey = (entry: GitBranchInfo) => `${entry.remote ?? "local"}:${entry.name}`;
+
+function branchOption(entry: GitBranchInfo): PickerOption {
+  return {
+    value: branchKey(entry),
+    title: (
+      <Text
+        as="span"
+        size="inherit"
+        tone="inherit"
+        weight={entry.current ? "medium" : undefined}
+        className="flex min-w-0"
+      >
+        <MiddleTruncate mode="text" className="min-w-0 flex-1">
+          {entry.name}
+        </MiddleTruncate>
+      </Text>
+    ),
+    textValue: entry.name,
+    icon: <GitBranch className="icon-sm" strokeWidth={1.75} />,
+    meta: entry.remote ? (
+      <Badge size="xs" appearance="subtle">
+        {entry.remote}
+      </Badge>
+    ) : undefined,
+  };
+}
+
 export function BranchPicker({
   cwd,
   branch,
@@ -164,25 +192,28 @@ export function BranchPicker({
   );
   const createRow: CreateRow | null = createTaken ? null : { kind: "create", name: createName };
 
-  const rows = useMemo((): BranchRow[] => {
-    const branches = projectBranches?.branches ?? [];
-    const name = query.trim();
-    const needle = name.toLowerCase();
-    const filtered = needle
-      ? branches.filter((entry) => {
-          const hay = entry.remote ? `${entry.name} ${entry.remote}` : entry.name;
-          return hay.toLowerCase().includes(needle);
-        })
-      : branches;
+  // Rows, option elements and the lowercase search text are built once per branch list (a repository can
+  // have thousands of remote refs); a keystroke only filters them and PickerList windows what it mounts.
+  const indexed = useMemo(() => {
     const selected = branch || projectBranches?.current;
-    return filtered.map((entry) => ({
-      kind: "branch" as const,
-      branch: {
-        ...entry,
-        current: entry.name === selected && !entry.remote,
-      },
-    }));
-  }, [branch, projectBranches, query]);
+    return (projectBranches?.branches ?? []).map((entry) => {
+      const row: BranchRow = {
+        kind: "branch",
+        branch: { ...entry, current: entry.name === selected && !entry.remote },
+      };
+      return {
+        row,
+        option: branchOption(row.branch),
+        hay: (entry.remote ? `${entry.name} ${entry.remote}` : entry.name).toLowerCase(),
+      };
+    });
+  }, [branch, projectBranches]);
+  const needle = query.trim().toLowerCase();
+  const visible = useMemo(
+    () => (needle ? indexed.filter((entry) => entry.hay.includes(needle)) : indexed),
+    [indexed, needle],
+  );
+  const rows = useMemo((): BranchRow[] => visible.map((entry) => entry.row), [visible]);
 
   const applySwitch = (pending: PendingSwitch) =>
     pending.kind === "create"
@@ -267,34 +298,7 @@ export function BranchPicker({
 
   // Navigation restarts whenever the picker opens or the query changes; a
   // shrinking list clamps the highlighted row during render.
-  const branchKey = (entry: GitBranchInfo) => `${entry.remote ?? "local"}:${entry.name}`;
-  const options = useMemo(
-    (): PickerOption[] =>
-      rows.map(({ branch: entry }) => ({
-        value: `${entry.remote ?? "local"}:${entry.name}`,
-        title: (
-          <Text
-            as="span"
-            size="inherit"
-            tone="inherit"
-            weight={entry.current ? "medium" : undefined}
-            className="flex min-w-0"
-          >
-            <MiddleTruncate mode="text" className="min-w-0 flex-1">
-              {entry.name}
-            </MiddleTruncate>
-          </Text>
-        ),
-        textValue: entry.name,
-        icon: <GitBranch className="icon-sm" strokeWidth={1.75} />,
-        meta: entry.remote ? (
-          <Badge size="xs" appearance="subtle">
-            {entry.remote}
-          </Badge>
-        ) : undefined,
-      })),
-    [rows],
-  );
+  const options = useMemo((): PickerOption[] => visible.map((entry) => entry.option), [visible]);
   const currentRow = rows.find((row) => row.branch.current);
   const picker = usePickerList({
     options,
@@ -337,9 +341,9 @@ export function BranchPicker({
     : missingGit && !checkouts
       ? t("No git repository")
       : checkouts
-        ? `${t("Working copy")} · ${checkouts.value}`
-        : `${t("Switch branch in this working copy…")} · ${label}`;
-  // With checkouts the control still switches working copy while a branch is unknown.
+        ? `${t("Worktree")} · ${checkouts.value}`
+        : `${t("Switch branch in this worktree…")} · ${label}`;
+  // With checkouts the control still switches worktree while a branch is unknown.
   const interactive =
     enabled && !checkoutBusy && (checkouts ? true : !awaitingBranch && !missingGit);
 
@@ -349,7 +353,7 @@ export function BranchPicker({
         title={title}
         aria-label={
           checkouts
-            ? `${t("Working copy")} ${label}`
+            ? `${t("Worktree")} ${label}`
             : awaitingBranch
               ? t("Loading branch")
               : missingGit
@@ -428,13 +432,13 @@ export function BranchPicker({
           minHeight={MENU_MIN_HEIGHT}
           maxHeight={MENU_MAX_HEIGHT}
           onDismiss={(reason) => dismiss(reason === "escape")}
-          label={checkouts ? t("Working copy") : t("Branch picker")}
+          label={checkouts ? t("Worktree") : t("Branch picker")}
           data-branch-picker=""
           header={
             <>
               {checkouts ? (
                 <TabStrip<Tab>
-                  label={t("Working copy")}
+                  label={t("Worktree")}
                   size="sm"
                   fill
                   className="shrink-0"
@@ -464,9 +468,7 @@ export function BranchPicker({
               <PopoverSearchHeader
                 ref={search}
                 label={checkoutTab ? t("Search worktrees") : t("Search or create a branch")}
-                placeholder={
-                  checkoutTab ? t("Search worktrees") : t("Search or create a branch...")
-                }
+                placeholder={checkoutTab ? t("Search worktrees") : t("Search or create a branch…")}
                 value={query}
                 onValueChange={(value) => {
                   setQuery(value);
@@ -535,10 +537,12 @@ export function BranchPicker({
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => pick(createRow)}
                   >
-                    <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                      {createRow.name
-                        ? t("Create and checkout {p0}", { p0: createRow.name })
-                        : t("New branch")}
+                    <Text size="inherit" tone="inherit" className="flex min-w-0">
+                      <MiddleTruncate className="min-w-0">
+                        {createRow.name
+                          ? t("Create and checkout {p0}", { p0: createRow.name })
+                          : t("New branch")}
+                      </MiddleTruncate>
                     </Text>
                   </Button>
                 ) : null}

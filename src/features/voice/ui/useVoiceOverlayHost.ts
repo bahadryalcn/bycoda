@@ -41,7 +41,8 @@ export function useVoiceOverlayHost(options: {
   useLayoutEffect(() => {
     handlers.current = options;
   });
-  const snapshot = JSON.stringify(state);
+  // The transcript-sized state is serialized only while an overlay window exists to receive it.
+  const snapshot = detached ? JSON.stringify(state) : "";
   const latestSnapshot = useRef(snapshot);
   latestSnapshot.current = snapshot;
   const label = useRef<string | null>(null);

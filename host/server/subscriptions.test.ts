@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import type { HostStreamTarget } from "../transport/ws/subscriptions";
 import { createSubscriptionsRuntime } from "./subscriptions";
 
 it("does not refresh sibling session streams when another session of the project changes", () => {
@@ -60,20 +61,70 @@ it("does not refresh sibling session streams when another session of the project
   runtime.unsubscribeChanges();
 });
 
+it("prunes stream version entries of retired targets on the aging timer, not only on the next load", () => {
+  vi.useFakeTimers();
+  try {
+    const store = {
+      environmentId: "env",
+      unattributedChangeVersion: 0,
+      projectVersion: () => 1,
+      versions: { scope: () => 1, session: () => 1 },
+      subscribeChanges: () => () => undefined,
+      subscribeAuthorityChanges: () => () => undefined,
+      subscribeAuthorizationChanges: () => () => undefined,
+    };
+    const noop = { onDelete: undefined, onChange: undefined };
+    const runtime = createSubscriptionsRuntime({
+      engine: { store },
+      tasks: noop,
+      goals: noop,
+      automations: noop,
+      stewards: noop,
+      hostNotes: noop,
+      crews: { definitions: noop, agents: noop, runs: noop },
+      desktop: { live: noop },
+      signal: { notify: () => undefined },
+      catalogs: noop,
+    } as never);
+    // Entries of a session and project no open stream targets any more.
+    runtime.streamProjects.set("gone", "gone-project");
+    runtime.streamSessionVersions.set("gone", 1);
+    runtime.streamProjectVersions.set("gone-project", 1);
+    runtime.streamProjectScopes.set("gone-project", 1);
+
+    vi.advanceTimersByTime(5_000);
+
+    expect(runtime.streamProjects.has("gone")).toBe(false);
+    expect(runtime.streamSessionVersions.has("gone")).toBe(false);
+    expect(runtime.streamProjectVersions.has("gone-project")).toBe(false);
+    expect(runtime.streamProjectScopes.has("gone-project")).toBe(false);
+    runtime.unsubscribeChanges();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 type DirectoryProject = { id: string; cwd: string; name: string; registered: boolean };
 function environmentRuntime() {
   const state = {
     projects: [{ id: "a", cwd: "/a", name: "A", registered: true }] as DirectoryProject[],
     privacyReady: true,
+    sessions: [] as { id: string; title: string }[],
+    sessionProjects: new Map<string, string>(),
+    /** The fresh desktop snapshots; moves only when one ages out or arrives. */
+    freshClients: '["desktop"]',
+    listCalls: 0,
   };
   const live: {
-    onChange?: () => void;
+    onChange?: (sessionIds: string[]) => void;
     onSourceChange?: () => void;
     onDirectoryChange?: () => void;
     groupLock: { access: () => unknown };
+    freshDirectoryClients: () => string;
     projectDirectory: () => unknown;
   } = {
     groupLock: { access: () => ({ groupIds: new Set<string>(), hiddenList: false }) },
+    freshDirectoryClients: () => state.freshClients,
     projectDirectory: () => ({
       version: 1,
       privacyReady: state.privacyReady,
@@ -84,7 +135,15 @@ function environmentRuntime() {
   const store = {
     environmentId: "env",
     unattributedChangeVersion: 0,
-    db: { outsideScope: async (run: () => unknown) => await run() },
+    db: {
+      outsideScope: async (run: () => unknown) => await run(),
+      prepare: () => ({
+        get: async (id: string) => {
+          const projectId = state.sessionProjects.get(id);
+          return projectId === undefined ? undefined : { project_id: projectId };
+        },
+      }),
+    },
     projects: async () => state.projects.map(({ registered: _registered, ...project }) => project),
     projectVersion: () => 1,
     versions: { scope: () => 1, session: () => 1 },
@@ -102,13 +161,28 @@ function environmentRuntime() {
     hostNotes: noop,
     crews: { definitions: noop, agents: noop, runs: noop },
     projectsService: {
-      list: async () => state.projects.map((p) => ({ id: p.id, cwd: p.cwd, name: p.name })),
+      list: async () => {
+        state.listCalls++;
+        return state.projects.map((p) => ({ id: p.id, cwd: p.cwd, name: p.name }));
+      },
     },
+    projectSessionList: async () => ({
+      etag: state.sessions.map((session) => session.title).join(),
+      list: state.sessions,
+    }),
     desktop: { live },
+    sessionRead: async (_id: unknown, run: () => unknown) => await run(),
     signal: { notify: () => undefined },
     catalogs: noop,
   } as never);
-  const events: { kind: string; data?: any; cursor: { epoch: string; sequence: number } }[] = [];
+  const events: {
+    subscriptionId: string;
+    kind: string;
+    data?: any;
+    revision?: number;
+    baseRevision?: number;
+    cursor: { epoch: string; sequence: number };
+  }[] = [];
   const owner = {
     connectionId: "connection",
     principalId: "principal",
@@ -118,16 +192,45 @@ function environmentRuntime() {
       return true;
     },
   };
-  const open = (subscriptionId = "s", cursor?: { epoch: string; sequence: number }) => {
+  const open = (
+    subscriptionId = "s",
+    cursor?: { epoch: string; sequence: number },
+    target: HostStreamTarget = { kind: "environment" },
+  ) => {
     const opened = runtime.subscriptionHub.open(owner, {
       subscriptionId,
-      target: { kind: "environment" },
+      target,
       ...(cursor ? { cursor } : {}),
     });
     opened.activate();
   };
   return { runtime, state, live, events, open };
 }
+
+it("refreshes only the project of an unsubscribed Host session on a desktop beat (#825)", async () => {
+  const { runtime, state, live } = environmentRuntime();
+  const invalidate = vi.spyOn(runtime.subscriptionHub, "invalidate");
+  runtime.streamProjectVersions.set("a", 1);
+  runtime.streamProjectVersions.set("b", 1);
+  state.sessionProjects.set("host-session", "a");
+
+  try {
+    live.onChange!(["host-session"]);
+    await vi.waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ kind: "project", projectId: "a" }),
+    );
+    expect(invalidate).not.toHaveBeenCalledWith({ kind: "project", projectId: "b" });
+
+    invalidate.mockClear();
+    live.onChange!(["desktop-only-session"]);
+    await vi.waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ kind: "project", projectId: "b" }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ kind: "project", projectId: "a" });
+  } finally {
+    runtime.unsubscribeChanges();
+  }
+});
 
 it("publishes the whole project directory on the environment stream and keeps the legacy projects field", async () => {
   vi.useFakeTimers();
@@ -182,6 +285,7 @@ it("re-reads an open environment stream when a desktop snapshot ages out", async
     open();
     await vi.advanceTimersByTimeAsync(500);
     state.privacyReady = false; // the desktop heartbeat went stale; no commit announces it
+    state.freshClients = "[]";
     await vi.advanceTimersByTimeAsync(30_000);
     expect(events.at(-1)!.data.directory.privacyReady).toBe(false);
     runtime.subscriptionHub.close();
@@ -189,6 +293,72 @@ it("re-reads an open environment stream when a desktop snapshot ages out", async
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("does not reload an open environment stream on the aging timer while no snapshot ages out", async () => {
+  vi.useFakeTimers();
+  try {
+    const { runtime, state, events, open } = environmentRuntime();
+    open();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.listCalls).toBe(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(state.listCalls).toBe(1);
+    expect(events).toHaveLength(1);
+    // A snapshot crossing the stale threshold still reloads once, then settles again.
+    state.freshClients = "[]";
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(state.listCalls).toBe(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(state.listCalls).toBe(2);
+    runtime.subscriptionHub.close();
+    runtime.unsubscribeChanges();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("refreshes every stream for SQL outside the session tables but only the environment for a commit no stream version explains", () => {
+  let notify!: () => void;
+  const store = {
+    environmentId: "env",
+    unattributedChangeVersion: 0,
+    projectVersion: () => 1,
+    versions: { scope: () => 1, session: () => 1 },
+    subscribeChanges: (listener: () => void) => {
+      notify = listener;
+      return () => undefined;
+    },
+    subscribeAuthorityChanges: () => () => undefined,
+    subscribeAuthorizationChanges: () => () => undefined,
+  };
+  const noop = { onDelete: undefined, onChange: undefined };
+  const runtime = createSubscriptionsRuntime({
+    engine: { store },
+    tasks: noop,
+    goals: noop,
+    automations: noop,
+    stewards: noop,
+    hostNotes: noop,
+    crews: { definitions: noop, agents: noop, runs: noop },
+    desktop: { live: noop },
+    signal: { notify: () => undefined },
+    catalogs: noop,
+  } as never);
+  const invalidate = vi.spyOn(runtime.subscriptionHub, "invalidate");
+  runtime.streamProjects.set("a", "p");
+  runtime.streamProjectVersions.set("p", 1);
+  runtime.streamProjectScopes.set("p", 1);
+  runtime.streamSessionVersions.set("a", 1);
+
+  notify(); // session-table writes elsewhere: no streamed version moved
+  expect(invalidate.mock.calls).toEqual([[{ kind: "environment" }]]);
+
+  invalidate.mockClear();
+  store.unattributedChangeVersion = 1; // a queue, approval or settings write
+  notify();
+  expect(invalidate.mock.calls).toEqual([[]]);
+  runtime.unsubscribeChanges();
 });
 
 it("replays a missed directory change to a reconnecting cursor", async () => {
@@ -205,6 +375,53 @@ it("replays a missed directory change to a reconnecting cursor", async () => {
     open("second", cursor);
     await vi.advanceTimersByTimeAsync(500);
     expect(events.at(-1)!.data.directory.projects).toEqual([]);
+    runtime.subscriptionHub.close();
+    runtime.unsubscribeChanges();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("streams a delta project target as changed rows and keeps the plain target a full snapshot", async () => {
+  vi.useFakeTimers();
+  try {
+    const { runtime, state, events, open } = environmentRuntime();
+    state.sessions = [
+      { id: "a", title: "a" },
+      { id: "b", title: "b" },
+      { id: "c", title: "c" },
+    ];
+    open("delta", undefined, { kind: "project", projectId: "p", delta: true });
+    open("plain", undefined, { kind: "project", projectId: "p" });
+    await vi.advanceTimersByTimeAsync(500);
+    const delta = () => events.filter((event) => event.subscriptionId === "delta");
+    const plain = () => events.filter((event) => event.subscriptionId === "plain");
+    expect(delta()).toHaveLength(1);
+    expect(delta()[0]).toMatchObject({ kind: "snapshot", data: { sessions: state.sessions } });
+    expect(plain()[0]).toMatchObject({ kind: "snapshot", data: { sessions: state.sessions } });
+    for (const [id, event] of [
+      ["delta", delta()[0]!],
+      ["plain", plain()[0]!],
+    ] as const)
+      runtime.subscriptionHub.acknowledge("connection", id, event.cursor);
+
+    // "c" streams: it changes and moves to the front.
+    state.sessions = [{ id: "c", title: "c streaming" }, state.sessions[0]!, state.sessions[1]!];
+    runtime.subscriptionHub.invalidate({ kind: "project", projectId: "p" });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(delta()).toHaveLength(2);
+    expect(delta()[1]).toMatchObject({
+      kind: "delta",
+      baseRevision: delta()[0]!.revision,
+      data: { etag: "c streaming,a,b", sessions: [{ id: "c", title: "c streaming" }], head: ["c"] },
+    });
+    expect(plain().at(-1)).toMatchObject({ kind: "snapshot", data: { sessions: state.sessions } });
+
+    // A commit that leaves the list as it was sends nothing.
+    runtime.subscriptionHub.acknowledge("connection", "delta", delta()[1]!.cursor);
+    runtime.subscriptionHub.invalidate({ kind: "project", projectId: "p" });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(delta()).toHaveLength(2);
     runtime.subscriptionHub.close();
     runtime.unsubscribeChanges();
   } finally {

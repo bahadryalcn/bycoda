@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  GitCommitGenerationActions,
   GitGenerationModelControl,
   useGitGenerationChoice,
 } from "../../../src/features/source-control/ui/GitGenerationSettings";
@@ -15,6 +16,7 @@ import { modelsForClaudeVersion } from "../../../src/integrations/harness/provid
 import { registerHarness } from "../../../src/integrations/harness/core/registry";
 import { languageReady } from "../../../src/shared/i18n";
 import { Button } from "../../../src/shared/ui/Button";
+import { TextareaField } from "../../../src/shared/ui/TextareaField";
 import { WandSparkles } from "../../../src/shared/ui/icons";
 // Shared tokens (control heights, field roles) so shared Buttons size as in the app.
 import "../../../src/styles/index.css";
@@ -101,4 +103,41 @@ function Fixture() {
     </ModelSourceContext.Provider>
   );
 }
-void languageReady.then(() => createRoot(document.getElementById("root")!).render(<Fixture />));
+
+function CommitControlFixture() {
+  const [choice, update] = useGitGenerationChoice("/fixture", "commit");
+  const [draft, setDraft] = useState("Keep this commit draft");
+  return (
+    <ModelSourceContext.Provider value={source}>
+      <aside className="m-3 w-[calc(100%-24px)] max-w-[340px] p-2 text-content">
+        <TextareaField
+          label="Commit message"
+          hideLabel
+          fieldSize="sm"
+          minRows={1}
+          autosize
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          endAdornment={
+            <GitCommitGenerationActions
+              cwd="/fixture"
+              preferred="claude"
+              choice={choice}
+              onChange={update}
+              canGenerate
+              generating={false}
+              generate={() => setDraft("Fixture commit message")}
+              cancel={() => {}}
+            />
+          }
+        />
+      </aside>
+    </ModelSourceContext.Provider>
+  );
+}
+
+void languageReady.then(() =>
+  createRoot(document.getElementById("root")!).render(
+    new URLSearchParams(location.search).has("commit") ? <CommitControlFixture /> : <Fixture />,
+  ),
+);

@@ -1,4 +1,4 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useModelDisplayName } from "../model/reactiveReads";
 import { Text } from "../../../shared/ui/Text";
@@ -160,6 +160,7 @@ function LocalAgentTabView({
     session ? findModel(session.model)?.name : undefined,
   );
   const displayName = useModelDisplayName(session?.model ?? "", session?.harness);
+  const runStatus = t("Run by the orchestrator · read-only");
   if (!session) {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
@@ -217,12 +218,17 @@ function LocalAgentTabView({
         )}
       >
         <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
+        {/* The model keeps up to 60% of the footer; the run status takes the rest and reveals its full text on overflow. */}
         <Tooltip label={title} asChild>
-          <Text size="inherit" tone="inherit" truncate className="min-w-0">
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 max-w-[60%]">
             {model} · {HARNESS_TITLE[session.harness]}
           </Text>
         </Tooltip>
-        <span className="ml-auto shrink-0">{t("Run by the orchestrator · read-only")}</span>
+        <OverflowTooltip label={runStatus}>
+          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1 text-end">
+            {runStatus}
+          </Text>
+        </OverflowTooltip>
         <span ref={setFindTriggerContainer} className="shrink-0" />
       </Text>
     </div>

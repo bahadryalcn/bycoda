@@ -4,6 +4,8 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import type { SshHttpProxyOperation } from "../model/sshHttpProxyApproval";
 import type { SshEndpoint } from "../model/serverInventory";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../../shared/ui/Button";
@@ -83,7 +85,7 @@ export function ServerFiles({
     // Native work may not exist yet while a picker or approval is pending.
     cancelledOperation.current = id;
     void cancelSftp(id).catch((reason) => {
-      if (mounted.current) setError(String(reason));
+      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
     });
   };
 
@@ -94,7 +96,7 @@ export function ServerFiles({
         if (mounted.current) setRecoveries(records);
       })
       .catch((reason) => {
-        if (mounted.current) setError(String(reason));
+        if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
       });
     const listener = subscribeSftpProgress((event) => {
       if (mounted.current && event.operationId === operation.current) setProgress(event);
@@ -119,7 +121,7 @@ export function ServerFiles({
     try {
       await callback(id);
     } catch (reason) {
-      if (mounted.current) setError(String(reason));
+      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       if (operation.current === id) operation.current = null;
       if (mounted.current) setBusy(false);
@@ -196,7 +198,7 @@ export function ServerFiles({
                       setUpload({ localPath: value, name: value.split(/[\\/]/).pop() ?? "" });
                     }
                   })
-                  .catch((reason) => setError(String(reason)));
+                  .catch((reason) => setError(sanitizeConnectionError(errorText(reason))));
               }}
             >
               <Upload className="icon-sm" />
@@ -448,7 +450,7 @@ export function ServerFiles({
                       try {
                         void load(sftpPath(path, entry.name));
                       } catch (reason) {
-                        setError(String(reason));
+                        setError(sanitizeConnectionError(errorText(reason)));
                       }
                     }}
                   >

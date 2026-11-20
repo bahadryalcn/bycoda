@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it } from "vitest";
 import {
+  REMOTE_HISTORY_CHANGE,
   REMOTE_TAB_BINDING_CHANGE,
+  refreshRemoteProjectSessions,
   rememberRemoteSession,
   remoteSessionFor,
   remoteShellBoundTo,
@@ -28,6 +30,26 @@ it("leaves other bindings and re-binding the same session alone", () => {
   rememberRemoteSession("shell-a");
   expect(remoteSessionFor("shell-a")).toBeUndefined();
   expect(remoteSessionFor("shell-b")).toBe("host-2");
+});
+
+it("keeps Host-derived session lists out of a tab binding or unbinding", () => {
+  let historyChanges = 0;
+  const listener = () => historyChanges++;
+  window.addEventListener(REMOTE_HISTORY_CHANGE, listener);
+  rememberRemoteSession("shell-a", "host-1");
+  rememberRemoteSession("shell-a", "host-2");
+  rememberRemoteSession("shell-a");
+  window.removeEventListener(REMOTE_HISTORY_CHANGE, listener);
+  expect(historyChanges).toBe(0);
+});
+
+it("still drops the cached lists on an explicit refresh", () => {
+  let historyChanges = 0;
+  const listener = () => historyChanges++;
+  window.addEventListener(REMOTE_HISTORY_CHANGE, listener);
+  refreshRemoteProjectSessions();
+  window.removeEventListener(REMOTE_HISTORY_CHANGE, listener);
+  expect(historyChanges).toBe(1);
 });
 
 it("announces a binding change once", () => {

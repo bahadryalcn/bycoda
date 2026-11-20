@@ -54,7 +54,7 @@ describe("ImportDialog", () => {
         collect: vi.fn(),
         import: vi.fn(async () => ({
           imported: 1,
-          rejected: [{ row: 4, reason: "Unknown account on this computer." }],
+          rejected: [{ row: 4, issues: ["Unknown account on this computer."] }],
         })),
       },
     });

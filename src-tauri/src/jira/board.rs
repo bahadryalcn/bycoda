@@ -10,6 +10,9 @@ pub struct Board {
     id: u64,
     name: String,
     kind: String,
+    /// Owning project, so desktop settings can scope one cached catalog without refetching.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_id: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -68,17 +71,35 @@ fn positive(id: u64) -> Result<(), String> {
     }
 }
 
-// Boards/sprints use offset pagination; issue search uses cursor pagination.
-fn fetch_values(mut fetch: impl FnMut(u64) -> Result<Value, String>) -> Result<Vec<Value>, String> {
+/// Overall time one board/sprint listing command may spend across all pages and retries.
+const LIST_BUDGET: Duration = Duration::from_secs(45);
+/// Most boards or sprints one command collects; beyond it the read fails instead of truncating.
+const LIST_VALUE_LIMIT: usize = 5000;
+
+// Boards/sprints use offset pagination; issue search uses cursor pagination. The read stops
+// with an error (never a silently short list) at the deadline or past `limit` values.
+fn fetch_values(
+    deadline: Instant,
+    limit: usize,
+    mut fetch: impl FnMut(u64) -> Result<Value, String>,
+) -> Result<Vec<Value>, String> {
     let mut start = 0;
     let mut values = Vec::new();
     for _ in 0..1000 {
+        if expired(deadline) {
+            return Err(READ_TIMEOUT_MESSAGE.into());
+        }
         let data = fetch(start)?;
         let page = data["values"]
             .as_array()
             .ok_or("Jira did not return board values")?;
         let next = data["startAt"].as_u64().unwrap_or(start) + page.len() as u64;
         values.extend(page.iter().cloned());
+        if values.len() > limit {
+            return Err(format!(
+                "This Jira site has more than {LIST_VALUE_LIMIT} boards or sprints. Narrow the selected projects."
+            ));
+        }
         if data["isLast"].as_bool() == Some(true)
             || data["total"].as_u64().is_some_and(|total| next >= total)
         {
@@ -93,8 +114,10 @@ fn fetch_values(mut fetch: impl FnMut(u64) -> Result<Value, String>) -> Result<V
 }
 
 fn fetch_sprints(config: &JiraConfig, board_id: u64) -> Result<Vec<Sprint>, String> {
-    let values = fetch_values(|start| {
-        jira_get(config, &format!("/rest/agile/1.0/board/{board_id}/sprint?state=active,future&maxResults=50&startAt={start}"))
+    let agent = jira_agent();
+    let deadline = Instant::now() + LIST_BUDGET;
+    let values = fetch_values(deadline, LIST_VALUE_LIMIT, |start| {
+        jira_get_with(&agent, config, &format!("/rest/agile/1.0/board/{board_id}/sprint?state=active,future&maxResults=50&startAt={start}"), Some(deadline))
     })?;
     Ok(values
         .iter()
@@ -152,15 +175,26 @@ pub async fn jira_list_boards(
                 .collect::<Result<Vec<_>, _>>()?,
             None => vec![None],
         };
+        // One agent and one deadline for the whole command: every project's pages reuse the
+        // connection pool and draw from the same budget and value cap.
+        let agent = jira_agent();
+        let deadline = Instant::now() + LIST_BUDGET;
         let mut values = Vec::new();
+        let mut visited = HashSet::new();
         for project in scopes {
-            values.extend(fetch_values(|start| {
+            if !visited.insert(project) {
+                continue;
+            }
+            let remaining = LIST_VALUE_LIMIT.saturating_sub(values.len());
+            values.extend(fetch_values(deadline, remaining, |start| {
                 let project = project
                     .map(|id| format!("&projectKeyOrId={id}"))
                     .unwrap_or_default();
-                jira_get(
+                jira_get_with(
+                    &agent,
                     &config,
                     &format!("/rest/agile/1.0/board?maxResults=50&startAt={start}{project}"),
+                    Some(deadline),
                 )
             })?);
         }
@@ -177,6 +211,7 @@ pub async fn jira_list_boards(
                     id,
                     name: string_field(b, "name")?,
                     kind,
+                    project_id: b["location"]["projectId"].as_u64().map(|id| id.to_string()),
                 })
             })
             .collect())
@@ -522,14 +557,19 @@ mod tests {
     }
     #[test]
     fn refuses_incomplete_pagination() {
-        assert!(fetch_values(|_| Ok(json!({"values":[],"isLast":false}))).is_err());
+        assert!(
+            fetch_values(Instant::now() + Duration::from_secs(60), 10, |_| Ok(
+                json!({"values":[],"isLast":false})
+            ))
+            .is_err()
+        );
         assert!(parse_page(
             &json!({"issues":[],"isLast":false}),
             "https://team.atlassian.net"
         )
         .is_err());
         let mut starts = vec![];
-        let v = fetch_values(|start| {
+        let v = fetch_values(Instant::now() + Duration::from_secs(60), 10, |start| {
             starts.push(start);
             Ok(if start == 0 {
                 json!({"values":[1],"isLast":false})
@@ -540,6 +580,50 @@ mod tests {
         .unwrap();
         assert_eq!(starts, vec![0, 1]);
         assert_eq!(v, vec![json!(1), json!(2)]);
+    }
+    #[test]
+    fn stops_at_the_deadline_without_returning_a_short_list() {
+        let mut calls = 0;
+        let expired_at = Instant::now() - Duration::from_secs(1);
+        let result = fetch_values(expired_at, 10, |_| {
+            calls += 1;
+            Ok(json!({"values":[1],"isLast":true}))
+        });
+        assert_eq!(result.unwrap_err(), READ_TIMEOUT_MESSAGE);
+        assert_eq!(calls, 0);
+        // A deadline that passes between pages fails the whole read, not just the tail.
+        let deadline = Instant::now() + Duration::from_millis(50);
+        let result = fetch_values(deadline, 10, |start| {
+            std::thread::sleep(Duration::from_millis(80));
+            Ok(json!({"values":[start],"isLast":false}))
+        });
+        assert_eq!(result.unwrap_err(), READ_TIMEOUT_MESSAGE);
+    }
+    #[test]
+    fn fails_instead_of_truncating_past_the_value_limit() {
+        let mut pages = 0;
+        let result = fetch_values(Instant::now() + Duration::from_secs(60), 3, |_| {
+            pages += 1;
+            Ok(json!({"values":[1,2],"isLast":false}))
+        });
+        assert!(result.unwrap_err().contains("more than"));
+        assert_eq!(pages, 2);
+    }
+    #[test]
+    fn retries_and_timeouts_respect_the_overall_deadline() {
+        let soon = Some(Instant::now() + Duration::from_millis(300));
+        assert!(!retry_fits(soon, Duration::from_millis(400)));
+        assert!(retry_fits(
+            Some(Instant::now() + Duration::from_secs(30)),
+            Duration::from_millis(1200)
+        ));
+        assert!(retry_fits(None, Duration::from_millis(1200)));
+        assert!(attempt_timeout(soon) <= Duration::from_millis(300));
+        assert_eq!(attempt_timeout(None), HTTP_TIMEOUT);
+        assert_eq!(
+            attempt_timeout(Some(Instant::now() - Duration::from_secs(1))),
+            Duration::from_millis(1)
+        );
     }
     #[test]
     fn scopes_and_encodes_issue_pages() {

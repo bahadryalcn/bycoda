@@ -13,3 +13,10 @@ export const listDir = async (path: string) =>
 export const createPath = async (path: string, name: string) => `${path}/${name}`;
 export const openPathWithDefaultApp = async () => {};
 export const pickNativeFolders = async () => [];
+export const pickFiles = async () => null;
+export const listWindowsDrives = async () => ["C:/", "D:/", "E:/", "F:/", "G:/", "H:/"];
+export const basename = (path: string) => {
+  const trimmed = path.replaceAll("\\", "/").replace(/\/+$/, "") || "/";
+  if (/^[A-Za-z]:$/.test(trimmed)) return trimmed;
+  return trimmed.split("/").filter(Boolean).pop() ?? trimmed;
+};

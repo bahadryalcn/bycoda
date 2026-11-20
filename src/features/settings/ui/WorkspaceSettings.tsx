@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IS_MAC, IS_WIN, MOD } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { errorText } from "../../../shared/lib/errors";
 import { setQuickComposerShortcut } from "../../quick-composer/model/quickComposer";
 import { quickComposerShortcutLabel } from "../../quick-composer/model/quickComposerShortcut";
 import {
@@ -46,7 +47,7 @@ function ExactGitRewindSetting() {
       .catch((cause: unknown) => {
         if (!cancelled) {
           setLoaded(false);
-          setError(String(cause));
+          setError(errorText(cause));
         }
       })
       .finally(() => {
@@ -66,7 +67,7 @@ function ExactGitRewindSetting() {
     try {
       setEnabled(await saveExactGitRewind(next));
     } catch (cause) {
-      setError(String(cause));
+      setError(errorText(cause));
     } finally {
       saving.current = false;
       setIsSaving(false);
@@ -144,7 +145,7 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
       .catch((error: unknown) => {
         // Another app already owns the combination. Leave the switch where the
         // user put it so the next launch tries again, but say why it is dead.
-        setQuickComposerError(String(error));
+        setQuickComposerError(errorText(error));
       })
       .finally(() => {
         quickComposerPending.current = false;

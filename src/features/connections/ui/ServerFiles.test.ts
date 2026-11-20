@@ -294,6 +294,7 @@ it("cancels a pending proxy approval without starting the late directory request
         .querySelector("form")!
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
     );
+    native.invoke.mockResolvedValueOnce(undefined);
     await act(async () => context.button("Cancel").click());
     await act(async () => approve("late-ticket"));
     expect(native.invoke).toHaveBeenCalledWith("ssh_sftp_cancel", expect.anything());
@@ -319,6 +320,7 @@ it("cancels a pending download picker without starting the late transfer", async
         .querySelector<HTMLButtonElement>('button[aria-label="Download file.txt"]')!
         .click(),
     );
+    native.invoke.mockResolvedValueOnce(undefined);
     await act(async () => context.button("Cancel").click());
     await act(async () => choose("C:/late-download.txt"));
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_download", expect.anything());

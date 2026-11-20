@@ -279,6 +279,50 @@ describe("agent app commands", () => {
     ).resolves.toMatchObject({ settled: true, turn: { assistant: { text: "Persisted answer" } } });
   });
 
+  it("wakes a waiting session on its own commit and still returns at the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const { source, host } = fixture();
+      const listeners = new Set<() => void>();
+      host.subscribeSession = vi.fn((_id, listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      });
+      let current = { ...newSession("codex", source.cwd), id: "other", busy: true };
+      host.session = vi.fn(async () => current);
+      const settling = handleAgentApp(
+        source,
+        "wait",
+        "sessions.wait",
+        { sessionId: "other", timeoutSeconds: 25 },
+        host,
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+      // Backoff keeps the reads far below the old fixed 500 ms cadence (about 20 in 10 s).
+      expect(vi.mocked(host.session).mock.calls.length).toBeLessThan(10);
+      const before = vi.mocked(host.session).mock.calls.length;
+      current = { ...current, busy: false };
+      for (const listener of listeners) listener();
+      await vi.advanceTimersByTimeAsync(0);
+      await expect(settling).resolves.toMatchObject({ settled: true, busy: false });
+      expect(vi.mocked(host.session).mock.calls.length).toBe(before + 1);
+      expect(listeners.size).toBe(0);
+
+      const timedOut = handleAgentApp(
+        source,
+        "wait-2",
+        "sessions.wait",
+        { sessionId: "other", timeoutSeconds: 1 },
+        host,
+      );
+      current = { ...current, busy: true };
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(timedOut).resolves.toMatchObject({ settled: false, busy: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reads a listed project session in bounded pages", async () => {
     const { source, host } = fixture();
     const result = await handleAgentApp(
@@ -292,6 +336,45 @@ describe("agent app commands", () => {
     await expect(
       handleAgentApp(source, "read-2", "sessions.read", { sessionId: "missing" }, host),
     ).rejects.toThrow("not found in this project");
+  });
+
+  it("guards session operations with one exact read instead of a project listing", async () => {
+    const { source, host } = fixture();
+    const foreign = { ...newSession("codex", "/tmp/elsewhere"), id: "foreign" };
+    const lead = { ...newSession("codex", source.cwd), id: "child", orchestrationLeadId: "lead" };
+    host.session = vi.fn(async (id) =>
+      id === "other"
+        ? { ...newSession("codex", source.cwd), id }
+        : id === "foreign"
+          ? foreign
+          : id === "child"
+            ? lead
+            : null,
+    );
+    await handleAgentApp(source, "r", "sessions.read", { sessionId: "other" }, host);
+    await handleAgentApp(source, "s", "sessions.send", { sessionId: "other", prompt: "Go" }, host);
+    await handleAgentApp(source, "d", "sessions.draft", { sessionId: "other", prompt: "Go" }, host);
+    await handleAgentApp(
+      source,
+      "w",
+      "sessions.wait",
+      { sessionId: "other", timeoutSeconds: 1 },
+      host,
+    );
+    await handleAgentApp(
+      source,
+      "f",
+      "folders.move",
+      { sessionId: "other", newFolderName: "Review" },
+      host,
+    );
+    for (const sessionId of ["foreign", "child", "missing"])
+      await expect(
+        handleAgentApp(source, `read-${sessionId}`, "sessions.read", { sessionId }, host),
+      ).rejects.toThrow("not found in this project");
+    expect(host.sessions).not.toHaveBeenCalled();
+    expect(host.send).toHaveBeenCalledTimes(1);
+    expect(host.draft).toHaveBeenCalledTimes(1);
   });
 
   it("sends a follow-up only to a listed idle session", async () => {
@@ -803,16 +886,10 @@ describe("agent app commands", () => {
       expect.objectContaining({ prompt: "Test prompt", draft: true }),
       result.id,
     );
-    host.sessions = vi.fn(async () => [
-      {
-        id: result.id,
-        title: "Test prompt",
-        harness: "codex",
-        model: "codex:test",
-        busy: false,
-        hasDraft: true,
-      },
-    ]);
+    // Membership is read from the exact session, not from listing the project's sessions.
+    host.session = vi.fn(async (id) =>
+      id === result.id ? { ...newSession("codex", source.cwd), id } : null,
+    );
     const moved = await handleAgentApp(
       source,
       "folder",

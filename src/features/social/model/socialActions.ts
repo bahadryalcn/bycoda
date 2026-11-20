@@ -121,7 +121,7 @@ export type ImportInput = {
   accountId: string;
   listId?: string;
 };
-export type ImportResult = { imported: number; rejected: { row: number; reason: string }[] };
+export type ImportResult = { imported: number; rejected: { row: number; issues: string[] }[] };
 export type CaptureRuleSaveInput = Pick<
   CaptureRule,
   "name" | "source" | "filter" | "targetListId"
@@ -188,7 +188,18 @@ export type InboxUnifiedResult = {
   unreadable: UnreadableAccount[];
   next?: string;
 };
-export type InboxSetStatusInput = { threadId: string; status: InboxStatus; tags?: string[] };
+/**
+ * Every field except `threadId` is optional and an unsent field keeps the stored value, so send
+ * only what changed. `tags` replaces the list; `addTags`/`removeTags` change single tags and
+ * cannot be combined with `tags`.
+ */
+export type InboxSetStatusInput = {
+  threadId: string;
+  status?: InboxStatus;
+  tags?: string[];
+  addTags?: string[];
+  removeTags?: string[];
+};
 export type InboxSetStatusResult = { threadId: string; status: InboxStatus; tags: string[] };
 export type InboxReplyOptions = {
   canReply: boolean;
@@ -219,6 +230,8 @@ export type InboxTimelineResult = {
   personId: string;
   events: InboxTimelineEvent[];
   truncated: boolean;
+  /** Cursor for the page of older events; present only while older events remain. */
+  next?: string;
 };
 
 // Autonomy (owner: autonomy module). Host input: levels and limits merge onto the current policy;
@@ -244,7 +257,8 @@ export type AiPlanStep = {
 };
 export type AiPlan = { planId: string; steps: AiPlanStep[] };
 export type AiPlanRunResult = {
-  results: { stepId: string; status: AiAction["status"]; message?: string }[];
+  /** retryAt: when a rate-limited step may run again; the owner or a rerun sends it then. */
+  results: { stepId: string; status: AiAction["status"]; message?: string; retryAt?: number }[];
 };
 export type AiSummary = {
   sentToday: number;
@@ -252,9 +266,16 @@ export type AiSummary = {
   newPeople: number;
   replyRate: number;
   waitingForYou: number;
+  /** True when the needs-human count could not be read; `waitingForYou` then omits those items. */
+  needsHumanUnavailable?: boolean;
 };
-/** Provisional (4D). */
-export type AiReport = { done: string[]; results: string[]; suggestions: string[] };
+/** Provisional (4D). `suggestionsError` is set when the text model failed; `suggestions` is then empty. */
+export type AiReport = {
+  done: string[];
+  results: string[];
+  suggestions: string[];
+  suggestionsError?: string;
+};
 
 // Browser layers (owner: browser-layers module)
 export type NeedsHumanItem = {
@@ -281,7 +302,15 @@ export type RecipeSuggestion = {
   status: "pending" | "approved" | "rejected";
 };
 /** Provisional (4H): one live view frame returned by `social.browser.view.frame`. */
-export type BrowserViewFrame = { jpegBase64: string; width: number; height: number };
+export type BrowserViewFrame = {
+  jpegBase64: string;
+  width: number;
+  height: number;
+  /** Absent from a Host that predates the cursor; the client then reads full frames. */
+  seq?: number;
+};
+/** `social.browser.view.frame` answer when the picture is the one the client already holds. */
+export type BrowserViewRead = BrowserViewFrame | { unchanged: true } | null;
 /** Provisional (4H): pointer, keyboard and scroll events forwarded to the live view. */
 export type BrowserViewInput =
   | { type: "click"; x: number; y: number; button?: "left" | "right" | "middle" }

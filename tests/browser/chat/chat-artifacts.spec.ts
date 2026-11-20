@@ -367,7 +367,11 @@ test("chat messages, attachment references and running work keep a readable hier
         "data-size",
         "42 B",
       );
-      expect((await token.boundingBox())!.height).toBeLessThan(26);
+      // The token sits on the message's own line: at most the body leading plus the inline strut.
+      const leading = await token.evaluate((element) =>
+        parseFloat(getComputedStyle(element).lineHeight),
+      );
+      expect((await token.boundingBox())!.height).toBeLessThanOrEqual(leading + 4);
       const track = dock.locator('[data-pacing-track="reserved"]');
       const summary = dock.locator(".activity-dock-summary");
       const trackBox = (await track.boundingBox())!;
@@ -388,14 +392,15 @@ test("chat messages, attachment references and running work keep a readable hier
       if (width === 1440) await page.screenshot({ path: info.outputPath(`chat-${theme}.png`) });
     }
   }
-  const preview = group.locator(".zen-phase-summary");
-  expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(120);
+  const preview = group.locator(".zen-phase-live");
+  // The live window is one bounded height rule: min(17.5rem, 45vh).
+  expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(17.5 * 16);
   await group.getByRole("button", { name: "Show more", exact: true }).click();
-  await expect(group.locator(".zen-phase-summary")).toHaveCount(0);
+  await expect(group.locator(".zen-phase-live")).toHaveCount(0);
   await expect(group.getByText(/very-long-command-path-0/).first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 900 });
   // Trail rows keep one line height; a long command ends in an ellipsis inside its row
-  // while the row's name and overflow hint keep the full command.
+  // while the row's accessible name keeps the full command.
   const row = group.getByLabel(/^Tool call: .*very-long-command-path-0\.tsx$/).first();
   const command = row.getByText(/very-long-command-path-0\.tsx/).first();
   await expect(command).toContainText("very-long-command-path-0.tsx");
@@ -426,6 +431,34 @@ test("chat messages, attachment references and running work keep a readable hier
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("clipped transcript commands stay inline on hover", async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/chat/transcript.html?chat-layout");
+  const group = page.locator(".transcript-activity-group").last();
+  await group.getByRole("button", { name: "Show more", exact: true }).click();
+  const row = group.getByLabel(/^Tool call: .*very-long-command-path-0\.tsx$/).first();
+  const command = row.getByText(/very-long-command-path-0\.tsx/).first();
+  await expect(command).toBeVisible();
+  expect(await command.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+  await page.clock.install();
+  for (const theme of ["dark", "light"]) {
+    await page.mouse.move(0, 0);
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await command.hover();
+    await page.clock.fastForward(600);
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: /very-long-command-path-\d+\.tsx/ }),
+    ).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath(`command-hover-${theme}.png`) });
+  }
+  await command.click();
+  await expect(row.locator("..")).toContainText("readable-output-marker");
 });
 
 test("chat code and command results remain compact until explicitly opened", async ({

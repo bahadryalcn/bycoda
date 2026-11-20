@@ -49,4 +49,16 @@ describe("attempt throttle", () => {
     expect(formatCooldown(30_000)).toBe("30 seconds");
     expect(formatCooldown(61_000)).toBe("2 minutes");
   });
+
+  it("words the wait in the app language", () => {
+    expect(formatCooldown(30_000, "tr")).toBe("30 saniye");
+    expect(formatCooldown(61_000, "tr")).toBe("2 dakika");
+    expect(formatCooldown(30_000, "de")).toBe("30 Sekunden");
+    expect(formatCooldown(61_000, "de")).toBe("2 Minuten");
+  });
+
+  it("rounds the wait up and never reads negative time", () => {
+    expect(formatCooldown(29_001, "en")).toBe("30 seconds");
+    expect(formatCooldown(-5_000, "en")).toBe("0 seconds");
+  });
 });

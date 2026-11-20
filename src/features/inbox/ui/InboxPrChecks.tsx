@@ -1,5 +1,6 @@
+import { errorText } from "../../../shared/lib/errors";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { ActionHost } from "../../../shared/ui/ActionHost";
@@ -49,6 +50,7 @@ import {
   checkStateLabel,
   countChecks,
   describeCheckCounts,
+  describeCheckSummary,
   isHttpUrl,
   sortChecks,
   type GithubPrCheck,
@@ -138,7 +140,6 @@ function PrCheckRow({
   fixDisabled,
   fixAnchor,
   repairItem,
-  wideStatus,
   revealToken,
 }: {
   check: GithubPrCheck;
@@ -152,7 +153,6 @@ function PrCheckRow({
   fixDisabled?: boolean;
   fixAnchor?: HTMLButtonElement;
   repairItem?: RepairGroup["items"][number];
-  wideStatus: boolean;
   revealToken?: number;
 }) {
   const t = useT();
@@ -220,7 +220,7 @@ function PrCheckRow({
         },
         (reason: unknown) => {
           if (!active) return;
-          const message = reason instanceof Error ? reason.message : String(reason);
+          const message = errorText(reason);
           setLoaded((previous) => ({
             key: detailsKey,
             details: previous?.key === detailsKey ? previous.details : null,
@@ -316,11 +316,11 @@ function PrCheckRow({
   const className =
     "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-left";
   const statusCell = (
-    <span className={`shrink-0 text-left ${wideStatus ? "w-24" : "w-14"}`}>
+    <span className="min-w-14 shrink-0 text-left whitespace-nowrap">
       {repairItem ? (
         <CheckRepairStatus item={repairItem} />
       ) : (
-        <Badge tone={mark.tone} size="xs" appearance="subtle">
+        <Badge tone={mark.tone} size="xs" appearance="subtle" className="whitespace-nowrap">
           {status}
         </Badge>
       )}
@@ -660,7 +660,6 @@ export function InboxPrChecks({
                   ).length,
               ])}
               check={check}
-              wideStatus={repairGroups.length > 0}
               revealToken={
                 revealed?.scope === revealScope &&
                 revealed.name === check.name &&
@@ -712,19 +711,13 @@ export function InboxPrChecks({
           : counts.pass
             ? t("Checks passed")
             : t("No checks ran");
-  const summary = describeCheckCounts({ ...counts, fail: 0 }, t, formatNumber);
+  const summary = describeCheckSummary({ ...counts, fail: 0 }, t, formatNumber);
   return (
     <section
       data-inbox-pr-checks
       aria-label={t("Pull request checks")}
       className="@container/checks flex min-w-0 flex-col gap-2"
     >
-      {checks?.pipelineOid && checks.pipelineOid !== checks.headOid ? (
-        <Text as="p" size="caption" tone="secondary" className="px-2">
-          {t("Pipeline commit")}: {checks.pipelineOid.slice(0, 12)} · {t("Source commit")}:{" "}
-          {checks.headOid.slice(0, 12)}
-        </Text>
-      ) : null}
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 px-2">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -736,16 +729,20 @@ export function InboxPrChecks({
             ) : null}
           </div>
           {checks?.headOid ? (
-            <Text as="p" size="caption" tone="secondary" className="mt-1 break-all">
-              {t("Checked commit")}:{" "}
-              <Tooltip label={checks.headOid} asChild>
-                <Code>{checks.headOid.slice(0, 12)}</Code>
-              </Tooltip>
-            </Text>
+            <Tooltip label={checks.headOid} asChild>
+              <Text as="p" size="caption" tone="secondary" className="mt-1 break-all">
+                {checks.pipelineOid && checks.pipelineOid !== checks.headOid
+                  ? t("Pipeline commit {p0}, source commit {p1}", {
+                      p0: shortSha(checks.pipelineOid),
+                      p1: shortSha(checks.headOid),
+                    })
+                  : t("Checked commit {p0}", { p0: shortSha(checks.headOid) })}
+              </Text>
+            </Tooltip>
           ) : null}
           {summary ? (
             <Text as="p" size="caption" tone="secondary" className="mt-1">
-              {summary.charAt(0).toUpperCase() + summary.slice(1)}.
+              {summary}
             </Text>
           ) : null}
           <span className="sr-only">{describeCheckCounts(counts, t, formatNumber)}</span>

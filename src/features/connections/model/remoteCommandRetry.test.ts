@@ -33,6 +33,30 @@ describe("classifyCommandFailure", () => {
     },
   );
 
+  it("keeps a reset, EOF or abort of the HTTP exchange uncertain, since the command may have arrived", () => {
+    for (const text of [
+      "The host request did not complete [RPC_HOST_UNAVAILABLE] (commands.dispatch).",
+      "The host request did not complete [RPC_HOST_UNAVAILABLE] (commands.dispatch). The host connection closed or refused the request. Reconnect before retrying an action; its outcome is unknown.",
+      "Host is not running on the machine. Start bycoda Host there, then reconnect. The request may have reached it before it stopped; its outcome is unknown.",
+    ])
+      expect(classifyCommandFailure(text)).toBe("uncertain");
+  });
+
+  it("treats only a proven pre-send HTTP failure as not sent", () => {
+    for (const text of [
+      "The host request did not complete [RPC_DNS] (commands.dispatch). The machine address could not be resolved.",
+      "The host request did not complete [RPC_PROXY] (commands.dispatch). The network proxy could not connect.",
+      "Host is not running on the machine. Start bycoda Host there, then reconnect.",
+    ])
+      expect(classifyCommandFailure(text)).toBe("not-sent");
+    for (const text of [
+      "The host request did not complete [RPC_TIMEOUT] (commands.dispatch).",
+      "The host request did not complete [RPC_PROTOCOL] (commands.dispatch).",
+      "Host returned HTTP 502",
+    ])
+      expect(classifyCommandFailure(text)).toBe("uncertain");
+  });
+
   it("treats a blocked lane as not sent", () => {
     expect(
       classifyCommandFailure(native("RPC_WS_BLOCKED", "Host authentication was refused")),

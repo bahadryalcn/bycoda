@@ -158,7 +158,7 @@ impl Session {
                 self.store.delete(&self.account)?;
                 Err(AccountError::session_expired())
             }
-            Err(TokenError::Network) => Err(AccountError::offline()),
+            Err(TokenError::Network(reason)) => Err(AccountError::offline_because(reason)),
             Err(TokenError::Failed(message)) => {
                 Err(AccountError::new(ErrorKind::Unavailable, message))
             }

@@ -13,6 +13,7 @@ import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
 import { createWorktree } from "../model/worktrees";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { FolderTree, GitBranch, Plus } from "../../../shared/ui/icons";
 
@@ -70,14 +71,14 @@ export function SidebarWorktreeSwitcher({
       path: main?.path ?? cwd,
       branch: main?.branch ?? null,
       isMain: true,
-      label: main?.branch ?? "Project folder",
-      detail: "Project folder · all sessions",
+      label: main?.branch ?? t("Project folder"),
+      detail: t("Project folder · all sessions"),
     },
     ...worktrees.map((tree) => ({
       path: tree.path,
       branch: tree.branch,
       isMain: false,
-      label: tree.branch ?? `Detached ${tree.head.slice(0, 7)}`,
+      label: tree.branch ?? detachedLabel(tree.head),
       detail: prettyCwd(tree.path),
     })),
   ].filter((tree) =>
@@ -177,7 +178,7 @@ export function SidebarWorktreeSwitcher({
   const focused = focus && worktrees.find((tree) => pathKey(tree.path) === pathKey(focus.path));
   // The working copy shown after the project name: the focused worktree, or the project folder's branch when known.
   const copyName = focus
-    ? (focused?.branch ?? focus.branch ?? "Detached worktree")
+    ? (focused?.branch ?? focus.branch ?? detachedLabel(focused?.head))
     : (main?.branch ?? undefined);
   const project = projectLabel ?? projectName(cwd);
   const fullTitle = copyName ? `${project} · ${copyName}` : project;
@@ -190,7 +191,7 @@ export function SidebarWorktreeSwitcher({
         ref={anchor}
         type="button"
         data-tauri-drag-region="false"
-        aria-label={t("Switch working copy")}
+        aria-label={t("Switch worktree")}
         aria-haspopup="dialog"
         expanded={open}
         aria-busy={pending || creating}
@@ -198,7 +199,7 @@ export function SidebarWorktreeSwitcher({
         endIcon={
           pending || creating ? (
             <Spinner
-              label={creating ? t("Creating worktree") : t("Switching working copy")}
+              label={creating ? t("Creating worktree") : t("Switching worktree")}
               className="shrink-0"
               tone="muted"
             />
@@ -240,15 +241,15 @@ export function SidebarWorktreeSwitcher({
           onDismiss={() => {
             if (!creating) closePicker();
           }}
-          role="dialog"
-          aria-label={t("Working copies")}
+          kind="dialog"
+          aria-label={t("Worktrees")}
           className="flex flex-col overflow-hidden"
         >
           <PopoverSearchHeader
             {...list.searchProps}
             size="md"
-            label={t("Search working copies")}
-            placeholder={t("Search or create a worktree...")}
+            label={t("Search worktrees")}
+            placeholder={t("Search or create a worktree…")}
             value={query}
             disabled={creating}
             onValueChange={(value) => {
@@ -262,11 +263,11 @@ export function SidebarWorktreeSwitcher({
             }}
           />
           <PickerList
-            label={t("Working copies")}
+            label={t("Worktrees")}
             controller={list}
             loading={!data && !error}
-            loadingLabel={t("Loading working copies…")}
-            emptyLabel={t("No matching working copies")}
+            loadingLabel={t("Loading worktrees…")}
+            emptyLabel={t("No matching worktrees")}
             className="min-h-0 overflow-y-auto"
           />
           {creationError || switchError || error ? (
@@ -311,6 +312,11 @@ export function SidebarWorktreeSwitcher({
       ) : null}
     </>
   );
+}
+
+/** Detached HEAD wording shared by picker rows and the sidebar title. */
+function detachedLabel(head?: string) {
+  return head ? t("Detached {p0}", { p0: shortSha(head) }) : t("Detached HEAD");
 }
 
 /** Tabs a worktree keeps open while another one is shown. */

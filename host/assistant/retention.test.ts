@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -183,6 +183,19 @@ it("purges expired message content but retains request tombstones so an old retr
   await expect(
     f.service.request({ op: "conversations.retention", days: 30 }, "chief"),
   ).rejects.toThrow("owner");
+});
+it("takes no critical write transaction on an idle tick and sweeps again once the hour is due", async () => {
+  const f = await fixture();
+  await f.service.tick();
+  const transaction = vi.spyOn(f.store, "transaction");
+  const critical = () => transaction.mock.calls.filter((call) => call[1] === "critical").length;
+  await f.service.tick();
+  expect(critical()).toBe(0);
+  f.advance(1 / 24);
+  await f.service.tick();
+  expect(critical()).toBe(1);
+  await f.service.tick();
+  expect(critical()).toBe(1);
 });
 it("keeps the latest accepted speech language across restart and old transport retries", async () => {
   const f = await fixture(),

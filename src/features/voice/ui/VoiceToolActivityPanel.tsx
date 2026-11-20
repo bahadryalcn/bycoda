@@ -1,5 +1,4 @@
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
@@ -12,6 +11,7 @@ import { Wrench } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { formatDuration } from "../../../shared/i18n/format";
 import { elapsedSince } from "../../../shared/lib/time/timestamps";
+import { subscribeVoiceSecond } from "../model/voicePresentationTimers";
 import type { VoiceToolActivityEntry } from "../model/voiceToolActivity";
 import styles from "./VoiceToolActivityPanel.module.css";
 
@@ -55,8 +55,7 @@ export function VoiceToolActivityPanel({
   // Keep elapsed time current while an action is running or awaiting its owner.
   useEffect(() => {
     if (!running) return;
-    const timer = setInterval(() => refresh((value) => value + 1), 1000);
-    return () => clearInterval(timer);
+    return subscribeVoiceSecond(() => refresh((value) => value + 1));
   }, [running]);
   if (!entries.length) return null;
   const label = t(running ? "Taking action…" : "Voice actions");
@@ -94,7 +93,7 @@ export function VoiceToolActivityPanel({
       {anchor && (
         <Popover
           anchor={anchor}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Voice actions")}
           width={340}
           flow="scroll"
@@ -112,64 +111,60 @@ export function VoiceToolActivityPanel({
           <ul className={styles.list}>
             {entries.map((entry) => {
               const live = entry.state === "running" || entry.state === "waiting-owner";
+              // Details stay visible text so keyboard and screen-reader users reach the request id.
+              const details = [entry.name, entry.target, entry.requestId]
+                .filter(Boolean)
+                .join(" · ");
               return (
-                <Tooltip
-                  key={entry.id}
-                  label={[entry.name, entry.target, entry.requestId].filter(Boolean).join(" · ")}
-                  asChild
-                >
-                  <li className={styles.row} data-state={entry.state} key={entry.id}>
-                    <div className={styles.marker}>
-                      {entry.state === "running" ? (
-                        <Spinner size="sm" />
-                      ) : (
-                        <StatusDot
-                          tone={
-                            entry.state === "returned"
-                              ? "muted"
-                              : entry.state === "failed"
-                                ? "danger"
-                                : "warning"
-                          }
-                        />
-                      )}
-                    </div>
-                    <div className={styles.details}>
-                      <Text
-                        as="div"
-                        size="secondary"
-                        weight="medium"
-                        tone="primary"
-                        wrap="anywhere"
-                      >
-                        {voiceActionLabel(entry.name)}
-                      </Text>
-                      <Text
-                        as="div"
-                        size="caption"
-                        leading="normal"
-                        tone={STATUS_TONE[entry.state]}
-                        wrap="anywhere"
-                      >
-                        {t(STATUS[entry.state])}
-                      </Text>
-                    </div>
-                    <Text size="caption" tone="muted" className={styles.time}>
-                      {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}
-                    </Text>
-                    {live && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        touchTarget={touchTarget}
-                        className={styles.stop}
-                        onClick={() => onStopWaiting(entry.id)}
-                      >
-                        {t("Stop waiting")}
-                      </Button>
+                <li className={styles.row} data-state={entry.state} key={entry.id}>
+                  <div className={styles.marker}>
+                    {entry.state === "running" ? (
+                      <Spinner size="sm" />
+                    ) : (
+                      <StatusDot
+                        tone={
+                          entry.state === "returned"
+                            ? "muted"
+                            : entry.state === "failed"
+                              ? "danger"
+                              : "warning"
+                        }
+                      />
                     )}
-                  </li>
-                </Tooltip>
+                  </div>
+                  <div className={styles.details}>
+                    <Text as="div" size="secondary" weight="medium" tone="primary" wrap="anywhere">
+                      {voiceActionLabel(entry.name)}
+                    </Text>
+                    <Text
+                      as="div"
+                      size="caption"
+                      leading="normal"
+                      tone={STATUS_TONE[entry.state]}
+                      wrap="anywhere"
+                    >
+                      {t(STATUS[entry.state])}
+                    </Text>
+                    <Text as="div" size="caption" tone="muted" wrap="anywhere">
+                      {details}
+                    </Text>
+                  </div>
+                  <Text size="caption" tone="muted" className={styles.time}>
+                    {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}
+                  </Text>
+                  {live && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      touchTarget={touchTarget}
+                      className={styles.stop}
+                      label={t("Stop waiting for {p0}", { p0: details })}
+                      onClick={() => onStopWaiting(entry.id)}
+                    >
+                      {t("Stop waiting")}
+                    </Button>
+                  )}
+                </li>
               );
             })}
           </ul>

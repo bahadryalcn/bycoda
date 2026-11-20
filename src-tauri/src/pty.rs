@@ -1314,18 +1314,15 @@ fn spawn_unix(
         }
         // Only announce this child. A remount/respawn reuses the id, and the
         // previous wait thread must not paint "[process exited]" on the new PTY
-        // or yank the replacement out of the host map.
-        let owner = if exit.is_ok() {
-            wait_app.try_state::<PtyHost>().and_then(|host| {
-                host.remove_if_child(&wait_id, &child).map(|live| {
-                    live.output.set_enabled(false);
-                    live.set_output_visible(&wait_app, &wait_id, true);
-                    live.owner_label()
-                })
+        // or yank the replacement out of the host map. A failed wait still
+        // retires this child, so the pane is not left registered without an exit.
+        let owner = wait_app.try_state::<PtyHost>().and_then(|host| {
+            host.remove_if_child(&wait_id, &child).map(|live| {
+                live.output.set_enabled(false);
+                live.set_output_visible(&wait_app, &wait_id, true);
+                live.owner_label()
             })
-        } else {
-            None
-        };
+        });
         if let Some(owner) = owner {
             emit_to_owner(
                 &wait_app,
@@ -1877,8 +1874,12 @@ pub fn ssh_terminal_suggestions_request(
         |event| emit_shell_event(&app, window.label(), event),
     )?;
     let acknowledgement = request_id.clone();
-    thread::spawn(move || {
-        thread::sleep(Duration::from_millis(1500));
+    // The 1.5 s deadline runs on the async runtime's timer, not a parked OS
+    // thread per request. The wake-time checks below stay as they were: a
+    // terminal that has gone or a request that was answered or replaced
+    // yields no event.
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
         let Some(host) = app.try_state::<PtyHost>() else {
             return;
         };
@@ -2356,6 +2357,26 @@ mod tests {
         assert!(host.remove_if_pid("term", 7).is_none());
         assert!(host.get("term").is_some());
         assert!(host.remove_if_pid("term", 42).is_some());
+        assert!(host.get("term").is_none());
+    }
+
+    // The wait thread retires its child even when `wait()` failed, so the
+    // removal must not depend on the exit status: it is keyed by child identity.
+    #[test]
+    fn remove_if_child_retires_the_child_it_was_given() {
+        let host = PtyHost::new();
+        let child = Arc::new(unix_child::UnixChild::new(
+            std::process::Command::new("true").spawn().unwrap(),
+        ));
+        let other = Arc::new(unix_child::UnixChild::new(
+            std::process::Command::new("true").spawn().unwrap(),
+        ));
+        let mut live = fake_pty(0, "main");
+        Arc::get_mut(&mut live).unwrap().child = Some(child.clone());
+        host.insert("term".into(), live);
+        assert!(host.remove_if_child("term", &other).is_none());
+        assert!(host.get("term").is_some());
+        assert!(host.remove_if_child("term", &child).is_some());
         assert!(host.get("term").is_none());
     }
 

@@ -82,6 +82,12 @@ export const sessionsRef = { current: [] };
 export const getSessions = () => sessionsRef.current;
 export const useSessionsSelector = <T>(select: (sessions: typeof sessionsRef.current) => T): T =>
   select(sessionsRef.current);
+export const getShellSessions = () => sessionsRef.current;
+export const useShellSessionsSelector = <T>(
+  select: (sessions: typeof sessionsRef.current) => T,
+): T => select(sessionsRef.current);
+export const selectSessionById = (sessions: readonly { id: string }[], id: string | undefined) =>
+  id === undefined ? undefined : sessions.find((session) => session.id === id);
 export const subscribeSessionCommits = () => () => {};
 export const useSession = () => undefined;
 export const converseWithSession = () =>
@@ -208,14 +214,18 @@ export async function discoverVoiceTools() {
 export async function callVoiceTool() {
   throw new Error("This fixture does not execute Host tools.");
 }
+const wakeScenario = new URLSearchParams(location.search).get("wake-quick-settings");
 export const localVoiceBackend = {
-  inspect: async () => ({
-    ready: true,
-    missing: [],
-    python: "/fixture/python",
-    whisperPath: "/fixture/whisper",
-    ttsPath: "/fixture/tts",
-  }),
+  inspect: async () => {
+    if (wakeScenario === "error") throw new Error("Fixture wake listener failure");
+    return {
+      ready: wakeScenario !== "pack",
+      missing: wakeScenario === "pack" ? ["faster-whisper"] : [],
+      python: "/fixture/python",
+      whisperPath: "/fixture/whisper",
+      ttsPath: "/fixture/tts",
+    };
+  },
   setupStatus: async () => ({ state: "idle" }),
   cloudStatus: async () => ({ elevenlabs: false }),
 };

@@ -47,8 +47,8 @@ for (const theme of ["light", "dark"])
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
         .toContain("## Recovery status");
       await answer.getByText("Recorded actions", { exact: true }).click();
-      await expect(answer).toContainText("Read files");
-      await answer.getByText("Read files", { exact: true }).hover();
+      await expect(answer).toContainText("Recorded action");
+      await answer.getByText("Recorded action", { exact: true }).first().hover();
       await expect(page.getByRole("tooltip")).toContainText("conversation.files.read");
       await page.mouse.move(0, 0);
       const input = page.getByRole("textbox", { name: /^Message / });
@@ -87,19 +87,21 @@ test("an untouched discovered worker becomes explicit only after choosing a work
   const dialog = page.getByRole("dialog");
   await expect(dialog).toHaveAccessibleName("Set up");
   await expect(dialog.locator('[aria-current="step"]')).toContainText("Identity");
-  expect((await setupDraft(page)).patch.execution).toBeNull();
+  await expect.poll(async () => (await setupDraft(page))?.patch.execution ?? null).toBeNull();
   await dialog.getByRole("button", { name: "Next", exact: true }).click();
   await expect(dialog).toHaveAccessibleName("Set up");
   await expect(dialog.locator('[aria-current="step"]')).toContainText("Work mode");
-  expect((await setupDraft(page)).patch.execution).toBeNull();
+  await expect.poll(async () => (await setupDraft(page))?.patch.execution ?? null).toBeNull();
   const workAndAsk = dialog.getByRole("radio", { name: /^Work and ask/ });
   await expect(workAndAsk).toBeVisible();
   await workAndAsk.click();
-  expect((await setupDraft(page)).patch.execution).toMatchObject({
-    harness: "codex",
-    model: "codex:fixture-worker",
-    modelSettings: { reasoningEffort: "low" },
-  });
+  await expect
+    .poll(async () => (await setupDraft(page))?.patch.execution)
+    .toMatchObject({
+      harness: "codex",
+      model: "codex:fixture-worker",
+      modelSettings: { reasoningEffort: "low" },
+    });
   expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
   expect(
     await page.evaluate(() =>
@@ -266,18 +268,14 @@ for (const theme of ["light", "dark"])
         await mode.click();
         await expect(mode).toBeChecked();
       }
-      expect((await setupDraft(page)).patch).toMatchObject({
-        autonomy: "chief",
-        confirmJobs: true,
-        planApproval: "large",
-        allowRoutineQuestions: true,
-        execution: {
-          harness: "codex",
-          model: "codex:fixture-worker",
-          modelSettings: { reasoningEffort: "low" },
-          runtimeMode: "supervised",
-        },
-      });
+      await expect
+        .poll(async () => (await setupDraft(page)).patch)
+        .toMatchObject({
+          autonomy: "chief",
+          confirmJobs: true,
+          planApproval: "large",
+          allowRoutineQuestions: true,
+        });
       expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
       await capture(2);
       await next();
@@ -289,16 +287,25 @@ for (const theme of ["light", "dark"])
       await chooseSetupValue(page, "Work hours start", "22:00");
       await workHours.click();
       await expect(dialog.getByRole("button", { name: /^Work hours start:/ })).toHaveCount(0);
-      const allDayPatch = (await setupDraft(page)).patch;
-      expect(allDayPatch.activeStart).toBe(allDayPatch.activeEnd);
+      // The draft is stored shortly after the control changes.
+      await expect
+        .poll(async () => {
+          const patch = (await setupDraft(page)).patch;
+          return patch.activeStart === patch.activeEnd;
+        })
+        .toBe(true);
       await workHours.click();
       await expect(
         dialog.getByRole("button", { name: "Work hours start: 22:00", exact: true }),
       ).toBeVisible();
       const quiet = dialog.getByRole("switch", { name: "Quiet hours", exact: true });
       if (await quiet.isChecked()) await quiet.click();
-      const quietPatch = (await setupDraft(page)).patch;
-      expect(quietPatch.quietStart).toBe(quietPatch.quietEnd);
+      await expect
+        .poll(async () => {
+          const patch = (await setupDraft(page)).patch;
+          return patch.quietStart === patch.quietEnd;
+        })
+        .toBe(true);
       await quiet.click();
       await capture(3);
       await dialog
@@ -385,9 +392,11 @@ for (const theme of ["light", "dark"])
         path: join(output, `settings-${theme}-${width}-behavior.png`),
       });
       const models = await showGroup("Models");
-      await expectModelsNavigation(page, models);
+      await expect(
+        models.getByRole("button", { name: "Manage models", exact: true }),
+      ).toBeVisible();
       expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
-      const autonomy = dialog.getByRole("region", { name: "Work", exact: true });
+      const autonomy = dialog.getByRole("tabpanel", { name: "Work", exact: true });
       for (const amount of ["100k", "500k", "1m", "5m"])
         await chooseSetupValue(page, "Daily token budget", `${amount} tokens/day`);
       await chooseSetupValue(page, "Daily token budget", "Custom");
@@ -415,7 +424,7 @@ for (const theme of ["light", "dark"])
         path: join(output, `settings-${theme}-${width}-presence.png`),
       });
       const cost = await showGroup("Cost and context");
-      await cost.getByRole("spinbutton", { name: "Review reservation", exact: true }).fill("9000");
+      await cost.getByRole("spinbutton", { name: "Reserve per review", exact: true }).fill("9000");
       await cost.getByRole("spinbutton", { name: "Summary every", exact: true }).fill("25");
       await cost.screenshot({
         animations: "disabled",
@@ -446,7 +455,7 @@ for (const theme of ["light", "dark"])
       );
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Models");
-      const reopened = dialog.getByRole("region", { name: "Work", exact: true });
+      const reopened = dialog.getByRole("tabpanel", { name: "Work", exact: true });
       await expect(
         reopened.getByRole("button", { name: "Daily token budget: 500k tokens/day", exact: true }),
       ).toBeVisible();
@@ -455,6 +464,7 @@ for (const theme of ["light", "dark"])
     });
 
 const headings: Record<string, string> = {
+  Models: "Work limits",
   Language: "Conversation",
   "Conversation behavior": "Conversation",
   Jobs: "Customize access",
@@ -576,7 +586,7 @@ for (const theme of ["light", "dark"])
       await openWrittenBrief(page);
       await expect(draft).toHaveValue("Review the saved release draft");
       await room.getByRole("button", { name: "Settings", exact: true }).click();
-      const settings = page.getByRole("dialog", { name: "Settings · Arif", exact: true });
+      const settings = page.getByRole("dialog", { name: "Settings for Arif", exact: true });
       await capture("settings");
       for (const section of [
         "Jobs",
@@ -641,7 +651,7 @@ for (const theme of ["light", "dark"])
       const unconfirmed = page.getByText("Summary unavailable", { exact: true }).first();
       await expect(unconfirmed).toBeVisible();
       await unconfirmed.hover();
-      await expect(page.getByRole("tooltip")).toHaveText("Summary refresh was not confirmed.");
+      await expect(page.getByRole("tooltip")).toHaveText("Summary refresh could not be confirmed.");
       await page.getByRole("button", { name: "Conversation actions", exact: true }).click();
       await expect(
         page.getByRole("menuitem", { name: "Retry summary refresh", exact: true }),
@@ -706,7 +716,7 @@ for (const theme of ["light", "dark"])
         `/tests/browser/assistant/assistant-room.html?theme=${theme}&question-presentation=1`,
       );
       const pending = page.getByRole("article").filter({
-        hasText: "Saving this question is unconfirmed. Retry to verify the original card.",
+        hasText: "Saving this question could not be confirmed. Retry to verify the original card.",
       });
       await expect(pending).toBeVisible();
       expect(await page.evaluate(() => (window as any).__presentationRequest)).toBeUndefined();
@@ -797,7 +807,7 @@ for (const theme of ["light", "dark"])
       await pending.getByRole("radio", { name: /Small safe change/ }).check();
       await pending.locator('button[type="submit"]').click();
       await expect(
-        pending.getByText("The answer is unconfirmed. Your original choice is kept.", {
+        pending.getByText("Your answer could not be confirmed. Your original choice is kept.", {
           exact: true,
         }),
       ).toBeVisible();
@@ -822,7 +832,7 @@ for (const theme of ["light", "dark"])
       );
       await openRoomSection(page, "Jobs");
       await page.getByRole("button", { name: "Job actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Delete...", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete…", exact: true }).click();
       const review = page.getByRole("dialog", { name: "Delete job?", exact: true });
       await expect(
         review.getByRole("checkbox", { name: "Also delete the reviewed tasks", exact: true }),
@@ -870,7 +880,7 @@ for (const theme of ["light", "dark"])
       );
       await openRoomSection(page, "Jobs");
       await page.getByRole("button", { name: "Job actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Delete...", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete…", exact: true }).click();
       const review = page.getByRole("dialog", { name: "Delete job?", exact: true });
       await review
         .getByRole("checkbox", { name: "Also delete the reviewed tasks", exact: true })
@@ -1052,7 +1062,7 @@ for (const theme of ["light", "dark"])
       const cost = await openSettingsGroup(page, "Cost and context");
       await cost.scrollIntoViewIfNeeded();
       await cost.getByRole("button", { name: "About cost and context", exact: true }).click();
-      await expect(page.getByText(/Claude utility requests include/)).toBeVisible();
+      await expect(page.getByText(/Worker limits use the first threshold reached/)).toBeVisible();
       await page.screenshot({
         animations: "disabled",
         path: join(output, `output-context-help-${theme}-${width}.png`),
@@ -1063,12 +1073,10 @@ for (const theme of ["light", "dark"])
         path: join(output, `output-context-compact-${theme}-${width}.png`),
       });
       await cost.getByRole("button", { name: "Worker context limits", exact: true }).click();
-      // Token and percentage limits share a label; the unit beside each field tells them apart,
-      // and the token fields come first.
-      const soft = cost.getByRole("spinbutton", { name: "Worker compact at", exact: true }).first();
+      const soft = cost.getByRole("spinbutton", { name: "Compact by token count", exact: true });
       await expect(soft).toHaveValue("150000");
       await expect(
-        cost.getByRole("spinbutton", { name: "Worker fresh session at", exact: true }).nth(1),
+        cost.getByRole("spinbutton", { name: "Start fresh by context usage", exact: true }),
       ).toHaveValue("80");
       await soft.fill("160000");
       await soft.blur();
@@ -1082,11 +1090,11 @@ for (const theme of ["light", "dark"])
       await openSettingsGroup(page, "Cost and context");
       await dialog.getByRole("button", { name: "Worker context limits", exact: true }).click();
       await expect(
-        dialog.getByRole("spinbutton", { name: "Worker compact at", exact: true }).first(),
+        dialog.getByRole("spinbutton", { name: "Compact by token count", exact: true }),
       ).toHaveValue("160000");
-      await expect(dialog.getByRole("spinbutton", { name: "Compact at", exact: true })).toHaveValue(
-        "150000",
-      );
+      await expect(
+        dialog.getByRole("spinbutton", { name: "Compact supervisor context", exact: true }),
+      ).toHaveValue("150000");
     });
 
 for (const theme of ["light", "dark"])
@@ -1150,7 +1158,7 @@ for (const theme of ["light", "dark"])
       await expect(dialog.getByRole("alert")).toContainText(
         "Connection interrupted after acceptance",
       );
-      await expect(dialog.getByRole("textbox", { name: "Request 1", exact: true })).toBeDisabled();
+      await expect(dialog.getByRole("textbox", { name: "Job 1", exact: true })).toBeDisabled();
       await page.screenshot({
         animations: "disabled",
         path: join(output, `multi-job-retry-${theme}-${width}.png`),
@@ -1166,7 +1174,7 @@ for (const theme of ["light", "dark"])
         page.getByRole("textbox", { name: "Give Arif a job", exact: true }),
       ).toBeDisabled();
       await page.getByRole("button", { name: "Show fixture project", exact: true }).click();
-      await expect(dialog.getByRole("textbox", { name: "Request 1", exact: true })).toHaveValue(
+      await expect(dialog.getByRole("textbox", { name: "Job 1", exact: true })).toHaveValue(
         "Coordinate frontend and backend",
       );
       await dialog.getByRole("button", { name: "Check and retry", exact: true }).click();
@@ -1339,9 +1347,10 @@ for (const theme of ["light", "dark"])
         `/tests/browser/assistant/assistant-room.html?theme=${theme}&briefing=1&presence=unreadable`,
       );
       await page.getByRole("button", { name: "Assistant status", exact: true }).click();
+      // The availability is a screen-reader live region: its text, not an accessible name, carries it.
       await expect(
-        page.getByRole("status", { name: "Current availability: Away", exact: true }),
-      ).toBeVisible();
+        page.getByRole("status").filter({ hasText: "Current availability: Away" }),
+      ).toBeAttached();
       await page.keyboard.press("Escape");
       const card = page.getByRole("region", { name: "While you were away", exact: true });
       await card.getByRole("button", { name: "Listen", exact: true }).click();
@@ -1361,7 +1370,7 @@ for (const theme of ["light", "dark"])
       const draft = page.getByRole("textbox", { name: "Message Arif", exact: true });
       await draft.fill("Keep this unsent draft");
       await page.getByRole("button", { name: "Conversation actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Clear conversation...", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Clear conversation…", exact: true }).click();
       const confirm = page.getByRole("dialog", { name: "Clear this conversation?", exact: true });
       await expect(confirm).toBeVisible();
       await page.screenshot({
@@ -1473,12 +1482,19 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Cost and context");
       await page.getByRole("button", { name: "About cost and context", exact: true }).click();
-      const explanation = page.getByText(
-        "Limits estimate retained text; summaries and a 1 MB safety limit can shorten it. Provider limits are not enforced.",
-        { exact: true },
-      );
+      // The popover now explains scheduling limits and worker thresholds; the old retained-text
+      // sentence is gone from the interface.
+      const explanation = page.getByText("Local scheduling limits, not a provider billing cap.", {
+        exact: true,
+      });
       await explanation.scrollIntoViewIfNeeded();
       await expect(explanation).toBeVisible();
+      await expect(
+        page.getByText(
+          "Worker limits use the first threshold reached: token count or percentage of the provider context window.",
+          { exact: true },
+        ),
+      ).toBeVisible();
       await page.screenshot({
         animations: "disabled",
         path: join(output, `${theme}-${width}-chief-context.png`),
@@ -1638,7 +1654,7 @@ for (const theme of ["light", "dark"] as const)
       await page
         .getByRole("switch", { name: "Enable computer use", exact: true })
         .scrollIntoViewIfNeeded();
-      await expect(page.getByText("Not installed", { exact: true })).toBeVisible();
+      await expect(page.getByText("Not installed", { exact: true }).first()).toBeVisible();
       // The emergency stop appears only while computer use is on.
       await expect(
         page.getByRole("button", { name: "Stop computer use", exact: true }),
@@ -1740,14 +1756,13 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       const dialog = page.getByRole("dialog");
       const models = await openSettingsGroup(page, "Models");
-      await expect(
-        models.getByText("Models and limits follow Settings > Models.", { exact: true }),
-      ).toBeVisible();
-      await expectModelsNavigation(page, models);
       await models.screenshot({
         animations: "disabled",
         path: join(output, `roles-central-link-${theme}-${width}.png`),
       });
+      await expectModelsNavigation(page, models);
+      await expect(dialog).toHaveCount(0);
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Identity");
       await dialog
         .getByRole("textbox", { name: "Assistant name", exact: true })
@@ -1936,9 +1951,12 @@ for (const theme of ["light", "dark"])
         .click();
       await page.getByRole("button", { name: "Remove supervision", exact: true }).click();
       await expect(
-        page.getByText("Supervision removal is unconfirmed. Check its status before continuing.", {
-          exact: true,
-        }),
+        page.getByText(
+          "Supervision removal could not be confirmed. Check its status before continuing.",
+          {
+            exact: true,
+          },
+        ),
       ).toBeVisible();
       await page.screenshot({
         animations: "disabled",
@@ -2007,7 +2025,7 @@ for (const theme of ["light", "dark"])
       );
       await expect(page.getByText("Fixture activity unavailable")).toBeVisible();
       await expect(page.getByText("No notes mention this job yet.")).toBeVisible();
-      await expect(page.getByText("Loading...", { exact: true })).toBeVisible();
+      await expect(page.getByText("Loading…", { exact: true })).toBeVisible();
       await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
       await page.screenshot({
         path: `temp/verification/assistant-callers-visual/${theme}-${width}-job-states.png`,

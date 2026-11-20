@@ -13,6 +13,7 @@ vi.mock("./rateLimitsCache", () => ({ clearCachedRateLimits: vi.fn() }));
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import { readProviderAccountIdentity } from "./providerAccountIdentity";
 import { removeProviderAccountCredentials } from "./providerAccountCredentials";
+import { ProviderAccountError } from "./providerAccountError";
 import { providerAccounts } from "./providerAccounts";
 import { registerProviderAccount, sameSignedInIdentity } from "./providerAccountRegistration";
 
@@ -36,6 +37,29 @@ it("rejects the same signed-in identity even with a different label and casing",
   await expect(registerProviderAccount(account)).rejects.toThrow("already added");
   expect(removeProviderAccountCredentials).toHaveBeenCalledWith("codex", "account-new");
   expect(providerAccounts("codex")).toHaveLength(1);
+});
+
+it("fails with stable codes that carry no identity, and keeps the cleanup cause", async () => {
+  vi.mocked(readProviderAccountIdentity).mockResolvedValue({
+    email: "work@example.com",
+    organization: "Company",
+  });
+  const duplicate = await registerProviderAccount(account).catch((error: unknown) => error);
+  expect(duplicate).toBeInstanceOf(ProviderAccountError);
+  expect(duplicate).toMatchObject({ code: "duplicate", label: expect.any(String) });
+  expect(JSON.stringify(duplicate)).not.toContain("work@example.com");
+  expect((duplicate as Error).message).not.toContain("work@example.com");
+
+  vi.mocked(readProviderAccountIdentity).mockResolvedValue(null);
+  await expect(registerProviderAccount(account)).rejects.toMatchObject({
+    code: "identityUnverified",
+  });
+
+  vi.mocked(loginHarness).mockRejectedValueOnce(new Error("Login cancelled"));
+  vi.mocked(removeProviderAccountCredentials).mockRejectedValueOnce(new Error("Disk locked"));
+  const cleanup = await registerProviderAccount(account).catch((error: unknown) => error);
+  expect(cleanup).toMatchObject({ code: "cleanupFailed" });
+  expect((cleanup as ProviderAccountError).cause).toMatchObject({ message: "Login cancelled" });
 });
 
 it("persists a verified different identity", async () => {

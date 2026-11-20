@@ -66,9 +66,12 @@ describe("session deletion dialog wording", () => {
     );
     expect(mocks.ask).not.toHaveBeenCalled();
     host.mockResolvedValueOnce(false as never);
-    expect(await confirmSessionDelete("Delete 4 conversations? This can’t be undone.")).toBe(false);
+    expect(await confirmSessionDelete({ count: 4, skippedRunning: 1 })).toBe(false);
     expect(host).toHaveBeenLastCalledWith(
-      expect.objectContaining({ title: "Delete 4 conversations?" }),
+      expect.objectContaining({
+        title: "Delete 4 conversations?",
+        message: expect.stringContaining("1 running conversation will be skipped."),
+      }),
     );
     unregister();
     expect(await confirmSessionDelete({ count: 1 })).toBe(false);

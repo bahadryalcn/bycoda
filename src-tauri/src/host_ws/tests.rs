@@ -1,4 +1,16 @@
 use super::*;
+use std::thread;
+
+// Regression for #503: each route used to get its own OS thread and current-thread
+// runtime, multiplied across five brokers. Route workers must stay tasks on the
+// shared async runtime, so the thread and runtime constructors must not return.
+#[test]
+fn host_ws_route_workers_run_on_the_shared_async_runtime() {
+    let production = include_str!("mod.rs");
+    assert!(!production.contains("thread::Builder::new()"));
+    assert!(!production.contains("new_current_thread"));
+    assert!(production.contains("tauri::async_runtime::spawn(async move"));
+}
 
 #[test]
 fn remote_admission_errors_block_only_explicit_identity_auth_or_schema() {
@@ -2439,6 +2451,112 @@ fn bulk_unary_download_keeps_other_rpc_and_socket_read_loop_available() {
     broker.shutdown();
 }
 
+/// Reads one chunk request at `offset`, then drops the socket without a response,
+/// like a link glitch mid-transfer.
+fn http_drop(mut stream: std::net::TcpStream, offset: usize) {
+    stream.set_nonblocking(false).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let mut headers = Vec::new();
+    while !headers.ends_with(b"\r\n\r\n") {
+        let mut byte = [0];
+        stream.read_exact(&mut byte).unwrap();
+        headers.push(byte[0]);
+        assert!(headers.len() < 8192);
+    }
+    let headers = String::from_utf8(headers).unwrap();
+    assert!(headers.starts_with(&format!(
+        "GET /ws-bulk/transfer.fixture?offset={offset} HTTP/1.1"
+    )));
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+}
+
+#[test]
+fn bulk_transient_chunk_drop_retries_same_offset_and_completes() {
+    let _serial = BULK_TEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let bytes = Arc::new(
+        serde_json::to_vec(
+            &json!([{"id":"project.bulk","cwd":"/fixture","name":"x".repeat(140_000)}]),
+        )
+        .unwrap(),
+    );
+    let data = bytes.clone();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &["projects.list"], "host.1").await;
+        let request = next(&mut socket).await;
+        result(&mut socket, &request, json!({"$bulk":descriptor(&data)})).await;
+        // First attempt at offset 0 glitches; the retry must re-request offset 0.
+        let (stream, _) = listener.accept().await.unwrap();
+        tokio::task::spawn_blocking(move || http_drop(stream.into_std().unwrap(), 0))
+            .await
+            .unwrap();
+        for offset in (0..data.len()).step_by(65536) {
+            let (stream, _) = listener.accept().await.unwrap();
+            let data = data.clone();
+            tokio::task::spawn_blocking(move || {
+                http_chunk(stream.into_std().unwrap(), &data, offset, None, None)
+            })
+            .await
+            .unwrap();
+        }
+        let _ = time::timeout(Duration::from_millis(150), socket.next()).await;
+    });
+    let broker = HostWsBroker::default();
+    let reply = broker
+        .request(
+            &server.route(),
+            "window.a",
+            "projects.list",
+            json!({}),
+            RequestOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(reply.result[0]["name"].as_str().unwrap().len(), 140_000);
+    broker.shutdown();
+}
+
+#[test]
+fn bulk_persistent_chunk_failure_stops_after_bounded_attempts() {
+    let _serial = BULK_TEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let bytes = Arc::new(
+        serde_json::to_vec(
+            &json!([{"id":"project.bulk","cwd":"/fixture","name":"x".repeat(140_000)}]),
+        )
+        .unwrap(),
+    );
+    let data = bytes.clone();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &["projects.list"], "host.1").await;
+        let request = next(&mut socket).await;
+        result(&mut socket, &request, json!({"$bulk":descriptor(&data)})).await;
+        // Exactly three attempts (first try plus two retries), all at offset 0.
+        for _ in 0..3 {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio::task::spawn_blocking(move || http_drop(stream.into_std().unwrap(), 0))
+                .await
+                .unwrap();
+        }
+        let _ = time::timeout(Duration::from_millis(150), socket.next()).await;
+    });
+    let broker = HostWsBroker::default();
+    let outcome = broker.request(
+        &server.route(),
+        "window.a",
+        "projects.list",
+        json!({}),
+        RequestOptions::default(),
+    );
+    assert!(outcome.is_err());
+    broker.shutdown();
+}
+
 #[test]
 fn bulk_hash_and_environment_mismatch_are_rejected() {
     let _serial = BULK_TEST
@@ -2874,4 +2992,37 @@ fn resource_retirement_fences_cross_window_stateful_unary_without_claiming_not_s
         let _ = done_tx.send(());
         broker.shutdown();
     }
+}
+
+// A native caller enqueues on a runtime worker and then blocks for the reply. The route worker
+// it woke sits in that worker's LIFO slot, which other workers cannot steal, so a plain blocking
+// wait stranded the socket loop: no reply was read, no Host ping answered, and the Host closed
+// the connection while the caller timed out with RPC_WS_INTERRUPTED.
+#[test]
+fn a_blocking_reply_wait_on_a_runtime_worker_keeps_the_woken_route_task_running() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let (wake_tx, mut wake_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let (reply_tx, reply_rx) = mpsc::channel::<()>();
+    runtime.spawn(async move {
+        while wake_rx.recv().await.is_some() {
+            let _ = reply_tx.send(());
+        }
+    });
+    thread::sleep(Duration::from_millis(50));
+    let replied = runtime.block_on(async move {
+        tokio::spawn(async move {
+            wake_tx.try_send(()).unwrap();
+            wait_for_reply(&reply_rx, Duration::from_secs(2)).is_ok()
+        })
+        .await
+        .unwrap()
+    });
+    assert!(
+        replied,
+        "the woken route task was stranded behind a blocking wait"
+    );
 }

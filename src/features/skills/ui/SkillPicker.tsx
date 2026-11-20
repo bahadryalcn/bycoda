@@ -9,7 +9,7 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { skillPickerDescription, skillScopeLabel } from "../model/skillPickerLabels";
 import { t, useLocale } from "../../../shared/i18n";
 import { Plus } from "../../../shared/ui/icons";
 import {
@@ -44,12 +44,19 @@ type Props = {
   showCreate?: boolean;
   error?: string | null;
   busy?: boolean;
+  /** Id of the listbox; rows derive their ids from it so an owning field can reference the active row. */
+  listId?: string;
   onActive: (index: number) => void;
   onPick: (skill: Skill) => void;
   onStartCreate: () => void;
   onCancelCreate: () => void;
   onCreate: (name: string, scope: "project" | "user") => void;
 };
+
+/** Stable id of the row at `index`, for `aria-activedescendant` on the owning field. */
+export function skillOptionId(listId: string, index: number): string {
+  return `${listId}-option-${index}`;
+}
 
 export function SkillPicker({
   parentSessionId,
@@ -63,6 +70,7 @@ export function SkillPicker({
   showCreate = true,
   error,
   busy,
+  listId,
   onActive,
   onPick,
   onStartCreate,
@@ -93,6 +101,7 @@ export function SkillPicker({
             query={query}
             active={active}
             compact={compact}
+            listId={listId}
             onActive={onActive}
             onPick={onPick}
           />
@@ -121,6 +130,7 @@ function SkillList({
   query,
   active,
   compact,
+  listId,
   onActive,
   onPick,
 }: {
@@ -129,6 +139,7 @@ function SkillList({
   query: string;
   active: number;
   compact?: boolean;
+  listId?: string;
   onActive: (index: number) => void;
   onPick: (skill: Skill) => void;
 }) {
@@ -178,7 +189,7 @@ function SkillList({
   return (
     <PickerListRoot
       ref={lockOverscroll}
-
+      id={listId}
       label={t("Commands and skills")}
       onMouseMove={onListMouseMove}
       className={`${compact ? "max-h-48" : "max-h-[min(240px,40vh)]"} overflow-y-auto overscroll-none px-1 py-1`}
@@ -208,6 +219,7 @@ function SkillList({
               className={compact ? undefined : "flex-col items-start justify-center"}
               data-has-description={compact ? undefined : ""}
               ref={highlighted ? activeRef : undefined}
+              id={listId ? skillOptionId(listId, index) : undefined}
               role="option"
               aria-selected={highlighted}
               active={highlighted}
@@ -223,12 +235,12 @@ function SkillList({
                 <Text size="caption" tone="secondary" className="shrink-0">
                   {isSkillGroupPickerItem(skill)
                     ? t("{p0} skills", { p0: skill.memberCount })
-                    : scopeLabel(skill)}
+                    : skillScopeLabel(skill)}
                 </Text>
               </span>
               {!compact && skill.description ? (
                 <ClampText as="span" lines={2} expandable={false} size="caption" tone="secondary">
-                  {skill.description}
+                  {skillPickerDescription(skill)}
                 </ClampText>
               ) : null}
               {!compact &&
@@ -444,15 +456,4 @@ const SECTION_HEADINGS: Record<PickerSection, () => string> = {
 function sectionOf(skill: Skill): PickerSection {
   if (skill.kind !== "template") return "commands";
   return isSkillGroupPickerItem(skill) ? "groups" : "templates";
-}
-
-function scopeLabel(skill: Skill): string {
-  if (skill.kind === "native") {
-    return skill.origin ? `${skill.source} · ${skill.origin}` : skill.source;
-  }
-  if (skill.kind === "builtin") return PRODUCT_IDENTITY.displayName;
-  if (skill.kind === "template") return "template";
-  if (skill.scope === "user") return "personal";
-  if (skill.source !== "agents" && skill.source !== "bycoda") return skill.source;
-  return "project";
 }

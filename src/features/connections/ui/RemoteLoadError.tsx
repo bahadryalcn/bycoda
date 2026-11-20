@@ -56,7 +56,11 @@ export function RemoteLoadError({
             p0: PRODUCT_IDENTITY.displayName,
             p1: name,
           })
-        : t("Couldn’t load from the machine");
+        : failure.kind === "identity"
+          ? t("{p0}’s identity changed", { p0: name })
+          : failure.kind === "temporary"
+            ? t("{p0} is busy right now", { p0: name })
+            : t("Couldn’t load from the machine");
   const needsAuth = needsSignIn(status);
   const startReconnect = () => {
     setReconnectError("");
@@ -79,7 +83,7 @@ export function RemoteLoadError({
           },
         ]
       : []),
-    ...(failure.kind === "unreachable" || failure.kind === "outdated" || failure.kind === "identity"
+    ...(failure.kind === "unreachable" || failure.kind === "outdated"
       ? [
           {
             label: t("Connection settings"),
@@ -102,9 +106,12 @@ export function RemoteLoadError({
           onClick: startReconnect,
           pending: reconnecting,
         }
-      : failure.kind === "other" && onRetry
-        ? { label: t("Retry"), onClick: onRetry }
-        : undefined;
+      : failure.kind === "identity"
+        ? // Reconnecting cannot clear a changed identity: only the owner re-pairs the machine.
+          { label: t("Review in Connections"), onClick: openConnections }
+        : failure.kind === "other" && onRetry
+          ? { label: t("Retry"), onClick: onRetry }
+          : undefined;
   const reconnectFailed = reconnectError && reconnectError !== failure.message;
   if (compact) {
     // One stable row: the raw transport text stays behind Details, never in the bar.
@@ -138,12 +145,11 @@ export function RemoteLoadError({
         {reconnectFailed ? (
           <span className="mt-1 flex min-w-0 flex-wrap items-baseline gap-2">
             <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
-              {t("Reconnecting failed: ")}
-              {reconnectError}
+              {t("Reconnecting failed: {p0}", { p0: reconnectError })}
             </Text>
             <ErrorDetails
               className="shrink-0"
-              title={t("Reconnecting failed: ")}
+              title={t("Reconnecting failed")}
               detail={reconnectError}
             />
           </span>
@@ -167,10 +173,7 @@ export function RemoteLoadError({
     >
       <p className="break-words">{failure.message}</p>
       {reconnectFailed ? (
-        <p className="mt-1 break-words">
-          {t("Reconnecting failed: ")}
-          {reconnectError}
-        </p>
+        <p className="mt-1 break-words">{t("Reconnecting failed: {p0}", { p0: reconnectError })}</p>
       ) : null}
       {stale ? <p className="mt-1">{t("Showing what was last loaded.")}</p> : null}
     </Alert>

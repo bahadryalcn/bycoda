@@ -62,7 +62,10 @@ setHarnessModels(
       displayName: "GPT-5.4",
       supportedReasoningEfforts: ["low", "medium", "high"],
       defaultReasoningEffort: "medium",
-      serviceTiers: ["fast"],
+      serviceTiers: [
+        { id: "fast", name: "Fast" },
+        { id: "ultrafast", name: "Ultrafast" },
+      ],
     },
   ]),
 );
@@ -222,13 +225,15 @@ function Fixture() {
       updateDeliveryProgress("composer-layout-fixture", progress, "accepted");
       return () => clearDeliveryProgress("composer-layout-fixture", progress);
     }
-    if (queueVisual !== "rejected") return;
+    if (queueVisual !== "rejected" && queueVisual !== "waiting") return;
     const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
     updateDeliveryProgress(
       "composer-layout-fixture",
       progress,
-      "rejected",
-      "The provider rejected the message. It remains queued and paused.",
+      queueVisual,
+      queueVisual === "waiting"
+        ? "RPC_WS_DEADLINE: Host request deadline elapsed or native consumer detached. The operation outcome is unknown; reconcile its command receipt before retrying."
+        : "The provider rejected the message. It remains queued and paused.",
     );
     return () => clearDeliveryProgress("composer-layout-fixture", progress);
   }, [queueVisual]);
@@ -286,8 +291,8 @@ function Fixture() {
         </div>
       </div>
       {deliveryProgress ? (
-        // The notice is a pane overlay owned by SessionPane; mirror that mount here.
-        <div data-session-body className="relative">
+        // The notice is an in-flow banner owned by SessionPane; mirror that mount here.
+        <div data-session-body className="relative flex flex-col">
           <DeliveryProgressNotice
             sessionId="composer-layout-fixture"
             messages={[{ id: "queued", text: "Queued task", attachments: [] }]}

@@ -2,6 +2,39 @@ import { expect, test } from "@playwright/test";
 
 for (const light of [true, false])
   for (const width of [800, 1280])
+    test(`earlier history scroll ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-usability.html?historyFixture${light ? "&light" : ""}`,
+      );
+      const transcript = page.locator(".agent-transcript");
+      const firstRecent = transcript.locator('[data-transcript-turn="history-12"]');
+      const firstOld = transcript.locator('[data-transcript-turn="history-0"]');
+      const loading = transcript.getByText("Loading earlier messages…");
+      const folder = "temp/verification/transcript-history";
+      const name = `${light ? "light" : "dark"}-${width}`;
+      await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+      await expect(firstOld).toHaveCount(0);
+      expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
+      await transcript.hover();
+      await page.mouse.wheel(0, -2400);
+      await expect(loading).toBeVisible();
+      await expect.poll(() => transcript.evaluate((element) => element.scrollTop)).toBe(0);
+      const before = (await firstRecent.boundingBox())!.y;
+      await page.screenshot({ path: `${folder}/loading-${name}.png` });
+      await page.evaluate(() => window.sessionUsability.finishHistoryPage());
+      await expect(firstOld).toHaveCount(1);
+      await expect(loading).toHaveCount(0);
+      expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(1);
+      await expect
+        .poll(async () => Math.abs((await firstRecent.boundingBox())!.y - before))
+        .toBeLessThan(2);
+      await page.screenshot({ path: `${folder}/loaded-${name}.png` });
+    });
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
     test(`session review caller visual ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(

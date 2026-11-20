@@ -23,17 +23,29 @@ afterEach(() => {
 });
 
 it("keeps a chosen size inside the window and above the minimum", () => {
-  expect(clampVoicePanelSize({ width: 480, height: 600 }, 300, 240)).toEqual({
+  expect(clampVoicePanelSize({ width: 480, height: 600 }, 300, 240, 0)).toEqual({
     width: 284,
-    height: 224,
+    height: 232,
   });
-  expect(clampVoicePanelSize({ width: 2000, height: 50 }, 1280, 800)).toEqual({
+  expect(clampVoicePanelSize({ width: 2000, height: 50 }, 1280, 800, 0)).toEqual({
     width: 1264,
     height: 260,
   });
-  expect(clampVoicePanelSize({ width: 480, height: 600 }, 1280, 800)).toEqual({
+  expect(clampVoicePanelSize({ width: 480, height: 600 }, 1280, 800, 0)).toEqual({
     width: 480,
     height: 600,
+  });
+});
+
+it("caps the height so a bottom-anchored panel's top edge stays in the window", () => {
+  // Panel sits 36px above the bottom (default), 56px when docked above the sidebar footer.
+  expect(clampVoicePanelSize({ width: 480, height: 900 }, 1280, 800, 36)).toEqual({
+    width: 480,
+    height: 756,
+  });
+  expect(clampVoicePanelSize({ width: 480, height: 900 }, 1280, 800, 56)).toEqual({
+    width: 480,
+    height: 736,
   });
 });
 
@@ -114,7 +126,7 @@ const viewProps = (panel: RefObject<HTMLElement | null>, noop = () => {}) =>
     onManualChange: noop,
   }) as VoiceCompanionViewProps;
 
-async function renderWithQuestion(rect: DOMRect) {
+async function renderWithQuestion(rect: DOMRect, overrides: Partial<VoiceCompanionViewProps> = {}) {
   const panel = createRef<HTMLElement>();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
@@ -123,7 +135,11 @@ async function renderWithQuestion(rect: DOMRect) {
   });
   act(() =>
     root.render(
-      createElement("section", { ref: panel }, createElement(VoiceCompanionView, viewProps(panel))),
+      createElement(
+        "section",
+        { ref: panel },
+        createElement(VoiceCompanionView, { ...viewProps(panel), ...overrides }),
+      ),
     ),
   );
   await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))));
@@ -150,6 +166,32 @@ it("keeps the question inside the companion when the window has no room beside o
   await renderWithQuestion(new DOMRect(16, 20, 360, 570));
   expect(host.querySelector("aside")).toBeNull();
   expect(host.querySelector("#question")).not.toBeNull();
+});
+
+it("names the side panel after the open question, as a landmark inline too", async () => {
+  window.innerWidth = 1280;
+  window.innerHeight = 800;
+  await renderWithQuestion(new DOMRect(16, 300, 360, 484));
+  expect(host.querySelector("aside")!.getAttribute("aria-label")).toBe("Question");
+
+  window.innerWidth = 400;
+  window.innerHeight = 600;
+  await renderWithQuestion(new DOMRect(16, 20, 360, 570));
+  const region = host.querySelector('section[aria-label="Question"]');
+  expect(region?.querySelector("#question")).not.toBeNull();
+});
+
+it("names a job review panel by its review title instead of as a question", async () => {
+  window.innerWidth = 1280;
+  window.innerHeight = 800;
+  await renderWithQuestion(new DOMRect(16, 300, 360, 484), {
+    choice: null,
+    jobReview: createElement("form", { id: "review" }),
+  });
+  const side = host.querySelector("aside")!;
+  expect(side.getAttribute("aria-label")).toBe("Review jobs before starting");
+  expect(side.querySelector("#review")).not.toBeNull();
+  expect(host.querySelector('[aria-label="Question"]')).toBeNull();
 });
 
 function pointer(type: string, init: { clientX: number; clientY: number }) {
@@ -264,3 +306,33 @@ it.each(["pointercancel", "lostpointercapture"])(
     expect(node.getBoundingClientRect()).toMatchObject({ width: 440, height: 330 });
   },
 );
+
+it("exposes the single-axis edges as focusable separators that resize from the keyboard", () => {
+  const { node, onPosition } = renderResizablePanel();
+  const edge = node.querySelector<HTMLElement>('[data-resize-direction="e"]')!;
+  expect(edge.getAttribute("role")).toBe("separator");
+  expect(edge.getAttribute("aria-orientation")).toBe("vertical");
+  expect(edge.getAttribute("aria-label")).toBe("Resize panel");
+  expect(edge.tabIndex).toBe(0);
+  expect(edge.getAttribute("aria-hidden")).toBeNull();
+
+  act(() => edge.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+  expect(node.getBoundingClientRect()).toMatchObject({ x: 300, y: 250, width: 416, height: 300 });
+  expect(JSON.parse(localStorage.getItem("bycoda:voice-size")!)).toEqual({
+    width: 416,
+    height: 300,
+  });
+  expect(onPosition).toHaveBeenLastCalledWith({ x: 300, y: 250 });
+
+  act(() => edge.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  expect(node.hasAttribute("data-sized")).toBe(false);
+  expect(localStorage.getItem("bycoda:voice-size")).toBeNull();
+});
+
+it("keeps corner targets pointer-only and hidden from assistive technology", () => {
+  const { node } = renderResizablePanel();
+  const corner = node.querySelector<HTMLElement>('[data-resize-direction="se"]')!;
+  expect(corner.getAttribute("aria-hidden")).toBe("true");
+  expect(corner.getAttribute("role")).toBeNull();
+  expect(corner.tabIndex).toBe(-1);
+});

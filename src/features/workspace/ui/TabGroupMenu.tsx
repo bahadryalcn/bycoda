@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { Divider } from "../../../shared/ui/Divider";
@@ -246,7 +247,7 @@ export function TabGroupMenu({
                     onClose();
                   }
                 } catch (error) {
-                  setLogoError(error instanceof Error ? error.message : String(error));
+                  setLogoError(errorText(error));
                 } finally {
                   logoOperation.current = false;
                   setLogoBusy(false);
@@ -290,7 +291,7 @@ export function TabGroupMenu({
                 setLogoError(null);
                 void clearProjectLogo(projectKey(logoProject))
                   .then(onLogoChange, (error) => {
-                    setLogoError(error instanceof Error ? error.message : String(error));
+                    setLogoError(errorText(error));
                   })
                   .finally(() => {
                     logoOperation.current = false;

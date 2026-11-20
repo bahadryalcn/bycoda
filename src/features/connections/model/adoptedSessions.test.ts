@@ -1784,7 +1784,9 @@ describe("a host turn that just finished", () => {
     snapshot = new Error("offline");
     await mirrorAdoptedSessions(deps);
     expect(reported.at(-1)).toEqual(["s1"]);
-    snapshot = { ...host({ blocks: [block("a"), block("b")] }), revision: 6 };
+    // #925 backs off failed reads of the same revision. A newer revision bypasses the backoff.
+    listing = entry({ revision: 7 });
+    snapshot = { ...host({ blocks: [block("a"), block("b")] }), revision: 7 };
     await mirrorAdoptedSessions(deps);
     expect(reported.at(-1)).toEqual([]);
     expect(current.blocks.map((item) => item.id)).toEqual(["a", "b"]);
@@ -1820,7 +1822,7 @@ describe("a host turn that just finished", () => {
 });
 
 it("hands a finished host turn that keeps failing to arrive to an explicit sync", async () => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({ toFake: ["Date", "performance"] });
   try {
     let current = local();
     let listing = entry({ status: "running" });
@@ -1842,8 +1844,11 @@ it("hands a finished host turn that keeps failing to arrive to an explicit sync"
     listing = entry({ revision: 6 });
     await mirrorAdoptedSessions(deps);
     expect(reported.at(-1)).toEqual(["s1"]);
-    vi.advanceTimersByTime(61_000);
-    await mirrorAdoptedSessions(deps);
+    // #1316 counts consecutive reachable passes and ignores a sleep-sized gap.
+    for (let pass = 0; pass < 13; pass++) {
+      vi.advanceTimersByTime(5_000);
+      await mirrorAdoptedSessions(deps);
+    }
     expect(current.adoptedSyncConflict).toBe(true);
     expect(reported.at(-1)).toEqual([]);
   } finally {

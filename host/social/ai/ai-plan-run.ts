@@ -4,6 +4,7 @@ import {
   type AutonomyLevel,
 } from "../../../src/features/social/model/autonomy";
 import type { AiPlanRunResult, AiPlanStep } from "../../../src/features/social/model/socialActions";
+import { SocialPlatformError } from "../../../src/integrations/social/adapter";
 import type { SocialActionContext } from "../core/social-actions";
 import { sanitizeSocialError } from "../core/social-helpers";
 import { readAutonomyPolicy } from "../autonomy/autonomy-policy";
@@ -55,12 +56,16 @@ function holdFor(gate: StepGate, owner: boolean, approved: boolean): Hold | unde
   return { status: "queued", reason: "Waiting for owner approval." };
 }
 
-/** One retry with the same receipt, so an uncertain first attempt cannot send twice. */
+/**
+ * One retry with the same receipt, so an uncertain first attempt cannot send twice. A rate limit is
+ * the provider refusing before it accepted anything, so the retry is skipped: the step fails with
+ * the time the limit resets, and the next run sends it then.
+ */
 async function execute(
   ctx: SocialActionContext,
   plan: StoredPlan,
   step: AiPlanStep,
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+): Promise<{ ok: true } | { ok: false; reason: string; retryAt?: number }> {
   const requestId = isWriteAction(step.action) ? `plan-${plan.id}-${step.id}` : undefined;
   let error: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -69,6 +74,8 @@ async function execute(
       return { ok: true };
     } catch (caught) {
       error = caught;
+      if (caught instanceof SocialPlatformError && caught.code === "rate_limit")
+        return { ok: false, reason: sanitizeSocialError(caught), retryAt: caught.retryAt };
     }
   }
   return { ok: false, reason: sanitizeSocialError(error) };
@@ -129,11 +136,15 @@ export async function runPlan(
     const outcome = await execute(ctx, plan, step);
     if (outcome.ok) {
       plan.completed.push(step.id);
+      // Saved before the audit write, so a failure there cannot replay a step that already ran.
+      await savePlan(ctx, plan);
       results.push(await finish(ctx, plan, step, "done"));
     } else {
-      results.push(await finish(ctx, plan, step, "failed", outcome.reason));
+      const failed = await finish(ctx, plan, step, "failed", outcome.reason);
+      results.push(
+        outcome.retryAt === undefined ? failed : { ...failed, retryAt: outcome.retryAt },
+      );
     }
   }
-  await savePlan(ctx, plan);
   return { results };
 }

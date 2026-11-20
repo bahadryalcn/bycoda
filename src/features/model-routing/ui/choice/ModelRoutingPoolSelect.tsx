@@ -23,7 +23,7 @@ export function ModelRoutingPoolSelect({
       disabled={disabled}
       options={[
         ...(includeOrder ? [{ value: "", label: t("Any model, in order") }] : []),
-        ...pools.map((pool) => ({ value: pool.id, label: pool.name })),
+        ...pools.map((pool) => ({ value: pool.id, label: pool.name || t("Unnamed group") })),
         ...(value && !pools.some((pool) => pool.id === value)
           ? [{ value, label: t("Deleted group"), disabled: true }]
           : []),

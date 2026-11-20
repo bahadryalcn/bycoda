@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import {
+  DECISION_INSTALL_CAPABILITY,
   DECISION_MODELS_RPC,
   type DecisionModelsMethod,
 } from "../../../shared/model/host-contracts/decision-models";
@@ -71,6 +72,25 @@ export function decisionModelsClient(machineId: string) {
         call("decisionModels.local.plan", params),
       install: (params: DecisionParams<"decisionModels.local.install">) =>
         call("decisionModels.local.install", params),
+      /** Only on a Host that advertises `DECISION_INSTALL_CAPABILITY`; see `installSupported`. */
+      installStart: (params: DecisionParams<"decisionModels.local.installStart">) =>
+        call("decisionModels.local.installStart", params),
+      installProgress: (params: DecisionParams<"decisionModels.local.installProgress">) =>
+        call("decisionModels.local.installProgress", params),
+      cancelInstall: (params: DecisionParams<"decisionModels.local.cancelInstall">) =>
+        call("decisionModels.local.cancelInstall", params),
+      /** Whether this Host can report install progress and cancel; an older Host only awaits `install`. */
+      installSupported: async (): Promise<boolean> => {
+        const host = await remoteRequest<{ capabilities?: unknown }>(
+          machineId,
+          "environment.describe",
+          {},
+        );
+        return (
+          Array.isArray(host.capabilities) &&
+          host.capabilities.includes(DECISION_INSTALL_CAPABILITY)
+        );
+      },
       start: (params: DecisionParams<"decisionModels.local.start">) =>
         call("decisionModels.local.start", params),
       stop: (params: DecisionParams<"decisionModels.local.stop">) =>

@@ -454,26 +454,34 @@ export async function notifySocialWaiting(
   });
 }
 
+/** Whether a daily summary would be announced right now. Checked before the
+ * summary is gathered so a focused or denied app does no multi-machine work. */
+export function canNotifyDailySummary(): boolean {
+  return shouldNotify({
+    enabled: loadNotificationsEnabled(),
+    permission,
+    windowFocused,
+    sessionVisible: false,
+  });
+}
+
 /** The daily summary of background work. The global switch applies; it has no
  * event setting of its own beyond the summary's own toggle. */
-export async function notifyDailySummary(headline: string): Promise<boolean> {
+export async function notifyDailySummary(
+  headline: string,
+  occurredAt = Date.now(),
+): Promise<boolean> {
+  if (!canNotifyDailySummary()) return false;
+  // A retry of one summary passes the same `occurredAt`, so history dedupes it
+  // instead of adding a row per attempt.
   logNotification({
     kind: "background",
     key: "background:summary",
     title: t("Daily summary"),
     label: headline,
     target: BACKGROUND_NOTIFICATION_TARGETS.summary,
-    occurredAt: Date.now(),
+    occurredAt,
   });
-  if (
-    !shouldNotify({
-      enabled: loadNotificationsEnabled(),
-      permission,
-      windowFocused,
-      sessionVisible: false,
-    })
-  )
-    return false;
   return deliver({
     sessionId: BACKGROUND_NOTIFICATION_TARGETS.summary,
     kind: "finished",

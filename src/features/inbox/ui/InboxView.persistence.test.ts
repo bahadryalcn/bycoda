@@ -28,10 +28,35 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 vi.mock("./InboxDetail", () => ({
   InboxDetail: ({ item }: { item: InboxItem | null }) =>
-    createElement("output", { "aria-label": "Selected inbox item" }, item?.title ?? ""),
+    createElement(
+      "div",
+      null,
+      createElement("output", { "aria-label": "Selected inbox item" }, item?.title ?? ""),
+      createElement("textarea", { "aria-label": "Comment draft" }),
+    ),
 }));
 vi.mock("./JiraBoardView", () => ({
-  JiraBoardView: () => createElement("div", { "data-jira-board-fixture": "" }),
+  JiraBoardView: ({ onSelect }: { onSelect: (issue: never) => void }) =>
+    createElement("button", {
+      "data-jira-board-fixture": "",
+      onClick: () =>
+        onSelect({
+          id: "jira-1",
+          kind: "jira",
+          provider: "jira",
+          identifier: "ENG-1",
+          number: 1,
+          title: "Board issue",
+          url: "https://acme.atlassian.net/browse/ENG-1",
+          state: "open",
+          updatedAt: "2026-10-22T08:00:00Z",
+          labels: [],
+          assignees: [],
+          draft: false,
+          repo: "ENG",
+          projectPath: "/work/project",
+        } as never),
+    }),
 }));
 vi.mock("../model/githubTasks", async (original) => ({
   ...(await original<typeof import("../model/githubTasks")>()),
@@ -164,6 +189,89 @@ it("groups Jira view and read/refresh icons beside search and retains the select
     ),
   );
   expect(button("List").getAttribute("aria-pressed")).toBe("true");
+});
+
+// Issue #1248: Escape that cancels an IME candidate must not close the Inbox.
+it("ignores an IME-composing Escape", async () => {
+  invoke.mockImplementation(async (command) =>
+    command.endsWith("_status") ? { connected: false } : [],
+  );
+  const onClose = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(InboxView, {
+        cwd: "/work/project",
+        recents: [],
+        onClose,
+        onAsk: async () => "session",
+        onAskRestart: async () => "session",
+        onAskMount: () => {},
+        onOpenIntegrations: () => {},
+      }),
+    ),
+  );
+  const press = (init: KeyboardEventInit) =>
+    act(async () => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, ...init }),
+      );
+    });
+  await press({ isComposing: true });
+  await press({ keyCode: 229 });
+  expect(onClose).not.toHaveBeenCalled();
+  await press({});
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("closes the open Jira board detail on Escape before leaving the Inbox", async () => {
+  saveInboxSource("jira");
+  saveInboxConnections({
+    github: false,
+    jira: true,
+    linear: false,
+    gitlab: false,
+    azuredevops: false,
+  });
+  invoke.mockImplementation(async (command) =>
+    command.endsWith("_status") ? { connected: command === "jira_status" } : [],
+  );
+  const onClose = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(InboxView, {
+        cwd: "/work/project",
+        recents: [],
+        onClose,
+        onAsk: async () => "session",
+        onAskRestart: async () => "session",
+        onAskMount: () => {},
+        onOpenIntegrations: () => {},
+      }),
+    ),
+  );
+  const escape = (target: EventTarget = document.body) =>
+    act(async () => {
+      target.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+    });
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[data-button-group="joined"] button[aria-label="Board"]')!
+      .click(),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>("[data-jira-board-fixture]")!.click(),
+  );
+  expect(container.querySelector('aside[aria-label="ENG-1"]')).not.toBeNull();
+  await escape(container.querySelector('aside textarea[aria-label="Comment draft"]')!);
+  expect(container.querySelector('aside[aria-label="ENG-1"]')).not.toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  await escape();
+  expect(container.querySelector('aside[aria-label="ENG-1"]')).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  await escape();
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 
 it("keeps active filters on an icon button and clears them through the menu", async () => {
@@ -361,4 +469,68 @@ it("offers the pull-request mode inside Inbox and keeps the all-items route reac
   expect(container.querySelector("h2")?.textContent).toBe("Inbox");
   await act(async () => toggle().click());
   expect(change).toHaveBeenLastCalledWith(false);
+});
+
+it("switches GitHub lists by kind and retains the chosen row layout when Inbox reopens", async () => {
+  const issues = items("/work/project");
+  const pr: InboxItem = {
+    ...issues[0],
+    kind: "pr",
+    number: 16,
+    title: "Review the new Inbox layout",
+    url: "https://github.com/acme/web/pull/16",
+    labels: [{ name: "design", color: "" }],
+  };
+  read.mockResolvedValue({ items: [...issues, pr], errors: {} });
+  const kind = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`[role="radio"][aria-label="${label}"]`)!;
+
+  await show();
+  expect(kind("Issues").getAttribute("aria-checked")).toBe("true");
+  expect(inboxRow(container, pr.title)).toBeNull();
+  await act(async () => kind("Pull requests").click());
+  expect(inboxRow(container, issues[0].title)).toBeNull();
+  expect(inboxRow(container, pr.title)?.getAttribute("aria-current")).toBe("true");
+  expect(inboxRow(container, pr.title)?.textContent).not.toContain("design");
+
+  const layout = container.querySelector<HTMLButtonElement>('button[aria-label="List view"]')!;
+  await act(async () => layout.click());
+  const comfortable =
+    document.querySelector<HTMLButtonElement>(
+      '[role="menuitemradio"][data-menu-id="comfortable"]',
+    ) ??
+    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
+      (option) => option.textContent?.trim() === "Comfortable",
+    )!;
+  await act(async () => comfortable.click());
+  expect(inboxRow(container, pr.title)?.parentElement?.textContent).toContain("design");
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await show();
+  expect(kind("Pull requests").getAttribute("aria-checked")).toBe("true");
+  expect(inboxRow(container, pr.title)?.parentElement?.textContent).toContain("design");
+});
+
+it("reveals a linked GitHub pull request when Issues was the active list", async () => {
+  const issue = items("/work/project")[0];
+  const pr: InboxItem = {
+    ...issue,
+    kind: "pr",
+    number: 16,
+    title: "Review the linked change",
+    url: "https://github.com/acme/web/pull/16",
+  };
+  read.mockResolvedValue({ items: [issue, pr], errors: {} });
+  await show();
+  expect(inboxRow(container, issue.title)).not.toBeNull();
+  await show("/work/project", { kind: "pr", number: pr.number, repo: pr.repo, url: pr.url });
+  expect(inboxRow(container, issue.title)).toBeNull();
+  expect(inboxRow(container, pr.title)?.getAttribute("aria-current")).toBe("true");
+});
+
+it("opens Pull requests for a saved legacy filter that hid issues", async () => {
+  saveInboxFilters({ ...DEFAULT_INBOX_FILTERS, hiddenKinds: ["issue"] });
+  await show();
+  const pulls = container.querySelector('[role="radio"][aria-label="Pull requests"]');
+  expect(pulls?.getAttribute("aria-checked")).toBe("true");
 });

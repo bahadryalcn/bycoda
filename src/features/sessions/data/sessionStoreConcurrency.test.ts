@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Every case re-imports the whole store graph (`vi.resetModules`), which exceeds 5 s on a loaded machine.
+vi.setConfig({ testTimeout: 30_000 });
+
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));

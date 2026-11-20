@@ -634,6 +634,9 @@ export type SocialCollectionFilter = {
   status?: string;
   segmentId?: string;
   since?: number;
+  /** jobs only, with `scheduledTo`: epoch-ms window [from, to) on `scheduledAt`, ordered by it ascending. */
+  scheduledFrom?: number;
+  scheduledTo?: number;
 };
 export type SocialWorkspaceFilters = Partial<Record<SocialCollection, SocialCollectionFilter>>;
 export type SocialWorkspaceQuery = {

@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { t } from "../../../../shared/i18n";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { Select } from "../../../../shared/ui/Select";
@@ -34,18 +35,21 @@ export function AssistantStandingConsentFields({
   projects: readonly { id?: string; name: string; path: string }[];
   disabled: boolean;
 }) {
+  const authorityId = useId();
   return (
     <>
       <Row
         label={t("Assistant authority")}
+        controlId={authorityId}
         descriptionVisible
         description={t(
           "Applies to this workspace and the selected Host. Coding conversations keep their own permissions.",
         )}
-        stacked
       >
         <Select
+          id={authorityId}
           label={t("Assistant authority")}
+          hideLabel
           value={value.permissionLevel ?? "legacy"}
           disabled={disabled}
           onValueChange={(permissionLevel) =>
@@ -91,7 +95,6 @@ export function AssistantStandingConsentFields({
               <Checkbox
                 key={key}
                 label={t(label)}
-                description={t("Always ask for approval")}
                 disabled={disabled}
                 checked={(value.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS).includes(key)}
                 onChange={(event) =>

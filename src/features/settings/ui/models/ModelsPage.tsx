@@ -59,7 +59,13 @@ import {
   useRetainedTransaction,
   retainedTransactionValue,
 } from "../../../model-routing/public/settings";
-import { loadLocalModelRoutingHost } from "./localModelRoutingHost";
+import { useModelRoutingHost } from "./modelRoutingHost";
+import {
+  SettingsHostFailure,
+  SettingsHostNotice,
+  SettingsHostPicker,
+  useSettingsHostScope,
+} from "../../../connections/public/settingsHosts";
 
 function providerAccountsSnapshot() {
   return JSON.stringify([providerAccounts("claude"), providerAccounts("codex")]);
@@ -126,11 +132,14 @@ export function ModelsPage({
     },
     staleTime: 0,
   });
-  const host = useQuery({
-    queryKey: ["settings", "local-model-routing-host"],
-    queryFn: loadLocalModelRoutingHost,
-  });
-  const delegation = useDelegationProfile(host.data?.machineId, host.data?.supported === true);
+  // Background work follows the picked Host; Defaults and delegation stay on this computer.
+  const scope = useSettingsHostScope();
+  const localRouting = useModelRoutingHost(scope.local);
+  const pickedRouting = useModelRoutingHost(scope.selected);
+  const delegation = useDelegationProfile(
+    localRouting.data?.machineId,
+    localRouting.data?.supported === true,
+  );
   const [targetChoice, setTargetChoice] = useState(retained.target);
   const leave = useLeaveGuard();
   const [accountScope, setAccountScope] = useState(retained.accountScope);
@@ -138,7 +147,7 @@ export function ModelsPage({
     retained.provider ?? loadLastModelChoice()?.harness ?? HARNESSES[0],
   );
   // One draft spans every provider and account, so switching them never hides an edit.
-  const transactionKey = `defaults:${JSON.stringify([host.data?.machineId ?? "", cwd ?? "", [...selectedTargetValues(targetChoice)].sort()])}`;
+  const transactionKey = `defaults:${JSON.stringify([scope.local?.id ?? "", cwd ?? "", [...selectedTargetValues(targetChoice)].sort()])}`;
   const [draft, setDraftState] = useRetainedTransaction(transactionKey + ":draft", EMPTY_DRAFT);
   const [saving, setSaving] = useRetainedTransaction(transactionKey + ":saving", false);
   const [saveState, setSaveState] = useRetainedTransaction<DefaultsSaveState>(
@@ -163,13 +172,12 @@ export function ModelsPage({
     ),
   );
   const saveDraft = async () => {
-    if (retainedTransactionValue<boolean>(`${transactionKey}:saving`)) return;
-    if (host.isPending || host.error) {
-      setSaveState({
-        state: "error",
-        message: host.error ? String(host.error) : t("Checking Host capabilities. Try again."),
-      });
-      return;
+    if (retainedTransactionValue<boolean>(`${transactionKey}:saving`)) return false;
+    // Defaults are desktop-local: only a still-running probe holds the save back, so a failing
+    // Host never blocks it (the Host routing sync is skipped then).
+    if (scope.loading || localRouting.pending) {
+      setSaveState({ state: "error", message: t("Checking Host capabilities. Try again.") });
+      return false;
     }
     const selected = selectedTargetValues(targetChoice).map(targets.parse).filter(targets.has);
     const destinations =
@@ -206,11 +214,14 @@ export function ModelsPage({
           .map(({ target, message }) => `${targets.label(target)}: ${message}`)
           .join("; "),
       });
-      return;
+      return false;
     }
-    if (retainedTransactionValue<typeof draft>(`${transactionKey}:draft`) === draft)
-      setDraft(EMPTY_DRAFT);
+    // An edit made while saving is not part of the acknowledged draft: keep it and do not
+    // acknowledge, so "Save and leave" never drops it.
+    const unchanged = retainedTransactionValue<typeof draft>(`${transactionKey}:draft`) === draft;
+    if (unchanged) setDraft(EMPTY_DRAFT);
     setSaveState({ state: "saved", target: outcome.saved.map(targets.label).join(", ") });
+    return unchanged;
   };
 
   const project = target.kind === "project" ? target.path : null;
@@ -233,104 +244,101 @@ export function ModelsPage({
 
   return (
     <div className="settings-topics grid min-w-0 gap-4">
-      {host.error || delegation.error ? (
-        <SettingsFeedback
-          state="error"
-          action={
-            host.error
-              ? {
-                  label: t("Retry"),
-                  onClick: () => {
-                    void host.refetch();
-                  },
-                }
-              : undefined
-          }
-        >
-          {String(host.error ?? delegation.error)}
-        </SettingsFeedback>
+      {/* One failing Host shows one error here; nothing derived from it is shown below. */}
+      {tab === "work" && scope.selected && pickedRouting.error ? (
+        <SettingsHostFailure
+          scope={scope}
+          message={pickedRouting.error}
+          revoked={pickedRouting.revoked}
+          onRetry={pickedRouting.retry}
+        />
+      ) : null}
+      {tab === "defaults" && delegation.error ? (
+        <SettingsFeedback state="error">{String(delegation.error)}</SettingsFeedback>
       ) : null}
       {/* Background work reads top-down: models, groups, who uses what, limits; one Save. */}
       <div id={settingDomId("models-roles")} data-setting-id="models-roles" hidden={tab !== "work"}>
-        <div id={settingDomId("models-order")} data-setting-id="models-order">
-          {host.isPending ? (
-            <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-          ) : (
-            <ModelOrderSettings
-              machineId={host.data?.machineId}
-              supported={host.data?.supported === true}
-            />
-          )}
+        <div className="grid gap-4">
+          <SettingsHostPicker scope={scope} />
+          <div id={settingDomId("models-order")} data-setting-id="models-order">
+            {/* Only a connected machine reaches the editor; any other state is reported instead. */}
+            {!scope.selected ? (
+              <SettingsHostNotice scope={scope} />
+            ) : pickedRouting.pending ? (
+              <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+            ) : pickedRouting.data ? (
+              <ModelOrderSettings
+                machineId={pickedRouting.data.machineId}
+                supported={pickedRouting.data.supported}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
-      {!host.data && host.isPending && tab !== "work" ? (
-        <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-      ) : null}
-      {host.data ? (
-        <div
-          id={settingDomId("models-chat")}
-          data-setting-id="models-chat"
-          hidden={tab !== "defaults"}
-        >
-          <ProviderDefaultsPanel
-            harness={activeProvider}
-            accountScope={accountScope}
-            onAccountScopeChange={(harness, accountId) => {
-              const next = { ...accountScope, [harness]: accountId };
-              updateRetainedModelsPage({ accountScope: next });
-              setAccountScope(next);
-            }}
-            target={target}
+      <div
+        id={settingDomId("models-chat")}
+        data-setting-id="models-chat"
+        hidden={tab !== "defaults"}
+      >
+        <ProviderDefaultsPanel
+          harness={activeProvider}
+          accountScope={accountScope}
+          onAccountScopeChange={(harness, accountId) => {
+            const next = { ...accountScope, [harness]: accountId };
+            updateRetainedModelsPage({ accountScope: next });
+            setAccountScope(next);
+          }}
+          target={target}
+          draft={draft}
+          onDraftChange={setDraft}
+          providerControl={{
+            // A provider with unsaved edits says so in the picker.
+            options: orderedHarnesses.map((id) => ({
+              value: id,
+              label: editedProviders.has(id)
+                ? `${HARNESS_TITLE[id]} · ${t("Unsaved")}`
+                : HARNESS_TITLE[id],
+            })),
+            onChange: (id) => {
+              updateRetainedModelsPage({ provider: id });
+              setProvider(id);
+            },
+          }}
+        />
+        {tab === "defaults" ? (
+          <ProviderDefaultsSaveBar
+            selection={targetChoice}
             draft={draft}
+            activeProvider={activeProvider ?? undefined}
+            providers={orderedHarnesses.filter(
+              (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
+            )}
             onDraftChange={setDraft}
-            providerControl={{
-              // A provider with unsaved edits says so in the picker.
-              options: orderedHarnesses.map((id) => ({
-                value: id,
-                label: editedProviders.has(id)
-                  ? `${HARNESS_TITLE[id]} · ${t("Unsaved")}`
-                  : HARNESS_TITLE[id],
-              })),
-              onChange: (id) => {
-                updateRetainedModelsPage({ provider: id });
-                setProvider(id);
-              },
+            target={target}
+            options={targets.options.map((option) =>
+              delegation.supported && option.value !== "global"
+                ? {
+                    ...option,
+                    label: `${option.label} (${t("Chats only")})`,
+                  }
+                : option,
+            )}
+            onTargetChange={(value) => {
+              if (value === targetChoice) return;
+              leave.guard(() => {
+                updateRetainedModelsPage({ target: value });
+                setTargetChoice(value);
+              });
             }}
+            changes={changes}
+            saveState={saveState}
+            saving={saving}
+            onSave={saveDraft}
+            onDiscard={() => setDraft(EMPTY_DRAFT)}
           />
-          {tab === "defaults" ? (
-            <ProviderDefaultsSaveBar
-              selection={targetChoice}
-              draft={draft}
-              activeProvider={activeProvider ?? undefined}
-              providers={orderedHarnesses.filter(
-                (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
-              )}
-              onDraftChange={setDraft}
-              target={target}
-              options={targets.options.map((option) =>
-                delegation.supported && option.value !== "global"
-                  ? {
-                      ...option,
-                      label: `${option.label} (${t("Chats only")})`,
-                    }
-                  : option,
-              )}
-              onTargetChange={(value) => {
-                if (value === targetChoice) return;
-                leave.guard(() => {
-                  updateRetainedModelsPage({ target: value });
-                  setTargetChoice(value);
-                });
-              }}
-              changes={changes}
-              saveState={saveState}
-              saving={saving}
-              onSave={saveDraft}
-              onDiscard={() => setDraft(EMPTY_DRAFT)}
-            />
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+      </div>
+
       {leave.dialog}
     </div>
   );

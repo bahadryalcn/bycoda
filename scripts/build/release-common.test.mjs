@@ -63,6 +63,7 @@ async function fixture(t) {
     "store-worker",
     "session-read-helper",
     "snapshot-worker",
+    "audience-sheet-worker",
     "workspace-cleanup-worker",
   ])
     files[`build/host/${name}.mjs`] = `// ${name}\n`;

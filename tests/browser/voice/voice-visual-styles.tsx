@@ -6,6 +6,8 @@ import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import { Button } from "../../../src/shared/ui/Button";
 import { VoiceCompanion } from "../../../src/features/voice/ui/VoiceCompanion";
+import { VoiceCompanionGate } from "../../../src/features/voice/ui/VoiceCompanionGate";
+import { VoiceLauncherSlot } from "../../../src/features/voice/ui/companion/voiceLauncherSlot";
 import { VoiceSettings } from "../../../src/features/voice/ui/VoiceSettings";
 import {
   loadVoiceSettings,
@@ -21,9 +23,10 @@ import { VoiceSetupSteps } from "../../../src/features/voice/ui/VoiceSetupSteps"
 import { saveKeybindingOverride } from "../../../src/features/settings/model/settings";
 import "../../../src/styles/index.css";
 const params = new URLSearchParams(location.search);
+const wakeQuickSettings = params.has("wake-quick-settings");
 if (params.has("high-refresh")) noteDisplayRefreshRate(240);
 if (params.has("push-to-talk"))
-  saveKeybindingOverride("Voice: Push to Talk", { shortcut: "Control+Shift+KeyJ" });
+  saveKeybindingOverride("Voice: Push to Talk", { shortcut: "Control+Shift+KeyQ" });
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
 await setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en");
 saveVoiceSettings({
@@ -103,14 +106,29 @@ function FixtureCompanion() {
     cwd: "/fixture-next",
   };
   const current = next ? second : session;
+  const Companion = wakeQuickSettings ? VoiceCompanionGate : VoiceCompanion;
   return (
     <main style={{ padding: 24, maxInlineSize: 720 }}>
       <p>Fixture evidence · synthetic audio and session state</p>
-      <VoiceSettings />
+      {params.get("wake-quick-settings") !== "error" && <VoiceSettings />}
       {navigation && (
         <Button onClick={() => setNext((value) => !value)}>Switch fixture project</Button>
       )}
-      <VoiceCompanion
+      {wakeQuickSettings && (
+        <footer
+          style={{
+            position: "fixed",
+            insetBlockEnd: 8,
+            insetInlineStart: 8,
+            display: "flex",
+            justifyContent: "center",
+            inlineSize: params.has("compact-rail") ? 56 : undefined,
+          }}
+        >
+          <VoiceLauncherSlot compact={params.has("compact-rail")} />
+        </footer>
+      )}
+      <Companion
         activeId={params.has("no-active") ? undefined : current.id}
         sessions={navigation ? [session, second] : [session]}
         onSubmit={() => {

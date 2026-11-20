@@ -27,10 +27,11 @@ import { isLocalSyncMachine } from "../../features/connections/public/localSync"
 /**
  * Starts the individual account once, tracks active time on this computer's Host and uploads
  * it while signed in. Everything here is inert without a local Host or a signed-in account.
+ * Only the local sync Host is ever used: a remote machine never receives this computer's activity.
  */
 export function useAccountPlatform(): void {
   const { machines } = useRemoteMachines();
-  const hostId = (machines.find(isLocalSyncMachine) ?? machines[0])?.id;
+  const hostId = machines.find(isLocalSyncMachine)?.id;
   useState(() => bindNotificationsServer(accountNotificationsPort()));
   useEffect(() => {
     void startAccount().catch(() => undefined);
@@ -53,6 +54,6 @@ export function useAccountPlatform(): void {
   useActivityTracker(hostId);
   useActivitySync(hostId, accountApi, reportAccountFailure);
   useServerNotifications();
-  useOwnerApprovalMirror(machines.find(isLocalSyncMachine)?.id);
+  useOwnerApprovalMirror(hostId);
   useDailySummary(hostId);
 }

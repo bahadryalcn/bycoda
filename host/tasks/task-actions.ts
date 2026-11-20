@@ -576,7 +576,18 @@ export async function startTask(
   return accepted;
 }
 
-export async function reorder(context: TaskContext, ids: unknown): Promise<HostTask[]> {
+/**
+ * Reorders `ids` among themselves inside the Host's full queue for their status.
+ * The caller may list only the tasks it can see; every other task keeps its place
+ * and the listed ones take over the slots they already occupied. With
+ * `expectedUpdatedAt` the whole move is rejected when any listed task changed
+ * since the caller read it. Returns the tasks whose position changed.
+ */
+export async function reorder(
+  context: TaskContext,
+  ids: unknown,
+  expectedUpdatedAt?: Readonly<Record<string, number>>,
+): Promise<HostTask[]> {
   await context.ready;
   return context.store.db.scope(async () => {
     await context.ready;
@@ -585,23 +596,47 @@ export async function reorder(context: TaskContext, ids: unknown): Promise<HostT
       !Array.isArray(ids) ||
       ids.length > 1000 ||
       ids.some((id) => typeof id !== "string") ||
-      new Set(ids).size !== ids.length
+      new Set(ids).size !== ids.length ||
+      (expectedUpdatedAt !== undefined &&
+        ids.some((id) => typeof expectedUpdatedAt[id] !== "number"))
     )
       throw new Error("Invalid task order");
-    const tasks = await mapAsync(ids, async (id) => await context.get(id));
-    if (tasks.some((task) => !task)) throw new Error("Task not found.");
-    if (tasks.some((task) => !["todo", "queued"].includes(task!.status)))
-      throw new Error("Only queued or to-do tasks can be reordered");
-    if (tasks.some((task) => task!.status !== tasks[0]!.status))
-      throw new Error("Reorder tasks within one status");
-    return await context.transaction(
-      async () =>
-        await mapAsync(
-          tasks,
-          async (task, position) =>
-            await context.write({ ...task!, position, updatedAt: context.now() }),
-        ),
-    );
+    // Check, read the queue and write under one transaction so a concurrent edit
+    // cannot land between the revision check and the position writes.
+    return await context.transaction(async () => {
+      const tasks = await mapAsync(ids as string[], async (id) => await context.get(id));
+      if (tasks.some((task) => !task)) throw new Error("Task not found.");
+      if (tasks.some((task) => !["todo", "queued"].includes(task!.status)))
+        throw new Error("Only queued or to-do tasks can be reordered");
+      if (tasks.some((task) => task!.status !== tasks[0]!.status))
+        throw new Error("Reorder tasks within one status");
+      if (
+        tasks.some((task) => expectedUpdatedAt && task!.updatedAt !== expectedUpdatedAt[task!.id])
+      )
+        throw new Error("The task queue changed. Refresh it before reordering.");
+      if (!tasks.length) return [];
+
+      const peers = (await context.list())
+        .filter((item) => item.status === tasks[0]!.status)
+        .sort((a, b) => (a.position ?? a.createdAt) - (b.position ?? b.createdAt));
+      const listed = new Set(ids as string[]);
+      const slots = peers.flatMap((peer, index) => (listed.has(peer.id) ? [index] : []));
+      if (slots.length !== listed.size) throw new Error("Task not found.");
+      const order = peers.map((peer) => peer.id);
+      slots.forEach((slot, index) => {
+        order[slot] = (ids as string[])[index]!;
+      });
+      const byId = new Map(peers.map((peer) => [peer.id, peer]));
+      const changed = order.flatMap((id, position) => {
+        const peer = byId.get(id)!;
+        return peer.position === position ? [] : [{ peer, position }];
+      });
+      return await mapAsync(
+        changed,
+        async ({ peer, position }) =>
+          await context.write({ ...peer, position, updatedAt: context.now() }),
+      );
+    });
   });
 }
 
@@ -683,6 +718,7 @@ export async function deleteTask(
   context.listCache = undefined;
   context.projectListCache.clear();
   context.schedulerTasks?.delete(id);
+  context.registeredBudgetRuns.delete(id);
 }
 
 export async function validateTransfer(

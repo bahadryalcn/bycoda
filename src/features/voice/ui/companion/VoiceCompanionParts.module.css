@@ -7,37 +7,18 @@
   min-inline-size: 0;
   margin-block-end: 10px;
   padding: 10px;
-  border-radius: var(--ui-radius-panel);
-  /* A soft glow in the colour of whoever has the floor, like the voice core's rings. */
-  --voice-stage-ink: var(--ui-tone-accent-fg);
-  background: radial-gradient(
-    120% 90% at 50% 0%,
-    color-mix(in oklab, var(--voice-stage-ink) 16%, transparent),
-    transparent 70%
-  );
 }
-.stage[data-state="thinking"] {
-  --voice-stage-ink: var(--ui-tone-warning-fg);
-}
-.stage[data-state="connecting"] {
-  --voice-stage-ink: var(--ui-tone-neutral-fg);
-}
-.stage:is([data-state="off"], [data-state="muted"]) {
-  --voice-stage-ink: var(--ui-text-muted);
-}
-.stage[data-state="error"] {
-  --voice-stage-ink: var(--ui-tone-danger-fg);
-}
-/* The call stage: everything centred under a large core. */
 .stage[data-layout="stage"] {
   justify-items: center;
-  padding-block: 18px 12px;
+  gap: 8px;
+  margin-block-end: 0;
+  padding-block: 4px;
   text-align: center;
 }
 .stage[data-layout="stage"] .status {
   flex-direction: column;
-  gap: 10px;
-  max-inline-size: 100%;
+  gap: 8px;
+  inline-size: 100%;
 }
 .stage[data-layout="stage"] .statusText {
   justify-items: center;
@@ -45,6 +26,7 @@
 }
 .stage[data-layout="stage"] .statusLine {
   justify-content: center;
+  min-block-size: 20px;
 }
 .stage[data-layout="stage"] .statusEnd {
   margin-inline-start: 0;
@@ -57,14 +39,9 @@
 }
 /* The words in flight on the call stage; long replies stay readable in the transcript. */
 .spoken {
-  display: -webkit-box;
-  max-inline-size: 100%;
+  max-inline-size: min(100%, 36ch);
   margin: 0;
-  overflow: hidden;
   overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  line-clamp: 4;
 }
 .meta {
   display: flex;
@@ -212,14 +189,14 @@
 .resizeEdge[data-resize-direction="s"] {
   left: 12px;
   right: 12px;
-  height: 6px;
+  block-size: 6px;
   cursor: ns-resize;
 }
 .resizeEdge[data-resize-direction="e"],
 .resizeEdge[data-resize-direction="w"] {
   top: 12px;
   bottom: 12px;
-  width: 6px;
+  inline-size: 6px;
   cursor: ew-resize;
 }
 .resizeEdge[data-resize-direction="ne"],
@@ -248,6 +225,11 @@
 }
 .resizeEdge[data-resize-direction*="w"] {
   left: 0;
+}
+/* The edge is already a 6px hit area on the panel's border box; the sash's ±3px pseudo-element
+   would only add scrollable overflow past the clipped panel. */
+.resizeEdge[data-resize-direction][data-orientation]::before {
+  inset: 0;
 }
 /* The side panel is the question's surface; drop the card frame inside it. */
 .side:has([data-question-form]) {

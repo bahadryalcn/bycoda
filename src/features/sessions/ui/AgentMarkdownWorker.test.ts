@@ -120,6 +120,10 @@ it("labels source fallback when workers are unavailable", () => {
     expect(f.container.textContent).toContain("Formatted preview unavailable. Showing source.");
     expect(f.container.textContent).toContain(text);
     expect(f.container.textContent).not.toContain("Rendering Markdown");
+    // Regression: long unbroken source tokens must wrap instead of widening the message.
+    const source = f.container.querySelector<HTMLElement>(".whitespace-pre-wrap")!;
+    expect(source.className).toContain("min-w-0");
+    expect(source.className).toContain("[overflow-wrap:anywhere]");
   } finally {
     f.close();
   }

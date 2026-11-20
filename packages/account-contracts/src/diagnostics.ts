@@ -79,41 +79,166 @@ export interface RedactOptions {
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const REDACTIONS: readonly [RegExp, string][] = [
-  // Authorization headers and bearer tokens.
-  [/\b(authorization\s*[:=]\s*)(?:bearer|basic|token)?\s*[^\s"',;]+/gi, "$1<redacted>"],
-  [/\bbearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, "Bearer <redacted>"],
-  // JSON Web Tokens.
-  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "<jwt>"],
-  // Well-known API key and token shapes.
+/** Longest line {@link redactDiagnosticText} keeps; longer lines are cut so work stays bounded. */
+const MAX_LINE_CHARS = 8192;
+const LINE_TRUNCATED = " <line-truncated>";
+const PRIVATE_KEY_PLACEHOLDER = "<private-key>";
+
+// Every pattern below starts at a boundary character group instead of an unanchored run of
+// word characters, and uses bounded whitespace, so a long run without a match is scanned once
+// per start instead of once per character (no quadratic backtracking).
+const SECRET_KEY_WORDS =
+  "token|secret|password|passwd|api[_-]?key|apikey|cookie|session[_-]?id|private[_-]?key|client[_-]?secret|signature|sig|authorization";
+const SECRET_KEY_HEAD = String.raw`(^|[^A-Za-z0-9_-])([A-Za-z0-9_-]*(?:${SECRET_KEY_WORDS})(?:\\?["'])?\s{0,20}[:=]\s{0,20}`;
+// `key: "multi word value"`, `"key": "a b"` and the JSON-escaped `\"key\": \"a b\"`. The value
+// runs to its closing quote, or to the end of the line when the quote is missing (a cut line).
+const QUOTED_SECRET_PATTERN = new RegExp(
+  String.raw`${SECRET_KEY_HEAD}(\\?["']))((?:(?!\3)(?:\\[^\r\n]|[^\\\r\n]))+)\\?(\3|(?=[\r\n]|$))`,
+  "gi",
+);
+const UNQUOTED_SECRET_PATTERN = new RegExp(
+  // A backslash that opens a JSON-escaped quote (`\"`) ends the value, so it stays in the text.
+  String.raw`${SECRET_KEY_HEAD}(?:\\?["'])?)(?:[^\s"',;&}\\]|\\(?!["']))+`,
+  "gi",
+);
+
+const REDACTIONS: readonly [RegExp, string | ((substring: string, ...args: string[]) => string)][] =
   [
-    /\b(?:sk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|sk_(?:live|test)_[A-Za-z0-9]{16,})\b/g,
-    "<secret>",
-  ],
-  // key=value / "key": "value" with a secret-looking key.
-  [
-    /\b((?:[A-Za-z0-9_-]*(?:token|secret|password|passwd|api[_-]?key|apikey|cookie|session[_-]?id|private[_-]?key|client[_-]?secret|signature|sig))["']?\s*[:=]\s*["']?)[^\s"',;&}]+/gi,
-    "$1<redacted>",
-  ],
-  // Query parameters that usually carry credentials.
-  [
-    /([?&](?:code|token|key|sig|signature|access_token|refresh_token|auth)=)[^&\s"']+/gi,
-    "$1<redacted>",
-  ],
-  // URLs with inline credentials.
-  [/\b([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s@]+@/gi, "$1<redacted>@"],
-  // Private key blocks.
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "<private-key>"],
-  // E-mail addresses.
-  [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "<email>"],
-  // User names inside common home-directory shapes.
-  [/\b([A-Za-z]:[\\/]+Users[\\/]+)(?!<user>)[^\\/\s"':]+/gi, "$1<user>"],
-  [/(\/(?:Users|home)\/)(?!<user>)[^/\s"':]+/g, "$1<user>"],
-];
+    // Authorization headers and bearer tokens.
+    [
+      /(^|[^A-Za-z0-9_])(authorization\s{0,20}[:=]\s{0,20})(?:(?:bearer|basic|token)\s{0,20})?[^\s"',;]+/gi,
+      "$1$2<redacted>",
+    ],
+    [/\bbearer\s{1,20}[A-Za-z0-9._~+/=-]{8,}/gi, "Bearer <redacted>"],
+    // JSON Web Tokens.
+    [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "<jwt>"],
+    // Well-known API key and token shapes.
+    [
+      /\b(?:sk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|sk_(?:live|test)_[A-Za-z0-9]{16,})\b/g,
+      "<secret>",
+    ],
+    // key=value / "key": "value" with a secret-looking key.
+    [
+      QUOTED_SECRET_PATTERN,
+      (_all, boundary, head, _quote, _body, close) => `${boundary}${head}<redacted>${close}`,
+    ],
+    [UNQUOTED_SECRET_PATTERN, "$1$2<redacted>"],
+    // Query parameters that usually carry credentials.
+    [
+      /([?&](?:code|token|key|sig|signature|access_token|refresh_token|auth)=)[^&\s"']+/gi,
+      "$1<redacted>",
+    ],
+    // URLs with inline credentials.
+    [/(^|[^A-Za-z0-9+.-])([a-z][a-z0-9+.-]{0,31}:\/\/)[^/\s:@]+:[^/\s@]+@/gi, "$1$2<redacted>@"],
+    // E-mail addresses.
+    [/(^|[^A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "$1<email>"],
+    // User names inside common home-directory shapes.
+    [/\b([A-Za-z]:[\\/]+Users[\\/]+)(?!<user>)[^\\/\s"':]+/gi, "$1<user>"],
+    [/(\/(?:Users|home)\/)(?!<user>)[^/\s"':]+/g, "$1<user>"],
+  ];
+
+const PRIVATE_KEY_BEGIN = /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY(?: BLOCK)?-----/g;
+const PRIVATE_KEY_END = /-----END [A-Z0-9 ]{0,40}PRIVATE KEY(?: BLOCK)?-----/g;
+const KEY_BODY_TEXT = /^(?:[A-Za-z0-9+/=]*|(?:Proc-Type|DEK-Info):.*)$/;
+const KEY_BODY_TEXT_STRICT = /^(?:[A-Za-z0-9+/=]{16,}|(?:Proc-Type|DEK-Info):.*)$/;
+
+/**
+ * A line that can sit inside a PEM body: base64 text or a legacy encryption header (a blank
+ * line too, unless `strict`). Strict is for lines before an orphan END marker, so ordinary
+ * short lines stay. Trimmed first so long whitespace runs never backtrack.
+ */
+function isKeyBodyLine(line: string, strict = false): boolean {
+  return (strict ? KEY_BODY_TEXT_STRICT : KEY_BODY_TEXT).test(line.trim());
+}
+
+function findFrom(pattern: RegExp, text: string, from: number): RegExpExecArray | null {
+  pattern.lastIndex = from;
+  return pattern.exec(text);
+}
+
+/** Start of the trailing run of key-body characters (base64 and JSON-escaped newlines). */
+function keyRunStart(text: string): number {
+  let index = text.length;
+  while (index > 0 && /[A-Za-z0-9+/=\\]/.test(text[index - 1]!)) index -= 1;
+  return index;
+}
+
+/**
+ * Replaces private key blocks with a placeholder. Handles blocks whose END line is missing
+ * (everything after BEGIN that still looks like key material) and blocks whose BEGIN line was
+ * cut off by log tailing (an END marker without BEGIN replaces the base64 lines before it).
+ */
+function redactPrivateKeyBlocks(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  let inKey = false;
+  for (const line of lines) {
+    let pos = 0;
+    if (inKey) {
+      const close = findFrom(PRIVATE_KEY_END, line, 0);
+      if (close) {
+        inKey = false;
+        pos = close.index + close[0].length;
+        if (line.slice(pos).trim() === "") continue;
+      } else if (isKeyBodyLine(line)) {
+        continue;
+      } else {
+        inKey = false;
+      }
+    }
+    let result = "";
+    let begin = findFrom(PRIVATE_KEY_BEGIN, line, pos);
+    let end = findFrom(PRIVATE_KEY_END, line, pos);
+    while (begin || end) {
+      if (begin && (!end || begin.index < end.index)) {
+        result += line.slice(pos, begin.index) + PRIVATE_KEY_PLACEHOLDER;
+        if (!end) {
+          inKey = true;
+          pos = line.length;
+          break;
+        }
+        pos = end.index + end[0].length;
+      } else if (end) {
+        const head = line.slice(pos, end.index);
+        result += head.slice(0, keyRunStart(head));
+        if (result.trim() === "") {
+          // The key started on earlier lines that the log tail cut: drop their base64 body.
+          // The line right before END may be a short last base64 line; earlier ones are full.
+          let strict = false;
+          while (out.length > 0 && out[out.length - 1]!.trim() !== "") {
+            if (!isKeyBodyLine(out[out.length - 1]!, strict)) break;
+            out.pop();
+            strict = true;
+          }
+        }
+        result += PRIVATE_KEY_PLACEHOLDER;
+        pos = end.index + end[0].length;
+      }
+      if (begin && begin.index < pos) begin = findFrom(PRIVATE_KEY_BEGIN, line, pos);
+      if (end && end.index < pos) end = findFrom(PRIVATE_KEY_END, line, pos);
+    }
+    out.push(result + line.slice(pos));
+  }
+  return out;
+}
+
+const isLineDelimiter = (char: string | undefined) =>
+  char === undefined || /[\s"'`,;(){}[\]<>]/.test(char);
+
+/** Cuts a too long line without leaving a half token (a secret fragment) at the cut. */
+function capLine(line: string): string {
+  if (line.length <= MAX_LINE_CHARS) return line;
+  let end = MAX_LINE_CHARS - LINE_TRUNCATED.length;
+  if (!isLineDelimiter(line[end])) {
+    while (end > 0 && !isLineDelimiter(line[end - 1])) end -= 1;
+  }
+  return `${line.slice(0, end)}${LINE_TRUNCATED}`;
+}
 
 /**
  * Best-effort redaction of secrets and personal data from log text. Clients run it before
- * upload and the server runs it again before storage, so it must be idempotent.
+ * upload and the server runs it again before storage, so it must be idempotent. Work is
+ * linear in the text size: lines longer than {@link MAX_LINE_CHARS} are cut before the
+ * patterns run, and the patterns avoid quadratic backtracking.
  */
 export function redactDiagnosticText(text: string, options: RedactOptions = {}): string {
   let result = text;
@@ -132,8 +257,41 @@ export function redactDiagnosticText(text: string, options: RedactOptions = {}):
       .join("[\\\\/]+");
     result = result.replace(new RegExp(`${pattern}(?=$|[\\\\/\\s"':])`, "gi"), "~");
   }
-  for (const [pattern, replacement] of REDACTIONS) result = result.replace(pattern, replacement);
+  result = redactPrivateKeyBlocks(result.split("\n")).map(capLine).join("\n");
+  for (const [pattern, replacement] of REDACTIONS) {
+    result =
+      typeof replacement === "string"
+        ? result.replace(pattern, replacement)
+        : result.replace(pattern, replacement);
+  }
   return result;
+}
+
+/** Drops leading base64-only lines: the body of a private key whose BEGIN line was cut off. */
+function dropLeadingKeyBody(text: string): string {
+  let pos = 0;
+  while (pos < text.length) {
+    const newline = text.indexOf("\n", pos);
+    const line = newline < 0 ? text.slice(pos) : text.slice(pos, newline);
+    if (!isKeyBodyLine(line, true)) break;
+    if (newline < 0) return "";
+    pos = newline + 1;
+  }
+  return text.slice(pos);
+}
+
+/**
+ * Newest whole lines of `text` within `limit` characters. A line the cut lands in is dropped
+ * so the section never starts on a fragment.
+ */
+function tailLines(text: string, limit: number): { text: string; cut: boolean } {
+  if (text.length <= limit) return { text, cut: false };
+  let start = text.length - limit;
+  if (text[start - 1] !== "\n") {
+    const newline = text.indexOf("\n", start);
+    start = newline < 0 ? text.length : newline + 1;
+  }
+  return { text: text.slice(start), cut: true };
 }
 
 /** One log source handed to {@link composeDiagnosticLog}, oldest line first. */
@@ -162,11 +320,20 @@ export function composeDiagnosticLog(
     options.maxChars ?? DIAGNOSTIC_TEXT_MAX_CHARS,
     DIAGNOSTIC_TEXT_MAX_CHARS,
   );
-  const usable = sections
-    .filter((section) => DiagnosticSourceName.safeParse(section.name).success)
-    .map((section) => ({ ...section, text: redactDiagnosticText(section.text, options).trimEnd() }))
-    .filter((section) => section.text.length > 0)
-    .slice(0, DIAGNOSTIC_MAX_SOURCES);
+  // Cut to the newest lines first and redact only that window, so a huge source costs no more
+  // than a small one. The window is twice the budget because redaction shrinks the text.
+  const usable: DiagnosticSection[] = [];
+  for (const section of sections) {
+    if (usable.length >= DIAGNOSTIC_MAX_SOURCES) break;
+    if (!DiagnosticSourceName.safeParse(section.name).success) continue;
+    const window = tailLines(section.text, maxChars * 2);
+    // A section that starts mid-file may start inside a private key body.
+    const raw =
+      window.cut || section.truncated === true ? dropLeadingKeyBody(window.text) : window.text;
+    const text = redactDiagnosticText(raw, options).trimEnd();
+    if (text.length === 0) continue;
+    usable.push({ name: section.name, text, truncated: window.cut || section.truncated === true });
+  }
   const headerCost = (name: string) => name.length + 14;
   const budget = Math.max(
     0,

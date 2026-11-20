@@ -1,5 +1,76 @@
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { HostAssistantKeepAwake } from "./assistant-keep-awake";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** Fake helper: `exits[i]()` simulates the i-th helper process dying on its own. */
+function fakeHelper(options: { failing: () => boolean }) {
+  const exits: Array<() => void> = [];
+  let acquired = 0;
+  return {
+    exits,
+    get acquired() {
+      return acquired;
+    },
+    acquire: async () => {
+      acquired++;
+      if (options.failing()) throw new Error("Denied");
+      let exit!: () => void;
+      const closed = new Promise<void>((done) => (exit = done));
+      exits.push(exit);
+      return { closed, release: async () => exit() };
+    },
+  };
+}
+
+it("restarts the helper after an unexpected exit while still requested, then clears the error", async () => {
+  vi.useFakeTimers();
+  const helper = fakeHelper({ failing: () => false });
+  const service = new HostAssistantKeepAwake({ platform: "win32", acquire: helper.acquire });
+  await service.setEnabled(true);
+  helper.exits[0]();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(service.status).toMatchObject({ requested: true, active: false });
+  expect(service.status.error).toBe("The system-awake helper stopped.");
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(helper.acquired).toBe(2);
+  expect(service.status).toMatchObject({ requested: true, active: true });
+  expect(service.status.error).toBeUndefined();
+  await service.close();
+});
+
+it("bounds restart attempts after repeated failures and does not spawn duplicate helpers", async () => {
+  vi.useFakeTimers();
+  let failing = false;
+  const helper = fakeHelper({ failing: () => failing });
+  const service = new HostAssistantKeepAwake({ platform: "win32", acquire: helper.acquire });
+  await service.setEnabled(true);
+  failing = true;
+  helper.exits[0]();
+  await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+  // 1 initial acquire + 5 scheduled restart attempts, then the budget is spent.
+  expect(helper.acquired).toBe(6);
+  expect(service.status).toMatchObject({ requested: true, active: false });
+  expect(service.status.error).toBe("The system-awake helper could not be restarted.");
+  await service.close();
+});
+
+it("an explicit stop cancels a pending restart", async () => {
+  vi.useFakeTimers();
+  const helper = fakeHelper({ failing: () => false });
+  const service = new HostAssistantKeepAwake({ platform: "win32", acquire: helper.acquire });
+  await service.setEnabled(true);
+  helper.exits[0]();
+  await vi.advanceTimersByTimeAsync(0);
+  await service.setEnabled(false);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(helper.acquired).toBe(1);
+  expect(service.status).toMatchObject({ requested: false, active: false });
+  expect(service.status.error).toBeUndefined();
+  await service.close();
+});
 
 it("is opt-in, reuses one power request, and releases when work ends or Host closes", async () => {
   let acquired = 0,

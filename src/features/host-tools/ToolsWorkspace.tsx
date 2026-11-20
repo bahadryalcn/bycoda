@@ -324,12 +324,9 @@ function ToolDock({
       return defaultSize;
     }
   };
-  const restoringSize = useRef(true);
-  const previousSizeKey = useRef(sizeKey);
-  if (previousSizeKey.current !== sizeKey) {
-    previousSizeKey.current = sizeKey;
-    restoringSize.current = true;
-  }
+  // Read the saved width once per mount, not on every render or window resize.
+  const [savedSize] = useState(readSize);
+  const restoringSize = useRef(false);
   const resize = useDragResize({
     axis: vertical ? "vertical" : "horizontal",
     direction: placement === "right" || placement === "bottom" ? "left" : "right",
@@ -345,7 +342,7 @@ function ToolDock({
       );
     },
     defaultWidth: vertical ? 300 : 420,
-    initial: readSize(),
+    initial: savedSize,
     onCommit: (value) => {
       if (!restoringSize.current)
         try {
@@ -355,15 +352,15 @@ function ToolDock({
         }
     },
   });
+  // Window resizes need no restore: useDragResize re-clamps the saved preference itself.
+  // Only a layout change (a different size key) loads that layout's saved width.
+  const restoredKey = useRef(sizeKey);
   useEffect(() => {
-    const restore = () => {
-      restoringSize.current = true;
-      resize.setWidth(readSize());
-      restoringSize.current = false;
-    };
-    restore();
-    window.addEventListener("resize", restore);
-    return () => window.removeEventListener("resize", restore);
+    if (restoredKey.current === sizeKey) return;
+    restoredKey.current = sizeKey;
+    restoringSize.current = true;
+    resize.setWidth(readSize());
+    restoringSize.current = false;
   }, [sizeKey]);
   return (
     <>

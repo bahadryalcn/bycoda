@@ -4,6 +4,20 @@ Open **Settings > Models** to manage model routing, chat defaults, subagents and
 for this computer's Host. Its tabs, in order, are **Background work**, **Defaults** and
 **Providers**. Decision models have their own Settings page.
 
+In a conversation, focus the model picker and press **Alt+Down** to open recent
+models. Arrow keys skip unavailable models. While the menu shows only unavailable
+models, it explains the state and keeps the current selection.
+
+Favorites show the model and the account that picking it will use. The provider
+logo identifies the provider. When it has several accounts, the colored number
+matches the account chooser. The home icon marks the project's default, and the
+check marks the model selected for the current conversation.
+
+In the conversation picker's **Agents** tab, open **Custom** or **Add** under
+**Subagents** to edit the list in one pass. Search for models or filter by account.
+**Select all shown** adds matching rows to your draft, within the model limit.
+**Apply** saves the entire selection. **Cancel** discards changes made in the editor.
+
 Every explicit-save editor in Settings uses one save bar. Its count opens the list of
 unsaved changes, grouped by provider, account or section, each with its own undo. Switching
 provider or account keeps every edit; a provider with unsaved edits is marked.
@@ -68,7 +82,9 @@ Automatic or inherited choice.
 The conversation model picker keeps the reasoning heading, current level and bars
 together while other options scroll. Narrow panels scroll their model and settings
 sections instead of shrinking either list away. Open Help for complete setting
-descriptions with the keyboard or touch; hovering is optional.
+descriptions with the keyboard or touch; hovering is optional. A locked setting, such as
+its window while auto-compact is off or extras while the conversation is updating, names
+its reason on hover.
 
 The Defaults tab shows Chat defaults first, then Advisor, Image models, Subagents and Subagent max effort.
 These controls scroll together. Selected image and subagent models remain readable
@@ -117,6 +133,35 @@ and Antigravity's setup steps open below it. The
 catalog manages model availability. Decision models have their own page, **Settings > Decision models**. Shared model
 order, limits and groups are managed in Settings > Models > Background work.
 
+Opening the OpenCode panel loads its model catalog. Models with zero token prices
+show a **Free** badge. Select **Free** or search for `free` or its translated
+label to show those models. **Enable all free** turns on every free model and
+keeps the current settings for other models.
+
+### Local models with Ollama
+
+The OpenCode panel has a **Local models (Ollama)** group for running Ollama models on
+this computer through OpenCode. Settings search finds it under `ollama`.
+
+- If Ollama is not installed, **Download Ollama** opens its download page; install it
+  and select **Check again**. If it is installed but stopped, **Start Ollama** starts it
+  in the background. Bycoda never stops Ollama, because other apps may use it.
+- **Download a model** pulls a model by its Ollama name, such as `qwen3:8b`, with
+  progress and **Cancel**. Embedding models are hidden. Models without tool support are
+  marked: they can chat but cannot edit files or run commands.
+- Select models and choose **Save to OpenCode**. Bycoda writes them to the
+  `provider.ollama` block of OpenCode's user config (`OPENCODE_CONFIG`, otherwise
+  `~/.config/opencode/opencode.json`), keeps every other setting, and saves the previous
+  file next to it with a `.monocode.bak` suffix. The models then appear in OpenCode's model list
+  as `ollama/<name>`. Clearing every model removes the block.
+- **Ollama port** sets the port Bycoda uses to reach Ollama on this computer (always
+  `127.0.0.1`). By default it comes from `OLLAMA_HOST`, otherwise 11434; **Use default**
+  returns to it. **Start Ollama** listens on that port, and Ollama models already saved to
+  OpenCode move to it at once. An address that points at another machine is left as is.
+- A config file with comments is never rewritten, so the comments are not lost; add
+  the models to it by hand. OpenCode itself is installed from the panel's header, not
+  by this group.
+
 **Settings > Usage & limits** is a separate page for provider usage, quotas and
 local budgets. Existing usage links and Settings search open that page.
 Switching between Providers and Usage & limits keeps account drafts and pending
@@ -126,6 +171,9 @@ choose a distinct name before starting browser sign-in. Searching for Antigravit
 account setup opens its setup steps.
 
 Provider account rows separate identity from usage status. The check beside an account marks its provider default. Account management shows complete names and plan details, and terminal profiles wrap their full paths. Email masking stays in effect until you choose Reveal email. CLI updates show model-refresh errors only when discovery fails; an unchanged model list needs no warning.
+
+Bycoda updates recognized npm and Homebrew Codex installs through their package manager. If a standalone Codex updater fails, update it with its original installer and check the version again. If Cursor CLI exits without an error message, run `agent update` (or `cursor-agent update`) in a terminal for that installation to see its output.
+If Bycoda cannot verify the new version, update details include the updater's output when available. Some package-managed CLIs print a manual upgrade command and exit successfully without installing an update.
 
 Account profiles lists only signed-in Claude, Codex and Grok profiles: the default CLI home, home folders such as `.claude2`, and accounts saved by the release or dev app. Each signed-in identity appears once, and an account you already added shows as Connected. If automatic terminal profile discovery fails, open Account profiles to see the error and select Find terminal profiles to retry.
 

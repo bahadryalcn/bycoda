@@ -133,6 +133,12 @@ export interface SocialAdapter {
   // End LinkedIn operations.
   /** Fetch bounded owned-publication pages only when the pending scan drains. */
   ownedPostPages?: true;
+  /**
+   * `poll` never reads its `posts` argument, so the host skips loading the published-ID history.
+   * Set only where the adapter provably ignores the list; an adapter that reads it (the browser
+   * adapters do) leaves this unset and keeps receiving the complete pending list.
+   */
+  ignoresPublishedPosts?: true;
   creatorInfo?(
     account: SocialAccount,
     token: string,

@@ -82,7 +82,7 @@ export function firstRunTourSteps(): TourStepDef[] {
       body: t("Changes lists what the agents edited. Read each diff, then commit."),
       targets: ["changes"],
       reveal: "changes",
-      tryIt: { label: t("Open Changes"), action: "changes" },
+      tryIt: { label: t("Open changes"), action: "changes" },
     },
     {
       id: "terminal",

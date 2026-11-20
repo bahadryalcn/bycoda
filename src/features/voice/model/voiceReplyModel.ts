@@ -40,5 +40,5 @@ export async function voiceReplyModel(session: Session): Promise<ModelRoutingTar
   }
   if (resolution.ok) return resolution.target;
   if (resolution.reason === "notConfigured") return fallback;
-  throw new Error("No eligible model is available for voice replies. Check Settings > Models.");
+  throw new Error("No eligible model is available for voice replies. Check Settings → Models.");
 }

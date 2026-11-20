@@ -161,3 +161,28 @@ it("reports only upstream statuses, never bodies or credentials", async () => {
   expect(String(offline)).toContain("could not be reached");
   expect(String(offline)).not.toContain(SECRET);
 });
+
+it("explains certificate failures without exposing network error details", async () => {
+  await expect(
+    transcribeCloudDictation("openai", AUDIO, "tr", {
+      credential,
+      request: async () => {
+        throw new TypeError(SECRET, {
+          cause: Object.assign(new Error(SECRET), { code: "SELF_SIGNED_CERT_IN_CHAIN" }),
+        });
+      },
+    }),
+  ).rejects.toThrow("OpenAI certificate could not be verified by bycoda Host.");
+});
+
+it.each([
+  [{ type: "insufficient_quota" }, "OpenAI speech recognition quota is exhausted"],
+  [{ code: "rate_limit_exceeded" }, "OpenAI speech recognition is rate limited"],
+])("explains OpenAI 429 without echoing provider messages", async (error, message) => {
+  const failure = await transcribeCloudDictation("openai", AUDIO, "tr", {
+    credential,
+    request: async () => reply(429, { error: { ...error, message: SECRET } }),
+  }).catch((cause: Error) => cause.message);
+  expect(failure).toContain(message);
+  expect(failure).not.toContain(SECRET);
+});

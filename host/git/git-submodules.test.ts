@@ -13,6 +13,9 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { hostGitSubmodules } from "./git-submodules";
 
+const paths = async (cwd: string, includeRepositories = false) =>
+  (await hostGitSubmodules(cwd, includeRepositories)).paths;
+
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 function fixture() {
@@ -60,8 +63,8 @@ it("discovers nested initialized repositories with spaces without changing their
     f.git(child, "status", "--porcelain"),
     f.git(child, "diff", "--cached"),
   ];
-  expect(await hostGitSubmodules(parent)).toEqual(["core pack", "core pack/nested module"]);
-  expect(await hostGitSubmodules(child)).toEqual(["nested module"]);
+  expect(await paths(parent)).toEqual(["core pack", "core pack/nested module"]);
+  expect(await paths(child)).toEqual(["nested module"]);
   expect([
     f.git(parent, "status", "--porcelain"),
     f.git(child, "status", "--porcelain"),
@@ -76,17 +79,17 @@ it("skips an uninitialized submodule instead of treating it as its parent reposi
   const parent = f.repo("parent");
   f.add(parent, source, "core-pack");
   f.git(parent, "submodule", "deinit", "-f", "--", "core-pack");
-  expect(await hostGitSubmodules(parent)).toEqual([]);
-  expect(await hostGitSubmodules(source)).toEqual([]);
+  expect(await paths(parent)).toEqual([]);
+  expect(await paths(source)).toEqual([]);
 });
 
 it("treats a plain folder as having no submodules and still discovers its repositories", async () => {
   const f = fixture();
   const plain = join(f.root, "plain");
   mkdirSync(plain);
-  expect(await hostGitSubmodules(plain)).toEqual([]);
+  expect(await paths(plain)).toEqual([]);
   f.repo("plain/app");
-  expect(await hostGitSubmodules(plain, true)).toEqual(["app"]);
+  expect(await hostGitSubmodules(plain, true)).toEqual({ paths: ["app"], limit: null });
 });
 
 it("opts into ignored independent repositories and worktree gitfiles without following directory links", async () => {
@@ -105,21 +108,20 @@ it("opts into ignored independent repositories and worktree gitfiles without fol
   f.git(outside, "worktree", "add", "-qb", "review", linkedWorktree);
   symlinkSync(outside, join(parent, "external"), process.platform === "win32" ? "junction" : "dir");
   const before = [f.git(parent, "status", "--porcelain"), f.git(mobile, "diff", "--cached")];
-  expect(await hostGitSubmodules(parent)).toEqual([]);
-  expect(await hostGitSubmodules(parent, true)).toEqual(["Türkçe proje", "mobile", "review-copy"]);
+  expect(await paths(parent)).toEqual([]);
+  expect(await paths(parent, true)).toEqual(["Türkçe proje", "mobile", "review-copy"]);
   expect([f.git(parent, "status", "--porcelain"), f.git(mobile, "diff", "--cached")]).toEqual(
     before,
   );
   expect(readFileSync(join(mobile, "file.txt"), "utf8")).toBe("independent unsaved change\n");
 });
 
-it("reports incomplete discovery when the physical folder depth limit is exceeded", async () => {
+it("keeps repositories found before the physical folder depth limit and reports the scan as limited", async () => {
   const f = fixture();
   const parent = f.repo("parent");
+  f.repo("parent/mobile");
   mkdirSync(join(parent, ...Array.from({ length: 66 }, () => "d")), { recursive: true });
-  await expect(hostGitSubmodules(parent, true)).rejects.toThrow(
-    "Repository discovery depth limit exceeded",
-  );
+  expect(await hostGitSubmodules(parent, true)).toEqual({ paths: ["mobile"], limit: "depth" });
 });
 
 it("skips generated data and dependency stores while retaining ignored source repositories", async () => {
@@ -134,7 +136,10 @@ it("skips generated data and dependency stores while retaining ignored source re
   f.add(parent, source, ".artifacts/pinned");
   writeFileSync(join(parent, ".gitignore"), `${generated.join("/\n")}/\nmobile/\n`);
   const before = f.git(parent, "status", "--porcelain");
-  expect(await hostGitSubmodules(parent, true)).toEqual([".artifacts/pinned", "mobile"]);
+  expect(await hostGitSubmodules(parent, true)).toEqual({
+    paths: [".artifacts/pinned", "mobile"],
+    limit: null,
+  });
   expect(f.git(parent, "status", "--porcelain")).toBe(before);
 });
 
@@ -154,8 +159,8 @@ it("deduplicates conflicted gitlink stages and preserves recursive discovery wit
   const before = f.git(parent, "ls-files", "--stage");
   expect(before).toContain(`160000 ${sha} 1\tcore pack`);
   expect(before).not.toContain(`160000 ${sha} 0\tcore pack`);
-  expect(await hostGitSubmodules(parent)).toEqual(["core pack", "core pack/nested"]);
+  expect(await paths(parent)).toEqual(["core pack", "core pack/nested"]);
   expect(f.git(parent, "ls-files", "--stage")).toBe(before);
   f.git(child, "submodule", "deinit", "-f", "--", "nested");
-  expect(await hostGitSubmodules(parent)).toEqual(["core pack"]);
+  expect(await paths(parent)).toEqual(["core pack"]);
 });

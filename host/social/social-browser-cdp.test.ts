@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Cdp, cdpPage, systemBrowserLauncher } from "./social-browser";
+import { Cdp, MAX_CDP_FRAME_LENGTH, cdpPage, systemBrowserLauncher } from "./social-browser";
 import { SocialBrowserLaunch } from "./social-browser-launch";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -44,6 +44,82 @@ it("times out a stuck browser command, ignores late replies and can continue wit
   cdp.close();
   expect(vi.getTimerCount()).toBe(0);
 });
+async function connected() {
+  vi.stubGlobal("WebSocket", Socket);
+  const pending = Cdp.connect("ws://127.0.0.1:1");
+  await Promise.resolve();
+  return pending;
+}
+/** EventTarget reports a throwing listener as an uncaught exception on a later tick. */
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+it("drops malformed and oversized frames without disturbing later replies", async () => {
+  const cdp = await connected();
+  const events = vi.fn();
+  cdp.on(events);
+  const raw = (data: unknown) =>
+    Socket.last.dispatchEvent(new MessageEvent("message", { data: data as never }));
+  for (const frame of [
+    "{not json",
+    "null",
+    "[]",
+    "7",
+    '"text"',
+    new ArrayBuffer(4),
+    "x".repeat(MAX_CDP_FRAME_LENGTH + 1),
+    '{"params":{}}',
+    '{"method":42}',
+  ])
+    raw(frame);
+  expect(events).not.toHaveBeenCalled();
+  const command = cdp.send("Page.enable");
+  Socket.last.answer({ id: 1, result: { ok: true } });
+  await expect(command).resolves.toEqual({ ok: true });
+  await settle();
+  cdp.close();
+});
+
+it("isolates a throwing or rejecting listener from siblings, replies and the process", async () => {
+  const cdp = await connected();
+  const seen: string[] = [];
+  cdp.on(() => {
+    throw new Error("sync failure");
+  });
+  cdp.on(async () => {
+    throw new Error("async failure");
+  });
+  cdp.on((method, _params, sessionId) => {
+    seen.push(`${method}:${sessionId ?? ""}`);
+  });
+  Socket.last.answer({ method: "Network.loadingFinished", params: {}, sessionId: "s1" });
+  Socket.last.answer({ method: "Page.frameNavigated", params: null, sessionId: 5 });
+  expect(seen).toEqual(["Network.loadingFinished:s1", "Page.frameNavigated:"]);
+  const command = cdp.send("Page.enable");
+  Socket.last.answer({ id: 1, result: { ok: true } });
+  await expect(command).resolves.toEqual({ ok: true });
+  await settle();
+  cdp.close();
+});
+
+it("fails the matching command for an error reply of any shape and ignores foreign ids", async () => {
+  const cdp = await connected();
+  const named = cdp.send("A");
+  const bare = cdp.send("B");
+  const odd = cdp.send("C");
+  const shapeless = cdp.send("D");
+  Socket.last.answer({ id: "1", result: {} });
+  Socket.last.answer({ id: null, error: { message: "ignored" } });
+  Socket.last.answer({ id: 1, error: { message: "No such target" } });
+  Socket.last.answer({ id: 2, error: "broken" });
+  Socket.last.answer({ id: 3, error: null, result: ["not an object"] });
+  Socket.last.answer({ id: 4, error: { message: { nested: true } } });
+  await expect(named).rejects.toThrow("No such target");
+  await expect(bare).rejects.toThrow("Browser command failed.");
+  await expect(odd).resolves.toEqual({});
+  await expect(shapeless).rejects.toThrow("Browser command failed.");
+  cdp.close();
+});
+
 it("rejects in-flight work and frees timers when the browser closes", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("WebSocket", Socket);

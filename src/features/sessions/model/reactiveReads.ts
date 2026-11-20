@@ -7,7 +7,7 @@ import {
 } from "../../../shared/lib/paths";
 import {
   deriveActivityDock,
-  dockCountLabel,
+  dockCountParts,
   dockStateLabel,
   type ActivityDock,
   type ActivityDockInput,
@@ -18,8 +18,8 @@ import {
   delegatedChildren,
   delegatedDockAgents,
   delegationParentOf,
-  isDelegatedChildOf,
   nestedDelegatedChildren,
+  nestedDelegationOwner,
 } from "./delegatedAgents";
 import { cardedChildren, createCardPlacer } from "./delegatedCards";
 import { executionUserIndex } from "./executionTurn";
@@ -28,7 +28,7 @@ import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
 import { modelDisplayName, modelHarness } from "./modelDisplayName";
 import { advisorModelName } from "./advisorModelName";
 import type { Block, HarnessId, Session, ToolPreview } from "./session";
-import { useSessionsSelector } from "./sessionsStore";
+import { getShellSessions, useSessionsSelector, useShellSessionsSelector } from "./sessionsStore";
 import { resolveToolCallDisplay, subagentModelName } from "./transcriptActivity";
 
 /*
@@ -171,17 +171,22 @@ export function useDelegatedCardBlocks(
   blocks: Block[],
   enabled: boolean,
 ): Block[] {
+  // The family comes from the shell (found once per structural change), the children
+  // from the live store, so their streamed text still reaches the cards.
   const children = useSessionsSelector(
-    (sessions) => (enabled ? delegatedChildren(sessions, parentId) : []),
+    (sessions) => (enabled ? delegatedChildren(sessions, parentId, getShellSessions()) : []),
     sameSessionList,
   );
   const [place] = useState(createCardPlacer);
   return useMemo(() => place(blocks, children), [place, blocks, children]);
 }
 
-/** The run ids of a session's delegated children; their results show on their cards. */
+/**
+ * The run ids of a session's delegated children; their results show on their cards.
+ * Reads the shell: a run id never changes with streamed text.
+ */
 export function useDelegatedRunIds(parentId: string | undefined): string[] {
-  return useSessionsSelector(
+  return useShellSessionsSelector(
     (sessions) =>
       parentId
         ? delegatedChildren(sessions, parentId).flatMap(
@@ -196,14 +201,14 @@ export function useDelegatedRunIds(parentId: string | undefined): string[] {
 export function useDelegatedDockAgents(parentId: string, blocks: Block[]): DockAgent[] {
   const catalog = useModelCatalogRevision();
   const children = useSessionsSelector(
-    (sessions) => delegatedChildren(sessions, parentId),
+    (sessions) => delegatedChildren(sessions, parentId, getShellSessions()),
     sameSessionList,
   );
   // The children's own subagents: their requests surface on their parent's row.
-  const nested = useSessionsSelector(
-    (sessions) => nestedDelegatedChildren(sessions, delegatedChildren(sessions, parentId)),
-    sameSessionList,
-  );
+  const nested = useSessionsSelector((sessions) => {
+    const shell = getShellSessions();
+    return nestedDelegatedChildren(sessions, delegatedChildren(sessions, parentId, shell), shell);
+  }, sameSessionList);
   const turnStartedAt = blocks[executionUserIndex(blocks)]?.startedAt;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => {
@@ -216,20 +221,15 @@ export function useDelegatedDockAgents(parentId: string, blocks: Block[]): DockA
 
 /** The subagent that started a delegated child, when that one is itself a subagent. */
 export function useNestedDelegationOwner(childId: string | undefined): Session | undefined {
-  return useSessionsSelector((sessions) => {
-    const child = childId ? sessions.find((session) => session.id === childId) : undefined;
-    return child
-      ? sessions.find(
-          (session) => !!delegationParentOf(session) && isDelegatedChildOf(child, session),
-        )
-      : undefined;
-  });
+  return useSessionsSelector((sessions) =>
+    nestedDelegationOwner(sessions, childId, getShellSessions()),
+  );
 }
 
-export function useDockCountLabel(dock: ActivityDock): string {
+export function useDockCountParts(dock: ActivityDock) {
   const locale = useLocale();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => dockCountLabel(dock), [dock, locale]);
+  return useMemo(() => dockCountParts(dock), [dock, locale]);
 }
 
 /** The stop-all control; its wording is read through getters, so it is rebuilt

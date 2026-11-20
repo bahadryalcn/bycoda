@@ -1,4 +1,17 @@
 import type { HostStore } from "../store";
+import type {
+  AssistantJob,
+  AssistantJobStatus,
+} from "../../src/shared/model/host-contracts/assistant";
+
+export const terminalAssistantJobs = new Set<AssistantJobStatus>(["done", "failed", "cancelled"]);
+const ACTIVE_JOB = `coalesce(json_extract(value,'$.status'),'') NOT IN (${Array.from(
+  terminalAssistantJobs,
+  (status) => `'${status}'`,
+).join(",")})`;
+const PROJECT_JOB = "json_extract(value,'$.kind') IS NOT 'quick'";
+const GOAL_ID = "json_extract(value,'$.goalId')";
+const SCHEDULED_JOB = `(${ACTIVE_JOB} OR (${PROJECT_JOB} AND json_type(value,'$.tokensComplete')='false'))`;
 
 export const assistantTables = [
   "profile",
@@ -23,6 +36,10 @@ export class AssistantRepository {
           updated_at INTEGER NOT NULL, deleted_at INTEGER, request_key TEXT UNIQUE
         ); CREATE INDEX IF NOT EXISTS assistant_${table}_recent ON assistant_${table}(deleted_at,updated_at DESC);`);
       }
+      await this.store.db.exec(
+        `CREATE INDEX IF NOT EXISTS assistant_jobs_scheduled ON assistant_jobs(updated_at DESC,id DESC)
+         WHERE deleted_at IS NULL AND ${SCHEDULED_JOB}`,
+      );
       await this.store.db.exec(`CREATE TABLE IF NOT EXISTS assistant_request_tombstones(
         table_name TEXT NOT NULL,request_key TEXT NOT NULL,record_id TEXT NOT NULL,
         PRIMARY KEY(table_name,request_key)
@@ -51,6 +68,22 @@ export class AssistantRepository {
       .get(id);
     return row ? (JSON.parse(row.value) as T) : undefined;
   }
+  /** Live (not deleted) records for `ids` in one query per chunk; absent ids are simply missing. */
+  async getMany<T>(table: AssistantTable, ids: readonly string[]): Promise<Map<string, T>> {
+    const found = new Map<string, T>(),
+      unique = [...new Set(ids)];
+    // Chunked to stay below SQLite's bound-variable limit.
+    for (let start = 0; start < unique.length; start += 500) {
+      const chunk = unique.slice(start, start + 500),
+        rows = await this.store.db
+          .prepare(
+            `SELECT id,value FROM assistant_${table} WHERE deleted_at IS NULL AND id IN (${chunk.map(() => "?").join(",")})`,
+          )
+          .all(...chunk);
+      for (const row of rows) found.set(row.id, JSON.parse(row.value) as T);
+    }
+    return found;
+  }
   async byKey<T>(table: AssistantTable, key: string): Promise<T | undefined> {
     const row = await this.store.db
       .prepare(`SELECT value,deleted_at FROM assistant_${table} WHERE request_key=?`)
@@ -75,6 +108,42 @@ export class AssistantRepository {
       )
       .all(limit);
     return rows.map((row) => JSON.parse(row.value) as T);
+  }
+  async scheduledJobs(activeProjectsOnly = false): Promise<AssistantJob[]> {
+    const rows = await this.store.db
+      .prepare(
+        `SELECT value FROM assistant_jobs WHERE deleted_at IS NULL AND ${SCHEDULED_JOB}
+           ${activeProjectsOnly ? `AND ${ACTIVE_JOB} AND ${PROJECT_JOB}` : ""}
+         ORDER BY updated_at DESC,id DESC LIMIT ?`,
+      )
+      .all(activeProjectsOnly ? 100 : 10000);
+    return rows.map((row) => JSON.parse(row.value) as AssistantJob);
+  }
+
+  async projectGoalIds(activeOnly = false): Promise<string[]> {
+    const rows = await this.store.db
+      .prepare(
+        `SELECT DISTINCT ${GOAL_ID} AS goal_id FROM assistant_jobs
+         WHERE deleted_at IS NULL AND ${PROJECT_JOB} AND ${GOAL_ID}<>''
+           ${activeOnly ? `AND ${SCHEDULED_JOB} AND ${ACTIVE_JOB}` : ""}`,
+      )
+      .all();
+    return rows.map((row) => String(row.goal_id));
+  }
+
+  async hasProjectJob(kind: "queued" | "working" | "reviewable"): Promise<boolean> {
+    const filters = {
+      queued: "json_extract(value,'$.status')='queued'",
+      working: "json_extract(value,'$.status') IN ('planning','running','stalled')",
+      reviewable: `${GOAL_ID}<>'' AND json_extract(value,'$.status') IS NOT 'paused'`,
+    };
+    return !!(await this.store.db
+      .prepare(
+        `SELECT 1 FROM assistant_jobs
+       WHERE deleted_at IS NULL AND ${SCHEDULED_JOB} AND ${ACTIVE_JOB} AND ${PROJECT_JOB}
+         AND ${filters[kind]} LIMIT 1`,
+      )
+      .get());
   }
   async memory<T>(limit = 10000): Promise<T[]> {
     const rows = await this.store.db
@@ -183,5 +252,13 @@ export class AssistantRepository {
     await this.store.db
       .prepare(`UPDATE assistant_${table} SET deleted_at=? WHERE id=?`)
       .run(now, id);
+  }
+  /** Soft-deletes every live activity row in one statement, or only those of `jobId` when given; like `trash`, versions are not bumped. */
+  async trashActivity(jobId: string | undefined, now: number) {
+    await this.store.db
+      .prepare(
+        "UPDATE assistant_activity SET deleted_at=? WHERE deleted_at IS NULL AND (? IS NULL OR json_extract(value,'$.jobId')=?)",
+      )
+      .run(now, jobId || null, jobId || null);
   }
 }

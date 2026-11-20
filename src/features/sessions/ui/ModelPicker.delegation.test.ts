@@ -159,7 +159,7 @@ describe("cross-provider delegation rows", () => {
   /** Opens a delegation setting's column-wide list (Add or its value button) and returns its options. */
   const choices = async (column: HTMLElement, label: string) => {
     const id = label === "Subagents" ? "crossSubagents" : "crossAdvisor";
-    if (!column.querySelector(`[data-model-setting-picker="${id}"]`)) {
+    if (!container.querySelector(`[data-model-setting-picker="${id}"]`)) {
       const block = column.querySelector<HTMLElement>(`[data-setting-id="${id}"]`)!;
       const open =
         block.querySelector<HTMLButtonElement>("[data-model-setting-add]") ??
@@ -170,7 +170,7 @@ describe("cross-provider delegation rows", () => {
         )!;
       await act(async () => open.click());
     }
-    const picker = column.querySelector<HTMLElement>(`[data-model-setting-picker="${id}"]`)!;
+    const picker = container.querySelector<HTMLElement>(`[data-model-setting-picker="${id}"]`)!;
     return [...picker.querySelectorAll<HTMLButtonElement>('[role="option"]')];
   };
 
@@ -201,31 +201,8 @@ describe("cross-provider delegation rows", () => {
     )!;
     expect(codexOption.getAttribute("aria-selected")).toBe("false");
     await act(async () => codexOption.click());
-    expect(onSettingsChange).toHaveBeenLastCalledWith({
-      crossSubagents: encodeSubagents([
-        { harness: "codex", model: codexModel.id, providerAccountId: "default" },
-      ]),
-    });
-    expect(container.querySelector(PANEL)).not.toBeNull();
-
-    // The panel stays open after a subagent pick: re-render with the saved value and add another.
-    const picked = encodeSubagents([
-      { harness: "codex", model: codexModel.id, providerAccountId: "default" },
-    ])!;
-    await act(async () =>
-      root.render(
-        createElement(ModelPicker, {
-          harness: "cursor",
-          model: cursorModel.id,
-          values: { crossSubagents: picked },
-          showEffortSummary: true,
-          onChange: vi.fn(),
-          onSettingsChange,
-        }),
-      ),
-    );
-    const second = await showAgents();
-    const subagents = await choices(second, "Subagents");
+    expect(onSettingsChange).not.toHaveBeenCalled();
+    const subagents = await choices(column, "Subagents");
     expect(
       subagents
         .find((option) => option.textContent?.includes("GPT 6.1 Sol"))!
@@ -233,15 +210,24 @@ describe("cross-provider delegation rows", () => {
     ).toBe("true");
     const opencodeOption = subagents.find((option) => option.textContent?.includes("Luna"))!;
     await act(async () => opencodeOption.click());
+    expect(onSettingsChange).not.toHaveBeenCalled();
+    const picker = container.querySelector('[data-model-setting-picker="crossSubagents"]')!;
+    const apply = [...picker.querySelectorAll("button")].find(
+      (button) => button.textContent === "Apply",
+    )!;
+    await act(async () => apply.click());
+    expect(onSettingsChange).toHaveBeenCalledTimes(1);
     expect(onSettingsChange).toHaveBeenLastCalledWith({
       crossSubagents: encodeSubagents([
         { harness: "codex", model: codexModel.id, providerAccountId: "default" },
         { harness: "opencode", model: opencodeModel.id },
       ]),
     });
+    expect(container.querySelector(PANEL)).not.toBeNull();
+    expect(container.querySelector("[data-model-subagent-editor]")).toBeNull();
   });
 
-  it("shows picked subagents as removable chips and closes the list with Done", async () => {
+  it("removes picked subagents and discards uncommitted picks on Cancel", async () => {
     seedCatalogs();
     const picked = encodeSubagents([
       { harness: "codex", model: codexModel.id, providerAccountId: "default" },
@@ -262,16 +248,20 @@ describe("cross-provider delegation rows", () => {
     await act(async () =>
       block.querySelector<HTMLButtonElement>("[data-model-setting-add]")!.click(),
     );
-    const picker = column.querySelector<HTMLElement>(
+    const picker = container.querySelector<HTMLElement>(
       '[data-model-setting-picker="crossSubagents"]',
     )!;
-    // Done sits after the scrolling option list, never inside it.
-    const done = [...picker.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "Done",
+    const available = picker.querySelector<HTMLButtonElement>(
+      '[role="option"][aria-selected="false"]',
     )!;
-    expect(picker.querySelector('[role="listbox"]')!.contains(done)).toBe(false);
-    await act(async () => done.click());
-    expect(column.querySelector("[data-model-setting-picker]")).toBeNull();
+    await act(async () => available.click());
+    const cancel = [...picker.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Cancel",
+    )!;
+    expect(picker.querySelector('[role="listbox"]')!.contains(cancel)).toBe(false);
+    await act(async () => cancel.click());
+    expect(onSettingsChange).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[data-model-setting-picker]")).toBeNull();
     expect(container.querySelector(PANEL)).not.toBeNull();
   });
 
@@ -303,7 +293,7 @@ describe("cross-provider delegation rows", () => {
     expect(container.querySelector(PANEL)).not.toBeNull();
   });
 
-  it("shows a saved accountless advisor as the available Default account without rewriting it", async () => {
+  it("hides a lone advisor account without rewriting the saved choice", async () => {
     seedCatalogs();
     const saved = encodeAdvisor({ harness: "codex", model: codexModel.id })!;
     const onSettingsChange = vi.fn();
@@ -318,7 +308,8 @@ describe("cross-provider delegation rows", () => {
     const selected = options.filter((choice) => choice.getAttribute("aria-selected") === "true");
     expect(selected).toHaveLength(1);
     expect(selected[0].textContent).toContain("GPT 6.1 Sol");
-    expect(selected[0].textContent).toContain("Default");
+    expect(selected[0].textContent).not.toContain("Default");
+    expect(selected[0].querySelector("[data-model-account-number]")).toBeNull();
     expect(onSettingsChange).not.toHaveBeenCalled();
     await act(async () => selected[0].click());
     expect(onSettingsChange).toHaveBeenLastCalledWith({ crossAdvisor: saved });

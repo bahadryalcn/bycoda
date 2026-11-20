@@ -30,7 +30,7 @@ export function SourceControlSettings() {
         <Row
           id="git-generation-default"
           label={t("Model")}
-          description={t("Model set in Settings > Models > Background work.")}
+          description={t("Model set in Settings → Models → Background work.")}
         >
           <Button variant="link" onClick={() => openModelsSettings("roles")}>
             {t("Manage models")}

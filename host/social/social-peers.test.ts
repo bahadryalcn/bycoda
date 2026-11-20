@@ -368,3 +368,25 @@ it("holds an unavailable peer after offer for review", async () => {
   await f.execute();
   expect(f.authority.send).toHaveBeenCalledTimes(1);
 });
+
+it("answers a peer token miss without SQL and still honors device revocation", async () => {
+  const { source, authority } = await pair();
+  const enrollment = await source.peers.enroll(authority.store.environmentId, source.deviceHash);
+  await authority.peers.register(
+    {
+      ...enrollment,
+      endpoint: source.endpoint,
+      mapping: { [source.project.id]: authority.project.id },
+    },
+    authority.deviceHash,
+  );
+  const prepare = vi.spyOn(authority.store.db, "prepare");
+  expect(await authority.peers.authenticated("device-token-not-a-peer")).toBeUndefined();
+  expect(prepare.mock.calls.some(([sql]) => String(sql).includes("social_peer_tokens"))).toBe(
+    false,
+  );
+  prepare.mockRestore();
+  expect(await authority.peers.authenticated(enrollment.token)).toBe(source.store.environmentId);
+  await authority.store.revokeDevice(authority.device.id);
+  expect(await authority.peers.authenticated(enrollment.token)).toBeUndefined();
+});

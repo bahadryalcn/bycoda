@@ -17,6 +17,11 @@ vi.mock("../../../../shared/ui/Modal", () => ({
   ModalActions: (props: { children: ReactNode }) => createElement("div", null, props.children),
 }));
 
+vi.mock("../../../../shared/ui/DatePicker", () => ({
+  DatePicker: (props: { label: string; max?: string }) =>
+    createElement("input", { "aria-label": props.label, "data-max": props.max }),
+}));
+
 let element: HTMLDivElement, root: Root;
 beforeEach(() => {
   element = document.createElement("div");
@@ -179,4 +184,32 @@ it("opens signup for an account the Host already created without creating anothe
     undefined,
     expect.anything(),
   );
+});
+
+// Regression for #569: the birth date ceiling is the owner's local calendar day, not the UTC day,
+// so it holds in both directions from UTC (east after local midnight, west in the evening).
+const birthdateMax = async (local: Date) => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(local);
+  try {
+    setup(
+      {
+        ...flow(),
+        registration: { ...flow().registration!, requiredFields: ["birthdate"], blockers: [] },
+      },
+      "acc-9",
+    );
+    await submit();
+    return element.querySelector("input[data-max]")?.getAttribute("data-max");
+  } finally {
+    vi.useRealTimers();
+  }
+};
+
+it("bounds the birth date by the owner's local day just after local midnight", async () => {
+  expect(await birthdateMax(new Date(2026, 10, 19, 0, 30))).toBe("2026-11-19");
+});
+
+it("bounds the birth date by the owner's local day late in the local evening", async () => {
+  expect(await birthdateMax(new Date(2026, 10, 19, 23, 30))).toBe("2026-11-19");
 });

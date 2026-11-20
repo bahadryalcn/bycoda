@@ -436,6 +436,7 @@ fn run_batch_progress(
         let _ = stdout.take(MAX_OUTPUT + 1).read_to_end(&mut bytes);
         bytes
     });
+    let activity = progress.clone();
     let diagnostic = std::thread::spawn(move || transfer::read_diagnostics(stderr, progress));
     let input = child.stdin.take().ok_or("SFTP input unavailable")?;
     // A long path can exceed an OS pipe buffer before authentication finishes.
@@ -444,24 +445,26 @@ fn run_batch_progress(
         let mut input = input;
         input.write_all(batch.as_bytes())
     });
-    let deadline = Instant::now()
-        + Duration::from_secs(if operation.id.starts_with("cleanup-") {
-            15
-        } else {
-            300
-        });
+    // Transfers (the only callers with progress) get an idle window that live
+    // data keeps extending plus a total ceiling; metadata keeps a flat limit.
+    let mut deadline = transfer::Deadline::new(&operation.id, activity.is_some(), Instant::now());
     let status = loop {
-        if operation.check().is_err() || Instant::now() >= deadline {
-            let cancelled = operation.check().is_err();
+        let cancelled = operation.check().is_err();
+        let expired = if cancelled {
+            None
+        } else {
+            deadline.expired(
+                Instant::now(),
+                activity.as_ref().map_or(0, |progress| progress.activity()),
+            )
+        };
+        if cancelled || expired.is_some() {
             let verified = retire_cancelled(child, input, output, diagnostic, process_guard, job);
-            return Err(if !verified {
-                "SFTP process retirement is unknown"
-            } else if cancelled {
-                "SFTP operation cancelled"
-            } else {
-                "SFTP operation timed out"
-            }
-            .into());
+            return Err(match (verified, expired) {
+                (false, _) => "SFTP process retirement is unknown".into(),
+                (true, Some(expiry)) => expiry.message(),
+                (true, None) => "SFTP operation cancelled".into(),
+            });
         }
         match child.try_wait() {
             Ok(Some(status)) => break status,

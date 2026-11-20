@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Surface } from "../../../shared/ui/Surface";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   closePermissionHelper,
   revealPermissionApp,
@@ -11,48 +12,51 @@ import {
 } from "../../../platform/tauri/systemPermissions";
 import { PERMISSION_IDS, permissionInfo } from "../model/permissions";
 
+/**
+ * The card docked under System Settings. Its native window has a fixed
+ * height, so it keeps three rows: title, one line (the step or the error) and
+ * the reveal action.
+ */
 export function PermissionHelper() {
   useLocale();
   const [error, setError] = useState(false);
   const query = new URLSearchParams(window.location.search).get("permission");
   const id = PERMISSION_IDS.find((id) => id === query) as PermissionId | undefined;
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- syncs the document theme class with the OS prefers-color-scheme media query while the helper window is open
-  useEffect(() => {
-    // This isolated native window follows the OS theme rather than workspace state.
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const update = () => {
-      document.documentElement.classList.toggle("dark", media.matches);
-      document.documentElement.classList.toggle("theme-light", !media.matches);
-      document.documentElement.dataset.theme = media.matches ? "dark" : "light";
-    };
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
   const reveal = () => {
+    setError(false);
     void revealPermissionApp().catch(() => setError(true));
   };
   return (
-    <Surface variant="card" frame="card" className="m-1 flex flex-col gap-3 p-4">
+    <Surface variant="card" frame="card" className="m-1 flex flex-col gap-2 p-3">
       <div className="flex items-center justify-between gap-2">
-        <Text weight="medium">{t("Add bycoda from Finder")}</Text>
+        <Text weight="medium" truncate>
+          {id
+            ? t("Add {p0} to {p1}", {
+                p0: PRODUCT_IDENTITY.displayName,
+                p1: permissionInfo(id).label,
+              })
+            : t("Add bycoda from Finder")}
+        </Text>
         <Button
+          variant="ghost"
           label={t("Close permission helper")}
           onClick={() => void closePermissionHelper().catch(() => setError(true))}
         >
           {t("Close")}
         </Button>
       </div>
-      {id && <Text tone="secondary">{permissionInfo(id).label}</Text>}
-      <Text tone="secondary">
-        {t(
-          "Reveal bycoda in Finder, then drag the app from Finder into the system permission list.",
-        )}
-      </Text>
-      <Button onClick={reveal}>{t("Reveal bycoda in Finder")}</Button>
-      {error && (
+      {error ? (
         <InlineError>{t("Could not reveal bycoda or close the helper. Try again.")}</InlineError>
+      ) : (
+        <Text tone="secondary">
+          {t(
+            "Reveal bycoda in Finder, then drag the app from Finder into the system permission list.",
+          )}
+        </Text>
       )}
+      <Button variant="primary" onClick={reveal}>
+        {t("Reveal bycoda in Finder")}
+      </Button>
     </Surface>
   );
 }

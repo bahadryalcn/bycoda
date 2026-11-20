@@ -115,12 +115,13 @@ it.each([false, true])(
     host.status = {
       state: "deferred",
       message: "The host update waits until running sessions finish.",
+      reason: "waiting-for-sessions",
     };
     await draw({ hideTopBar, workspaceMode: "worktree" });
     expect(container.textContent).toContain(
       "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
     );
-    expect(button("Send")?.disabled).toBe(true);
+    expect(button("Send")?.getAttribute("aria-disabled")).toBe("true");
     expect(button("Send")?.getAttribute("aria-description")).toBe(
       "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
     );
@@ -142,13 +143,14 @@ it.each([
   expect(container.textContent).toContain("Your checkout is not used as a fallback.");
   expect(container.textContent).not.toContain("will install automatically");
   expect(button("Use current checkout")).toBeDefined();
-  expect(button("Send")?.disabled).toBe(true);
+  expect(button("Send")?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("does not describe a local pending update as the remote machine's update", async () => {
   host.status = {
     state: "deferred",
     message: "The host update waits until running sessions finish.",
+    reason: "waiting-for-sessions",
   };
   await draw({
     cwd: "remote://older/repo",
@@ -156,7 +158,7 @@ it("does not describe a local pending update as the remote machine's update", as
     workspaceMode: "worktree",
   });
   expect(container.textContent).not.toContain("will install automatically");
-  expect(button("Send")?.disabled).toBe(true);
+  expect(button("Send")?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("does not hold Send for an unreadable policy default, only for an explicit worktree choice", async () => {
@@ -170,6 +172,7 @@ it("keeps update recovery available when the owner changes language while the er
   host.status = {
     state: "deferred",
     message: "The host update waits until running sessions finish.",
+    reason: "waiting-for-sessions",
   };
   await draw();
   await act(async () => setLanguagePreference("tr"));

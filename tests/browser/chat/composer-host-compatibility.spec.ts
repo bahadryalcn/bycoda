@@ -3,8 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 const fixture = "/tests/browser/chat/composer-host-compatibility.html";
 const waiting =
   "The Host update on this computer is waiting for active sessions to finish and will install automatically.";
-// A blocked Send names its reason after the action.
-const blockedSend = /^Send\. /;
+// A blocked Send keeps its name; the reason is its accessible description.
+const blockedSend = "Send";
 const capture = (name: string) => `temp/verification/c1/${test.info().project.name}/${name}.png`;
 
 async function readyCurrentCheckout(page: Page) {
@@ -51,7 +51,7 @@ for (const theme of ["light", "dark"] as const) {
     );
     const status = page.locator("[data-workspace-creation-status]");
     await expect(status).toContainText(waiting);
-    await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();
+    await expect(page.getByRole("button", { name: blockedSend, exact: true })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Use current checkout", exact: true }),
     ).toBeInViewport();
@@ -95,7 +95,7 @@ for (const theme of ["light", "dark"] as const) {
     );
     const status = page.locator("[data-workspace-creation-status]");
     await expect(status).toContainText(waiting);
-    await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();
+    await expect(page.getByRole("button", { name: blockedSend, exact: true })).toBeDisabled();
     await page.screenshot({ path: capture(`deferred-host-update-${theme}`) });
     await page.setViewportSize({ width: 800, height: 900 });
     await expect(
@@ -128,7 +128,7 @@ for (const theme of ["light", "dark"] as const) {
       "Update bycoda Host on this project's machine to use managed workspaces. Your checkout is not used as a fallback.",
     );
     await expect(status).not.toContainText(waiting);
-    await expect(page.getByRole("button", { name: blockedSend })).toBeDisabled();
+    await expect(page.getByRole("button", { name: blockedSend, exact: true })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Use current checkout", exact: true }),
     ).toBeEnabled();
@@ -152,7 +152,7 @@ for (const theme of ["light", "dark"] as const) {
     // The consequence leads; the exact ref and commit are the hover detail.
     await expect(status).toContainText("New worktree from main");
     await status.getByText("New worktree from main", { exact: true }).hover();
-    await expect(page.getByRole("tooltip")).toHaveText("Based on main @ 01234567");
+    await expect(page.getByRole("tooltip")).toHaveText("Based on main @ 0123456");
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
       "Keep this draft while the Host updates",

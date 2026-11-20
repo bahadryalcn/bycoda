@@ -1,3 +1,4 @@
+import { focusManager } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { errorRateLimits, idleRateLimits, type ProviderRateLimits } from "./rateLimits";
 import { fetchClaudeRateLimits } from "./rateLimitsFetch";
@@ -147,6 +148,24 @@ it("keeps the last usage, with its own age, when a refresh is rate limited", asy
   expect(getCachedRateLimits("claude")).toBe(result);
 });
 
+it("keeps each failure's own reason on the account it belongs to when old usage is retained", async () => {
+  fetchClaude.mockResolvedValueOnce(usage(40));
+  await loadRateLimits("claude", "account-work");
+  fetchClaude.mockResolvedValueOnce(errorRateLimits("claude", "Fake text", null, "signedOut"));
+  const signedOut = await loadRateLimits("claude", "account-work", true);
+  expect(signedOut).toMatchObject({
+    status: "error",
+    reason: "signedOut",
+    session: { usedPercent: 40 },
+  });
+  expect(getCachedRateLimits("claude", "account-personal").reason).toBeUndefined();
+  // A later unclassified failure never inherits the old cause.
+  fetchClaude.mockResolvedValueOnce(rateLimited());
+  const later = await loadRateLimits("claude", "account-work", true);
+  expect(later.status).toBe("error");
+  expect(later.reason).toBeUndefined();
+});
+
 it("tries again by itself after a failed read, and stops once it works", async () => {
   fetchClaude.mockResolvedValueOnce(rateLimited());
   await loadRateLimits("claude");
@@ -180,6 +199,49 @@ it("checks back soon while a Claude token awaits renewal by the CLI", async () =
     status: "ok",
     session: { usedPercent: 30 },
   });
+});
+
+it("stops quick renewal checks after a bounded number and falls back to the network backoff", async () => {
+  fetchClaude.mockImplementation(async () => ({
+    ...errorRateLimits("claude", "Claude usage will update when this account is used again"),
+    renewalPending: true,
+  }));
+  await loadRateLimits("claude");
+
+  await vi.advanceTimersByTimeAsync(15_000 * 10);
+  expect(fetchClaude).toHaveBeenCalledTimes(11);
+
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect(fetchClaude).toHaveBeenCalledTimes(11);
+
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(fetchClaude).toHaveBeenCalledTimes(12);
+});
+
+it("pauses renewal checks while the window is hidden and resumes on focus", async () => {
+  try {
+    fetchClaude.mockResolvedValueOnce({
+      ...errorRateLimits("claude", "Claude usage will update when this account is used again"),
+      renewalPending: true,
+    });
+    focusManager.setFocused(true);
+    await loadRateLimits("claude", "default", false, () => focusManager.isFocused(), true);
+
+    focusManager.setFocused(false);
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(fetchClaude).toHaveBeenCalledTimes(1);
+
+    fetchClaude.mockResolvedValueOnce(usage(30));
+    focusManager.setFocused(true);
+    expect(fetchClaude).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getCachedRateLimits("claude")).toMatchObject({
+      status: "ok",
+      session: { usedPercent: 30 },
+    });
+  } finally {
+    focusManager.setFocused(undefined);
+  }
 });
 
 it("shares a recent read instead of asking the provider again", async () => {

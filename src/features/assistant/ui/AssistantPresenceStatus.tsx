@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import type { AssistantSnapshot } from "../../../shared/model/host-contracts/assistant";
-import { assistantPresenceState } from "../model/assistantBriefing";
+import { assistantPresenceRecheckDelay, assistantPresenceState } from "../model/assistantBriefing";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { AssistantPresenceIndicator } from "./AssistantPresenceIndicator";
 import styles from "./AssistantPresenceIndicator.module.css";
@@ -35,23 +36,36 @@ export function AssistantPresenceStatus({
   /** The Host could not be read, so the snapshot's availability is not current. */
   offline?: boolean;
 }) {
-  const [, refresh] = useState(0);
+  const [tick, refresh] = useState(0);
+  const automatic = snapshot.automaticPresence;
+  // Effect reason: freshness is a function of the clock; one timeout at the next fresh/stale
+  // boundary re-renders the chip, instead of a fixed 15 s tick on every mounted chip (#315).
   useEffect(() => {
-    const timer = setInterval(() => refresh((value) => value + 1), 15000);
-    return () => clearInterval(timer);
-  }, []);
+    const delay = assistantPresenceRecheckDelay(automatic, Date.now());
+    if (delay === undefined) return;
+    const timer = setTimeout(() => refresh((value) => value + 1), delay);
+    return () => clearTimeout(timer);
+  }, [automatic, tick]);
   const state = assistantPresenceState(snapshot, Date.now());
   const effective = offline ? "offline" : state.effective;
+  const announcement = (
+    <LiveText
+      className="sr-only"
+      text={t("Current availability: {p0}", { p0: label(effective) })}
+    />
+  );
   if (compact)
     return (
-      <span role="status" aria-label={t("Current availability: {p0}", { p0: label(effective) })}>
+      <span>
         <AssistantPresenceIndicator state={effective} />
+        {announcement}
       </span>
     );
   return (
     <div className={styles.status}>
-      <span role="status" aria-label={t("Current availability: {p0}", { p0: label(effective) })}>
+      <span>
         <AssistantPresenceIndicator state={effective} />
+        {announcement}
       </span>
       {details && (
         <InfoPopover label={t("About computer presence")}>

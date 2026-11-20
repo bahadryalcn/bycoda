@@ -3,6 +3,7 @@ import type {
   AssistantRequest,
   AssistantResponse,
 } from "../../../shared/model/host-contracts/assistant";
+import { unconfirmedError } from "./unconfirmedOutcome";
 
 type Intent = {
   id: string;
@@ -118,7 +119,7 @@ export class AssistantNoteDraft {
     )
       return Promise.reject(
         new Error(
-          "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+          "The original computer could not be verified. Keep this draft and reconnect that computer.",
         ),
       );
     const retry = Boolean(this.draft.intent);
@@ -147,8 +148,9 @@ export class AssistantNoteDraft {
         // Null also covers an owner deleting a committed note after its reply was
         // lost. Native Notes has no creation tombstone receipt; never resurrect it.
         if (!prior)
-          throw new Error(
-            "The note save is uncertain and the note is no longer available. Keep this draft and review Notes before continuing.",
+          throw unconfirmedError(
+            "The note save",
+            "The note is no longer available. Keep this draft and review Notes before continuing.",
           );
         if (prior) {
           if (matches(prior, intent)) return prior;

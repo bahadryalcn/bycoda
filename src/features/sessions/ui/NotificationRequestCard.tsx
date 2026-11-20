@@ -109,8 +109,7 @@ export function NotificationRequestCard({
           <X className="icon-sm" />
         </Button>
       ) : null}
-      {/* One footer row: source, harness and time on the left, kind and the
-          decision or the way to answer on the right. */}
+      {/* Source and time share the footer with the action that opens the conversation. */}
       <Text
         as="div"
         size="caption"
@@ -132,17 +131,15 @@ export function NotificationRequestCard({
           className="notification-request-actions flex shrink-0 items-center gap-1"
           data-no-drag=""
         >
-          <Badge tone="warning">{notice.kind === "question" ? t("Question") : t("Approval")}</Badge>
-          {notice.kind === "question" ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={() => onFocusSession(session.id)}
-            >
-              {t("Answer")}
-            </Button>
-          ) : null}
+          {notice.kind === "question" ? <Badge tone="warning">{t("Question")}</Badge> : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={() => onFocusSession(session.id)}
+          >
+            {notice.kind === "question" ? t("Answer") : t("Open session")}
+          </Button>
         </span>
       </Text>
       {notice.kind === "approval" ? (

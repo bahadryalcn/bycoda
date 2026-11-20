@@ -62,6 +62,35 @@ export function userLinkRanges(text: string): UserLinkRange[] {
   return ranges;
 }
 
+const rangeCache = new Map<string, readonly UserLinkRange[]>();
+const MAX_CACHED_RANGE_TEXTS = 16;
+// shortcut: very long drafts are tokenized on every call instead of being retained as keys; raise if profiling shows long link-heavy drafts.
+const MAX_CACHED_RANGE_LENGTH = 20_000;
+
+/**
+ * `userLinkRanges` reused while the text is unchanged, so a caret move or a re-render over
+ * the same draft never tokenizes (and URL-parses) it again. The result is shared: do not
+ * mutate it.
+ */
+export function cachedUserLinkRanges(text: string): readonly UserLinkRange[] {
+  const cached = rangeCache.get(text);
+  if (cached) {
+    // Re-insert so the least recently used text is the one evicted.
+    rangeCache.delete(text);
+    rangeCache.set(text, cached);
+    return cached;
+  }
+  const ranges = userLinkRanges(text);
+  if (text.length <= MAX_CACHED_RANGE_LENGTH) {
+    rangeCache.set(text, ranges);
+    if (rangeCache.size > MAX_CACHED_RANGE_TEXTS) {
+      const oldest = rangeCache.keys().next();
+      if (!oldest.done) rangeCache.delete(oldest.value);
+    }
+  }
+  return ranges;
+}
+
 /** Kept as a small utility for callers that need the stricter exact-URL rule. */
 export function parseStandaloneHttpUrl(text: string): UserLink | null {
   const value = text.trim();

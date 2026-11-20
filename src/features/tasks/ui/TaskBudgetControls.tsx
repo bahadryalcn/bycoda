@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import "./task-form.css";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -66,7 +66,7 @@ export function TaskBudgetUsage({
   stop?: string;
   budget?: TaskRunBudget;
 }) {
-  useLocale();
+  const format = useFormat();
   if (!usage && !stop) return null;
   const threshold = (budget?.warningPercent ?? 80) / 100;
   const nearing = Boolean(
@@ -89,14 +89,21 @@ export function TaskBudgetUsage({
       {usage ? (
         <DescriptionList size="sm">
           <DescriptionItem term={t("Agent minutes")}>
-            {usage.agentMinutes.toFixed(1)}
+            {format.formatNumber(usage.agentMinutes, {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            })}
           </DescriptionItem>
-          <DescriptionItem term={t("Agent runs")}>{usage.attempts}</DescriptionItem>
+          <DescriptionItem term={t("Agent runs")}>
+            {format.formatNumber(usage.attempts)}
+          </DescriptionItem>
           <DescriptionItem term={t("Reported tokens")}>
             {usage.tokensComplete
-              ? usage.tokens
+              ? usage.tokens === null
+                ? null
+                : format.formatNumber(usage.tokens)
               : t("Unknown total ({p0} reported)", {
-                  p0: usage.reportedTokens,
+                  p0: format.formatNumber(usage.reportedTokens),
                 })}
           </DescriptionItem>
         </DescriptionList>

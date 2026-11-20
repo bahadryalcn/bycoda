@@ -16,9 +16,12 @@ vi.mock("../../../../platform/tauri/fs", () => ({
   homeDir: vi.fn(async () => "/home/test"),
 }));
 vi.mock("../../../../features/sessions/model/models", async () => ({
-  setHarnessModels: mocks.setHarnessModels,
   withAutoCompactToggle: (await import("../../../../features/sessions/model/autoCompact"))
     .withAutoCompactToggle,
+}));
+vi.mock("../../core/probedCatalogStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../core/probedCatalogStore")>()),
+  publishProbedCatalog: mocks.setHarnessModels,
 }));
 beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", () => {
@@ -238,9 +241,9 @@ it("discovers extension-only catalogs after initially empty responses", async ()
   expectStopped();
 });
 
-it("finishes an empty catalog without replacing existing models", async () => {
+it("reports an empty catalog as a failed refresh without replacing existing models", async () => {
   mocks.writeChild.mockImplementation(async (id, line) => reply(id, line, []));
-  const result = refreshPiCatalog();
+  const result = expect(refreshPiCatalog()).rejects.toThrow("pi reported no models.");
   await vi.runAllTimersAsync();
   await result;
   expect(Date.now()).toBe(5_000);
@@ -261,6 +264,7 @@ it("deduplicates concurrent refreshes and publishes the settled catalog", async 
   expect(mocks.setHarnessModels).toHaveBeenCalledExactlyOnceWith(
     "pi",
     expect.arrayContaining([expect.objectContaining({ nativeId: "antigravity/shared-id" })]),
+    true,
   );
   expectStopped();
 });

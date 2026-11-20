@@ -19,6 +19,7 @@ import {
 } from "../../../platform/tauri/fs";
 import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
 import { useGitResource } from "../hooks/useGitResource";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { GitFeedback } from "./GitFeedback";
 import {
   gitPanelRuntime,
@@ -41,7 +42,7 @@ let stashOpen = false;
 export function stashCommit(entry: GitStashEntry): GitHistoryCommit {
   return {
     sha: entry.sha,
-    shortSha: entry.sha.slice(0, 7),
+    shortSha: shortSha(entry.sha),
     parents: [],
     author: "",
     timestamp: entry.timestamp,

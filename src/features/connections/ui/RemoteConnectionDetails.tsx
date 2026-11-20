@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
-import { t } from "../../../shared/i18n";
+import { formatNumber, t } from "../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -39,24 +39,29 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
   }, [ticking]);
   return (
     <Text as="div" tone="inherit" className="flex min-w-0 flex-col gap-2">
-      <Text role="status" as="p" size="inherit" tone="muted">
-        {t(phases[lifecycle.phase])}
+      <Text as="p" size="inherit" tone="muted">
+        {/* Only the phase is live: it changes on real transitions, not every tick. */}
+        <Text role="status" as="span" size="inherit" tone="inherit">
+          {t(lifecycle.paused ? "Automatic reconnect paused" : phases[lifecycle.phase])}
+        </Text>
         {lifecycle.phase === "checking" && lifecycle.startedAt != null && now != null ? (
           <span className="tabular-nums">
             {" "}
             ·{" "}
-            {t("{seconds}s elapsed", {
-              seconds: Math.max(0, Math.floor((now - lifecycle.startedAt) / 1_000)),
-            })}
+            {t("{seconds}s elapsed").replace(
+              "{seconds}",
+              formatNumber(Math.max(0, Math.floor((now - lifecycle.startedAt) / 1_000))),
+            )}
           </span>
         ) : null}
         {lifecycle.nextRetryAt != null && now != null ? (
           <span className="tabular-nums">
             {" "}
             ·{" "}
-            {t("Retry in {seconds}s", {
-              seconds: Math.max(0, Math.ceil((lifecycle.nextRetryAt - now) / 1_000)),
-            })}
+            {t("Retry in {seconds}s").replace(
+              "{seconds}",
+              formatNumber(Math.max(0, Math.ceil((lifecycle.nextRetryAt - now) / 1_000))),
+            )}
           </span>
         ) : null}
       </Text>

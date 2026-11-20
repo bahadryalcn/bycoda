@@ -129,7 +129,7 @@
 .content[data-view="Notes"] {
   overflow: hidden;
 }
-@media (max-width: 600px) {
+@container assistant-room (max-width: 600px) {
   .collectionTools > .pageTitle {
     flex-basis: 100%;
   }
@@ -137,7 +137,7 @@
     flex: 1 1 10rem;
   }
 }
-@media (max-width: 720px) {
+@container assistant-room (max-width: 720px) {
   .content {
     padding: 16px 12px;
   }

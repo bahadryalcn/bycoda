@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -10,7 +11,11 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Surface } from "../../../shared/ui/Surface";
 import { stripAnsi } from "../../../shared/lib/ansi";
-import { terminalResultMessage } from "../model/codeTerminal";
+import {
+  CODE_POLL_BASE_MS,
+  codeTerminalPollDelay,
+  terminalResultMessage,
+} from "../model/codeTerminal";
 import { loadCodeRunReport } from "../model/codeRunReport";
 import type {
   CodeTerminalController,
@@ -41,6 +46,7 @@ export function CodeTerminalDialog({
   const reportSent = useRef(false);
   const [stopping, setStopping] = useState(false);
   const working = state.phase === "starting" || state.phase === "running";
+  const exited = state.phase === "exited";
   const report = useStableCallback(() => {
     if (!onReport || reportSent.current || state.phase !== "exited") return;
     reportSent.current = true;
@@ -62,19 +68,55 @@ export function CodeTerminalDialog({
       })
       .catch((error: unknown) => {
         reportSent.current = false;
-        setReportError(error instanceof Error ? error.message : String(error));
+        setReportError(errorText(error));
       })
       .finally(() => setReporting(false))
       .catch(() => {});
   });
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll the owned Host process while this terminal dialog is mounted; never replay launch.
   useEffect(() => {
-    if (options.native || state.phase === "exited") return;
-    const timer = setInterval(() => {
-      void controller.refresh().catch(() => {});
-    }, 300);
-    return () => clearInterval(timer);
-  }, [controller, options.native, state.phase]);
+    if (options.native || exited) return;
+    let stopped = false;
+    let idleReads = 0;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = () => {
+      timer = undefined;
+      // A hidden window reads nothing; visibilitychange resumes the loop.
+      if (stopped || document.visibilityState === "hidden") return;
+      void controller
+        .refresh()
+        .then((outcome) => {
+          idleReads = outcome === "idle" ? idleReads + 1 : 0;
+          failures = outcome === "failed" ? failures + 1 : 0;
+        })
+        .catch(() => {
+          failures += 1;
+        })
+        .finally(() => {
+          if (stopped || timer !== undefined || document.visibilityState === "hidden") return;
+          timer = setTimeout(poll, codeTerminalPollDelay(idleReads, failures));
+        })
+        .catch(() => {});
+    };
+    const visibilityChanged = () => {
+      if (document.visibilityState === "hidden") {
+        clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      if (timer !== undefined) return;
+      idleReads = 0;
+      poll();
+    };
+    timer = setTimeout(poll, CODE_POLL_BASE_MS);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visibilityChanged);
+    };
+  }, [controller, options.native, exited]);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Observe process settlement and attach its final drained output once when the owner selected reporting.
   useEffect(() => {
     if (autoReport && state.phase === "exited") report();

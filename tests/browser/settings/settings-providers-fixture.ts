@@ -11,6 +11,7 @@ import { setHarnessModels } from "../../../src/features/sessions/model/models";
 
 const enabled = new URLSearchParams(location.search).has("providersFixture");
 const worstIdentities = new URLSearchParams(location.search).has("providerIdentityStress");
+const quotaStress = new URLSearchParams(location.search).has("providerQuotaFixture");
 const versions: Record<string, string> = {
   claude: "2.1.12",
   codex: "0.94.0",
@@ -87,6 +88,17 @@ export function seedProvidersFixture() {
       name,
     })),
   );
+  if (new URLSearchParams(location.search).has("openCodePricing")) {
+    setHarnessModels("opencode", [
+      { id: "opencode:opencode/big-pickle", harness: "opencode", name: "Big Pickle", free: true },
+      { id: "opencode:opencode/beam-free", harness: "opencode", name: "Beam", free: true },
+      {
+        id: "opencode:opencode/deepseek-v4.1-flash",
+        harness: "opencode",
+        name: "DeepSeek V4.1 Flash",
+      },
+    ]);
+  }
   configureChildBackend({
     invoke: async <T>(command: string, args: Record<string, unknown> = {}) => {
       const value = providersFixtureCommand(command, args);
@@ -153,8 +165,10 @@ export function providersFixtureCommand(command: string, args: Record<string, un
           body: JSON.stringify({
             five_hour: { utilization: 14, resets_at: new Date(Date.now() + 7200000).toISOString() },
             seven_day: {
-              utilization: 32,
-              resets_at: new Date(Date.now() + 172800000).toISOString(),
+              utilization: quotaStress ? (args.accountId === "account-work" ? 92 : 100) : 32,
+              resets_at: new Date(
+                Date.now() + (quotaStress ? 40_950_000 : 172800000),
+              ).toISOString(),
             },
           }),
         };

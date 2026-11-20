@@ -3,7 +3,9 @@ import { act, createElement, StrictMode, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatSessionTitle } from "../../features/sessions/model/session";
+import { saveAutoTabGroupLabel } from "../../features/workspace/model/tabGroups";
 import { formatReminderTime } from "../../features/sessions/model/sessionReminders";
+import { HOVER_CARD_CLOSE_MS, HOVER_CARD_OPEN_MS } from "../../shared/ui/Tooltip";
 import { Sidebar } from "./Sidebar";
 import { setSessionDeletionStatus } from "../../features/sessions/model/sessionDeletionStatus";
 import { OPEN_CREWS_PAGE_EVENT } from "../../features/crews/model/crewsPage";
@@ -116,7 +118,7 @@ function renameInput(): HTMLInputElement {
 }
 
 function projectSearchInput(): HTMLInputElement | null {
-  return document.querySelector('input[placeholder="Search projects..."]');
+  return document.querySelector('input[placeholder="Search projects…"]');
 }
 
 async function openProjectsFlyout() {
@@ -600,7 +602,7 @@ describe("sidebar session bulk actions", () => {
       (entry) => entry.textContent?.includes("Open Side by Side"),
     )!;
     expect(item.disabled).toBe(true);
-    expect(item.textContent).toContain("Select at most 9 conversations");
+    expect(item.textContent).toContain("Select at most 9 sessions");
     act(() => item.click());
     expect(props.onOpenSessionsSideBySide).not.toHaveBeenCalled();
   });
@@ -631,7 +633,7 @@ describe("sidebar session bulk actions", () => {
   it("toggles rows with plain clicks in selection mode and leaves it on Escape", () => {
     act(() => render());
     expect(bar()).toBeNull();
-    act(() => container.querySelector<HTMLElement>('[aria-label="Select conversations"]')!.click());
+    act(() => container.querySelector<HTMLElement>('[aria-label="Select sessions"]')!.click());
     expect(container.querySelectorAll("[data-session-checkbox]")).toHaveLength(3);
     clickCard("session-2");
     clickCard("session-3");
@@ -688,7 +690,7 @@ describe("sidebar session bulk actions", () => {
     await act(async () => barButton("Delete selected").click());
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm).toHaveBeenCalledWith(
-      "Delete 2 conversations? This can’t be undone.\n\n1 running conversation will be skipped.",
+      "Delete 2 conversations?\n\n2 conversations and their history will be permanently deleted. This can’t be undone. 1 running conversation will be skipped.",
     );
     expect(vi.mocked(props.onDeleteSessionNow).mock.calls).toEqual([["session-2"], ["session-3"]]);
     expect(props.onDeleteSession).not.toHaveBeenCalled();
@@ -840,7 +842,9 @@ describe("sidebar session bulk actions", () => {
     await act(async () => {
       pressKey(document.body, "Delete");
     });
-    expect(confirm).toHaveBeenCalledWith("Delete 2 conversations? This can’t be undone.");
+    expect(confirm).toHaveBeenCalledWith(
+      "Delete 2 conversations?\n\n2 conversations and their history will be permanently deleted. This can’t be undone.",
+    );
     expect(props.onDeleteSessionNow).not.toHaveBeenCalled();
     expect(selectedIds()).toEqual(["session-2", "session-3"]);
   });
@@ -1528,7 +1532,7 @@ describe("sidebar orchestration card", () => {
     expect(card().querySelector('[data-orchestration-agent="worker"]')).not.toBeNull();
   });
 
-  it("opens the custom subagent tooltip immediately on hover", () => {
+  it("opens the subagent hover card after the shared hover delay and closes it on leave", async () => {
     props.busySessionIds = new Set();
     props.sessions[0].orchestration = {
       status: "active",
@@ -1553,9 +1557,13 @@ describe("sidebar orchestration card", () => {
     act(() => render());
     const trigger = card().querySelector<HTMLButtonElement>("[data-orchestration-icon]")!;
 
-    act(() => trigger.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    // The card is the shared HoverCard: it opens after its rest delay on pointer enter.
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, HOVER_CARD_OPEN_MS + 100));
+    });
 
-    const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]')!;
+    const tooltip = document.querySelector<HTMLElement>("[data-hover-card]")!;
     expect(tooltip).not.toBeNull();
     expect(tooltip.classList.contains("popover-open")).toBe(true);
     expect(tooltip.textContent).toContain("1/2 done");
@@ -1564,8 +1572,11 @@ describe("sidebar orchestration card", () => {
     expect(tooltip.textContent).toContain("Check types");
     expect(tooltip.textContent).toContain("Done");
 
-    act(() => trigger.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
-    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent("pointerout", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, HOVER_CARD_CLOSE_MS + 100));
+    });
+    expect(document.querySelector("[data-hover-card]")).toBeNull();
   });
 
   it("renders saved worker details without claiming the workers are running", () => {
@@ -1963,7 +1974,7 @@ describe("collapsed rail Inbox actions", () => {
 
     const sidebar = container.querySelector("aside")!;
     expect(container.querySelector("[data-compact-project-rail]")).toBeNull();
-    expect(sidebar.querySelector('button[aria-label^="Toggle Projects"]')).not.toBeNull();
+    expect(sidebar.querySelector('button[aria-label^="Toggle sidebar"]')).not.toBeNull();
     expect(sidebar.querySelector('button[aria-label^="Search"]')).not.toBeNull();
     expect(sidebar.querySelector('button[aria-label^="Settings"]')).not.toBeNull();
   });
@@ -2002,19 +2013,19 @@ describe("collapsed rail Inbox actions", () => {
       button.getAttribute("aria-label"),
     );
     expect(labels.indexOf("Back")).toBeLessThan(labels.indexOf("Forward"));
-    expect(labels.indexOf("Forward")).toBeLessThan(labels.indexOf("Expand projects"));
-    expect(labels.indexOf("Expand projects")).toBeLessThan(labels.indexOf("Search sessions"));
+    expect(labels.indexOf("Forward")).toBeLessThan(labels.indexOf("Toggle sidebar"));
+    expect(labels.indexOf("Toggle sidebar")).toBeLessThan(labels.indexOf("Search sessions"));
     const back = header.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!;
     expect(title.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(back.closest("[data-pane-header-body]")).not.toBeNull();
-    expect(container.querySelectorAll('button[aria-label="Expand projects"]')).toHaveLength(1);
+    expect(container.querySelectorAll('button[aria-label="Toggle sidebar"]')).toHaveLength(1);
     expect(
-      container.querySelector('[data-compact-project-rail] button[aria-label="Expand projects"]'),
+      container.querySelector('[data-compact-project-rail] button[aria-label="Toggle sidebar"]'),
     ).toBeNull();
     act(() => back.click());
     act(() => header.querySelector<HTMLButtonElement>('button[aria-label="Forward"]')!.click());
     act(() =>
-      header.querySelector<HTMLButtonElement>('button[aria-label="Expand projects"]')!.click(),
+      header.querySelector<HTMLButtonElement>('button[aria-label="Toggle sidebar"]')!.click(),
     );
     expect(props.onGoBack).toHaveBeenCalledOnce();
     expect(props.onGoForward).toHaveBeenCalledOnce();
@@ -2100,7 +2111,7 @@ describe("collapsed rail Inbox actions", () => {
     act(() =>
       container
         .querySelector<HTMLButtonElement>(
-          '[data-workspace-header] button[aria-label="Expand projects"]',
+          '[data-workspace-header] button[aria-label="Toggle sidebar"]',
         )!
         .click(),
     );
@@ -2151,7 +2162,9 @@ describe("collapsed rail Inbox actions", () => {
     expect(workspace()).not.toBeNull();
     act(() => workspace().click());
     expect(drawer()?.dataset.sidebarDrawer).toBe("open");
-    expect(drawer()?.className).not.toContain("absolute");
+    // Only narrow windows overlay the drawer (`max-[596px]:absolute`); it stays in flow otherwise.
+    expect(drawer()?.className).not.toMatch(/(^|\s)absolute(\s|$)/);
+    expect(drawer()?.className).toContain("max-[596px]:absolute");
     expect(drawer()?.querySelector("aside")?.className).toContain("body-glass");
     expect(container.querySelector('[data-compact-project-rail] [role="tablist"]')).toBeNull();
     expect(animations).toHaveLength(1);
@@ -2571,6 +2584,30 @@ it("lets compact row actions overlay the idle time instead of reserving a gutter
     saveSessionListDisplay(DEFAULT_SESSION_LIST_DISPLAY);
   }
 });
+
+it.each(["standard", "compact", "detailed"] as const)(
+  "shows the remote marker before the provider in %s rows",
+  (density) => {
+    saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density });
+    act(render);
+    expect(card().querySelector('[aria-label="On another machine"]')).toBeNull();
+
+    const cwd = "remote://env-1/workspace/project";
+    saveAutoTabGroupLabel(cwd, "project (tailm)");
+    props.sessions = [{ ...props.sessions[0], cwd }];
+    act(render);
+    const provider = card().querySelector('[data-session-provider="codex"]')!;
+    const marker = provider.parentElement?.previousElementSibling;
+    expect(marker?.getAttribute("aria-label")).toBe("On another machine");
+    expect(marker?.querySelector("svg")).not.toBeNull();
+    if (density !== "compact") {
+      expect(card().querySelector("[data-session-row-project]")?.textContent).toContain("project");
+      expect(card().querySelector("[data-session-row-project]")?.textContent).not.toContain(
+        "tailm",
+      );
+    }
+  },
+);
 
 it("drops a repository prefix that repeats the project in detailed rows", () => {
   saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density: "detailed" });

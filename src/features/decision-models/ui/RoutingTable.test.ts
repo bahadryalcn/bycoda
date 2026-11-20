@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { saveAllPending } from "../../../shared/ui/settings";
 import { RoutingTable } from "./RoutingTable";
 import { SourceOrderPicker } from "./SourceOrderPicker";
 import { setInputValue } from "./decisionTestDom";
@@ -317,3 +318,55 @@ it("resets a custom task without changing other task routes", async () => {
     container.remove();
   }
 });
+
+it.each([
+  { outcome: "the Host acknowledges", reject: false, acknowledged: true },
+  { outcome: "the Host rejects", reject: true, acknowledged: false },
+])(
+  "Save and leave acknowledges the routing only when $outcome the save",
+  async ({ reject, acknowledged }) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const onSave = reject
+      ? vi.fn().mockRejectedValue(new Error("Host unavailable"))
+      : vi.fn().mockResolvedValue(undefined);
+    try {
+      await act(async () =>
+        root.render(
+          createElement(RoutingTable, {
+            routing: { generic: { sourceIds: ["source"], threshold: 0.9 } },
+            sources: [],
+            busy: false,
+            onSave,
+          }),
+        ),
+      );
+      await act(async () =>
+        [...container.querySelectorAll<HTMLButtonElement>("button")]
+          .find((button) => button.textContent === "Customize")!
+          .click(),
+      );
+      const field = container.querySelector<HTMLInputElement>('input[inputmode="decimal"]')!;
+      setInputValue(field, "0.8");
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await saveAllPending();
+      });
+      expect(onSave).toHaveBeenCalledOnce();
+      expect(result).toBe(acknowledged);
+      if (!acknowledged) {
+        // A rejected save keeps the owner's draft and leaves Save available for a retry.
+        expect(field.value).toBe("0.8");
+        expect(
+          [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+            (button) => button.textContent === "Save routing",
+          )?.disabled,
+        ).toBe(false);
+      }
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  },
+);

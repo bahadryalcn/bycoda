@@ -8,7 +8,7 @@ import { sameProjectPath } from "../../../features/projects/model/recents";
 import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { t } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { WorkspaceSessionPaneProps } from "../layout/WorkspaceMainArea";
 import {
@@ -16,6 +16,10 @@ import {
   reserveSessionWindow,
 } from "../../model/sessionWindowOwnership";
 import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
+import {
+  WorkspaceActionError,
+  presentWorkspaceActionError,
+} from "../../model/workspaceActionError";
 
 /** The app supplies its canonical session store and all normal composer handlers. */
 export function CrewCoordinatorSession({
@@ -34,10 +38,12 @@ export function CrewCoordinatorSession({
         (entry.id === target.sessionId || remoteSessionFor(entry.id) === target.sessionId),
     ),
   );
-  const [error, setError] = useState<string>();
+  // The thrown value is kept and presented at render so the sentence follows the language.
+  const [error, setError] = useState<{ reason: unknown; action: "open" | "stop" }>();
   const [loaded, setLoaded] = useState(false);
   const [revision, setRevision] = useState(0);
   const { confirm, dialog } = useConfirm();
+  const t = useT();
   const load = useStableCallback(() => onOpen(target));
   const stop = async (sessionId: string) => {
     const managed = crewManagedSession(sessionId);
@@ -71,7 +77,11 @@ export function CrewCoordinatorSession({
         ? remoteSessionOwnershipKey(target.cwd, target.sessionId)
         : target.sessionId;
       const finish = await reserveSessionWindow([key]);
-      if (!finish) throw new Error("This conversation is already open in another window.");
+      if (!finish)
+        throw new WorkspaceActionError(
+          "conversationOpenElsewhere",
+          "This conversation is already open in another window.",
+        );
       if (!alive) {
         await finish(false);
         return;
@@ -81,7 +91,7 @@ export function CrewCoordinatorSession({
       if (alive) setLoaded(true);
     };
     void adopt().catch((reason: unknown) => {
-      if (alive) setError(reason instanceof Error ? reason.message : String(reason));
+      if (alive) setError({ reason, action: "open" });
     });
     return () => {
       alive = false;
@@ -103,7 +113,12 @@ export function CrewCoordinatorSession({
           },
         }}
       >
-        {error}
+        {presentWorkspaceActionError(
+          error.reason,
+          error.action === "stop"
+            ? t("Could not stop this conversation.")
+            : t("Could not open this conversation."),
+        )}
       </Alert>
     );
   if (!loaded || !session) return <LoadingText>{t("Loading session…")}</LoadingText>;
@@ -113,9 +128,7 @@ export function CrewCoordinatorSession({
       <SessionPane
         {...paneProps}
         onStop={(sessionId) => {
-          void stop(sessionId).catch((reason: unknown) =>
-            setError(reason instanceof Error ? reason.message : String(reason)),
-          );
+          void stop(sessionId).catch((reason: unknown) => setError({ reason, action: "stop" }));
         }}
         session={session}
         embedded

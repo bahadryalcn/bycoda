@@ -3,9 +3,10 @@ import { Badge } from "../../shared/ui/Badge";
 import { Button } from "../../shared/ui/Button";
 import { InlineError } from "../../shared/ui/InlineError";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
+import { useConfirm } from "../../shared/ui/ConfirmDialog";
 import { useT } from "../../shared/i18n";
 import { useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { Trash2, RotateCcw } from "../../shared/ui/icons";
+import { X, RotateCcw } from "../../shared/ui/icons";
 import { RAIL_SECTION_HEADER, RAIL_SECTION_LABEL } from "./useRailSections";
 import {
   getRecoverySaveFailure,
@@ -46,6 +47,7 @@ export function SessionRecoveryControl({
   includeFiles?: boolean;
 }) {
   const t = useT();
+  const { confirm, dialog } = useConfirm();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   const pendingRef = useRef(false);
@@ -56,7 +58,8 @@ export function SessionRecoveryControl({
   );
   if (!count && !saveFailure && !allowEmpty) return null;
   const label = includeFiles ? t("Recovered work") : t("Recovered sessions");
-  const clearLabel = includeFiles ? t("Clear conversation recovery list") : t("Clear list");
+  // One name for both modes, matching the sidebar's "session" vocabulary.
+  const clearLabel = t("Dismiss recovered sessions");
   const clear = async () => {
     if (!onClear || pendingRef.current) return;
     pendingRef.current = true;
@@ -65,6 +68,18 @@ export function SessionRecoveryControl({
     if (await clearFailed(onClear)) setError(true);
     pendingRef.current = false;
     setPending(false);
+  };
+  // Dismissing only drops references from the list; history and running work are untouched.
+  const confirmClear = async () => {
+    const ok = await confirm({
+      title: t("Dismiss recovered sessions?"),
+      message: t(
+        "They leave the recovery list. Their session history is kept and running work is not stopped.",
+      ),
+      confirmLabel: clearLabel,
+      danger: false,
+    });
+    if (ok) await clear();
   };
   return (
     <ActionHost
@@ -132,11 +147,12 @@ export function SessionRecoveryControl({
           className="recovery-rail-clear recovery-remove"
           reveal={pending || error ? "always" : "interaction"}
           loading={pending}
-          onClick={() => void clear()}
+          onClick={() => void confirmClear()}
         >
-          <Trash2 className="icon-sm" aria-hidden="true" />
+          <X className="icon-sm" aria-hidden="true" />
         </InlineAction>
       ) : null}
+      {dialog}
       {error ? (
         <InlineError className="recovery-rail-error">
           {t("Could not update the recovery list. Try again.")}

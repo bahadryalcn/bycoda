@@ -187,17 +187,17 @@ function body() {
   };
 }
 
-it("shows save progress and explicitly saves before the autosave delay", async () => {
+it("saves explicitly before the autosave delay and keeps routine status quiet", async () => {
   await render();
-  expect(container.querySelector('[data-note-save-state="saved"]')).not.toBeNull();
+  expect(container.querySelector("[data-note-save-state]")).toBeNull();
   vi.useFakeTimers();
   await input(body(), "Save this note now");
-  expect(container.querySelector('[data-note-save-state="unsaved"]')).not.toBeNull();
+  expect(container.querySelector("[data-note-save-state]")).toBeNull();
   await click("Save");
   expect(stored.find((note) => note.sourceSessionId === sessionId)?.body).toBe(
     "Save this note now",
   );
-  expect(container.querySelector('[data-note-save-state="saved"]')).not.toBeNull();
+  expect(container.querySelector("[data-note-save-state]")).toBeNull();
 });
 
 it("keeps autosaving the draft after deletion fails", async () => {

@@ -362,7 +362,7 @@ for (const theme of ["light", "dark"]) {
         await page.getByRole("button", { name: "Quick connect", exact: true }).click();
         const editor = page.getByRole("dialog", { name: "Quick connect", exact: true });
         await editor
-          .getByRole("textbox", { name: "Host", exact: true })
+          .getByRole("textbox", { name: "Hostname", exact: true })
           .fill(`server-${index}.example.invalid`);
         await editor.getByRole("textbox", { name: "Name", exact: true }).fill("106");
         await editor.getByRole("button", { name: "Connect", exact: true }).click();
@@ -778,6 +778,46 @@ test("saved SSH command previews its target and copies without terminal input or
   await page.screenshot({ path: `${evidence}/saved-command-390.png` });
 });
 
+test("pastes local clipboard text into the active SSH terminal with both gestures", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Requires Chromium clipboard permissions");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/tests/browser/terminal/servers.html?terminalWorkspace=1");
+  await page.getByRole("button", { name: "Quick connect", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Quick connect", exact: true });
+  await dialog
+    .getByRole("textbox", { name: "Hostname", exact: true })
+    .fill("paste.example.invalid");
+  await dialog.getByRole("textbox", { name: "SSH user", exact: true }).fill("fixture");
+  await dialog.getByRole("button", { name: "Connect", exact: true }).click();
+  const terminal = page.locator(".xterm-helper-textarea");
+  await page.locator(".xterm-screen").click();
+  await expect(terminal).toBeFocused();
+  const clipboardWrites = () =>
+    page.evaluate(() => {
+      const { serversFixtureRequests } = window as unknown as {
+        serversFixtureRequests: { command: string; input: { id: string; data: string } }[];
+      };
+      const connection = serversFixtureRequests.find(
+        ({ command }) => command === "ssh_terminal_quick_spawn",
+      );
+      return serversFixtureRequests
+        .filter(
+          ({ command, input }) => command === "pty_write" && input.id === connection?.input.id,
+        )
+        .map(({ input }) => input.data);
+    });
+  await page.evaluate(() => navigator.clipboard.writeText("ssh shift insert"));
+  await terminal.press("Shift+Insert");
+  await expect.poll(clipboardWrites).toEqual(["ssh shift insert"]);
+  await page.evaluate(() => navigator.clipboard.writeText("ssh right click"));
+  await page.locator(".xterm-screen").click({ button: "right" });
+  await expect.poll(clipboardWrites).toEqual(["ssh shift insert", "ssh right click"]);
+});
+
 test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab on inventory return", async ({
   page,
 }) => {
@@ -795,7 +835,9 @@ test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab 
   expect((await calls()).some((item) => item.command.startsWith("ssh_terminal"))).toBe(false);
   await page.getByRole("button", { name: "Quick connect", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Quick connect", exact: true });
-  await dialog.getByRole("textbox", { name: "Host", exact: true }).fill("quick.example.invalid");
+  await dialog
+    .getByRole("textbox", { name: "Hostname", exact: true })
+    .fill("quick.example.invalid");
   await dialog.getByRole("textbox", { name: "SSH user", exact: true }).fill("alice");
   await expect(dialog.locator('[aria-label="Endpoint preview"]')).toContainText(
     "alice@quick.example.invalid:22",
@@ -875,7 +917,7 @@ for (const theme of ["light", "dark"])
       .getByRole("textbox", { name: "Name", exact: true })
       .fill("Production deployment connection with a deliberately long name");
     const address = "application.production.example.invalid";
-    await quick.getByRole("textbox", { name: "Host", exact: true }).fill(address);
+    await quick.getByRole("textbox", { name: "Hostname", exact: true }).fill(address);
     await quick.getByRole("textbox", { name: "SSH user", exact: true }).fill("deployment");
     await openAdvancedSshSettings(quick);
     await quick.locator("summary").filter({ hasText: "Use a key file path" }).click();
@@ -895,12 +937,12 @@ for (const theme of ["light", "dark"])
       true,
     );
     await page.screenshot({ path: `${folder}/quick-${theme}-390-preview.png` });
-    await quick.getByRole("textbox", { name: "Host", exact: true }).fill("-invalid-host");
+    await quick.getByRole("textbox", { name: "Hostname", exact: true }).fill("-invalid-host");
     await quick.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(quick.getByRole("alert")).toHaveText("Enter a valid SSH endpoint.");
     await expect(quick.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
     await page.screenshot({ path: `${folder}/quick-${theme}-390-error.png` });
-    await quick.getByRole("textbox", { name: "Host", exact: true }).fill(address);
+    await quick.getByRole("textbox", { name: "Hostname", exact: true }).fill(address);
     await quick.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(
       page.getByRole("tab", {
@@ -1033,7 +1075,7 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "Quick connect", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Quick connect", exact: true });
     await dialog
-      .getByRole("textbox", { name: "Host", exact: true })
+      .getByRole("textbox", { name: "Hostname", exact: true })
       .fill("windows.example.invalid");
     await dialog.getByRole("button", { name: "Connect", exact: true }).click();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
@@ -1372,10 +1414,10 @@ for (const theme of ["light", "dark"]) {
     await expect(toggle).not.toBeChecked();
     await toggle.click();
     await expect(
-      editor.getByRole("textbox", { name: "Jump host 1: Host", exact: true }),
+      editor.getByRole("textbox", { name: "Jump host 1: Hostname", exact: true }),
     ).toHaveValue("");
     await editor
-      .getByRole("textbox", { name: "Jump host 1: Host", exact: true })
+      .getByRole("textbox", { name: "Jump host 1: Hostname", exact: true })
       .fill("first.example.invalid");
     await editor.getByRole("textbox", { name: "Jump host 1: User", exact: true }).fill("operator");
     await editor.getByRole("textbox", { name: "Jump host 1: Port", exact: true }).fill("2222");
@@ -1404,7 +1446,7 @@ for (const theme of ["light", "dark"]) {
     );
     await toggle.click();
     await expect(
-      editor.getByRole("textbox", { name: "Jump host 1: Host", exact: true }),
+      editor.getByRole("textbox", { name: "Jump host 1: Hostname", exact: true }),
     ).toHaveValue("first.example.invalid");
     await editor
       .locator("summary")

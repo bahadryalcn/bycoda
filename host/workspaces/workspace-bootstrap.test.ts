@@ -3,9 +3,18 @@ import { WorkspaceBootstrapReceipts } from "./workspace-bootstrap-receipts";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtemp, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   WorkspaceBootstrapService,
@@ -174,6 +183,110 @@ it("detects lockfile changes during installation without exposing installer diag
     error: { code: "LOCKFILE_CHANGED" },
   });
   expect(JSON.stringify(await service.status(result.id))).not.toContain("secret");
+});
+
+/** Mimics the real runner: kills on abort, then rejects once its tree is (not) proven gone. */
+const hangUntilAborted = (signal: AbortSignal, settled: boolean) =>
+  new Promise<string>((_, reject) => {
+    signal.addEventListener(
+      "abort",
+      () => reject(Object.assign(new Error("aborted"), { settled })),
+      { once: true },
+    );
+  });
+
+it("bounds a hung install with BOOTSTRAP_TIMEOUT, aborts its process tree and frees the workspace", async () => {
+  const root = await fixture();
+  const installSignals: AbortSignal[] = [];
+  const run = vi.fn<BootstrapCommand>(async ({ args, signal }) => {
+    if (args[0] === "--version") return "12.15.0";
+    installSignals.push(signal);
+    return hangUntilAborted(signal, true);
+  });
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    runCommand: run,
+    commandTimeoutMs: { install: 20 },
+  });
+  const first = await service.prepare(request);
+  expect(await service.wait(first.id)).toMatchObject({
+    state: "failed",
+    error: { code: "BOOTSTRAP_TIMEOUT" },
+  });
+  expect(installSignals[0]?.aborted).toBe(true);
+  // The tree was verified gone, so the next explicit attempt is admitted.
+  const retried = await service.prepare({ ...request, idempotencyKey: "retry" });
+  expect(retried.id).not.toBe(first.id);
+  expect((await service.wait(retried.id)).error?.code).toBe("BOOTSTRAP_TIMEOUT");
+});
+
+it("gives the version probe its own shorter deadline and never starts the install after it", async () => {
+  const root = await fixture();
+  const run = vi.fn<BootstrapCommand>(async ({ signal }) => hangUntilAborted(signal, true));
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    runCommand: run,
+    commandTimeoutMs: { version: 20, install: 60_000 },
+  });
+  const result = await service.prepare(request);
+  expect(await service.wait(result.id)).toMatchObject({
+    state: "failed",
+    error: { code: "BOOTSTRAP_TIMEOUT" },
+  });
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(run.mock.calls[0]?.[0].args).toEqual(["--version"]);
+});
+
+it("keeps the workspace owner held when a timed-out command cannot prove its tree is gone", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    // Ignores the abort entirely: no settlement proof ever arrives.
+    runCommand: async ({ args }) =>
+      args[0] === "--version" ? "12.15.0" : new Promise<string>(() => {}),
+    commandTimeoutMs: { install: 20 },
+    commandKillGraceMs: 20,
+  });
+  const first = await service.prepare(request);
+  expect(await service.wait(first.id)).toMatchObject({
+    state: "failed",
+    error: { code: "BOOTSTRAP_TIMEOUT" },
+  });
+  await expect(service.prepare({ ...request, idempotencyKey: "retry" })).rejects.toThrow(
+    "already running",
+  );
+});
+
+it("times out only the stalled workspace's install and leaves an unrelated install running", async () => {
+  const stalled = await fixture();
+  const unrelated = await fixture();
+  let unrelatedSignal: AbortSignal | undefined;
+  let finishUnrelated!: () => void;
+  const gate = new Promise<void>((done) => {
+    finishUnrelated = done;
+  });
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async (id) => (id === "workspace" ? stalled : unrelated),
+    runCommand: async ({ args, cwd, signal }) => {
+      if (args[0] === "--version") return "12.15.0";
+      if (cwd.endsWith(basename(stalled))) return hangUntilAborted(signal, true);
+      unrelatedSignal = signal;
+      await gate;
+      return "";
+    },
+    commandTimeoutMs: { install: 200 },
+  });
+  const slow = await service.prepare(request);
+  // Start the unrelated install later so its own deadline is still in the future.
+  await new Promise((done) => setTimeout(done, 100));
+  const other = await service.prepare({ ...request, workspaceId: "other" });
+  expect(await service.wait(slow.id)).toMatchObject({
+    state: "failed",
+    error: { code: "BOOTSTRAP_TIMEOUT" },
+  });
+  expect(unrelatedSignal?.aborted).toBe(false);
+  finishUnrelated();
+  expect(await service.wait(other.id)).toMatchObject({ state: "ready" });
 });
 
 it("isolates two runs and serializes keyed shared build outputs before copying immutable executables", async () => {
@@ -406,6 +519,41 @@ it("waits for a live kernel witness and recovers after its process exits", async
   }
   await waiting;
   expect(build).toHaveBeenCalledOnce();
+});
+
+it("bounds the build-cache lease wait and releases only its own attempt", async () => {
+  const root = await fixture();
+  const service = new WorkspaceBootstrapService({
+    resolveWorkspace: async () => root,
+    buildLeasePollMs: 5,
+    buildLeaseWaitMs: 80,
+  });
+  const target = await service.withBuildCache(
+    "workspace",
+    new AbortController().signal,
+    async (env) => env.cargoTargetDir,
+  );
+  const holder = new DatabaseSync(join(target, ".bycoda-build-lease.db"));
+  holder.exec("BEGIN EXCLUSIVE");
+  const build = vi.fn(async () => {});
+  try {
+    await expect(
+      service.withBuildCache("workspace", new AbortController().signal, build),
+    ).rejects.toMatchObject({ code: "BUILD_CACHE_LEASE_TIMEOUT" });
+    expect(build).not.toHaveBeenCalled();
+    // The timed-out attempt left no sentinel and no temporary inode behind.
+    const names = await readdir(target);
+    expect(
+      names.filter((name) => name.startsWith(".bycoda-build-lease") && name.endsWith(".tmp")),
+    ).toEqual([]);
+    expect(names).not.toContain(".bycoda-build-lease");
+  } finally {
+    holder.exec("ROLLBACK");
+    holder.close();
+  }
+  await expect(
+    service.withBuildCache("workspace", new AbortController().signal, async () => "built"),
+  ).resolves.toBe("built");
 });
 
 it("holds an uncertain generation when its callback fails with a surviving child", async () => {

@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { claudeShellCommands } from "../../../platform/tauri/fs";
-import { getSession, shouldPersistSession, upsertSession } from "./sessionStore";
+import {
+  getEarlierStoredHistory,
+  getSession,
+  shouldPersistSession,
+  upsertSession,
+} from "./sessionStore";
 import {
   proposalBlock,
   type OrchestrationProposal,
@@ -45,6 +50,48 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("progressive stored history", () => {
+  it("opens with ten recent turns and reads older blocks only on demand", async () => {
+    const id = "on-demand-history";
+    const blocks = Array.from({ length: 64 }, (_, index) => ({
+      id: `block-${index}`,
+      role: index % 2 === 0 ? "user" : "assistant",
+      text: `Message ${index}`,
+    }));
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command === "session_get_page") {
+        const { before, limit } = args as { before?: number; limit: number };
+        const end = before ?? blocks.length;
+        const start = Math.max(0, end - limit);
+        return Promise.resolve({
+          session: record(id, blocks.slice(start, end)),
+          before: start || undefined,
+          totalBlocks: blocks.length,
+          revision: 7,
+        }) as ReturnType<typeof invoke>;
+      }
+      return Promise.resolve([]) as ReturnType<typeof invoke>;
+    });
+    const window = await getSession(id, { deferHistory: true });
+    expect(window?.blocks.map((block) => block.id)).toEqual(
+      blocks.slice(44).map((block) => block.id),
+    );
+    expect(shouldPersistSession(window!)).toBe(false);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "session_get_page"),
+    ).toEqual([["session_get_page", { sessionId: id, limit: 48 }]]);
+    const page = await getEarlierStoredHistory(window!);
+    expect(invoke).toHaveBeenLastCalledWith("session_get_page", {
+      sessionId: id,
+      before: 44,
+      revision: 7,
+      limit: 80,
+    });
+    expect(page?.cursor.before).toBeUndefined();
+    expect([...page!.blocks, ...window!.blocks].map((block) => block.id)).toEqual(
+      blocks.map((block) => block.id),
+    );
+  });
   it("recovers a raw plan revision after its proposal context arrives on an earlier page", async () => {
     const proposal: OrchestrationProposal = {
       version: 1,

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { StoreDatabase } from "../store-db";
 import { ProviderInboxBridge } from "./provider-inbox";
 import type { RemoteInboxOperation } from "../../src/features/inbox/model/remoteInbox";
@@ -48,6 +48,18 @@ describe("desktop provider inbox job bridge", () => {
     await bridge.beat("native", "desktop", { version: 1, replies: [{ id: receipt.id, result }] });
     expect((await bridge.result("client", "jira-priority")).result).toEqual(result);
     await expect(bridge.result("other", "jira-priority")).rejects.toThrow();
+  });
+  it("prunes the job table once per request instead of again for availability (#813)", async () => {
+    const { bridge, db } = setup();
+    await bridge.beat("native", "desktop", { version: 1 });
+    await bridge.request("client", "first", read);
+    const prepare = vi.spyOn(db, "prepare");
+    await bridge.request("client", "second", read);
+    const expiryDeletes = prepare.mock.calls.filter(([sql]) =>
+      String(sql).includes("DELETE FROM remote_inbox_jobs WHERE expires<?"),
+    );
+    prepare.mockRestore();
+    expect(expiryDeletes).toHaveLength(1);
   });
   it("delivers the requesting device name with a job and omits it when unknown", async () => {
     const { bridge } = setup();

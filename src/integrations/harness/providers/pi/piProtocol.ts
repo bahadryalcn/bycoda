@@ -136,21 +136,33 @@ export function buildPiSpawnArgs(
     noExtensions?: boolean;
     /** Titles and other one-shot prompts: no tools, skills, or project context. */
     isolated?: boolean;
+    /** Delegated scratch session: no model tools or ambient resources. */
+    chatOnlyCwd?: string;
     plan?: boolean;
     /** Authoritative enabled native paths; an empty array intentionally disables all skills. */
     skillPaths?: readonly string[];
   },
 ): string[] {
   const args = ["--mode", "rpc"];
-  if (!input.isolated && input.skillPaths) {
+  if (input.chatOnlyCwd) {
+    if (flavor.id !== "pi") throw new Error("Chat-only mode requires stock Pi.");
+    args.push(
+      ...PI_CHAT_ONLY_FLAGS,
+      "--system-prompt",
+      "You are a helpful assistant.",
+      "--session-dir",
+      `${input.chatOnlyCwd.replace(/[\\/]+$/, "")}/.bycoda-pi-sessions`,
+    );
+  }
+  if (!input.isolated && !input.chatOnlyCwd && input.skillPaths) {
     args.push("--no-skills");
     for (const path of input.skillPaths) args.push("--skill", path);
   }
   if (input.isolated || input.noSession) args.push("--no-session");
-  if (input.isolated || input.noExtensions) args.push("--no-extensions");
+  if (!input.chatOnlyCwd && (input.isolated || input.noExtensions)) args.push("--no-extensions");
   if (input.isolated) {
     args.push(...flavor.isolateFlags);
-  } else if (input.plan) {
+  } else if (input.plan && !input.chatOnlyCwd) {
     args.push("--tools", flavor.planTools.join(","));
   }
   if (input.resume?.trim()) {
@@ -159,6 +171,23 @@ export function buildPiSpawnArgs(
   const model = input.model?.trim();
   if (model) args.push("--model", model);
   return args;
+}
+
+export const PI_CHAT_ONLY_FLAGS = [
+  "--no-tools",
+  "--no-extensions",
+  "--no-mcp",
+  "--no-skills",
+  "--no-prompt-templates",
+  "--no-context-files",
+  "--no-approve",
+] as const;
+
+/** Refuse older CLIs before any prompt when one of the isolation switches is absent. */
+export function supportsPiChatOnly(help: string): boolean {
+  return [...PI_CHAT_ONLY_FLAGS, "--system-prompt", "--session-dir", "--session"].every((flag) =>
+    new RegExp(`(?:^|\\s)${flag}(?=[\\s,=<]|$)`, "m").test(help),
+  );
 }
 
 export function parsePiModelRef(nativeId: string | undefined): PiModelRef | null {

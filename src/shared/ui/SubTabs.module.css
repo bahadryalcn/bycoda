@@ -22,3 +22,17 @@
   color: var(--foreground);
   box-shadow: inset 0 calc(var(--ui-focus-width) * -1) 0 currentColor;
 }
+
+/* Forced colors drop box-shadow, so the selected underline would vanish and leave the
+   selected tab identical to its siblings. Draw it again in the system highlight colour;
+   disabled tabs keep the system disabled text colour. Keyboard focus keeps its outline. */
+@media (forced-colors: active) {
+  .list [role="tab"][aria-selected="true"] {
+    forced-color-adjust: none;
+    color: CanvasText;
+    box-shadow: inset 0 calc(var(--ui-focus-width) * -1) 0 Highlight;
+  }
+  .list [role="tab"][aria-disabled="true"] {
+    color: GrayText;
+  }
+}

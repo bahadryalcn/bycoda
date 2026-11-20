@@ -111,7 +111,9 @@ it("does not call an unread Active result zero and exposes its failed read recov
   expect(page.textContent).not.toContain("Loading crews");
   expect(tabs()[0]).toBe("Active");
   await act(async () =>
-    [...page.querySelectorAll("button")].find((button) => button.textContent === "Retry")!.click(),
+    [...page.querySelectorAll("button")]
+      .find((button) => button.textContent === "Try again")!
+      .click(),
   );
   expect(hosts.refetch).toHaveBeenCalledOnce();
 });

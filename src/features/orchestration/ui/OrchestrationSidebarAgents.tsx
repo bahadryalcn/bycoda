@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -8,7 +9,11 @@ import { useContext, useRef, useState, useSyncExternalStore } from "react";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { orchestrator } from "../model/orchestration";
-import { orchestrationTaskLabel, type OrchestrationSummary } from "../model/orchestrationSummary";
+import {
+  orchestrationTaskLabelCode,
+  type OrchestrationSummary,
+} from "../model/orchestrationSummary";
+import { orchestrationTaskLabelText } from "./orchestrationTaskLabelText";
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { OrchestrationActions, OrchestrationWorkers } from "./OrchestrationActions";
@@ -69,7 +74,7 @@ export function OrchestrationSidebarAgents({
     try {
       await operation();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorText(reason));
     } finally {
       inFlight.current = false;
       setPendingAction(null);
@@ -87,11 +92,12 @@ export function OrchestrationSidebarAgents({
         className="mb-0.5 px-0.5 flex items-center justify-between"
       >
         <span>
-          {summary.tasks.length} {summary.tasks.length === 1 ? t("agent") : t("agents")}
+          {summary.tasks.length === 1
+            ? t("{p0} agent", { p0: summary.tasks.length })
+            : t("{p0} agents", { p0: summary.tasks.length })}
         </span>
         <span className="tabular-nums">
-          {done}/{summary.tasks.length}
-          {t(" done")}
+          {t("{p0}/{p1} done", { p0: done, p1: summary.tasks.length })}
         </span>
       </Text>
       {/*
@@ -112,8 +118,9 @@ export function OrchestrationSidebarAgents({
           // Something waiting on an answer opens itself; it cannot be missed.
           const open = expanded.has(task.sessionId) || !!task.needsInput;
           const live = run?.tasks.find((entry) => entry.sessionId === task.sessionId);
-          const label = orchestrationTaskLabel(task, summary);
-          const working = summary.live && task.status === "running" && !task.needsInput;
+          const labelCode = orchestrationTaskLabelCode(task, summary);
+          const label = orchestrationTaskLabelText(labelCode);
+          const working = labelCode === "working";
           // A saved provider model may not be in this window's catalog yet.
           // Keep its identity instead of substituting the harness default.
           const model = modelDisplayName(task.model, task.harness);
@@ -250,8 +257,9 @@ export function OrchestrationSidebarAgents({
         >
           {resumeBlocker && (
             <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
-              {resumeBlocker.title || t("Another conversation")}
-              {t(" is still running in this project.")}
+              {t("{p0} is still running in this project.", {
+                p0: resumeBlocker.title || t("Another conversation"),
+              })}
             </Text>
           )}
           <div className="-mr-1.5 flex items-center justify-end gap-1">

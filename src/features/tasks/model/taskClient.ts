@@ -49,13 +49,11 @@ import {
   type TaskStatus,
 } from "./hostTasks";
 
-export const TASK_MACHINE_ERROR =
-  "This project’s machine isn’t connected, or its bycoda Host needs an update.";
-export const TASK_AGENT_ERROR = "This agent cannot run tasks in the background.";
-
 /** A host task as this desktop shows it: on its machine, in its project. */
 export type BoardTask = HostTask & {
   evaluationSupported?: boolean;
+  /** The Host rejects a reorder when a listed task changed since this board read it. */
+  reorderGuardSupported?: boolean;
   machineId: string;
   machineName: string;
   /** How this desktop addresses the task's project. */
@@ -79,6 +77,10 @@ export type TaskDraft = {
   workspaceLocked?: boolean;
   workspace?: TaskWorkspace;
   id?: string;
+  /** The Host's copy of the task as this edit opened. Edits only: the Host
+   * refuses the save when the task changed elsewhere meanwhile. A create never
+   * has one. Retained by form spreads. */
+  expectedConfiguration?: HostTask;
   /** Stable create receipt, separate from edit mode; retained by form spreads. */
   creation?: { id: string; target?: string; attempted?: boolean };
   /** Explicit host selected by the owner; edits retain their original host. */
@@ -159,9 +161,7 @@ export function todoUnsupportedMessage(
 ): string | undefined {
   const machine = backgroundMachineFor(machines, cwd);
   if (!machine || todoCapable.some((entry) => entry.id === machine.id)) return undefined;
-  return `Update bycoda Host on ${
-    isLocalSyncMachine(machine) ? "this computer" : machine.name
-  } to add to-do items`;
+  return taskClientErrors.todoHost(isLocalSyncMachine(machine) ? t("this computer") : machine.name);
 }
 
 export function newTaskDraft(
@@ -194,8 +194,28 @@ export function newTaskDraft(
   };
 }
 
+/** The Host's own task, without the board's per-machine and capability fields,
+ * which the Host's strict contract refuses. */
+export function hostTaskSnapshot(task: BoardTask): HostTask {
+  const {
+    machineId: _machineId,
+    machineName: _machineName,
+    cwd: _cwd,
+    stale: _stale,
+    evaluationSupported: _evaluationSupported,
+    reorderGuardSupported: _reorderGuardSupported,
+    reviewRecheckSupported: _reviewRecheckSupported,
+    finishWithFindingsSupported: _finishWithFindingsSupported,
+    blockedTakeoverSupported: _blockedTakeoverSupported,
+    workspaceControlsSupported: _workspaceControlsSupported,
+    ...host
+  } = task;
+  return structuredClone(host);
+}
+
 export function draftFromTask(task: BoardTask): TaskDraft {
   return {
+    expectedConfiguration: hostTaskSnapshot(task),
     ...(task.budget ? { budget: task.budget } : {}),
     ...(task.preflightRequirements ? { preflightRequirements: task.preflightRequirements } : {}),
     ...(task.workflowId
@@ -266,7 +286,7 @@ export function hostTaskFromDraft(
   id: string,
   projectId: string,
 ): HostTaskWireInput {
-  if (!isRemoteProvider(draft.harness)) throw new Error(TASK_AGENT_ERROR);
+  if (!isRemoteProvider(draft.harness)) throw new Error(taskClientErrors.agent());
   return {
     id,
     ...("budget" in draft ? { budget: draft.budget ?? {} } : {}),
@@ -484,6 +504,7 @@ export async function listBoardTaskResults(
               blockedTakeoverSupported: capabilities.includes("tasks.blocked-takeover"),
               workspaceControlsSupported: capabilities.includes(HOST_TASK_WORKSPACES),
               evaluationSupported: capabilities.includes("tasks.evaluation"),
+              reorderGuardSupported: capabilities.includes("tasks.reorder-guard"),
             }));
           }
           throw new Error(taskClientErrors.boardChanged());
@@ -573,6 +594,10 @@ export async function saveTask(
         ...hostTaskFromDraft(draft, draft.id ?? creation!.id, project.id),
         // An older host starts every new task queued, and ignores this.
         ...(draft.id ? {} : { status }),
+        // Only an edit compares against what it opened; a create is keyed by its receipt.
+        ...(draft.id && draft.expectedConfiguration
+          ? { expectedConfiguration: draft.expectedConfiguration }
+          : {}),
       },
     },
     false,
@@ -593,7 +618,7 @@ export function taskMachineFor(
 ): RemoteMachine {
   const inferred = backgroundMachineFor(machines, cwd);
   const machine = machineId ? machines.find((entry) => entry.id === machineId) : inferred;
-  if (!machine) throw new Error(TASK_MACHINE_ERROR);
+  if (!machine) throw new Error(taskClientErrors.machine());
   if (!inferred || inferred.id !== machine.id) throw new Error(taskClientErrors.projectOnMachine());
   return machine;
 }
@@ -635,7 +660,7 @@ export async function requireTaskHarnessCapabilities(
   if (!options.budget && !options.preflightRequirements?.length && !clearReviewer) return;
   const capabilities = await machineCapabilities(machine);
   if (clearReviewer && !capabilities.includes(HOST_TASK_REVIEWER_PROFILE))
-    throw new Error(TASK_MACHINE_ERROR);
+    throw new Error(taskClientErrors.machine());
   if (options.budget && !capabilities.includes(TASK_RUN_BUDGET_CAPABILITY))
     throw new Error(taskClientErrors.budgetHost());
   if (options.preflightRequirements?.length && !capabilities.includes(TASK_PREFLIGHT_CAPABILITY))
@@ -696,6 +721,7 @@ function updatedBoardTask(task: BoardTask, updated: HostTask): BoardTask {
     blockedTakeoverSupported: task.blockedTakeoverSupported,
     workspaceControlsSupported: task.workspaceControlsSupported,
     evaluationSupported: task.evaluationSupported,
+    reorderGuardSupported: task.reorderGuardSupported,
   };
 }
 
@@ -749,16 +775,23 @@ export async function reorderTasks(tasks: readonly BoardTask[]): Promise<BoardTa
     "tasks.reorder",
     {
       taskIds: tasks.map((task) => task.id),
+      // The Host places these ids inside its full queue; the revisions reject the
+      // move when another client changed any of them since this board read them.
+      // shortcut: an older Host has no guard and applies the list as sent; it is unguarded until it updates.
+      ...(tasks.every((task) => task.reorderGuardSupported)
+        ? {
+            expectedUpdatedAt: Object.fromEntries(tasks.map((task) => [task.id, task.updatedAt])),
+          }
+        : {}),
     },
     false,
     true,
   );
-  return updated.map((task) =>
-    updatedBoardTask(
-      tasks.find((item) => item.id === task.id)!,
-      task,
-    ),
-  );
+  // The Host also returns hidden tasks whose position it renumbered; the board only holds its own.
+  return updated.flatMap((task) => {
+    const known = tasks.find((item) => item.id === task.id);
+    return known ? [updatedBoardTask(known, task)] : [];
+  });
 }
 
 export async function requireTaskWorkspaces(

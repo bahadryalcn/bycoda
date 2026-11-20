@@ -43,6 +43,14 @@ export interface CloseTabActionDeps {
   rememberRemotePendingWorktree: (sessionId: string) => void;
 }
 
+/** A tab is the same one when its id and the sessions/panes it hosts are unchanged. */
+export function sameTabIdentity(left: WorkspaceTab, right: WorkspaceTab): boolean {
+  return (
+    left.id === right.id &&
+    JSON.stringify(leafIds(left.layout)) === JSON.stringify(leafIds(right.layout))
+  );
+}
+
 /** Close single tabs and batches of tabs, confirming unsaved files and terminals first. */
 export function useCloseTabActions({
   activateTab,
@@ -245,9 +253,7 @@ export function useCloseTabActions({
         const remainingIds = ids.filter((id) => closingIds.has(id));
         if (remainingIds.length === 0) return;
         const latest = tabsRef.current;
-        const sameIdentity = (left: WorkspaceTab, right: WorkspaceTab) =>
-          left.id === right.id &&
-          JSON.stringify(leafIds(left.layout)) === JSON.stringify(leafIds(right.layout));
+        const sameIdentity = sameTabIdentity;
         const latestClosing = latest.filter(
           (tab) =>
             closingIds.has(tab.id) && closing.some((original) => sameIdentity(original, tab)),

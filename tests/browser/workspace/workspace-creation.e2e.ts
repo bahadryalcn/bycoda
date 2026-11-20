@@ -110,8 +110,10 @@ for (const theme of ["light", "dark"]) {
         "Update bycoda Host",
       );
       expect((await expectNoAdmission(page)).submissions).toEqual([]);
-      // The disabled Send control carries the reason in its accessible name.
-      await expect(page.getByRole("button", { name: /^Send\. Update bycoda Host/ })).toBeDisabled();
+      // The disabled Send control keeps its name and carries the reason as its description.
+      const send = page.getByRole("button", { name: "Send", exact: true });
+      await expect(send).toBeDisabled();
+      await expect(send).toHaveAccessibleDescription(/Update bycoda Host/);
       await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
         /Keep the owner's draft/,
       );

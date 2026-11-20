@@ -3,6 +3,7 @@ import { ImageDropZone } from "../../../src/features/settings/ui/appearance/cont
 import { AdvancedSettings, Row } from "../../../src/shared/ui/settings";
 import { AntigravityAccountSettings } from "../../../src/features/settings/ui/AntigravityAccountSettings";
 import { seedProvidersFixture, providersFixtureCommand } from "./settings-providers-fixture";
+import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core/register";
 import { agentDefaultsFixtureCommand } from "./agent-defaults-fixture";
 import { useState } from "react";
 import { VoiceAssistantFixture } from "./voice-assistant-fixture";
@@ -53,6 +54,14 @@ type FixtureEntry = { key: string; version: number; value: unknown };
 const canonicalPage = crypto.randomUUID();
 const canonicalScopes = new Map<string, { revision: number; entries: Map<string, FixtureEntry> }>();
 const canonicalReceipts = new Map<string, { request: string; result: unknown }>();
+if (new URLSearchParams(location.search).get("connections") === "1") {
+  canonicalScopes.set("remote-outbox.v2", {
+    revision: 1,
+    entries: new Map([
+      ["migration:complete", { key: "migration:complete", version: 1, value: true }],
+    ]),
+  });
+}
 function canonicalFixture(command: string, args: Record<string, unknown>): unknown {
   if (command === "canonical_store_page_token") return canonicalPage;
   if (command === "canonical_store_session_guard_ready") return true;
@@ -69,6 +78,9 @@ function canonicalFixture(command: string, args: Record<string, unknown>): unkno
       revision: store.revision,
       entries: (args.keys as string[]).flatMap((key) => (entry(key) ? [entry(key)] : [])),
     });
+  if (scope === "remote-outbox.v2" && command === "canonical_store_list_bounded") {
+    return { revision: store.revision, entries: [], hasMore: false };
+  }
   if (command === "canonical_store_list") {
     if (args.expectedRevision != null && args.expectedRevision !== store.revision)
       throw new Error("Fixture canonical snapshot changed");
@@ -144,8 +156,75 @@ const consentFixture = new Map<
     criticalExclusions: string[];
   }
 >();
+const imageReviewFixture = new URLSearchParams(location.search).has("appearanceImageReview");
+const generationFixture =
+  imageReviewFixture || new URLSearchParams(location.search).has("appearanceGeneration");
+let generatedImageNumber = 0;
+const pendingDrawings = new Map<
+  string,
+  { resolve: (path: { path: string }) => void; reject: (error: Error) => void }
+>();
+if (generationFixture) {
+  window.addEventListener("fixture-complete-appearance-drawings", () => {
+    for (const drawing of pendingDrawings.values())
+      drawing.resolve({ path: `/fixture/image-${++generatedImageNumber}.png` });
+    pendingDrawings.clear();
+  });
+}
 mockIPC(
   (command, args) => {
+    if (generationFixture && command === "add_background_library_image")
+      return {
+        id: String(args.sourcePath),
+        path: String(args.sourcePath),
+        createdMs: generatedImageNumber,
+        bytes: 100,
+        source: "generated",
+        prompt: args.prompt,
+      };
+    if (imageReviewFixture && command === "save_chat_background") return args.sourcePath;
+    if (generationFixture && command === "remote_machines")
+      return [
+        {
+          id: "fixture-appearance-host",
+          environmentId: "fixture-appearance-host",
+          name: "This computer (local sync)",
+          endpoint: "http://127.0.0.1:3777",
+          localHost: true,
+        },
+      ];
+    if (
+      generationFixture &&
+      command === "remote_request" &&
+      String(args.method).startsWith("appearance.")
+    ) {
+      const { generationId } = args.params as { generationId: string };
+      if (args.method === "appearance.themeSuggestions")
+        return {
+          suggestions: [
+            {
+              name: "Alpine",
+              hue: 210,
+              saturation: 24,
+              accent: "#528fea",
+              imagePrompt: "Mountain silhouettes",
+            },
+            { name: "Haze", hue: 270, saturation: 18, accent: "#aa80d9" },
+          ],
+        };
+      if (args.method === "appearance.backgroundImage" && imageReviewFixture)
+        return { path: `/fixture/image-${++generatedImageNumber}.png` };
+      if (args.method === "appearance.backgroundImage")
+        return new Promise<{ path: string }>((resolve, reject) =>
+          pendingDrawings.set(generationId, { resolve, reject }),
+        );
+      if (args.method === "appearance.cancelGeneration") {
+        const cancel = pendingDrawings.get(generationId);
+        pendingDrawings.delete(generationId);
+        cancel?.reject(new Error("Cancelled"));
+        return { cancelled: Boolean(cancel) };
+      }
+    }
     if (command === "assistant_consent_get")
       return structuredClone(consentFixture.get(String(args.environmentId)) ?? null);
     if (command === "assistant_consent_set") {
@@ -494,44 +573,50 @@ mockIPC(
             endpoint: "https://cloud.example.com",
           },
         );
-        const routeSet: Record<string, unknown> = {
-          "fixture-remote": {
-            prefer: "saved",
-            active: "192.168.1.30",
-            routes: [
-              { address: "owner@studio.local", kind: "name", source: "saved", enabled: true },
-              { address: "100.97.82.4", kind: "tailscale", source: "other", enabled: true },
-              { address: "192.168.1.30", kind: "lan", source: "reported", enabled: true },
-            ],
-          },
-          "fixture-cloud": {
-            prefer: "saved",
-            active: "calm-river.trycloudflare.com",
-            routes: [
-              {
-                address: "calm-river.trycloudflare.com",
-                kind: "tunnel",
-                source: "account",
-                enabled: true,
-              },
-            ],
-          },
-        };
-        if (command === "remote_machine_routes") {
-          const id = args.machineId as string;
-          return (
-            routeSet[id] ?? {
-              prefer: "saved",
-              active: null,
-              routes: [
-                { address: "192.168.1.40", kind: "lan", source: "saved", enabled: true },
-                { address: "100.97.82.9", kind: "tailscale", source: "reported", enabled: true },
-              ],
-            }
-          );
-        }
-        if (command === "remote_machine_route_check") return [];
       }
+      const routeSet: Record<string, unknown> = {
+        "fixture-remote": {
+          prefer: "saved",
+          active: "192.168.1.30",
+          routes: [
+            { address: "owner@studio.local", kind: "name", source: "saved", enabled: true },
+            { address: "100.97.82.4", kind: "tailscale", source: "other", enabled: true },
+            { address: "192.168.1.30", kind: "lan", source: "reported", enabled: true },
+          ],
+        },
+        "fixture-cloud": {
+          prefer: "saved",
+          active: "calm-river.trycloudflare.com",
+          routes: [
+            {
+              address: "calm-river.trycloudflare.com",
+              kind: "tunnel",
+              source: "account",
+              enabled: true,
+            },
+          ],
+        },
+      };
+      if (command === "remote_machine_routes") {
+        const id = args.machineId as string;
+        return (
+          routeSet[id] ?? {
+            prefer: "saved",
+            active: null,
+            routes: [
+              { address: "192.168.1.40", kind: "lan", source: "saved", enabled: true },
+              { address: "100.97.82.9", kind: "tailscale", source: "reported", enabled: true },
+            ],
+          }
+        );
+      }
+      if (command === "remote_machine_route_check")
+        return statusFixture
+          ? []
+          : [
+              { address: "100.97.82.4", reachable: false },
+              { address: "192.168.1.30", reachable: true },
+            ];
       // Machines found on this computer that are not added yet, for the Add list.
       if (command === "discover_machine_candidates")
         return [
@@ -642,6 +727,8 @@ mockIPC(
                 ? ["tunnels.manage"]
                 : [
                     "workspace.run",
+                    "workspaces.managed.v1",
+                    "workspaces.policy.v1",
                     "git.worktreeCreate",
                     "tunnels.manage",
                     "devices.paired",
@@ -823,8 +910,30 @@ if (new URLSearchParams(location.search).has("libraryProbe")) {
   (window as any).__TAURI_INTERNALS__.convertFileSrc = () =>
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
 }
+if (generationFixture) {
+  (window as any).__TAURI_INTERNALS__.convertFileSrc = (path: string) => {
+    const second = path.includes("image-2");
+    const sky = second ? "#3a645f" : "#253856";
+    const mountains = second ? "#172c32" : "#101b36";
+    return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><path fill="${sky}" d="M0 0h1280v720H0z"/><circle fill="#e3c59e" cx="965" cy="225" r="82"/><path fill="${mountains}" d="M0 545 282 276l212 218 286-327 500 383v170H0z"/><path fill="#121f28" d="m0 624 331-129 145 87 304-109 500 177v70H0z"/></svg>`)}`;
+  };
+}
 
 seedProvidersFixture();
+if (generationFixture) {
+  registerBuiltinHarnesses();
+  writeGeneratorValue("choice", { harness: "codex", model: "codex:auto" }, undefined);
+  writeGeneratorValue("roleInitialized", true, false);
+  writeGeneratorValue(
+    "suggestions",
+    [
+      { name: "Meadow", hue: 140, saturation: 24, accent: "#69b68e" },
+      { name: "Bay", hue: 190, saturation: 32, accent: "#51b9dc" },
+    ],
+    [],
+  );
+  writeGeneratorValue("withImage", true, false);
+}
 if (new URLSearchParams(location.search).has("generatorSuggestions")) {
   writeGeneratorValue(
     "suggestions",

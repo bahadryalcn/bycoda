@@ -2,7 +2,10 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-vi.mock("../../../shared/i18n", () => ({ t: (value: string) => value }));
+vi.mock("../../../shared/i18n", () => ({
+  t: (value: string) => value,
+  useT: () => (value: string) => value,
+}));
 import { AssistantKeepAwakeStatus, keepAwakeLabel } from "./AssistantKeepAwakeStatus";
 it("does not claim native activation from a requested policy and retains native errors", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

@@ -86,7 +86,7 @@ pub async fn account_sign_in_start() -> Result<SignInStart, AccountError> {
         let runtime = runtime()?;
         let client_id = runtime.config.require_client_id()?.to_string();
         let endpoints = runtime.backend.endpoints().map_err(|error| match error {
-            TokenError::Network => AccountError::offline(),
+            TokenError::Network(reason) => AccountError::offline_because(reason),
             TokenError::InvalidGrant => AccountError::not_configured(),
             TokenError::Failed(message) => AccountError::new(ErrorKind::Unavailable, message),
         })?;

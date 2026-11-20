@@ -282,7 +282,7 @@ mockIPC(
           throw new Error("IMAP login failed: the server rejected the saved app password.");
         return threads.filter((item) => item.accountId === args.accountId);
       case "messaging_thread_messages":
-        return threadMessages(String(args.accountId), String(args.threadId));
+        return { messages: threadMessages(String(args.accountId), String(args.threadId)) };
       case "messaging_microsoft_device_start":
         return {
           handle: "fixture-device-handle",

@@ -119,14 +119,71 @@ export function saveAgentDefaultConfirmed<K extends keyof AgentDefaults>(
   );
 }
 
+const POLL_MS = 5000;
+const MAX_IDLE_POLL_MS = 30_000;
+const MAX_FAILED_POLL_MS = 60_000;
+
+/** Delay before the next poll: grows while the Host version is unchanged or unreachable. */
+function nextAgentDefaultsPollDelay(unchanged: number, failures: number): number {
+  if (failures) return Math.min(POLL_MS * 2 ** Math.min(failures, 16), MAX_FAILED_POLL_MS);
+  return Math.min(POLL_MS * 2 ** Math.min(unchanged, 16), MAX_IDLE_POLL_MS);
+}
+
 registerAgentDefaultsSync({
+  /**
+   * Runs only while something subscribes. Initial hydration runs at once, polling pauses while
+   * the window is hidden, backs off while idle or failing, and a window that becomes visible or
+   * focused catches up immediately.
+   */
   start() {
     if (typeof window === "undefined" || !isTauri()) return () => {};
-    queue = queue.then(refresh).catch(() => {});
-    const timer = setInterval(() => {
-      queue = queue.then(refresh).catch(() => {});
-    }, 5000);
-    return () => clearInterval(timer);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let unchanged = 0;
+    let failures = 0;
+    const plan = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      if (stopped || document.hidden) return;
+      // A window hidden after this timer was planned skips the read; `catchUp` resumes it.
+      timer = setTimeout(
+        () => {
+          if (!document.hidden) void poll();
+        },
+        nextAgentDefaultsPollDelay(unchanged, failures),
+      );
+    };
+    const poll = async () => {
+      clearTimeout(timer);
+      timer = undefined;
+      const before = agentDefaultsSnapshot()?.version;
+      const run = queue.then(refresh);
+      queue = run.catch(() => {});
+      try {
+        await run;
+        failures = 0;
+        unchanged = agentDefaultsSnapshot()?.version === before ? unchanged + 1 : 0;
+      } catch {
+        // Unreachable or incapable Host: back off; saves and initialization still report.
+        failures++;
+      }
+      plan();
+    };
+    const catchUp = () => {
+      if (stopped || document.hidden) return;
+      unchanged = 0;
+      failures = 0;
+      void poll();
+    };
+    document.addEventListener("visibilitychange", catchUp);
+    window.addEventListener("focus", catchUp);
+    void poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", catchUp);
+      window.removeEventListener("focus", catchUp);
+    };
   },
   save: saveAgentDefaultConfirmed,
 });

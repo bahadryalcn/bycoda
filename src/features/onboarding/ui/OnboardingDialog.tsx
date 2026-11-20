@@ -32,6 +32,7 @@ import {
   FolderPlus,
 } from "../../../shared/ui/icons";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { BrandMark } from "../../../shared/ui/BrandMark";
 const ConnectionsSettings = lazy(() =>
   import("../../connections/ui/ConnectionsSettings").then((module) => ({
     default: module.ConnectionsSettings,
@@ -113,7 +114,9 @@ export default function OnboardingDialog({
     [],
   );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  // Language-change failures belong to the language picker, not to the step body.
+  const [languageError, setLanguageError] = useState("");
+  const languageAttempt = useRef(0);
   const body = useRef<HTMLDivElement>(null);
   const previousStep = useRef(step);
   const { machines } = useRemoteMachines();
@@ -121,6 +124,9 @@ export default function OnboardingDialog({
   const goTo = (next: number) => {
     if (busy) return;
     if (current === "Account") markAccountStepSeen();
+    // Moving on ends the previous outcome; a late reply to an older attempt must not reappear.
+    languageAttempt.current += 1;
+    setLanguageError("");
     setVisited((seen) => new Set([...seen, steps[next]]));
     setCurrentId(steps[next]);
   };
@@ -148,7 +154,7 @@ export default function OnboardingDialog({
         <header {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "onboarding-header")}>
           <div className="onboarding-topline">
             <div className="onboarding-brand">
-              <img src={PRODUCT_IDENTITY.logoSrc} alt="" />
+              <BrandMark />
               <span>{PRODUCT_IDENTITY.displayName}</span>
               <small {...surfaceAttributes({ frame: "pane", edge: "inline-start" })}>
                 {t("Quick setup")}
@@ -167,12 +173,18 @@ export default function OnboardingDialog({
                   value={getLanguagePreference()}
                   options={[{ value: "system", label: t("System language") }, ...LANGUAGES]}
                   onValueChange={(value) => {
-                    if (value === "system" || isLocale(value))
-                      void setLanguagePreference(value).catch((reason) => setError(String(reason)));
+                    if (value !== "system" && !isLocale(value)) return;
+                    const attempt = ++languageAttempt.current;
+                    setLanguageError("");
+                    void setLanguagePreference(value).catch((reason) => {
+                      // Only the newest language change may report; an older reply is stale.
+                      if (attempt === languageAttempt.current) setLanguageError(String(reason));
+                    });
                   }}
                 />
               </div>
             </div>
+            {languageError ? <Alert tone="danger">{languageError}</Alert> : null}
           </div>
           <div className="onboarding-stepper-wrap">
             <Stepper
@@ -190,7 +202,6 @@ export default function OnboardingDialog({
         {current !== "Projects" ? (
           <div className="onboarding-stage">
             <div className="onboarding-body" key={step}>
-              {error ? <Alert tone="danger">{error}</Alert> : null}
               {current === "Account" ? <OnboardingAccount /> : null}
               {current === "Statistics" ? <OnboardingStatistics /> : null}
               {current === "Workspace" ? <OnboardingWorkspace /> : null}
@@ -264,7 +275,7 @@ export default function OnboardingDialog({
           harness={signIn.provider}
           accountId={signIn.accountId}
           onClose={() => setSignIn(null)}
-          completeDescription="Your agent is connected. Continue setting up your workspace."
+          completeDescription={t("Your agent is connected. Continue setting up your workspace.")}
           onSignedIn={() =>
             setSignedIn(
               (current) =>
@@ -394,6 +405,10 @@ function Projects({
     }
   };
   const busy = importing || adding;
+  const importStatus = t("Importing conversations: {p0} / {p1}", {
+    p0: progress?.done ?? 0,
+    p1: progress?.total ?? 0,
+  });
   const listing = !loading && !summary && !importing;
   const empty = listing && !error && folders.length === 0;
   const chooseFolders = (
@@ -419,10 +434,7 @@ function Projects({
         />
         <div className="onboarding-scroll">
           {error ? (
-            <Alert tone="danger">
-              {t("Could not complete this action: ")}
-              {error}
-            </Alert>
+            <Alert tone="danger">{t("Could not complete this action: {p0}", { p0: error })}</Alert>
           ) : null}
           {loading ? (
             <div className="onboarding-scan">
@@ -572,15 +584,13 @@ function Projects({
           {importing ? (
             <div>
               <Progress
-                label={t("Importing conversations: ")}
+                aria-valuetext={importStatus}
                 value={progress?.total ? progress.done : undefined}
                 max={progress?.total || 1}
                 compact
               />
               <Text as="p" size="inherit" tone="muted" leading="normal">
-                <LiveText
-                  text={`${t("Importing conversations: ")}${progress?.done ?? 0} / ${progress?.total ?? 0}`}
-                />
+                <LiveText text={importStatus} />
               </Text>
               <Button onClick={() => abort.current?.abort()} variant="secondary" type="button">
                 {t("Stop import")}
@@ -677,21 +687,18 @@ function Projects({
           </Button>
         }
       >
-        {!summary && selected.size ? (
-          <Button disabled={busy} onClick={onFinish} variant="ghost" type="button">
-            {t("Skip import")}
-          </Button>
-        ) : null}
+        <Button disabled={busy || !!summary} onClick={onFinish} variant="ghost" type="button">
+          {t("Skip import")}
+        </Button>
         <Button
-          disabled={busy}
+          disabled={busy || (!summary && !selected.size)}
           loading={importing}
-          onClick={summary || !selected.size ? onFinish : () => void start()}
+          onClick={summary ? onFinish : () => void start()}
+          reserveLabels={[t("Finish setup"), t("Import {p0} projects", { p0: folders.length })]}
           variant="primary"
           type="button"
         >
-          {summary || !selected.size
-            ? t("Finish setup")
-            : t("Import {p0} projects", { p0: selected.size })}
+          {summary ? t("Finish setup") : t("Import {p0} projects", { p0: selected.size })}
         </Button>
       </OnboardingFooter>
     </>

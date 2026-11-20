@@ -9,6 +9,10 @@ repository, using that Host's Git model routing and provider accounts. They neve
 fall back to a local provider when the remote Host is unavailable. Stopping
 generation dismisses the pending result; the Host call retains its 90-second
 provider deadline. Edited drafts and changed staged content remain protected.
+The arrow beside **Generate commit message** opens the model picker with the
+selected model's supported effort and speed controls. The choice is saved per
+checkout and applies to commit messages. **Automatic** clears the commit-specific
+choice. Remote checkouts list models from their own Host.
 
 Linked workspace repository lists include every declared folder, including `.`
 when the containing folder is itself a repository. Root and nested repositories
@@ -46,12 +50,12 @@ target. A single review target shows its Stashes and Graph sections below its ch
 All repositories and All checkouts show one Stashes and Graph below the rows instead
 of one per row: Auto follows the repository you last used in the list, and the
 selector in the Graph header shows the active repository even when collapsed and
-switches to another repository. The full Commit Graph offers the same selector;
+switches to another repository. The full Commit graph offers the same selector;
 when Graph is hidden, it appears above Stashes. Right-click an empty part of the Git panel to show or
 hide Stashes and Graph in every panel, or to switch Auto Fetch. The Changes tab totals include discovered child repositories in All
 checkouts and wait for every target's reading before showing a complete total.
 
-In narrow Commit Graph windows, reopening Branches keeps the commit inspector visible; the commit column yields space while branch and file controls stay reachable.
+In narrow Commit graph windows, reopening Branches keeps the commit inspector visible; the commit column yields space while branch and file controls stay reachable.
 
 Repository discovery includes initialized submodules and independent repositories
 inside the selected checkout, including ignored source folders such as a separate
@@ -60,8 +64,11 @@ including `.pnpm-store`, Python environments (`.venv`, `venv`, `__pycache__`),
 generated `.artifacts` and `.local-data` trees. These trees do not consume the
 discovery budget; explicitly selected repositories and initialized submodules
 inside them remain accessible.
-Discovery is bounded; an access or limit error keeps the previous inventory and
-offers Refresh rather than presenting an incomplete scan as an empty result.
+Discovery is bounded. When a scan reaches its size limit (files, folders, depth or
+repository count), the repositories found so far stay listed and the panel shows
+"Repositories found: N (scan limited)"; All-checkout change totals stay unknown
+because they would be incomplete. A timeout or access error keeps the previous
+inventory and offers Refresh rather than presenting an incomplete scan as an empty result.
 
 When All repositories lists a submodule as its own row, the parent's change list
 leaves out that submodule's pointer (gitlink) change and the submodule row shows it
@@ -87,6 +94,8 @@ as in the file menu. Row actions appear on hover, keyboard focus or selection an
 remain available on touch devices. Discard keeps its confirmation and selected-entry
 scope. File names take priority over directory labels; added/removed line counts
 stay together, and the full relative path is available on the file tooltip.
+Each changes list is a single Tab stop: Up/Down/Home/End move between files and
+folders, and Right/Left move across a row's open, Discard, Stage and More controls.
 
 The commit field retains its checkout draft. Message generation remains cancellable
 and allows staging. Commit variants are unavailable while generation is pending;
@@ -97,9 +106,16 @@ action, without a separate model settings menu. Saved legacy checkout selections
 remain available as a fallback when global model routing is unavailable. Account
 selection is resolved when generation runs.
 
+If pull request text can't be generated (signed-out provider, quota, timeout or an
+unusable reply), **Create PR** stops without creating anything and shows a short
+message with **Retry**. **Create with commit summary** publishes the branch's commit
+list instead, only when you choose it; provider error text is not shown.
+
 While there are changes, the main button is **Commit**: it commits what is staged,
 or every change when nothing is staged (amending never adds unstaged files). It
-never pushes. **Commit & Push** and **Commit, Push & Create PR** are in its menu.
+never pushes. After a successful regular commit, a tracked branch shows the
+updated outgoing commit count while Git refreshes the full status.
+**Commit & Push** and **Commit, Push & Create PR** are in its menu.
 Pending outgoing or incoming commits keep their own **Push**, **Pull**, **Sync
 Changes** or **Publish Branch** button beside it. With nothing to commit, that sync,
 Create PR or View PR action leads instead.

@@ -348,6 +348,13 @@ export function MessageQueue({
       : restored
         ? "restored"
         : "summary";
+  // Why a queue action is off while a send or a session checkpoint is in progress. Only
+  // `disabledReason` uses these; every `disabled` condition below is unchanged.
+  const sendingReason =
+    pendingAction || pendingDelivery ? t("Unavailable while the queue is sending") : undefined;
+  const busyReason = queueClosed
+    ? t("Unavailable while the session checkpoint is prepared")
+    : sendingReason;
   const canSend = (message: QueuedMessage) =>
     canSendQueueMessage(message, {
       blocked:
@@ -372,9 +379,6 @@ export function MessageQueue({
   };
   return (
     <Text as="div" size="inherit" tone="secondary" data-message-queue data-usage-guide="queue">
-      {queueClosed ? (
-        <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
-      ) : null}
       <div
         {...surfaceAttributes(
           { radius: "dock-top", variant: "floating", material: "glass" },
@@ -384,10 +388,19 @@ export function MessageQueue({
         ref={card}
       >
         {paused ? (
-          <Text as="div" size="caption" tone="inherit" className="mb-1 flex h-7 items-center gap-2">
-            <Pause className="icon-sm" />
+          <Text
+            as="div"
+            size="caption"
+            tone="inherit"
+            className="mb-1 flex min-h-(--ui-control-height-compact) flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            <Pause className="icon-sm shrink-0" />
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
-            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+            <Text
+              size="inherit"
+              tone="inherit"
+              className="min-w-0 flex-1 basis-40 [overflow-wrap:anywhere]"
+            >
               {(delivery &&
                 (delivery.stage === "rejected" ||
                   delivery.stage === "unknown" ||
@@ -417,6 +430,19 @@ export function MessageQueue({
                 (hold.kind === "held" && hold.reason === "unknown") ||
                 hasMissingAttachment(messages[0])
               }
+              disabledReason={
+                sendingReason ??
+                // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
+                (hold.kind === "held" && hold.reason === "unknown"
+                  ? t("Delivery is not confirmed. Automatic resend is held.")
+                  : hasMissingAttachment(messages[0])
+                    ? t("Attachment missing")
+                    : !onResume
+                      ? t(
+                          "This queue action is unavailable. Reopen the conversation and try again.",
+                        )
+                      : undefined)
+              }
               loading={pendingAction === "resume"}
               loadingLabel={t("Resuming…")}
               onClick={() => trigger("resume", onResume)}
@@ -432,11 +458,15 @@ export function MessageQueue({
             as="div"
             size="caption"
             tone="inherit"
-            className="mb-1 flex h-7 items-center gap-2"
+            className="mb-1 flex min-h-(--ui-control-height-compact) flex-wrap items-center gap-x-2 gap-y-1"
             data-queue-held-elsewhere
           >
-            <Pause className="icon-sm" />
-            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+            <Pause className="icon-sm shrink-0" />
+            <Text
+              size="inherit"
+              tone="inherit"
+              className="min-w-0 flex-1 basis-40 [overflow-wrap:anywhere]"
+            >
               {activeFeedback && !activeFeedback.error
                 ? activeFeedback.text
                 : t("Queue held by another window, which sends it")}
@@ -448,6 +478,7 @@ export function MessageQueue({
               variant="ghost"
               type="button"
               disabled={queueClosed || !!pendingAction || pendingDelivery}
+              disabledReason={busyReason}
               loading={pendingAction === "takeover"}
               loadingLabel={t("Taking over…")}
               onClick={() => trigger("takeover", () => takeOverSharedLocalQueue(sessionId))}
@@ -458,10 +489,19 @@ export function MessageQueue({
           </Text>
         ) : null}
         {restored ? (
-          <Text as="div" size="caption" tone="inherit" className="mb-1 flex h-7 items-center gap-2">
-            <Pause className="icon-sm" />
+          <Text
+            as="div"
+            size="caption"
+            tone="inherit"
+            className="mb-1 flex min-h-(--ui-control-height-compact) flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            <Pause className="icon-sm shrink-0" />
             <DeliveryProgressIndicator sessionId={sessionId} />
-            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+            <Text
+              size="inherit"
+              tone="inherit"
+              className="min-w-0 flex-1 basis-40 [overflow-wrap:anywhere]"
+            >
               {messages.length === 1
                 ? t("1 queued message restored")
                 : t("{p0} queued messages restored", { p0: messages.length })}
@@ -479,6 +519,17 @@ export function MessageQueue({
                 delivery?.stage === "unknown" ||
                 hasMissingAttachment(messages[0]) ||
                 (!onResume && !canSend(messages[0]))
+              }
+              disabledReason={
+                sendingReason ??
+                (messages.some((message) => message.deliveryUnknown) ||
+                delivery?.stage === "unknown"
+                  ? t("Delivery is not confirmed. Automatic resend is held.")
+                  : hasMissingAttachment(messages[0])
+                    ? t("Attachment missing")
+                    : !onResume && !canSend(messages[0])
+                      ? (busyReason ?? t("Queue is waiting for the current turn to finish."))
+                      : undefined)
               }
               loading={pendingAction === "resume"}
               loadingLabel={t("Resuming…")}
@@ -506,13 +557,17 @@ export function MessageQueue({
               {t("Queue")} · {messages.length}
             </span>
             {activeFeedback && !activeFeedback.error ? (
-              <Text size="inherit" tone="inherit" truncate>
-                {activeFeedback.text}
-              </Text>
+              <OverflowTooltip label={activeFeedback.text}>
+                <Text size="inherit" tone="inherit" truncate tabIndex={0}>
+                  {activeFeedback.text}
+                </Text>
+              </OverflowTooltip>
             ) : waitingOnSubagents ? (
-              <Text size="inherit" tone="inherit" truncate>
-                {t("Sends when the subagents finish")}
-              </Text>
+              <OverflowTooltip label={t("Sends when the subagents finish")}>
+                <Text size="inherit" tone="inherit" truncate tabIndex={0}>
+                  {t("Sends when the subagents finish")}
+                </Text>
+              </OverflowTooltip>
             ) : null}
             {reopenIn === "summary" ? (
               <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
@@ -544,6 +599,7 @@ export function MessageQueue({
                   message={message}
                   itemRef={(node) => sortable.setItemRef(message.id, node)}
                   disabled={queueClosed || !!pendingAction || pendingDelivery}
+                  disabledReason={busyReason}
                   onRemove={() => removeMessage(message.id)}
                 />
               );
@@ -604,12 +660,12 @@ export function MessageQueue({
                   disabled={
                     messages.length < 2 || queueClosed || !!pendingAction || pendingDelivery
                   }
+                  disabledReason={messages.length < 2 ? undefined : busyReason}
                   variant="ghost"
                   type="button"
                   data-queue-handle={message.id}
                   tooltip={t("Drag to reorder")}
                   shortcut="Alt+↑ / Alt+↓"
-                  aria-label={t("Reorder queued message")}
                   aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                   onPointerDown={(event) => {
                     if (messages.length < 2 || event.button !== 0) return;
@@ -641,20 +697,14 @@ export function MessageQueue({
                     </Text>
                   </OverflowTooltip>
                   {attachmentGone ? (
-                    <Tooltip
-                      label={t(
-                        "An attached file is gone. Edit this message to drop it, or remove the message.",
-                      )}
-                      asChild
+                    <Text
+                      size="inherit"
+                      tone="warning"
+                      className="block [overflow-wrap:anywhere]"
+                      data-queue-attachment-missing
                     >
-                      <Text
-                        size="inherit"
-                        tone="warning"
-                        className="block [overflow-wrap:anywhere]"
-                      >
-                        {t("Attachment missing")}
-                      </Text>
-                    </Tooltip>
+                      {t("Attachment missing")} · {t("Edit to drop it, or remove the message.")}
+                    </Text>
                   ) : null}
                   {target && targetLabel ? (
                     <Text
@@ -688,9 +738,27 @@ export function MessageQueue({
                       variant="ghost"
                       type="button"
                       disabled={!canSend(message)}
+                      disabledReason={
+                        busyReason ??
+                        (message.deliveryUnknown ||
+                        (delivery?.messageId === message.id && delivery.stage === "unknown")
+                          ? t("Delivery is not confirmed. Automatic resend is held.")
+                          : attachmentGone
+                            ? t("Attachment missing")
+                            : busy &&
+                                (message.intent === "plan" || message.intent === "orchestrate")
+                              ? t(
+                                  "New messages wait until this turn finishes. Stop pauses the queue.",
+                                )
+                              : busy && !steerSupported && route === "join"
+                                ? t(
+                                    "This host cannot steer the active turn. The message remains queued.",
+                                  )
+                                : undefined)
+                      }
                       tooltip={
                         busy && (message.intent === "plan" || message.intent === "orchestrate")
-                          ? t("New messages wait until this turn finishes. Stop pauses the queue.")
+                          ? undefined
                           : route === "switch"
                             ? t(
                                 "Steer stops the running turn, including its background work, and continues this conversation on the saved provider, as switching provider in the composer does.",
@@ -718,9 +786,9 @@ export function MessageQueue({
                     iconOnly
                     label={t("Edit queued message")}
                     disabled={queueClosed || !!pendingAction || pendingDelivery}
+                    disabledReason={busyReason}
                     variant="ghost"
                     type="button"
-                    aria-label={t("Edit queued message")}
                     onClick={() => startEdit(message)}
                     className="shrink-0"
                   >
@@ -731,6 +799,7 @@ export function MessageQueue({
                     iconOnly
                     label={t("Remove queued message")}
                     disabled={queueClosed || !!pendingAction || pendingDelivery}
+                    disabledReason={busyReason}
                     onClick={() => removeMessage(message.id)}
                   >
                     <Trash2 className="icon-sm" />
@@ -747,6 +816,7 @@ export function MessageQueue({
             onUndo={() => perform(`undo:${entry.id}`, entry.undo).then((value) => value === true)}
             onDismiss={dismissRemoval}
             disabled={queueClosed || !!pendingAction || pendingDelivery}
+            disabledReason={busyReason}
           />
         ))}
         {!delivery && activeFeedback?.error ? (

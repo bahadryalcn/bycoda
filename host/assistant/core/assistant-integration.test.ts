@@ -42,6 +42,8 @@ async function fixture(extra: AssistantPorts = {}) {
     store = new HostStore(path);
     await store.ready;
     tasks = new HostTasks(store, engine, () => clock.now);
+    // The fixture supplies child states and sessions. Let the scheduler reconcile them without launching workers.
+    tasks.assistantTaskAdmission = async () => false;
     goals = new HostGoals(store, engine, tasks, () => clock.now);
     await goals.ready;
     service = new HostAssistant(store, {
@@ -361,19 +363,18 @@ it("keeps a blocked goal recoverable and follows running children while its job 
   const noon = new Date(f.clock.now);
   noon.setHours(12, 0, 0, 0);
   f.clock.now = noon.getTime();
-  const { job, goal, task } = await f.seed();
+  const { job, task } = await f.seed();
   task.status = "blocked";
   await f.saveTask(task);
   await f.configure("jobs", { keepAwakeWhileWorking: true, keepAwakeWhileAway: false });
+  await f.goals.tick();
   await f.service.tick();
   expect((await f.job(job.id)).status).toBe("waiting");
   task.status = "queued";
-  goal.status = "running";
-  await f.saveTask(task);
-  await f.saveGoal(goal);
   await f.saveSession("worker", 100, "running");
   task.sessionId = "worker";
   await f.saveTask(task);
+  await f.goals.tick();
   await f.service.tick();
   let current = await f.job(job.id);
   expect(current.status).toBe("running");
@@ -549,6 +550,7 @@ it("simulates five unattended jobs, actual usage thresholds, restart, and indepe
     await f.saveTask(entry.task);
   }
   await f.configure("chief");
+  await f.goals.tick();
   await f.service.tick();
   expect((await f.job(jobs[2].job.id)).status).toBe("waiting");
   expect((await f.job(jobs[1].job.id)).status).toBe("waiting");

@@ -58,6 +58,7 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
     .value;
   const etag = await f.tasks.changeEtag(),
     revision = await f.tasks.revision();
+  await f.tasks.list();
   const projection = vi.spyOn(assistantTaskMetadata, "withAssistantTaskMetadata");
   await f.tasks.list();
   await f.tasks.list();
@@ -78,9 +79,10 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
   await f.tasks.assistantFollowupsChanged();
   expect(changed).toHaveBeenCalledOnce();
   expect(await f.tasks.revision()).toBeGreaterThan(revision);
-  expect(await f.tasks.changeEtag()).not.toBe(etag);
-  expect((await f.tasks.list())[0].assistantFollowups).toEqual({ delivered: 1, unconfirmed: 0 });
   const deliveredEtag = await f.tasks.changeEtag();
+  expect(deliveredEtag).not.toBe(etag);
+  expect(projection).not.toHaveBeenCalled();
+  expect((await f.tasks.list())[0].assistantFollowups).toEqual({ delivered: 1, unconfirmed: 0 });
   expect(projection).toHaveBeenCalledOnce();
   projection.mockRestore();
   // Canonical source membership can change without touching a task or receipt.
@@ -89,13 +91,15 @@ it("refreshes read-only assistant follow-up metadata and board ETags without rew
       "UPDATE goals SET value=json_set(value,'$.taskIds',json('[]')) WHERE id='assistant-job'",
     )
     .run();
-  expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   expect(await f.tasks.changeEtag()).not.toBe(deliveredEtag);
+  expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   await f.store.db
     .prepare("UPDATE goals SET value=json_set(value,'$.taskIds',json(?)) WHERE id='assistant-job'")
     .run(JSON.stringify([task.id]));
   expect((await f.tasks.list())[0].assistantFollowups?.delivered).toBe(1);
+  expect(await f.tasks.changeEtag()).toBe(deliveredEtag);
   await f.store.db.prepare("UPDATE assistant_jobs SET deleted_at=1 WHERE id='job'").run();
+  expect(await f.tasks.changeEtag()).not.toBe(deliveredEtag);
   expect((await f.tasks.list())[0].assistantFollowups).toBeUndefined();
   expect((await f.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(task.id))!.value).toBe(
     original,
@@ -257,12 +261,19 @@ it("releases assistant hours and budget holds independently while preserving an 
   await f.store.db
     .prepare("UPDATE tasks SET value=json_set(value,'$.goalId','assistant-goal') WHERE id='main'")
     .run();
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-budget", true);
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-hours", true);
+  await f.tasks.syncGoalPauseReason("assistant-budget", ["assistant-goal"]);
+  await f.tasks.syncGoalPauseReason("assistant-hours", ["assistant-goal", "historical-goal"]);
+  const transaction = vi.spyOn(f.store, "transaction");
+  await f.tasks.syncGoalPauseReason("assistant-hours", ["assistant-goal", "historical-goal"]);
+  expect(transaction).not.toHaveBeenCalled();
   await f.tasks.setGoalPaused("assistant-goal", true);
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-budget", false);
+  await f.tasks.syncGoalPauseReason("assistant-budget", []);
   await expect(f.tasks.startTask("main")).rejects.toThrow("goal is paused");
-  await f.tasks.setGoalPauseReason("assistant-goal", "assistant-hours", false);
+  transaction.mockClear();
+  await f.tasks.syncGoalPauseReason("assistant-hours", []);
+  expect(transaction).toHaveBeenCalledTimes(1);
+  expect(await f.tasks.goalExecutionAllowed("historical-goal")).toBe(true);
+  transaction.mockRestore();
   await expect(f.tasks.startTask("main")).rejects.toThrow("goal is paused");
   expect(
     await f.store.db
@@ -1789,6 +1800,50 @@ describe("explicit task workspaces and owner controls", () => {
     expect((await tasks.get("two"))?.position).toBe(0);
     expect((await tasks.get("one"))?.position).toBe(1);
   });
+  it("keeps unlisted tasks in place when a client reorders only the tasks it can see", async () => {
+    const { tasks, input, clock } = await setup();
+    for (const id of ["a", "hidden", "c"]) await tasks.save(input({ id }));
+    await tasks.reorder(["a", "hidden", "c"]);
+    const before = await tasks.get("hidden");
+    clock.now += 1000;
+    await tasks.reorder(["c", "a"]);
+    expect(await tasks.get("c")).toMatchObject({ position: 0 });
+    expect(await tasks.get("hidden")).toEqual(before);
+    expect(await tasks.get("a")).toMatchObject({ position: 2 });
+    // A task another client added after this client read the board stays last.
+    await tasks.save(input({ id: "late" }));
+    await tasks.reorder(["a", "c"]);
+    expect((await tasks.get("a"))?.position).toBe(0);
+    expect((await tasks.get("hidden"))?.position).toBe(1);
+    expect((await tasks.get("c"))?.position).toBe(2);
+    expect((await tasks.get("late"))?.position ?? Infinity).toBeGreaterThan(2);
+  });
+  it("rejects a reorder built from a stale revision and leaves the queue untouched", async () => {
+    const { tasks, input, clock } = await setup();
+    for (const id of ["one", "two"]) await tasks.save(input({ id }));
+    await tasks.reorder(["one", "two"]);
+    const one = (await tasks.get("one"))!;
+    const two = (await tasks.get("two"))!;
+    const seen = { one: one.updatedAt, two: two.updatedAt };
+    // Another client reorders first; its write changes both revisions.
+    clock.now += 1000;
+    await tasks.reorder(["two", "one"]);
+    clock.now += 1000;
+    await expect((async () => await tasks.reorder(["one", "two"], seen))()).rejects.toThrow(
+      "changed",
+    );
+    expect((await tasks.get("two"))?.position).toBe(0);
+    expect((await tasks.get("one"))?.position).toBe(1);
+    await expect(
+      (async () => await tasks.reorder(["one", "two"], { one: seen.one }))(),
+    ).rejects.toThrow("Invalid task order");
+    const fresh = {
+      one: (await tasks.get("one"))!.updatedAt,
+      two: (await tasks.get("two"))!.updatedAt,
+    };
+    await tasks.reorder(["one", "two"], fresh);
+    expect((await tasks.get("one"))?.position).toBe(0);
+  });
 });
 describe("host tasks", () => {
   it("transfers only fresh independent unstarted tasks while retaining their id", async () => {
@@ -1832,23 +1887,45 @@ describe("host tasks", () => {
       "Project is not registered on this machine",
     );
   });
-  it("recomputes the change etag only after a task is written or removed", async () => {
-    const { tasks, input, clock, store } = await setup();
+  it("reads task change etags without listing tasks, even after a write", async () => {
+    const { tasks, input, store } = await setup();
+    const task = await tasks.save(input());
+    const list = vi.spyOn(tasks, "list");
+    const projection = vi.spyOn(assistantTaskMetadata, "withAssistantTaskMetadata");
+    const initial = await tasks.changeEtag();
+    expect(await tasks.changeEtag()).toBe(initial);
+
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.budgetUsage.measuredAt', ?) WHERE id=?")
+      .run(task.budgetUsage!.measuredAt + 1, task.id);
+    expect(await tasks.changeEtag()).toBe(initial);
+
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.budgetUsage.agentMinutes', 1) WHERE id=?")
+      .run(task.id);
+    const budget = await tasks.changeEtag();
+    expect(budget).not.toBe(initial);
+
+    await store.db
+      .prepare("UPDATE tasks SET value=json_set(value, '$.status', 'blocked') WHERE id=?")
+      .run(task.id);
+    const blocked = await tasks.changeEtag();
+    expect(blocked).not.toBe(budget);
+
+    await store.db.prepare("DELETE FROM tasks WHERE id=?").run(task.id);
+    expect(await tasks.changeEtag()).not.toBe(blocked);
+    expect(list).not.toHaveBeenCalled();
+    expect(projection).not.toHaveBeenCalled();
+    list.mockRestore();
+    projection.mockRestore();
+  });
+  it("changes the task etag after inserting another task", async () => {
+    const { tasks, input } = await setup();
     const empty = await tasks.changeEtag();
-    const revision = tasks.revision;
     expect(await tasks.changeEtag()).toBe(empty);
-    expect(tasks.revision).toBe(revision);
     await tasks.save(input());
     const one = await tasks.changeEtag();
     expect(one).not.toBe(empty);
-    // Unchanged rows are not parsed again while polling.
-    const prepare = vi.spyOn(store.db, "prepare");
-    expect(await tasks.changeEtag()).toBe(one);
-    expect(prepare.mock.calls.map(([sql]) => sql)).toEqual([
-      "SELECT version FROM task_cache_revision WHERE id=1",
-    ]);
-    prepare.mockRestore();
-    clock.now += 1;
     await tasks.save(input({ id: "second" }));
     expect(await tasks.changeEtag()).not.toBe(one);
   });
@@ -4275,6 +4352,23 @@ it("caches unchanged lists and filters projects before JSON parsing", async () =
   parse.mockRestore();
   await tasks.save(input({ title: "Changed" }));
   expect((await tasks.list(first[0].projectId))[0].title).toBe("Changed");
+});
+it("evicts one project list cache entry at the cap instead of clearing every project", async () => {
+  const { store, tasks, input } = await setup();
+  const projectIds: string[] = [];
+  for (let index = 0; index < 33; index++) {
+    const project = await store.addProject(join(tmpdir(), `bounded-list-${index}`), `P${index}`);
+    projectIds.push(project.id);
+    await tasks.save(input({ id: `task-${index}`, projectId: project.id }));
+  }
+  for (const projectId of projectIds) await tasks.list(projectId);
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    await tasks.list(projectIds[1]);
+    expect(parse).not.toHaveBeenCalled();
+  } finally {
+    parse.mockRestore();
+  }
 });
 it(
   "stops a real verification tree and holds retry/delete until it exits",

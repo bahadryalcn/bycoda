@@ -71,7 +71,7 @@ it("keep-awake listeners hear Host snapshots, never localStorage events", () => 
   acceptAgentDefaults({ agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version: 2 } });
   expect(callback).toHaveBeenCalledTimes(1);
 });
-it("keeps enum normalization and the event detail/load split after a failed save", () => {
+it("does not publish an enum change after a failed save (#900)", () => {
   saveDiffLayout("split");
   const callback = vi.fn();
   const unsubscribe = subscribeDiffLayout(callback);
@@ -83,8 +83,8 @@ it("keeps enum normalization and the event detail/load split after a failed save
       throw new Error("quota");
     });
     saveDiffLayout("invalid" as "inline");
-    expect(details).toEqual(["auto"]);
-    expect(callback).toHaveBeenCalledTimes(1);
+    expect(details).toEqual([]);
+    expect(callback).not.toHaveBeenCalled();
     expect(loadDiffLayout()).toBe("split");
   } finally {
     unsubscribe();

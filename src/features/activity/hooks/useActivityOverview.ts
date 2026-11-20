@@ -3,7 +3,7 @@ import {
   type ActivitySummary,
   type ActivityTotals,
 } from "@bycoda/account-contracts/activity";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { accountApi, reportAccountFailure, useAccountState } from "../../account";
 import { useRemoteMachines } from "../../connections/public/connections";
@@ -33,7 +33,11 @@ export type ActivityOverview = {
 
 type Loader<T> = { key: string; load: () => Promise<T> };
 
-/** Loads now and every minute while `loader` is set; `loader.key` identifies what it loads. */
+/**
+ * Loads now and every minute while `loader` is set; `loader.key` identifies what it loads.
+ * At most one load is in flight, ticks are skipped while the document is hidden, and it reloads
+ * once when the window becomes visible again. `onError` fires on the first failure after a success.
+ */
 function usePolled<T>(loader: Loader<T> | null, onError?: (error: unknown) => void) {
   const [state, setState] = useState<{ value: T | null; failed: boolean }>({
     value: null,
@@ -44,20 +48,36 @@ function usePolled<T>(loader: Loader<T> | null, onError?: (error: unknown) => vo
   useEffect(() => {
     if (key === null || !load) return;
     let cancelled = false;
+    let inFlight = false;
+    let failing = false;
     const run = async () => {
+      if (inFlight || document.hidden) return;
+      inFlight = true;
       try {
         const value = await load();
+        failing = false;
         if (!cancelled) setState({ value, failed: false });
       } catch (error) {
         if (!cancelled) setState((current) => ({ value: current.value, failed: true }));
-        onError?.(error);
+        if (!failing) {
+          failing = true;
+          onError?.(error);
+        }
+      } finally {
+        inFlight = false;
       }
     };
     run().catch(() => undefined);
     const timer = setInterval(() => run().catch(() => undefined), REFRESH_MS);
+    // Reload once on return to the foreground; the in-flight guard keeps this from overlapping a tick.
+    const onVisible = () => {
+      if (!document.hidden) run().catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
     // `key` stands for the loader; `load` is a new closure on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
@@ -79,6 +99,8 @@ export function useActivityOverview(): ActivityOverview {
   const [choice, setScope] = useState<ActivityScope>("all");
   const { machines } = useRemoteMachines();
   const refs = useMemo(() => machineRefs(machines), [machines]);
+  // Device names survive ticks; the device list is fetched only when a summary device is unknown.
+  const deviceNames = useRef(new Map<string, string>());
 
   const local = usePolled(
     refs.length > 0
@@ -102,13 +124,15 @@ export function useActivityOverview(): ActivityOverview {
             const summary = await api.getActivitySummary({
               query: { timeZone, date: localDateFor(new Date(), timeZone) },
             });
-            const names = new Map<string, string>();
-            try {
-              for (const device of (await api.listDevices()).items) {
-                names.set(device.id, device.name);
+            const names = deviceNames.current;
+            if ((summary.perDevice ?? []).some((entry) => !names.has(entry.deviceId))) {
+              try {
+                for (const device of (await api.listDevices()).items) {
+                  names.set(device.id, device.name);
+                }
+              } catch {
+                // Names are decoration; ids still identify the devices.
               }
-            } catch {
-              // Names are decoration; ids still identify the devices.
             }
             return { summary, names };
           },

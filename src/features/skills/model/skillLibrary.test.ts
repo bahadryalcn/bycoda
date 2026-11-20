@@ -57,6 +57,12 @@ describe("skill library", () => {
     ]);
   });
 
+  it("does not call a name missing from a truncated list absent", () => {
+    const cut = { ...lists[1], truncated: true };
+    expect(skillPresence("arc", [lists[0], cut])).toEqual(["missing", "present"]);
+    expect(skillPresence("brandkit", [lists[0], cut])).toEqual(["present", "unknown"]);
+  });
+
   it("finds the matching copy on a machine, preferring the same source", () => {
     const claude = skill("guide", "x", { source: "claude" });
     expect(copyOn(lists[1], claude)?.path).toBe("/home/u/.claude/skills/guide/SKILL.md");

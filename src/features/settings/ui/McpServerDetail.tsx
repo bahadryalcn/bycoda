@@ -6,15 +6,16 @@ import { DescriptionItem, DescriptionList } from "../../../shared/ui/Description
 import { InlineError } from "../../../shared/ui/InlineError";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Sheet } from "../../../shared/ui/Sheet";
-import { Group, Row, Toggle } from "../../../shared/ui/settings";
+import { Group, Row, Toggle, useLeaveGuard } from "../../../shared/ui/settings";
 import { FolderOpen } from "../../../shared/ui/icons";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { revealPath } from "../../../platform/tauri/fs";
-import { canSignInMcp, MCP_PROVIDER_LABELS } from "../model/mcp";
+import { canSignInMcp, MCP_PROVIDER_LABELS, scopeLabel } from "../model/mcp";
 import type { McpCatalogEntry, McpEntryStatus } from "../model/mcpCatalog";
 import type { McpServerRow } from "../model/mcpSettingsCache";
 import type { McpHub } from "../hooks/useMcpHub";
-import { ProviderIcon, scopeLabel } from "./McpAddServer";
+import { errorText } from "../../../shared/lib/errors";
+import { ProviderIcon } from "./McpAddServer";
 import { McpServerConfigEditor } from "./McpServerConfigEditor";
 
 export const STATUS_TONE: Record<McpEntryStatus, BadgeTone> = {
@@ -70,6 +71,7 @@ export function McpServerDetail({
   globalOnly,
   hub,
   actions,
+  stale = false,
   onClose,
 }: {
   entry: McpCatalogEntry;
@@ -78,225 +80,234 @@ export function McpServerDetail({
   globalOnly: boolean;
   hub: McpHub;
   actions: McpRowActions;
+  stale?: boolean;
   onClose: () => void;
 }) {
   const hubEntry = entry.hub;
   const policy = hub.loading?.policy;
   const transport = hubEntry?.kind ?? entry.configs[0]?.transport ?? "";
-  const hubLocked = hub.saving || !!hub.busy || !!hub.loading?.corrupt;
+  const hubLocked = stale || hub.saving || !!hub.busy || !!hub.loading?.corrupt;
+  const configLocked = stale || actions.locked;
   const [fileError, setFileError] = useState("");
+  // Close button, Escape and backdrop all reach `onClose`; Remove can end the entry the draft belongs to.
+  const leave = useLeaveGuard();
   return (
-    <Sheet
-      side="end"
-      size="40rem"
-      title={entry.name}
-      description={[transport.toUpperCase(), statusLabel(status)].filter(Boolean).join(" · ")}
-      onClose={onClose}
-    >
-      <div className="grid gap-6">
-        {hub.error ? (
-          <InlineError
-            details={hub.error}
-            secondaryAction={{ label: t("Dismiss"), onClick: hub.dismissError }}
-          />
-        ) : null}
-        {fileError ? (
-          <InlineError
-            details={fileError}
-            secondaryAction={{ label: t("Dismiss"), onClick: () => setFileError("") }}
-          />
-        ) : null}
-        {hubEntry ? (
-          <Group title={t("Sessions")}>
-            {hubEntry.kind === "http" ? (
-              <Row
-                label={t("bycoda sign-in")}
-                info={t("bycoda keeps this login so every session can use the server.")}
-              >
-                <div className="flex items-center gap-2">
-                  <Badge
-                    size="sm"
-                    tone={
-                      hubEntry.oauth === "signed-in"
-                        ? "success"
-                        : hubEntry.oauth === "error"
-                          ? "danger"
-                          : hubEntry.oauth === "expired"
-                            ? "warning"
-                            : "neutral"
-                    }
-                  >
-                    {hubEntry.oauth === "signed-in"
-                      ? t("Signed in")
-                      : hubEntry.oauth === "expired"
-                        ? t("Expired")
-                        : hubEntry.oauth === "error"
-                          ? t("Sign-in failed")
-                          : t("Not signed in")}
-                  </Badge>
-                  {hubEntry.oauth === "signed-in" || hubEntry.oauth === "expired" ? (
-                    <Button
+    <>
+      <Sheet
+        side="end"
+        size="40rem"
+        title={entry.name}
+        description={[transport.toUpperCase(), stale ? t("Unavailable") : statusLabel(status)]
+          .filter(Boolean)
+          .join(" · ")}
+        onClose={() => leave.guard(onClose)}
+      >
+        <div className="grid gap-6">
+          {hub.error ? (
+            <InlineError
+              details={hub.error}
+              secondaryAction={{ label: t("Dismiss"), onClick: hub.dismissError }}
+            />
+          ) : null}
+          {fileError ? (
+            <InlineError
+              details={fileError}
+              secondaryAction={{ label: t("Dismiss"), onClick: () => setFileError("") }}
+            />
+          ) : null}
+          {hubEntry ? (
+            <Group title={t("Sessions")}>
+              {hubEntry.kind === "http" ? (
+                <Row
+                  label={t("bycoda sign-in")}
+                  info={t("bycoda keeps this login so every session can use the server.")}
+                >
+                  <div className="flex items-center gap-2">
+                    <Badge
                       size="sm"
-                      variant="ghost"
-                      disabled={hubLocked}
-                      onClick={() => void hub.signOut(hubEntry.name)}
-                    >
-                      {t("Sign out")}
-                    </Button>
-                  ) : null}
-                  {hubEntry.oauth !== "signed-in" ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      loading={hub.busy === hubEntry.name || hub.waiting === hubEntry.name}
-                      disabled={hubLocked || hub.waiting === hubEntry.name}
-                      onClick={() => void hub.signIn(hubEntry.name)}
-                    >
-                      {t("Sign in")}
-                    </Button>
-                  ) : null}
-                </div>
-              </Row>
-            ) : null}
-            {policy ? (
-              <Row
-                label={t("Start with every session")}
-                info={t("Off: the server starts the first time a session uses it.")}
-                disabled={policy.mode === "always" || !hubEntry.directEligible || hubLocked}
-                disabledReason={
-                  policy.mode === "always"
-                    ? t("Every server already starts with each session.")
-                    : !hubEntry.directEligible
-                      ? t("Sign in first.")
-                      : undefined
-                }
-              >
-                <Toggle
-                  label={t("Start {p0} with every session", { p0: entry.name })}
-                  on={policy.mode === "always" || hubEntry.direct}
-                  disabled={policy.mode === "always" || !hubEntry.directEligible || hubLocked}
-                  onChange={(on) => void hub.setDirect(hubEntry.name, on)}
-                />
-              </Row>
-            ) : null}
-            <Row label={t("Found in")}>
-              <span className="flex flex-wrap justify-end gap-1">
-                {hubEntry.sources.map((source) => (
-                  <Badge key={source} size="sm" tone="neutral">
-                    {sourceLabel(source)}
-                  </Badge>
-                ))}
-              </span>
-            </Row>
-          </Group>
-        ) : null}
-        {entry.configs.map((server) => {
-          const key = `${server.provider}:${server.scope}:${server.configPath}:${server.name}`;
-          const blocked = actions.toggleBlockedReason(server);
-          return (
-            <Group
-              key={key}
-              title={
-                <span className="inline-flex items-center gap-2">
-                  <ProviderIcon provider={server.provider} />
-                  {`${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`}
-                </span>
-              }
-            >
-              <Row label={t("Enabled")} disabled={!!blocked} disabledReason={blocked}>
-                <Toggle
-                  label={t("Enable {p0} in {p1}", {
-                    p0: server.name,
-                    p1: `${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`,
-                  })}
-                  on={server.enabled !== false}
-                  disabled={actions.locked || !actions.canToggle(server)}
-                  onChange={() => void actions.setEnabled(server)}
-                />
-              </Row>
-              {server.configPath ? (
-                <Row label={t("File")}>
-                  <span className="flex min-w-0 items-center gap-1">
-                    <MiddleTruncate size="caption" tone="secondary">
-                      {server.configPath}
-                    </MiddleTruncate>
-                    <Button
-                      variant="ghost"
-                      iconOnly
-                      size="sm"
-                      label={t("Show in folder")}
-                      onClick={() =>
-                        void revealPath(server.configPath).catch((cause) =>
-                          setFileError(String(cause)),
-                        )
+                      tone={
+                        hubEntry.oauth === "signed-in"
+                          ? "success"
+                          : hubEntry.oauth === "error"
+                            ? "danger"
+                            : hubEntry.oauth === "expired"
+                              ? "warning"
+                              : "neutral"
                       }
                     >
-                      <FolderOpen className="icon-sm" />
-                    </Button>
-                    <CopyButton
-                      iconOnly
-                      size="sm"
-                      label={t("Copy config path")}
-                      text={server.configPath}
-                      resetKeys={[server.configPath]}
-                      onCopyError={(cause) => setFileError(String(cause))}
-                    />
-                  </span>
+                      {hubEntry.oauth === "signed-in"
+                        ? t("Signed in")
+                        : hubEntry.oauth === "expired"
+                          ? t("Expired")
+                          : hubEntry.oauth === "error"
+                            ? t("Sign-in failed")
+                            : t("Not signed in")}
+                    </Badge>
+                    {hubEntry.oauth === "signed-in" || hubEntry.oauth === "expired" ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={hubLocked}
+                        onClick={() => void hub.signOut(hubEntry.name)}
+                      >
+                        {t("Sign out")}
+                      </Button>
+                    ) : null}
+                    {hubEntry.oauth !== "signed-in" ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={hub.busy === hubEntry.name || hub.waiting === hubEntry.name}
+                        disabled={hubLocked || hub.waiting === hubEntry.name}
+                        onClick={() => void hub.signIn(hubEntry.name)}
+                      >
+                        {t("Sign in")}
+                      </Button>
+                    ) : null}
+                  </div>
                 </Row>
               ) : null}
-              {server.configPath ? (
-                <Row label={t("Configuration")} stacked>
-                  <McpServerConfigEditor
-                    server={server}
-                    cwd={cwd}
-                    globalOnly={globalOnly}
-                    disabled={actions.locked}
-                    onSaved={actions.refresh}
+              {policy ? (
+                <Row
+                  label={t("Start with every session")}
+                  info={t("Off: the server starts the first time a session uses it.")}
+                  disabled={policy.mode === "always" || !hubEntry.directEligible || hubLocked}
+                  disabledReason={
+                    policy.mode === "always"
+                      ? t("Every server already starts with each session.")
+                      : !hubEntry.directEligible
+                        ? t("Sign in first.")
+                        : undefined
+                  }
+                >
+                  <Toggle
+                    label={t("Start {p0} with every session", { p0: entry.name })}
+                    on={policy.mode === "always" || hubEntry.direct}
+                    disabled={policy.mode === "always" || !hubEntry.directEligible || hubLocked}
+                    onChange={(on) => void hub.setDirect(hubEntry.name, on)}
                   />
                 </Row>
               ) : null}
-              {canSignInMcp(server) ? (
-                <Row
-                  label={t("{p0} sign-in", { p0: MCP_PROVIDER_LABELS[server.provider] })}
-                  info={t("Signs in through the provider's own CLI, for use outside bycoda.")}
-                >
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    loading={actions.busyKey === `${key}:login`}
-                    disabled={actions.locked}
-                    onClick={() => void actions.providerSignIn(server)}
-                  >
-                    {t("Sign in")}
-                  </Button>
-                </Row>
-              ) : null}
-              {server.provider === "claude" ? (
-                <Row label={t("Remove from {p0}", { p0: scopeLabel(server.scope) })}>
-                  <Button
-                    size="sm"
-                    tone="danger"
-                    loading={actions.busyKey === `${key}:remove`}
-                    disabled={actions.locked}
-                    onClick={() => void actions.remove(server)}
-                  >
-                    {t("Remove")}
-                  </Button>
-                </Row>
-              ) : null}
+              <Row label={t("Found in")}>
+                <span className="flex flex-wrap justify-end gap-1">
+                  {hubEntry.sources.map((source) => (
+                    <Badge key={source} size="sm" tone="neutral">
+                      {sourceLabel(source)}
+                    </Badge>
+                  ))}
+                </span>
+              </Row>
             </Group>
-          );
-        })}
-        {entry.configs.length === 0 && hubEntry ? (
-          <DescriptionList size="sm">
-            <DescriptionItem term={t("Configuration")}>
-              {t("Managed by {p0}. Edit it there.", {
-                p0: hubEntry.sources.map(sourceLabel).join(", "),
-              })}
-            </DescriptionItem>
-          </DescriptionList>
-        ) : null}
-      </div>
-    </Sheet>
+          ) : null}
+          {entry.configs.map((server) => {
+            const key = `${server.provider}:${server.scope}:${server.configPath}:${server.name}`;
+            const blocked = actions.toggleBlockedReason(server);
+            return (
+              <Group
+                key={key}
+                title={
+                  <span className="inline-flex items-center gap-2">
+                    <ProviderIcon provider={server.provider} />
+                    {`${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`}
+                  </span>
+                }
+              >
+                <Row label={t("Enabled")} disabled={!!blocked} disabledReason={blocked}>
+                  <Toggle
+                    label={t("Enable {p0} in {p1}", {
+                      p0: server.name,
+                      p1: `${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`,
+                    })}
+                    on={server.enabled !== false}
+                    disabled={configLocked || !actions.canToggle(server)}
+                    onChange={() => void actions.setEnabled(server)}
+                  />
+                </Row>
+                {server.configPath ? (
+                  <Row label={t("File")}>
+                    <span className="flex min-w-0 items-center gap-1">
+                      <MiddleTruncate size="caption" tone="secondary">
+                        {server.configPath}
+                      </MiddleTruncate>
+                      <Button
+                        variant="ghost"
+                        iconOnly
+                        size="sm"
+                        label={t("Show in folder")}
+                        onClick={() =>
+                          void revealPath(server.configPath).catch((cause) =>
+                            setFileError(errorText(cause)),
+                          )
+                        }
+                      >
+                        <FolderOpen className="icon-sm" />
+                      </Button>
+                      <CopyButton
+                        iconOnly
+                        size="sm"
+                        label={t("Copy config path")}
+                        text={server.configPath}
+                        resetKeys={[server.configPath]}
+                        onCopyError={(cause) => setFileError(errorText(cause))}
+                      />
+                    </span>
+                  </Row>
+                ) : null}
+                {server.configPath ? (
+                  <Row label={t("Configuration")} stacked>
+                    <McpServerConfigEditor
+                      server={server}
+                      cwd={cwd}
+                      globalOnly={globalOnly}
+                      disabled={configLocked}
+                      onSaved={actions.refresh}
+                    />
+                  </Row>
+                ) : null}
+                {canSignInMcp(server) ? (
+                  <Row
+                    label={t("{p0} sign-in", { p0: MCP_PROVIDER_LABELS[server.provider] })}
+                    info={t("Signs in through the provider's own CLI, for use outside bycoda.")}
+                  >
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={actions.busyKey === `${key}:login`}
+                      disabled={configLocked}
+                      onClick={() => void actions.providerSignIn(server)}
+                    >
+                      {t("Sign in")}
+                    </Button>
+                  </Row>
+                ) : null}
+                {server.provider === "claude" ? (
+                  <Row label={t("Remove from {p0}", { p0: scopeLabel(server.scope) })}>
+                    <Button
+                      size="sm"
+                      tone="danger"
+                      loading={actions.busyKey === `${key}:remove`}
+                      disabled={configLocked}
+                      onClick={() => leave.guard(() => void actions.remove(server))}
+                    >
+                      {t("Remove")}
+                    </Button>
+                  </Row>
+                ) : null}
+              </Group>
+            );
+          })}
+          {entry.configs.length === 0 && hubEntry ? (
+            <DescriptionList size="sm">
+              <DescriptionItem term={t("Configuration")}>
+                {t("Managed by {p0}. Edit it there.", {
+                  p0: hubEntry.sources.map(sourceLabel).join(", "),
+                })}
+              </DescriptionItem>
+            </DescriptionList>
+          ) : null}
+        </div>
+      </Sheet>
+      {leave.dialog}
+    </>
   );
 }

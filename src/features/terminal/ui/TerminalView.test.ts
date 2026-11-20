@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, StrictMode } from "react";
+import { act, createElement, StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -29,7 +29,22 @@ const assistance = vi.hoisted(() => ({
   setAutomatic: vi.fn(),
   setSource: vi.fn(),
 }));
-vi.mock("../model/sshShellIntegration", () => ({ useSshShellIntegration: () => assistance }));
+const assistanceUpdates = new Set<() => void>();
+let assistanceRevision = 0;
+function subscribeToAssistance(listener: () => void) {
+  assistanceUpdates.add(listener);
+  return () => assistanceUpdates.delete(listener);
+}
+vi.mock("../model/sshShellIntegration", () => ({
+  useSshShellIntegration: () => {
+    useSyncExternalStore(subscribeToAssistance, () => assistanceRevision);
+    return assistance;
+  },
+}));
+vi.mock("../../../shared/ui/ActionHost", { spy: true });
+vi.mock("./TerminalCursorPopover", () => ({
+  TerminalCursorPopover: ({ children }: { children: React.ReactNode }) => children,
+}));
 vi.mock("@tauri-apps/api/core", () => native);
 const xterm = vi.hoisted(() => ({
   fit: vi.fn(() => null as { cols: number; rows: number } | null),
@@ -106,6 +121,7 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 import { TerminalView } from "./TerminalView";
+import { actionContentScopeAttributes } from "../../../shared/ui/ActionHost";
 import { WEBGL_IDLE_DROP_MS } from "../runtime/terminalWebgl";
 import { queueTerminalCommand } from "../model/terminalLaunchCommand";
 import { takeTerminalCommand } from "../model/terminalLaunchCommand";
@@ -534,6 +550,7 @@ it("runs an action once after shell startup, without replaying it on remount", a
 
 afterEach(() => {
   assistance.state = undefined;
+  assistance.automatic = false;
   xterm.instances.length = 0;
   xterm.webgl.length = 0;
   xterm.fit.mockReset().mockReturnValue(null);
@@ -586,6 +603,58 @@ it("signals startup review only once after the native ready prompt for this inte
     await act(async () => render());
     expect(ready).toHaveBeenCalledTimes(1);
     expect(pty.writePty).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("keeps SSH suggestion updates inside the controls without rendering the terminal pane", async () => {
+  const { host, root } = setup();
+  assistance.automatic = true;
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "ssh-typing",
+          cwd: "",
+          active: true,
+          sshConnectionId: "saved",
+          shellIntegration: "bash",
+        }),
+      ),
+    );
+    vi.mocked(actionContentScopeAttributes).mockClear();
+    for (const prefix of ["l", "ls"]) {
+      await act(async () => {
+        xterm.instances[0].dataHandler!(prefix.at(-1)!);
+        assistance.state = {
+          id: "ssh-typing",
+          status: "suggestions",
+          shell: "bash",
+          user: "ubuntu",
+          host: "fixture",
+          requestId: prefix,
+          prefix,
+          suggestions: prefix === "l" ? ["lsmod"] : ["ls -l"],
+        };
+        assistanceRevision += 1;
+        assistanceUpdates.forEach((update) => update());
+      });
+      expect(host.querySelector('[role="option"]')?.textContent).toBe(
+        prefix === "l" ? "lsmod" : "ls -l",
+      );
+    }
+    expect(pty.writePty.mock.calls).toEqual([
+      ["ssh-typing", "l"],
+      ["ssh-typing", "s"],
+    ]);
+    expect(actionContentScopeAttributes).not.toHaveBeenCalled();
+    expect(native.invoke).toHaveBeenCalledExactlyOnceWith(
+      "ssh_terminal_spawn",
+      expect.objectContaining({ id: "ssh-typing" }),
+    );
+    expect(xterm.instances).toHaveLength(1);
   } finally {
     await act(async () => root.unmount());
     host.remove();

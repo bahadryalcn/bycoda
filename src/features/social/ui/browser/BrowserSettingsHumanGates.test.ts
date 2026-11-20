@@ -121,7 +121,7 @@ it("opens the live view for the owner without resolving the wait, saving or send
   await act(async () => button("Open live view").click());
   await settle();
   expect(element.querySelector('section[aria-label="Live browser view"]')).not.toBeNull();
-  expect(browserViewFrame).toHaveBeenCalledWith("a1");
+  expect(browserViewFrame).toHaveBeenCalledWith("a1", undefined);
   expect(resolve).not.toHaveBeenCalled();
   expect(browserViewInput).not.toHaveBeenCalled();
   expect(set).not.toHaveBeenCalled();

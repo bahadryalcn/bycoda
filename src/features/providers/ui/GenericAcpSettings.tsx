@@ -1,8 +1,11 @@
+import { errorText } from "../../../shared/lib/errors";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { t, useLocale } from "../../../shared/i18n";
@@ -10,6 +13,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { hostFeatureRequest } from "../../connections/model/hostFeatureClient";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { knownRemoteMachine, useRemoteMachines } from "../../connections/model/connections";
 import { refreshGenericAcpCatalog } from "../../../integrations/harness/providers/generic-acp/genericAcpAdapter";
 import { probeHarnessAvailability } from "../../../integrations/harness/core/availability";
 import { Button } from "../../../shared/ui/Button";
@@ -20,6 +24,10 @@ import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { AdvancedSettings, Group, settingDomId } from "../../../shared/ui/settings";
 import type { AcpRegistryEntry, GenericAcpConfig, GenericAcpSummary } from "../model/genericAcp";
+
+// Stable keys: each operation's label is translated at render time, never looked up dynamically.
+type BusyKind = "" | "reload" | "registry" | "saving" | "removing" | "installing";
+type StatusKind = "" | "draft" | "saved";
 
 function Field({
   label,
@@ -145,13 +153,17 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
     setDraftDirty(false);
   };
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState("");
+  const [busy, setBusy] = useState<BusyKind>("");
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<StatusKind>("");
   const remote = parseRemotePath(cwd);
+  // Subscribes to the machine list so the name resolves once it loads; the
+  // scope line shows the name, never the environment id.
+  useRemoteMachines(Boolean(remote));
+  const remoteName = remote ? knownRemoteMachine(remote.environmentId)?.name : undefined;
   const scope = remote
-    ? t("Target machine: remote host {p0}. ACP configuration and credentials stay on that host.", {
-        p0: remote.environmentId,
+    ? t("Target machine: {p0}. ACP configuration and credentials stay on that host.", {
+        p0: remoteName || t("Remote host"),
       })
     : t("Target machine: this machine. ACP configuration and credentials stay here.");
   const request = <T,>(command: string, params: Record<string, unknown> = {}) =>
@@ -159,12 +171,14 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       ? parseRemotePath(cwd)
         ? hostFeatureRequest<T>(cwd, "generic-acp-v1", command, params)
         : invoke<T>(command, params)
-      : Promise.reject(new Error("ACP settings closed before the request completed."));
+      : Promise.reject(new Error(t("ACP settings closed before the request completed.")));
   async function reload() {
     const result = await request<GenericAcpSummary[]>("generic_acp_list");
     if (!activeRef.current) return;
     if (!Array.isArray(result))
-      throw new Error("ACP configuration is unavailable on this machine. Update its app or host.");
+      throw new Error(
+        t("ACP configuration is unavailable on this machine. Update its app or host."),
+      );
     setConfigs(result);
   }
   useEffect(() => {
@@ -176,12 +190,12 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         if (cancelled) return;
         if (!Array.isArray(result))
           throw new Error(
-            "ACP configuration is unavailable on this machine. Update its app or host.",
+            t("ACP configuration is unavailable on this machine. Update its app or host."),
           );
         setConfigs(result);
       })
       .catch((reason) => {
-        if (!cancelled) setError(String(reason));
+        if (!cancelled) setError(errorText(reason));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -191,10 +205,10 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       activeRef.current = false;
     };
   }, [cwd]);
-  async function run(label: string, action: () => Promise<void>, confirm = false) {
+  async function run(label: BusyKind, action: () => Promise<void>, confirm = false) {
     if (!activeRef.current || busyRef.current || loading) {
       if (confirm)
-        throw new Error("ACP operation is unavailable while another request is pending.");
+        throw new Error(t("ACP operation is unavailable while another request is pending."));
       return;
     }
     busyRef.current = true;
@@ -215,7 +229,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       }
     } catch (reason) {
       if (activeRef.current) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(errorText(reason));
       }
       // A confirmation owns its failure state. A refresh failure after the
       // mutation completed remains a list error, not a failed deletion.
@@ -233,6 +247,24 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
     }
   }
   const editing = configs.some((config) => config.id === form.id);
+  const busyLabel = () => {
+    switch (busy) {
+      case "installing":
+        return t("Installing {p0}…", { p0: installingId });
+      case "saving":
+        return t("Saving…");
+      case "removing":
+        return t("Removing…");
+      case "registry":
+        return t("Loading ACP registry…");
+      default:
+        return t("Loading ACP agents…");
+    }
+  };
+  const statusLabel = () =>
+    status === "draft"
+      ? t("Save or cancel the current agent draft before opening another.")
+      : t("ACP agent saved on the target machine.");
   const openAgentForm = () => {
     const root = formDisclosureRef.current;
     const input = root?.querySelector<HTMLInputElement>("input");
@@ -252,7 +284,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
     }
     setRegistryOpen(true);
     setRegistryState("loading");
-    void run("Loading registry", async () => {
+    void run("registry", async () => {
       try {
         const entries = await request<AcpRegistryEntry[]>("generic_acp_registry", {
           refresh: true,
@@ -260,7 +292,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         if (!activeRef.current) return;
         if (!Array.isArray(entries)) {
           throw new Error(
-            "ACP configuration is unavailable on this machine. Update its app or host.",
+            t("ACP configuration is unavailable on this machine. Update its app or host."),
           );
         }
         setRegistry(entries);
@@ -281,7 +313,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       if (activeRef.current) {
         cancelingInstallRef.current = "";
         setCancelingInstallId("");
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(errorText(reason));
       }
     }
   };
@@ -307,26 +339,22 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
             <Button
               className="shrink-0"
               disabled={loading || !!busy}
-              onClick={() => void run("Loading agents…", async () => {})}
+              onClick={() => void run("reload", async () => {})}
             >
               {t("Reload agents")}
             </Button>
           </div>
         }
       >
-        {loading || busy || status || (!configs.length && !error) ? (
-          <Alert tone="info">
-            {loading
-              ? t("Loading ACP agents…")
-              : busy
-                ? installingId
-                  ? t("Installing {p0}…", { p0: installingId })
-                  : t(busy)
-                : status
-                  ? t(status)
-                  : t("No ACP agents configured. Use Add agent or browse the registry.")}
-          </Alert>
-        ) : null}
+        <div data-acp-status className="flex min-h-8 min-w-0 items-center px-3 py-1">
+          {loading || busy ? (
+            <LoadingText delay={false} className="min-w-0">
+              {loading ? t("Loading ACP agents…") : busyLabel()}
+            </LoadingText>
+          ) : status ? (
+            <InlineMessage tone="info">{statusLabel()}</InlineMessage>
+          ) : null}
+        </div>
         {error && <Alert tone="danger">{error}</Alert>}
         {configs.map((config) => (
           <div
@@ -355,7 +383,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 disabled={loading || !!busy}
                 onClick={() => {
                   if (draftDirty) {
-                    setStatus("Save or cancel the current agent draft before opening another.");
+                    setStatus("draft");
                     openAgentForm();
                     return;
                   }
@@ -379,13 +407,22 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   doneLabel={t("Removed")}
                   disabled={loading || !!busy}
                   onConfirm={() =>
-                    run("Removing", () => request("generic_acp_remove", { id: config.id }), true)
+                    run("removing", () => request("generic_acp_remove", { id: config.id }), true)
                   }
                 />
               </span>
             </div>
           </div>
         ))}
+        {!loading && !error && !configs.length ? (
+          <EmptyState
+            size="inline"
+            kind="empty"
+            className="px-3 py-2"
+            descriptionText={{ size: "micro" }}
+            description={t("No ACP agents configured. Use Add agent or browse the registry.")}
+          />
+        ) : null}
         <div id="acp-agent-form-disclosure" ref={formDisclosureRef}>
           <AdvancedSettings
             key={`${formRevision}:${editing ? form.id : "new"}`}
@@ -401,14 +438,14 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
               }}
               onSubmit={(event) => {
                 event.preventDefault();
-                void run("Saving", async () => {
+                void run("saving", async () => {
                   const args = JSON.parse(argsText);
                   const env = envText.trim() ? JSON.parse(envText) : undefined;
                   await request("generic_acp_save", {
                     config: { ...form, args, ...(env ? { env } : {}) },
                   });
                   if (!activeRef.current) return;
-                  setStatus("ACP agent saved on the target machine.");
+                  setStatus("saved");
                   setFormRevision((revision) => revision + 1);
                   resetForm();
                 });
@@ -543,7 +580,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
               </div>
               <div className="flex items-center gap-2 sm:col-span-2">
                 <Button className="shrink-0" disabled={loading || !!busy} type="submit">
-                  {busy === "Saving" ? t("Saving…") : t("Save agent")}
+                  {busy === "saving" ? t("Saving…") : t("Save agent")}
                 </Button>
                 <Button
                   className="shrink-0"
@@ -590,7 +627,9 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 )}
               </Text>
               {registryState === "loading" ? (
-                <Alert tone="info">{t("Loading ACP registry…")}</Alert>
+                <LoadingText delay={false} className="px-3 py-2">
+                  {t("Loading ACP registry…")}
+                </LoadingText>
               ) : registryState === "error" ? null : registryState === "loaded" &&
                 registry.length > 0 ? (
                 <div {...surfaceAttributes({ dividers: "pane" })}>
@@ -628,7 +667,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                             onClick={() => {
                               if (!activeRef.current || busyRef.current || loading) return;
                               setInstallingId(entry.id);
-                              void run(t("Installing {p0}…", { p0: entry.id }), () =>
+                              void run("installing", () =>
                                 request("generic_acp_install", {
                                   id: entry.id,
                                   version: entry.version,

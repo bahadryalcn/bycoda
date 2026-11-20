@@ -120,6 +120,7 @@ function signedOutLimits(provider: RateLimitProvider): ProviderRateLimits {
     updatedAt: Date.now(),
     error: `${provider} is not signed in`,
     status: "error",
+    reason: "signedOut",
   };
 }
 
@@ -128,6 +129,7 @@ function connectedLimits(provider: RateLimitProvider): ProviderRateLimits {
     ...signedOutLimits(provider),
     error: null,
     status: "ok",
+    reason: undefined,
   };
 }
 

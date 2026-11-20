@@ -76,6 +76,25 @@ describe("pacing uncle animation gate", () => {
     render();
     expect(vi.getTimerCount()).toBe(1);
   });
+  it("keeps its canvas context and observers across focus, visibility and motion pauses", () => {
+    render();
+    const contexts = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length;
+    const canvas = container.querySelector("canvas");
+    for (const next of [
+      () => (state.focused = false),
+      () => (state.focused = true),
+      () => (state.motion = false),
+      () => (state.motion = true),
+    ]) {
+      next();
+      render();
+    }
+    render(false);
+    render(true);
+    expect(vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls).toHaveLength(contexts);
+    expect(container.querySelector("canvas")).toBe(canvas);
+    expect(vi.getTimerCount()).toBe(1);
+  });
   it("keeps the walk position when the session is hidden and shown again", () => {
     render();
     act(() => vi.advanceTimersByTime(150));

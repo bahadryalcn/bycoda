@@ -4,6 +4,7 @@ use crate::remote::NativeServiceReply;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::AppHandle;
 
 pub(super) struct WorkspaceOperation {
@@ -27,18 +28,40 @@ pub(crate) fn authorized(
     })
 }
 
+/// Result of one authority probe while a workspace operation waits for owner acceptance.
+pub(crate) enum AuthorityProbe {
+    Granted,
+    Waiting,
+    /// The operation was cancelled, its Host changed, or the probe failed: stop waiting.
+    Gone,
+}
+
+const AUTHORITY_POLL_MIN: Duration = Duration::from_millis(50);
+const AUTHORITY_POLL_MAX: Duration = Duration::from_millis(500);
+
+/// Probes with exponential backoff until granted, gone, or the budget is spent.
+/// The final probe runs at the budget boundary, so a grant at the deadline still counts.
 pub(crate) fn wait_for_authority(
-    mut query: impl FnMut() -> bool,
-    mut wait: impl FnMut(),
-    attempts: usize,
+    mut probe: impl FnMut() -> AuthorityProbe,
+    mut sleep: impl FnMut(Duration),
+    budget: Duration,
 ) -> bool {
-    for _ in 0..attempts {
-        if query() {
-            return true;
+    let mut waited = Duration::ZERO;
+    let mut delay = AUTHORITY_POLL_MIN;
+    loop {
+        match probe() {
+            AuthorityProbe::Granted => return true,
+            AuthorityProbe::Gone => return false,
+            AuthorityProbe::Waiting => {}
         }
-        wait();
+        if waited >= budget {
+            return false;
+        }
+        let step = delay.min(budget - waited);
+        sleep(step);
+        waited += step;
+        delay = (delay * 2).min(AUTHORITY_POLL_MAX);
     }
-    false
 }
 
 pub(super) fn parse(
@@ -222,18 +245,67 @@ mod tests {
     #[test]
     fn worker_waits_for_owner_acceptance_and_never_emits_on_timeout() {
         let mut polls = 0;
+        let mut sleeps = Vec::new();
         assert!(wait_for_authority(
             || {
                 polls += 1;
-                polls == 3
+                if polls == 3 {
+                    AuthorityProbe::Granted
+                } else {
+                    AuthorityProbe::Waiting
+                }
             },
-            || {},
-            4
+            |step| sleeps.push(step),
+            Duration::from_secs(30)
         ));
         assert_eq!(polls, 3);
-        let mut waits = 0;
-        assert!(!wait_for_authority(|| false, || waits += 1, 4));
-        assert_eq!(waits, 4);
+        assert_eq!(
+            sleeps,
+            vec![Duration::from_millis(50), Duration::from_millis(100)]
+        );
+        let mut waited = Duration::ZERO;
+        let mut probes = 0;
+        assert!(!wait_for_authority(
+            || {
+                probes += 1;
+                AuthorityProbe::Waiting
+            },
+            |step| waited += step,
+            Duration::from_secs(1)
+        ));
+        assert_eq!(waited, Duration::from_secs(1));
+        assert_eq!(probes, 6);
+    }
+
+    #[test]
+    fn worker_stops_polling_once_the_operation_is_gone() {
+        let mut probes = 0;
+        let mut sleeps = 0;
+        assert!(!wait_for_authority(
+            || {
+                probes += 1;
+                AuthorityProbe::Gone
+            },
+            |_| sleeps += 1,
+            Duration::from_secs(30)
+        ));
+        assert_eq!((probes, sleeps), (1, 0));
+    }
+
+    #[test]
+    fn worker_backoff_is_capped_per_probe() {
+        let mut max_step = Duration::ZERO;
+        let mut total = Duration::ZERO;
+        assert!(!wait_for_authority(
+            || AuthorityProbe::Waiting,
+            |step| {
+                max_step = max_step.max(step);
+                total += step;
+            },
+            Duration::from_secs(30)
+        ));
+        assert_eq!(max_step, Duration::from_millis(500));
+        assert_eq!(total, Duration::from_secs(30));
     }
     #[test]
     fn organization_write_uses_the_same_immutable_owner_parser() {

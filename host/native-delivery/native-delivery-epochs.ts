@@ -5,9 +5,12 @@ import type { StoreDatabase } from "../store-db";
 import type { NativeDeliveryKind } from "./native-delivery-store";
 import type { NativeDeliveryIdentity } from "../../src/shared/model/host-contracts/native-delivery-identity";
 import {
+  nativeDeliveryEpochOriginalId,
   parseNativeDeliveryEpochOriginalId,
   type NativeDeliveryEpochDescription,
   type NativeDeliveryEpochFence,
+  type NativeDeliveryEpochGapParams,
+  type NativeDeliveryEpochGapResult,
   type NativeDeliveryEpochOriginal,
   type NativeDeliveryEpochRef,
 } from "../../src/shared/model/host-contracts/native-delivery-epochs";
@@ -64,6 +67,38 @@ const retired = (
     OR (${row}.kind='native.services.conversation.desktop.finish' AND ${row}.consumed_bytes=17 AND ${row}.consumed_sha256='${FINISH_HASH}')
     OR ${row}.kind='native.services.workspace.format'))`;
 
+const GAP_KINDS = new Set<string>([
+  "buffer",
+  "native.services.conversation.desktop.finish",
+  "native.services.workspace.format",
+]);
+const MAX_GAPS = 65_536;
+const MAX_OWN_GAPS = 1024;
+const gapColumns =
+  "environment_id,principal_id,owner_id,generation,sequence,original_id,kind,sha256,byte_length";
+const gapTable = `environment_id TEXT NOT NULL,principal_id TEXT NOT NULL,owner_id TEXT NOT NULL,generation INTEGER NOT NULL,sequence INTEGER NOT NULL,
+  original_id TEXT NOT NULL,kind TEXT NOT NULL,sha256 TEXT NOT NULL,byte_length INTEGER NOT NULL,
+  PRIMARY KEY(environment_id,principal_id,owner_id,generation,sequence),UNIQUE(environment_id,principal_id,original_id)`;
+const gapMatch = (a: string, b: string) =>
+  gapColumns
+    .split(",")
+    .map((key) => `${a}.${key}=${b}.${key}`)
+    .join(" AND ");
+const gapShape = (
+  row: string,
+) => `(${sqlUuid(`${row}.owner_id`)} AND ${sqlInteger(`${row}.generation`, 1)} AND ${sqlInteger(`${row}.sequence`, 1)}
+  AND ${row}.original_id='nd2:'||${row}.owner_id||':'||${row}.generation||':'||${row}.sequence
+  AND ${row}.kind IN ('buffer','native.services.conversation.desktop.finish','native.services.workspace.format')
+  AND typeof(${row}.sha256)='text' AND length(${row}.sha256)=64 AND ${row}.sha256 NOT GLOB '*[^0-9a-f]*'
+  AND ${sqlInteger(`${row}.byte_length`, 1)} AND ${row}.byte_length<=16777216)`;
+/** Any fence half (or a receipt) for the exact epoch slot or original id. */
+const gapSlot = (table: string, row: string, owner: string, generation: string, sequence: string) =>
+  `EXISTS(SELECT 1 FROM ${table} g WHERE g.environment_id=${row}.environment_id AND g.principal_id=${row}.principal_id
+    AND (g.original_id=${row}.original_id OR (g.owner_id=${owner} AND g.generation=${generation} AND g.sequence=${sequence})))`;
+const gapHeld = (row: string) =>
+  `NOT EXISTS(SELECT 1 FROM native_delivery_epochs o JOIN native_delivery_epoch_witnesses w ON ${ownerMatch("o", "w")}
+    WHERE o.environment_id=${row}.environment_id AND o.principal_id=${row}.principal_id AND o.owner_id=${row}.owner_id AND o.generation=${row}.generation AND ${row}.sequence<=o.through)`;
+
 /** Called only by the actual receipt initializer's admitted FULL transaction. */
 export async function initializeNativeDeliveryEpochs(db: StoreDatabase): Promise<void> {
   db.assertCriticalScope();
@@ -83,6 +118,8 @@ export async function initializeNativeDeliveryEpochs(db: StoreDatabase): Promise
     CREATE TABLE IF NOT EXISTS native_delivery_epochs (environment_id TEXT NOT NULL,principal_id TEXT NOT NULL,owner_id TEXT NOT NULL UNIQUE,generation INTEGER NOT NULL UNIQUE,open_id TEXT NOT NULL,through INTEGER NOT NULL,high_water INTEGER NOT NULL,closed INTEGER NOT NULL,PRIMARY KEY(environment_id,principal_id,owner_id,generation),UNIQUE(environment_id,principal_id,open_id));
     CREATE TABLE IF NOT EXISTS native_delivery_epoch_witnesses (environment_id TEXT NOT NULL,principal_id TEXT NOT NULL,owner_id TEXT NOT NULL UNIQUE,generation INTEGER NOT NULL UNIQUE,open_id TEXT NOT NULL,through INTEGER NOT NULL,high_water INTEGER NOT NULL,closed INTEGER NOT NULL,PRIMARY KEY(environment_id,principal_id,owner_id,generation),UNIQUE(environment_id,principal_id,open_id));
     CREATE UNIQUE INDEX IF NOT EXISTS native_delivery_receipt_epoch ON native_delivery_receipts(environment_id,principal_id,epoch_owner_id,epoch_generation,epoch_sequence);
+    CREATE TABLE IF NOT EXISTS native_delivery_epoch_gap_fences (${gapTable});
+    CREATE TABLE IF NOT EXISTS native_delivery_epoch_gap_witnesses (${gapTable});
   `);
   const counter = await db
     .prepare("SELECT root_id,generation FROM native_delivery_epoch_counter WHERE id=1")
@@ -94,6 +131,7 @@ export async function initializeNativeDeliveryEpochs(db: StoreDatabase): Promise
     const evidence = await db
       .prepare(`SELECT 1 AS present FROM native_delivery_epochs UNION ALL SELECT 1 FROM native_delivery_epoch_witnesses
       UNION ALL SELECT 1 FROM native_delivery_protocol_floors UNION ALL SELECT 1 FROM native_delivery_protocol_witnesses
+      UNION ALL SELECT 1 FROM native_delivery_epoch_gap_fences UNION ALL SELECT 1 FROM native_delivery_epoch_gap_witnesses
       UNION ALL SELECT 1 FROM native_delivery_receipts WHERE substr(original_id,1,4)='nd2:' LIMIT 1`)
       .get();
     if (evidence) throw failure();
@@ -121,7 +159,11 @@ export async function initializeNativeDeliveryEpochs(db: StoreDatabase): Promise
     AND typeof(NEW.sha256)='text' AND length(NEW.sha256)=64 AND NEW.sha256 NOT GLOB '*[^0-9a-f]*'
     AND ${sqlInteger("NEW.byte_length", 1)} AND NEW.byte_length<=16777216
     AND NEW.kind IN ('buffer','native.services.conversation.desktop.finish','native.services.workspace.format') AND NEW.state='admitted')`;
+  // These two guards gained gap-fence clauses; replace older definitions in place.
+  // An older Host keeps the newer definitions (IF NOT EXISTS) and stays fenced.
   await db.exec(`
+    DROP TRIGGER IF EXISTS native_delivery_epoch_update;
+    DROP TRIGGER IF EXISTS native_delivery_receipt_insert;
     CREATE TRIGGER IF NOT EXISTS native_delivery_epoch_counter_insert BEFORE INSERT ON native_delivery_epoch_counter BEGIN
       SELECT CASE WHEN EXISTS(SELECT 1 FROM native_delivery_epoch_counter WHERE id=NEW.id)
         OR EXISTS(SELECT 1 FROM native_delivery_epoch_counter_witness) OR EXISTS(SELECT 1 FROM native_delivery_epoch_witnesses) OR EXISTS(SELECT 1 FROM native_delivery_epochs)
@@ -179,9 +221,14 @@ export async function initializeNativeDeliveryEpochs(db: StoreDatabase): Promise
         OR NEW.through<OLD.through OR NEW.through-OLD.through>32 OR NEW.high_water<OLD.high_water OR NEW.closed<OLD.closed
         OR (OLD.closed=1 AND (NEW.through<>OLD.through OR NEW.high_water<>OLD.high_water))
         OR NOT EXISTS(SELECT 1 FROM native_delivery_epoch_witnesses w WHERE ${ownerMatch("w", "OLD")})
-        OR (NEW.high_water>OLD.high_water AND (NEW.through<>OLD.through OR NEW.closed<>OLD.closed OR NOT EXISTS(SELECT 1 FROM native_delivery_receipts r WHERE r.environment_id=OLD.environment_id AND r.principal_id=OLD.principal_id AND r.epoch_owner_id=OLD.owner_id AND r.epoch_generation=OLD.generation AND r.epoch_sequence=NEW.high_water AND r.state='admitted')))
-        OR (NEW.through>OLD.through AND ((SELECT COUNT(*) FROM native_delivery_receipts r WHERE r.environment_id=OLD.environment_id AND r.principal_id=OLD.principal_id AND r.epoch_owner_id=OLD.owner_id AND r.epoch_generation=OLD.generation AND r.epoch_sequence>OLD.through AND r.epoch_sequence<=NEW.through)<>NEW.through-OLD.through
-          OR EXISTS(SELECT 1 FROM native_delivery_receipts r WHERE r.environment_id=OLD.environment_id AND r.principal_id=OLD.principal_id AND r.epoch_owner_id=OLD.owner_id AND r.epoch_generation=OLD.generation AND r.epoch_sequence>OLD.through AND r.epoch_sequence<=NEW.through AND NOT coalesce(${retired("r")},0))))
+        OR (NEW.high_water>OLD.high_water AND (NEW.through<>OLD.through OR NEW.closed<>OLD.closed OR NOT (EXISTS(SELECT 1 FROM native_delivery_receipts r WHERE r.environment_id=OLD.environment_id AND r.principal_id=OLD.principal_id AND r.epoch_owner_id=OLD.owner_id AND r.epoch_generation=OLD.generation AND r.epoch_sequence=NEW.high_water AND r.state='admitted')
+          OR EXISTS(SELECT 1 FROM native_delivery_epoch_gap_fences g JOIN native_delivery_epoch_gap_witnesses x ON ${gapMatch("g", "x")} WHERE g.environment_id=OLD.environment_id AND g.principal_id=OLD.principal_id AND g.owner_id=OLD.owner_id AND g.generation=OLD.generation AND g.sequence=NEW.high_water))))
+        OR (NEW.through>OLD.through AND ((SELECT COUNT(*) FROM native_delivery_receipts r WHERE r.environment_id=OLD.environment_id AND r.principal_id=OLD.principal_id AND r.epoch_owner_id=OLD.owner_id AND r.epoch_generation=OLD.generation AND r.epoch_sequence>OLD.through AND r.epoch_sequence<=NEW.through)
+            +(SELECT COUNT(*) FROM native_delivery_epoch_gap_fences g WHERE g.environment_id=OLD.environment_id AND g.principal_id=OLD.principal_id AND g.owner_id=OLD.owner_id AND g.generation=OLD.generation AND g.sequence>OLD.through AND g.sequence<=NEW.through)<>NEW.through-OLD.through
+          OR EXISTS(SELECT 1 FROM native_delivery_receipts r WHERE r.environment_id=OLD.environment_id AND r.principal_id=OLD.principal_id AND r.epoch_owner_id=OLD.owner_id AND r.epoch_generation=OLD.generation AND r.epoch_sequence>OLD.through AND r.epoch_sequence<=NEW.through AND NOT coalesce(${retired("r")},0))
+          OR EXISTS(SELECT 1 FROM native_delivery_epoch_gap_fences g WHERE g.environment_id=OLD.environment_id AND g.principal_id=OLD.principal_id AND g.owner_id=OLD.owner_id AND g.generation=OLD.generation AND g.sequence>OLD.through AND g.sequence<=NEW.through
+            AND (NOT coalesce(${gapShape("g")},0) OR NOT EXISTS(SELECT 1 FROM native_delivery_epoch_gap_witnesses x WHERE ${gapMatch("g", "x")})
+              OR EXISTS(SELECT 1 FROM native_delivery_receipts r WHERE r.environment_id=g.environment_id AND r.principal_id=g.principal_id AND (r.original_id=g.original_id OR (r.epoch_owner_id=g.owner_id AND r.epoch_generation=g.generation AND r.epoch_sequence=g.sequence)))))))
         OR (NEW.closed=1 AND EXISTS(SELECT 1 FROM native_delivery_receipts r WHERE r.environment_id=OLD.environment_id AND r.principal_id=OLD.principal_id AND r.epoch_owner_id=OLD.owner_id AND r.epoch_generation=OLD.generation AND r.epoch_sequence>NEW.through))
         THEN RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_FLOOR_FENCED') END;
     END;
@@ -199,6 +246,9 @@ export async function initializeNativeDeliveryEpochs(db: StoreDatabase): Promise
     CREATE TRIGGER IF NOT EXISTS native_delivery_epoch_witness_delete BEFORE DELETE ON native_delivery_epoch_witnesses BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_OWNER_HELD'); END;
     CREATE TRIGGER IF NOT EXISTS native_delivery_receipt_insert BEFORE INSERT ON native_delivery_receipts BEGIN
       SELECT CASE WHEN EXISTS(SELECT 1 FROM native_delivery_receipts WHERE environment_id=NEW.environment_id AND principal_id=NEW.principal_id AND original_id=NEW.original_id) THEN RAISE(ABORT,'NATIVE_DELIVERY_ORIGINAL_REPLACE') END;
+      SELECT CASE WHEN ${gapSlot("native_delivery_epoch_gap_fences", "NEW", "NEW.epoch_owner_id", "NEW.epoch_generation", "NEW.epoch_sequence")}
+        OR ${gapSlot("native_delivery_epoch_gap_witnesses", "NEW", "NEW.epoch_owner_id", "NEW.epoch_generation", "NEW.epoch_sequence")}
+        THEN RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_FENCED') END;
       SELECT CASE WHEN substr(NEW.original_id,1,4)<>'nd2:' AND (NEW.epoch_owner_id IS NOT NULL OR NEW.epoch_generation IS NOT NULL OR NEW.epoch_sequence IS NOT NULL
         OR EXISTS(SELECT 1 FROM native_delivery_protocol_floors WHERE environment_id=NEW.environment_id AND principal_id=NEW.principal_id)
         OR EXISTS(SELECT 1 FROM native_delivery_protocol_witnesses WHERE environment_id=NEW.environment_id AND principal_id=NEW.principal_id)
@@ -226,6 +276,33 @@ export async function initializeNativeDeliveryEpochs(db: StoreDatabase): Promise
       SELECT CASE WHEN OLD.epoch_owner_id IS NULL OR NOT coalesce(${retired("OLD")},0) OR NOT EXISTS(SELECT 1 FROM native_delivery_epochs o JOIN native_delivery_epoch_witnesses w ON ${ownerMatch("o", "w")}
         WHERE o.environment_id=OLD.environment_id AND o.principal_id=OLD.principal_id AND o.owner_id=OLD.epoch_owner_id AND o.generation=OLD.epoch_generation AND OLD.epoch_sequence<=o.through)
         THEN RAISE(ABORT,'NATIVE_DELIVERY_ORIGINAL_HELD') END;
+    END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_epoch_gap_insert BEFORE INSERT ON native_delivery_epoch_gap_fences BEGIN
+      SELECT CASE WHEN NOT coalesce(${gapShape("NEW")},0) OR NOT ${healthyGlobal} OR NOT ${healthyProtocol("NEW.environment_id", "NEW.principal_id")}
+        OR ${gapSlot("native_delivery_epoch_gap_fences", "NEW", "NEW.owner_id", "NEW.generation", "NEW.sequence")}
+        OR ${gapSlot("native_delivery_epoch_gap_witnesses", "NEW", "NEW.owner_id", "NEW.generation", "NEW.sequence")}
+        OR EXISTS(SELECT 1 FROM native_delivery_receipts r WHERE r.environment_id=NEW.environment_id AND r.principal_id=NEW.principal_id
+          AND (r.original_id=NEW.original_id OR (r.epoch_owner_id=NEW.owner_id AND r.epoch_generation=NEW.generation AND r.epoch_sequence=NEW.sequence)))
+        OR NOT EXISTS(SELECT 1 FROM native_delivery_epochs o JOIN native_delivery_epoch_witnesses w ON ${ownerMatch("o", "w")}
+          WHERE o.environment_id=NEW.environment_id AND o.principal_id=NEW.principal_id AND o.owner_id=NEW.owner_id AND o.generation=NEW.generation AND o.closed=0 AND NEW.sequence-o.through BETWEEN 1 AND ${WINDOW})
+        THEN RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_REFUSED') END;
+    END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_epoch_gap_insert_sync AFTER INSERT ON native_delivery_epoch_gap_fences BEGIN
+      INSERT INTO native_delivery_epoch_gap_witnesses(${gapColumns}) VALUES(NEW.environment_id,NEW.principal_id,NEW.owner_id,NEW.generation,NEW.sequence,NEW.original_id,NEW.kind,NEW.sha256,NEW.byte_length);
+      UPDATE native_delivery_epochs SET high_water=NEW.sequence WHERE environment_id=NEW.environment_id AND principal_id=NEW.principal_id AND owner_id=NEW.owner_id AND generation=NEW.generation AND high_water<NEW.sequence;
+    END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_epoch_gap_update BEFORE UPDATE ON native_delivery_epoch_gap_fences BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_IMMUTABLE'); END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_epoch_gap_delete BEFORE DELETE ON native_delivery_epoch_gap_fences BEGIN
+      SELECT CASE WHEN ${gapHeld("OLD")} THEN RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_HELD') END;
+    END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_epoch_gap_witness_insert BEFORE INSERT ON native_delivery_epoch_gap_witnesses BEGIN
+      SELECT CASE WHEN ${gapSlot("native_delivery_epoch_gap_witnesses", "NEW", "NEW.owner_id", "NEW.generation", "NEW.sequence")}
+        OR NOT EXISTS(SELECT 1 FROM native_delivery_epoch_gap_fences g WHERE ${gapMatch("g", "NEW")})
+        THEN RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_WITNESS') END;
+    END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_epoch_gap_witness_update BEFORE UPDATE ON native_delivery_epoch_gap_witnesses BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_IMMUTABLE'); END;
+    CREATE TRIGGER IF NOT EXISTS native_delivery_epoch_gap_witness_delete BEFORE DELETE ON native_delivery_epoch_gap_witnesses BEGIN
+      SELECT CASE WHEN ${gapHeld("OLD")} THEN RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_HELD') END;
     END;
   `);
   await globalGeneration(db);
@@ -317,7 +394,7 @@ async function protocol(store: HostStore, principal: string): Promise<0 | 2> {
     const owner = await store.db
       .prepare(`SELECT owner_id FROM native_delivery_epoch_witnesses WHERE environment_id=? AND principal_id=?
       UNION ALL SELECT owner_id FROM native_delivery_epochs WHERE environment_id=? AND principal_id=?
-      UNION ALL SELECT epoch_owner_id FROM native_delivery_receipts WHERE environment_id=? AND principal_id=? AND substr(original_id,1,4)='nd2:' LIMIT 1`)
+      UNION ALL SELECT epoch_owner_id FROM native_delivery_receipts WHERE environment_id=? AND principal_id=? AND original_id>='nd2:' AND original_id<'nd2;' LIMIT 1`)
       .get(...key, ...key, ...key);
     if (owner) throw failure();
     return 0;
@@ -371,6 +448,48 @@ export function createNativeDeliveryEpochs(store: HostStore) {
       return description(row);
     });
   }
+  /** Both halves of every gap fence in `(after, through]`, validated; a lone half is corrupt. */
+  async function gaps(
+    principal: string,
+    ref: NativeDeliveryEpochRef,
+    after: number,
+    through: number,
+  ) {
+    const args = [store.environmentId, principal, ref.ownerId, ref.generation, after, through];
+    const where =
+      "WHERE environment_id=? AND principal_id=? AND owner_id=? AND generation=? AND sequence>? AND sequence<=? ORDER BY sequence LIMIT 33";
+    const rows = await store.db
+      .prepare(`SELECT ${gapColumns} FROM native_delivery_epoch_gap_fences ${where}`)
+      .all(...args);
+    const witnesses = await store.db
+      .prepare(`SELECT ${gapColumns} FROM native_delivery_epoch_gap_witnesses ${where}`)
+      .all(...args);
+    if (JSON.stringify(rows) !== JSON.stringify(witnesses)) throw failure();
+    for (const row of rows) {
+      let parsed: NativeDeliveryEpochOriginal | null = null;
+      try {
+        parsed = parseNativeDeliveryEpochOriginalId(String(row.original_id));
+      } catch {
+        throw failure();
+      }
+      if (
+        !parsed ||
+        parsed.ownerId !== ref.ownerId ||
+        parsed.ownerId !== row.owner_id ||
+        parsed.generation !== row.generation ||
+        parsed.sequence !== row.sequence ||
+        !GAP_KINDS.has(String(row.kind)) ||
+        !/^[a-f0-9]{64}$/.test(String(row.sha256)) ||
+        !integer(row.byte_length) ||
+        row.byte_length < 1 ||
+        row.byte_length > 16777216
+      )
+        throw failure();
+    }
+    return rows;
+  }
+  const gapAt = async (principal: string, original: NativeDeliveryEpochOriginal) =>
+    (await gaps(principal, original, original.sequence - 1, original.sequence))[0];
   async function fence(
     principal: string,
     identity: NativeDeliveryIdentity,
@@ -378,14 +497,16 @@ export function createNativeDeliveryEpochs(store: HostStore) {
     const original = parseNativeDeliveryEpochOriginalId(identity.originalId);
     if (!original) return null;
     const owner = await status(principal, original);
-    return owner.closed || original.sequence <= owner.through
-      ? {
-          ownerId: owner.ownerId,
-          generation: owner.generation,
-          through: owner.through,
-          closed: owner.closed,
-        }
-      : null;
+    if (owner.closed || original.sequence <= owner.through)
+      return {
+        ownerId: owner.ownerId,
+        generation: owner.generation,
+        through: owner.through,
+        closed: owner.closed,
+      };
+    // Never "absent": a gap-fenced original is terminally unadmittable, not retryable.
+    if (await gapAt(principal, original)) throw failure("GAP_FENCED");
+    return null;
   }
   async function assertAdmission(
     principal: string,
@@ -399,7 +520,104 @@ export function createNativeDeliveryEpochs(store: HostStore) {
     const owner = await status(principal, original);
     if (owner.closed || original.sequence <= owner.through) throw failure("FENCED");
     if (original.sequence - owner.through > WINDOW) throw failure("WINDOW");
+    if (await gapAt(principal, original)) throw failure("GAP_FENCED");
     return original;
+  }
+  /** Serialized with admission (same critical lane plus the receipt trigger): either the
+   * original's receipt exists and is reported, or a no-effect fence makes it unadmittable. */
+  async function resolveGap(
+    principal: string,
+    input: NativeDeliveryEpochGapParams,
+  ): Promise<NativeDeliveryEpochGapResult> {
+    const original = {
+      ownerId: input.ownerId,
+      generation: input.generation,
+      sequence: input.sequence,
+    };
+    const originalId = nativeDeliveryEpochOriginalId(original);
+    if (
+      !GAP_KINDS.has(input.kind) ||
+      !/^[a-f0-9]{64}$/.test(input.sha256) ||
+      !integer(input.byteLength) ||
+      input.byteLength < 1 ||
+      input.byteLength > 16777216
+    )
+      throw failure("IDENTITY");
+    const exact = {
+      ownerId: input.ownerId,
+      generation: input.generation,
+      sequence: input.sequence,
+      kind: input.kind,
+      sha256: input.sha256,
+      byteLength: input.byteLength,
+    };
+    return store.transaction(async () => {
+      const owner = await status(principal, original);
+      const receipts = await store.db
+        .prepare(`SELECT original_id,kind,sha256,byte_length,epoch_owner_id,epoch_generation,epoch_sequence FROM native_delivery_receipts
+          WHERE environment_id=? AND principal_id=? AND (original_id=? OR (epoch_owner_id=? AND epoch_generation=? AND epoch_sequence=?)) LIMIT 2`)
+        .all(
+          store.environmentId,
+          principal,
+          originalId,
+          original.ownerId,
+          original.generation,
+          original.sequence,
+        );
+      if (receipts.length) {
+        const row = receipts[0]!;
+        if (
+          receipts.length !== 1 ||
+          row.original_id !== originalId ||
+          row.epoch_owner_id !== original.ownerId ||
+          row.epoch_generation !== original.generation ||
+          row.epoch_sequence !== original.sequence ||
+          row.kind !== input.kind ||
+          row.sha256 !== input.sha256 ||
+          row.byte_length !== input.byteLength
+        )
+          throw failure("CONFLICT");
+        await store.db.checkAuthorization();
+        return { ...exact, outcome: "admitted" as const };
+      }
+      // Covered slots no longer say whether they retired or were fenced; never guess.
+      if (owner.closed || original.sequence <= owner.through) throw failure("FENCED");
+      if (original.sequence - owner.through > WINDOW) throw failure("WINDOW");
+      const existing = await gapAt(principal, original);
+      if (existing) {
+        if (
+          existing.kind !== input.kind ||
+          existing.sha256 !== input.sha256 ||
+          existing.byte_length !== input.byteLength
+        )
+          throw failure("CONFLICT");
+        await store.db.checkAuthorization();
+        return { ...exact, outcome: "not_admitted" as const };
+      }
+      const count = await store.db
+        .prepare(`SELECT COUNT(*) AS total,SUM(CASE WHEN environment_id=? AND principal_id=? THEN 1 ELSE 0 END) AS own
+          FROM native_delivery_epoch_gap_witnesses`)
+        .get(store.environmentId, principal);
+      if (Number(count?.total) >= MAX_GAPS || Number(count?.own ?? 0) >= MAX_OWN_GAPS)
+        throw failure("CAPACITY");
+      await store.db.checkAuthorization();
+      await store.db
+        .prepare(
+          `INSERT INTO native_delivery_epoch_gap_fences(${gapColumns}) VALUES (?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          store.environmentId,
+          principal,
+          original.ownerId,
+          original.generation,
+          original.sequence,
+          originalId,
+          input.kind,
+          input.sha256,
+          input.byteLength,
+        );
+      return { ...exact, outcome: "not_admitted" as const };
+    }, "critical");
   }
   async function change(
     principal: string,
@@ -433,7 +651,17 @@ export function createNativeDeliveryEpochs(store: HostStore) {
           owner.through,
           input.through,
         );
-      if (rows.length !== input.through - owner.through) throw failure("HOLE");
+      const fenced = await gaps(principal, owner, owner.through, input.through);
+      const fencedSequences = new Set(fenced.map((row) => Number(row.sequence)));
+      if (
+        rows.length + fenced.length !== input.through - owner.through ||
+        rows.some((row) => fencedSequences.has(Number(row.epoch_sequence)))
+      )
+        throw failure("HOLE");
+      const expected = Array.from(
+        { length: input.through - owner.through },
+        (_, index) => owner.through + index + 1,
+      ).filter((sequence) => !fencedSequences.has(sequence));
       for (let index = 0; index < rows.length; index++) {
         const row = rows[index],
           parsed = parseNativeDeliveryEpochOriginalId(String(row.original_id));
@@ -441,7 +669,7 @@ export function createNativeDeliveryEpochs(store: HostStore) {
           !parsed ||
           parsed.ownerId !== owner.ownerId ||
           parsed.generation !== owner.generation ||
-          parsed.sequence !== owner.through + index + 1 ||
+          parsed.sequence !== expected[index] ||
           row.epoch_owner_id !== parsed.ownerId ||
           row.epoch_generation !== parsed.generation ||
           row.epoch_sequence !== parsed.sequence ||
@@ -493,6 +721,24 @@ export function createNativeDeliveryEpochs(store: HostStore) {
           input.through,
         );
       if (Number(deleted.changes) !== rows.length) throw failure("CAS");
+      for (const table of [
+        "native_delivery_epoch_gap_fences",
+        "native_delivery_epoch_gap_witnesses",
+      ]) {
+        const removed = await store.db
+          .prepare(
+            `DELETE FROM ${table} WHERE environment_id=? AND principal_id=? AND owner_id=? AND generation=? AND sequence>? AND sequence<=?`,
+          )
+          .run(
+            store.environmentId,
+            principal,
+            owner.ownerId,
+            owner.generation,
+            owner.through,
+            input.through,
+          );
+        if (Number(removed.changes) !== fenced.length) throw failure("CAS");
+      }
       return status(principal, input);
     }, "critical");
   }
@@ -500,6 +746,7 @@ export function createNativeDeliveryEpochs(store: HostStore) {
     status,
     fence,
     assertAdmission,
+    resolveGap,
     async assertNotFenced(principal: string, identity: NativeDeliveryIdentity) {
       if (await fence(principal, identity)) throw failure("FENCED");
     },

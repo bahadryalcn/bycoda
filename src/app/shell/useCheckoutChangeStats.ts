@@ -58,11 +58,11 @@ export function useCheckoutChangeStats({
     `source-control:checkouts:${checkoutSelectionKey}:selected`,
     () => loadCheckoutSelection(checkoutSelectionKey),
   );
-  const { modules, error: discoveryError } = useGitSubmodules(
-    checkoutPaths,
-    checkoutScopeEnabled,
-    true,
-  );
+  const {
+    modules,
+    limits,
+    error: discoveryError,
+  } = useGitSubmodules(checkoutPaths, checkoutScopeEnabled, true);
   const repositoryTargets = checkoutRepositoryPaths(checkoutPaths, modules);
   const selectedCheckout = checkoutScope
     ? resolveCheckoutSelection(
@@ -82,6 +82,7 @@ export function useCheckoutChangeStats({
   );
   const changeStats = allCheckouts
     ? discoveryError ||
+      Object.keys(limits).length > 0 ||
       checkoutPaths.some((path) => modules[path] === undefined) ||
       allStats.length !== repositoryTargets.length ||
       allStats.some((stats) => !stats)

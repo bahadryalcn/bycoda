@@ -213,9 +213,14 @@ export function VoiceSetupSteps({
           language,
         );
         mic.current = voice;
-        const secret = await realtimeSecret(settings.mode === "grok" ? "xai" : "openai");
+        const provider = settings.mode === "grok" ? "xai" : "openai";
+        const secret = await realtimeSecret(provider);
         if (epoch.current === attempt)
-          await voice.connect(secret, [], { deviceId: settings.microphoneId });
+          await voice.connect(secret, [], {
+            deviceId: settings.microphoneId,
+            // A microphone permission prompt can outlast the 60 s credential.
+            renewSecret: () => realtimeSecret(provider),
+          });
       }
       await refreshDevices(() => epoch.current !== attempt);
     } catch (cause) {

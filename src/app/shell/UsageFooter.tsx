@@ -8,7 +8,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../shared/lib/queryClient";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
-import { useLocale, useT } from "../../shared/i18n";
+import { useT } from "../../shared/i18n";
 import { Terminal } from "../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
@@ -39,10 +39,11 @@ import {
   runningTerminalChipLabel,
   type RunningTerminal,
 } from "../../features/terminal/model/terminalTab";
-import { MOD } from "../../platform/tauri/platform";
+import { useKeybindingShortcut } from "../../features/settings/public/useKeybindingShortcut";
 import { ConversationToolsButton } from "../../features/host-tools/ConversationToolsButton";
 import type { ConversationTools } from "../../features/host-tools/SessionHostTools";
 import { UsageProviderChip } from "./UsageProviderChip";
+import { WorkingIndicator } from "../../shared/ui/WorkingIndicator";
 import {
   saveUsageDisplayAccount,
   useUsageDisplayAccount,
@@ -63,6 +64,7 @@ import {
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
 import { useProviderAccounts } from "../../features/providers/model/useProviderAccounts";
+import { providerAccountErrorText } from "../../features/providers/public/providerAccountError";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 
 export type UsageFooterSession = {
@@ -108,6 +110,8 @@ export function UsageFooter({
   onManageAccounts?: (provider: ProviderAccountProvider) => void;
 }) {
   const t = useT();
+  // The live binding (user overrides included), so the hint matches what the shortcut does.
+  const terminalShortcut = useKeybindingShortcut("Terminal: New");
   const wantClaude = providers.includes("claude");
   const wantCodex = providers.includes("codex");
   const wantOpencode = providers.includes("opencode");
@@ -224,37 +228,40 @@ export function UsageFooter({
     [],
   );
 
-  const reconnectProvider = useCallback(async (provider: RateLimitProvider, accountId: string) => {
-    while (inflight.current) await inflight.current;
-    setRefreshing(true);
-    const operation = (async () => {
-      try {
-        await (accountId === "default"
-          ? loginHarness(provider)
-          : loginHarness(provider, accountId));
-        const value = await loadRateLimits(provider, accountId, true);
-        if (value.status !== "ok") {
-          throw new Error(
-            value.error || `${HARNESS_TITLE[provider]} sign-in could not be verified`,
+  const reconnectProvider = useCallback(
+    async (provider: RateLimitProvider, accountId: string) => {
+      while (inflight.current) await inflight.current;
+      setRefreshing(true);
+      const operation = (async () => {
+        try {
+          await (accountId === "default"
+            ? loginHarness(provider)
+            : loginHarness(provider, accountId));
+          const value = await loadRateLimits(provider, accountId, true);
+          if (value.status !== "ok") {
+            throw new Error(
+              value.error || `${HARNESS_TITLE[provider]} sign-in could not be verified`,
+            );
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : t("Could not complete sign-in");
+          setCachedRateLimits(
+            provider,
+            accountId,
+            errorRateLimits(provider, message, getCachedRateLimits(provider, accountId)),
           );
+          throw error;
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Could not complete sign-in";
-        setCachedRateLimits(
-          provider,
-          accountId,
-          errorRateLimits(provider, message, getCachedRateLimits(provider, accountId)),
-        );
-        throw error;
-      }
-    })();
-    const tracked = operation.finally(() => {
-      inflight.current = null;
-      setRefreshing(false);
-    });
-    inflight.current = tracked.catch(() => undefined);
-    await tracked;
-  }, []);
+      })();
+      const tracked = operation.finally(() => {
+        inflight.current = null;
+        setRefreshing(false);
+      });
+      inflight.current = tracked.catch(() => undefined);
+      await tracked;
+    },
+    [t],
+  );
 
   const reconnectClaude = useCallback(
     () => reconnectProvider("claude", claudeAccountId),
@@ -296,11 +303,11 @@ export function UsageFooter({
     : (onNewTerminal ?? onShowTerminal);
   const ariaLabel =
     showUsage || session?.harness === "pi"
-      ? "Provider usage"
+      ? t("Provider usage")
       : showTerminals || showTerminalButton
-        ? "Terminals"
+        ? t("Terminals")
         : session
-          ? "Session"
+          ? t("Session")
           : undefined;
 
   return (
@@ -314,9 +321,10 @@ export function UsageFooter({
         `@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 ${embedded ? "flex-1" : "shrink-0 px-1.5"}`,
       )}
     >
+      {/* Shared scrollbar (not hidden) so clipped provider chips show that more exist; the chips are buttons, so keyboard focus scrolls them into view. */}
       <ScrollArea
         axis="both"
-        scrollbar="hidden"
+        scrollbar="auto"
         data-provider-usage
         className="flex min-w-0 flex-1 items-center gap-1 overscroll-x-contain"
       >
@@ -400,7 +408,7 @@ export function UsageFooter({
               iconOnly
               label={terminalLabel}
               shortcut={
-                !projectTerminalActive && !terminalUnavailableReason ? MOD + "+`" : undefined
+                !projectTerminalActive && !terminalUnavailableReason ? terminalShortcut : undefined
               }
               variant="ghost"
               motion="none"
@@ -418,17 +426,6 @@ export function UsageFooter({
         </div>
       ) : null}
     </Text>
-  );
-}
-
-function TerminalLiveMark() {
-  useLocale();
-  return (
-    <span className="terminal-live shrink-0" aria-hidden>
-      <span className="terminal-live-bar" />
-      <span className="terminal-live-bar" />
-      <span className="terminal-live-bar" />
-    </span>
   );
 }
 
@@ -455,7 +452,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
       setOpen(false);
       setLoginState("complete");
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : "Could not complete sign-in");
+      setLoginError(providerAccountErrorText(error, "signIn"));
       setLoginState("error");
     }
   };
@@ -501,15 +498,14 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
           align="start"
           gap={7}
           width={300}
-          autoFocus
           onDismiss={dismiss}
-          role="dialog"
+          kind="dialog"
           aria-label={t("{p0} sign-in", { p0: HARNESS_TITLE[session.harness] })}
-          tabIndex={-1}
         >
           <Text as="div" size="inherit" tone="primary">
             <ProviderSignInPanel
               harness={session.harness}
+              accountId={session.providerAccountId}
               state={loginState}
               error={loginError}
               onSignIn={() => void signIn()}
@@ -573,7 +569,7 @@ function RunningTerminalChip({
           setMenuOpen((value) => !value);
         }}
       >
-        <TerminalLiveMark />
+        <WorkingIndicator className="shrink-0" />
         <span className="sr-only">{label}</span>
       </Button>
       {menuOpen && many && !panelOpen ? (

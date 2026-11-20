@@ -10,19 +10,20 @@ export const VOICE_WAKE_EVENT = "bycoda:voice-wake";
  * starts Talk exactly like the button, and does nothing while voice is already connecting,
  * live or reconnecting (mute stays as is).
  */
-export function useVoiceTalkEvent(options: { status: string; start: () => void }) {
+export function useVoiceTalkEvent(options: { status: string; start: (wake: boolean) => void }) {
   const latest = useRef(options);
   useLayoutEffect(() => {
     latest.current = options;
   });
   useEffect(() => {
-    const talk = () => {
-      if (CAN_TALK.has(latest.current.status)) latest.current.start();
+    const talk = (wake: boolean) => {
+      if (CAN_TALK.has(latest.current.status)) latest.current.start(wake);
     };
-    const subscription = listenVoiceTalk(talk);
-    window.addEventListener(VOICE_WAKE_EVENT, talk);
+    const wake = () => talk(true);
+    const subscription = listenVoiceTalk(() => talk(false));
+    window.addEventListener(VOICE_WAKE_EVENT, wake);
     return () => {
-      window.removeEventListener(VOICE_WAKE_EVENT, talk);
+      window.removeEventListener(VOICE_WAKE_EVENT, wake);
       return subscription();
     };
   }, []);

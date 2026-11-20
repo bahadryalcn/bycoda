@@ -158,6 +158,20 @@ it("collapses skill groups without creating another scroll owner", async () => {
   expect(group.hidden).toBe(false);
 });
 
+it("unmounts collapsed group rows and remounts them on expand", async () => {
+  await render();
+  const personal = container.querySelector<HTMLButtonElement>(
+    "[data-section-label] button[aria-controls]",
+  )!;
+  const group = document.getElementById(personal.getAttribute("aria-controls")!)!;
+  const rows = group.querySelectorAll("[data-action-primary]").length;
+  expect(rows).toBeGreaterThan(0);
+  await act(async () => personal.click());
+  expect(group.querySelectorAll("[data-action-primary]")).toHaveLength(0);
+  await act(async () => personal.click());
+  expect(group.querySelectorAll("[data-action-primary]")).toHaveLength(rows);
+});
+
 it("retains the shared list scroll position across navigation", async () => {
   await render();
   const list = container.querySelector<HTMLElement>("[data-skill-list]")!;
@@ -286,7 +300,8 @@ describe("Settings skill preview", () => {
     expect(container.querySelector('[aria-label="Skill instructions"]')).not.toBeNull();
     edit("# Draft instructions");
     await click("Other guide");
-    await click("Project guide");
+    // A modified row announces its draft mark in its accessible name.
+    await click("Project guide, Draft");
     expect(container.querySelector(".cm-content")?.textContent).toContain("Draft instructions");
     await click("Preview");
     expect(container.querySelector('[aria-label="Skill preview"] h1')?.textContent).toBe(
@@ -319,7 +334,8 @@ describe("Settings skill preview", () => {
     expect(disk).toBe("---\nname: guide\n---\n\n# Updated instructions\n");
     expect(container.textContent).not.toContain("Skill saved.");
     expect(button("Saved").disabled).toBe(true);
-    expect(container.querySelector("footer")?.textContent).not.toContain("Saved");
+    // Success shows on the Save control itself, not as a separate toast.
+    expect(container.querySelector("footer")?.textContent).toContain("Saved");
     edit("# Another draft");
     expect(button("Save").disabled).toBe(false);
   });
@@ -434,12 +450,17 @@ describe("Settings skill preview", () => {
       }
       await openPreview("Project guide");
       const previousText =
-        previousState === "document" ? "Previous document" : "Previous read failed";
+        previousState === "document" ? "Previous document" : "Could not read SKILL.md.";
       expect(container.querySelector('[aria-label="Skill preview"]')?.textContent).toContain(
         previousText,
       );
+      if (previousState === "error") {
+        await click("Details: Could not read SKILL.md.");
+        expect(document.body.textContent).toContain("Previous read failed");
+      }
       vi.mocked(invoke).mockImplementationOnce(() => pending.promise);
       await openPreview("Other guide");
+      expect(document.body.textContent).not.toContain("Previous read failed");
       expect(frames.length).toBeGreaterThan(0);
       for (const frame of frames) {
         expect(frame).not.toContain(previousText);
@@ -706,7 +727,8 @@ describe("Settings skill preview", () => {
       await openPreview("Project guide");
       const alert = document.querySelector('[aria-label="Skill preview"] [role="alert"]');
       expect(alert?.textContent).toContain("Could not read SKILL.md");
-      expect(alert?.textContent).toContain(error instanceof Error ? error.message : error);
+      // The raw cause is behind Details, not in the headline (#582).
+      expect(alert?.textContent).not.toContain(error instanceof Error ? error.message : error);
       expect(document.querySelector('[role="status"]')).toBeNull();
       await click("Close skill preview");
       await openPreview("Other guide");
@@ -903,7 +925,7 @@ describe("Skills on connected machines", () => {
     await renderLocalProject();
 
     expect(hostCalls).toContainEqual(
-      expect.objectContaining({ command: "list_skills", args: { cwd: "" } }),
+      expect.objectContaining({ command: "list_skills", args: { cwd: "", withStatus: true } }),
     );
     const text = container.textContent ?? "";
     expect(text).toContain("mac-notes");
@@ -959,6 +981,7 @@ describe("Skills on connected machines", () => {
 
     expect(hostCalls.find((call) => call.machineId === "machine-mac")?.args).toEqual({
       cwd: "/Users/me/shop",
+      withStatus: true,
     });
     expect(container.textContent).toContain("shop-deploy");
     // Missing on two machines: each machine's column offers its own copy.

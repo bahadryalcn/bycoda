@@ -195,6 +195,12 @@ const params = {
     expectedUpdatedAt: 2.5,
   },
   "crews.agent.delete": { projectId: "project", agentId: "profile" },
+  "crews.agent.group.update": {
+    projectId: "project",
+    group: "UI",
+    rename: "Interface",
+    members: [{ agentId: "profile", expectedUpdatedAt: 2 }],
+  },
   "crews.start": {
     projectId: "project",
     definitionId: "crew",
@@ -276,7 +282,7 @@ it("inventories all declared Crew/candidate/policy/run and catalog/question fiel
     ["ModelSettingChoice", dto.CrewModelSettingChoiceSchema],
   ] as const)
     expect(Object.keys(schema.shape).sort()).toEqual(
-      declaredKeys("src/features/sessions/model/models.ts", name),
+      declaredKeys("src/shared/model/agentModel.ts", name),
     );
   for (const [name, schema] of [
     ["UserQuestionPrompt", dto.CrewUserQuestionPromptSchema],
@@ -768,6 +774,18 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
     runId: started.id,
     expectedUpdatedAt: finished!.updatedAt,
   });
+  const grouped = await call("crews.agent.save", {
+    agent: { ...agent("profile", "specialist"), projectId: project.id, groups: ["Interface"] },
+    expectedUpdatedAt: savedAgent.updatedAt,
+  });
+  expect(
+    await call("crews.agent.group.update", {
+      projectId: project.id,
+      group: "Interface",
+      rename: "Interface design",
+      members: [{ agentId: grouped.id, expectedUpdatedAt: grouped.updatedAt }],
+    }),
+  ).toStrictEqual({ updated: 1 });
   await call("crews.agent.delete", { agentId: savedAgent.id });
   // The first list normalized the dangling member link, which moved the crew revision.
   const current = (await call("crews.list")).definitions.find((d) => d.id === saved.id);

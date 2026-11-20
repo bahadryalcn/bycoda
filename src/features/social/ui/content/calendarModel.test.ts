@@ -7,7 +7,9 @@ import {
   isToday,
   monthCells,
   shiftMonth,
+  shiftWeek,
   splitMonthEntries,
+  visibleRange,
   startOfDay,
   weekDays,
 } from "./calendarModel";
@@ -104,5 +106,51 @@ describe("splitMonthEntries", () => {
   it("keeps the first entries and counts the rest", () => {
     expect(splitMonthEntries([1, 2, 3, 4, 5], 3)).toEqual({ shown: [1, 2, 3], more: 2 });
     expect(splitMonthEntries([1], 3)).toEqual({ shown: [1], more: 0 });
+  });
+});
+
+describe("visible range", () => {
+  it("covers the seven week days from the first local midnight to the midnight after the last", () => {
+    const { from, to } = visibleRange("week", local(2026, 11, 11)); // a Wednesday
+    expect(from).toBe(new Date(2026, 10, 9).getTime());
+    expect(to).toBe(new Date(2026, 10, 16).getTime());
+  });
+
+  it("covers all 42 month cells, including the days of the neighbouring months it draws", () => {
+    const { from, to } = visibleRange("month", local(2026, 11, 7));
+    expect(from).toBe(new Date(2026, 9, 26).getTime());
+    expect(to).toBe(new Date(2026, 11, 7).getTime());
+    for (const day of monthCells(local(2026, 11, 7))) {
+      expect(day >= from && day < to).toBe(true);
+    }
+  });
+
+  it("includes a post one millisecond before the end and excludes the next midnight", () => {
+    const { from, to } = visibleRange("week", local(2026, 11, 11));
+    const entry = (at: number) => ({ at });
+    const inside = [entry(from), entry(to - 1), entry(to), entry(from - 1)].filter(
+      (item) => item.at >= from && item.at < to,
+    );
+    expect(inside.map((item) => item.at)).toEqual([from, to - 1]);
+  });
+
+  it("follows local calendar days across a daylight-saving change instead of fixed 24 h steps", () => {
+    // The week of 26 Oct - 1 Nov 2026 holds a clock change in many zones; its end is still local midnight.
+    const { from, to } = visibleRange("week", local(2026, 10, 28));
+    expect(from).toBe(new Date(2026, 9, 26).getTime());
+    expect(to).toBe(new Date(2026, 10, 2).getTime());
+    expect(dayKey(to)).toBe("2026-11-02");
+  });
+
+  it("honours a Sunday week start", () => {
+    const { from, to } = visibleRange("week", local(2026, 11, 11), 0);
+    expect(dayKey(from)).toBe("2026-11-08");
+    expect(dayKey(to)).toBe("2026-11-15");
+  });
+
+  it("moves with the shifted anchor so the next week asks for the next window", () => {
+    const anchor = local(2026, 11, 11);
+    expect(visibleRange("week", shiftWeek(anchor, 1)).from).toBe(visibleRange("week", anchor).to);
+    expect(visibleRange("week", shiftWeek(anchor, -1)).to).toBe(visibleRange("week", anchor).from);
   });
 });

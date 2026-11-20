@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { findRevealedTask } from "../model/taskReveal";
 import { useQueryClient } from "@tanstack/react-query";
 import { SPRINT_CATALOG_QUERY_KEY } from "../model/useSprintCatalog";
@@ -38,9 +39,9 @@ import {
   resolveTaskNote,
   retargetTask,
   startTask,
-  TASK_MACHINE_ERROR,
   type TaskDraft,
 } from "../model/taskClient";
+import { taskClientErrors } from "../model/taskClientErrors";
 import type { TaskWorkspace } from "../model/taskWorkspace";
 import { taskColumn, type TaskColumn, type TaskStatus } from "../model/hostTasks";
 import { t, useLocale, useT } from "../../../shared/i18n";
@@ -494,7 +495,8 @@ function TasksContent({
     Number(goalFilter !== ALL_GOALS) + Number(statusFilter !== "all") + Number(sprintFilter !== "");
   // Changing scope drops hidden selections; select-all never means hidden tasks.
   // Adjusted during render when the visible set changes (the list itself is rebuilt often).
-  const visibleSignature = JSON.stringify(tasks.map(bulkTaskKey));
+  // Rebuilt only when the filtered list itself changes, not on every render or poll tick.
+  const visibleSignature = useMemo(() => JSON.stringify(tasks.map(bulkTaskKey)), [tasks]);
   const [bulkScope, setBulkScope] = useState(visibleSignature);
   if (bulkScope !== visibleSignature) {
     setBulkScope(visibleSignature);
@@ -509,7 +511,7 @@ function TasksContent({
 
   const beginCreate = () => {
     if (projectFilter !== "all" && (!scopedCwd || isProjectLockedIn(lock, scopedCwd))) {
-      setError(TASK_MACHINE_ERROR);
+      setError(taskClientErrors.machine());
       return;
     }
     const project =
@@ -556,7 +558,7 @@ function TasksContent({
     try {
       setSessionPreview(taskBackgroundSessionTarget(task, sessionId));
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorText(reason));
     } finally {
       openingSessionRequests.current.delete(key);
       setOpeningSessions(new Set(openingSessionRequests.current));
@@ -1046,7 +1048,7 @@ function TasksContent({
         </p>
       ) : null}
       <div
-        className={`@container/task-area min-h-0 min-w-0 flex-1 ${section === "reports" || (section === "sprints" && !currentSprint) ? "hidden" : "flex"}`}
+        className={`@container/task-area task-board-area min-w-0 flex-1 ${section === "reports" || (section === "sprints" && !currentSprint) ? "hidden" : "flex"}`}
       >
         <GoalSessionsDialog goals={goals} tasks={visibleTasks} onOpenSession={onOpenSession} />
         <ScrollArea

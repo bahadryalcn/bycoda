@@ -5,7 +5,9 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { usePendingSource } from "../../../shared/ui/settings";
 import type { McpServerRow } from "../model/mcpSettingsCache";
+import { errorText } from "../../../shared/lib/errors";
 
 type ServerConfig = { config: string; revision: string };
 
@@ -27,7 +29,7 @@ function jsonError(text: string): string {
       ? ""
       : t("Configuration must be a JSON object");
   } catch (cause) {
-    return cause instanceof Error ? cause.message : String(cause);
+    return errorText(cause);
   }
 }
 
@@ -69,7 +71,7 @@ export function McpServerConfigEditor({
       setDraft(result.config);
       setSaveError("");
     } catch (cause) {
-      if (version === epoch.current) setLoadError(String(cause));
+      if (version === epoch.current) setLoadError(errorText(cause));
     }
   }
   const loadOnMount = useEffectEvent(() => void load());
@@ -83,30 +85,52 @@ export function McpServerConfigEditor({
     };
   }, [identity]);
 
-  async function save() {
-    if (!loaded || saving) return;
+  /** Resolves true only once the native write acknowledged this draft; a refused or failed write keeps it. */
+  async function save(): Promise<boolean> {
+    if (!loaded || saving) return false;
     const invalid = jsonError(draft);
     if (invalid) {
       setSaveError(invalid);
-      return;
+      return false;
     }
     setSaving(true);
     setSaveError("");
+    let written = false;
     try {
       const result = await invoke<ServerConfig>("mcp_server_config_write", {
         ...target(server, cwd, globalOnly),
         config: draft,
         expectedRevision: loaded.revision,
       });
+      written = true;
       setLoaded(result);
       setDraft(result.config);
       await onSaved();
     } catch (cause) {
-      setSaveError(String(cause));
+      setSaveError(errorText(cause));
     } finally {
       setSaving(false);
     }
+    return written;
   }
+
+  // The leave prompt names the entry and the fact of a change, never the draft: it can hold env values or headers.
+  usePendingSource(
+    loaded && draft !== loaded.config
+      ? {
+          id: `mcp-config:${identity}`,
+          title: t("Configuration for {p0}", { p0: server.name }),
+          changes: [{ id: "config", label: t("Configuration") }],
+          canSave: !disabled && !saving && !jsonError(draft),
+          pending: saving,
+          save,
+          discard: () => {
+            setDraft(loaded.config);
+            setSaveError("");
+          },
+        }
+      : null,
+  );
 
   if (loadError)
     return (

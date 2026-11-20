@@ -153,7 +153,7 @@ export function ConversationHeader({
             {
               kind: "item",
               id: "clear",
-              label: t("Clear conversation..."),
+              label: t("Clear conversation…"),
               danger: true,
               disabled: pending || clearing || summaryRefreshing,
             },

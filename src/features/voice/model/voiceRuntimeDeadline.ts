@@ -6,7 +6,7 @@ export const voiceToolWaitsForOwner = (name: string) =>
 
 /** Owner approvals raised by a running tool; their own prompt owns the wait. */
 export type VoiceApprovalPort = {
-  pending(): boolean;
+  pending(requestId: string): boolean;
   subscribe(listener: () => void): () => void;
 };
 let approvalPort: VoiceApprovalPort | undefined;
@@ -15,16 +15,19 @@ export function setVoiceApprovalPort(port: VoiceApprovalPort | undefined) {
   approvalPort = port;
 }
 
+export const getVoiceApprovalPort = () => approvalPort;
+
 export function voiceRuntimeDeadline<T>(
   operation: (wait: VoiceToolWait) => Promise<T>,
   signal: AbortSignal,
   timeoutMs = VOICE_TOOL_TIMEOUT_MS,
+  approvalRequestId?: string,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let ownerWaiting = false;
-    const port = approvalPort;
+    const port = approvalRequestId ? approvalPort : undefined;
     const stopWatching = port?.subscribe(() => sync());
     const expire = () =>
       finish(() =>
@@ -37,7 +40,7 @@ export function voiceRuntimeDeadline<T>(
     // The deadline is suspended while an owner approval is pending, then restarts in full.
     const sync = () => {
       if (settled || ownerWaiting) return;
-      if (port?.pending()) {
+      if (approvalRequestId && port?.pending(approvalRequestId)) {
         if (timer !== undefined) clearTimeout(timer);
         timer = undefined;
       } else if (timer === undefined) timer = setTimeout(expire, timeoutMs);

@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import {
   prefersReducedMotion,
   useAudioFeedbackMotionEnabled,
+  useWindowHasFocus,
 } from "../../settings/public/decorativeMotion";
 import brandGeometry from "../../../shared/lib/brandGeometry.json";
 import type { VoiceVisual } from "../model/voiceSettings";
@@ -43,6 +44,8 @@ export function VoiceVisualizer({
   const root = useRef<HTMLSpanElement>(null);
   // The decorative-motion setting stills this like the OS reduce-motion request does.
   const motion = useAudioFeedbackMotionEnabled();
+  // Behind another application nobody sees the frames: hold the still frame like the canvas loops.
+  const focused = useWindowHasFocus();
   useEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -182,7 +185,8 @@ export function VoiceVisualizer({
 
     function tick(time: number) {
       frame = undefined;
-      if (disposed || document.hidden || !visible || prefersReducedMotion() || !motion) return;
+      if (disposed || document.hidden || !visible || prefersReducedMotion() || !motion || !focused)
+        return;
       // Repaint on the same timestamp stays allowed: callers re-sample the live meter.
       if (time === lastPaint || time - lastPaint >= PAINT_INTERVAL_MS) {
         lastPaint = time;
@@ -197,7 +201,12 @@ export function VoiceVisualizer({
       step = undefined;
       const calm = prefersReducedMotion() || !motion;
       const running =
-        !disposed && !document.hidden && visible && !calm && (preview || !STATIC_STATES.has(state));
+        !disposed &&
+        !document.hidden &&
+        visible &&
+        focused &&
+        !calm &&
+        (preview || !STATIC_STATES.has(state));
       element!.dataset.animating = String(running);
       paint(1300, true);
       if (running) frame = requestAnimationFrame(tick);
@@ -237,7 +246,7 @@ export function VoiceVisualizer({
       document.removeEventListener("visibilitychange", refresh);
       reduced.removeEventListener("change", refresh);
     };
-  }, [visual, state, level, preview, motion]);
+  }, [visual, state, level, preview, motion, focused]);
 
   return (
     <span

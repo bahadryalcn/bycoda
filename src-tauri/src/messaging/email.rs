@@ -6,7 +6,7 @@ mod net;
 mod smtp;
 mod threads;
 
-use super::types::{now_ms, Account, Message, Provider, Secret, Thread};
+use super::types::{now_ms, Account, Message, MessagePage, Provider, Secret, Thread};
 use config::{Credential, EmailConfig};
 use imap::{parse_internal_date, Fetched, Imap};
 use serde_json::Value;
@@ -19,7 +19,8 @@ use threads::{Mailbox, Summary, HEADER_FIELDS};
 const SCAN_MAX: u32 = 400;
 const VERIFY_DEADLINE: Duration = Duration::from_secs(60);
 const OPERATION_DEADLINE: Duration = Duration::from_secs(120);
-const MAX_THREAD_MESSAGES: usize = 100;
+/// Messages fetched in full per conversation page.
+const THREAD_PAGE_SIZE: usize = 50;
 const MAX_MESSAGE_BYTES: u64 = 2 * 1024 * 1024;
 const PREVIEW_BYTES: usize = 8 * 1024;
 const PREVIEW_CHARS: usize = 160;
@@ -75,16 +76,27 @@ pub(crate) fn thread_messages(
     account: &Account,
     secret: &mut Secret,
     thread_id: &str,
-) -> Result<Vec<Message>, String> {
+    before: Option<&str>,
+) -> Result<MessagePage, String> {
+    let before = match before {
+        Some(cursor) => Some(cursor.parse::<u32>().map_err(|_| {
+            "This conversation page is invalid. Reload the conversation.".to_string()
+        })?),
+        None => None,
+    };
     let (config, mut imap) = signed_in(account, secret)?;
     let result = (|| {
         let scan = scan(&mut imap, SCAN_MAX)?;
-        let mut members = threads::members_of(&scan.summaries, thread_id);
-        if members.is_empty() {
+        let all = threads::members_of(&scan.summaries, thread_id);
+        if all.is_empty() {
             return Err(gone());
         }
-        if members.len() > MAX_THREAD_MESSAGES {
-            members.drain(..members.len() - MAX_THREAD_MESSAGES);
+        let (members, earlier) = member_page(&scan.summaries, &all, before);
+        if members.is_empty() {
+            return Ok(MessagePage {
+                messages: Vec::new(),
+                earlier: None,
+            });
         }
         let uids: Vec<u32> = members
             .iter()
@@ -110,10 +122,33 @@ pub(crate) fn thread_messages(
             })
             .collect();
         messages.sort_by_key(|(uid, message)| (message.at, *uid));
-        Ok(messages.into_iter().map(|(_, message)| message).collect())
+        Ok(MessagePage {
+            messages: messages.into_iter().map(|(_, message)| message).collect(),
+            earlier,
+        })
     })();
     imap.logout();
     result.map_err(incoming)
+}
+
+/// One page of a thread's members (oldest first): the newest `THREAD_PAGE_SIZE` before the
+/// member whose UID is `before`, with that member's UID as the cursor for the page before it.
+/// A cursor that is no longer in the scanned window ends the history instead of failing.
+fn member_page(
+    summaries: &[Summary],
+    members: &[usize],
+    before: Option<u32>,
+) -> (Vec<usize>, Option<String>) {
+    let end = match before {
+        None => members.len(),
+        Some(uid) => members
+            .iter()
+            .position(|index| summaries[*index].uid == uid)
+            .unwrap_or(0),
+    };
+    let start = end.saturating_sub(THREAD_PAGE_SIZE);
+    let earlier = (start > 0).then(|| summaries[members[start]].uid.to_string());
+    (members[start..end].to_vec(), earlier)
 }
 
 pub(crate) fn reply(

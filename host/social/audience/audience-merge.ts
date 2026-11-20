@@ -9,7 +9,7 @@ import {
   visiblePeople,
 } from "./audience-access";
 
-/** Pages through the store at most this far per call. shortcut: a linear scan; upgrade with indexed email and username columns. */
+/** Pages through the store at most this far per call. shortcut: a linear scan for match suggestions; upgrade with indexed profile and username columns. */
 const SCAN_LIMIT = 5000;
 /** Groups larger than this are not paired (quadratic work and noisy suggestions). */
 const MAX_GROUP = 20;
@@ -38,25 +38,11 @@ function dedupeBy<T>(items: T[], keyOf: (item: T) => string): T[] {
   return [...seen.values()];
 }
 
-/** True when any listed static list holds one of the given people. */
-async function listsHoldAny(
-  ctx: SocialActionContext,
-  listId: string,
-  personIds: Set<string>,
-): Promise<boolean> {
-  let cursor: string | undefined;
-  do {
-    const page = await ctx.store.listMembers(listId, { cursor });
-    if (page.personIds.some((id) => personIds.has(id))) return true;
-    cursor = page.next;
-  } while (cursor);
-  return false;
-}
-
 /**
  * Folds the sources into the target: the target keeps its own id and gains the sources' handles,
  * emails, tags, memberships, interactions (newest 100 per source) and suppressions. Additive
- * copies run first, so an interrupted merge leaves the source records in place.
+ * copies run first, so an interrupted merge leaves the source records in place; the whole fold
+ * is one store transaction, so a failure part-way rolls everything back.
  * Enrollments of the sources are removed with them (not carried over).
  */
 export async function mergeInto(
@@ -64,86 +50,84 @@ export async function mergeInto(
   targetId: string,
   sourceIds: string[],
 ): Promise<SocialPerson> {
-  const store = ctx.store;
-  const now = ctx.now();
-  const target = await store.getPerson(targetId);
-  if (!target) throw new Error("Person not found.");
-  const sources: SocialPerson[] = [];
-  for (const id of new Set(sourceIds)) {
-    if (id === targetId) continue;
-    const source = await store.getPerson(id);
-    if (!source) throw new Error("Person not found.");
-    sources.push(source);
-  }
-  if (!sources.length) return target;
-  const sourceSet = new Set(sources.map((source) => source.id));
-  for (const list of (await store.listLists()).filter((item) => item.kind === "static"))
-    if (await listsHoldAny(ctx, list.id, sourceSet))
-      await store.addMembers(list.id, [targetId], { source: "merge", at: now });
-  for (const source of sources) {
-    for (const interaction of await store.listInteractions(source.id))
-      await store.addInteraction({
-        ...interaction,
-        id: `${interaction.id}~${targetId}`,
-        personId: targetId,
-      });
-    for (const suppression of await store.findSuppressions({ personId: source.id }))
-      await store.putSuppression({
-        ...suppression,
-        id: `${suppression.id}~${targetId}`,
-        personId: targetId,
-      });
-  }
-  // Sources go before the target takes their handles: a handle row may belong to one person only.
-  for (const source of sources) await store.deletePerson(source.id);
-  const everyone = [target, ...sources];
-  const language = target.language ?? sources.find((source) => source.language)?.language;
-  return await store.putPerson({
-    ...target,
-    handles: dedupeBy(
-      everyone.flatMap((person) => person.handles),
-      (handle) => `${handle.accountId}\u0000${handle.platformId}`,
-    ),
-    emails: dedupeBy(
-      everyone.flatMap((person) => person.emails),
-      (email) => email.address,
-    ),
-    tags: [...new Set(everyone.flatMap((person) => person.tags))],
-    projectIds: [...new Set(everyone.flatMap((person) => person.projectIds))],
-    notes: everyone
-      .map((person) => person.notes)
-      .filter(Boolean)
-      .join("\n"),
-    ...(language ? { language } : {}),
-    updatedAt: now,
+  return ctx.store.transaction(async () => {
+    const store = ctx.store;
+    const now = ctx.now();
+    const target = await store.getPerson(targetId);
+    if (!target) throw new Error("Person not found.");
+    const sources: SocialPerson[] = [];
+    for (const id of new Set(sourceIds)) {
+      if (id === targetId) continue;
+      const source = await store.getPerson(id);
+      if (!source) throw new Error("Person not found.");
+      sources.push(source);
+    }
+    if (!sources.length) return target;
+    for (const listId of await store.staticListIdsHolding(sources.map((source) => source.id)))
+      await store.addMembers(listId, [targetId], { source: "merge", at: now });
+    for (const source of sources) {
+      for (const interaction of await store.listInteractions(source.id))
+        await store.addInteraction({
+          ...interaction,
+          id: `${interaction.id}~${targetId}`,
+          personId: targetId,
+        });
+      for (const suppression of await store.findSuppressions({ personId: source.id }))
+        await store.putSuppression({
+          ...suppression,
+          id: `${suppression.id}~${targetId}`,
+          personId: targetId,
+        });
+    }
+    // Sources go before the target takes their handles: a handle row may belong to one person only.
+    for (const source of sources) await store.deletePerson(source.id);
+    const everyone = [target, ...sources];
+    const language = target.language ?? sources.find((source) => source.language)?.language;
+    return await store.putPerson({
+      ...target,
+      handles: dedupeBy(
+        everyone.flatMap((person) => person.handles),
+        (handle) => `${handle.accountId}\u0000${handle.platformId}`,
+      ),
+      emails: dedupeBy(
+        everyone.flatMap((person) => person.emails),
+        (email) => email.address,
+      ),
+      tags: [...new Set(everyone.flatMap((person) => person.tags))],
+      projectIds: [...new Set(everyone.flatMap((person) => person.projectIds))],
+      notes: everyone
+        .map((person) => person.notes)
+        .filter(Boolean)
+        .join("\n"),
+      ...(language ? { language } : {}),
+      updatedAt: now,
+    });
   });
 }
 
 /**
  * Automatic merge on an exact e-mail match (owner decision D6=B). Each listed person absorbs the
- * other people who share one of its addresses. Callers must be the owner: this scans all people.
+ * other people who share one of its addresses, found through the e-mail index. Callers must be
+ * the owner: it changes other people's records. Each person's lookup and merge run in one store
+ * transaction on freshly read records, so a concurrent edit is never merged from a stale copy.
  */
 export async function mergeEmailMatches(
   ctx: SocialActionContext,
   personIds: string[],
 ): Promise<void> {
-  const people = await scanPeople(ctx);
-  const byId = new Map(people.map((person) => [person.id, person]));
-  const byEmail = new Map<string, SocialPerson[]>();
-  for (const person of people)
-    for (const email of person.emails) push(byEmail, email.address, person);
   const merged = new Set<string>();
   for (const id of new Set(personIds)) {
     if (merged.has(id)) continue;
-    const person = byId.get(id);
-    if (!person) continue;
-    const sourceIds = new Set<string>();
-    for (const email of person.emails)
-      for (const other of byEmail.get(email.address) ?? [])
-        if (other.id !== id && !merged.has(other.id)) sourceIds.add(other.id);
-    if (!sourceIds.size) continue;
-    await mergeInto(ctx, id, [...sourceIds]);
-    for (const sourceId of sourceIds) merged.add(sourceId);
+    await ctx.store.transaction(async () => {
+      const person = await ctx.store.getPerson(id);
+      if (!person?.emails.length) return;
+      const sourceIds = (
+        await ctx.store.findPersonIdsByEmail(person.emails.map((email) => email.address))
+      ).filter((other) => other !== id && !merged.has(other));
+      if (!sourceIds.length) return;
+      await mergeInto(ctx, id, sourceIds);
+      for (const sourceId of sourceIds) merged.add(sourceId);
+    });
   }
 }
 

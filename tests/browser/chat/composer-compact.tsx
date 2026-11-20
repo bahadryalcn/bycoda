@@ -278,7 +278,7 @@ void Promise.all([
       {params.has("context-sections") ? (
         <main className="p-8">
           <ContextMeter
-            usage={{ used: 64000, window: 128000 }}
+            usage={{ used: 184000, window: 1000000 }}
             sessionUsage={{
               costUsd: 1.8,
               apiMs: 290000,
@@ -286,6 +286,13 @@ void Promise.all([
               lastProcessApiMs: 290000,
             }}
             contextBlocks={[
+              {
+                id: "context-turn",
+                role: "user",
+                text: "Review context usage",
+                durationMs: 4000,
+                turnMetrics: { outputTokens: 280 },
+              },
               {
                 id: "context-agent",
                 role: "tool",

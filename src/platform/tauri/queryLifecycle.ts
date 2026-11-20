@@ -33,7 +33,17 @@ export function installQueryLifecycle() {
     const releases: Array<() => void> = [];
     if (isTauri()) {
       refreshNative = async () => {
-        await refreshWindowState();
+        const hiddenAt = ignoreThrough;
+        try {
+          await refreshWindowState();
+        } catch (error) {
+          report(error);
+          // No native read succeeded; DOM focus is the only signal left, unless a hide
+          // or native focus payload arrived meanwhile and already decided.
+          if (!disposed && ignoreThrough === hiddenAt && document.visibilityState !== "hidden")
+            setFocused(document.hasFocus());
+          return;
+        }
         fromNative();
       };
       // The shared window state owns the native listeners; resize covers hide/minimize.

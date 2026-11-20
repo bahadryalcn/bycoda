@@ -28,15 +28,15 @@ export function voiceErrorReason(error: unknown) {
 export function voiceFailureReply(transcript: string, error: unknown) {
   const reason = voiceErrorReason(error);
   return isTurkish(transcript)
-    ? `Bunu tamamlayamadım: ${reason}. Başka bir şey değiştirilmedi.`
-    : `I couldn't finish that: ${reason}. Nothing else was changed.`;
+    ? `Bunu tamamlayamadım: ${reason}.`
+    : `I couldn't finish that: ${reason}.`;
 }
 
 /** Used only when the final no-tools summary call itself yields no usable reply. */
-export function voiceLimitFallback(transcript: string, done: number) {
+export function voiceLimitFallback(transcript: string) {
   return isTurkish(transcript)
-    ? `Bu istek için adım sınırına ulaştım; ${done} adım tamamlandı. Devam etmemi istersen "devam et" de.`
-    : `I reached the step limit for this request after ${done} steps. Say "continue" and I'll pick up from there.`;
+    ? 'Bu istek için adım sınırına ulaştım. Devam etmemi istersen "devam et" de.'
+    : 'I reached the step limit for this request. Say "continue" and I’ll pick up from there.';
 }
 
 export function observedRequestIds(observations: readonly unknown[]) {

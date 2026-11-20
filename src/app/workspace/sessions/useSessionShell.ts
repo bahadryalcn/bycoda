@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useCallback, type MutableRefObject } from "react";
 import {
   flushHostSessionBindings,
@@ -44,11 +45,7 @@ export function useSessionShell({ removingSessionIds, getSubmitSessionRef }: Ses
             t("This conversation is still loading. Send again in a moment."),
           );
           void flushHostSessionBindings().catch((error: unknown) => {
-            showSubmitNotice(
-              sessionId,
-              error instanceof Error ? error.message : String(error),
-              "error",
-            );
+            showSubmitNotice(sessionId, errorText(error), "error");
           });
           return false;
         }
@@ -57,7 +54,7 @@ export function useSessionShell({ removingSessionIds, getSubmitSessionRef }: Ses
           return false;
         }
       } catch (error) {
-        showSubmitNotice(sessionId, error instanceof Error ? error.message : String(error));
+        showSubmitNotice(sessionId, errorText(error));
         return false;
       }
       const blockId = crypto.randomUUID();
@@ -78,7 +75,7 @@ export function useSessionShell({ removingSessionIds, getSubmitSessionRef }: Ses
           return runShellCommand(sessionWorkCwd(session), command, loadTerminalProfile());
         })
         .catch((error): ShellResult => ({
-          output: error instanceof Error ? error.message : String(error),
+          output: errorText(error),
           exitCode: null,
           timedOut: false,
         }))

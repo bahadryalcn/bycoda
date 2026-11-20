@@ -15,6 +15,7 @@ import {
   supportsBtwHarness,
 } from "../../../features/sessions/model/btw";
 import { nativeModelId } from "../../../features/sessions/model/models";
+import { BtwThreadError, btwErrorCodeOf } from "../../../features/sessions/model/btwError";
 import { runHarnessTextPrompt } from "../../../integrations/harness";
 import {
   defaultProviderAccountId,
@@ -157,6 +158,7 @@ export function useBtwThreads({
                   ...thread,
                   status: "error",
                   updatedAt: Date.now(),
+                  errorCode: "accountUnavailable",
                   error:
                     "The account owning this side conversation is unavailable or unknown. Start a new side conversation to continue with the current account.",
                 }
@@ -182,6 +184,7 @@ export function useBtwThreads({
                 ...thread,
                 status: "error",
                 updatedAt: Date.now(),
+                errorCode: "workingDirectoryRequired",
                 error: "A project working directory is required for this question.",
               }
             : undefined,
@@ -195,6 +198,7 @@ export function useBtwThreads({
                 ...thread,
                 status: "error",
                 updatedAt: Date.now(),
+                errorCode: "codexModelUnavailable",
                 error: "The selected Codex model is unavailable.",
               }
             : undefined,
@@ -216,6 +220,9 @@ export function useBtwThreads({
                 ...thread,
                 status: "error",
                 updatedAt: Date.now(),
+                // Only the typed turn refusal is translated; any other failure keeps its text as
+                // raw detail, redacted when the sheet shows it.
+                errorCode: btwErrorCodeOf(error),
                 error:
                   error instanceof Error
                     ? error.message
@@ -284,7 +291,10 @@ export function useBtwThreads({
           if (controller.signal.aborted) return;
           const text = output.trim();
           if (!text) {
-            throw new Error(`${HARNESS_TITLE[harness]} returned an empty side answer.`);
+            throw new BtwThreadError(
+              "emptyAnswer",
+              `${HARNESS_TITLE[harness]} returned an empty side answer.`,
+            );
           }
           updateBtwThread(input.sessionId, input.userBlockId, input.thread.id, (thread) => {
             if (!thread) return undefined;
@@ -309,15 +319,14 @@ export function useBtwThreads({
                 },
               ],
               error: undefined,
+              errorCode: undefined,
             };
           });
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
-          const message =
-            error instanceof Error
-              ? error.message
-              : `${HARNESS_TITLE[harness]} could not answer this side question.`;
+          // Raw provider text is stored as is; the sheet adds the translated sentence and redacts it.
+          const message = error instanceof Error ? error.message : undefined;
           updateBtwThread(input.sessionId, input.userBlockId, input.thread.id, (thread) =>
             thread
               ? {
@@ -325,6 +334,7 @@ export function useBtwThreads({
                   status: "error",
                   updatedAt: Date.now(),
                   pendingBlocks: undefined,
+                  errorCode: btwErrorCodeOf(error),
                   error: message,
                 }
               : undefined,

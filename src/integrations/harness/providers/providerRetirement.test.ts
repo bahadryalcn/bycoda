@@ -31,7 +31,6 @@ vi.mock("../core/child", async () => {
     "prepareHarnessTextWorkspace",
     "readHarnessTextFile",
     "execChild",
-    "freeHarnessPort",
     "harnessHttp",
     "readHarnessTaskOutput",
     "openHarnessSse",

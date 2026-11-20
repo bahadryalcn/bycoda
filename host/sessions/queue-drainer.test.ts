@@ -336,11 +336,10 @@ it("waits while a desktop window runs the conversation and sends when its run le
   drainers.push(drainer);
   runs.acquire("chat", "desktop:a");
   await queues.change("chat", { messages: [] }, { messages: [row("a")], status: "active" });
-  await settle();
+  expect(await timerCount(queues)).toBe(1);
   expect(sent).toEqual([]);
-  // The window crashed: nothing renews the lease, and the host looks again once it ends.
-  drainer.kick("chat");
-  await vi.advanceTimersByTimeAsync(RUN_LEASE_TTL_MS + 1_000);
+  // Advance only to the drainer wake so real worker replies can settle before more fake time passes.
+  await vi.advanceTimersByTimeAsync(RUN_LEASE_TTL_MS + 1);
   await settle();
   expect(sent).toEqual(["a"]);
   expect(await timerCount(queues)).toBe(0);

@@ -109,6 +109,16 @@ it("masks a conversation in a locked group instead of recording its text", async
   expect(entry.label).toBe("A session in a locked group needs attention");
 });
 
+it("does not log a daily summary the focused window suppressed, and dedupes its retries", async () => {
+  setWindowFocused(true);
+  expect(await notifyDailySummary("Summary")).toBe(false);
+  expect(await logged(0)).toEqual([]);
+  setWindowFocused(false);
+  await notifyDailySummary("Summary", 1_800_000_000_000);
+  await notifyDailySummary("Summary", 1_800_000_000_000);
+  expect(await logged(1)).toHaveLength(1);
+});
+
 it("records background work, the summary, account items and assistant messages with their targets", async () => {
   await notifyBackground({ target: "automations", kind: "finished", message: "Nightly ran" });
   await notifyDailySummary("3 tasks done");

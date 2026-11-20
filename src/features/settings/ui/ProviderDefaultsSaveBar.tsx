@@ -168,7 +168,7 @@ export function ProviderDefaultsSaveBar({
   changes: readonly PendingChange[];
   saveState: DefaultsSaveState;
   saving?: boolean;
-  onSave: () => unknown;
+  onSave: () => boolean | Promise<boolean>;
   onDiscard: () => void;
 }) {
   useLocale();
@@ -265,7 +265,7 @@ export function ProviderDefaultsSaveBar({
         </>
       }
       trailing={
-        <div className="provider-defaults-field">
+        <div className="provider-defaults-field provider-defaults-field-end">
           <DefaultsTargetsPicker
             values={values}
             options={options}

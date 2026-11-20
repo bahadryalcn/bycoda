@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
@@ -8,6 +9,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { SessionRewindPlan } from "../model/contracts";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { shortSha } from "../../../shared/lib/shortSha";
 
 type Preview = {
   displaySessionId: string;
@@ -100,6 +102,8 @@ export function clearWorkspaceRewindUndo(sessionId: string) {
   changed();
 }
 
+const MAX_TIMER_MS = 2_147_483_647;
+
 export function WorkspaceRewindPreview({
   plan,
   onApply,
@@ -112,20 +116,36 @@ export function WorkspaceRewindPreview({
   const t = useT();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(Date.now);
+  const [expired, setExpired] = useState(() => Date.now() >= plan.expiresAt);
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+    // One bounded timer flips `expired` at plan.expiresAt; no per-second re-render of the preview.
+    // Re-arms past setTimeout's ~24.8-day ceiling so a long expiry never fires early.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      const remaining = plan.expiresAt - Date.now();
+      if (remaining <= 0) {
+        setExpired(true);
+        return;
+      }
+      timer = setTimeout(arm, Math.min(remaining, MAX_TIMER_MS));
+    };
+    arm();
+    return () => clearTimeout(timer);
+  }, [plan.expiresAt]);
   const apply = async () => {
     if (pending) return;
+    // Expiry is re-checked at action time: a throttled timer must not let an expired plan apply.
+    if (Date.now() >= plan.expiresAt) {
+      setExpired(true);
+      return;
+    }
     setPending(true);
     setError(null);
     try {
       await onApply();
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
     } finally {
       setPending(false);
     }
@@ -146,7 +166,7 @@ export function WorkspaceRewindPreview({
             variant="primary"
             tone="warning"
             loading={pending}
-            disabled={pending || plan.blockers.length > 0 || plan.expiresAt <= now}
+            disabled={pending || plan.blockers.length > 0 || expired}
             onClick={() => void apply()}
           >
             {t(plan.direction === "undo" ? "Undo rewind" : "Rewind conversation and files")}
@@ -163,8 +183,8 @@ export function WorkspaceRewindPreview({
           })}
         </p>
         <Text as="p" size="caption" tone="inherit" className="break-words font-mono">
-          {plan.branchRef.replace(/^refs\/heads\//, "")} · {plan.currentHead.slice(0, 12)} →{" "}
-          {plan.targetHead.slice(0, 12)}
+          {plan.branchRef.replace(/^refs\/heads\//, "")} · {shortSha(plan.currentHead)} →{" "}
+          {shortSha(plan.targetHead)}
         </Text>
         {plan.merged ? (
           <Alert tone="info">{t("Main is not rewound. The merged result stays in main.")}</Alert>
@@ -193,9 +213,9 @@ export function WorkspaceRewindPreview({
             {blocker}
           </Alert>
         ))}
-        {plan.expiresAt <= now ? (
+        {expired ? (
           <Alert tone="warning">
-            {t("This rewind preview is blocked or expired. Cancel and open a new preview.")}
+            {t("This rewind preview has expired. Cancel and open a new preview.")}
           </Alert>
         ) : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}

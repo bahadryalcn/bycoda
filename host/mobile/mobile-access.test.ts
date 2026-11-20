@@ -96,6 +96,96 @@ describe("private mobile access", () => {
     expect(results.every((result) => result.state === "ready")).toBe(true);
     expect(run.mock.calls.filter((call) => call[1][1] === "--bg")).toHaveLength(1);
   });
+  it("reports every status and enable result to observers without letting them fail the call", async () => {
+    let config: unknown = {};
+    const run = vi.fn(async (_program: string, args: string[]) => {
+      if (args[0] === "status") return identity;
+      if (args[1] === "status") return JSON.stringify(config);
+      config = configured();
+      return "enabled";
+    });
+    const service = createMobileAccessService(() => 3776, {
+      executable: async () => "tailscale",
+      run,
+    });
+    const seen: string[] = [];
+    service.observe((status) => seen.push(status.state));
+    service.observe(() => {
+      throw new Error("observer failed");
+    });
+    expect((await service.status()).state).toBe("setup-required");
+    expect((await service.enable()).state).toBe("ready");
+    expect(seen).toEqual(["setup-required", "ready"]);
+  });
+  // Regression: environment.describe read this on every call, and each probe started
+  // two Tailscale processes that blocked the Host event loop.
+  it("reuses a status until the network changes and coalesces concurrent probes", async () => {
+    let network = "Wi-Fi=192.168.1.5";
+    const run = vi.fn(async (_program: string, _args: string[]): Promise<string> => {
+      throw new Error("Tailscale service is not running");
+    });
+    const service = createMobileAccessService(() => 3776, {
+      executable: async () => "tailscale",
+      run,
+      network: () => network,
+    });
+    const seen: string[] = [];
+    service.observe((status) => seen.push(status.state));
+    const first = await Promise.all([service.status(), service.status()]);
+    expect(first.map((status) => status.state)).toEqual(["unavailable", "unavailable"]);
+    expect((await service.status()).state).toBe("unavailable");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(["unavailable"]);
+    // The owner's explicit check bypasses the cache.
+    await service.status({ fresh: true });
+    expect(run).toHaveBeenCalledTimes(2);
+    // Tailscale coming up gives its adapter an address: the next read probes again.
+    network = "Tailscale=100.97.82.0|Wi-Fi=192.168.1.5";
+    run.mockImplementation(async (_program: string, args: string[]) =>
+      args[0] === "status" ? identity : JSON.stringify(configured()),
+    );
+    expect((await service.status()).state).toBe("ready");
+    expect(run).toHaveBeenCalledTimes(4);
+  });
+  it("keeps an enable result over a probe that started before it", async () => {
+    let config: unknown = {};
+    let releaseProbe!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseProbe = resolve));
+    let firstProbe = true;
+    const run = vi.fn(async (_program: string, args: string[]) => {
+      if (args[0] === "status") {
+        if (firstProbe) {
+          // The earlier probe saw an older answer and finishes last.
+          firstProbe = false;
+          await gate;
+          return JSON.stringify({ BackendState: "NeedsLogin" });
+        }
+        return identity;
+      }
+      if (args[1] === "status") return JSON.stringify(config);
+      config = configured();
+      return "enabled";
+    });
+    const service = createMobileAccessService(() => 3776, {
+      executable: async () => "tailscale",
+      run,
+      network: () => "Wi-Fi=192.168.1.5",
+    });
+    const seen: string[] = [];
+    service.observe((status) => seen.push(status.state));
+    const stale = service.status();
+    const enabled = service.enable();
+    // While an enable runs, a status read waits for it instead of probing again.
+    const during = service.status();
+    expect((await enabled).state).toBe("ready");
+    expect((await during).state).toBe("ready");
+    releaseProbe();
+    expect((await stale).state).toBe("ready");
+    expect(seen).toEqual(["ready"]);
+    const calls = run.mock.calls.length;
+    expect((await service.status()).state).toBe("ready");
+    expect(run).toHaveBeenCalledTimes(calls);
+  });
   it("needs installation or login instead of silently configuring networking", async () => {
     const run = vi.fn(async () => JSON.stringify({ BackendState: "NeedsLogin" }));
     const missing = createMobileAccessService(() => 3776, {

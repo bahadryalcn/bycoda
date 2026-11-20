@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { PermissionRow } from "../permissions";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
@@ -103,7 +104,7 @@ export function DesktopControlSettings({
     } catch (cause) {
       if (captured === generation.current) {
         setStatus(undefined);
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorText(cause));
       }
     } finally {
       stoppingRef.current = false;
@@ -233,7 +234,7 @@ export function DesktopControlSettings({
       if (captured === generation.current) {
         setStatus(undefined);
         if (options.rethrow) throw cause;
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorText(cause));
       } else if (options.rethrow) {
         throw cause;
       }

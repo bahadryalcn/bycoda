@@ -12,6 +12,7 @@ import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Text } from "../../../../shared/ui/Text";
 import { usePlanShare } from "../../model/planShareQuery";
+import { untrackedCopy, type PlanShareHost } from "./planShareUntracked";
 
 type Format = ReturnType<typeof useFormat>;
 
@@ -34,9 +35,18 @@ function jobTitle(t: ReturnType<typeof useT>, job: PlanShareJob): string {
   return job.label ?? t("Session {p0}", { p0: job.sessionId.slice(0, 8) });
 }
 
-function AccountShare({ account, label }: { account: PlanShareAccount; label: string }) {
+function AccountShare({
+  account,
+  label,
+  host,
+}: {
+  account: PlanShareAccount;
+  label: string;
+  host: PlanShareHost;
+}) {
   const t = useT();
   const format = useFormat();
+  const untracked = untrackedCopy(t, host);
   const known = account.status === "ok";
   return (
     <section className="flex min-w-0 flex-col gap-1">
@@ -70,12 +80,8 @@ function AccountShare({ account, label }: { account: PlanShareAccount; label: st
             <DescriptionItem
               term={
                 <span className="inline-flex items-center gap-1">
-                  {t("Not tracked on this computer")}
-                  <InfoPopover label={t("Not tracked on this computer")}>
-                    {t(
-                      "Provider-reported usage that sessions on this computer do not explain, such as the web, a phone or other computers. All values are estimates.",
-                    )}
-                  </InfoPopover>
+                  {untracked.label}
+                  <InfoPopover label={untracked.label}>{untracked.info}</InfoPopover>
                 </span>
               }
             >
@@ -94,6 +100,7 @@ function AccountShare({ account, label }: { account: PlanShareAccount; label: st
  */
 export function PlanShareList({
   machineId,
+  host,
   supported,
   window,
   accounts,
@@ -101,6 +108,8 @@ export function PlanShareList({
   limit,
 }: {
   machineId: string | undefined;
+  /** The Host the usage was measured on, named in the untracked row. */
+  host: PlanShareHost;
   supported: boolean;
   window: PlanShareWindow;
   accounts?: string[];
@@ -123,6 +132,7 @@ export function PlanShareList({
           key={account.account}
           account={account}
           label={accountLabels?.[account.account] ?? account.account.replace(/^[^:]*:/, "")}
+          host={host}
         />
       ))}
     </div>

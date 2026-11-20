@@ -43,6 +43,7 @@ import {
   notifyRemoteRecovered,
   readRemoteConnection,
   resetRemoteHealth,
+  subscribeRemoteRecovered,
 } from "../model/remoteHealth";
 import { resetAutoContinueForTests } from "../../sessions/model/autoContinue";
 import {
@@ -1525,7 +1526,7 @@ it("holds explicit worktree remote creation and drafts when the Host lacks manag
   expect(document.body.textContent).toContain(
     "Update bycoda to create managed sessions on this remote Host.",
   );
-  expect(byLabel("Send")!.disabled).toBe(true);
+  expect(byLabel("Send")!.getAttribute("aria-disabled")).toBe("true");
   await act(async () => byLabel("Send")!.click());
   await act(async () =>
     container
@@ -1545,7 +1546,9 @@ it("holds explicit worktree remote creation and drafts when the Host lacks manag
   expect(draft).toBeDefined();
   await act(async () => draft!.click());
   await type("Keep this unsent remote draft");
-  expect(byLabel("Save draft")!.disabled).toBe(true);
+  const saveDraft = byLabel("Save draft")!;
+  expect(saveDraft.getAttribute("aria-disabled")).toBe("true");
+  expect(saveDraft.disabled).toBe(false);
   await act(async () => byLabel("Save draft")!.click());
   await act(async () =>
     container
@@ -1970,7 +1973,7 @@ it("creates a host worktree through the composer and selects it", async () => {
   expect(document.body.textContent).toContain("Existing worktree…");
   expect(document.body.textContent).not.toContain("Worktree settings");
   expect(document.body.querySelector('[aria-label="Existing worktrees"]')).toBeNull();
-  expect(document.body.querySelector('input[placeholder="Search working copies…"]')).toBeNull();
+  expect(document.body.querySelector('input[placeholder="Search worktrees…"]')).toBeNull();
   const create = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "New worktree",
   );
@@ -2307,7 +2310,7 @@ it("asks to connect the machine when it is not set up on this computer", async (
   );
   await render();
   expect(document.body.textContent).toContain(
-    "The machine for this project isn’t connected on this computer.",
+    "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.",
   );
   expect(container.querySelector("textarea")).toBeNull();
 });
@@ -3312,6 +3315,30 @@ it("keeps the transcript on disconnect, shows one connection notice and reconnec
   expect(document.body.textContent).not.toContain("Earlier reply");
 });
 
+it("keeps the pane online and its transcript through one timed-out read, without a recovery reload", async () => {
+  explainAtOnce();
+  openExistingChat();
+  await render();
+  await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
+  const recovered = vi.fn();
+  const unsubscribe = subscribeRemoteRecovered(recovered);
+  const statusChanges = vi.fn();
+  window.addEventListener("bycoda:remote-machine-status", statusChanges);
+  machineDown = "[RPC_TIMEOUT] the Host did not answer in time";
+  await act(async () => byLabel("Refresh conversation")!.click());
+  await settle();
+  await settle();
+  // The manual refresh stays pending until the retry answers; it is not an error.
+  expect(remoteDataPhase()).not.toBe("error");
+  expect(document.body.textContent).toContain("Earlier reply");
+  expect(document.body.textContent).not.toContain("Can’t reach Home server");
+  // No offline status was published, so nothing announces a recovery later.
+  expect(statusChanges).not.toHaveBeenCalled();
+  expect(recovered).not.toHaveBeenCalled();
+  window.removeEventListener("bycoda:remote-machine-status", statusChanges);
+  unsubscribe();
+});
+
 it("uses one connection recovery for blocked conversation and queue reads without replaying messages", async () => {
   sharedQueueSupported = true;
   hostQueue = {
@@ -3356,10 +3383,11 @@ it("keeps an independent queue-storage retry available beside a connection probl
   openExistingChat();
   await renderRemoteProbe();
   expect(document.body.textContent).toContain("queue storage unavailable");
+  const queueNotice = [...document.querySelectorAll("[data-toast-tone]")].find((notice) =>
+    notice.textContent?.includes("queue storage unavailable"),
+  );
   expect(
-    [...document.body.querySelectorAll("button")].filter(
-      (button) => button.textContent === "Retry",
-    ),
+    [...queueNotice!.querySelectorAll("button")].filter((button) => button.textContent === "Retry"),
   ).toHaveLength(1);
   expect(
     [...document.body.querySelectorAll("button")].filter(
@@ -4162,15 +4190,17 @@ it("shows follow-up attachment preparation and refuses repeated Send while keepi
     await act(async () => notifyRemoteRecovered("env"));
     await settle();
     await act(async () => remoteOverrides.onSubmit!("shell", "New unsent text", []));
-    const dismiss = [...document.body.querySelectorAll("button")].find(
+    const refusal = t("The previous message is still being sent. Your message is kept.");
+    const notice = [...document.querySelectorAll("[data-toast-tone]")].find((entry) =>
+      entry.textContent?.includes(refusal),
+    );
+    const dismiss = [...notice!.querySelectorAll("button")].find(
       (entry) => entry.getAttribute("aria-label") === t("Dismiss notice"),
     )!;
     expect(dismiss).toBeTruthy();
     expect(dismiss.disabled).toBe(false);
     await act(async () => dismiss.click());
-    expect(document.body.textContent).not.toContain(
-      t("The previous message is still being sent. Your message is kept."),
-    );
+    expect(document.body.textContent).not.toContain(refusal);
   } finally {
     await act(async () => setLanguagePreference("en"));
     machineDown = undefined;

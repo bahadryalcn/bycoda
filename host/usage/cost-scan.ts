@@ -185,25 +185,98 @@ async function parseFile(path: string, provider: Provider): Promise<KeyedRequest
 const isLog = (name: string) => name.endsWith(".jsonl") || name.endsWith(".jsonl.zst");
 const baseName = (path: string) => path.replace(/^.*[\\/]/, "").replace(/\.zst$/, "");
 
-type Found = { path: string; mtime: number };
+type Found = { path: string; mtime: number; size: number };
+
+const STAT_CONCURRENCY = 16;
+
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await run(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 async function collect(dir: string, sinceMs: number, depth: number, out: Found[]) {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  // Stat this directory's logs with a small concurrency limit; the walk below keeps readdir order.
+  const logs = entries.filter((entry) => entry.isFile() && isLog(entry.name));
+  const infos = await mapLimit(logs, STAT_CONCURRENCY, (entry) =>
+    stat(join(dir, entry.name)).catch(() => null),
+  );
+  const statOf = new Map(logs.map((entry, index) => [entry.name, infos[index]]));
   for (const entry of entries) {
     if (out.length >= MAX_FILES) return;
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (depth < MAX_DEPTH) await collect(path, sinceMs, depth + 1, out);
-    } else if (entry.isFile() && isLog(entry.name)) {
-      const info = await stat(path).catch(() => null);
+    } else {
+      const info = statOf.get(entry.name);
       // A transcript last written before the cutoff holds nothing newer.
-      if (info && info.mtimeMs >= sinceMs) out.push({ path, mtime: info.mtimeMs });
+      if (info && info.mtimeMs >= sinceMs) out.push({ path, mtime: info.mtimeMs, size: info.size });
     }
   }
 }
 
-const fileCache = new Map<string, { size: number; mtime: number; requests: KeyedRequest[] }>();
-export const clearScanCache = () => fileCache.clear();
+type CacheEntry = { size: number; mtime: number; requests: KeyedRequest[] };
+
+/** Parsed requests per log file. Map order is recency: a hit or insert moves the entry last. */
+const fileCache = new Map<string, CacheEntry>();
+let cachedRequests = 0;
+let maxCachedRequests = 150_000;
+/** Cache keys of the files each running scan is using; eviction leaves them alone. */
+const activeScans = new Set<Set<string>>();
+
+export const clearScanCache = () => {
+  fileCache.clear();
+  cachedRequests = 0;
+};
+/** Cache size, and a smaller request budget for tests. */
+export const scanCacheState = () => ({ files: fileCache.size, requests: cachedRequests });
+export const setScanCacheLimit = (requests: number) => {
+  maxCachedRequests = requests;
+};
+
+const isPinned = (key: string) => {
+  for (const pinned of activeScans) if (pinned.has(key)) return true;
+  return false;
+};
+
+function touch(key: string, entry: CacheEntry) {
+  fileCache.delete(key);
+  fileCache.set(key, entry);
+}
+
+/** Cache `entry` within the request budget by evicting the least recently used files no running scan
+ * needs. When the running scans alone fill the budget the entry is skipped, so what is cached stays
+ * a stable subset instead of being thrown away and re-parsed in full on every refresh. */
+function remember(key: string, entry: CacheEntry) {
+  const previous = fileCache.get(key);
+  if (previous) {
+    fileCache.delete(key);
+    cachedRequests -= previous.requests.length;
+  }
+  const size = entry.requests.length;
+  if (size > maxCachedRequests) return;
+  for (const [other, cached] of fileCache) {
+    if (cachedRequests + size <= maxCachedRequests) break;
+    if (isPinned(other)) continue;
+    fileCache.delete(other);
+    cachedRequests -= cached.requests.length;
+  }
+  if (cachedRequests + size > maxCachedRequests) return;
+  fileCache.set(key, entry);
+  cachedRequests += size;
+}
 
 export type ScanResult = { requests: LogRequest[]; files: number; truncated: boolean };
 
@@ -229,16 +302,26 @@ export async function scanLogs(
   // Oldest first, so a resumed session's replayed request belongs to the log that first recorded it.
   found.sort((a, b) => a.mtime - b.mtime);
   const merged = new Map<string, LogRequest>();
-  for (const { path } of found) {
-    const info = await stat(path).catch(() => null);
-    if (!info) continue;
-    let entry = fileCache.get(path);
-    if (!entry || entry.size !== info.size || entry.mtime !== info.mtimeMs) {
-      entry = { size: info.size, mtime: info.mtimeMs, requests: await parseFile(path, provider) };
-      if (fileCache.size > 8_000) fileCache.clear();
-      fileCache.set(path, entry);
+  const cacheKey = (path: string) => `${provider}\0${path}`;
+  // Pin this scan's files so a concurrent scan cannot evict them mid-run.
+  const live = new Set(found.map((file) => cacheKey(file.path)));
+  activeScans.add(live);
+  try {
+    for (const { path, size, mtime } of found) {
+      const key = cacheKey(path);
+      let entry = fileCache.get(key);
+      // The size and mtime come from the walk's stat, taken before the parse: a file that grows
+      // while it is read no longer matches and is parsed again next time.
+      if (entry && entry.size === size && entry.mtime === mtime) touch(key, entry);
+      else {
+        entry = { size, mtime, requests: await parseFile(path, provider) };
+        remember(key, entry);
+      }
+      for (const [requestKey, request] of entry.requests)
+        mergeRequest(merged, provider, requestKey, request);
     }
-    for (const [key, request] of entry.requests) mergeRequest(merged, provider, key, request);
+  } finally {
+    activeScans.delete(live);
   }
   return {
     requests: [...merged.values()].filter((request) => request.ts * 1000 >= sinceMs),

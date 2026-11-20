@@ -5,7 +5,13 @@ import { Modal } from "../../../shared/ui/Modal";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { HostModelSource } from "../../connections/public/HostModelSource";
 import type { BackgroundSessionTarget } from "../../tasks";
-import { newTaskDraft, saveTask, startTask, type TaskDraft } from "../../tasks/public/taskCreation";
+import {
+  newTaskDraft,
+  saveTask,
+  startTask,
+  type BoardTask,
+  type TaskDraft,
+} from "../../tasks/public/taskCreation";
 import { TaskForm } from "../../tasks/public/taskCreation";
 import type { useProjectCrews } from "../model/crewClient";
 import { useCrewMachineScope } from "./CrewMachineScope";
@@ -83,29 +89,64 @@ function CrewTaskDraft({
     return initial;
   });
   const [saving, setSaving] = useState(false);
+  // Creation failures keep the form and draft; a start failure never reopens creation.
   const [error, setError] = useState<string>();
-  const [created, setCreated] = useState(false);
+  // The confirmed task. Start retries target this identity and never create it again.
+  const [receipt, setReceipt] = useState<BoardTask>();
+  const [startError, setStartError] = useState<string>();
   const gate = useRef(false);
-  const save = async (mode: "todo" | "queued" | "save", next: TaskDraft) => {
+  const run = async (work: () => Promise<void>) => {
     if (gate.current) return;
     gate.current = true;
     setSaving(true);
     setError(undefined);
-    drafts.set(key, next);
     try {
-      const saved = await saveTask([data.machine], next, mode === "todo" ? "todo" : "queued");
-      // A confirmed creation retires the draft before a separate start can fail.
-      drafts.delete(key);
-      setCreated(true);
-      if (mode === "queued" && saved.workspaceControlsSupported) await startTask(saved);
-      await state.refetch();
-      onClose();
-    } catch (reason) {
-      setError(presentRemoteError(reason, { explicit: true }));
+      await work();
     } finally {
       gate.current = false;
       setSaving(false);
     }
+  };
+  const startReceipt = async (task: BoardTask) => {
+    try {
+      setReceipt(await startTask(task));
+      setStartError(undefined);
+      return true;
+    } catch (reason) {
+      setStartError(presentRemoteError(reason, { explicit: true }));
+      return false;
+    }
+  };
+  const finish = async () => {
+    // The created task is already on the board; a failed list refresh is not a creation
+    // failure, and the crew list polls and shows its own error state.
+    await state.refetch().catch(() => undefined);
+    onClose();
+  };
+  const save = (mode: "todo" | "queued" | "save", next: TaskDraft) =>
+    run(async () => {
+      drafts.set(key, next);
+      let task: BoardTask;
+      try {
+        task = await saveTask([data.machine], next, mode === "todo" ? "todo" : "queued");
+      } catch (reason) {
+        setError(presentRemoteError(reason, { explicit: true }));
+        return;
+      }
+      // Creation is confirmed: retire the draft before the separate start request.
+      drafts.delete(key);
+      setReceipt(task);
+      if (mode === "queued" && task.workspaceControlsSupported) {
+        if (await startReceipt(task)) await finish();
+        return;
+      }
+      await finish();
+    });
+  const retryStart = () => {
+    if (!receipt) return;
+    void run(async () => {
+      if (await startReceipt(receipt)) await finish();
+    });
   };
   return (
     <Modal
@@ -122,7 +163,16 @@ function CrewTaskDraft({
           {error}
         </Alert>
       ) : null}
-      {created ? (
+      {receipt && startError ? (
+        <Alert
+          tone="warning"
+          className="m-4"
+          action={{ label: t("Retry"), onClick: retryStart }}
+          secondaryAction={{ label: t("Close"), onClick: onClose }}
+        >
+          {t("Task created, but it could not be started: {p0}", { p0: startError })}
+        </Alert>
+      ) : receipt ? (
         <Alert tone="success" className="m-4" action={{ label: t("Close"), onClick: onClose }}>
           {t("Task created")}
         </Alert>

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useRef, type ComponentProps, type ReactNode } from "react";
 import { defaultRangeExtractor } from "@tanstack/react-virtual";
 import {
   COLLECTION_WINDOW_THRESHOLD,
@@ -78,7 +78,7 @@ export function CollectionFooter({
 }
 
 export type ContinuousListProps<T> = CollectionFooterProps & {
-  /** Request one remote page near the scroll end. Errors pause automatic retries. */
+  /** Also request one remote page near the scroll end; the explicit Load more stays for short pages. Errors pause automatic retries. */
   loadOnScroll?: boolean;
   items: readonly T[];
   itemKey: (item: T) => string;
@@ -133,9 +133,9 @@ function ContinuousListWindow<T>({
     ready: items.length > 0,
   });
   const [position] = useRetainedState(`${stateKey}:scroll`, () => ({ top: 0, left: 0 }), "view");
-  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  // Focus is read only by rangeExtractor, so it lives in a ref: a focus move must not re-render every row.
+  const focusedKey = useRef<string | null>(null);
   const requiredIndex = items.findIndex((item) => itemKey(item) === requiredKey);
-  const focusedIndex = items.findIndex((item) => itemKey(item) === focusedKey);
   const virtual = items.length > COLLECTION_WINDOW_THRESHOLD;
   const virtualizer = useCollectionVirtualizer({
     count: items.length,
@@ -146,14 +146,18 @@ function ContinuousListWindow<T>({
     initialRect: { width: 640, height: 480 },
     initialOffset: () => position.top,
     overscan: 6,
-    rangeExtractor: (range) =>
-      [
+    rangeExtractor: (range) => {
+      const focused = focusedKey.current;
+      const focusedIndex =
+        focused === null ? -1 : items.findIndex((item) => itemKey(item) === focused);
+      return [
         ...new Set([
           ...defaultRangeExtractor(range),
           ...(requiredIndex >= 0 ? [requiredIndex] : []),
           ...(focusedIndex >= 0 ? [focusedIndex] : []),
         ]),
-      ].sort((a, b) => a - b),
+      ].sort((a, b) => a - b);
+    },
   });
   const ref = useCallback(
     (node: HTMLDivElement | null) => {
@@ -214,10 +218,12 @@ function ContinuousListWindow<T>({
                 .filter(Boolean)
                 .join(" ")}
               style={virtual ? { transform: `translateY(${row.start}px)` } : undefined}
-              onFocusCapture={() => setFocusedKey(key)}
+              onFocusCapture={() => {
+                focusedKey.current = key;
+              }}
               onBlurCapture={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                  setFocusedKey(null);
+                  focusedKey.current = null;
               }}
             >
               {renderItem(item, row.index)}
@@ -225,11 +231,8 @@ function ContinuousListWindow<T>({
           );
         })}
       </div>
-      <CollectionFooter
-        {...footer}
-        hasMore={loadOnScroll ? false : footer.hasMore}
-        empty={items.length === 0}
-      />
+      {/* A page too short to scroll never fires a scroll request, so the explicit control stays. */}
+      <CollectionFooter {...footer} empty={items.length === 0} />
     </div>
   );
 }

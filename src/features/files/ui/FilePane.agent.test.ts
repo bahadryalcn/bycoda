@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newAgentTab, newEditorPane } from "../../workspace/model/layout";
 import { newSession } from "../../sessions/model/session";
+import { setLanguagePreference } from "../../../shared/i18n";
 import { FilePane } from "./FilePane";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -84,6 +85,18 @@ describe("file pane agent tabs", () => {
       ),
     );
     expect(container.textContent).toContain("Done");
+  });
+
+  it("names the file tab strip in the selected language", async () => {
+    await act(async () => setLanguagePreference("tr"));
+    try {
+      await act(async () => root.render(createElement(FilePane, props)));
+      expect(container.querySelector('[role="tablist"]')?.getAttribute("aria-label")).toBe(
+        "Açık dosyalar",
+      );
+    } finally {
+      await act(async () => setLanguagePreference("en"));
+    }
   });
 
   it("omits redundant tabs when the title bar already represents the file", async () => {

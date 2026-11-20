@@ -2,6 +2,7 @@ import type { z } from "zod";
 import {
   DecisionCatalogEntrySchema,
   DecisionDiscoverySettingsSchema,
+  DecisionInstallStateSchema,
   DecisionLocalPlanSchema,
   DecisionRoutingSchema,
   DecisionSourceInputSchema,
@@ -29,6 +30,7 @@ export type HardwareInfo = z.output<typeof HardwareInfoSchema>;
 export type LocalRecommendation = z.output<typeof LocalRecommendationSchema>;
 export type LocalStatus = z.output<typeof LocalStatusSchema>;
 export type LocalPlan = z.output<typeof DecisionLocalPlanSchema>;
+export type InstallState = z.output<typeof DecisionInstallStateSchema>;
 export type DiscoverySettings = z.output<typeof DecisionDiscoverySettingsSchema>;
 export type SourceTestResult = z.output<typeof DecisionSourceTestSchema>;
 export type SourceEvaluation = z.output<typeof DecisionEvaluationSchema>;

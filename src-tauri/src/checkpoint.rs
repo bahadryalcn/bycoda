@@ -864,8 +864,10 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
             .authority_execution_gate(),
     );
-    // Only a read-only scan runs before commands are accepted. Settling
-    // interrupted turns runs git, so it stays off the UI thread.
+    // Before commands are accepted, only the sessions marked as having an
+    // active turn are read (see `turn::active_sessions`). Settling them runs
+    // git and retiring settled leases walks the lease list; both stay off the
+    // UI thread.
     let recovery = store.plan_recovery();
     app.manage(store.clone());
     spawn_recovery(recovery);

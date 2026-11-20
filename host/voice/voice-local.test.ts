@@ -9,7 +9,13 @@ vi.mock("node:child_process", async (importActual) => {
       spawnOverride.child ?? actual.spawn(...args)) as typeof actual.spawn,
   };
 });
-import { DICTATION_WARM_MS, LocalVoiceService, validateVoiceAudio } from "./voice-local";
+import {
+  DICTATION_WARM_MS,
+  LOCAL_REQUEST_TIMEOUT_MS,
+  LOCAL_WORKER_UNRESPONSIVE_MS,
+  LocalVoiceService,
+  validateVoiceAudio,
+} from "./voice-local";
 import * as runtime from "./voice-runtime";
 it("does not expire a live lease because the wall clock jumps forward", async () => {
   vi.useFakeTimers();
@@ -302,5 +308,201 @@ it("closes the worker and fails pending requests when the worker stdin errors", 
     expect(internals.child).toBeUndefined();
   } finally {
     service.close();
+  }
+});
+
+// Real streams carry the protocol; only timers are faked so stream delivery stays real.
+const audio = Buffer.alloc(6400).toString("base64");
+const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+async function connectedWorker() {
+  const { EventEmitter } = await import("node:events");
+  const { PassThrough } = await import("node:stream");
+  const written: Array<{ id: string }> = [];
+  const write = vi.fn((data: string, done?: (error?: Error | null) => void) => {
+    written.push(JSON.parse(data));
+    done?.();
+    return true;
+  });
+  const child = Object.assign(new EventEmitter(), {
+    stdin: Object.assign(new EventEmitter(), { write }),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(),
+  });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const service = new LocalVoiceService();
+  spawnOverride.child = child;
+  const first = service.start({ natural: false });
+  await flush();
+  spawnOverride.child = undefined;
+  child.stdout.write(JSON.stringify({ ready: true, model: "small", device: "cpu" }) + "\n");
+  const windowA = await first;
+  const windowB = await service.start({ natural: false });
+  const reply = async (id: string, text = "hello") => {
+    child.stdout.write(JSON.stringify({ id, text, language: "en", inferenceMs: 1 }) + "\n");
+    await flush();
+  };
+  const cleanup = () => {
+    spawnOverride.child = undefined;
+    inspect.mockRestore();
+    service.close();
+    vi.useRealTimers();
+  };
+  return { service, child, write, written, windowA, windowB, reply, cleanup };
+}
+
+it("fails only the slow request and keeps the worker and every lease", async () => {
+  const w = await connectedWorker();
+  try {
+    const slow = w.service.transcribe(w.windowA.lease, audio);
+    const failure = expect(slow).rejects.toThrow("timed out");
+    await flush();
+    await vi.advanceTimersByTimeAsync(LOCAL_REQUEST_TIMEOUT_MS);
+    await failure;
+    expect(w.child.kill).not.toHaveBeenCalled();
+    expect(() => w.service.keepAlive(w.windowA.lease)).not.toThrow();
+    expect(w.service.keepAlive(w.windowB.lease)).toEqual({ ready: true });
+    // The late reply for the abandoned request is dropped, not delivered anywhere.
+    await w.reply(w.written[0]!.id, "late");
+    const next = w.service.transcribe(w.windowB.lease, audio);
+    await flush();
+    await w.reply(w.written[1]!.id, "fresh");
+    await expect(next).resolves.toMatchObject({ text: "fresh" });
+    expect(w.child.kill).not.toHaveBeenCalled();
+  } finally {
+    w.cleanup();
+  }
+});
+
+it("ignores stdout lines that are not worker protocol messages", async () => {
+  const w = await connectedWorker();
+  try {
+    const pending = w.service.transcribe(w.windowA.lease, audio);
+    await flush();
+    for (const noise of [
+      "UserWarning: something printed to stdout",
+      "null",
+      "7",
+      '{"error":"stray worker error"}',
+      `{"id":"unknown","text":"not ours"}`,
+      "{broken",
+    ])
+      w.child.stdout.write(noise + "\n");
+    w.child.stdout.write("x".repeat(40_000) + "\n");
+    await flush();
+    expect(w.child.kill).not.toHaveBeenCalled();
+    expect(() => w.service.keepAlive(w.windowB.lease)).not.toThrow();
+    await w.reply(w.written[0]!.id);
+    await expect(pending).resolves.toMatchObject({ text: "hello" });
+  } finally {
+    w.cleanup();
+  }
+});
+
+it("fails only the request whose stdin write errors", async () => {
+  const w = await connectedWorker();
+  try {
+    const kept = w.service.transcribe(w.windowA.lease, audio);
+    await flush();
+    w.write.mockImplementationOnce((_data, done) => {
+      done?.(new Error("write failed"));
+      return false;
+    });
+    await expect(w.service.transcribe(w.windowB.lease, audio)).rejects.toThrow("failed");
+    expect(w.child.kill).not.toHaveBeenCalled();
+    expect(() => w.service.keepAlive(w.windowA.lease)).not.toThrow();
+    await w.reply(w.written[0]!.id);
+    await expect(kept).resolves.toMatchObject({ text: "hello" });
+    // A healthy worker that is not owing replies is never restarted by the watchdog.
+    await vi.advanceTimersByTimeAsync(LOCAL_WORKER_UNRESPONSIVE_MS);
+    expect(w.child.kill).not.toHaveBeenCalled();
+  } finally {
+    w.cleanup();
+  }
+});
+
+it("counts timed-out requests the worker still owes toward the busy limit", async () => {
+  const w = await connectedWorker();
+  try {
+    const first = expect(w.service.transcribe(w.windowA.lease, audio)).rejects.toThrow("timed out");
+    const second = expect(w.service.transcribe(w.windowB.lease, audio)).rejects.toThrow(
+      "timed out",
+    );
+    await flush();
+    await vi.advanceTimersByTimeAsync(LOCAL_REQUEST_TIMEOUT_MS);
+    await Promise.all([first, second]);
+    await expect(w.service.transcribe(w.windowA.lease, audio)).rejects.toThrow("busy");
+    expect(w.write).toHaveBeenCalledTimes(2);
+    // Answering an abandoned request frees its slot without a restart.
+    await w.reply(w.written[0]!.id);
+    const next = w.service.transcribe(w.windowA.lease, audio);
+    await flush();
+    await w.reply(w.written[2]!.id, "after");
+    await expect(next).resolves.toMatchObject({ text: "after" });
+    expect(w.child.kill).not.toHaveBeenCalled();
+  } finally {
+    w.cleanup();
+  }
+});
+
+it("restarts a worker that owes a reply and goes silent", async () => {
+  const w = await connectedWorker();
+  try {
+    const slow = expect(w.service.transcribe(w.windowA.lease, audio)).rejects.toThrow("timed out");
+    await flush();
+    await vi.advanceTimersByTimeAsync(LOCAL_REQUEST_TIMEOUT_MS);
+    await slow;
+    await vi.advanceTimersByTimeAsync(LOCAL_WORKER_UNRESPONSIVE_MS - LOCAL_REQUEST_TIMEOUT_MS - 1);
+    expect(w.child.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(w.child.kill).toHaveBeenCalledOnce();
+    expect(() => w.service.keepAlive(w.windowB.lease)).toThrow("expired");
+  } finally {
+    w.cleanup();
+  }
+});
+
+it("does not let a replaced worker's startup timer close its successor", async () => {
+  const { EventEmitter } = await import("node:events");
+  const { PassThrough } = await import("node:stream");
+  const fake = () =>
+    Object.assign(new EventEmitter(), {
+      stdin: Object.assign(new EventEmitter(), { write: vi.fn() }),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(),
+    });
+  const old = fake();
+  const next = fake();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const service = new LocalVoiceService();
+  try {
+    spawnOverride.child = old;
+    const abandoned = service.start({ natural: false });
+    abandoned.catch(() => undefined);
+    await flush();
+    // The old worker never reports exit, so its startup timer is still pending.
+    service.close();
+    spawnOverride.child = next;
+    const restarted = service.start({ natural: false });
+    await flush();
+    spawnOverride.child = undefined;
+    next.stdout.write(JSON.stringify({ ready: true, model: "small", device: "cpu" }) + "\n");
+    const { lease } = await restarted;
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(next.kill).not.toHaveBeenCalled();
+    expect(() => service.keepAlive(lease)).not.toThrow();
+  } finally {
+    spawnOverride.child = undefined;
+    inspect.mockRestore();
+    service.close();
+    vi.useRealTimers();
   }
 });

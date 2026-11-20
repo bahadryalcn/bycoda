@@ -33,6 +33,8 @@ export function createSocialAdapters(
     snapchat: createSnapchatAdapter(http),
     whatsapp: createWhatsAppAdapter(http, graphVersion),
     telegram: {
+      // Both the bot and the channel poll ignore the published-ID list.
+      ignoresPublishedPosts: true,
       send: (...args) =>
         (args[0].accountType === "channel" ? telegramChannel : telegramBot).send(...args),
       poll: (...args) =>

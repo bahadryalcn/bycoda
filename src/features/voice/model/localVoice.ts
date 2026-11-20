@@ -8,7 +8,7 @@ import {
 import { VoiceVad, decodePcmBase64, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 import { removeSpeechFillers, speechTranscript } from "./voiceTranscript";
-import { openMicrophone } from "./microphoneAccess";
+import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { voiceRuntimeDeadline } from "./voiceRuntimeDeadline";
@@ -108,19 +108,22 @@ export class LocalVoice {
         await localVoiceBackend.release(this.info.lease);
         return;
       }
-      this.stream = await openMicrophone({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          ...(this.conversation.deviceId
-            ? { deviceId: { exact: this.conversation.deviceId } }
-            : {}),
+      this.stream = await openMicrophone(
+        {
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            ...(this.conversation.deviceId
+              ? { deviceId: { exact: this.conversation.deviceId } }
+              : {}),
+          },
+          video: false,
         },
-        video: false,
-      });
+        { signal: this.lifetime.signal },
+      );
       if (this.closed) {
-        this.stream.getTracks().forEach((track) => track.stop());
+        stopMicrophone(this.stream);
         return;
       }
       this.audio = new AudioContext({ sampleRate: 16000 });
@@ -594,7 +597,7 @@ export class LocalVoice {
     this.silence();
     this.vad?.reset();
     if (this.heartbeat) clearInterval(this.heartbeat);
-    this.stream?.getTracks().forEach((track) => track.stop());
+    stopMicrophone(this.stream);
     this.source?.disconnect();
     this.capture?.disconnect();
     if (this.capture) this.capture.port.onmessage = null;

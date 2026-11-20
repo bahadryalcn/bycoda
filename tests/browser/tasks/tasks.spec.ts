@@ -112,12 +112,12 @@ for (const width of [1280, 800])
       await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
       await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
       const bulk = page.getByRole("region", { name: "Selected task actions", exact: true });
-      await expect(bulk.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
-      await expect(bulk.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
-      await expect(bulk.getByRole("button", { name: "Stop", exact: true })).toBeDisabled();
-      await expect(bulk.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
+      await expect(bulk.getByRole("button", { name: /^Start\b/ })).toBeEnabled();
+      await expect(bulk.getByRole("button", { name: /^Retry\b/ })).toBeEnabled();
+      await expect(bulk.getByRole("button", { name: /^Stop\b/ })).toBeDisabled();
+      await expect(bulk.getByRole("button", { name: /^Delete\b/ })).toBeEnabled();
       await capture("bulk-eligibility");
-      await bulk.getByRole("button", { name: "Delete", exact: true }).click();
+      await bulk.getByRole("button", { name: /^Delete\b/ }).click();
       const confirm = page.getByRole("dialog", { name: "Delete selected tasks", exact: true });
       await expect(confirm).toContainText("5 are eligible");
       await capture("delete-confirm");
@@ -171,12 +171,12 @@ for (const width of [1280, 800])
       await page.getByRole("button", { name: "More actions", exact: true }).first().click();
       await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
       await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
-      await bulk.getByRole("button", { name: "Delete", exact: true }).click();
+      await bulk.getByRole("button", { name: /^Delete\b/ }).click();
       await page
         .getByRole("dialog", { name: "Delete selected tasks", exact: true })
         .getByRole("button", { name: "Delete", exact: true })
         .click();
-      await expect(bulk.getByRole("button", { name: "Delete", exact: true })).toHaveAttribute(
+      await expect(bulk.getByRole("button", { name: /^Delete\b/ })).toHaveAttribute(
         "aria-busy",
         "true",
       );
@@ -800,7 +800,7 @@ for (const { width, theme } of [
     );
     await fillTask(form);
     const objective = "Keep this exact user objective while reusing the workflow.";
-    await form.getByRole("textbox", { name: "Description", exact: true }).fill(objective);
+    await form.getByRole("combobox", { name: "Description", exact: true }).fill(objective);
     await openAdvanced(form);
     const summary = form.locator("summary").filter({ hasText: /^Workflow$/ });
     await summary.focus();
@@ -808,7 +808,7 @@ for (const { width, theme } of [
     await choose(page, form.getByRole("button", { name: /^Workflow:/ }), "Source research");
     await form.getByRole("button", { name: "Apply workflow", exact: true }).click();
     const applied = JSON.parse(
-      await form.getByRole("textbox", { name: "Description", exact: true }).inputValue(),
+      await form.getByRole("combobox", { name: "Description", exact: true }).inputValue(),
     );
     expect(applied.objective).toBe(objective);
     expect(applied.acceptance).toContain(
@@ -900,7 +900,7 @@ for (const { width, theme } of [
     await choose(page, reopened.getByRole("button", { name: /^Workflow:/ }), "My checked flow");
     await reopened.getByRole("button", { name: "Apply workflow", exact: true }).click();
     const restored = JSON.parse(
-      await reopened.getByRole("textbox", { name: "Description", exact: true }).inputValue(),
+      await reopened.getByRole("combobox", { name: "Description", exact: true }).inputValue(),
     );
     expect(restored.acceptance).toContain(
       "Factual claims are checked against opened primary sources",
@@ -1229,12 +1229,12 @@ test("bulk cleanup uses one confirmation, preserves code and retries only failed
   await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
   await expect(page.getByText("102 selected", { exact: true })).toBeVisible();
   const actions = page.getByRole("region", { name: "Selected task actions" });
-  await actions.getByRole("button", { name: "Delete", exact: true }).click();
+  await actions.getByRole("button", { name: /^Delete\b/ }).click();
   const confirm = page.getByRole("dialog", { name: "Delete selected tasks", exact: true });
   await expect(confirm).toContainText("100 are eligible");
   await confirm.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(actions).toContainText("99 succeeded, 2 skipped, 1 failed");
-  await actions.getByRole("button", { name: "Retry failed tasks", exact: true }).click();
+  await actions.getByRole("button", { name: /^Repeat on failed tasks/ }).click();
   await page
     .getByRole("dialog", { name: "Delete selected tasks", exact: true })
     .getByRole("button", { name: "Delete", exact: true })
@@ -1562,7 +1562,7 @@ async function fillTask(form: Locator) {
     .getByRole("textbox", { name: "Task title", exact: true })
     .fill("Run on the selected computer");
   await form
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Finish the fixture task without stopping.");
 }
 async function fillGoal(form: Locator) {
@@ -1703,7 +1703,7 @@ test("project discovery errors have an in-form retry", async ({ page }) => {
   await page.evaluate(() =>
     (window as unknown as { taskFixtureRecoverProjects: () => void }).taskFixtureRecoverProjects(),
   );
-  await form.getByRole("button", { name: "Retry", exact: true }).click();
+  await form.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(form.getByRole("alert")).toHaveCount(0);
   await choose(page, project(form), "remote-api");
   await expect(form.locator("[data-goal-project]")).toHaveCount(1);
@@ -2063,10 +2063,10 @@ test("compact task form keeps advanced choices and long instructions manageable"
   await expect(machine(form)).toBeFocused();
   await fillTask(form);
   await form
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Detailed instructions and acceptance criteria.\n".repeat(80));
   const prompt = (await form
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .boundingBox())!;
   expect(prompt.height).toBeLessThanOrEqual(225);
   await expect(form.getByRole("button", { name: "Add to To do", exact: true })).toBeVisible();

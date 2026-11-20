@@ -22,7 +22,42 @@ const slowScopeWarn = createDedupedWarn({ windowMs: 10 * 60_000 });
 const STUCK_SCOPE_MS = 15_000;
 const SCOPE_DEADLINE_MS = 5 * 60_000;
 const BOUNDARY_DEADLINE_MS = 60_000;
-export type ScopeOptions = { deadlineMs?: number };
+export type ScopeOptions = {
+  deadlineMs?: number;
+  /**
+   * Absolute `monotonicNow()` instant after which this request must not be admitted. It is
+   * the caller's original ingress deadline, so FIFO queue time counts against it. A scope
+   * still queued past it is rejected with `StoreAdmissionExpiredError` before it enters or
+   * runs anything; once admitted, the deadline no longer applies.
+   */
+  admitBefore?: number;
+};
+/**
+ * The request's admission deadline passed before it entered the database or began its
+ * transaction. Nothing ran and nothing was written, so the caller may report "not sent".
+ */
+export class StoreAdmissionExpiredError extends Error {
+  readonly code = "HOST_STORE_ADMISSION_EXPIRED";
+  readonly admitted = false as const;
+  constructor(readonly waitedMs: number) {
+    super(`Host database admission deadline passed before the request entered ms=${waitedMs}`);
+    this.name = "StoreAdmissionExpiredError";
+  }
+}
+/** Stage timings of one database owner; numbers only, never SQL, parameters or payloads. */
+type ScopeTimings = {
+  /** FIFO wait before this owner entered. */
+  queueMs: number;
+  /** Request-level authorization guards run while owning the scope. */
+  guardMs: number;
+  /** Time the worker spent executing statements. */
+  workerMs: number;
+  /** Time from posting a request to its reply, which includes worker execution and thread hops. */
+  roundTripMs: number;
+  /** Round trip of COMMIT, the durable flush. */
+  commitMs: number;
+  requests: number;
+};
 /** A holder never returned: it was failed so the queue could move on. */
 class ScopeDeadlineError extends Error {
   constructor(site: string, ms: number) {
@@ -55,7 +90,7 @@ const workerParams = (
   params.map((param) =>
     Array.isArray(param) ? param.map(exactBytes) : exactBytes(param as SQLInputValue),
   ) as SQLInputValue[] | SQLInputValue[][];
-type Owner = { id: string; phase: "open" | "closing" | "closed" };
+type Owner = { id: string; phase: "open" | "closing" | "closed"; timings?: ScopeTimings };
 type AuthorizationCheck = () => boolean | Promise<boolean>;
 export type StoreAuthorization =
   | AuthorizationCheck
@@ -64,6 +99,8 @@ type Reply = {
   id?: number;
   ready?: boolean;
   value?: any;
+  /** Worker-side execution time of this request. */
+  ms?: number;
   error?: string;
   code?: string;
   errcode?: number;
@@ -97,6 +134,10 @@ export class StoreDatabase {
   scopeDeadlineMs = SCOPE_DEADLINE_MS;
   /** Longest the worker may take to answer an enter/leave or a liveness ping. */
   boundaryDeadlineMs = BOUNDARY_DEADLINE_MS;
+  /** An owner holding the queue, or a request waiting in it, this long logs its stage timings. */
+  slowScopeMs = SLOW_SCOPE_MS;
+  /** Sink for slow-scope stage timings; deduplicated per call site by default. */
+  scopeWarn: (message: string, detail?: string) => void = slowScopeWarn;
   private tail: Promise<unknown> = Promise.resolve();
   private sequence = 0;
   admissionVersion = 0;
@@ -123,6 +164,8 @@ export class StoreDatabase {
       sql?: string;
       mutation: boolean;
       write: boolean;
+      sentAt: number;
+      commit: boolean;
     }
   >();
 
@@ -143,6 +186,14 @@ export class StoreDatabase {
       const request = this.pending.get(reply.id!);
       if (!request) return;
       this.pending.delete(reply.id!);
+      const timings = request.owner.timings;
+      if (timings) {
+        const roundTrip = performance.now() - request.sentAt;
+        timings.requests++;
+        timings.roundTripMs += roundTrip;
+        timings.workerMs += typeof reply.ms === "number" ? reply.ms : 0;
+        if (request.commit) timings.commitMs += roundTrip;
+      }
       if (reply.error) {
         const error = Object.assign(new Error(reply.error), {
           code: reply.code,
@@ -447,11 +498,23 @@ export class StoreDatabase {
   private async authorize(guard?: StoreAuthorization): Promise<void> {
     // The guard may read this Store. Keep the live SQL owner, but prevent the
     // guard's own reads from recursively checking that same request guard.
-    if (
-      guard &&
-      !(await this.authorizations.exit(typeof guard === "function" ? guard : guard.check))
-    )
-      throw new RequestAuthorizationError();
+    if (!guard) return;
+    const timings = this.owners.getStore()?.timings;
+    const startedAt = performance.now();
+    try {
+      if (!(await this.authorizations.exit(typeof guard === "function" ? guard : guard.check)))
+        throw new RequestAuthorizationError();
+    } finally {
+      if (timings) timings.guardMs += performance.now() - startedAt;
+    }
+  }
+  /**
+   * Throws `StoreAdmissionExpiredError` when the caller's ingress deadline has passed. Call it
+   * before work that must not begin late (a BEGIN, an effect); it costs no queue admission.
+   */
+  assertAdmissionOpen(admitBefore: number | undefined): void {
+    if (admitBefore !== undefined && monotonicNow() >= admitBefore)
+      throw new StoreAdmissionExpiredError(0);
   }
   storeScope<T>(work: () => T | Promise<T>, options?: ScopeOptions): Promise<T> {
     return this.scope(() => this.internal.run(true, work), undefined, options);
@@ -491,7 +554,9 @@ export class StoreDatabase {
     if (authorization && typeof authorization !== "function")
       return this.authorizations
         .exit(() => authorization.prepare())
-        .then((prepared) => this.authorizations.run(prepared, () => this.scope(work, signal)));
+        .then((prepared) =>
+          this.authorizations.run(prepared, () => this.scope(work, signal, options)),
+        );
     if (signal && this.queuedCancellableReads >= 128)
       return Promise.reject(new Error("Database cancellable read queue is full."));
     if (signal) this.queuedCancellableReads++;
@@ -499,15 +564,38 @@ export class StoreDatabase {
     const admittedBefore = ++this.admissionVersion;
     // V8 formats the stack only when it is read, so an unread entry costs one capture.
     const entry = new Error();
+    const queuedAt = performance.now();
     let entered = false;
     let stuck: ReturnType<typeof setInterval> | undefined;
     const pending = this.tail.then(async () => {
       if (this.failed) throw this.failed;
       await this.ready;
       if (signal?.aborted) throw new Error("Database read admission cancelled.");
+      // Queue time counts against the caller's original deadline: a request that waited out
+      // its deadline never enters, so nothing of it can run after the caller gave up.
+      if (options?.admitBefore !== undefined && monotonicNow() >= options.admitBefore) {
+        const waitedMs = Math.round(performance.now() - queuedAt);
+        if (waitedMs >= this.slowScopeMs)
+          this.scopeWarn(
+            `Host database request expired in queue before ${scopeSite(entry)}`,
+            `queue=${waitedMs}ms queued=${this.admissionVersion - admittedBefore}`,
+          );
+        throw new StoreAdmissionExpiredError(waitedMs);
+      }
       entered = true;
-      const owner: Owner = { id: randomUUID(), phase: "open" };
       const enteredAt = performance.now();
+      const owner: Owner = {
+        id: randomUUID(),
+        phase: "open",
+        timings: {
+          queueMs: enteredAt - queuedAt,
+          guardMs: 0,
+          workerMs: 0,
+          roundTripMs: 0,
+          commitMs: 0,
+          requests: 0,
+        },
+      };
       stuck = setInterval(() => {
         console.warn(
           `Host database queue still held by ${scopeSite(entry, 8)} ms=${Math.round(performance.now() - enteredAt)} queued=${this.admissionVersion - admittedBefore}`,
@@ -560,11 +648,15 @@ export class StoreDatabase {
           owner.phase = "closed";
         }
         const held = performance.now() - enteredAt;
-        if (held >= SLOW_SCOPE_MS)
-          slowScopeWarn(
+        const timings = owner.timings!;
+        if (held >= this.slowScopeMs || timings.queueMs >= this.slowScopeMs) {
+          const ms = (value: number) => Math.round(value);
+          // Numbers only: never SQL text, parameters, payloads, tokens or paths.
+          this.scopeWarn(
             `Host database queue held by ${scopeSite(entry)}`,
-            `ms=${Math.round(held)} queued=${this.admissionVersion - admittedBefore}`,
+            `ms=${ms(held)} queued=${this.admissionVersion - admittedBefore} queue=${ms(timings.queueMs)}ms guard=${ms(timings.guardMs)}ms worker=${ms(timings.workerMs)}ms roundTrip=${ms(timings.roundTripMs)}ms commit=${ms(timings.commitMs)}ms requests=${timings.requests}`,
           );
+        }
         if (workFailed) throw primary;
         return result as Awaited<ReturnType<typeof work>>;
       });
@@ -653,6 +745,8 @@ export class StoreDatabase {
         owner: { id: "", phase: "closed" },
         mutation: false,
         write: false,
+        sentAt: performance.now(),
+        commit: false,
       });
       try {
         this.worker.postMessage({ id, owner: "", method: "ping", params: [] });
@@ -728,6 +822,8 @@ export class StoreDatabase {
             method === "run" ||
             method === "exec"),
         write: writes,
+        sentAt: performance.now(),
+        commit: method === "exec" && /^\s*COMMIT\s*;?\s*$/i.test(sql ?? ""),
       });
       try {
         this.worker.postMessage({ id, owner: owner.id, method, sql, params: workerParams(params) });

@@ -671,62 +671,82 @@ fn open_current(store: &SessionStore, owner: &NativeBufferOwner) -> Result<Draft
     })
 }
 
-#[tauri::command(async)]
-pub fn native_editor_draft_open(
+/// Draft work locks the writer connection; run it on the blocking pool so a busy
+/// store cannot pin the tokio workers every other IPC command needs.
+async fn owned_draft_work<T: Send + 'static>(
     window: tauri::Window,
-    store: tauri::State<'_, SessionStore>,
-) -> Result<DraftOpen, String> {
-    crate::native_window_lifecycle::editor_buffers(&window, &store, |owner| {
-        open_current(&store, owner)
+    label: &'static str,
+    work: impl FnOnce(&SessionStore, &NativeBufferOwner) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    use tauri::Manager;
+    crate::harness::run_blocking(label, move || {
+        let store = window.state::<SessionStore>();
+        crate::native_window_lifecycle::editor_buffers(&window, &store, |owner| work(&store, owner))
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn native_editor_draft_put(
+#[tauri::command]
+pub async fn native_editor_draft_open(window: tauri::Window) -> Result<DraftOpen, String> {
+    owned_draft_work(window, "native_editor_draft_open", open_current).await
+}
+
+#[tauri::command]
+pub async fn native_editor_draft_put(
     window: tauri::Window,
-    store: tauri::State<'_, SessionStore>,
     capture: PutDraft,
 ) -> Result<DraftReceipt, String> {
-    crate::native_window_lifecycle::editor_buffers(&window, &store, |owner| {
-        put(&store, owner, capture)
+    owned_draft_work(window, "native_editor_draft_put", move |store, owner| {
+        put(store, owner, capture)
     })
+    .await
 }
-#[tauri::command(async)]
-pub fn native_editor_draft_read_current(
+#[tauri::command]
+pub async fn native_editor_draft_read_current(
     window: tauri::Window,
-    store: tauri::State<'_, SessionStore>,
     document: DraftDocument,
 ) -> Result<DraftRead, String> {
-    crate::native_window_lifecycle::editor_buffers(&window, &store, |owner| {
-        read_current(&store, owner, document)
-    })
+    owned_draft_work(
+        window,
+        "native_editor_draft_read_current",
+        move |store, owner| read_current(store, owner, document),
+    )
+    .await
 }
-#[tauri::command(async)]
-pub fn native_editor_draft_read_recovery(
+#[tauri::command]
+pub async fn native_editor_draft_read_recovery(
     window: tauri::Window,
-    store: tauri::State<'_, SessionStore>,
     request: ReadRecoveryDraft,
 ) -> Result<DraftRecoveryRead, String> {
-    crate::native_window_lifecycle::editor_buffers(&window, &store, |owner| {
-        read_recovery(&store, owner, request)
-    })
+    owned_draft_work(
+        window,
+        "native_editor_draft_read_recovery",
+        move |store, owner| read_recovery(store, owner, request),
+    )
+    .await
 }
-#[tauri::command(async)]
-pub fn native_editor_draft_clear_saved(
+#[tauri::command]
+pub async fn native_editor_draft_clear_saved(
     window: tauri::Window,
-    store: tauri::State<'_, SessionStore>,
     saved: SaveCoveredDraft,
 ) -> Result<DraftReceipt, String> {
-    crate::native_window_lifecycle::editor_buffers(&window, &store, |owner| {
-        clear_saved(&store, owner, saved)
-    })
+    owned_draft_work(
+        window,
+        "native_editor_draft_clear_saved",
+        move |store, owner| clear_saved(store, owner, saved),
+    )
+    .await
 }
-#[tauri::command(async)]
-pub fn native_editor_draft_inventory(
-    store: tauri::State<'_, SessionStore>,
+#[tauri::command]
+pub async fn native_editor_draft_inventory(
+    app: tauri::AppHandle,
     request: DraftInventoryRequest,
 ) -> Result<DraftInventory, String> {
-    inventory(&store, request)
+    use tauri::Manager;
+    crate::harness::run_blocking("native_editor_draft_inventory", move || {
+        inventory(&app.state::<SessionStore>(), request)
+    })
+    .await
 }
 
 #[cfg(test)]

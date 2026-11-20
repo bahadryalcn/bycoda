@@ -580,9 +580,14 @@ export function createManagedWorkspaceRegistry(
             timeout: 30_000,
             env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
           });
+        // Only `--quiet`'s exit 1 means "no such ref"; a timeout or any other failure is
+        // unknown and must reach the caller, which then keeps the ordinary recovery.
         const branch = await git(["rev-parse", "--verify", "--quiet", workspace.branchRef]).then(
           () => true,
-          () => false,
+          (error: { code?: unknown; killed?: boolean }) => {
+            if (error.code === 1 && !error.killed) return false;
+            throw error;
+          },
         );
         const registrations = (await git(["worktree", "list", "--porcelain", "-z"])).split("\0");
         const pathKey = workspacePathKey(workspace.path);
@@ -649,15 +654,13 @@ export function createManagedWorkspaceRegistry(
       });
     },
     async touchOwnerActivity(owner) {
-      for (const workspace of await store.managedWorkspaces()) {
+      for (const workspace of await store.managedWorkspaces({
+        ownerKind: owner.kind,
+        ownerId: owner.id,
+      })) {
         // A blocked or removed directory has no activity to record; its owner keeps
         // heartbeating, so touching it would only fail on every beat.
-        if (
-          workspace.owner.kind === owner.kind &&
-          workspace.owner.id === owner.id &&
-          workspace.directoryState === "present"
-        )
-          await registry.touchActivity(workspace.id);
+        if (workspace.directoryState === "present") await registry.touchActivity(workspace.id);
       }
     },
   };

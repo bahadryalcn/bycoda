@@ -1,5 +1,6 @@
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { stripAttachmentTokens } from "./attachmentTokens";
+import type { BtwErrorCode } from "./btwError";
 import type { InlineVisual } from "./inlineVisual";
 import type { ToolInspection } from "./toolInspection";
 import { dropContextWindow, type ContextUsage } from "./contextUsage";
@@ -24,6 +25,7 @@ import { loadProjectProviderSettings, projectDefaultAccountId } from "./projectP
 import { applySessionDefaults, providerSessionDefaults } from "./providerSessionDefaults";
 import { HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import type { InterjectionMeta } from "../../../shared/model/interjection";
 
 export { HARNESSES, HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 export type { HarnessId } from "../../../shared/model/harnessIdentity";
@@ -145,7 +147,10 @@ export type BtwThread = {
   providerThreadId?: string;
   /** Account that owns this side conversation's provider thread. */
   providerAccountId?: string;
+  /** Raw failure text for logs and recovery; the sheet shows `errorCode` or a redacted form of it. */
   error?: string;
+  /** Set when the app itself refused the request; translated where the sheet renders it. */
+  errorCode?: BtwErrorCode;
   /** Live harness blocks for the in-flight reply; not persisted. */
   pendingBlocks?: Block[];
 };
@@ -161,13 +166,7 @@ export type SecondOpinionMeta = {
 };
 
 /** A mid-turn interjection the harness asked to surface, e.g. OMP advisor notes. */
-export type InterjectionSeverity = "nit" | "concern" | "blocker";
-
-export type InterjectionMeta = {
-  customType: string;
-  /** Highest severity among this interjection's retained notes, when any is known. */
-  severity?: InterjectionSeverity;
-};
+export type { InterjectionMeta, InterjectionSeverity } from "../../../shared/model/interjection";
 
 export type ToolPreviewKind = "read" | "write" | "shell" | "search";
 
@@ -218,6 +217,8 @@ export type AgentStep = {
   outputTruncated?: boolean;
 };
 
+export type WorkflowAgentParent = { callId: string; phase?: string };
+
 /**
  * The inside of a delegated run: what the subagent is called, and the trail it
  * left. Held on the parent Agent tool block so the transcript can open it
@@ -228,6 +229,8 @@ export type AgentRunMeta = {
   name: string;
   /** Provider agent type, e.g. "code-reviewer". */
   agentType?: string;
+  /** The provider Workflow call that launched this native subagent. */
+  workflow?: WorkflowAgentParent;
   /** Model reported for the child, which may differ from its parent. */
   model?: string;
   /** What the subagent was asked to do, bounded. Absent when the provider does not expose it. */
@@ -535,6 +538,8 @@ export type Session = {
   historyPartial?: boolean;
   /** Only a tail page is available; sending/editing/persistence must wait. */
   historyLoading?: boolean;
+  /** Cursor for a stored transcript opened without reading all of its history. */
+  storedHistory?: { before?: number; revision: number };
   historyLoadError?: string;
   /** Receipt for an acknowledged floating-composer handoff. */
   quickLaunchAccepted?: boolean;

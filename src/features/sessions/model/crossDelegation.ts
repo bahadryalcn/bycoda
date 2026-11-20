@@ -122,10 +122,17 @@ export function imageModelsSetting(input: Pick<DelegationInput, "harnesses">): M
   };
 }
 
-type DelegationChoice = {
-  ref: DelegateModelRef;
-  label: string;
+/** Account and model display details computed by the picker, outside the Host DTO. */
+export type DelegationOption = ModelSetting["options"][number] & {
+  modelLabel?: string;
+  accountLabel?: string;
   accountColor?: string;
+  accountNumber?: number;
+  detail?: string;
+};
+
+type DelegationChoice = Omit<DelegationOption, "value"> & {
+  ref: DelegateModelRef;
   /** Provider and model, without the account. */
   name: string;
 };
@@ -163,7 +170,22 @@ function builtInAdvisorChoices(
     // A saved ref on another account still selects this row.
     const ref =
       saved?.harness === "claude" && saved.model === choice.ref.model ? saved : choice.ref;
-    return [{ ...choice, ref, label: choice.name, accountColor: undefined }];
+    const active = choices.find(
+      (candidate) =>
+        candidate.ref.harness === "claude" &&
+        (candidate.ref.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID) ===
+          (input.currentAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
+    );
+    return [
+      {
+        ...choice,
+        ref,
+        label: choice.name,
+        accountColor: active?.accountColor,
+        accountLabel: active?.accountLabel,
+        accountNumber: active?.accountNumber,
+      },
+    ];
   });
 }
 
@@ -184,7 +206,14 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
         ...(model.accountId ? { providerAccountId: model.accountId } : {}),
       } satisfies DelegateModelRef,
       label: `${HARNESS_TITLE[harness]} · ${modelChoiceBaseName(model)}${model.accountLabel ? ` · ${model.accountLabel}` : ""}${model.accountId && input.signedOutAccounts?.has(`${harness}:${model.accountId}`) ? ` · ${input.signedOutLabel ?? "Not signed in"}` : ""}`,
+      modelLabel: modelChoiceBaseName(model),
       accountColor: model.accountColor,
+      accountNumber: model.accountNumber,
+      accountLabel: model.accountNumber ? model.accountLabel : undefined,
+      detail:
+        model.accountId && input.signedOutAccounts?.has(`${harness}:${model.accountId}`)
+          ? (input.signedOutLabel ?? "Not signed in")
+          : undefined,
       name: `${HARNESS_TITLE[harness]} · ${modelChoiceBaseName(model)}`,
     })),
   );
@@ -249,15 +278,22 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
           value: refValue(ref),
           label: `${HARNESS_TITLE[ref.harness]} · ${option.label}${account?.accountLabel ? ` · ${account.accountLabel}` : ""}${ref.providerAccountId && input.signedOutAccounts?.has(`claude:${ref.providerAccountId}`) ? ` · ${input.signedOutLabel ?? "Not signed in"}` : ""}`,
           accountColor: account?.accountColor,
+          accountNumber: account?.accountNumber,
+          accountLabel: account?.accountNumber ? account.accountLabel : undefined,
+          modelLabel: option.label,
         }
       : unavailable(ref);
   };
   if (legacySubagent) savedSubagents.push(legacySubagent);
-  const option = (choice: DelegationChoice, saved: DelegateModelRef[]) => ({
+  const option = (choice: DelegationChoice, saved: DelegateModelRef[]): DelegationOption => ({
     // Keep the saved wire value for native selects; normalization is presentation only.
     value: refValue(saved.find((ref) => choiceKey(ref) === choiceKey(choice.ref)) ?? choice.ref),
     label: choice.label,
     accountColor: choice.accountColor,
+    accountNumber: choice.accountNumber,
+    accountLabel: choice.accountLabel,
+    modelLabel: choice.modelLabel,
+    detail: choice.detail,
   });
   const subagents: ModelSetting = {
     id: CROSS_SUBAGENTS_KEY,
@@ -421,6 +457,9 @@ export function crossDelegationSummary(
  * provider icon already names it. Pickers keep the full label so same-named models stay apart.
  */
 export function delegationShortLabel(setting: ModelSetting, value: string, label: string): string {
+  const option: DelegationOption | undefined = setting.options.find((item) => item.value === value);
+  if (option?.modelLabel)
+    return [option.modelLabel, option.accountLabel, option.detail].filter(Boolean).join(" · ");
   const harness = delegationOptionHarness(setting, value);
   const prefix = harness ? `${HARNESS_TITLE[harness]} · ` : "";
   return prefix && label.startsWith(prefix) ? label.slice(prefix.length) : label;

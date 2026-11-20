@@ -1,11 +1,24 @@
 use super::*;
 
+/// An address learned from another source can now belong to a different computer; such a
+/// Host is never saved under the found computer's name.
+fn check_expected_host(expected: Option<&str>, environment_id: &str) -> Result<(), String> {
+    match expected {
+        Some(expected) if expected != environment_id => {
+            Err("This address belongs to a different computer".into())
+        }
+        _ => Ok(()),
+    }
+}
+
 pub(super) fn start_ssh_job(
     app: AppHandle,
     target: SshTarget,
     name: String,
     existing: Option<StoredMachine>,
     upgrade: bool,
+    // A found account computer: the Host on this address must be that computer.
+    expected_environment_id: Option<String>,
 ) -> Result<String, String> {
     let adding = existing.is_none();
     let named = !name.trim().is_empty();
@@ -97,6 +110,7 @@ pub(super) fn start_ssh_job(
                     .filter(|s| !s.is_empty())
                     .ok_or("Host identity is missing")?
                     .to_string();
+                check_expected_host(expected_environment_id.as_deref(), &environment_id)?;
                 StoredMachine {
                     id: uuid::Uuid::new_v4().to_string(),
                     name,
@@ -146,8 +160,8 @@ pub(super) fn start_ssh_job(
                 }
                 Err(error) => return Err(error),
             };
-            if descriptor.get("protocolVersion").and_then(Value::as_u64) != Some(1) {
-                return Err("This host uses an incompatible protocol version".into());
+            if let Some(message) = crate::remote::protocol::protocol_mismatch(&descriptor) {
+                return Err(message.into());
             }
             if descriptor.get("environmentId").and_then(Value::as_str)
                 != Some(&machine.environment_id)
@@ -186,6 +200,10 @@ pub(super) fn start_ssh_job(
         job.complete(|| {
             let (mut machine, mut tunnel) = prepared?;
             let state = app.state::<RemoteConnections>();
+            // Old tunnels leave the registry under the store lock; ending their
+            // ssh can wait seconds, so they are dropped after it is released.
+            // Declared before the guard so every early return drops them after it.
+            let mut retired = Vec::new();
             let _guard = state
                 .store
                 .lock()
@@ -210,17 +228,36 @@ pub(super) fn start_ssh_job(
                 if !named {
                     machine.name = old.name.clone();
                 }
-                state.tunnels.remove(&machine.id);
+                retired.push(state.tunnels.detach(&machine.id));
             }
             machines.retain(|m| m.id != machine.id);
             machines.push(machine.clone());
             write(&path, &machines)?;
             state.invalidate_ws(&machine.id);
-            state
-                .tunnels
-                .insert(machine.id.clone(), &machine.environment_id, tunnel);
+            retired.push(
+                state
+                    .tunnels
+                    .insert(machine.id.clone(), &machine.environment_id, tunnel),
+            );
+            drop(_guard);
+            drop(retired);
             Ok(machine.public())
         });
     });
     Ok(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_expected_host;
+
+    #[test]
+    fn a_found_computer_must_answer_with_its_own_identity() {
+        assert!(check_expected_host(None, "env-a").is_ok());
+        assert!(check_expected_host(Some("env-a"), "env-a").is_ok());
+        assert_eq!(
+            check_expected_host(Some("env-a"), "env-b").unwrap_err(),
+            "This address belongs to a different computer"
+        );
+    }
 }

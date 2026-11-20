@@ -1493,6 +1493,25 @@ it("resolves every provider and runs only allowed catalog commands", async () =>
       cwd: directory,
     });
     expect(JSON.parse(output)).toEqual(["models", "--json"]);
+    const piHelp = ["--no-extensions", "--no-mcp", "--no-approve", "--help"];
+    expect(
+      JSON.parse(
+        await backend.invoke<string>("harness_exec", {
+          command: file,
+          args: piHelp,
+          binaryProvider: "pi",
+          cwd: directory,
+        }),
+      ),
+    ).toEqual(piHelp);
+    await expect(
+      backend.invoke("harness_exec", {
+        command: file,
+        args: piHelp,
+        binaryProvider: "omp",
+        cwd: directory,
+      }),
+    ).rejects.toThrow("Unsupported headless catalog command");
     const cleanupArgs = [
       "--no-auto-update",
       "sessions",

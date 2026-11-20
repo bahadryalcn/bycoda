@@ -28,7 +28,7 @@
     New trust, interactive authentication and proxy credential approval are not
     available through this route; never bypass a rejected action with raw SSH.
   - Read before you edit. Passwords and keys are never exposed.
-- Machines are computers connected to bycoda (Settings > Connections > Add machine,
+- Machines are computers connected to bycoda (Settings > Connections > Add a computer,
   over SSH). Each one runs a host that keeps its sessions alive.
   - `machines.list` gives a `machineId` for `devices.*` and `ui.tools.open`.
   - Pairing machines or a phone is owner-only.

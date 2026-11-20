@@ -40,9 +40,10 @@ it("does not briefly report new current Host observations as future timestamps b
       }),
     ),
   );
-  expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Current availability: Here",
   );
+  expect(container.querySelector('[role="status"][aria-label]')).toBeNull();
   vi.setSystemTime(20000);
   await act(() =>
     root.render(
@@ -74,7 +75,10 @@ it("keeps the manual DND choice visible while reporting unavailable automatic ev
       }),
     ),
   );
-  expect(container.textContent).toBe("Do not disturb");
+  expect(container.querySelector("[data-presence-state]")?.textContent).toBe("Do not disturb");
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "Current availability: Do not disturb",
+  );
   await openDetails();
   expect(document.body.textContent).toContain("Computer presence: Away");
 });
@@ -94,7 +98,7 @@ it("shows the Host effective state when computer evidence is unsupported", async
   expect(
     container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
   ).toBe("present");
-  expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Current availability: Here",
   );
   expect(container.querySelector("div")).toBeNull();
@@ -117,7 +121,7 @@ it("shows Offline only while the Host cannot be read, then restores the snapshot
   expect(
     container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
   ).toBe("offline");
-  expect(container.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Current availability: Offline",
   );
   await render(false);
@@ -125,4 +129,23 @@ it("shows Offline only while the Host cannot be read, then restores the snapshot
     container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
   ).toBe("present");
   expect(snapshot.effectivePresence).toBe("present");
+});
+// #315: one timeout at the freshness boundary instead of a fixed 15 s tick per mounted chip.
+it("re-renders once at the staleness boundary and keeps no recurring timer", async () => {
+  const snapshot = {
+    presence: { state: "present" as const, since: 1, updatedAt: 1 },
+    automaticPresence: { state: "present" as const, supported: true, since: 1, updatedAt: 10000 },
+  };
+  await act(() => root.render(createElement(AssistantPresenceStatus, { snapshot, compact: true })));
+  expect(vi.getTimerCount()).toBe(1);
+  await act(() => vi.advanceTimersByTime(299000));
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "Current availability: Here",
+  );
+  await act(() => vi.advanceTimersByTime(2000));
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "Current availability: Away",
+  );
+  // Stale reading: no further boundary ahead, so no timer is left running.
+  expect(vi.getTimerCount()).toBe(0);
 });

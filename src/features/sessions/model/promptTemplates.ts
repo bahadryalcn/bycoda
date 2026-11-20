@@ -167,7 +167,7 @@ function preview(body: string): string {
     .map((part) => part.trim())
     .find(Boolean);
   const text = line ?? "";
-  return text.length > 120 ? `${text.slice(0, 117)}...` : text;
+  return text.length > 120 ? `${text.slice(0, 117)}…` : text;
 }
 
 /** Shapes a template as a picker row, so the slash picker lists it with commands and skills. */

@@ -9,7 +9,7 @@ import {
   useProviderAccountUsage,
 } from "../../providers/model/accountUsage";
 import {
-  DEFAULT_PROVIDER_ACCOUNT_ID,
+  defaultProviderAccountIdIn,
   providerAccountLabelIn,
   subscribeProviderAccounts,
   type ProviderAccountProvider,
@@ -51,22 +51,17 @@ export function ProviderAccountMenu({
     provider,
     enabled: source.accounts === undefined && open && accounts.length > 1,
   });
+  const currentId = accountId ?? defaultProviderAccountIdIn(accounts);
   // A replacement may be the only account left after deleting the old one.
-  if (
-    accounts.length < 2 &&
-    accounts.some((account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID))
-  )
-    return null;
+  if (accounts.length < 2 && accounts.some((account) => account.id === currentId)) return null;
   if (accounts.length === 0) return null;
 
   const label =
     source.accounts === undefined
-      ? providerAccountLabelIn(storedAccounts, accountId, t)
-      : (accounts.find((account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID))
-          ?.label ?? t("Unavailable Host account"));
-  const current = accounts.find(
-    (account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
-  );
+      ? providerAccountLabelIn(storedAccounts, currentId, t)
+      : (accounts.find((account) => account.id === currentId)?.label ??
+        t("Unavailable Host account"));
+  const current = accounts.find((account) => account.id === currentId);
 
   return (
     <>
@@ -123,13 +118,13 @@ export function ProviderAccountMenu({
                   ? `${status.label} · ${status.detail}`
                   : status.label
                 : undefined,
-              checked: account.id === accountId,
+              checked: account.id === currentId,
               selectionRole: "radio" as const,
             };
           })}
           onPick={(id) => {
             onClose?.();
-            if (id !== accountId) onSelect(id);
+            if (id !== currentId) onSelect(id);
           }}
           onClose={() => setOpen(false)}
         />

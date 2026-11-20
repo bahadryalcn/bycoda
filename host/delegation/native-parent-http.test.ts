@@ -121,7 +121,7 @@ it("delegates through an authenticated Native parent absent from the Host sessio
   expect(
     await call("conversation.tools.call", { action: "agents.delegate", input }, grant.token),
   ).toMatchObject({ runId: run.runId, sessionId: run.sessionId });
-  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce(), COMPLETION_WAIT);
   expect((await store.session(run.sessionId)).session.modelSettings.delegationParent).toContain(id);
   await expect(store.session(id)).rejects.toThrow("Session not found on this machine");
   const sibling = await call(
@@ -132,9 +132,10 @@ it("delegates through an authenticated Native parent absent from the Host sessio
     },
     grant.token,
   );
-  await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
-  await vi.waitFor(async () =>
-    expect((await store.session(sibling.sessionId)).status).toBe("idle"),
+  await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2), COMPLETION_WAIT);
+  await vi.waitFor(
+    async () => expect((await store.session(sibling.sessionId)).status).toBe("idle"),
+    COMPLETION_WAIT,
   );
   const childGrant = await call("conversation.access.issue", { sessionId: run.sessionId });
   const members = await call(

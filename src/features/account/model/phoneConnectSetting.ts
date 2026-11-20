@@ -7,5 +7,7 @@ const EVENT = "bycoda:phone-connect-change";
 const flag = storedFlag(KEY, false, EVENT, true);
 
 export const isPhoneConnectEnabled = (): boolean => flag.load() === true;
-export const setPhoneConnectEnabled = (value: boolean): void => flag.save(value);
+export const setPhoneConnectEnabled = (value: boolean): void => {
+  flag.save(value);
+};
 export const subscribePhoneConnect = flag.subscribe;

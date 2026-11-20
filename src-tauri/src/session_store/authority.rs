@@ -566,8 +566,8 @@ impl ExecutionGate {
         let reservation_id = uuid::Uuid::new_v4().to_string();
         let transient_lease = is_transient_kind(kind);
         let result = {
-            let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
-            lease_write(&conn, transient_lease, |tx| {
+            // A lock failure settles the operation below like any other error.
+            super::writer_lock::lock_writer(&self.conn).and_then(|conn| lease_write(&conn, transient_lease, |tx| {
                 let generation = require_native(tx, session_id, existing_control)?;
                 match read_state(tx, session_id)? {
                     Some(state) if generation > 0 => {
@@ -586,7 +586,7 @@ impl ExecutionGate {
                 tx.execute("INSERT INTO native_authority_reservations(reservation_id,session_id,generation,kind,phase,owner_pid,created_at)
                 VALUES(?1,?2,?3,?4,'RESERVED',?5,?6)",params![reservation_id,session_id,generation as i64,kind,std::process::id(),now_millis()]).map_err(|error|error.to_string())?;
                 Ok(generation)
-            })
+            }))
         }; // SQL mutex is released BEFORE operation settlement/Drop.
         let generation = match result {
             Ok(generation) => generation,
@@ -635,12 +635,12 @@ impl ExecutionGate {
     }
 
     pub(crate) fn assert_checkpoint(&self, session_id: &str) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
+        let conn = super::writer_lock::lock_writer(&self.conn)?;
         assert_checkpoint(&conn, session_id)
     }
 
     pub(crate) fn has_floor(&self) -> Result<bool, String> {
-        let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
+        let conn = super::writer_lock::lock_writer(&self.conn)?;
         conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM native_authority_floor)",
             [],
@@ -657,7 +657,7 @@ impl ExecutionGate {
                 .admit_unqualified_write()
                 .map_err(|e| e.to_string())?;
         }
-        let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
+        let conn = super::writer_lock::lock_writer(&self.conn)?;
         critical(&conn, |tx| {
             let floor: bool = tx
                 .query_row(
@@ -701,7 +701,7 @@ impl ExecutionGate {
             .next()
             .map(|(_, value)| value.into_owned())
             .ok_or("NATIVE_AUTHORITY_INVALID_PROVIDER_TARGET")?;
-        let conn = self.conn.lock().unwrap_or_else(|error| error.into_inner());
+        let conn = super::writer_lock::lock_writer(&self.conn)?;
         let conflict: bool = conn
             .query_row(
                 "SELECT EXISTS(

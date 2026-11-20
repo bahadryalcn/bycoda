@@ -1,15 +1,16 @@
 import { installAssistantObservationProducers } from "../assistant/observations/assistant-observation-producers";
+import { failureFields } from "../diagnostics/failure-fields";
+import { createLogger } from "../diagnostics/logger";
 import { perfMetrics } from "../diagnostics/perf-metrics";
 import type { ServerBindings } from "./bindings";
-import { bootPhase } from "./boot-phases";
+import { bootPhase, readyWithin } from "./boot-phases";
 import {
   markSessionWorkCoverage,
   startSessionWork,
   stopSessionWork,
 } from "../work/session-adapter";
 import { guardUnhandledRejections } from "./support";
-/** Total time a stopping Host may spend draining before it force-exits. */
-export const HOST_SHUTDOWN_DEADLINE_MS = 45_000;
+import { HOST_SHUTDOWN_DEADLINE_MS } from "../lifecycle-state";
 
 /**
  * Exit status of a shutdown that ran to its end. Service supervisors restart a Host that
@@ -24,6 +25,16 @@ export function shutdownExitCode(reason: string, failed: boolean): number {
 }
 
 type ClosePromise = Promise<void> & { pendingDrains(): string[] };
+
+/**
+ * Recovery services whose entry points await `ready` themselves, so a slow or wedged one
+ * must not hold the Host's listen back: boot waits a bounded time and reports it degraded.
+ */
+const OPTIONAL_RECOVERY_SERVICES: ReadonlySet<string> = new Set([
+  "provider-inbox",
+  "social",
+  "social-peers",
+]);
 
 /**
  * Hard stop for a drain that never settles: a dead listener must not keep the
@@ -93,6 +104,8 @@ export async function createLifecycleRuntime(
     | "subscriptionHub"
     | "bulkTransfers"
     | "localVoice"
+    | "decisionModels"
+    | "roomFiles"
     | "assistantKeepAwake"
     | "managedAssistantSessions"
     | "desktopControl"
@@ -151,6 +164,7 @@ export async function createLifecycleRuntime(
   let startup: Promise<void> = Promise.resolve();
   let resourceClose: ClosePromise | undefined;
   const pendingDrainLabels = new Set<string>();
+  const startupLog = createLogger("host.startup");
   dependencies.server.on("listening", () => {
     if (dependencies.closing) return;
     startup = dependencies.engine.store.db.outsideScope(async () => {
@@ -169,9 +183,10 @@ export async function createLifecycleRuntime(
           await action();
         } catch (error) {
           if (!dependencies.closing)
-            console.warn(
-              `Host background startup step "${name}" failed: ${error instanceof Error ? error.name : "Error"}.`,
-            );
+            startupLog.warn(`Host background startup step "${name}" failed.`, {
+              step: name,
+              ...failureFields(error),
+            });
         } finally {
           clearTimeout(timer);
         }
@@ -200,8 +215,9 @@ export async function createLifecycleRuntime(
         step("social", () => dependencies.social.start()),
       ]);
     });
-    void startup.catch(() => {
-      if (!dependencies.closing) console.warn("Host background startup failed.");
+    void startup.catch((error: unknown) => {
+      if (!dependencies.closing)
+        startupLog.warn("Host background startup failed.", failureFields(error));
     });
   });
   // Node does not await EventEmitter listeners. The CLI and fixtures await this
@@ -256,7 +272,9 @@ export async function createLifecycleRuntime(
       );
       drain("queueDrainer", async () => await dependencies.queueDrainer.close());
       drain("localVoice", () => dependencies.localVoice.close());
+      drain("decisionModels", () => dependencies.decisionModels.close());
       drain("assistant", () => dependencies.assistant.close());
+      drain("assistantCommands", () => dependencies.roomFiles.folders.close());
       drain("assistantKeepAwake", () => dependencies.assistantKeepAwake.close());
       drain("managedAssistantSessions", () => dependencies.managedAssistantSessions.close());
       drain("desktopControl", () => dependencies.desktopControl.close());
@@ -329,7 +347,10 @@ export async function createLifecycleRuntime(
   try {
     // Each step logs its own time: this phase alone holds the Host's listen back.
     await bootPhase("recovery-managed", () =>
-      dependencies.managed.recover((id) => dependencies.tasks.reconcileDelivery(id)),
+      dependencies.managed.recover(
+        (id) => dependencies.tasks.reconcileDelivery(id),
+        (name, work) => bootPhase(`recovery-managed-${name}`, work),
+      ),
     );
     await bootPhase("recovery-services", () =>
       Promise.all(
@@ -345,7 +366,13 @@ export async function createLifecycleRuntime(
             ["tasks", dependencies.tasks.ready],
             ["goals", dependencies.goals.ready],
           ] as const
-        ).map(([name, ready]) => bootPhase(`recovery-service-${name}`, () => ready)),
+        ).map(([name, ready]) =>
+          bootPhase(`recovery-service-${name}`, () =>
+            OPTIONAL_RECOVERY_SERVICES.has(name)
+              ? readyWithin(`recovery-service-${name}`, ready)
+              : ready,
+          ),
+        ),
       ),
     );
     dependencies.observationCoverage = await bootPhase("recovery-observations", () =>

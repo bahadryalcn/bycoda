@@ -9,7 +9,8 @@ import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SettingsFeedback } from "../../../shared/ui/settings";
-import { MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
+import { MCP_PROVIDER_LABELS, scopeLabel, type McpConnection } from "../model/mcp";
+import { errorText } from "../../../shared/lib/errors";
 type Scope = McpConnection["scope"];
 export type Provider = McpConnection["provider"];
 export const PROVIDERS: Provider[] = ["claude", "claude_desktop", "codex", "cursor", "opencode"];
@@ -20,10 +21,6 @@ const SCOPES: Record<Provider, Scope[]> = {
   cursor: ["project", "user"],
   opencode: ["project", "user"],
 };
-
-export function scopeLabel(scope: Scope): string {
-  return scope === "user" ? t("Global") : scope === "project" ? t("Project") : t("Local project");
-}
 
 export function scopeDescription(scope: Scope): string {
   return scope === "user"
@@ -49,12 +46,14 @@ export function ProviderIcon({ provider }: { provider: Provider }) {
 
 function McpPicker<T extends string>({
   label,
+  description,
   value,
   options,
   onChange,
   disabled = false,
 }: {
   label: string;
+  description?: string;
   value: T;
   options: { value: T; label: string; icon?: ReactNode }[];
   onChange: (value: T) => void;
@@ -65,6 +64,7 @@ function McpPicker<T extends string>({
       loopNavigation
       disabled={disabled}
       label={label}
+      description={description}
       value={value}
       options={options}
       onValueChange={(value) => onChange(value as T)}
@@ -120,7 +120,9 @@ export function AddServerModal({
       await onAdded();
       onClose();
     } catch (cause) {
-      setError(written ? t("Server added. Refresh failed. Retry to check status.") : String(cause));
+      setError(
+        written ? t("Server added. Refresh failed. Retry to check status.") : errorText(cause),
+      );
     } finally {
       adding.current = false;
       setBusy(false);
@@ -155,7 +157,7 @@ export function AddServerModal({
       <form
         id={formId}
         onSubmit={(event) => {
-          void add(event).catch((cause) => setError(String(cause)));
+          void add(event).catch((cause) => setError(errorText(cause)));
         }}
         className="space-y-4"
       >
@@ -177,6 +179,7 @@ export function AddServerModal({
           <McpPicker
             disabled={busy || added}
             label={t("Scope")}
+            description={scopeDescription(scope)}
             value={scope}
             options={SCOPES[provider].map((option) => ({
               value: option,
@@ -185,19 +188,13 @@ export function AddServerModal({
             onChange={setScope}
           />
         </div>
-        <Text as="p" size="caption" tone="secondary" className="break-all">
-          {scope === "user"
-            ? t("Available to all projects.")
-            : t("Selected project: {p0}", { p0: cwd })}
-          {scope === "local" ? (
-            <Text size="inherit" tone="muted" className="mt-1 block">
-              {t("Only this project, in your personal settings.")}
-            </Text>
-          ) : null}
-        </Text>
+        {scope === "user" ? null : (
+          <Text as="p" size="caption" tone="secondary" className="break-all">
+            {t("Selected project: {p0}", { p0: cwd })}
+          </Text>
+        )}
         <TextField
           label={t("Name")}
-          description={t("(optional for an mcpServers block)")}
           value={name}
           disabled={busy || added}
           pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
@@ -208,6 +205,7 @@ export function AddServerModal({
 
         <TextareaField
           label={t("JSON configuration")}
+          description={t("Paste an mcpServers block or a server object.")}
           required
           value={config}
           disabled={busy || added}
@@ -219,12 +217,6 @@ export function AddServerModal({
           placeholder={'{"mcpServers":{"my-server":{"command":"npx","args":["-y","example-mcp"]}}}'}
         />
 
-        <Text as="p" size="caption" tone="muted">
-          {t("Paste an mcpServers block or a server object.")}
-        </Text>
-        <Text as="p" size="caption" tone="muted">
-          {t("Saves configuration. Refresh to check status.")}
-        </Text>
         {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       </form>
     </Modal>

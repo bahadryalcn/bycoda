@@ -8,6 +8,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import type { ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 
 type Props = {
   name: string;
@@ -32,7 +33,7 @@ export function RemoveProjectDialog({
 }: Props) {
   const t = useT();
   const [sessions, setSessions] = useState<number | null>(null);
-  const [countError, setCountError] = useState<string | null>(null);
+  const [countError, setCountError] = useState<RemoteErrorView | null>(null);
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
@@ -44,7 +45,7 @@ export function RemoveProjectDialog({
         if (!cancelled) setSessions(counts.reduce((sum, count) => sum + count, 0));
       },
       (reason: unknown) => {
-        if (!cancelled) setCountError(reason instanceof Error ? reason.message : String(reason));
+        if (!cancelled) setCountError(describeRemoteError(reason));
       },
     );
     return () => {
@@ -56,10 +57,10 @@ export function RemoveProjectDialog({
     title: t("Delete {p0}", { p0: name }),
     message: paths
       ? t(
-          "All conversations for the selected projects will be deleted. The projects leave the sidebar. Their folders on disk stay put.",
+          "All sessions for the selected projects will be deleted. The projects leave the sidebar. Their folders on disk stay put.",
         )
       : t(
-          "All conversations for this project will be deleted. It also leaves the sidebar. The folder on disk stays put, and opening it again brings the project back empty.",
+          "All sessions for this project will be deleted. It also leaves the sidebar. The folder on disk stays put, and opening it again brings the project back empty.",
         ),
     confirmLabel: t("Delete"),
     pendingLabel: t("Deleting…"),
@@ -71,8 +72,8 @@ export function RemoveProjectDialog({
               tone: "danger",
               content:
                 sessions === 1
-                  ? t("1 saved conversation will be removed.")
-                  : t("{p0} saved conversations will be removed.", { p0: sessions }),
+                  ? t("1 saved session will be removed.")
+                  : t("{p0} saved sessions will be removed.", { p0: sessions }),
             },
           ]
         : undefined,
@@ -88,8 +89,11 @@ export function RemoveProjectDialog({
     body: (
       <>
         {countError ? (
-          <InlineError retry={{ onRetry: () => setRevision((value) => value + 1) }}>
-            {countError}
+          <InlineError
+            details={countError.details}
+            retry={{ onRetry: () => setRevision((value) => value + 1) }}
+          >
+            {countError.message}
           </InlineError>
         ) : sessions == null ? (
           <LoadingText>{t("Loading…")}</LoadingText>

@@ -5,7 +5,7 @@ import {
   getNativeOutputEventOrigin,
 } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyHarnessEvent } from "../../core/apply";
+import { applyHarnessEvent, applyHarnessEvents } from "../../core/apply";
 import { newSession } from "../../../../features/sessions/model/session";
 import {
   foldableWork,
@@ -26,6 +26,9 @@ const writeChild = vi.fn(async (_id: string, line: string) => {
   sent.push(line);
 });
 const readHarnessTaskOutput = vi.fn(async () => ({ text: "live output\n", truncated: false }));
+const invokeProviderCommand = vi.fn(
+  async (): Promise<Array<{ agentId: string; metadata: string; transcript: string }>> => [],
+);
 
 beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", () =>
@@ -46,6 +49,7 @@ vi.mock("../../core/child", () =>
     },
     writeChild,
     readHarnessTaskOutput,
+    invokeProviderCommand,
   }),
 );
 
@@ -61,9 +65,14 @@ const {
   stopClaudeBackgroundWork,
   stopClaudeSession,
   __claudeTestReset,
+  nextOutputPollDelay,
 } = await import("./claude");
+const { claudeWorkflowReferences, loadClaudeWorkflowArtifacts } =
+  await import("./claudeWorkflowArtifacts");
 // Imports `claude.ts`, so it has to be loaded after the child mock like the rest.
 const { buildImportedSession } =
+  await import("../../../../features/sessions/model/claudeSessionImport");
+const { hydrateImportedClaudeWorkflows } =
   await import("../../../../features/sessions/model/claudeSessionImport");
 import type { HarnessEvent } from "../../core/types";
 import type { RuntimeMode, TurnIntent } from "../../../../features/sessions/model/session";
@@ -1964,6 +1973,233 @@ describe("claude subagents", () => {
     });
   });
 
+  it("settles a workflow without converting it into an agent", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: {
+        content: [{ type: "tool_use", id: "toolu_workflow", name: "Workflow", input: {} }],
+      },
+    });
+    emit({
+      type: "system",
+      subtype: "task_started",
+      task_id: "wf1",
+      task_type: "local_workflow",
+      tool_use_id: "toolu_workflow",
+      description: "Research",
+    });
+    emit({
+      type: "system",
+      subtype: "task_progress",
+      task_id: "wf1",
+      tool_use_id: "toolu_workflow",
+      description: "Research",
+    });
+    emit({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "wf1",
+      tool_use_id: "toolu_workflow",
+      status: "completed",
+      summary: "Done",
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+    const session = applyHarnessEvents(newSession("claude", "/repo"), events);
+    expect(
+      session.blocks.find((block) => block.tool?.callId === "toolu_workflow")?.tool,
+    ).toMatchObject({ status: "completed" });
+    expect(
+      session.blocks.find((block) => block.tool?.callId === "toolu_workflow")?.tool?.kind,
+    ).not.toBe("agent");
+  });
+
+  it("reads workflow agents by provider identity and maps their transcript", async () => {
+    const parent = {
+      type: "user",
+      toolUseResult: {
+        taskType: "local_workflow",
+        taskId: "task",
+        runId: "wf_123",
+        transcriptDir: "ignored",
+      },
+      message: { content: [{ type: "tool_result", tool_use_id: "workflow-call" }] },
+    };
+    const call = {
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id: "workflow-call", name: "Workflow", input: {} }],
+      },
+    };
+    const notice = {
+      type: "user",
+      origin: { kind: "task-notification", producer: "session-task" },
+      message: {
+        content:
+          "<task-notification><task-id>task</task-id><status>completed</status></task-notification>",
+      },
+    };
+    expect(
+      claudeWorkflowReferences(
+        [call, parent, notice].map((record) => JSON.stringify(record)).join("\n"),
+      ),
+    ).toEqual([{ callId: "workflow-call", taskId: "task", runId: "wf_123", status: "completed" }]);
+    expect(
+      claudeWorkflowReferences(
+        [call, parent, { ...notice, origin: {} }]
+          .map((record) => JSON.stringify(record))
+          .join("\n"),
+      ),
+    ).toEqual([{ callId: "workflow-call", taskId: "task", runId: "wf_123" }]);
+    invokeProviderCommand.mockResolvedValueOnce([
+      {
+        agentId: "abc",
+        metadata: JSON.stringify({
+          agentType: "workflow-subagent",
+          inWorkflowRun: true,
+          description: "Research",
+          workflowPhase: "Review",
+          model: "opus",
+        }),
+        transcript: JSON.stringify({
+          type: "assistant",
+          uuid: "one",
+          message: { stop_reason: "end_turn", content: [{ type: "text", text: "Found it" }] },
+        }),
+      },
+    ]);
+    const events: HarnessEvent[] = [];
+    await loadClaudeWorkflowArtifacts({
+      cwd: "/repo",
+      providerSessionId: "session",
+      runId: "wf_123",
+      callId: "workflow-call",
+      status: "completed",
+      onEvent: (event) => events.push(event),
+    });
+    expect(invokeProviderCommand).toHaveBeenCalledWith("harness_claude_workflow_artifacts", {
+      cwd: "/repo",
+      providerAccountId: undefined,
+      providerSessionId: "session",
+      runId: "wf_123",
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.started",
+        callId: "workflow:workflow-call:abc",
+        workflow: { callId: "workflow-call", phase: "Review" },
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "agent.step", text: "Found it" }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "tool.updated", status: "completed" }),
+    );
+  });
+
+  it("loads live workflow artifacts and settles them on notification", async () => {
+    invokeProviderCommand.mockResolvedValue([
+      {
+        agentId: "a",
+        metadata: JSON.stringify({ agentType: "workflow-subagent", inWorkflowRun: true }),
+        transcript: "",
+      },
+    ]);
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: { content: [{ type: "tool_use", id: "w", name: "Workflow", input: {} }] },
+    });
+    emit({
+      type: "system",
+      subtype: "task_started",
+      task_id: "task",
+      task_type: "local_workflow",
+      tool_use_id: "w",
+      description: "Work",
+    });
+    emit({
+      type: "user",
+      toolUseResult: { taskType: "local_workflow", taskId: "task", runId: "wf_1" },
+      message: { content: [{ type: "tool_result", tool_use_id: "w" }] },
+    });
+    await waitFor(
+      () =>
+        events.some((event) => event.type === "tool.started" && event.callId === "workflow:w:a"),
+      "workflow agent",
+    );
+    emit({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "task",
+      tool_use_id: "w",
+      status: "completed",
+    });
+    await waitFor(
+      () =>
+        events.some(
+          (event) =>
+            event.type === "tool.updated" &&
+            event.callId === "workflow:w:a" &&
+            event.status === "interrupted",
+        ),
+      "workflow agent completion",
+    );
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+    invokeProviderCommand.mockReset();
+  });
+
+  it("hydrates imported workflow trails without claiming unfinished agents completed", async () => {
+    const transcript = [
+      { type: "user", message: { content: "Start" } },
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "w", name: "Workflow", input: {} }] },
+      },
+      {
+        type: "user",
+        toolUseResult: { taskType: "local_workflow", taskId: "t", runId: "wf_1" },
+        message: { content: [{ type: "tool_result", tool_use_id: "w" }] },
+      },
+      {
+        type: "user",
+        origin: { kind: "task-notification", producer: "session-task" },
+        message: {
+          content:
+            "<task-notification><task-id>t</task-id><status>completed</status></task-notification>",
+        },
+      },
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    invokeProviderCommand.mockResolvedValueOnce([
+      {
+        agentId: "a",
+        metadata: JSON.stringify({ agentType: "workflow-subagent", inWorkflowRun: true }),
+        transcript: "",
+      },
+    ]);
+    const base = newSession("claude", "/repo");
+    const session = buildImportedSession({ base, transcript, providerSessionId: "sess_1" });
+    const hydrated = await hydrateImportedClaudeWorkflows({
+      session,
+      transcript,
+      cwd: "/repo",
+      providerSessionId: "sess_1",
+    });
+    expect(hydrated.blocks.find((block) => block.tool?.callId === "w")?.tool?.status).toBe(
+      "completed",
+    );
+    expect(
+      hydrated.blocks.find((block) => block.tool?.callId === "workflow:w:a")?.tool?.status,
+    ).toBe("interrupted");
+  });
+
   it("stays busy after a parent result while a background subagent is running", async () => {
     const { events, turn } = await startTurn("s1");
     let settled = false;
@@ -2549,6 +2785,17 @@ describe("claude subagents", () => {
 });
 
 describe("claude background tasks", () => {
+  it("backs off while output is unchanged and resets on new output", () => {
+    let delay = 1_000;
+    const seen: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      delay = nextOutputPollDelay(delay, false);
+      seen.push(delay);
+    }
+    expect(seen).toEqual([1500, 2250, 3375, 5000, 5000, 5000, 5000, 5000]);
+    expect(nextOutputPollDelay(5_000, true)).toBe(1_000);
+  });
+
   it("reads output reported only by the completion notification", async () => {
     readHarnessTaskOutput.mockClear();
     readHarnessTaskOutput.mockResolvedValue({ text: "completed output\n", truncated: false });

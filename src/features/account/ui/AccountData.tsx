@@ -13,6 +13,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Group, Row } from "../../../shared/ui/settings";
+import { AnonymousUsageSetting } from "./AnonymousUsageSetting";
 import { useDataExport, useDataSummary } from "../hooks/useAccountData";
 
 export function retentionLabel(key: RetentionKey): string {
@@ -121,8 +122,9 @@ function DataExportRow() {
               ? t("The export failed. Try again.")
               : status === "expired"
                 ? t("The export expired. Request a new one.")
-                : t("A JSON file with everything bycoda stores about your account.")
+                : undefined
       }
+      info={status ? undefined : t("A JSON file with everything bycoda stores about your account.")}
       feedback={
         error || follow.isError ? (
           <InlineError>{error || t("Could not check the export.")}</InlineError>
@@ -177,6 +179,7 @@ export function AccountData() {
     >
       {summary ? <StoredData summary={summary} /> : null}
       <DataExportRow />
+      <AnonymousUsageSetting />
     </Group>
   );
 }

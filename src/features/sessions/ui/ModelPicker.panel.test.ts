@@ -145,9 +145,11 @@ async function inputText(input: HTMLInputElement, value: string) {
 
 const listbox = () => panel()!.querySelector<HTMLElement>('[role="listbox"]')!;
 const providerTab = (label: string) =>
-  panel()!.querySelector<HTMLButtonElement>(
-    `[role="tablist"][aria-label="Providers"] [role="tab"][aria-label="${label}"]`,
-  )!;
+  [
+    ...panel()!.querySelectorAll<HTMLButtonElement>(
+      '[role="tablist"][aria-label="Providers"] [role="tab"]',
+    ),
+  ].find((tab) => tab.getAttribute("aria-label")?.split(" · ")[0] === label)!;
 
 /** A setting block, switching to the column tab that holds it when needed. */
 async function settingBlock(id: string) {
@@ -263,6 +265,32 @@ describe("model panel", () => {
     expect(panel()).toBeNull();
     expect(document.activeElement).toBe(trigger());
   });
+
+  it.each(["data-mcp-picker", "data-session-folder-picker"])(
+    "does not open over a focused composer %s",
+    async (attribute) => {
+      await render({ harness: "claude", model: "claude:opus-5", hotkeys: true });
+      const blocking = document.createElement("div");
+      blocking.setAttribute(attribute, "");
+      const search = document.createElement("input");
+      blocking.append(search);
+      document.body.append(blocking);
+      search.focus();
+      await act(async () => {
+        search.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: ">",
+            code: "Period",
+            ctrlKey: true,
+            shiftKey: true,
+            bubbles: true,
+          }),
+        );
+      });
+      expect(panel()).toBeNull();
+      blocking.remove();
+    },
+  );
 
   it.each([
     ["subagentModel", "default", "subagentPolicy"],
@@ -555,7 +583,7 @@ describe("model panel", () => {
     await click(providerTab("Favorites"));
     expect(
       [...listbox().querySelectorAll('[role="option"]')].map((option) =>
-        option.textContent?.trim().replace(/\s+(Cursor|OpenCode Go)$/, ", $1"),
+        option.getAttribute("aria-label"),
       ),
     ).toEqual(["Auto, Cursor", "Muse Spark 1.3, Cursor", "Muse Spark 1.3, OpenCode Go"]);
   });
@@ -617,6 +645,34 @@ describe("model panel", () => {
     expect(panel()).toBeNull();
     await openPanel();
     expect(providerTab("Grok Build").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("keeps a typed search and provider while the pointer drifts over the provider rail", async () => {
+    await render({ harness: "grok", model: "grok:grok-4.6", values: { effort: "high" } });
+    await openPanel();
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search models"]')!;
+    await inputText(search, "Grok");
+    const openCodeTab = providerTab("OpenCode");
+    await movePointer(openCodeTab);
+    expect(openCodeTab.getAttribute("aria-selected")).toBe("false");
+    expect(providerTab("Grok Build").getAttribute("aria-selected")).toBe("true");
+    expect(search.value).toBe("Grok");
+
+    // A deliberate click still switches providers and starts that list fresh.
+    await click(openCodeTab);
+    expect(openCodeTab.getAttribute("aria-selected")).toBe("true");
+    expect(search.value).toBe("");
+  });
+
+  it("previews a provider on hover again once the search is empty", async () => {
+    await render({ harness: "grok", model: "grok:grok-4.6", values: { effort: "high" } });
+    await openPanel();
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search models"]')!;
+    await inputText(search, "Grok");
+    await inputText(search, "");
+    const openCodeTab = providerTab("OpenCode");
+    await movePointer(openCodeTab);
+    expect(openCodeTab.getAttribute("aria-selected")).toBe("true");
   });
 });
 
@@ -779,7 +835,8 @@ describe("model panel settings column", () => {
     await click(tabs[1]);
     expect(columnLabels()).toEqual(["Advisor", "Image models", "Subagents", "Subagent max effort"]);
     const rows = [...container.querySelectorAll("[data-model-settings] [data-setting-id]")];
-    expect(new Set(rows.map((row) => row.parentElement)).size).toBe(1);
+    // Every row is wrapped by its reason hint, so the shared list is the scroller they sit in.
+    expect(new Set(rows.map((row) => row.closest(".overflow-y-auto"))).size).toBe(1);
   });
 
   it("toggles Fast with its switch and shows it in the trigger", async () => {
@@ -919,13 +976,20 @@ describe("model panel settings column", () => {
   it("explains the hovered setting in the help strip", async () => {
     await openOrdered({});
     const help = () => container.querySelector("[data-model-setting-help]")!.textContent;
-    expect(help()).toContain("Help");
+    expect(help()).not.toContain("Help");
     await act(async () => {
       container
         .querySelector('[data-setting-id="fast"] [role="switch"]')!
         .dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     });
     expect(help()).toContain("Same model, faster output");
+  });
+
+  it("shows a single labelled help control and no placeholder text when no setting is pointed at", async () => {
+    await openOrdered({});
+    const footer = container.querySelector("[data-model-setting-help]")!;
+    expect(footer.textContent).not.toContain("Help");
+    expect(footer.querySelectorAll('button[aria-label="Help"]')).toHaveLength(1);
   });
 
   it("opens complete settings help without hovering and retains it when focus moves into help", async () => {
@@ -1146,12 +1210,14 @@ describe("model panel accounts", () => {
   const accountRows = () => [
     ...accountList()!.querySelectorAll<HTMLButtonElement>('[role="radiogroup"] [role="radio"]'),
   ];
-  const accountLabel = (row: Element) => row.querySelector("span > span")?.textContent;
+  const accountLabel = (row: Element) =>
+    row.querySelector("[data-model-account-name]")?.textContent;
   const accountRow = (label: string) => accountRows().find((row) => accountLabel(row) === label)!;
 
-  it("names a lone account without a switch or menu", async () => {
+  it("hides a lone account without hiding its models", async () => {
     await openClaude();
-    expect(panel()!.querySelector("[data-model-account-label]")).not.toBeNull();
+    expect(panel()!.querySelector("[data-model-account-label]")).toBeNull();
+    expect(listbox()).not.toBeNull();
     expect(accountSwitch()).toBeNull();
     expect(accountMenu()).toBeNull();
   });
@@ -1166,7 +1232,9 @@ describe("model panel accounts", () => {
       ),
     ).toEqual(["Opus 5.5", "Sonnet 5"]);
     const radios = [...accountSwitch()!.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
-    expect(radios.map((radio) => radio.textContent?.trim())).toEqual(["personal", "work"]);
+    expect(
+      radios.map((radio) => radio.querySelector("[data-model-account-number]")?.textContent),
+    ).toEqual(["1", "2"]);
     expect(radios[0].getAttribute("aria-checked")).toBe("true");
     await click(radios[1]);
     expect(onChange).toHaveBeenCalledExactlyOnceWith("claude", "claude:opus-5.5", "account-work");
@@ -1181,7 +1249,7 @@ describe("model panel accounts", () => {
     await click(accountMenu()!);
     expect(accountMenu()!.getAttribute("aria-expanded")).toBe("true");
     expect(accountList()).not.toBeNull();
-    expect(panel()!.querySelector('[role="listbox"]')).toBeNull();
+    expect(panel()!.querySelector('[role="listbox"]')).not.toBeNull();
     expect(accountSearch()).toBeNull();
     expect(accountRows().map(accountLabel)).toEqual(["personal", "work", "lab"]);
     await click(accountRow("lab"));
@@ -1216,7 +1284,11 @@ describe("model panel accounts", () => {
     const onChange = vi.fn();
     await openClaude(onChange);
     await click(providerTab("Codex"));
-    await click(optionByText(accountSwitch()!, "radio", "team"));
+    await click(
+      [...accountSwitch()!.querySelectorAll('[role="radio"]')].find((radio) =>
+        radio.textContent?.includes("team"),
+      )!,
+    );
     // Another provider's account waits for the model picked there.
     expect(onChange).not.toHaveBeenCalled();
     await click(optionByText(listbox(), "option", "GPT 6"));

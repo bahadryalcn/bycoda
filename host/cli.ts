@@ -11,15 +11,23 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
+import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { REMOTE_PROVIDERS, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { version } from "../package.json";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 import { readHostBuildIdentity } from "./build-identity";
 import { createNativeAuthorityBootstrap } from "./native-authority/bootstrap";
 import { writeFileAtomic } from "./storage/atomic-write";
-import { readRunningHost, verifyHostStopped, type RunningHost as Running } from "./lifecycle-state";
+import {
+  HOST_STOP_WAIT_MS,
+  hostStateReleased,
+  readHostRecord,
+  readRunningHost,
+  verifyHostStopped,
+  type RunningHost as Running,
+} from "./lifecycle-state";
 import { acquireHostOwner, probeHostOwner } from "./owner";
 import { startHostDiagnostics, type HostDiagnostics } from "./diagnostics/host-lifecycle";
 import { createBootTimer } from "./server/boot-phases";
@@ -254,18 +262,25 @@ Connect another computer using an SSH forward to the loopback port.`);
           lifecycle(state, "stop"),
         );
         if (!stopped) {
-          if (readRunning()?.pid !== state.pid)
+          if (readHostRecord(directory)?.pid !== state.pid)
             throw new Error("The host restarted during shutdown; retry service uninstall.");
           exitedState = state;
         }
       } else await lifecycle(state, "stop").catch(() => undefined);
-      for (let i = 0; !exitedState && i < 200 && existsSync(statePath); i++)
+      const stopStarted = monotonicNow();
+      while (
+        !exitedState &&
+        elapsedSince(stopStarted) < HOST_STOP_WAIT_MS &&
+        !hostStateReleased(directory, state.pid)
+      )
         await new Promise((resolve) => setTimeout(resolve, 100));
-      if (process.platform === "win32" && !exitedState && existsSync(statePath))
+      if (process.platform === "win32" && !exitedState && !hostStateReleased(directory, state.pid))
         throw new Error("The old host did not finish shutting down; service paths were preserved.");
     }
     if (process.platform === "win32") notes = await uninstallService();
-    if (exitedState && readRunning()?.pid === exitedState.pid) rmSync(statePath, { force: true });
+    // A Host that exited without its cleanup (forced exit) leaves its record behind.
+    if (state && existsSync(statePath) && hostStateReleased(directory, state.pid))
+      rmSync(statePath, { force: true });
     console.log(
       [
         (await probeHostOwner(directory)) === "stopped"
@@ -355,6 +370,10 @@ Connect another computer using an SSH forward to the loopback port.`);
       }
     }
     throw new Error(`Host did not start. See ${join(directory, "host.log")}`);
+  }
+  if (command === "serve" && process.platform === "win32") {
+    // Use Windows trust for outbound TLS, preserving bundled and explicitly configured CAs.
+    setDefaultCACertificates([...getCACertificates("default"), ...getCACertificates("system")]);
   }
   const diagnostics: HostDiagnostics | undefined =
     command === "serve" ? startHostDiagnostics({ dataDir: directory, version }) : undefined;
@@ -478,16 +497,8 @@ Connect another computer using an SSH forward to the loopback port.`);
     ensureGenericAcpRegistered();
     const release = await acquireHarnessBridge();
     boot?.phase("providers");
-    const available: RemoteProvider[] = [];
-    for (const provider of REMOTE_PROVIDERS) {
-      if (provider === "acp") continue;
-      try {
-        await backend.resolve(provider);
-        available.push(provider);
-      } catch {
-        /* report via descriptor */
-      }
-    }
+    const { discoverAvailableProviders } = await import("./providers/provider-discovery");
+    const available = await discoverAvailableProviders((provider) => backend.resolve(provider));
     boot?.phase("engine-scan");
     const engine = new HostEngine(store, hostProviders, undefined, undefined, runWriters);
     await engine.ready;
@@ -501,6 +512,9 @@ Connect another computer using an SSH forward to the loopback port.`);
       provider: createNativeSourceHelperProvider({ directory }),
       environmentId: store.environmentId,
     });
+    // version.json sits next to this runtime and never changes while it runs; the desktop polls
+    // lifecycle status, so it is read once instead of on the event loop per poll.
+    const buildIdentity = readHostBuildIdentity(entryPath);
     let stopping: Promise<void> | undefined;
     let stop: (reason?: string) => Promise<void>;
     // A separate local administrative credential cannot be used as a paired
@@ -537,7 +551,7 @@ Connect another computer using an SSH forward to the loopback port.`);
                   pid: process.pid,
                   version,
                   runtime: entryPath,
-                  buildIdentity: readHostBuildIdentity(entryPath),
+                  buildIdentity,
                 }),
               );
               if (action === "stop") void stop();

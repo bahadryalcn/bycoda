@@ -118,4 +118,39 @@ describe("refresh scheduler", () => {
     expect(run).toHaveBeenCalledTimes(4);
     scheduler.stop();
   });
+
+  it("doubles the wait after each failed refresh up to the cap and resets on success", async () => {
+    let failing = true;
+    const run = vi.fn(async () => {
+      if (failing) throw new Error("down");
+    });
+    const scheduler = createRefreshScheduler({
+      run,
+      intervalMs: 10_000,
+      hiddenIntervalMs: 60_000,
+      isHidden: () => false,
+      maxBackoffMs: 35_000,
+    });
+    scheduler.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(run).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(run).toHaveBeenCalledTimes(2);
+    // 40 s would be next, but the cap is 35 s.
+    await vi.advanceTimersByTimeAsync(34_999);
+    expect(run).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(run).toHaveBeenCalledTimes(3);
+    // The cap holds from here on.
+    await vi.advanceTimersByTimeAsync(35_000);
+    expect(run).toHaveBeenCalledTimes(4);
+    failing = false;
+    await vi.advanceTimersByTimeAsync(35_000);
+    expect(run).toHaveBeenCalledTimes(5);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(run).toHaveBeenCalledTimes(6);
+    scheduler.stop();
+  });
 });

@@ -159,6 +159,41 @@ describe("decision model owner RPC", () => {
     ).rejects.toThrow("unverified model");
   });
 
+  it("starts an install only with the exact confirmation and the catalog gate", async () => {
+    await expect(
+      handleDecisionModelsRpc(
+        dependencies,
+        rpc("decisionModels.local.installStart", { modelId: "clef-flash-9b", confirm: true }),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      handleDecisionModelsRpc(
+        dependencies,
+        rpc("decisionModels.local.installStart", {
+          modelId: "clef-flash-9b",
+          confirm: "INSTALL_DECISION_MODEL",
+        }),
+      ),
+    ).rejects.toThrow("unverified model");
+  });
+
+  it("reports an idle install and cancels nothing when no install runs", async () => {
+    const progress = rpc("decisionModels.local.installProgress", { modelId: "clef-flash-9b" });
+    const cancel = rpc("decisionModels.local.cancelInstall", { modelId: "clef-flash-9b" });
+
+    await handleDecisionModelsRpc(dependencies, progress);
+    await handleDecisionModelsRpc(dependencies, cancel);
+
+    expect(progress.result).toEqual({ state: "idle" });
+    expect(cancel.result).toEqual({ cancelled: false });
+    await expect(
+      handleDecisionModelsRpc(
+        dependencies,
+        rpc("decisionModels.local.cancelInstall", { modelId: "clef", extra: 1 }),
+      ),
+    ).rejects.toThrow();
+  });
+
   it("plans a local install without downloading anything", async () => {
     const request = rpc("decisionModels.local.plan", { modelId: "clef-flash-9b" });
 

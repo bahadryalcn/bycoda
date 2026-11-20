@@ -189,9 +189,16 @@ export function useSharedRemoteQueue(
       savedRows.current = undefined; // not written: try again with the next change
     });
   }, [client, key, environmentId, state.queue.messages, state.loaded]);
+  const retryRead = async () => {
+    if (!client) return;
+    const read = state.loaded ? client.retry() : (initializeRef.current?.() ?? Promise.resolve());
+    await read.catch((error) => client.hold(error));
+  };
   if (!enabled || !client)
     return {
       ...fallback,
+      // shortcut: the saved-queue fallback reports no read state, so its retry counts as settled at once.
+      retryRead: async () => fallback.retry(),
       release: async (isCurrent: () => boolean = () => true) => {
         if (!isCurrent())
           throw new Error("Queue resume was cancelled. The messages remain queued.");
@@ -220,12 +227,9 @@ export function useSharedRemoteQueue(
     current: () => client.snapshot().queue,
     loaded: state.loaded,
     error: state.error,
-    retry: () => {
-      const retry = state.loaded
-        ? client.retry()
-        : (initializeRef.current?.() ?? Promise.resolve());
-      void retry.catch((error) => client.hold(error));
-    },
+    retry: () => void retryRead(),
+    /** The same read, as a promise that settles when it ends, so a quiet retry waits for it. */
+    retryRead,
     enqueue: (message: RemoteQueueDraft) =>
       client.update((queue) => enqueueRemoteMessage(queue, message)),
     remove: (id: string) => client.update((queue) => removeRemoteMessage(queue, id)),

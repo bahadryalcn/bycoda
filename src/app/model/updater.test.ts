@@ -235,6 +235,105 @@ describe("disabled updater", () => {
   });
 });
 
+describe("manual check during a background flow", () => {
+  it("answers a manual check that joined a background flow with the install prompt", async () => {
+    mocks.updaterEnabled = true;
+    mocks.downloadAndInstall.mockResolvedValue(undefined);
+    mocks.check.mockResolvedValue({
+      version: "0.1.23",
+      downloadAndInstall: mocks.downloadAndInstall,
+    });
+    let finish!: (version: string) => void;
+    mocks.getVersion.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const updater = await import("./updater");
+    const background = updater.runUpdateFlow(false);
+    const manual = updater.runUpdateFlow(true);
+    finish("0.1.22");
+    const [, result] = await Promise.all([background, manual]);
+    expect(mocks.ask).toHaveBeenCalledOnce();
+    expect(mocks.downloadAndInstall).toHaveBeenCalledOnce();
+    expect(mocks.relaunch).toHaveBeenCalledOnce();
+    expect(result.phase).toBe("current");
+  });
+
+  it("shows the latest-version toast when a manual check joined a background flow that found nothing", async () => {
+    mocks.updaterEnabled = true;
+    mocks.check.mockResolvedValue(null);
+    let finish!: (version: string) => void;
+    mocks.getVersion.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const updater = await import("./updater");
+    const background = updater.runUpdateFlow(false);
+    const manual = updater.runUpdateFlow(true);
+    finish("0.1.22");
+    await Promise.all([background, manual]);
+    expect(mocks.ask).not.toHaveBeenCalled();
+    expect(mocks.check).toHaveBeenCalledTimes(2);
+    expect(mocks.toastShow).toHaveBeenCalledWith({
+      tone: "info",
+      message: "You're on the latest version.",
+    });
+  });
+
+  it("keeps the update a running flow prompted with when a background probe finds a newer one", async () => {
+    mocks.updaterEnabled = true;
+    const flowInstall = vi.fn().mockResolvedValue(undefined);
+    const newerInstall = vi.fn().mockResolvedValue(undefined);
+    mocks.check
+      .mockResolvedValueOnce({ version: "0.1.23", downloadAndInstall: flowInstall })
+      .mockResolvedValueOnce({ version: "0.1.24", downloadAndInstall: newerInstall });
+    let answer!: (approved: boolean) => void;
+    mocks.ask.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const updater = await import("./updater");
+    const flow = updater.runUpdateFlow(true);
+    await vi.waitFor(() => expect(mocks.ask).toHaveBeenCalledOnce());
+    await expect(updater.probeForUpdate()).resolves.toMatchObject({ version: "0.1.24" });
+    answer(true);
+    await flow;
+    expect(flowInstall).toHaveBeenCalledOnce();
+    expect(newerInstall).not.toHaveBeenCalled();
+  });
+
+  it("keeps the newest probe's update when an older probe from another channel settles last", async () => {
+    mocks.updaterEnabled = true;
+    const staleInstall = vi.fn().mockResolvedValue(undefined);
+    const freshInstall = vi.fn().mockResolvedValue(undefined);
+    let settleStale!: (update: unknown) => void;
+    mocks.check
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            settleStale = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ version: "0.2.0", downloadAndInstall: freshInstall });
+    const updater = await import("./updater");
+    const stale = updater.probeForUpdate();
+    await vi.waitFor(() => expect(mocks.check).toHaveBeenCalledOnce());
+    // The channel switch: a newer probe answers first, then the old feed's result arrives.
+    await expect(updater.probeForUpdate(true)).resolves.toMatchObject({ version: "0.2.0" });
+    settleStale({ version: "0.1.23", downloadAndInstall: staleInstall });
+    await stale;
+    await updater.installPendingUpdate();
+    expect(freshInstall).toHaveBeenCalledOnce();
+    expect(staleInstall).not.toHaveBeenCalled();
+  });
+});
+
 describe("background probe back-off", () => {
   const MINUTE = 60 * 1000;
 
@@ -251,29 +350,29 @@ describe("background probe back-off", () => {
   it("lengthens the background wait while the feed fails and restores it on success", async () => {
     const { updater, backoff } = await failingFeed();
     await expect(updater.probeForUpdate()).rejects.toThrow();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(60 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(10 * MINUTE);
     await expect(updater.probeForUpdate()).rejects.toThrow();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(120 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(20 * MINUTE);
 
     mocks.check.mockResolvedValue(null);
     await expect(updater.probeForUpdate()).resolves.toBeNull();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(30 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(5 * MINUTE);
   });
 
   it("always reaches the feed for an explicit check, which starts the wait again", async () => {
     const { updater, backoff } = await failingFeed();
-    for (let streak = 0; streak < 5; streak++)
+    for (let streak = 0; streak < 7; streak++)
       await expect(updater.probeForUpdate()).rejects.toThrow();
     expect(backoff.nextUpdateProbeDelayMs()).toBe(480 * MINUTE);
 
     mocks.check.mockClear();
     expect((await updater.runUpdateFlow(true)).phase).toBe("error");
     expect(mocks.check).toHaveBeenCalledOnce();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(30 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(5 * MINUTE);
 
     await expect(updater.probeForUpdate()).rejects.toThrow();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(60 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(10 * MINUTE);
     await expect(updater.probeForUpdate(true)).rejects.toThrow();
-    expect(backoff.nextUpdateProbeDelayMs()).toBe(30 * MINUTE);
+    expect(backoff.nextUpdateProbeDelayMs()).toBe(5 * MINUTE);
   });
 });

@@ -1,11 +1,12 @@
 import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { WAKE_LIMITS, WakeGuard } from "./voiceWakeGuard";
 import { matchesWakePhrase } from "./voiceWakePhrase";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 
 /** An open microphone: frames of mono PCM at `rate`, released by `close`. */
 export type WakeCapture = { rate: number; close: () => void };
 export type WakeDeps = {
-  openCapture: (onFrame: (frame: Int16Array) => void) => Promise<WakeCapture>;
+  openCapture: (onFrame: (frame: Int16Array) => void, signal: AbortSignal) => Promise<WakeCapture>;
   /** Local recognizer only; resolves to the recognized text. */
   recognize: (pcm: string) => Promise<string>;
   /** Releases the recognizer. */
@@ -28,6 +29,7 @@ type Options = {
  */
 export class WakeListener {
   private capture?: WakeCapture;
+  private opening?: AbortController;
   private stopped = false;
   private epoch = 0;
   private pauseTimer?: ReturnType<typeof setTimeout>;
@@ -46,10 +48,15 @@ export class WakeListener {
 
   private async open() {
     const epoch = ++this.epoch;
+    const opening = (this.opening = new AbortController());
     try {
       let vad: VoiceVad | undefined;
-      const capture = await this.deps.openCapture((frame) => {
+      const pending = this.deps.openCapture((frame) => {
         if (epoch === this.epoch) vad?.push(frame);
+      }, opening.signal);
+      const capture = await withTimeout(pending, 20_000, "Wake capture").catch((cause: unknown) => {
+        void pending.then((late) => late.close()).catch(() => {});
+        throw cause;
       });
       vad = new VoiceVad(
         capture.rate,
@@ -60,6 +67,7 @@ export class WakeListener {
       this.capture = capture;
       this.options.onState("listening");
     } catch (cause) {
+      if (epoch !== this.epoch) return;
       this.halt();
       this.options.onError(cause);
     }
@@ -98,6 +106,8 @@ export class WakeListener {
 
   private release() {
     this.epoch++;
+    this.opening?.abort();
+    this.opening = undefined;
     this.capture?.close();
     this.capture = undefined;
     this.deps.closeRecognizer();

@@ -67,9 +67,23 @@ function write(locations: Record<string, StoredProjectLocation>) {
   }
 }
 
-function remember(locations: Record<string, StoredProjectLocation>, location: ProjectLocation) {
+/**
+ * Record `location` in `locations` (a fresh `read()` snapshot) and persist only
+ * when the stored map actually changes. `replacedKey` drops the entry of a
+ * folder that moved.
+ */
+function remember(
+  locations: Record<string, StoredProjectLocation>,
+  location: ProjectLocation,
+  replacedKey?: string,
+) {
   const path = normalizeProjectPath(location.path);
-  locations[pathKey(path)] = { path, identity: location.identity };
+  const key = pathKey(path);
+  const replaced = replacedKey !== undefined && replacedKey !== key && replacedKey in locations;
+  if (replaced) delete locations[replacedKey];
+  const existing = locations[key];
+  if (!replaced && existing?.path === path && existing.identity === location.identity) return;
+  locations[key] = { path, identity: location.identity };
   write(locations);
 }
 
@@ -91,9 +105,8 @@ export async function synchronizeProjectLocation(
   if (!isLocalProject(normalized)) {
     return { path: normalized, identity: "", moved: false };
   }
-  const locations = read();
   const oldKey = pathKey(normalized);
-  const identity = locations[oldKey]?.identity;
+  const identity = read()[oldKey]?.identity;
   const cached = validatedLocations.get(oldKey);
   if (cached && cached.expires > Date.now() && cached.identity === identity) {
     return { ...cached.value };
@@ -102,7 +115,7 @@ export async function synchronizeProjectLocation(
   const finishLocation = startPerformanceSpan("project-location");
   let location: ProjectLocation | null;
   try {
-    location = await resolveProjectLocation(normalized, locations[oldKey]?.identity);
+    location = await resolveProjectLocation(normalized, identity);
   } finally {
     finishLocation();
   }
@@ -110,8 +123,9 @@ export async function synchronizeProjectLocation(
 
   const resolved = normalizeProjectPath(location.path);
   const moved = !sameProjectPath(normalized, resolved);
-  if (moved) delete locations[oldKey];
-  remember(locations, { ...location, path: resolved });
+  // Re-read after the await: concurrent syncs may have recorded identities
+  // since the pre-await snapshot, and writing that stale map back would drop them.
+  remember(read(), { ...location, path: resolved }, moved ? oldKey : undefined);
   const value = { ...location, path: resolved, moved };
   // Moved locations must trigger App's project migration, never replay a
   // cached migration. Missing/error results are deliberately not cached.

@@ -83,13 +83,9 @@ function hasReadableTime(item: { updatedAt: string }): boolean {
 function legacySnapshot(raw: string | null): SeenStore {
   if (!raw) return { seeded: false, items: {} };
   const parsed: unknown = JSON.parse(raw);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-    throw new Error("Saved Inbox history is invalid.");
-  const value = parsed as { seeded?: unknown; items?: unknown };
-  if (typeof value.seeded === "boolean" && isSeenMap(value.items))
-    return { seeded: value.seeded, items: value.items };
-  if (isSeenMap(parsed)) return { seeded: true, items: parsed };
-  throw new Error("Saved Inbox history is invalid.");
+  const store = parseSeenStore(parsed);
+  if (!store) throw new Error("Saved Inbox history is invalid.");
+  return store;
 }
 function signalCold() {
   try {
@@ -283,9 +279,25 @@ function notifyInboxSeen() {
   listeners.notify();
 }
 
-function isSeenMap(value: unknown): value is SeenMap {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value).every((entry) => typeof entry === "number" && Number.isFinite(entry));
+/** Keeps every readable record of a stored map; one malformed value never discards the rest. */
+function validSeenEntries(value: unknown): SeenMap | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const kept: SeenMap = {};
+  for (const [key, entry] of Object.entries(value))
+    if (typeof entry === "number" && Number.isFinite(entry)) kept[key] = entry;
+  return kept;
+}
+
+/** Parsed localStorage history: a `{ seeded, items }` wrapper or the older plain map. */
+function parseSeenStore(parsed: unknown): SeenStore | undefined {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const record = parsed as { seeded?: unknown; items?: unknown };
+  if ("items" in record || "seeded" in record) {
+    const items = validSeenEntries(record.items);
+    // An unreadable seeded flag reads as unseeded: the next snapshot re-seeds without losing items.
+    return items && { seeded: record.seeded === true, items };
+  }
+  return { seeded: true, items: validSeenEntries(parsed)! };
 }
 
 function loadInboxSeenStore(): SeenStore {
@@ -303,21 +315,8 @@ function loadInboxSeenStore(): SeenStore {
       cachedRaw = raw;
       return (cachedStore = { seeded: false, items: {} });
     }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      cachedRaw = raw;
-      return (cachedStore = { seeded: false, items: {} });
-    }
-    const record = parsed as { seeded?: unknown; items?: unknown };
-    if (typeof record.seeded === "boolean" && isSeenMap(record.items)) {
-      cachedRaw = raw;
-      return (cachedStore = { seeded: record.seeded, items: record.items });
-    }
-    if (isSeenMap(parsed)) {
-      cachedRaw = raw;
-      return (cachedStore = { seeded: true, items: parsed });
-    }
     cachedRaw = raw;
-    return (cachedStore = { seeded: false, items: {} });
+    return (cachedStore = parseSeenStore(parsed) ?? { seeded: false, items: {} });
   } catch {
     cachedRaw = undefined;
     cachedStore = undefined;
@@ -407,13 +406,50 @@ export function inboxSeenGeneration(): number {
   return coldGeneration;
 }
 
+type SeenRead = { seeded: boolean; value: number | undefined };
+type SeenReadWaiter = { resolve: (read: SeenRead) => void; reject: (error: unknown) => void };
+let seenReadBatch = new Map<string, SeenReadWaiter[]>();
+
+/**
+ * Reads of the same tick share one storage read. A focus or generation bump makes every
+ * visible row re-read at once; per-row transactions would stutter the repaint.
+ */
+function readSeenBatched(key: string): Promise<SeenRead> {
+  return new Promise((resolve, reject) => {
+    const first = seenReadBatch.size === 0;
+    const waiters = seenReadBatch.get(key);
+    if (waiters) waiters.push({ resolve, reject });
+    else seenReadBatch.set(key, [{ resolve, reject }]);
+    // One scheduled flush drains whatever joins the batch before it runs.
+    if (first) queueMicrotask(flushSeenReads);
+  });
+}
+function flushSeenReads() {
+  const batch = seenReadBatch;
+  seenReadBatch = new Map();
+  if (batch.size === 0) return;
+  const keys = [...batch.keys()];
+  void (async () => {
+    const items = new Map<string, number | undefined>();
+    let seeded = false;
+    for (let index = 0; index < keys.length; index += 512) {
+      const result = await readInboxSeenStorage(keys.slice(index, index + 512));
+      seeded = result.seeded;
+      for (const [key, value] of result.items) items.set(key, value);
+    }
+    for (const [key, waiters] of batch)
+      for (const waiter of waiters) waiter.resolve({ seeded, value: items.get(key) });
+  })().catch((error) => {
+    for (const waiters of batch.values()) for (const waiter of waiters) waiter.reject(error);
+  });
+}
+
 export async function readInboxEntryUnseen(entry: InboxSeenEntry): Promise<boolean> {
   if (!coldAvailable() && !coldRequired()) return isInboxEntryUnseen(entry);
   try {
     await ensureCold();
-    const result = await readInboxSeenStorage([entry.key]);
-    const value = result.items.get(entry.key);
-    return !!entry.key && result.seeded && unseenAgainst(entry, value);
+    const result = await readSeenBatched(entry.key);
+    return !!entry.key && result.seeded && unseenAgainst(entry, result.value);
   } catch (error) {
     coldState = "error";
     coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";

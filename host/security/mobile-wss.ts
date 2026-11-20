@@ -9,14 +9,21 @@ import { createServer } from "node:https";
 import { isIP } from "node:net";
 import type { Duplex } from "node:stream";
 import { WS_LIMITS, WS_SUBPROTOCOL } from "../../src/shared/model/host-contracts";
+import { TUNNEL_ERROR_HEADER, TUNNEL_SUBPROTOCOL } from "../dev-servers/dev-server-tunnel";
 import type { MobileTlsMaterial } from "./mobile-tls";
+import { GATEWAY_ADMISSION, OVER_CAPACITY_RETRY_AFTER_SECONDS } from "./gateway-admission";
 
 export type MobileWssOptions = {
   address: string;
   getPort: () => number;
   material: MobileTlsMaterial;
   ingressSecret?: string;
-  limits?: Partial<{ maxConnections: number; maxPending: number; handshakeTimeoutMs: number }>;
+  limits?: Partial<{
+    maxConnections: number;
+    rejectReserve: number;
+    maxPending: number;
+    handshakeTimeoutMs: number;
+  }>;
 };
 
 const token = /^Bearer [A-Za-z0-9_-]{43}$/;
@@ -33,6 +40,7 @@ const singular = new Set([
   "sec-websocket-version",
   "sec-websocket-protocol",
 ]);
+const tunnelPath = /^\/ws-tunnel\?[A-Za-z0-9_.~%=&+-]{1,1500}$/;
 const authority = (address: string, port: number) =>
   `${isIP(address) === 6 ? `[${address}]` : address}:${port}`;
 
@@ -46,10 +54,12 @@ function uniqueHeaders(request: IncomingMessage): boolean {
   return true;
 }
 
-function rejectSocket(socket: Duplex, status: number) {
+function rejectSocket(socket: Duplex, status: number, tunnelError?: string) {
   if (socket.destroyed) return;
+  const retry = status === 429 ? `Retry-After: ${OVER_CAPACITY_RETRY_AFTER_SECONDS}\r\n` : "";
+  const tunnel = tunnelError ? `${TUNNEL_ERROR_HEADER}: ${tunnelError}\r\n` : "";
   socket.end(
-    `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+    `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\n${retry}${tunnel}Connection: close\r\nContent-Length: 0\r\n\r\n`,
     () => socket.destroy(),
   );
 }
@@ -60,7 +70,8 @@ function rejectSocket(socket: Duplex, status: number) {
 export function createMobileWssGateway(options: MobileWssOptions) {
   if (!isIP(options.address)) throw new Error("Mobile WSS requires an exact local IP address.");
   const limits = {
-    maxConnections: 32,
+    maxConnections: GATEWAY_ADMISSION.maxAdmitted,
+    rejectReserve: GATEWAY_ADMISSION.rejectReserve,
     maxPending: 16,
     handshakeTimeoutMs: WS_LIMITS.handshakeTimeoutMs,
     ...options.limits,
@@ -68,7 +79,11 @@ export function createMobileWssGateway(options: MobileWssOptions) {
   for (const limit of Object.values(limits))
     if (!Number.isSafeInteger(limit) || limit < 1)
       throw new Error("Invalid mobile WSS resource limit.");
+  // Hard ceiling on TCP sockets. Sockets past `maxConnections` only get a TLS 429 while the reserve lasts.
+  const ceiling = limits.maxConnections + limits.rejectReserve;
   const raw = new Set<Duplex>();
+  const admitted = new Set<Duplex>();
+  const overCapacity = new WeakSet<Duplex>();
   const upstreams = new Set<Duplex>();
   let pending = 0;
   let closing = false;
@@ -82,7 +97,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
     maxHeaderSize: 8192,
     keepAliveTimeout: 1000,
   });
-  server.maxConnections = limits.maxConnections;
+  server.maxConnections = ceiling;
 
   function valid(request: IncomingMessage): boolean {
     const active = server.address();
@@ -123,11 +138,13 @@ export function createMobileWssGateway(options: MobileWssOptions) {
     request.resume();
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Connection", "close");
+    if (status === 429)
+      response.setHeader("Retry-After", String(OVER_CAPACITY_RETRY_AFTER_SECONDS));
     response.writeHead(status).end(() => request.socket.destroy());
   }
 
   server.on("connection", (socket) => {
-    if (closing || raw.size >= limits.maxConnections) {
+    if (closing || raw.size >= ceiling) {
       socket.destroy();
       return;
     }
@@ -135,8 +152,17 @@ export function createMobileWssGateway(options: MobileWssOptions) {
     socket.once("close", () => raw.delete(socket));
     socket.on("error", () => socket.destroy());
   });
+  // Admission counts established TLS sessions, not raw TCP, so handshakes and refused
+  // peers cannot use up the phones' share. Sessions past the cap keep TLS and get a 429.
   server.on("secureConnection", (socket) => {
-    if (socket.servername && socket.servername !== options.address) socket.destroy();
+    if (socket.servername && socket.servername !== options.address) {
+      socket.destroy();
+      return;
+    }
+    if (admitted.size < limits.maxConnections) {
+      admitted.add(socket);
+      socket.once("close", () => admitted.delete(socket));
+    } else overCapacity.add(socket);
   });
   server.on("checkContinue", (request, response) => deny(request, response, 400));
   server.on("checkExpectation", (request, response) => deny(request, response, 417));
@@ -153,7 +179,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
       deny(request, response, 403);
       return;
     }
-    if (pending >= limits.maxPending) {
+    if (overCapacity.has(request.socket) || pending >= limits.maxPending) {
       deny(request, response, 429);
       return;
     }
@@ -236,10 +262,15 @@ export function createMobileWssGateway(options: MobileWssOptions) {
   });
 
   server.on("upgrade", (request, socket, head) => {
+    // `/ws-tunnel` is the dev-server byte tunnel; it is forwarded with its own subprotocol
+    // and the Host answers its failures with an `X-Bycoda-Tunnel-Error` header.
+    const tunnel = request.url !== "/ws" && tunnelPath.test(request.url ?? "");
+    const route = tunnel ? request.url! : "/ws";
+    const subprotocol = tunnel ? TUNNEL_SUBPROTOCOL : WS_SUBPROTOCOL;
     if (
       !valid(request) ||
       request.method !== "GET" ||
-      request.url !== "/ws" ||
+      (request.url !== "/ws" && !tunnel) ||
       request.headers.upgrade?.toLowerCase() !== "websocket" ||
       !request.headers.connection
         ?.toLowerCase()
@@ -248,13 +279,13 @@ export function createMobileWssGateway(options: MobileWssOptions) {
       request.headers["sec-websocket-version"] !== "13" ||
       typeof request.headers["sec-websocket-key"] !== "string" ||
       !/^[+/0-9A-Za-z]{22}==$/.test(request.headers["sec-websocket-key"]) ||
-      request.headers["sec-websocket-protocol"] !== WS_SUBPROTOCOL ||
+      request.headers["sec-websocket-protocol"] !== subprotocol ||
       head.length > WS_LIMITS.maxMessageBytes
     ) {
       rejectSocket(socket, 403);
       return;
     }
-    if (pending >= limits.maxPending) {
+    if (overCapacity.has(socket) || pending >= limits.maxPending) {
       rejectSocket(socket, 429);
       return;
     }
@@ -270,7 +301,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
     const upstream = httpRequest({
       hostname: "127.0.0.1",
       port: internalPort,
-      path: "/ws",
+      path: route,
       method: "GET",
       agent: false,
       headers: {
@@ -281,13 +312,17 @@ export function createMobileWssGateway(options: MobileWssOptions) {
         Upgrade: "websocket",
         "Sec-WebSocket-Version": "13",
         "Sec-WebSocket-Key": request.headers["sec-websocket-key"],
-        "Sec-WebSocket-Protocol": WS_SUBPROTOCOL,
+        "Sec-WebSocket-Protocol": subprotocol,
       },
     });
-    const timeout = setTimeout(() => {
-      rejectSocket(socket, 503);
-      upstream.destroy();
-    }, limits.handshakeTimeoutMs);
+    const timeout = setTimeout(
+      () => {
+        rejectSocket(socket, 503);
+        upstream.destroy();
+        // The tunnel handshake includes the Host's own dev-server TCP connect (5 s).
+      },
+      limits.handshakeTimeoutMs + (tunnel ? 10_000 : 0),
+    );
     timeout.unref();
     const settled = () => {
       clearTimeout(timeout);
@@ -304,11 +339,13 @@ export function createMobileWssGateway(options: MobileWssOptions) {
     upstream.once("response", (reply) => {
       settled();
       reply.resume();
+      const code = reply.headers[TUNNEL_ERROR_HEADER.toLowerCase()];
       rejectSocket(
         socket,
         reply.statusCode && reply.statusCode >= 400 && reply.statusCode <= 599
           ? reply.statusCode
           : 502,
+        tunnel && typeof code === "string" && /^[a-z]{1,16}$/.test(code) ? code : undefined,
       );
     });
     upstream.once("upgrade", (reply, target, upstreamHead) => {
@@ -317,7 +354,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
         closing ||
         socket.destroyed ||
         reply.statusCode !== 101 ||
-        reply.headers["sec-websocket-protocol"] !== WS_SUBPROTOCOL ||
+        reply.headers["sec-websocket-protocol"] !== subprotocol ||
         reply.headers["sec-websocket-accept"] !==
           createHash("sha1")
             .update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
@@ -329,7 +366,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
       }
       track(target);
       socket.write(
-        `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${reply.headers["sec-websocket-accept"]}\r\nSec-WebSocket-Protocol: ${WS_SUBPROTOCOL}\r\n\r\n`,
+        `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${reply.headers["sec-websocket-accept"]}\r\nSec-WebSocket-Protocol: ${subprotocol}\r\n\r\n`,
       );
       target.once("close", () => socket.destroy());
       socket.once("close", () => target.destroy());

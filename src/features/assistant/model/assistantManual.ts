@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useEffect, useRef, useState } from "react";
 import { pathKey } from "../../../shared/lib/paths";
 import type {
@@ -13,6 +14,7 @@ import type {
 import { isProjectLocked } from "../../group-lock/model/groupLock";
 import { assistantRequest } from "./assistantClient";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { unconfirmedError } from "./unconfirmedOutcome";
 
 export type ManualProject = { id?: string; path: string; name: string };
 export type ManualState = NonNullable<AssistantResponse["manual"]>;
@@ -51,7 +53,7 @@ export function manualEnrollmentVersion(
 }
 
 const reason = (cause: unknown) => {
-  const message = cause instanceof Error ? cause.message : String(cause);
+  const message = errorText(cause);
   return message === "The assistant already has 100 active manual supervision grants."
     ? "No more conversations can be enrolled. Revoke supervision before adding another."
     : presentRemoteError(cause, { explicit: true });
@@ -161,7 +163,7 @@ export function useManualSupervision(
       )
         return;
       if (!response.manual)
-        throw new Error("Manual supervision was not confirmed. Refresh before retrying.");
+        throw unconfirmedError("Manual supervision", "Refresh before retrying.");
       adopt(response.manual);
       return true;
     } catch (cause) {

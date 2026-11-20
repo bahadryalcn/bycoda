@@ -142,6 +142,15 @@ function integer(text: string, min: number, max: number, message: string): numbe
   return value;
 }
 
+/**
+ * Empty and 0 both mean no limit on the Limits tab, matching the Host's own no-limit values.
+ * Shared by fields whose wire form cannot carry 0 as a limit (run minutes) and by fields that
+ * already use 0 (daily agent minutes), so the same input means the same thing everywhere.
+ */
+function isNoLimit(text: string): boolean {
+  return text.trim() === "" || Number(text) === 0;
+}
+
 /** Parses only at save; invalid or partially typed numbers stay visible in the draft. */
 export function prepareOrderSave(draft: OrderDraft): {
   routing: ModelRoutingDraft;
@@ -189,9 +198,9 @@ export function prepareOrderSave(draft: OrderDraft): {
             }),
       };
     }),
-    defaultMaxRunMinutes: draft.maxRunMinutes.trim()
-      ? integer(draft.maxRunMinutes, 1, 10080, "Run time must be 1 to 10080 whole minutes.")
-      : undefined,
+    defaultMaxRunMinutes: isNoLimit(draft.maxRunMinutes)
+      ? undefined
+      : integer(draft.maxRunMinutes, 1, 10080, "Run time must be 1 to 10080 whole minutes."),
   };
   if (!ModelRoutingDraftSchema.safeParse(routing).success)
     throw new Error(
@@ -205,8 +214,12 @@ export function prepareOrderSave(draft: OrderDraft): {
     if (entry.providerAccountId && !supportsProviderAccounts(entry.harness))
       throw new Error("This provider has no account choice.");
   }
+  const poolNames = new Set<string>();
   for (const pool of routing.pools) {
     if (!pool.name.trim()) throw new Error("Give every group a name.");
+    const key = pool.name.trim().toLocaleLowerCase();
+    if (poolNames.has(key)) throw new Error("Group names must be unique.");
+    poolNames.add(key);
     if (!pool.entryIds.length && !pool.poolIds?.length)
       throw new Error("Every group needs at least one model or group.");
     if (
@@ -236,12 +249,15 @@ export function prepareOrderSave(draft: OrderDraft): {
         Number.MAX_SAFE_INTEGER,
         "Concurrent tasks must be a positive safe integer.",
       ),
-      dailyAgentMinutes: integer(
-        draft.limits.dailyAgentMinutes,
-        0,
-        Number.MAX_SAFE_INTEGER,
-        "Daily agent time must be zero or a positive whole number of minutes.",
-      ),
+      // Host treats 0 as no limit, so an empty field saves the same value.
+      dailyAgentMinutes: isNoLimit(draft.limits.dailyAgentMinutes)
+        ? 0
+        : integer(
+            draft.limits.dailyAgentMinutes,
+            0,
+            Number.MAX_SAFE_INTEGER,
+            "Daily agent time must be zero or a positive whole number of minutes.",
+          ),
     }),
   };
 }
@@ -282,6 +298,16 @@ export function removeOrderEntry(draft: OrderDraft, id: string): OrderDraft {
       })),
     },
   };
+}
+
+/** `base`, then `base 2`, `base 3`…, skipping names already used (case-insensitive). */
+export function nextOrderPoolName(pools: ModelRoutingPool[], base: string): string {
+  const taken = new Set(pools.map((pool) => pool.name.trim().toLocaleLowerCase()));
+  if (!taken.has(base.toLocaleLowerCase())) return base;
+  for (let suffix = 2; ; suffix += 1) {
+    const name = `${base} ${suffix}`;
+    if (!taken.has(name.toLocaleLowerCase())) return name;
+  }
 }
 
 export function removeOrderPool(draft: OrderDraft, id: string): OrderDraft {

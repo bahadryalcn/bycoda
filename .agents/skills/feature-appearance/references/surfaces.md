@@ -4,16 +4,16 @@ Code paths are repository-relative. Verify current callers and platform gates fo
 
 ## Ownership
 
-| Area                                  | Starting points                                                                                                                                                        |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Preferences and preview               | `src/features/settings/ui/AppearanceSettings.tsx`, `AppearanceSettings.css`, `AppearancePreviews.tsx`, `AppearancePreviews.css`, `useAppearanceSettings.tsx`           |
-| Preference state and durable outcomes | `src/features/settings/model/appearance.ts`, `appearancePreferences.ts`, `appearancePersistence.ts`, `uiScale.ts`, `themePalettes.ts`                                  |
-| Motion/session display                | `src/features/settings/ui/AppearanceBehaviorSettings.tsx`, `SessionListSettings.tsx`; model `decorativeMotion.ts`; `src/features/sessions/model/sessionListDisplay.ts` |
-| Global image effects                  | `src/features/settings/model/newThreadBackgroundEffects.ts`, `newThreadBackgroundEffects.worker.ts`; follow image controls and SessionPane consumers                   |
-| Project image precedence              | `src/features/projects/model/chatBackground.ts`, `projectChatBackground.ts`; `src/features/projects/ui/ProjectBackgroundDialog.tsx`, `useProjectBackgroundEffect.ts`   |
-| Live scenes                           | `src/features/settings/ui/LiveBackgroundPicker.tsx`, `LiveBackgroundCanvas.tsx`, `live-background/`; `src/features/settings/model/liveBackground.ts`                   |
-| Shared theme                          | `src/shared/theme/palette.ts`, `src/styles/palette.css`, `index.css`, `arc.css`; use existing theme references                                                         |
-| Navigation/ambient consumers          | `src/app/shell/Sidebar.tsx`, `ProjectRail.tsx`; `src/features/sessions/ui/CrewScene.tsx`, `CrewBackdrop.tsx`; follow current tab-motion consumer                       |
+| Area                                  | Starting points                                                                                                                                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Preferences and preview               | `src/features/settings/ui/AppearanceSettings.tsx`, `AppearanceSettings.css`, `AppearancePreviews.tsx`, `AppearancePreviews.css`, `useAppearanceSettings.tsx`                                     |
+| Preference state and durable outcomes | `src/features/settings/model/appearance.ts`, `appearancePreferences.ts`, `appearancePersistence.ts`, `uiScale.ts`, `themePalettes.ts`                                                            |
+| Motion/session display                | `src/features/settings/ui/appearance/controls/CrewStageCard.tsx`, `appearance/controls/InterfaceSizeGroup.tsx`; model `decorativeMotion.ts`; `src/features/sessions/model/sessionListDisplay.ts` |
+| Global image effects                  | `src/features/settings/model/newThreadBackgroundEffects.ts`, `newThreadBackgroundEffects.worker.ts`; follow image controls and SessionPane consumers                                             |
+| Project image precedence              | `src/features/projects/model/chatBackground.ts`, `projectChatBackground.ts`; `src/features/projects/ui/ProjectBackgroundDialog.tsx`, `useProjectBackgroundEffect.ts`                             |
+| Live scenes                           | `src/features/settings/ui/appearance/controls/SceneStrip.tsx`, `LiveBackgroundCanvas.tsx`, `live-background/`; `src/features/settings/model/liveBackground.ts`                                   |
+| Shared theme                          | `src/shared/theme/palette.ts`, `src/styles/palette.css`, `index.css`, `arc.css`; use existing theme references                                                                                   |
+| Navigation/ambient consumers          | `src/app/shell/Sidebar.tsx`, `ProjectRail.tsx`; `src/features/sessions/ui/CrewScene.tsx`, `CrewBackdrop.tsx`; follow current tab-motion consumer                                                 |
 
 ## Persistence and platform boundaries
 
@@ -40,3 +40,9 @@ Check write failure/retry/sibling races, scoped reset, image decode/worker failu
 - Every applied chat background image is also kept in the library (`model/backgroundLibrary.ts`, `controls/BackgroundLibrary.tsx`). Saved themes (`model/savedThemes.ts`, `model/appearanceSnapshot.ts`, `controls/savedThemeActions.ts`, `SavedThemes.tsx`, `SaveLookButton.tsx`) store a snapshot of every setting plus a library image id.
 - A new Appearance setting must join `captureAppearanceSnapshot`, `normalizeAppearanceSnapshot` and `applyAppearanceSnapshot`, or saved themes will not restore it.
 - Library images referenced by saved themes are never evicted; deleting one asks first and leaves those themes without the picture.
+
+## Host theme and background commands
+
+- `host/appearance/theme-suggestions.ts`: Host command `appearance.themeSuggestions` (contract in `src/shared/model/host-contracts/appearance.ts`); it validates and clamps every entry before it returns.
+- `host/appearance/background-image.ts`: Host command `appearance.backgroundImage`. It reuses the Social image adapters (Codex native ImageGen, or Gemini when the Host has `GEMINI_API_KEY` and `BYCODA_SOCIAL_GEMINI_IMAGE_MODEL`), tries only the chosen provider, and returns a temporary file the desktop copies through `onChooseChatBackground`.
+- `themeGenerationJobs.ts` keeps jobs in the generator session across theme batches and Settings remounts. `appearance.cancelGeneration` in `host/server/rpc-appearance.ts` aborts one active request using its generation ID and initiating owner credential. Results stay available for preview. Applying a candidate requires Use image, and drawing a replacement preserves the current candidate until the replacement reaches the library.

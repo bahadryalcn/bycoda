@@ -45,6 +45,7 @@ import {
   CircleHelp as LucideCircleHelp,
   Info as LucideInfo,
   CircleX as LucideCircleX,
+  CloudOff as LucideCloudOff,
   CloudUpload as LucideCloudUpload,
   Calendar as LucideCalendar,
   CalendarDays as LucideCalendarDays,
@@ -144,6 +145,7 @@ import {
   MonitorSmartphone as LucideMonitorSmartphone,
   Dices as LucideDices,
   Sparkles as LucideSparkles,
+  SkipForward as LucideSkipForward,
   Square as LucideSquare,
   Columns2 as LucideSplitSquare,
   SquarePlus as LucideSquarePlus,
@@ -408,6 +410,7 @@ export const CircleDot = wrap(LucideCircleDot, "CircleDot");
 export const CircleHelp = wrap(LucideCircleHelp, "CircleHelp");
 export const Info = wrap(LucideInfo, "Info");
 export const CircleX = wrap(LucideCircleX, "CircleX");
+export const CloudOff = wrap(LucideCloudOff, "CloudOff");
 export const CloudUpload = wrap(LucideCloudUpload, "CloudUpload");
 export const Calendar = wrap(LucideCalendar, "Calendar");
 export const CalendarDays = wrap(LucideCalendarDays, "CalendarDays");
@@ -517,6 +520,7 @@ export const MonitorSmartphone = wrap(LucideMonitorSmartphone, "MonitorSmartphon
 export const Dices = wrap(LucideDices, "Dices");
 export const Sparkles = wrap(LucideSparkles, "Sparkles");
 export const Square = wrap(LucideSquare, "Square");
+export const SkipForward = wrap(LucideSkipForward, "SkipForward");
 export const SplitSquare = wrap(LucideSplitSquare, "SplitSquare");
 export const SquarePlus = wrap(LucideSquarePlus, "SquarePlus");
 export const Star = wrap(LucideStar, "Star");

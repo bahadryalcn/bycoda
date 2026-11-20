@@ -1,13 +1,12 @@
-import { useCallback, type MutableRefObject } from "react";
+import { useCallback, useRef, type MutableRefObject } from "react";
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
 import type { Session } from "../../../features/sessions/model/session";
 import { sessionWorkCwd } from "../../../features/sessions/model/session";
-import { persistFingerprint } from "../../../features/sessions/data/sessionStore";
+import { getSession, persistFingerprint } from "../../../features/sessions/data/sessionStore";
 import { bindHarnessSession, isLiveHarness } from "../../../integrations/harness";
 
 export interface RunningOnHostLoaderDeps {
   loadRunningOnHostRef: MutableRefObject<((ids: string[]) => void) | undefined>;
-  loadStoredSession: (sessionId: string) => Promise<Session | null>;
   openingSessionIds: MutableRefObject<Set<string>>;
   removingSessionIds: MutableRefObject<Set<string>>;
   loadedSessionCache: MutableRefObject<Map<string, Session>>;
@@ -18,51 +17,60 @@ export interface RunningOnHostLoaderDeps {
  * Working card shows them without a tab; they unload once seen after done. */
 export function useRunningOnHostLoader({
   loadRunningOnHostRef,
-  loadStoredSession,
   openingSessionIds,
   removingSessionIds,
   loadedSessionCache,
   lastPersisted,
 }: RunningOnHostLoaderDeps): void {
+  const loadingIds = useRef(new Set<string>());
   const loadRunningOnHost = useCallback(
     (sessionIds: string[]) => {
       for (const sessionId of sessionIds) {
-        if (openingSessionIds.current.has(sessionId) || removingSessionIds.current.has(sessionId))
+        if (
+          openingSessionIds.current.has(sessionId) ||
+          removingSessionIds.current.has(sessionId) ||
+          loadingIds.current.has(sessionId) ||
+          sessionsRef.current.some((session) => session.id === sessionId)
+        )
           continue;
-        void loadStoredSession(sessionId).then((restored) => {
-          if (
-            !restored ||
-            restored.inboxAsk ||
-            removingSessionIds.current.has(sessionId) ||
-            sessionsRef.current.some((session) => session.id === sessionId)
-          )
-            return;
-          loadedSessionCache.current.delete(sessionId);
-          if (
-            !restored.worktreeRemoved &&
-            restored.providerSessionId &&
-            isLiveHarness(restored.harness)
-          ) {
-            bindHarnessSession(
-              restored.harness,
-              restored.id,
-              restored.providerSessionId,
-              sessionWorkCwd(restored),
-              restored.providerAccountId,
-              restored.blocks,
-            );
-          }
-          lastPersisted.current.set(restored.id, persistFingerprint(restored));
-          const next = [
-            ...sessionsRef.current,
-            { ...restored, busy: false, continuingElsewhere: true },
-          ];
-          sessionsRef.current = next;
-          setSessions(next);
-        });
+        loadingIds.current.add(sessionId);
+        void getSession(sessionId)
+          .then((restored) => {
+            if (
+              !restored ||
+              restored.inboxAsk ||
+              removingSessionIds.current.has(sessionId) ||
+              sessionsRef.current.some((session) => session.id === sessionId)
+            )
+              return;
+            loadedSessionCache.current.delete(sessionId);
+            if (
+              !restored.worktreeRemoved &&
+              restored.providerSessionId &&
+              isLiveHarness(restored.harness)
+            ) {
+              bindHarnessSession(
+                restored.harness,
+                restored.id,
+                restored.providerSessionId,
+                sessionWorkCwd(restored),
+                restored.providerAccountId,
+                restored.blocks,
+              );
+            }
+            lastPersisted.current.set(restored.id, persistFingerprint(restored));
+            const next = [
+              ...sessionsRef.current,
+              { ...restored, busy: false, continuingElsewhere: true },
+            ];
+            sessionsRef.current = next;
+            setSessions(next);
+          })
+          .catch((error) => console.warn("Running Host conversation could not be loaded", error))
+          .finally(() => loadingIds.current.delete(sessionId));
       }
     },
-    [loadStoredSession, removingSessionIds, loadedSessionCache, lastPersisted, openingSessionIds],
+    [removingSessionIds, loadedSessionCache, lastPersisted, openingSessionIds],
   );
   loadRunningOnHostRef.current = loadRunningOnHost;
 }

@@ -188,6 +188,7 @@ const personFrom = (
 
 export function createXAdapter(http: SocialHttp): SocialAdapter {
   return {
+    ignoresPublishedPosts: true,
     async send(account, job, token, media, checkpoint, beforeSubmit) {
       const message =
         job.kind === "message" ||

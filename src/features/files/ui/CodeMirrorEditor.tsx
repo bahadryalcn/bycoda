@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { EditorBlameResize } from "./EditorBlameResize";
 import { Button } from "../../../shared/ui/Button";
@@ -506,7 +507,7 @@ function StandardCodeMirrorEditor({
       } catch (error) {
         if (!disposed && generation === formatGeneration && view.state.doc === before)
           setFormatError({
-            message: error instanceof Error ? error.message : String(error),
+            message: errorText(error),
             generation,
             saved: false,
           });
@@ -952,7 +953,7 @@ function StandardCodeMirrorEditor({
         if (!disposed)
           setLanguageFailure({
             path,
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: errorText(cause),
           });
       });
 
@@ -1279,8 +1280,7 @@ function StandardCodeMirrorEditor({
         ) : null}
         {blameOn && blameError ? (
           <InlineError text={{ wrap: "anywhere" }} live="polite" className="shrink-0 px-3 py-1">
-            {t("Blame unavailable: ")}
-            {blameError}
+            {t("Blame unavailable: {p0}", { p0: blameError })}
           </InlineError>
         ) : null}
         <ConflictLayoutFrame path={path} sources={conflictSources}>

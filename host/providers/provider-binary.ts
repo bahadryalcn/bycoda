@@ -32,6 +32,7 @@ export function execArgsAllowed(provider: RemoteProvider, args: string[]): boole
     allowed.length === args.length && allowed.every((arg, index) => arg === args[index]);
   return (
     ALLOWED_EXEC_ARGS.some(matches) ||
+    (provider === "pi" && matches(["--no-extensions", "--no-mcp", "--no-approve", "--help"])) ||
     (provider === "opencode" && OPENCODE_EXEC_ARGS.some(matches)) ||
     (provider === "grok" &&
       args.length === 4 &&

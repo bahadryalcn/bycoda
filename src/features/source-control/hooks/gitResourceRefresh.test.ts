@@ -49,6 +49,20 @@ it("settles loading when a cached resource remounts inside its refresh interval"
   expect(container.textContent).toBe("false:cached result");
 });
 
+it("reads again after remount if the size estimate could not visit every node", async () => {
+  const read = vi.fn(async () => Array<number>(50_000).fill(0));
+  function View() {
+    const resource = useGitResource("/large", "large", true, read, false, 60_000);
+    return createElement("output", null, resource.data?.length);
+  }
+  await act(async () => root.render(createElement(View)));
+  expect(container.textContent).toBe("50000");
+  await act(async () => root.render(null));
+  await act(async () => root.render(createElement(View)));
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toBe("50000");
+});
+
 it("does not force a fresh cached resource after manually refreshing a different key", async () => {
   const readA = vi.fn(async () => "A");
   const readB = vi.fn(async () => "B");

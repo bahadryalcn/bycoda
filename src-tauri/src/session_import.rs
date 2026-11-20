@@ -9,8 +9,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
-use std::time::{Instant, UNIX_EPOCH};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -30,6 +30,10 @@ const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PROMPT_CHARS: usize = 240;
 const MAX_TOOL_INPUT_BYTES: usize = 24 * 1024;
 const MAX_TOOL_OUTPUT_BYTES: usize = 4 * 1024;
+/// How long discovery waits for folder existence checks. A folder on a
+/// disconnected network drive can block a `stat` far longer.
+const CWD_PROBE_DEADLINE: Duration = Duration::from_secs(3);
+const CWD_PROBE_WORKERS: usize = 8;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -74,6 +78,9 @@ pub struct DiscoveryReport {
     pub files_scanned: usize,
     /// Files with no working directory or no prompt: nothing to import.
     pub files_skipped: usize,
+    /// Distinct folders whose existence could not be checked in time. Their
+    /// candidates report `cwd_exists: false`, which is a guess, not a finding.
+    pub cwd_unverified: usize,
     pub elapsed_ms: u64,
 }
 
@@ -421,13 +428,34 @@ pub(crate) fn discover_in(claude_projects: &Path, codex_roots: &[PathBuf]) -> Di
     }
 
     let files_scanned = claude_files.len() + codex_files.len();
+    // One discovery at a time: a second caller (onboarding next to the import
+    // dialog, a review and its commit) waits and then reads the cache the
+    // first one filled instead of parsing every transcript again.
+    let gate = DISCOVERY_GATE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let mut candidates = par_filter_map(&claude_files, |(path, folder)| {
-        scan_claude_file(path, folder)
+        scan_cached(path, ScanScope::Claude(folder.clone()), || {
+            scan_claude_file(path, folder)
+        })
     });
     candidates.extend(par_filter_map(&codex_files, |(path, archived)| {
-        scan_codex_file(path, *archived)
+        scan_cached(path, ScanScope::Codex(*archived), || {
+            scan_codex_file(path, *archived)
+        })
     }));
     let files_skipped = files_scanned - candidates.len();
+    let roots: Vec<&Path> = std::iter::once(claude_projects)
+        .chain(codex_roots.iter().map(PathBuf::as_path))
+        .collect();
+    forget_unlisted(
+        &roots,
+        claude_files
+            .iter()
+            .map(|(path, _)| path)
+            .chain(codex_files.iter().map(|(path, _)| path)),
+    );
+    drop(gate);
 
     // The same conversation can be filed twice (a moved or relocated session):
     // keep whichever was written last.
@@ -449,11 +477,23 @@ pub(crate) fn discover_in(claude_projects: &Path, codex_roots: &[PathBuf]) -> Di
         .map(|(_, candidate)| candidate)
         .collect();
 
-    let mut exists: HashMap<String, bool> = HashMap::new();
+    // Folder existence is never cached: it changes without any transcript changing.
+    let mut folders: Vec<String> = candidates
+        .iter()
+        .map(|candidate| candidate.cwd.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    folders.sort();
+    let exists = probe_cwds(folders.clone(), CWD_PROBE_DEADLINE, |cwd| {
+        Path::new(cwd).is_dir()
+    });
+    let cwd_unverified = folders
+        .iter()
+        .filter(|cwd| !exists.contains_key(*cwd))
+        .count();
     for candidate in &mut candidates {
-        candidate.cwd_exists = *exists
-            .entry(candidate.cwd.clone())
-            .or_insert_with(|| Path::new(&candidate.cwd).is_dir());
+        candidate.cwd_exists = exists.get(&candidate.cwd).copied().unwrap_or(false);
     }
     candidates.sort_by(|a, b| b.last_at.cmp(&a.last_at).then(a.path.cmp(&b.path)));
 
@@ -461,8 +501,162 @@ pub(crate) fn discover_in(claude_projects: &Path, codex_roots: &[PathBuf]) -> Di
         candidates,
         files_scanned,
         files_skipped,
+        cwd_unverified,
         elapsed_ms: started.elapsed().as_millis() as u64,
     }
+}
+
+// --- scan cache -----------------------------------------------------------
+
+/// What a file's scan result depends on besides its bytes: Claude files are
+/// judged against the folder they were filed under, Codex ones by whether they
+/// were archived.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ScanScope {
+    Claude(String),
+    Codex(bool),
+}
+
+/// A file that still has this size and modification time is taken to be the
+/// bytes that were scanned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileStamp {
+    size: u64,
+    modified_ms: u64,
+}
+
+struct CachedScan {
+    stamp: FileStamp,
+    scope: ScanScope,
+    /// `None` is a real answer too: a file with nothing to import stays skipped
+    /// without being opened again.
+    candidate: Option<ImportCandidate>,
+}
+
+static DISCOVERY_GATE: Mutex<()> = Mutex::new(());
+
+fn scan_cache() -> &'static Mutex<HashMap<PathBuf, CachedScan>> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedScan>>> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn file_stamp(path: &Path) -> Option<FileStamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    let modified = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+    Some(FileStamp {
+        size: meta.len(),
+        modified_ms: modified.as_millis() as u64,
+    })
+}
+
+/// `scan`'s answer for `path`, reused while the file's size and modification
+/// time are unchanged. The stamp is read before the scan, so a file written
+/// during it is stored under the older stamp and scanned again next time.
+fn scan_cached(
+    path: &Path,
+    scope: ScanScope,
+    scan: impl FnOnce() -> Option<ImportCandidate>,
+) -> Option<ImportCandidate> {
+    // Without a readable stamp freshness cannot be told, so nothing is reused.
+    let Some(stamp) = file_stamp(path) else {
+        return scan();
+    };
+    if let Some(hit) = lock(scan_cache())
+        .get(path)
+        .filter(|cached| cached.stamp == stamp && cached.scope == scope)
+    {
+        return hit.candidate.clone();
+    }
+    let candidate = scan();
+    lock(scan_cache()).insert(
+        path.to_path_buf(),
+        CachedScan {
+            stamp,
+            scope,
+            candidate: candidate.clone(),
+        },
+    );
+    candidate
+}
+
+/// Drops the entries under `roots` for files discovery no longer lists, so the
+/// cache never outgrows the stores it mirrors. Other roots are left alone.
+fn forget_unlisted<'a>(roots: &[&Path], listed: impl Iterator<Item = &'a PathBuf>) {
+    let listed: HashSet<&PathBuf> = listed.collect();
+    lock(scan_cache()).retain(|path, _| {
+        listed.contains(path) || !roots.iter().any(|root| path.starts_with(root))
+    });
+}
+
+// --- folder probes --------------------------------------------------------
+
+fn cwd_probes_in_flight() -> &'static Mutex<HashSet<String>> {
+    static IN_FLIGHT: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    IN_FLIGHT.get_or_init(Default::default)
+}
+
+/// Whether each folder is a directory, for the folders answered within
+/// `deadline`. Probes run on a few worker threads that are abandoned at the
+/// deadline, so one disconnected drive cannot stall the dialog; a folder whose
+/// probe is still hanging from an earlier discovery is not probed again, which
+/// bounds the stuck threads to one per such folder. Folders missing from the
+/// result were not checked.
+fn probe_cwds(
+    cwds: Vec<String>,
+    deadline: Duration,
+    is_dir: impl Fn(&str) -> bool + Send + Sync + 'static,
+) -> HashMap<String, bool> {
+    let started = Instant::now();
+    let queue: VecDeque<String> = {
+        let mut in_flight = lock(cwd_probes_in_flight());
+        cwds.into_iter()
+            .filter(|cwd| in_flight.insert(cwd.clone()))
+            .collect()
+    };
+    let pending = queue.len();
+    let queue = Arc::new(Mutex::new(queue));
+    let is_dir = Arc::new(is_dir);
+    let (sender, receiver) = mpsc::channel::<(String, bool)>();
+    for _ in 0..pending.min(CWD_PROBE_WORKERS) {
+        let (queue, is_dir, sender) = (queue.clone(), is_dir.clone(), sender.clone());
+        let spawned = std::thread::Builder::new().spawn(move || loop {
+            let Some(cwd) = lock(&queue).pop_front() else {
+                break;
+            };
+            let exists = is_dir(&cwd);
+            lock(cwd_probes_in_flight()).remove(&cwd);
+            // The receiver is gone once the deadline passed.
+            let _ = sender.send((cwd, exists));
+        });
+        if spawned.is_err() {
+            break;
+        }
+    }
+    drop(sender);
+
+    let mut known = HashMap::new();
+    while known.len() < pending {
+        let Some(left) = deadline.checked_sub(started.elapsed()) else {
+            break;
+        };
+        match receiver.recv_timeout(left) {
+            Ok((cwd, exists)) => {
+                known.insert(cwd, exists);
+            }
+            Err(_) => break,
+        }
+    }
+    // Whatever no worker picked up will not be probed now: release it.
+    let abandoned: Vec<String> = lock(&queue).drain(..).collect();
+    let mut in_flight = lock(cwd_probes_in_flight());
+    for cwd in &abandoned {
+        in_flight.remove(cwd);
+    }
+    known
 }
 
 /// The prompt a person typed, or nothing for the wrappers Claude Code records
@@ -1326,6 +1520,123 @@ mod tests {
         assert!(report.candidates[0].resumable);
         assert_eq!(report.candidates[0].cwd, cwd);
         std::fs::remove_dir_all(root).ok();
+    }
+
+    fn set_modified(path: &Path, time: std::time::SystemTime) {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(time)
+            .unwrap();
+    }
+
+    #[test]
+    fn unchanged_transcripts_are_not_parsed_again_but_changed_ones_are() {
+        let root = temp_dir("cache");
+        let cwd = r"G:\Projects\demo";
+        let message = |text: &str| format!(r#"{{"role":"user","content":{text:?}}}"#);
+        let path = write(
+            &root.join("g--Projects-demo"),
+            "88888888-1111.jsonl",
+            &[claude_line("user", cwd, "", &message("Alpha one"))],
+        );
+        let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+        assert_eq!(
+            discover_in(&root, &[]).candidates[0].first_prompt,
+            "Alpha one"
+        );
+
+        // Same size and modification time: the cached scan answers, the file is not opened.
+        std::fs::write(
+            &path,
+            claude_line("user", cwd, "", &message("Bravo two")) + "\n",
+        )
+        .unwrap();
+        set_modified(&path, stamp);
+        assert_eq!(
+            discover_in(&root, &[]).candidates[0].first_prompt,
+            "Alpha one"
+        );
+
+        // A new modification time is a new file as far as freshness goes.
+        set_modified(&path, stamp + Duration::from_secs(5));
+        assert_eq!(
+            discover_in(&root, &[]).candidates[0].first_prompt,
+            "Bravo two"
+        );
+
+        // A different size is too.
+        std::fs::write(
+            &path,
+            claude_line("user", cwd, "", &message("Charlie three")) + "\n",
+        )
+        .unwrap();
+        set_modified(&path, stamp + Duration::from_secs(5));
+        assert_eq!(
+            discover_in(&root, &[]).candidates[0].first_prompt,
+            "Charlie three"
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_cached_scan_is_only_reused_for_the_scope_it_was_made_in() {
+        let root = temp_dir("cache-scope");
+        let path = write(&root, "file.jsonl", &["{}".into()]);
+        let scans = std::cell::Cell::new(0);
+        let scan = || {
+            scans.set(scans.get() + 1);
+            None
+        };
+        assert!(scan_cached(&path, ScanScope::Codex(false), scan).is_none());
+        assert!(scan_cached(&path, ScanScope::Codex(false), scan).is_none());
+        assert_eq!(scans.get(), 1, "a skipped file is remembered as skipped");
+        scan_cached(&path, ScanScope::Codex(true), scan);
+        assert_eq!(scans.get(), 2, "archived and live rollouts differ");
+        scan_cached(&path, ScanScope::Claude("folder".into()), scan);
+        assert_eq!(scans.get(), 3, "a provider never reuses another's scan");
+
+        // A file that left the store is forgotten; another store's entries are not.
+        let elsewhere = temp_dir("cache-elsewhere");
+        let kept = write(&elsewhere, "kept.jsonl", &["{}".into()]);
+        scan_cached(&kept, ScanScope::Codex(false), scan);
+        forget_unlisted(&[root.as_path()], std::iter::empty());
+        assert!(!lock(scan_cache()).contains_key(&path));
+        assert!(lock(scan_cache()).contains_key(&kept));
+        std::fs::remove_dir_all(root).ok();
+        std::fs::remove_dir_all(elsewhere).ok();
+    }
+
+    #[test]
+    fn a_hanging_folder_probe_is_abandoned_and_not_repeated() {
+        let id = uuid::Uuid::new_v4();
+        let fast = format!("fast-{id}");
+        let slow = format!("slow-{id}");
+        let is_dir = |cwd: &str| {
+            if cwd.starts_with("slow-") {
+                std::thread::sleep(Duration::from_millis(1500));
+            }
+            true
+        };
+
+        let started = Instant::now();
+        let known = probe_cwds(
+            vec![fast.clone(), slow.clone()],
+            Duration::from_millis(200),
+            is_dir,
+        );
+        assert!(started.elapsed() < Duration::from_millis(1200));
+        assert_eq!(known.get(&fast), Some(&true));
+        assert!(!known.contains_key(&slow), "unanswered, so unverified");
+
+        // The first probe is still stuck: it is not stacked with a second thread.
+        let again = probe_cwds(vec![slow.clone()], Duration::from_millis(200), |_| true);
+        assert!(again.is_empty());
+
+        std::thread::sleep(Duration::from_millis(1700));
+        let recovered = probe_cwds(vec![slow.clone()], Duration::from_secs(2), |_| false);
+        assert_eq!(recovered.get(&slow), Some(&false));
     }
 
     fn codex_meta(id: &str, cwd: &str, source: &str, originator: &str, extra: &str) -> String {

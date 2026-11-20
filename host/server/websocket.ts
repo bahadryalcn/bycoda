@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { attachDevServerTunnel, TUNNEL_CAPABILITY } from "../dev-servers/dev-server-tunnel";
 import { hostBulkDependencies } from "../transport/http/bulk";
 import { attachHostWebSocketTransport } from "../transport/ws/server";
 import { requestingDeviceName } from "../desktop/remoteActivity";
@@ -26,15 +27,24 @@ export function createWebsocketRuntime(
   >,
 ) {
   const tailnetHosts = createTailnetServeHosts(() => dependencies.mobileAccess.status());
+  // Any status or enable the owner flow already read (Settings enabling Serve) is
+  // visible to the Host check at once instead of after the next 60 s probe.
+  dependencies.mobileAccess.observe(tailnetHosts.observe);
+  // The first probe at creation runs before the Host listens and cannot know its port;
+  // probe again as soon as the Host listens so the name is known right after boot.
+  if (dependencies.server.listening) tailnetHosts.refresh();
+  else dependencies.server.once("listening", tailnetHosts.refresh);
   const websocket = attachHostWebSocketTransport({
     // Phones away from home reach /ws through this Host's own Tailscale Serve name;
     // the proxy connects from loopback and the bearer credential still authenticates.
     allowedHosts: tailnetHosts.current,
+    retryUnknownHost: tailnetHosts.retryUnknownHost,
     server: dependencies.server,
     environmentId: dependencies.engine.store.environmentId,
     mobileIngressSecret: dependencies.mobileIngressSecret,
     methods: dependencies.domainDispatcher.methods,
     capabilities: [
+      TUNNEL_CAPABILITY,
       "browser.sessionScopes.v1",
       "browser.ownerPresentationScopes.v1",
       "native.buffers.recovery.v1",
@@ -42,6 +52,9 @@ export function createWebsocketRuntime(
       "transport.ws.devices.v1",
       "transport.ws.devices.preview.mobile.v1",
       "transport.ws.voice.v1",
+      // The phone's background voice socket has no HTTP fallback: without this its spoken
+      // message ("assistant.request") is refused as incompatible before it is ever sent.
+      "assistant.v1",
       "native.services.v1",
       "native.workspaces.v1",
       "native.buffers.upload.v1",
@@ -50,7 +63,9 @@ export function createWebsocketRuntime(
       "native.services.workspace.format.bounded.v1",
       "native.buffers.delivery.ack.v1",
       "native.services.delivery.ack.v1",
+      "native.services.delivery.admission.v1",
       "native.delivery.epochs.v2",
+      "native.delivery.epochs.gaps.v1",
       "transport.ws.workspaces.cleanup.v1",
       "transport.ws.sessions.v2",
       "sessions.references.v1",
@@ -112,5 +127,30 @@ export function createWebsocketRuntime(
         async () => await dependencies.domainDispatcher.dispatch(method, params, context),
       ),
   });
-  return { websocket };
+  // The tunnel shares the Host listener and its lifecycle: closing the websocket runtime
+  // also closes every open dev-server tunnel.
+  const tunnel = attachDevServerTunnel({
+    server: dependencies.server,
+    allowedHosts: tailnetHosts.current,
+    mobileIngressSecret: dependencies.mobileIngressSecret,
+    authenticate: async (token) =>
+      await dependencies.engine.store.db.outsideScope(async () =>
+        (await dependencies.engine.store.authenticated(token))
+          ? {
+              id: createHash("sha256").update(token).digest("hex"),
+              authorized: async () => await dependencies.engine.store.authenticated(token),
+            }
+          : null,
+      ),
+    endpoint: async (params) => await dependencies.devServerAccess.endpoint(params),
+  });
+  return {
+    websocket: {
+      ...websocket,
+      close: async () => {
+        await tunnel.close();
+        await websocket.close();
+      },
+    },
+  };
 }

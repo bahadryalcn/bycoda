@@ -27,6 +27,7 @@ import {
   MINIMUM_OPENCODE_VERSION,
   parseOpenCodeVersion,
 } from "../../../integrations/harness/providers/opencode/opencodeProtocol";
+import { errorText } from "../../../shared/lib/errors";
 
 import { revealPath } from "../../../platform/tauri/fs";
 import { open as pickFile } from "@tauri-apps/plugin-dialog";
@@ -122,8 +123,7 @@ export function ProviderBinaryControl({
         return next;
       } catch (cause) {
         if (!mounted.current || generation !== request.current) return null;
-        const message = cause instanceof Error ? cause.message : String(cause);
-        setError(message);
+        setError(errorText(cause));
         return null;
       } finally {
         if (generation === request.current) {
@@ -221,7 +221,7 @@ export function ProviderBinaryControl({
             }
           })
           .catch((cause) => {
-            if (mounted.current && generation === request.current) setError(String(cause));
+            if (mounted.current && generation === request.current) setError(errorText(cause));
           })
           .finally(() => {
             if (generation === request.current) {
@@ -418,7 +418,7 @@ export function ProviderBinaryControl({
                     onClick={() => {
                       if (inspection) {
                         void revealPath(inspection.path).catch((cause) => {
-                          setRevealError(cause instanceof Error ? cause.message : String(cause));
+                          setRevealError(errorText(cause));
                         });
                       }
                     }}

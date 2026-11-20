@@ -36,6 +36,7 @@ export function ProfileRow({
     <Row
       label={label}
       description={info ? description : undefined}
+      descriptionVisible={Boolean(info)}
       info={
         info ??
         (description ? (

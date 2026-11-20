@@ -3,19 +3,19 @@ import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { formatBytes } from "../../../shared/i18n/format";
-import { DECISION_INSTALL_CONFIRMATION } from "../../../shared/model/host-contracts/decision-models";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Progress } from "../../../shared/ui/Progress";
 import { Stepper, type StepperStep } from "../../../shared/ui/Stepper";
+import { useLocalInstall } from "../hooks/useLocalInstall";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import type {
   DecisionCatalogEntry,
   HardwareInfo,
+  InstallState,
   LocalPlan,
   LocalRecommendation,
-  LocalStatus,
 } from "../model/decisionTypes";
 import {
   catalogLabel,
@@ -26,6 +26,23 @@ import {
 import { ErrorNotice } from "./ErrorNotice";
 
 type Loaded = { hardware: HardwareInfo; recommendation: LocalRecommendation };
+
+/** Bytes received so far. Indeterminate until the Host reports them, or when no file size is known. */
+function InstallProgress({ progress }: { progress: InstallState["progress"] | null }) {
+  if (!progress) return <Progress label={t("Installing…")} />;
+  if (progress.bytesTotal <= 0)
+    return <Progress label={t("Downloading {p1}…", { p1: formatBytes(progress.bytesDone) })} />;
+  return (
+    <Progress
+      value={Math.min(progress.bytesDone, progress.bytesTotal)}
+      max={progress.bytesTotal}
+      label={t("Downloading {p1} of {p2}…", {
+        p1: formatBytes(progress.bytesDone),
+        p2: formatBytes(progress.bytesTotal),
+      })}
+    />
+  );
+}
 
 /**
  * Local install in three steps: this computer, the recommendation, then an explicit install.
@@ -49,9 +66,6 @@ export function LocalInstallWizard({
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
-  const [installing, setInstalling] = useState(false);
-  const [result, setResult] = useState<LocalStatus | null>(null);
-  const [installError, setInstallError] = useState<unknown>(null);
   const [plan, setPlan] = useState<LocalPlan | null>(null);
   const [planError, setPlanError] = useState<unknown>(null);
   const [planAttempt, setPlanAttempt] = useState(0);
@@ -97,21 +111,16 @@ export function LocalInstallWizard({
   }, [client, modelId, offer, planAttempt]);
 
   const readyToInstall = plan !== null && plan.installable && plan.fits && planError === null;
+  const local = useLocalInstall({ client, modelId, onInstalled });
+  const { installing, result, error: installError } = local;
   const install = () => {
-    if (!modelId || !readyToInstall) return;
-    setInstallError(null);
-    setInstalling(true);
-    void client.local
-      .install({ modelId, confirm: DECISION_INSTALL_CONFIRMATION })
-      .then(
-        (status) => {
-          setResult(status);
-          if (status.state === "installed" || status.state === "running") onInstalled();
-        },
-        (error: unknown) => setInstallError(error),
-      )
-      .finally(() => setInstalling(false));
+    if (readyToInstall) local.install();
   };
+  const [wasInstalling, setWasInstalling] = useState(installing);
+  if (wasInstalling !== installing) {
+    setWasInstalling(installing);
+    if (installing) setStep(2);
+  }
 
   const steps: StepperStep[] = [
     { id: "computer", label: target ?? t("This computer") },
@@ -186,7 +195,11 @@ export function LocalInstallWizard({
               <ErrorNotice error={loadError} onRetry={() => setAttempt((value) => value + 1)} />
             ) : null}
             {loaded === null && loadError === null ? (
-              <Progress label={t("Checking this computer…")} />
+              <Progress
+                label={
+                  target ? t("Checking Host {p0}…", { p0: target }) : t("Checking this computer…")
+                }
+              />
             ) : null}
             {loaded ? (
               <Text as="ul" className="flex min-w-0 flex-col gap-1">
@@ -203,7 +216,7 @@ export function LocalInstallWizard({
             {offer === "install" ? (
               <>
                 <Text as="p" size="caption" tone="secondary">
-                  {t("Model: {p1}", { p1: modelName })}
+                  {t("Model: {p0}", { p0: modelName })}
                 </Text>
                 {planError !== null ? (
                   <ErrorNotice
@@ -212,7 +225,13 @@ export function LocalInstallWizard({
                   />
                 ) : null}
                 {plan === null && planError === null ? (
-                  <Progress label={t("Checking this computer…")} />
+                  <Progress
+                    label={
+                      target
+                        ? t("Checking Host {p0}…", { p0: target })
+                        : t("Checking this computer…")
+                    }
+                  />
                 ) : null}
                 {plan !== null && !plan.installable ? (
                   <InlineMessage tone="warning">
@@ -252,14 +271,31 @@ export function LocalInstallWizard({
         ) : null}
         {step === 2 ? (
           <div className="flex min-w-0 flex-col gap-2">
-            {result === null && !installing && installError === null ? (
+            {result === null && !installing && installError === null && !local.cancelled ? (
               <p>
                 {target
                   ? t("Install {p1} on Host {p2}?", { p1: modelName, p2: target })
                   : t("Install {p1} on this computer?", { p1: modelName })}
               </p>
             ) : null}
-            {installing ? <Progress label={t("Installing…")} /> : null}
+            {installing ? <InstallProgress progress={local.progress} /> : null}
+            {installing && local.canCancel ? (
+              <div className="flex">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={local.cancelling}
+                  onClick={local.cancel}
+                >
+                  {local.cancelling ? t("Cancelling…") : t("Cancel install")}
+                </Button>
+              </div>
+            ) : null}
+            {local.cancelled ? (
+              <InlineMessage tone="neutral">
+                {t("Install cancelled. Nothing was kept.")}
+              </InlineMessage>
+            ) : null}
             {installed ? (
               <InlineMessage tone="success">
                 {t("Installed. You can start it from the source list.")}

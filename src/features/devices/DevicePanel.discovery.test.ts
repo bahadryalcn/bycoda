@@ -148,3 +148,14 @@ it("shows an unknown discovery count while pending or failed, and zero only afte
   }
   expect(summary()).toContain("0 devices found");
 });
+
+it("uses singular copy for exactly one discovered device", async () => {
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({ devices: [second], errors: [] });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await click("Device options");
+  await click("Setup and access");
+  const summary = document.querySelector(".device-panel-setup-summary")!.textContent;
+  expect(summary).toContain("1 device found");
+  expect(summary).not.toContain("1 devices found");
+});

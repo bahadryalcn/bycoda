@@ -6,6 +6,7 @@ import { fetchGitIndex } from "../model/gitIndexStore";
 import { subscribeDirsChanged } from "../../files/public/fileTree";
 import { parentPath } from "../../../shared/lib/paths";
 import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
+import { useMachineAvailability } from "../../connections/public/machineAvailability";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { IS_MAC } from "../../../platform/tauri/platform";
 
@@ -175,9 +176,11 @@ function stop(entry: Entry) {
 
 export function useGitFileStatuses(cwd: string, enabled: boolean): GitStatusMap {
   const active = enabled && Boolean(cwd) && cwd !== "~";
+  // The last statuses stay shown, but a machine that cannot be asked is not read.
+  const readable = useMachineAvailability(cwd).available;
   const subscribe = useCallback(
     (listener: () => void) => {
-      if (!active) return () => undefined;
+      if (!active || !readable) return () => undefined;
       const entry = entryFor(cwd);
       const unsubscribe = entry.listeners.subscribe(listener);
       if (entry.listeners.size === 1) start(entry);
@@ -187,7 +190,7 @@ export function useGitFileStatuses(cwd: string, enabled: boolean): GitStatusMap 
         entries.prune();
       };
     },
-    [active, cwd],
+    [active, readable, cwd],
   );
   const getSnapshot = useCallback(() => {
     return active ? entryFor(cwd).data : EMPTY;

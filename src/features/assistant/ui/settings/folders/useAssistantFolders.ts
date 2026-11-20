@@ -1,3 +1,4 @@
+import { errorText } from "../../../../../shared/lib/errors";
 import { presentRemoteError } from "../../../../connections/public/remoteFailure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../../../../../shared/i18n";
@@ -17,7 +18,7 @@ export type FoldersDraft = {
   allowChangesWithoutAsking: boolean;
 };
 
-const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+const message = (cause: unknown) => errorText(cause);
 const fromSaved = (saved: AssistantFoldersResponse): FoldersDraft => ({
   paths: saved.folders.map((folder) => folder.path),
   runWithoutAsking: saved.runWithoutAsking,
@@ -93,12 +94,12 @@ export function useAssistantFolders(
         allowChangesWithoutAsking: draft.allowChangesWithoutAsking,
       });
       if (!result.assistantFolders)
-        throw new Error(t("The folder list save was not confirmed. Check before retrying."));
+        throw new Error(t("The folder list save could not be confirmed. Check before retrying."));
       if (
         draft.allowChangesWithoutAsking &&
         result.assistantFolders.allowChangesWithoutAsking !== true
       )
-        throw new Error(t("The folder list save was not confirmed. Check before retrying."));
+        throw new Error(t("The folder list save could not be confirmed. Check before retrying."));
       setSaved(result.assistantFolders);
       setDraft(fromSaved(result.assistantFolders));
       setConflict(false);

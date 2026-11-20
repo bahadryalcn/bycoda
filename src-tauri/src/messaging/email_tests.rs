@@ -102,6 +102,50 @@ fn thread_view_summarizes_a_group() {
     assert_eq!(without_preview.preview, "Re: Plan");
 }
 
+fn numbered(count: u32) -> (Vec<Summary>, Vec<usize>) {
+    let summaries = (0..count)
+        .map(|index| Summary {
+            uid: 100 + index,
+            at: u64::from(index),
+            ..Summary::default()
+        })
+        .collect();
+    (summaries, (0..count as usize).collect())
+}
+
+#[test]
+fn member_pages_walk_back_from_the_newest_without_gaps() {
+    let total = THREAD_PAGE_SIZE as u32 * 2 + 5;
+    let (summaries, members) = numbered(total);
+    let (first, earlier) = member_page(&summaries, &members, None);
+    assert_eq!(first, members[members.len() - THREAD_PAGE_SIZE..]);
+    let cursor = earlier.expect("older messages remain");
+    assert_eq!(cursor, summaries[first[0]].uid.to_string());
+    let (second, earlier) = member_page(&summaries, &members, cursor.parse().ok());
+    assert_eq!(second.len(), THREAD_PAGE_SIZE);
+    assert_eq!(second.last().copied(), first[0].checked_sub(1));
+    let (third, earlier) = member_page(
+        &summaries,
+        &members,
+        earlier.and_then(|uid| uid.parse().ok()),
+    );
+    assert_eq!(third, members[..5]);
+    assert_eq!(earlier, None);
+}
+
+#[test]
+fn a_short_thread_is_one_page_and_a_vanished_cursor_ends_history() {
+    let (summaries, members) = numbered(3);
+    assert_eq!(
+        member_page(&summaries, &members, None),
+        (members.clone(), None)
+    );
+    assert_eq!(
+        member_page(&summaries, &members, Some(9_999)),
+        (Vec::new(), None)
+    );
+}
+
 #[test]
 fn full_message_parses_body_and_direction() {
     let raw = b"From: Me <me@gmail.com>\r\nSubject: Hi\r\nContent-Type: text/html\r\n\r\n<p>Hi&nbsp;<i>there</i></p>\r\n";

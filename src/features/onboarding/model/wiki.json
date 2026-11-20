@@ -175,7 +175,7 @@
                 "Open a project with a Git working tree. Review the diff against the intended branch before staging, committing or pushing."
               ],
               "steps": [
-                "Open Changes and select a file to inspect its diff.",
+                "Open changes and select a file to inspect its diff.",
                 "Stage the intended files or supported hunks. Confirm the staged diff and current branch.",
                 "Enter a commit message and commit when ready. Push only after checking the destination and permissions."
               ]

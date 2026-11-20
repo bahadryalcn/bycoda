@@ -3,7 +3,8 @@ import { desktopDelegationParent } from "./delegated-children";
 import { normalizeProjectPath, sameProjectPath } from "./project-path";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, Stats } from "node:fs";
+import { stat } from "node:fs/promises";
 import { desktopReadSource, readDesktopSnapshot, type DesktopReadSource } from "./snapshot-read";
 import { SessionReadError } from "../domains/sessions/read-errors";
 import { homedir } from "node:os";
@@ -88,6 +89,14 @@ export function desktopDatabasePaths(
 }
 
 let pathsCache: { key: string; at: number; value: string[] } | undefined;
+
+/** One fingerprint part: identity, time and size of a file, or why it could not be read. */
+function statPart(file: string, value: Stats | unknown): string {
+  if (value instanceof Stats)
+    return `${file}:${value.dev}:${value.ino}:${value.mtimeMs}:${value.ctimeMs}:${value.size}`;
+  const code = (value as NodeJS.ErrnoException).code;
+  return code === "ENOENT" || code === "ENOTDIR" ? "-" : `unavailable:${code ?? "unknown"}`;
+}
 
 /** `desktopDatabasePaths()` stats up to three files; watchers ask per tick. */
 function cachedDesktopDatabasePaths(): string[] {
@@ -378,22 +387,41 @@ export class DesktopSessions {
    * Two stats per database instead of re-reading every session row.
    */
   fingerprint(): string {
-    const parts: string[] = [];
-    for (const path of this.paths())
-      for (const file of [path, `${path}-wal`]) {
+    return this.fingerprintFiles()
+      .map((file) => {
         try {
-          const stat = statSync(file);
-          parts.push(
-            `${file}:${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`,
-          );
+          return statPart(file, statSync(file));
         } catch (error) {
-          const code = (error as NodeJS.ErrnoException).code;
-          parts.push(
-            code === "ENOENT" || code === "ENOTDIR" ? "-" : `unavailable:${code ?? "unknown"}`,
-          );
+          return statPart(file, error);
         }
-      }
-    return parts.join("|");
+      })
+      .join("|");
+  }
+
+  /**
+   * `fingerprint()` for the Host event loop: the stats run on the libuv pool, so a stalled
+   * disk (a restore point, an antivirus scan) cannot freeze the Host. Concurrent callers
+   * share one round of stats.
+   */
+  fingerprintAsync(): Promise<string> {
+    this.fingerprintFlight ??= Promise.all(
+      this.fingerprintFiles().map((file) =>
+        stat(file).then(
+          (value) => statPart(file, value),
+          (error: unknown) => statPart(file, error),
+        ),
+      ),
+    )
+      .then((parts) => parts.join("|"))
+      .finally(() => {
+        this.fingerprintFlight = undefined;
+      });
+    return this.fingerprintFlight;
+  }
+  private fingerprintFlight?: Promise<string>;
+
+  private fingerprintFiles(): string[] {
+    return this.paths().flatMap((path) => [path, `${path}-wal`]);
   }
 
   /** Releases every cached connection (host shutdown). */
@@ -641,10 +669,9 @@ export class DesktopSessions {
 
   private summaryOf({ row, inFlight }: Found, projectId: string): HostSessionSummary {
     const updatedAt = Number(row.updated_at);
+    const managedBy = managementOf(row);
     return {
-      ...(assistantSessionManagement(parse(row.assistant_management_json))
-        ? { managedBy: assistantSessionManagement(parse(row.assistant_management_json)) }
-        : {}),
+      ...(managedBy ? { managedBy } : {}),
       projectId,
       revision: updatedAt,
       status: inFlight ? "running" : row.interrupted ? "interrupted" : "idle",
@@ -855,6 +882,8 @@ export class DesktopSessions {
   async listSnapshotAsync(projectCwd: string, projectId: string, providers: readonly string[]) {
     const requestKey = JSON.stringify([projectCwd, projectId, providers]),
       generation = this.metadataGeneration;
+    // Taken before the cache lookup, so the entry compared below is the one in the cache now.
+    const database = this.metadataKeys.has(requestKey) ? await this.fingerprintAsync() : undefined;
     const knownKey = this.metadataKeys.get(requestKey),
       knownEntry = knownKey ? this.listSnapshots.get(knownKey) : undefined;
     // Unchanged database files (two stats) and unchanged heartbeat: the cached
@@ -862,7 +891,7 @@ export class DesktopSessions {
     if (
       knownKey &&
       knownEntry &&
-      knownEntry.database === this.fingerprint() &&
+      knownEntry.database === database &&
       Date.now() - knownEntry.refreshed < 30_000 &&
       knownEntry.live === this.live.listVersion(knownEntry.ids, knownEntry.stored)
     ) {
@@ -1288,6 +1317,11 @@ export class DesktopSessions {
     return sameProjectPath(a, b, this.platform);
   }
 
+  /** The key `samePath` compares: equal keys are the same folder. */
+  pathKey(path: string): string {
+    return normalizeProjectPath(path, this.platform);
+  }
+
   snapshot(id: string, projectId: string): HostSession | undefined {
     const found = this.collect("id=?", [id])[0];
     return this.snapshotFromRow(id, projectId, found);
@@ -1451,12 +1485,11 @@ export class DesktopSessions {
   ): Omit<HostSession, "session"> & { session: Omit<Session, "blocks"> } {
     const { row } = found;
     const updatedAt = Number(row.updated_at);
+    const managedBy = managementOf(row);
     // The transcript this desktop last agreed on with the host; an older app has no column.
     const adoptedBase = parseHead(parse(row.adopted_base));
     const session: Omit<Session, "blocks"> = {
-      ...(assistantSessionManagement(parse(row.assistant_management_json))
-        ? { managedBy: assistantSessionManagement(parse(row.assistant_management_json)) }
-        : {}),
+      ...(managedBy ? { managedBy } : {}),
       id: String(row.id),
       harness: String(row.harness) as Session["harness"],
       model: String(row.model ?? ""),
@@ -1497,6 +1530,12 @@ export class DesktopSessions {
 /** Where the provider ran: the selected worktree, else the project folder. */
 function workCwd(row: Row): string {
   return String(row.worktree_cwd || row.cwd);
+}
+
+/** The validated assistant provenance of a desktop row. A null, malformed or legacy column
+ * yields `undefined`. Each builder calls this once per row and reuses the result. */
+function managementOf(row: Row) {
+  return assistantSessionManagement(parse(row.assistant_management_json));
 }
 
 function parse(value: unknown): any {

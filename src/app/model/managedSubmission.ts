@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import type { ControlOutcome } from "../../features/orchestration/model/orchestration";
 import type { SubmissionAcceptance } from "./submissionAcceptance";
 
@@ -21,7 +22,7 @@ export async function submitWithSettlement(options: {
     settle({
       status: "failed",
       text: "",
-      error: error instanceof Error ? error.message : String(error),
+      error: errorText(error),
     });
     return false;
   }

@@ -218,7 +218,7 @@ it("creates a new folder on the remote machine and updates the path to open", as
 it("points to Settings when no machine is connected", async () => {
   machines = [];
   await render();
-  expect(document.body.textContent).toContain("No machines are connected yet");
+  expect(document.body.textContent).toContain("No computers are connected yet");
   expect(button("Add a machine")).toBeTruthy();
 });
 
@@ -268,7 +268,7 @@ it("does not present an unreadable machine registry as a successful empty result
   );
   await render();
   expect(document.body.textContent).toContain("Registry unavailable");
-  expect(document.body.textContent).not.toContain("No machines are connected yet");
+  expect(document.body.textContent).not.toContain("No computers are connected yet");
   vi.mocked(invoke).mockImplementation(original);
   await act(async () =>
     (document.querySelector('button[aria-label^="Retry loading"]') as HTMLButtonElement).click(),
@@ -293,7 +293,7 @@ it("ignores an older machine-list failure after a newer read succeeds", async ()
   expect(reads).toHaveLength(2);
   await act(async () => reads[1].resolve([]));
   await act(async () => reads[0].reject(new Error("Old read failed")));
-  expect(document.body.textContent).toContain("No machines are connected yet");
+  expect(document.body.textContent).toContain("No computers are connected yet");
   expect(document.body.textContent).not.toContain("Old read failed");
 });
 

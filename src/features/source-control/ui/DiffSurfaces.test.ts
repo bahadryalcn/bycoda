@@ -279,7 +279,7 @@ it("clears a previous commit's error while a new commit loads and provides retry
   api.commitFiles.mockRejectedValueOnce(new Error("old failure"));
   await act(async () => root.render(createElement(CommitDiff, { cwd: "/repo", sha: "aaaa" })));
   expect(container.textContent).toContain("old failure");
-  expect(container.querySelector("button")?.textContent).toBe("Retry");
+  expect(container.querySelector("button")?.textContent).toBe("Try again");
   const next = deferred<typeof files>();
   api.commitFiles.mockReturnValueOnce(next.promise);
   await act(async () => root.render(createElement(CommitDiff, { cwd: "/repo", sha: "bbbb" })));

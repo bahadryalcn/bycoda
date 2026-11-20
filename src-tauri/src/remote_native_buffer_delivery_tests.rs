@@ -93,7 +93,11 @@ impl Fixture {
             path: self.path.clone(),
             machine: self.machine.clone(),
             pin: RecoveryRoute {
-                revision: self.state.recovery_routes.capture().unwrap(),
+                revision: self
+                    .state
+                    .recovery_routes
+                    .capture(&self.machine.id)
+                    .unwrap(),
                 selected_endpoint: self.machine.endpoint.clone(),
             },
         };
@@ -128,6 +132,7 @@ impl Fixture {
                 delivery,
                 delivery_ack: false,
                 delivery_epochs: false,
+                delivery_epoch_gaps: false,
                 delivery_cursors: self.state.native_buffer_delivery_cursors.clone(),
                 delivery_ack_cursors: self.state.native_buffer_delivery_ack_cursors.clone(),
             })),

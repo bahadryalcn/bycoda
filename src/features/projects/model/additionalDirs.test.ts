@@ -143,3 +143,60 @@ describe("per-session additional folders", () => {
     expect(loadSessionAdditionalDirs("s2")).toEqual(["/work/api"]);
   });
 });
+
+describe("unreadable stored folders", () => {
+  const PROJECTS_KEY = "bycoda.projectAdditionalDirs";
+  const SESSIONS_KEY = "bycoda.sessionAdditionalDirs";
+
+  it("keeps the last valid folders and never overwrites unreadable stored text", () => {
+    saveAdditionalDirs("/work/web", ["/work/api"]);
+    saveAdditionalDirs("/work/site", ["/work/ui"]);
+    const corrupt = '{"/work/web": "oops"';
+    localStorage.setItem(PROJECTS_KEY, corrupt);
+
+    expect(loadAdditionalDirs("/work/web")).toEqual(["/work/api"]);
+    expect(loadAdditionalDirs("/work/site")).toEqual(["/work/ui"]);
+    expect(saveAdditionalDirs("/work/site", [])).toBe(false);
+    expect(saveAdditionalDirs("/work/web", ["/work/ui"])).toBe(false);
+    expect(rebaseAdditionalDirs("/work/web", "/work/moved")).toBe(false);
+    expect(removeAdditionalDirs("/work/site")).toBe(false);
+    expect(localStorage.getItem(PROJECTS_KEY)).toBe(corrupt);
+  });
+
+  it("treats a non-object or non-array value as unreadable", () => {
+    localStorage.setItem(PROJECTS_KEY, '["/work/api"]');
+    expect(saveAdditionalDirs("/work/web", ["/work/api"])).toBe(false);
+    localStorage.setItem(PROJECTS_KEY, '{"/work/web": "/work/api"}');
+    expect(saveAdditionalDirs("/work/web", ["/work/api"])).toBe(false);
+    expect(localStorage.getItem(PROJECTS_KEY)).toBe('{"/work/web": "/work/api"}');
+  });
+
+  it("writes again once the stored text is cleared", () => {
+    localStorage.setItem(PROJECTS_KEY, "not json");
+    expect(saveAdditionalDirs("/work/web", ["/work/api"])).toBe(false);
+
+    localStorage.removeItem(PROJECTS_KEY);
+    expect(saveAdditionalDirs("/work/web", ["/work/api"])).toBe(true);
+    expect(loadAdditionalDirs("/work/web")).toEqual(["/work/api"]);
+  });
+
+  it("does not overwrite unreadable session overrides", () => {
+    saveAdditionalDirs("/work/web", ["/work/api"]);
+    localStorage.setItem(SESSIONS_KEY, "not json");
+
+    expect(saveSessionAdditionalDirs("s1", "/work/web", ["/work/ui"])).toBe(false);
+    removeSessionAdditionalDirs("s1");
+    expect(localStorage.getItem(SESSIONS_KEY)).toBe("not json");
+    expect(loadSessionAdditionalDirs("s1")).toBeUndefined();
+    expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/work/api"]);
+  });
+
+  it("keeps the most recently saved session override after the stored text becomes unreadable", () => {
+    expect(saveSessionAdditionalDirs("s1", "/work/web", ["/work/ui"])).toBe(true);
+    localStorage.setItem(SESSIONS_KEY, "not json");
+
+    expect(loadSessionAdditionalDirs("s1")).toEqual(["/work/ui"]);
+    expect(saveSessionAdditionalDirs("s1", "/work/web", null)).toBe(false);
+    expect(localStorage.getItem(SESSIONS_KEY)).toBe("not json");
+  });
+});

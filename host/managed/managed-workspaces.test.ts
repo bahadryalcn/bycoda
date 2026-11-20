@@ -605,6 +605,28 @@ it("skips owner activity for a workspace whose directory never materialized", as
   expect((await f.registry.get({ workspaceId: blocked.id }))?.revision).toBe(blocked.revision);
 });
 
+it("looks up only the owner's workspaces when recording owner activity", async () => {
+  const f = await fixture();
+  const { workspace } = await f.registry.prepare(f.request);
+  expect(
+    (
+      await f.store.managedWorkspaces({
+        ownerKind: workspace.owner.kind,
+        ownerId: workspace.owner.id,
+      })
+    ).map((item) => item.id),
+  ).toEqual([workspace.id]);
+  expect(
+    await f.store.managedWorkspaces({ ownerKind: workspace.owner.kind, ownerId: "someone-else" }),
+  ).toEqual([]);
+  const list = vi.spyOn(f.store, "managedWorkspaces");
+  await f.registry.touchOwnerActivity(workspace.owner);
+  expect(list).toHaveBeenCalledWith({
+    ownerKind: workspace.owner.kind,
+    ownerId: workspace.owner.id,
+  });
+});
+
 it("rejects an unavailable base and explicit current-mode preparation without allocating directories", async () => {
   const f = await fixture();
   await expect(f.registry.prepare({ ...f.request, baseRef: "missing-branch" })).rejects.toThrow();

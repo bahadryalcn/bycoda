@@ -4,7 +4,7 @@ import type {
   AssistantNotification,
   AssistantSnapshot,
 } from "../../../shared/model/host-contracts/assistant";
-import { AssistantNotificationDelivery } from "./assistantNotifications";
+import { AssistantNotificationDelivery, currentNotification } from "./assistantNotifications";
 const notification: AssistantNotification = {
   id: "event-one",
   kind: "job.done",
@@ -24,11 +24,25 @@ function fixture() {
   const request = vi.fn(async () => ({ ok: true })),
     deliver = vi.fn(async () => true),
     lead = vi.fn(async () => true),
-    projectPath = vi.fn(async () => "/work/app"),
+    projectPath = vi.fn(async (_id: string): Promise<string | undefined> => "/work/app"),
     current = vi.fn(async () => notification);
   const ports = { request, deliver, lead, projectPath, current, storage: localStorage };
   return { ...ports, ports, pump: new AssistantNotificationDelivery(ports) };
 }
+it("reads the full notification from the polled snapshot and only for an enabled, set-up profile", () => {
+  expect(currentNotification(snapshot, "event-one")).toEqual(notification);
+  expect(currentNotification(snapshot, "missing")).toBeUndefined();
+  expect(
+    currentNotification(
+      {
+        ...snapshot,
+        profile: { enabled: false, setupComplete: true } as AssistantSnapshot["profile"],
+      },
+      "event-one",
+    ),
+  ).toBeUndefined();
+  expect(currentNotification(null, "event-one")).toBeUndefined();
+});
 it("retries only acknowledgement after native success, including a new bridge instance", async () => {
   const f = fixture();
   f.request.mockRejectedValueOnce(new Error("Host disconnected"));
@@ -92,7 +106,7 @@ it("resolves every contributing project and does not deliver a partial or unknow
   await missing.pump.check({ ...snapshot, notifications: [multi] });
   expect(missing.deliver).not.toHaveBeenCalled();
   const legacy = fixture();
-  const summary = { ...notification, kind: "briefing.ready" as const, projectId: undefined };
+  const summary = { ...notification, kind: "briefing" as const, projectId: undefined };
   legacy.current.mockResolvedValue(summary);
   await legacy.pump.check({ ...snapshot, notifications: [summary] });
   expect(legacy.deliver).not.toHaveBeenCalled();

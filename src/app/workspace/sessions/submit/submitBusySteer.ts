@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 
 import { nextQueueStatus } from "../../../../features/connections/model/queueState";
@@ -280,7 +281,7 @@ export function steerBusySubmit(
           return queueFollowUp();
         }
         const unknown = error instanceof DeliveryUnknownError;
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = errorText(error);
         retain(unknown);
         updateDeliveryProgress(sessionId, progress, unknown ? "unknown" : "rejected", detail);
         // onSubmit accepts deferred work immediately. Preserve every refusal,

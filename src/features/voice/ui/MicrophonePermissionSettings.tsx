@@ -1,16 +1,18 @@
+import { errorText } from "../../../shared/lib/errors";
 import { PermissionRow } from "../../permissions";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
-import { Row } from "../../../shared/ui/settings";
+import { AdvancedSettings, Row } from "../../../shared/ui/settings";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import {
   isMicrophoneBlocked,
   microphoneBlockedMessage,
   webviewMicrophoneBlockedMessage,
   openMicrophone,
+  stopMicrophone,
 } from "../model/microphoneAccess";
 import { loadVoiceSettings } from "../model/voiceSettings";
 
@@ -21,6 +23,7 @@ export function MicrophonePermissionSettings() {
   const [requestPending, setRequestPending] = useState(false);
   const [error, setError] = useState("");
   const attempt = useRef(0);
+  const captureRequest = useRef<AbortController | null>(null);
   const pending = useRef(false);
   const mounted = useRef(false);
   useEffect(() => {
@@ -51,6 +54,7 @@ export function MicrophonePermissionSettings() {
     return () => {
       mounted.current = false;
       attempt.current++;
+      captureRequest.current?.abort();
       status?.removeEventListener("change", update);
     };
   }, []);
@@ -60,24 +64,30 @@ export function MicrophonePermissionSettings() {
     pending.current = true;
     setRequestPending(true);
     const id = ++attempt.current;
+    const request = new AbortController();
+    captureRequest.current = request;
     setBusy(true);
     setError("");
     try {
       const microphoneId = loadVoiceSettings().microphoneId;
-      const stream = await openMicrophone({
-        audio: microphoneId ? { deviceId: { exact: microphoneId } } : true,
-        video: false,
-      });
+      const stream = await openMicrophone(
+        {
+          audio: microphoneId ? { deviceId: { exact: microphoneId } } : true,
+          video: false,
+        },
+        { signal: request.signal },
+      );
       // A grant can arrive after Cancel, disabling the feature, or unmounting.
-      stream.getTracks().forEach((track) => track.stop());
+      stopMicrophone(stream);
       if (mounted.current && id === attempt.current) setPermission("granted");
     } catch (cause) {
       if (mounted.current && id === attempt.current) {
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = errorText(cause);
         if (isMicrophoneBlocked(message)) setPermission("denied");
         setError(message);
       }
     } finally {
+      if (captureRequest.current === request) captureRequest.current = null;
       pending.current = false;
       if (mounted.current) setRequestPending(false);
       if (mounted.current && id === attempt.current) setBusy(false);
@@ -101,7 +111,6 @@ export function MicrophonePermissionSettings() {
               ));
   return (
     <>
-      <PermissionRow id="microphone" />
       <Row
         id="speech-microphone"
         label={t("Microphone access")}
@@ -121,7 +130,7 @@ export function MicrophonePermissionSettings() {
         <Button
           onClick={() =>
             void check().catch((cause) => {
-              if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+              if (mounted.current) setError(errorText(cause));
             })
           }
           loading={busy}
@@ -133,6 +142,7 @@ export function MicrophonePermissionSettings() {
           <Button
             onClick={() => {
               attempt.current++;
+              captureRequest.current?.abort();
               setBusy(false);
             }}
           >
@@ -141,6 +151,9 @@ export function MicrophonePermissionSettings() {
         ) : null}
         <MicrophoneRecoveryAction message={blocked ? microphoneBlockedMessage() : error} />
       </Row>
+      <AdvancedSettings title={t("Permissions")} settingIds={["permission-microphone"]} keepMounted>
+        <PermissionRow id="microphone" />
+      </AdvancedSettings>
     </>
   );
 }

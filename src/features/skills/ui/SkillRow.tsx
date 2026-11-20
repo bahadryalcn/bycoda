@@ -83,6 +83,10 @@ export function SkillRow({
 }): ReactNode {
   useLocale();
   const { skill } = entry.primary;
+  // The draft and off marks are visual only; fold them into the name so assistive technology announces them.
+  const accessibleName = [entry.name, modified ? t("Draft") : null, off ? t("Off") : null]
+    .filter(Boolean)
+    .join(", ");
   return (
     <ActionHost
       className={styles.row}
@@ -107,7 +111,7 @@ export function SkillRow({
           variant="item"
           selected={selected}
           className={styles.name}
-          aria-label={entry.name}
+          aria-label={accessibleName}
           ref={nameRef}
           aria-controls={previewOpen ? previewId : undefined}
           aria-expanded={selected}
@@ -138,7 +142,13 @@ export function SkillRow({
         </Button>
       </Tooltip>
       {off ? (
-        <Text size="caption" tone="secondary" leading="inherit" className={styles.offLabel}>
+        <Text
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          className={styles.offLabel}
+          aria-hidden="true"
+        >
           {t("Off")}
         </Text>
       ) : null}

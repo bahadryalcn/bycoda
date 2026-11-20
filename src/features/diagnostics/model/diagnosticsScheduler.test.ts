@@ -90,14 +90,17 @@ describe("crash handling at start", () => {
     stop();
   });
 
-  it("always send: switches to auto even when the upload fails", async () => {
+  it("always send: keeps the mode and the marker when the upload fails, so a retry can still succeed", async () => {
     const kit = makeDeps({ logs: { crash: CRASH } });
     kit.sendDiagnosticReport.mockRejectedValueOnce(new Error("offline"));
     const { scheduler, stop } = start(kit);
     await flush();
     expect(await scheduler.sendPending(true)).toBe("failed");
-    expect(getDiagnosticsMode()).toBe("auto");
+    expect(getDiagnosticsMode()).toBe("ask");
     expect(scheduler.getPending()).not.toBeNull();
+    expect(await scheduler.sendPending(true)).toBe("sent");
+    expect(getDiagnosticsMode()).toBe("auto");
+    expect(scheduler.getPending()).toBeNull();
     stop();
   });
 

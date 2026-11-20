@@ -78,21 +78,29 @@ function fakeClient(
     if (!handler) throw new Error(`Unexpected ${action}`);
     return handler(input);
   });
-  const snapshot = vi.fn(async () => ({
-    accounts: [],
-    pollingEnabled: false,
-    profiles: [
-      {
-        projectId: "p1",
-        productName: "Demo",
-        brandVoice: "Plain",
-        facts: options.facts ?? [fact("f1"), fact("f2")],
-      },
-    ],
+  const snapshot = vi.fn(async () => {
+    throw new Error("The reply box must not read the full workspace snapshot.");
+  });
+  // Like the Host: profiles come back narrowed to the requested project.
+  const sectionSnapshot = vi.fn(async (input: Record<string, unknown>) => ({
+    cursor: "c",
+    unchanged: false,
+    snapshot: {
+      accounts: [],
+      pollingEnabled: false,
+      profiles: [
+        {
+          projectId: "p1",
+          productName: "Demo",
+          brandVoice: "Plain",
+          facts: options.facts ?? [fact("f1"), fact("f2")],
+        },
+      ].filter((profile) => !input.projectId || profile.projectId === input.projectId),
+    },
   }));
-  const client = { request, snapshot } as unknown as SocialClient;
+  const client = { request, snapshot, sectionSnapshot } as unknown as SocialClient;
   const writes = () => calls.filter((call) => WRITE_ACTIONS.includes(call.action));
-  return { client, calls, request, writes, draft };
+  return { client, calls, request, writes, draft, sectionSnapshot };
 }
 
 beforeEach(() => {
@@ -162,7 +170,10 @@ it("keeps Send disabled with its reason until the owner writes a reply", async (
   await mount(fake.client);
   expect(off(button("Send"))).toBe(true);
   expect(button("Send").getAttribute("aria-description")).toBe("Write a reply first.");
-  expect(element.querySelector(".inbox-note")?.textContent).toContain("Write a reply first.");
+  act(() => button("Send").focus());
+  expect(document.activeElement).toBe(button("Send"));
+  expect(element.textContent).not.toContain("Write a reply first.");
+  expect(element.querySelector(".inbox-note")).toBeNull();
   await type("   ");
   expect(off(button("Send"))).toBe(true);
   await type("Thanks, see you soon.");
@@ -193,7 +204,7 @@ it("keeps the chosen Instagram PDF after an upload failure and queues only the r
   expect(upload).not.toHaveBeenCalled();
   expect(element.textContent).toContain(file.name);
   await click(button("Send"));
-  expect(element.textContent).toContain("Upload interrupted");
+  expect(element.textContent).toContain("Reply preparation could not finish.");
   expect(element.textContent).toContain(file.name);
   expect(fake.writes()).toEqual([]);
   await click(button("Send"));
@@ -242,7 +253,7 @@ it("blocks the reply box with the Host reason and never sends while a reply is n
   await mount(fake.client);
   expect(editor().disabled).toBe(true);
   expect(off(button("Send"))).toBe(true);
-  expect(element.textContent).toContain(
+  expect(button("Send").getAttribute("aria-description")).toBe(
     "This conversation requires a template. Template replies are unavailable here.",
   );
   await click(button("Send"));
@@ -265,6 +276,8 @@ it("does not report success and keeps the text when the draft cannot be created"
   expect(element.querySelector('[role="alert"]')?.textContent).toContain(
     "Reply preparation could not finish. Retry the same reply or edit its draft.",
   );
+  // The Host text stays in Details; it is never appended to the translated sentence.
+  expect(element.textContent).not.toContain("The account changed.");
   expect(element.textContent).not.toContain("Reply queued.");
   expect(editor().value).toBe("Hello there");
 });
@@ -369,12 +382,21 @@ it("explains in place why AI is unavailable without a project or without verifie
   const noProject = fakeClient();
   await mount(noProject.client, { projectId: undefined });
   expect(off(button("Fill with AI"))).toBe(true);
-  expect(element.textContent).toContain("Choose the conversation's project first.");
+  expect(element.querySelector(".inbox-note")?.textContent).toBe(
+    "Choose the conversation's project first.",
+  );
+  // The visible note is the only text for this reason: no tooltip repeats it.
+  expect(button("Fill with AI").getAttribute("aria-description")).toBeNull();
+  expect(button("Fill with AI").getAttribute("aria-describedby")).toBe(
+    element.querySelector(".inbox-note")?.id,
+  );
 
   const noFacts = fakeClient({ facts: [] });
   await mount(noFacts.client);
   expect(off(button("Fill with AI"))).toBe(true);
-  expect(element.textContent).toContain("Add verified facts for this project first.");
+  expect(element.querySelector(".inbox-note")?.textContent).toBe(
+    "Add verified facts for this project first.",
+  );
   expect(noFacts.calls.some((call) => call.action === "replies.suggest")).toBe(false);
 });
 
@@ -385,7 +407,9 @@ it("says why Send is off while the reply options are unknown or cannot be read",
   await mount(pending.client);
   await type("Thanks");
   expect(off(button("Send"))).toBe(true);
-  expect(element.textContent).toContain("Checking whether this conversation can take a reply.");
+  expect(button("Send").getAttribute("aria-description")).toBe(
+    "Checking whether this conversation can take a reply.",
+  );
 
   const failing = fakeClient({
     handlers: {
@@ -397,7 +421,7 @@ it("says why Send is off while the reply options are unknown or cannot be read",
   await mount(failing.client);
   await type("Thanks");
   expect(off(button("Send"))).toBe(true);
-  expect(element.textContent).toContain(
+  expect(button("Send").getAttribute("aria-description")).toBe(
     "The reply options could not be loaded. Reload the conversation.",
   );
   expect(failing.writes()).toEqual([]);
@@ -422,6 +446,32 @@ it("replaces the draft with the AI suggestion once the owner agrees", async () =
   await click(button("Fill with AI"));
   expect(fake.calls.some((call) => call.action === "replies.suggest")).toBe(true);
   expect(editor().value).toBe("It is free.");
+});
+
+it("reads only the conversation's project facts and reuses them across conversations", async () => {
+  const fake = fakeClient();
+  await mount(fake.client);
+  await mount(fake.client, { id: "t2" });
+  expect(fake.client.snapshot).not.toHaveBeenCalled();
+  expect(fake.sectionSnapshot.mock.calls.map((call) => call[0])).toEqual([
+    { section: "accounts", projectId: "p1", limit: 1 },
+  ]);
+  expect(off(button("Fill with AI"))).toBe(false);
+
+  // Another project is its own read and never borrows the first project's facts.
+  await mount(fake.client, { id: "t3", projectId: "p2" });
+  expect(fake.sectionSnapshot.mock.calls.map((call) => call[0])).toEqual([
+    { section: "accounts", projectId: "p1", limit: 1 },
+    { section: "accounts", projectId: "p2", limit: 1 },
+  ]);
+  expect(off(button("Fill with AI"))).toBe(true);
+  expect(element.querySelector(".inbox-note")?.textContent).toBe(
+    "Add verified facts for this project first.",
+  );
+
+  // A conversation without a project reads no facts at all.
+  await mount(fake.client, { id: "t4", projectId: undefined });
+  expect(fake.sectionSnapshot).toHaveBeenCalledTimes(2);
 });
 
 it("restores the exact reply draft after leaving and reopening the conversation", async () => {
@@ -471,7 +521,7 @@ it("shows suggestion progress and protects the editor while AI text is pending",
   await act(async () => button("Fill with AI").click());
   expect(button("Fill with AI").getAttribute("aria-busy")).toBe("true");
   expect(editor().disabled).toBe(true);
-  expect(element.querySelector(".inbox-note")?.textContent).not.toContain("Sending");
+  expect(element.textContent).not.toContain("Sending");
   await act(async () => finish({ text: "Prepared reply", factIds: ["f1"] }));
   await flush();
   expect(editor().disabled).toBe(false);
@@ -547,7 +597,15 @@ it("allows editing a genuinely refused preparation and preserves its text", asyn
   await mount(fake.client);
   await type("Correct this draft");
   await click(button("Send"));
-  expect(element.textContent).toContain("Draft preview changed.");
+  // #679 keeps the Host refusal behind Details while showing an actionable summary.
+  expect(element.querySelector('[role="alert"]')?.textContent).toContain(
+    "Reply preparation could not finish. Retry the same reply or edit its draft.",
+  );
+  expect(document.body.textContent).not.toContain("Draft preview changed.");
+  await click(button("Details"));
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "Draft preview changed.",
+  );
   expect(fake.writes().some((call) => call.action === "replies.send")).toBe(false);
   await click(button("Edit reply"));
   expect(editor().disabled).toBe(false);

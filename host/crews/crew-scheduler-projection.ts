@@ -163,14 +163,64 @@ export async function readCrewDefinitions(store: HostStore): Promise<CrewDefault
   return JSON.parse(String(row.value)) as CrewDefaultsState;
 }
 
+/** What a full read saw: each run's row position and stored payload, used to write back only what changed. */
+type ReadSnapshot = { total: number; ordinals: Map<string, number>; payloads: Map<string, string> };
+const snapshots = new WeakMap<object, ReadSnapshot>();
+
 export async function readCrewState(store: HostStore): Promise<CrewState> {
   return store.db.scope(async () => {
     const row = await store.db.prepare("SELECT value FROM metadata WHERE key=?").get(stateKey);
     if (!row) throw new Error("Crew storage is unavailable");
     const state = JSON.parse(String(row.value));
-    const rows = await store.db.prepare("SELECT payload FROM crew_runs_v2 ORDER BY ordinal").all();
-    return { ...state, runs: rows.map((entry) => JSON.parse(String(entry.payload)) as CrewRun) };
+    const rows = await store.db
+      .prepare("SELECT ordinal,run_id,payload FROM crew_runs_v2 ORDER BY ordinal")
+      .all();
+    const runs = rows.map((entry) => JSON.parse(String(entry.payload)) as CrewRun);
+    const result: CrewState = { ...state, runs };
+    // Only a contiguous layout can be written back row by row; otherwise the full path repairs it.
+    if (rows.every((entry, index) => Number(entry.ordinal) === index)) {
+      const snapshot: ReadSnapshot = {
+        total: rows.length,
+        ordinals: new Map(rows.map((entry, index) => [String(entry.run_id), index])),
+        payloads: new Map(rows.map((entry) => [String(entry.run_id), String(entry.payload)])),
+      };
+      snapshots.set(result, snapshot);
+      for (const run of runs) snapshots.set(run, snapshot);
+    }
+    return result;
   });
+}
+
+/** The read this state descends from, found through the state itself or any run still carried over. */
+function snapshotOf(state: CrewState): ReadSnapshot | undefined {
+  return snapshots.get(state) ?? state.runs.map((run) => snapshots.get(run)).find(Boolean);
+}
+
+/**
+ * Persists runs that differ from the read they came from, touching only those rows. Returns false when
+ * the run list was reordered, shrunk or never read from the table, so the caller rewrites it in full.
+ */
+async function writeChangedRuns(store: HostStore, runs: CrewRun[], snapshot: ReadSnapshot) {
+  let known = 0;
+  for (let ordinal = 0; ordinal < runs.length; ordinal++) {
+    const at = snapshot.ordinals.get(runs[ordinal].id);
+    if (at === undefined ? ordinal < snapshot.total : at !== ordinal) return false;
+    if (at !== undefined) known++;
+  }
+  if (known !== snapshot.total) return false;
+  for (let ordinal = 0; ordinal < runs.length; ordinal++) {
+    const run = runs[ordinal];
+    const payload = JSON.stringify(run);
+    if (snapshot.payloads.get(run.id) === payload) continue;
+    // Another writer moved or added a row since this read: never overwrite a different run.
+    const row = await store.db
+      .prepare("SELECT run_id FROM crew_runs_v2 WHERE ordinal=?")
+      .get(ordinal);
+    if (row ? row.run_id !== run.id : ordinal < snapshot.total)
+      throw new Error("Crew run changed; retry");
+    await saveRun(store, ordinal, run);
+  }
+  return true;
 }
 
 export async function writeCrewState(store: HostStore, state: CrewState): Promise<void> {
@@ -181,6 +231,8 @@ export async function writeCrewState(store: HostStore, state: CrewState): Promis
   await store.db
     .prepare("UPDATE metadata SET value=? WHERE key=? AND value<>?")
     .run(JSON.stringify(rest), stateKey, JSON.stringify(rest));
+  const snapshot = snapshotOf(state);
+  if (snapshot && (await writeChangedRuns(store, runs, snapshot))) return;
   const existing = await store.db
     .prepare("SELECT ordinal,payload FROM crew_runs_v2 ORDER BY ordinal")
     .all();

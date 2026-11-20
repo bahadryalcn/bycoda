@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { HostStore } from "../../store";
 import {
   AUDIENCE_SCHEMA_KEY,
+  PERSON_EMAIL_INDEX_KEY,
   SYSTEM_COMMENTERS_LIST_ID,
   SYSTEM_COMMENTERS_RULE_ID,
   SocialAudienceStore,
@@ -209,6 +210,53 @@ describe("audience migration", () => {
     expect((await audience.listPeople({ limit: 200 })).items).toEqual(people.items);
     expect(await audience.listLists()).toHaveLength(2);
     expect(await audience.findSuppressions({ personId: "person-c2" })).toHaveLength(1);
+  });
+});
+
+describe("e-mail index and membership lookups", () => {
+  const email = (address: string) => ({ address, source: "manual" as const, verified: false });
+
+  it("finds people by exact address and follows edits and deletes", async () => {
+    const { audience } = await fixture();
+    await audience.putPerson(person("p-1", { emails: [email("a@x.com"), email("a@x.com")] }));
+    await audience.putPerson(person("p-2", { emails: [email("a@x.com"), email("b@x.com")] }));
+    await audience.putPerson(person("p-3", { emails: [email("c@x.com")] }));
+    expect(await audience.findPersonIdsByEmail(["a@x.com"])).toEqual(["p-1", "p-2"]);
+    expect(await audience.findPersonIdsByEmail(["b@x.com", "c@x.com"])).toEqual(["p-2", "p-3"]);
+    expect(await audience.findPersonIdsByEmail(["A@x.com"])).toEqual([]);
+    await audience.putPerson(person("p-1", { emails: [email("z@x.com")] }));
+    expect(await audience.findPersonIdsByEmail(["a@x.com"])).toEqual(["p-2"]);
+    await audience.deletePerson("p-2");
+    expect(await audience.findPersonIdsByEmail(["a@x.com", "b@x.com"])).toEqual([]);
+  });
+
+  it("rebuilds the index for people stored before it existed", async () => {
+    const { store, audience } = await fixture();
+    await audience.putPerson(person("p-1", { emails: [email("a@x.com")] }));
+    await store.db.prepare("DELETE FROM social_person_emails").run();
+    await store.db.prepare("DELETE FROM social_settings WHERE key=?").run(PERSON_EMAIL_INDEX_KEY);
+    expect(await audience.findPersonIdsByEmail(["a@x.com"])).toEqual([]);
+    await audience.initialize();
+    expect(await audience.findPersonIdsByEmail(["a@x.com"])).toEqual(["p-1"]);
+    expect(await audience.getSetting(PERSON_EMAIL_INDEX_KEY)).toBe("1");
+  });
+
+  it("lists only static lists that hold any of the people", async () => {
+    const { store, audience } = await fixture();
+    const list = (id: string, kind: "static" | "dynamic") =>
+      audience.putList({ id, name: id, kind, projectIds: [], createdAt: 1 });
+    await list("s-1", "static");
+    await list("s-2", "static");
+    await list("s-3", "static");
+    await list("d-1", "dynamic");
+    await audience.addMembers("s-1", ["p-1"], { source: "test", at: 1 });
+    await audience.addMembers("s-2", ["p-1", "p-2"], { source: "test", at: 1 });
+    await audience.addMembers("s-3", ["p-9"], { source: "test", at: 1 });
+    await store.db
+      .prepare("INSERT INTO social_list_members VALUES (?,?,?,?)")
+      .run("d-1", "p-1", 1, "test");
+    expect(await audience.staticListIdsHolding(["p-1", "p-2"])).toEqual(["s-1", "s-2"]);
+    expect(await audience.staticListIdsHolding([])).toEqual([]);
   });
 });
 
@@ -451,5 +499,86 @@ describe("enrollments by person and store transactions", () => {
       }),
     ).rejects.toThrow("stop the transaction");
     expect(await audience.getSetting("tx-probe")).toBeUndefined();
+  });
+});
+
+describe("reply stats and AI action window", () => {
+  it("counts contacted and replied people in one aggregate over the full history", async () => {
+    const { audience } = await fixture();
+    const add = (personId: string, direction: "inbound" | "outbound", at: number, id: string) =>
+      audience.addInteraction({
+        id,
+        personId,
+        accountId: "x1",
+        platform: "x",
+        kind: "comment",
+        at,
+        direction,
+      });
+    // p1: outbound at 150, reply at 200.
+    await add("p1", "outbound", 150, "p1-out");
+    await add("p1", "inbound", 200, "p1-in");
+    // p2: outbound with no reply.
+    await add("p2", "outbound", 160, "p2-out");
+    // p3: outbound only before the window, so not contacted.
+    await add("p3", "outbound", 50, "p3-out");
+    // p4: inbound only, so not contacted.
+    await add("p4", "inbound", 300, "p4-in");
+    // p5: inbound before the first outbound does not count as a reply.
+    await add("p5", "inbound", 130, "p5-in");
+    await add("p5", "outbound", 160, "p5-out");
+    // p6: the reply is older than 100 newer rows, so only a full-history read finds it.
+    await add("p6", "outbound", 150, "p6-out");
+    await add("p6", "inbound", 200, "p6-in");
+    for (let index = 0; index < 100; index++) {
+      await add("p6", "outbound", 1_000 + index, `p6-noise-${index}`);
+    }
+    expect(await audience.replyStats(["p1", "p2", "p3", "p4", "p5", "p6"], 100)).toEqual({
+      contacted: 4,
+      replied: 2,
+    });
+    expect(await audience.replyStats([], 100)).toEqual({ contacted: 0, replied: 0 });
+  });
+
+  it("reads one thread or contact by id and only the threads of the given handles", async () => {
+    const { store, audience } = await fixture();
+    const insert = store.db.prepare("INSERT INTO social_records VALUES (?,?,?)");
+    const rows: [string, string, unknown][] = [
+      ["contact", "c-ana", { id: "c-ana", accountId: "x1", platformId: "ana", name: "Ana" }],
+      ["contact", "c-bo", { id: "c-bo", accountId: "x1", platformId: "bo", name: "Bo" }],
+      ["contact", "c-ana-y", { id: "c-ana-y", accountId: "y1", platformId: "ana", name: "Ana" }],
+      ["thread", "t-ana", { id: "t-ana", accountId: "x1", contactId: "c-ana", events: [] }],
+      ["thread", "t-bo", { id: "t-bo", accountId: "x1", contactId: "c-bo", events: [] }],
+      ["thread", "t-ana-y", { id: "t-ana-y", accountId: "y1", contactId: "c-ana-y", events: [] }],
+    ];
+    for (const [kind, id, value] of rows) await insert.run(kind, id, JSON.stringify(value));
+    expect(await audience.getThread("t-bo")).toMatchObject({ id: "t-bo" });
+    expect(await audience.getThread("c-bo")).toBeUndefined();
+    expect(await audience.getContact("c-bo")).toMatchObject({ platformId: "bo" });
+    const found = await audience.threadsForHandles("x1", ["ana"]);
+    expect(found.map((item) => item.thread.id)).toEqual(["t-ana"]);
+    expect(found[0].contact.id).toBe("c-ana");
+    expect(await audience.threadsForHandles("x1", [])).toEqual([]);
+  });
+
+  it("filters the AI action log by since before paging, newest first", async () => {
+    const { audience } = await fixture();
+    const action = (id: string, at: number): AiAction => ({
+      id,
+      at,
+      actor: "owner",
+      accountId: "x1",
+      action: "replies.send",
+      summary: id,
+      status: "done",
+    });
+    await audience.putAiAction(action("a", 1));
+    await audience.putAiAction(action("b", 2));
+    await audience.putAiAction(action("c", 3));
+    const first = await audience.listAiActions({ since: 2, limit: 1 });
+    expect(first.items.map((item) => item.id)).toEqual(["c"]);
+    const second = await audience.listAiActions({ since: 2, cursor: first.next, limit: 1 });
+    expect(second.items.map((item) => item.id)).toEqual(["b"]);
+    expect(second.next).toBeUndefined();
   });
 });

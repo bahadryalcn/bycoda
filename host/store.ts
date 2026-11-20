@@ -91,7 +91,19 @@ export { blockRevisions } from "./sessions/block-revisions";
 // A machine can register over a hundred projects, and the phone reads them all every few seconds;
 // the row budget below bounds memory, so this count must not evict projects a poll still needs.
 const SUMMARY_PROJECTS = 512;
-const CACHED_SESSIONS = 32;
+const SUMMARY_ROWS = 100000;
+// The 64 MiB weight budget in `remember` bounds memory. At 32 entries, listing one parent's
+// subagent runs (30 children on a real Host) evicted the working set on every poll, and each
+// miss re-parsed a snapshot or started a read helper process (a measured Host stall source).
+const CACHED_SESSIONS = 128;
+type SummaryEntry = {
+  version: number;
+  external: number;
+  rows: Map<string, HostSessionSummary>;
+  /** Stored summary JSON each row was read from or written as; a row without one is reparsed. */
+  raw: Map<string, string>;
+  sorted?: HostSessionSummary[];
+};
 // Original request signatures compact after a week. Compact fences (the replay answer) are
 // deleted only after their request id leaves the replay horizon (see command-receipt-retention).
 const RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -236,6 +248,23 @@ export type HostAuthorityChange = Readonly<{
   phase: "host-active" | "aborted";
   projectId?: string;
 }>;
+
+type SessionStateMetadata = Pick<
+  HostSession,
+  "projectId" | "revision" | "status" | "authorityGeneration" | "createdAt"
+> & { desktop: boolean };
+
+function stateMetadataOf(value: HostSession): SessionStateMetadata {
+  return {
+    projectId: value.projectId,
+    revision: value.revision,
+    status: value.status,
+    desktop: value.desktop != null,
+    authorityGeneration: value.authorityGeneration,
+    createdAt: value.createdAt ?? value.updatedAt,
+  };
+}
+
 export class HostStore {
   private readonly desktopCommandInstance = randomUUID();
   private readonly authorityContexts = new AsyncLocalStorage<ReadonlyMap<string, number>>();
@@ -309,10 +338,7 @@ export class HostStore {
   // treat returned values as immutable.
   private cache = new Map<string, HostSession>();
   private cacheWeights = new Map<string, number>();
-  private stateMetadata = new Map<
-    string,
-    { revision: number; status: HostSession["status"]; desktop: boolean }
-  >();
+  private stateMetadata = new Map<string, SessionStateMetadata>();
   private receiptWrites = 0;
   // token -> data_version at the moment its device row was last seen.
   private authCache = new Map<string, { version: number; expires: number }>();
@@ -350,6 +376,8 @@ export class HostStore {
     else this.committedChangeVersion++;
   }
   readonly changes = new ChangeSignal();
+  /** Moves only when a project is registered; list reads reuse the registry until then. */
+  projectRegistryVersion = 0;
   captureSnapshot(destination: string): Promise<HostSnapshotManifest> {
     return captureHostSnapshot({
       database: this.db,
@@ -432,15 +460,24 @@ export class HostStore {
   }
   private projectVersions = new Map<string, number>();
   readonly versions = new SessionChangeVersions();
-  private summaryRows = new Map<
-    string,
-    {
-      version: number;
-      external: number;
-      rows: Map<string, HostSessionSummary>;
-      sorted?: HostSessionSummary[];
-    }
-  >();
+  private summaryRows = new Map<string, SummaryEntry>();
+  /** Total cached rows, kept in step with `summaryRows` so eviction never rescans the cache. */
+  private summaryRowCount = 0;
+  private setSummaryRows(projectId: string, entry: SummaryEntry): void {
+    this.dropSummaryRows(projectId);
+    this.summaryRows.set(projectId, entry);
+    this.summaryRowCount += entry.rows.size;
+  }
+  private dropSummaryRows(projectId: string): void {
+    const entry = this.summaryRows.get(projectId);
+    if (!entry) return;
+    this.summaryRows.delete(projectId);
+    this.summaryRowCount -= entry.rows.size;
+  }
+  private clearSummaryRows(): void {
+    this.summaryRows.clear();
+    this.summaryRowCount = 0;
+  }
   /** Patch one streamed row instead of reparsing the project's entire history. */
   private async savedSummary(value: HostSession): Promise<void> {
     if (this.closePromise) return;
@@ -460,10 +497,13 @@ export class HostStore {
       entry.version + step !== this.projectVersion(value.projectId) ||
       entry.external !== (await this.dataVersion())
     ) {
-      this.summaryRows.delete(value.projectId);
+      this.dropSummaryRows(value.projectId);
       return;
     }
+    const before = entry.rows.size;
     entry.rows.set(value.session.id, summary(value));
+    entry.raw.delete(value.session.id);
+    this.summaryRowCount += entry.rows.size - before;
     entry.version = this.projectVersion(value.projectId);
     entry.sorted = undefined;
   }
@@ -546,7 +586,7 @@ export class HostStore {
     this.versions.clearPending();
     this.versions.forgetListed();
     this.cache.clear();
-    this.summaryRows.clear();
+    this.clearSummaryRows();
     this.cacheWeights.clear();
     this.stateMetadata.clear();
     this.clearAuthCache();
@@ -579,7 +619,7 @@ export class HostStore {
   private dropCaches(): void {
     this.cache.clear();
     this.cacheWeights.clear();
-    this.summaryRows.clear();
+    this.clearSummaryRows();
     this.stateMetadata.clear();
     this.versions.forgetListed();
     this.bumpChangeVersion();
@@ -600,6 +640,7 @@ export class HostStore {
         BEGIN SELECT RAISE(ABORT, 'Session was deleted; start a new conversation.'); END;
       CREATE TABLE IF NOT EXISTS session_journal (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, revision INTEGER NOT NULL, metadata TEXT NOT NULL, block_ids TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS session_journal_blocks (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, block_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id,block_id));
+      CREATE TABLE IF NOT EXISTS conversation_image_budget (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, used INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, signature TEXT NOT NULL, receipt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS session_pin_receipts (operation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, project_id TEXT NOT NULL, request_hash TEXT NOT NULL, result TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS desktop_command_delivery (
@@ -624,6 +665,7 @@ export class HostStore {
         UNIQUE(repository_id, branch_ref)
       );
       CREATE INDEX IF NOT EXISTS managed_workspaces_project ON managed_workspaces(project_id, environment_id);
+      CREATE INDEX IF NOT EXISTS managed_workspaces_owner ON managed_workspaces(owner_kind, owner_id);
       CREATE TABLE IF NOT EXISTS workspace_operations (
         id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, kind TEXT NOT NULL,
         idempotency_key TEXT NOT NULL, phase TEXT NOT NULL, payload TEXT NOT NULL,
@@ -754,9 +796,10 @@ export class HostStore {
   /** Narrow mirror of the `sessions` columns that checkpoints change. The
    * `sessions` row holds the multi-MB snapshot, and SQLite rewrites a whole
    * row (and its overflow pages) whenever any column in it changes, so
-   * streaming checkpoints only touch this table. Hard saves write both, which
-   * keeps the `sessions` columns reasonably current for an older host binary
-   * after a rollback. Existing columns are never dropped or renamed. */
+   * streaming checkpoints only touch this table. Hard saves write `sessions`
+   * and session_state_update mirrors them here, which keeps the `sessions`
+   * columns reasonably current for an older host binary after a rollback.
+   * Existing columns are never dropped or renamed. */
   private async migrateSessionState(): Promise<void> {
     await this.db.exec(`CREATE TABLE IF NOT EXISTS session_state (
       id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
@@ -774,11 +817,20 @@ export class HostStore {
     );
     CREATE INDEX IF NOT EXISTS session_state_project ON session_state(project_id);
     CREATE INDEX IF NOT EXISTS session_state_project_recent ON session_state(project_id, updated_at DESC, id);
+    CREATE INDEX IF NOT EXISTS session_state_running ON session_state(status) WHERE status='running';
     CREATE INDEX IF NOT EXISTS session_state_workspace_probe ON session_state(json_extract(summary, '$.workspaceId')) WHERE json_valid(summary);
     CREATE INDEX IF NOT EXISTS session_state_worktree_probe ON session_state(json_extract(summary, '$.worktreeCwd')) WHERE json_valid(summary) AND json_extract(summary, '$.worktreeCwd') IS NOT NULL;`);
     await initializeWorkspaceSessionProbe(this.db);
     // An older host binary only knows `sessions`; these keep the side table
-    // current when it writes there after a rollback.
+    // current when it writes there after a rollback. The update trigger covers
+    // every column a save changes, so saves write `sessions` only.
+    const sessionStateUpdate = `CREATE TRIGGER session_state_update AFTER UPDATE OF snapshot, project_id, summary, revision, updated_at, status, has_desktop, provider_session_id, harness, session_cwd, shell_running ON sessions BEGIN
+      UPDATE session_state SET project_id=NEW.project_id, summary=NEW.summary, revision=NEW.revision, updated_at=NEW.updated_at, status=NEW.status,
+        has_desktop=COALESCE(NEW.has_desktop, 0), desktop_updated_at=json_extract(NEW.snapshot, '$.desktop.updatedAt'),
+        provider_session_id=NEW.provider_session_id, harness=NEW.harness,
+        session_cwd=NEW.session_cwd, shell_running=COALESCE(NEW.shell_running, 0)
+      WHERE id=NEW.id;
+    END;`;
     await this.db
       .exec(`CREATE TRIGGER IF NOT EXISTS session_state_insert AFTER INSERT ON sessions BEGIN
       INSERT OR REPLACE INTO session_state
@@ -786,13 +838,23 @@ export class HostStore {
       VALUES (NEW.id, NEW.project_id, NEW.summary, NEW.revision, NEW.updated_at, NEW.status, COALESCE(NEW.has_desktop, 0),
         json_extract(NEW.snapshot, '$.desktop.updatedAt'),
         NEW.provider_session_id, NEW.harness, NEW.session_cwd, COALESCE(NEW.shell_running, 0));
-    END;
-    CREATE TRIGGER IF NOT EXISTS session_state_update AFTER UPDATE OF summary, revision, updated_at, status, has_desktop, provider_session_id, harness, session_cwd, shell_running ON sessions BEGIN
-      UPDATE session_state SET summary=NEW.summary, revision=NEW.revision, updated_at=NEW.updated_at, status=NEW.status,
-        has_desktop=COALESCE(NEW.has_desktop, 0), provider_session_id=NEW.provider_session_id, harness=NEW.harness,
-        session_cwd=NEW.session_cwd, shell_running=COALESCE(NEW.shell_running, 0)
-      WHERE id=NEW.id;
     END;`);
+    // CREATE TRIGGER IF NOT EXISTS would keep an older definition, so replace it
+    // once. The backfill runs in the same transaction, so a crash cannot leave
+    // the new trigger without the rows it was meant to correct.
+    const installedUpdate = await this.db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='session_state_update'")
+      .get();
+    if (!String(installedUpdate?.sql ?? "").includes("desktop_updated_at")) {
+      await this.db.exec(`BEGIN;
+        DROP TRIGGER IF EXISTS session_state_update;
+        ${sessionStateUpdate}
+        UPDATE session_state SET
+          project_id = (SELECT project_id FROM sessions WHERE sessions.id = session_state.id),
+          desktop_updated_at = (SELECT json_extract(snapshot, '$.desktop.updatedAt') FROM sessions WHERE sessions.id = session_state.id)
+        WHERE id IN (SELECT id FROM sessions);
+        COMMIT;`);
+    }
     // Idempotent: also adopts rows added while the triggers did not exist.
     await this.db.exec(`INSERT OR IGNORE INTO session_state
       (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running)
@@ -801,85 +863,100 @@ export class HostStore {
         provider_session_id, harness, session_cwd, shell_running
       FROM sessions WHERE id NOT IN (SELECT id FROM session_state)`);
   }
+  /**
+   * `admitBefore` is the caller's original ingress deadline (`monotonicNow()` instant). It is
+   * enforced at every point before BEGIN — the FIFO queue, scope entry and the durability
+   * selection — so an expired request throws `StoreAdmissionExpiredError` having written
+   * nothing. It never interrupts a transaction that already began.
+   */
   async transaction<T>(
     fn: () => T | Promise<T>,
     durability?: "critical" | "checkpoint",
+    options?: { admitBefore?: number },
   ): Promise<T> {
-    return this.db.scope(() => {
-      if (this.inTransaction) {
-        // Unspecified nested calls inherit the outer durability; explicit critical stays strict.
-        if (durability === "critical") this.db.assertCriticalScope();
-        return Promise.resolve().then(fn);
-      }
-      const run = async () => {
-        // Each run owns the shared transaction state only while its epoch is current; an
-        // abandoned run that resumes later must not touch what the next holder built.
-        const epoch = this.transactionEpoch;
-        await this.db.exec("BEGIN IMMEDIATE");
-        const mutationVersion = this.db.dataMutationVersion;
-        const pendingBefore = new Map<string, PendingWrite | undefined>();
-        this.pendingBefore = pendingBefore;
-        this.inTransaction = true;
-        this.transactionChanges = 0;
-        this.transactionProjectChanges.clear();
-        this.versions.clearPending();
-        this.flushedInTransaction = [];
-        try {
-          const value = await fn();
-          await this.db.exec("COMMIT");
-          if (epoch !== this.transactionEpoch) throw new Error("Transaction was abandoned.");
-          this.committedChangeVersion += this.transactionChanges;
-          for (const [id, count] of this.transactionProjectChanges)
-            this.projectVersions.set(id, (this.projectVersions.get(id) ?? 0) + count);
-          const changed = this.transactionProjectChanges.size > 0 || this.versions.pendingChanged;
-          this.versions.commit();
-          this.pendingBefore = undefined;
-          this.inTransaction = false;
-          this.transactionChanges = 0;
-          this.transactionProjectChanges.clear();
-          this.flushedInTransaction = [];
-          const effects = this.transactionEffects.committed();
-          this.db.outsideScope(() => {
-            if (this.db.dataMutationVersion !== mutationVersion) this.publishChanges();
-            try {
-              if (changed) this.changes.notify();
-            } catch (error) {
-              console.error("Committed change notification failed:", error);
-            }
-            for (const effect of effects) dispatchCommittedEffect(effect);
-          });
-          return value;
-        } catch (error) {
-          if (epoch !== this.transactionEpoch) throw error;
-          this.pendingBefore = undefined;
-          this.inTransaction = false;
+    const admitBefore = options?.admitBefore;
+    this.db.assertAdmissionOpen(admitBefore);
+    return this.db.scope(
+      () => {
+        if (this.inTransaction) {
+          // Unspecified nested calls inherit the outer durability; explicit critical stays strict.
+          if (durability === "critical") this.db.assertCriticalScope();
+          return Promise.resolve().then(fn);
+        }
+        this.db.assertAdmissionOpen(admitBefore);
+        const run = async () => {
+          // Each run owns the shared transaction state only while its epoch is current; an
+          // abandoned run that resumes later must not touch what the next holder built.
+          const epoch = this.transactionEpoch;
+          this.db.assertAdmissionOpen(admitBefore);
+          await this.db.exec("BEGIN IMMEDIATE");
+          const mutationVersion = this.db.dataMutationVersion;
+          const pendingBefore = new Map<string, PendingWrite | undefined>();
+          this.pendingBefore = pendingBefore;
+          this.inTransaction = true;
           this.transactionChanges = 0;
           this.transactionProjectChanges.clear();
           this.versions.clearPending();
-          this.versions.forgetListed();
-          this.cache.clear();
-          this.summaryRows.clear();
-          this.cacheWeights.clear();
-          this.stateMetadata.clear();
-          this.clearAuthCache();
-          this.transactionEffects.commit = [];
           this.flushedInTransaction = [];
-          for (const [id, entry] of pendingBefore) {
-            clearTimeout(this.pending.get(id)?.timer);
-            this.pending.delete(id);
-            if (entry) this.restore(entry);
-          }
           try {
-            await this.db.exec("ROLLBACK");
-          } catch (rollbackError) {
-            console.error("Could not roll back host transaction:", rollbackError);
+            const value = await fn();
+            await this.db.exec("COMMIT");
+            if (epoch !== this.transactionEpoch) throw new Error("Transaction was abandoned.");
+            this.committedChangeVersion += this.transactionChanges;
+            for (const [id, count] of this.transactionProjectChanges)
+              this.projectVersions.set(id, (this.projectVersions.get(id) ?? 0) + count);
+            const changed = this.transactionProjectChanges.size > 0 || this.versions.pendingChanged;
+            this.versions.commit();
+            this.pendingBefore = undefined;
+            this.inTransaction = false;
+            this.transactionChanges = 0;
+            this.transactionProjectChanges.clear();
+            this.flushedInTransaction = [];
+            const effects = this.transactionEffects.committed();
+            this.db.outsideScope(() => {
+              if (this.db.dataMutationVersion !== mutationVersion) this.publishChanges();
+              try {
+                if (changed) this.changes.notify();
+              } catch (error) {
+                console.error("Committed change notification failed:", error);
+              }
+              for (const effect of effects) dispatchCommittedEffect(effect);
+            });
+            return value;
+          } catch (error) {
+            if (epoch !== this.transactionEpoch) throw error;
+            this.pendingBefore = undefined;
+            this.inTransaction = false;
+            this.transactionChanges = 0;
+            this.transactionProjectChanges.clear();
+            this.versions.clearPending();
+            this.versions.forgetListed();
+            this.cache.clear();
+            this.clearSummaryRows();
+            this.cacheWeights.clear();
+            this.stateMetadata.clear();
+            this.clearAuthCache();
+            this.transactionEffects.commit = [];
+            this.flushedInTransaction = [];
+            for (const [id, entry] of pendingBefore) {
+              clearTimeout(this.pending.get(id)?.timer);
+              this.pending.delete(id);
+              if (entry) this.restore(entry);
+            }
+            try {
+              await this.db.exec("ROLLBACK");
+            } catch (rollbackError) {
+              console.error("Could not roll back host transaction:", rollbackError);
+            }
+            this.transactionEffects.rolledBack();
+            throw error;
           }
-          this.transactionEffects.rolledBack();
-          throw error;
-        }
-      };
-      return durability !== "checkpoint" ? this.db.durableScope(run) : run();
-    });
+        };
+        return durability !== "checkpoint" ? this.db.durableScope(run) : run();
+      },
+      undefined,
+      { admitBefore },
+    );
   }
   /** Derived readers may use uncommitted rows, but must not publish them in a
    * revision cache: a rollback followed by another write can reuse a revision. */
@@ -899,6 +976,31 @@ export class HostStore {
       });
     }
   }
+  /** Counts one generated image against a conversation's budget. The check and the increment share
+   * one transaction, and the row cascades with its session. Returns undefined when the budget is spent. */
+  reserveConversationImage(sessionId: string, limit: number): Promise<number | undefined> {
+    return this.transaction(async () => {
+      const row = await this.db
+        .prepare("SELECT used FROM conversation_image_budget WHERE session_id=?")
+        .get(sessionId);
+      const used = row ? Number(row.used) : 0;
+      if (used >= limit) return undefined;
+      await this.db
+        .prepare(
+          "INSERT INTO conversation_image_budget (session_id, used) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET used=excluded.used",
+        )
+        .run(sessionId, used + 1);
+      return used + 1;
+    });
+  }
+  conversationImagesUsed(sessionId: string): Promise<number> {
+    return this.db.storeScope(async () => {
+      const row = await this.db
+        .prepare("SELECT used FROM conversation_image_budget WHERE session_id=?")
+        .get(sessionId);
+      return row ? Number(row.used) : 0;
+    });
+  }
   async managedWorkspace(id: string): Promise<ManagedWorkspace | null> {
     return this.db.storeScope(async () => {
       const row = await this.db
@@ -912,6 +1014,8 @@ export class HostStore {
       projectId?: string;
       repositoryId?: string;
       environmentId?: string;
+      ownerKind?: string;
+      ownerId?: string;
       states?: WorkspaceState[];
     } = {},
   ): Promise<ManagedWorkspace[]> {
@@ -922,6 +1026,8 @@ export class HostStore {
         ["project_id", filter.projectId],
         ["repository_id", filter.repositoryId],
         ["environment_id", filter.environmentId],
+        ["owner_kind", filter.ownerKind],
+        ["owner_id", filter.ownerId],
       ])
         if (value !== undefined) {
           clauses.push(`${column}=?`);
@@ -1389,7 +1495,10 @@ export class HostStore {
       await this.db
         .prepare("INSERT OR IGNORE INTO projects VALUES (?, ?, ?)")
         .run(randomUUID(), cwd, name);
-      this.afterCommit(() => this.changes.notify());
+      this.afterCommit(() => {
+        this.projectRegistryVersion++;
+        this.changes.notify();
+      });
       return (await this.db
         .prepare("SELECT * FROM projects WHERE cwd=?")
         .get(cwd)) as unknown as HostProject;
@@ -1482,8 +1591,12 @@ export class HostStore {
     return this.remember(value);
   }
   /** Cold cancellable reads parse outside the SQL queue; see `prefetchColdSession`. */
-  private prefetchCold(id: string, signal: AbortSignal): Promise<void> {
-    return prefetchColdSession({
+  private async cancellableSessionRead<T>(
+    id: string,
+    signal: AbortSignal,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const oversized = await prefetchColdSession({
       id,
       signal,
       path: this.sessionReadPath,
@@ -1492,12 +1605,12 @@ export class HostStore {
       resident: (key) => this.pending.has(key) || this.cache.has(key),
       admit: (value) => this.remember(value),
     });
+    // A transcript over the child's reply budget is parsed in the queue, as an
+    // unsignalled read is; the signal still cancels the queued work.
+    return oversized ? this.db.scope(work, signal) : this.withReadCancellation(signal, work);
   }
   async session(id: string, signal?: AbortSignal): Promise<HostSession> {
-    if (signal)
-      return this.prefetchCold(id, signal).then(() =>
-        this.withReadCancellation(signal, () => this.session(id)),
-      );
+    if (signal) return this.cancellableSessionRead(id, signal, () => this.session(id));
     return this.db.storeScope(async () => {
       const value = await this.find(id);
       if (!value) throw new Error("Session not found on this machine");
@@ -1523,6 +1636,24 @@ export class HostStore {
       const row = await this.db.prepare("SELECT status FROM session_state WHERE id=?").get(id);
       if (!row) throw sessionNotFound();
       return String(row.status);
+    });
+  }
+  /** Latest turn id of a session from its state row; never loads or parses the transcript. */
+  async sessionRunId(id: string): Promise<string | undefined> {
+    return this.db.storeScope(async () => {
+      const pending = this.pending.get(id);
+      if (pending) return pending.value.runId;
+      // Legacy rows without a summary fall back to the snapshot inside SQLite.
+      const row = await this.db
+        .prepare(
+          `SELECT CASE WHEN summary IS NULL THEN
+            (SELECT json_extract(snapshot, '$.runId') FROM sessions WHERE sessions.id=session_state.id)
+            ELSE json_extract(summary, '$.runId') END AS run_id
+          FROM session_state WHERE id=?`,
+        )
+        .get(id);
+      if (!row) throw sessionNotFound();
+      return typeof row.run_id === "string" && row.run_id ? row.run_id : undefined;
     });
   }
   /** Fresh durable or pending identity for deferred startup binding. */
@@ -1582,25 +1713,28 @@ export class HostStore {
         .prepare("SELECT id, revision, summary FROM session_state WHERE project_id=?")
         .all(projectId);
       const list: HostSessionSummary[] = [];
+      const raws = new Map<string, string>();
       let refreshComplete = true;
       // Bound concurrent transcript reads and write legacy projections in small CAS batches.
       for (let offset = 0; offset < rows.length; offset += 32) {
         const updates: { id: string; revision: number; old: string | null; value: string }[] = [];
         const batch = await Promise.all(
           rows.slice(offset, offset + 32).map(async (row) => {
-            const unwritten = this.pending.get(String(row.id));
+            const id = String(row.id);
+            const unwritten = this.pending.get(id);
             if (unwritten) {
               if (unwritten.value.authorityGeneration !== undefined)
-                await assertHostAuthority(
-                  this.db,
-                  String(row.id),
-                  unwritten.value.authorityGeneration,
-                );
+                await assertHostAuthority(this.db, id, unwritten.value.authorityGeneration);
               return summary(unwritten.value);
             }
-            const cached = row.summary
-              ? (JSON.parse(String(row.summary)) as HostSessionSummary)
-              : undefined;
+            const stored = row.summary == null ? undefined : String(row.summary);
+            // An unchanged stored summary reuses the parsed copy the cache already holds.
+            const reused =
+              stored !== undefined && entry?.raw.get(id) === stored
+                ? entry?.rows.get(id)
+                : undefined;
+            const cached =
+              reused ?? (stored ? (JSON.parse(stored) as HostSessionSummary) : undefined);
             // `model` is "" for the provider default; only its absence marks a summary
             // written before the field existed.
             if (
@@ -1610,15 +1744,19 @@ export class HostStore {
               cached.providerHistory !== undefined &&
               cached.delegationParent !== undefined &&
               cached.unread !== undefined
-            )
+            ) {
+              if (stored !== undefined) raws.set(id, stored);
               return cached;
-            const fresh = summary(await this.session(String(row.id)));
+            }
+            const fresh = summary(await this.session(id));
+            const value = JSON.stringify(fresh);
             updates.push({
-              id: String(row.id),
+              id,
               revision: Number(row.revision),
-              old: row.summary == null ? null : String(row.summary),
-              value: JSON.stringify(fresh),
+              old: stored ?? null,
+              value,
             });
+            raws.set(id, value);
             return fresh;
           }),
         );
@@ -1645,22 +1783,19 @@ export class HostStore {
       if (
         !this.inTransaction &&
         refreshComplete &&
-        list.length <= 100000 &&
+        list.length <= SUMMARY_ROWS &&
         version === this.projectVersion(projectId) &&
         external === (await this.dataVersion())
       ) {
-        this.summaryRows.delete(projectId);
-        this.summaryRows.set(projectId, {
+        this.setSummaryRows(projectId, {
           version,
           external,
           rows: new Map(list.map((item) => [item.id, item])),
+          raw: raws,
           sorted: list,
         });
-        while (
-          this.summaryRows.size > SUMMARY_PROJECTS ||
-          [...this.summaryRows.values()].reduce((count, item) => count + item.rows.size, 0) > 100000
-        )
-          this.summaryRows.delete(this.summaryRows.keys().next().value!);
+        while (this.summaryRows.size > SUMMARY_PROJECTS || this.summaryRowCount > SUMMARY_ROWS)
+          this.dropSummaryRows(this.summaryRows.keys().next().value!);
       }
       return list.slice();
     });
@@ -1678,11 +1813,33 @@ export class HostStore {
       return false;
     });
   }
+  /** Exact run identities for admission, with unwritten state taking precedence. */
+  async runningSessionRuns(): Promise<{ sessionId: string; projectId: string; runId: string }[]> {
+    return this.db.storeScope(async () => {
+      // Only legacy rows without a summary need to extract the ID from the snapshot in SQLite.
+      const rows = await this.db
+        .prepare(
+          `SELECT id, project_id, CASE WHEN summary IS NULL THEN
+            (SELECT json_extract(snapshot, '$.runId') FROM sessions WHERE sessions.id=st.id)
+            ELSE json_extract(summary, '$.runId') END AS run_id
+          FROM session_state st WHERE status='running'`,
+        )
+        .all();
+      const runs: { sessionId: string; projectId: string; runId: string }[] = [];
+      for (const row of rows) {
+        const sessionId = String(row.id);
+        if (!this.pending.has(sessionId) && typeof row.run_id === "string" && row.run_id)
+          runs.push({ sessionId, projectId: String(row.project_id), runId: row.run_id });
+      }
+      for (const [sessionId, { value }] of this.pending) {
+        if (value.status === "running" && value.runId)
+          runs.push({ sessionId, projectId: value.projectId, runId: value.runId });
+      }
+      return runs;
+    });
+  }
   async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
-    if (signal)
-      return this.prefetchCold(id, signal).then(() =>
-        this.withReadCancellation(signal, () => this.sync(id, revision)),
-      );
+    if (signal) return this.cancellableSessionRead(id, signal, () => this.sync(id, revision));
     return this.db.storeScope(async () => {
       const value = await this.session(id);
       const { blockRevisions, ...snapshot } = value;
@@ -1912,24 +2069,10 @@ export class HostStore {
       return (await this.sessionStateMetadata(id))?.revision;
     });
   }
-  async sessionStateMetadata(
-    id: string,
-  ): Promise<{ revision: number; status: HostSession["status"]; desktop: boolean } | undefined> {
+  async sessionStateMetadata(id: string): Promise<SessionStateMetadata | undefined> {
     return this.db.storeScope(async () => {
-      const pending = this.pending.get(id)?.value;
-      if (pending)
-        return {
-          revision: pending.revision,
-          status: pending.status,
-          desktop: pending.desktop != null,
-        };
-      const cached = this.cache.get(id);
-      if (cached)
-        return {
-          revision: cached.revision,
-          status: cached.status,
-          desktop: cached.desktop != null,
-        };
+      const resident = this.pending.get(id)?.value ?? this.cache.get(id);
+      if (resident) return stateMetadataOf(resident);
       const known = this.stateMetadata.get(id);
       if (known) {
         this.stateMetadata.delete(id);
@@ -1937,34 +2080,35 @@ export class HostStore {
         return known;
       }
       const row = await this.db
-        .prepare("SELECT revision,status,has_desktop FROM session_state WHERE id=?")
+        .prepare(
+          `SELECT project_id, revision, status, has_desktop,
+            json_extract(summary, '$.authorityGeneration') AS authority_generation,
+            COALESCE(json_extract(summary, '$.createdAt'), updated_at) AS created_at
+          FROM session_state WHERE id=?`,
+        )
         .get(id);
       if (!row) return undefined;
-      const value = {
+      const value: SessionStateMetadata = {
+        projectId: String(row.project_id),
         revision: Number(row.revision),
         status: row.status as HostSession["status"],
         desktop: !!Number(row.has_desktop),
+        authorityGeneration:
+          row.authority_generation == null ? undefined : Number(row.authority_generation),
+        createdAt: row.created_at == null ? undefined : Number(row.created_at),
       };
       this.rememberStateMetadata(id, value);
       return value;
     });
   }
-  private rememberStateMetadata(
-    id: string,
-    value: { revision: number; status: HostSession["status"]; desktop: boolean },
-  ) {
+  private rememberStateMetadata(id: string, value: SessionStateMetadata) {
     this.stateMetadata.delete(id);
     this.stateMetadata.set(id, value);
     while (this.stateMetadata.size > 4096)
       this.stateMetadata.delete(this.stateMetadata.keys().next().value!);
   }
   private updateStateMetadata(value: HostSession) {
-    const update = () =>
-      this.rememberStateMetadata(value.session.id, {
-        revision: value.revision,
-        status: value.status,
-        desktop: value.desktop != null,
-      });
+    const update = () => this.rememberStateMetadata(value.session.id, stateMetadataOf(value));
     if (this.inTransaction) this.transactionEffects.commit.push(update);
     else update();
   }
@@ -2055,6 +2199,8 @@ export class HostStore {
                   accepted,
                   previous,
                   (event as { type?: string } | null)?.type === "session.metadata",
+                  options.blockChanges,
+                  previousIndex?.positions,
                 ),
                 ...(authorityGeneration === undefined ? {} : { authorityGeneration }),
                 // Older snapshots have no creation time. Preserve their last recorded
@@ -2222,7 +2368,8 @@ export class HostStore {
     value: HostSession,
     rows: { revision: number; event: unknown }[],
   ): Promise<void> {
-    // Both tables store the same summary: build and serialize it once per save.
+    // session_state mirrors this row through session_state_update, so the save
+    // writes `sessions` alone and the summary is serialized once.
     const summaryJson = JSON.stringify(summary(value));
     const run = async () => {
       await this.db
@@ -2243,25 +2390,6 @@ export class HostStore {
           value.revision,
           value.updatedAt,
           value.status,
-          value.session.providerSessionId || null,
-          value.session.harness ?? null,
-          value.session.cwd ?? null,
-          indexBlocks(value.session.blocks).root.shell > 0 ? 1 : 0,
-        );
-      await this.db
-        .prepare(
-          `INSERT INTO session_state (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, summary=excluded.summary, revision=excluded.revision, updated_at=excluded.updated_at, status=excluded.status, has_desktop=excluded.has_desktop, desktop_updated_at=excluded.desktop_updated_at, provider_session_id=excluded.provider_session_id, harness=excluded.harness, session_cwd=excluded.session_cwd, shell_running=excluded.shell_running`,
-        )
-        .run(
-          value.session.id,
-          value.projectId,
-          summaryJson,
-          value.revision,
-          value.updatedAt,
-          value.status,
-          value.desktop == null ? 0 : 1,
-          value.desktop?.updatedAt ?? null,
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
@@ -2581,6 +2709,7 @@ export class HostStore {
         this.cache.delete(id);
         this.transactionEffects.commit.push(() => {
           this.stateMetadata.delete(id);
+          this.versions.retire(id);
         });
         this.bumpChangeVersion();
         this.touchProject(projectId);

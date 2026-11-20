@@ -305,6 +305,84 @@ it("movement pointer mode ignores entry and repeated stationary coordinates afte
   expect(rows[0].hasAttribute("data-active")).toBe(true);
 });
 
+const moveAt = (row: Element, clientX: number, clientY: number) =>
+  act(async () =>
+    row.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX, clientY })),
+  );
+
+it("keeps the keyboard highlight by default when scrolling slides a row under a resting pointer", async () => {
+  await act(async () =>
+    root.render(
+      createElement(PickerList, {
+        label: "Choices",
+        options: choices,
+        value: "a",
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  const rows = container.querySelectorAll('[role="option"]');
+  await act(async () => rows[1].dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+  expect(rows[0].hasAttribute("data-active")).toBe(true);
+  await moveAt(rows[0], 10, 20);
+  await key(container.querySelector('[role="listbox"]')!, "ArrowDown");
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+  // The scroll re-dispatches pointer events at the unchanged coordinates onto the row now under it.
+  await moveAt(rows[0], 10, 20);
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+  // A real pointer move, even within the same row, still takes the highlight.
+  await moveAt(rows[0], 10, 24);
+  expect(rows[0].hasAttribute("data-active")).toBe(true);
+});
+
+it("shares the pointer guard across rows so a stationary pointer cannot highlight a different row", async () => {
+  await act(async () =>
+    root.render(
+      createElement(PickerList, {
+        label: "Choices",
+        options: choices,
+        value: "a",
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  const rows = container.querySelectorAll('[role="option"]');
+  await moveAt(rows[0], 10, 20);
+  await moveAt(rows[1], 10, 20);
+  expect(rows[1].hasAttribute("data-active")).toBe(false);
+  expect(rows[0].hasAttribute("data-active")).toBe(true);
+  await moveAt(rows[1], 11, 20);
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+});
+
+it("keeps the keyboard highlight in a searchable select while a resting pointer sees rows scroll under it", async () => {
+  const options = [
+    { value: "a", label: "Alpha" },
+    { value: "b", label: "Beta" },
+    { value: "c", label: "Gamma" },
+  ];
+  await act(async () =>
+    root.render(
+      createElement(SearchableSelect, {
+        label: "Searchable",
+        value: "a",
+        options,
+        searchable: false,
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  const rows = document.querySelectorAll('[role="option"]');
+  await moveAt(rows[0], 5, 5);
+  await key(document.querySelector('[role="listbox"]')!, "ArrowDown");
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+  await moveAt(rows[0], 5, 5);
+  expect(rows[1].hasAttribute("data-active")).toBe(true);
+  await moveAt(rows[2], 5, 9);
+  expect(rows[2].hasAttribute("data-active")).toBe(true);
+});
+
 it("keeps the external editor and native list ref while a caller controls active IDs", async () => {
   const list = createRef<HTMLUListElement>(),
     onKeyDown = vi.fn();

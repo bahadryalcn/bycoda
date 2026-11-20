@@ -6,7 +6,7 @@ import {
   cloneProgress,
   cloneRepository,
   runGitClone,
-  type PathExists,
+  type CloneFolderPorts,
   type SpawnProcess,
 } from "./clone";
 
@@ -31,7 +31,11 @@ export function createProjectsService<Project>(dependencies: {
   list: (options: ProjectsReadOptions) => readonly Project[] | Promise<readonly Project[]>;
   directoryPorts?: ProjectDirectoryPorts;
   /** Process launch and existence check for `git clone`; domains never import platform modules. */
-  clonePorts?: { spawn: SpawnProcess; exists: PathExists };
+  clonePorts?: {
+    spawn: SpawnProcess;
+    killTree: (pid: number) => void;
+    folders: CloneFolderPorts;
+  };
 }) {
   const ports = () => {
     if (!dependencies.directoryPorts) throw new Error("Project directory access is unavailable");
@@ -97,8 +101,18 @@ export function createProjectsService<Project>(dependencies: {
       const result = await cloneRepository(
         params,
         parent.path,
-        (url, dest, options) => runGitClone(url, dest, { ...options, spawn: runtime().spawn }),
-        (path) => runtime().exists(path),
+        (url, dest, options) =>
+          runGitClone(url, dest, {
+            ...options,
+            spawn: runtime().spawn,
+            killTree: runtime().killTree,
+          }),
+        // Resolved per call so a missing port cannot fail before the URL is validated.
+        {
+          exists: (path) => runtime().folders.exists(path),
+          claim: (path) => runtime().folders.claim(path),
+          remove: (path) => runtime().folders.remove(path),
+        },
       );
       await assertDomainAuthority(context);
       return result;

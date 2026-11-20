@@ -193,7 +193,7 @@
   padding: 8px 20px;
 }
 
-@media (max-width: 900px) {
+@container assistant-room (max-width: 900px) {
   .layout {
     grid-template-columns: 180px minmax(0, 1fr);
   }

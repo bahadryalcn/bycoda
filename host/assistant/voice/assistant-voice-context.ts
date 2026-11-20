@@ -172,7 +172,7 @@ export class HostAssistantVoiceContexts {
   ) {
     this.ready = store.ready.then(async () => {
       await store.db.exec(
-        "CREATE TABLE IF NOT EXISTS assistant_voice_contexts(id TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE IF NOT EXISTS assistant_voice_context_versions(context_id TEXT NOT NULL,version INTEGER NOT NULL,value TEXT NOT NULL,PRIMARY KEY(context_id,version));CREATE TABLE IF NOT EXISTS assistant_voice_generations(id TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE IF NOT EXISTS assistant_voice_context_requests(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,context_id TEXT NOT NULL);CREATE TABLE IF NOT EXISTS assistant_voice_disclosures(id TEXT PRIMARY KEY,request_key TEXT NOT NULL UNIQUE,value TEXT NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS assistant_voice_contexts(id TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE IF NOT EXISTS assistant_voice_context_versions(context_id TEXT NOT NULL,version INTEGER NOT NULL,value TEXT NOT NULL,PRIMARY KEY(context_id,version));CREATE TABLE IF NOT EXISTS assistant_voice_generations(id TEXT PRIMARY KEY,value TEXT NOT NULL);CREATE TABLE IF NOT EXISTS assistant_voice_context_requests(id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,context_id TEXT NOT NULL);CREATE TABLE IF NOT EXISTS assistant_voice_disclosures(id TEXT PRIMARY KEY,request_key TEXT NOT NULL UNIQUE,value TEXT NOT NULL);CREATE INDEX IF NOT EXISTS assistant_voice_contexts_owner ON assistant_voice_contexts(json_extract(value,'$.ownerMessageId'),json_extract(value,'$.updatedAt') DESC);",
       );
       // A restarted process cannot prove whether a prior tool result was disclosed.
       const rows = await store.db

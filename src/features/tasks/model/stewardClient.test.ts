@@ -8,13 +8,14 @@ import {
   boardStewardsFromHost,
   draftFromSteward,
   hostStewardFromDraft,
+  hostStewardSnapshot,
   isStewardProposal,
   newStewardDraft,
   runStewardNow,
   saveSteward,
   setStewardEnabled,
 } from "./stewardClient";
-import { TASK_AGENT_ERROR } from "./taskClient";
+import { taskClientErrors } from "./taskClientErrors";
 
 // Mock the entry the client imports: the model module sits in an import cycle, so spreading
 // its original can hand the client the real transport before the mock exists.
@@ -143,7 +144,7 @@ describe("steward client", () => {
         "s1",
         "p-app",
       ),
-    ).toThrow(TASK_AGENT_ERROR);
+    ).toThrow(taskClientErrors.agent());
   });
 
   it("recognizes a declinable suggestion", () => {
@@ -151,6 +152,76 @@ describe("steward client", () => {
     expect(isStewardProposal({ source: "steward", status: "queued" })).toBe(false);
     expect(isStewardProposal({ source: undefined, status: "todo" })).toBe(false);
     expect(isStewardProposal({ source: "goal", status: "todo" })).toBe(false);
+  });
+});
+
+describe("retrying a steward create", () => {
+  it("sends the same steward id when a draft is saved again after a lost reply", async () => {
+    vi.mocked(machineProjects).mockResolvedValue([{ id: "p-app", cwd: "G:/app", name: "app" }]);
+    vi.mocked(remoteRequest)
+      .mockRejectedValueOnce(new Error("Request timed out"))
+      .mockImplementationOnce(
+        async (_machineId, _method, params) => (params as { steward: HostSteward }).steward,
+      );
+    const draft = newStewardDraft("G:/app", "claude", "claude:test");
+
+    await expect(saveSteward([local, mac], draft)).rejects.toThrow("Request timed out");
+    await saveSteward([local, mac], draft);
+
+    const sentIds = vi
+      .mocked(remoteRequest)
+      .mock.calls.map(([, , params]) => (params as { steward: HostStewardInput }).steward.id);
+    expect(sentIds).toHaveLength(2);
+    expect(sentIds[1]).toBe(sentIds[0]);
+  });
+
+  it("gives a new create intent its own steward id", () => {
+    const first = newStewardDraft("G:/app", "claude", "claude:test");
+    const second = newStewardDraft("G:/app", "claude", "claude:test");
+    expect(first.creationId).toBeTruthy();
+    expect(second.creationId).not.toBe(first.creationId);
+  });
+});
+
+describe("steward edit conflicts", () => {
+  const projects = [{ id: "p-app", cwd: "/work/app", name: "app" }];
+
+  it("sends the steward as the editor opened it, without the board's fields", async () => {
+    vi.mocked(machineProjects).mockResolvedValue(projects);
+    vi.mocked(remoteRequest).mockResolvedValue(stored);
+    const [opened] = boardStewardsFromHost(local, projects, [stored]);
+    const draft = { ...draftFromSteward(opened), focus: "My edit" };
+
+    await saveSteward([local], draft);
+
+    const { steward } = vi.mocked(remoteRequest).mock.calls[0][2] as {
+      steward: HostStewardInput & { expectedConfiguration?: HostSteward };
+    };
+    expect(steward.focus).toBe("My edit");
+    expect(steward.expectedConfiguration).toEqual(stored);
+    expect(steward.expectedConfiguration).not.toHaveProperty("machineId");
+    expect(steward.expectedConfiguration).not.toHaveProperty("cwd");
+  });
+
+  it("keeps a create free of expectedConfiguration and on its creation id", async () => {
+    vi.mocked(machineProjects).mockResolvedValue(projects);
+    vi.mocked(remoteRequest).mockResolvedValue(stored);
+    const draft = newStewardDraft("/work/app", "claude", "claude:test");
+
+    await saveSteward([local], draft);
+
+    const { steward } = vi.mocked(remoteRequest).mock.calls[0][2] as {
+      steward: HostStewardInput & { expectedConfiguration?: HostSteward };
+    };
+    expect(steward.id).toBe(draft.creationId);
+    expect(steward).not.toHaveProperty("expectedConfiguration");
+  });
+
+  it("keeps the opened copy across form edits so a rejected save can be retried", () => {
+    const [opened] = boardStewardsFromHost(local, projects, [stored]);
+    const draft = draftFromSteward(opened);
+    expect({ ...draft, focus: "Changed" }.expectedConfiguration).toBe(draft.expectedConfiguration);
+    expect(draft.expectedConfiguration).not.toBe(opened);
   });
 });
 
@@ -263,11 +334,14 @@ describe("confirmed steward mutation results", () => {
         action === "run"
           ? { stewardId: stored.id }
           : {
-              steward: hostStewardFromDraft(
-                { ...draftFromSteward(old), enabled: false },
-                stored.id,
-                stored.projectId,
-              ),
+              steward: {
+                ...hostStewardFromDraft(
+                  { ...draftFromSteward(old), enabled: false },
+                  stored.id,
+                  stored.projectId,
+                ),
+                expectedConfiguration: hostStewardSnapshot(old),
+              },
             },
         false,
         true,

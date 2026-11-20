@@ -10,6 +10,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useLocale, useT } from "../../../shared/i18n";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   keepSessionChanges,
   sessionCheckpointStatus,
@@ -17,6 +18,12 @@ import {
   undoSessionChanges,
   type CheckpointFile,
 } from "../model/checkpoint";
+import {
+  classifyCheckpointFailure,
+  RECORDING_POLL,
+  recordingPollDelay,
+  type RecordingPhase,
+} from "../model/checkpointRecording";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { invalidateProjectFiles } from "../../files/public/fileIndex";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
@@ -49,6 +56,17 @@ export function orchestrationLocksUndo(runs: readonly UndoLockingRun[], sessionI
   );
 }
 
+/** `saved` marks a failed checkpoint record, which Refresh re-reads but cannot repair. */
+type ReviewError = { message: string; saved: boolean };
+type LoadOutcome = "loaded" | "recording" | "failed" | "skipped";
+
+function describeReviewError(cause: unknown, explicit: boolean): ReviewError | null {
+  const message = explicit
+    ? presentRemoteError(cause, { explicit: true })
+    : presentRemoteError(cause);
+  return message ? { message, saved: classifyCheckpointFailure(cause) === "failed" } : null;
+}
+
 export function SessionReview(props: Props) {
   return <SessionReviewContent key={JSON.stringify([props.sessionId, props.cwd])} {...props} />;
 }
@@ -66,11 +84,18 @@ function SessionReviewContent({
   const [files, setFiles] = useState<CheckpointFile[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [acting, setActing] = useState<"keep" | "undo" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [recording, setRecording] = useState(false);
+  const [error, setError] = useState<ReviewError | null>(null);
+  const [recording, setRecording] = useState<RecordingPhase>("idle");
   const [refreshing, setRefreshing] = useState(false);
   const [statusStale, setStatusStale] = useState(false);
   const request = useRef(0);
+  // Mirrors `recording` for async callbacks; the poll count survives phase changes within one wait.
+  const recordingRef = useRef<RecordingPhase>("idle");
+  const pollAttempts = useRef(0);
+  const setPhase = useStableCallback((next: RecordingPhase) => {
+    recordingRef.current = next;
+    setRecording(next);
+  });
   const actingRef = useRef(false);
   const filesRef = useRef(files);
   useLayoutEffect(() => {
@@ -80,39 +105,52 @@ function SessionReviewContent({
   if (busy && files.length > 0) setFiles([]);
   if (expanded && files.length <= 3) setExpanded(false);
 
-  const load = useCallback(() => {
-    if (actingRef.current) return;
-    const generation = ++request.current;
-    if (!cwd || cwd === "~") {
-      setFiles([]);
-      return;
-    }
-    setRefreshing(true);
-    return sessionCheckpointStatus(sessionId, cwd)
-      .then((status) => {
-        if (generation !== request.current) return;
-        setFiles(status.files);
-        setStatusStale(false);
-        setError(null);
-        setRecording(false);
-      })
-      .catch((cause: unknown) => {
-        if (generation === request.current) {
+  /** `restart` is an explicit refresh: it starts a fresh bounded wait even after one stalled. */
+  const load = useCallback(
+    (options?: { restart?: boolean }): Promise<LoadOutcome> => {
+      if (actingRef.current) return Promise.resolve("skipped");
+      const generation = ++request.current;
+      if (!cwd || cwd === "~") {
+        setFiles([]);
+        return Promise.resolve("skipped");
+      }
+      setRefreshing(true);
+      return sessionCheckpointStatus(sessionId, cwd)
+        .then((status): LoadOutcome => {
+          if (generation !== request.current) return "skipped";
+          setFiles(status.files);
+          setStatusStale(false);
+          setError(null);
+          setPhase("idle");
+          pollAttempts.current = 0;
+          return "loaded";
+        })
+        .catch((cause: unknown): LoadOutcome => {
+          if (generation !== request.current) return "skipped";
           setStatusStale(true);
-          const message = cause instanceof Error ? cause.message : String(cause);
-          const pending = message.includes("Workspace checkpoint is still recording this turn");
-          setRecording(pending);
-          setError(pending ? null : (presentRemoteError(cause) ?? null));
-        }
-      })
-      .finally(() => {
-        if (generation === request.current) setRefreshing(false);
-      });
-  }, [sessionId, cwd]);
+          if (classifyCheckpointFailure(cause) === "recording") {
+            setError(null);
+            if (options?.restart || recordingRef.current === "idle") {
+              pollAttempts.current = 0;
+              setPhase("waiting");
+            }
+            return "recording";
+          }
+          setPhase("idle");
+          setError(describeReviewError(cause, false));
+          return "failed";
+        })
+        .finally(() => {
+          if (generation === request.current) setRefreshing(false);
+        });
+    },
+    [sessionId, cwd, setPhase],
+  );
 
   useEffect(() => {
     if (!enabled || busy) return;
-    load();
+    pollAttempts.current = 0;
+    void load();
     let timer: number | null = null;
     const schedule = () => {
       if (timer != null) window.clearTimeout(timer);
@@ -142,36 +180,77 @@ function SessionReviewContent({
     };
   }, [enabled, load, sessionId, busy]);
 
+  // While the Host records the turn, poll with backoff, a capped attempt count and no polling
+  // while the page is hidden; after the cap the card stalls until an explicit refresh or a return
+  // to the visible window starts a new bounded wait.
   useEffect(() => {
-    if (!recording || !enabled || busy) return;
+    if (recording === "idle" || !enabled || busy) return;
     let cancelled = false;
-    let timer: number;
-    const poll = async () => {
-      await load();
-      if (!cancelled) timer = window.setTimeout(() => void poll(), 1000);
+    let timer: number | null = null;
+    const stop = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = null;
     };
-    timer = window.setTimeout(() => void poll(), 1000);
+    const arm = () => {
+      stop();
+      if (cancelled || document.hidden) return;
+      timer = window.setTimeout(tick, recordingPollDelay(pollAttempts.current));
+    };
+    function tick() {
+      timer = null;
+      pollAttempts.current += 1;
+      void load().then(() => {
+        // `load` settled the phase unless the checkpoint is still recording (or the poll was superseded).
+        if (cancelled || recordingRef.current !== "waiting") return;
+        if (pollAttempts.current >= RECORDING_POLL.maxAttempts) setPhase("stalled");
+        else arm();
+      });
+    }
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else if (recordingRef.current === "stalled") void load({ restart: true });
+      else if (timer == null) arm();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    if (recording === "waiting") arm();
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [recording, enabled, busy, load]);
+  }, [recording, enabled, busy, load, setPhase]);
 
   // The card represents the result of a turn. Keep it out of the live turn,
   // then refresh and reveal it once the turn has settled.
-  if (!enabled || busy || (files.length === 0 && !error && !recording)) return null;
-  if (recording) {
+  if (!enabled || busy || (files.length === 0 && !error && recording === "idle")) return null;
+  if (recording === "waiting") {
     return (
       <LoadingText delay={false} className="px-3 py-2">
         {t("Loading changes…")}
       </LoadingText>
     );
   }
+  if (recording === "stalled") {
+    return (
+      <Alert tone="warning">
+        {t("Still recording this turn's changes…")}{" "}
+        <Button
+          variant="ghost"
+          type="button"
+          onClick={() => void load({ restart: true })}
+          loading={refreshing}
+          disabled={refreshing}
+        >
+          {t("Refresh")}
+        </Button>
+      </Alert>
+    );
+  }
 
   const errorNotice = error ? (
     <Alert tone="danger">
-      {error}{" "}
-      {error.startsWith("Workspace checkpoint failed:") && (
+      {error.message}{" "}
+      {error.saved && (
         <p>
           {t(
             "This turn's changes could not be fully recorded. Fix the reported error before starting a new turn. Refresh only checks the saved checkpoint.",
@@ -181,11 +260,11 @@ function SessionReviewContent({
       <Button
         variant="ghost"
         type="button"
-        onClick={load}
+        onClick={() => void load({ restart: true })}
         loading={refreshing}
         disabled={refreshing}
       >
-        {t(error.startsWith("Workspace checkpoint failed:") ? "Refresh" : "Retry")}
+        {t(error.saved ? "Refresh" : "Retry")}
       </Button>
     </Alert>
   ) : null;
@@ -220,7 +299,7 @@ function SessionReviewContent({
         if (generation === request.current) setFiles(status.files);
       })
       .catch((cause: unknown) => {
-        if (generation === request.current) setError(presentRemoteError(cause, { explicit: true }));
+        if (generation === request.current) setError(describeReviewError(cause, true));
       })
       .finally(() => {
         actingRef.current = false;

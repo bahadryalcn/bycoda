@@ -142,11 +142,6 @@
   min-width: 0;
 }
 
-.social-detail-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 .social-detail-topic {
   display: inline-flex;
   align-items: center;

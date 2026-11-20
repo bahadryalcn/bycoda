@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cancelProjectSearch, searchProject, type ProjectSearchMatch } from "./search";
 
@@ -46,7 +47,7 @@ export function useProjectFileSearch(enabled: boolean, cwd: string, query: strin
               setState((previous) => ({
                 key,
                 result: previous.key === key ? previous.result : EMPTY,
-                error: cause instanceof Error ? cause.message : String(cause),
+                error: errorText(cause),
                 loading: false,
                 attempt: retryTick,
               }));

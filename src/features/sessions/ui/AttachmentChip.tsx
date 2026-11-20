@@ -10,7 +10,7 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
-import { Link, X } from "../../../shared/ui/icons";
+import { Download, Link, X } from "../../../shared/ui/icons";
 import { tokenLabel } from "../model/attachmentTokens";
 import { attachmentPresentation, formatAttachmentSize } from "../model/attachmentPresentation";
 import { AttachmentIdentity } from "./AttachmentIdentity";
@@ -25,6 +25,7 @@ import {
   AttachmentFilePreview,
   canOpenFileAttachment,
   sameFilePreviewSource,
+  useSaveAttachmentCopy,
 } from "./AttachmentFilePreview";
 
 type Props = {
@@ -44,6 +45,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
   const canOpenFile = canOpenFileAttachment(attachment);
+  const saveCopy = useSaveAttachmentCopy(attachment);
   const [thumbnailBox, nearViewport] = useNearViewport<HTMLDivElement>();
   const {
     src: preview,
@@ -227,6 +229,32 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
             ) : null}
           </>
         )}
+        {saveCopy.canSave ? (
+          <Button
+            motion="none"
+            {...motionAttributes({ transition: "opacity" })}
+            {...actionContentAttributes(
+              { phase: "interaction", hide: "opacity", focus: "within" },
+              "absolute bottom-1 right-1",
+            )}
+            size="sm"
+            iconOnly
+            label={t("Save {p0}", { p0: attachment.name })}
+            variant="secondary"
+            shape="pill"
+            type="button"
+            tooltip={t("Download")}
+            aria-label={t("Save {p0}", { p0: attachment.name })}
+            disabled={saveCopy.saving}
+            loading={saveCopy.saving}
+            onClick={(event) => {
+              event.stopPropagation();
+              saveCopy.save();
+            }}
+          >
+            <Download className="icon-xs" strokeWidth={2} />
+          </Button>
+        ) : null}
         {onRemove ? (
           <Button
             motion="none"
@@ -255,6 +283,11 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
       {previewError ? (
         <InlineMessage tone="warning" live="assertive">
           {t("Preview unavailable. Try again.")}
+        </InlineMessage>
+      ) : null}
+      {saveCopy.error ? (
+        <InlineMessage tone="warning" live="assertive">
+          {saveCopy.error}
         </InlineMessage>
       ) : null}
       {attachment.browserAnnotation ? (

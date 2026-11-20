@@ -4,6 +4,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 import {
   forwardRuntimeId,
   listSshForwards,
+  retrySshForwardsNow,
   startSshForward,
   stopSshForward,
   validateForwardRule,
@@ -45,6 +46,9 @@ describe("SSH forwarding contracts", () => {
     });
     await stopSshForward("one:rule");
     expect(invoke).toHaveBeenLastCalledWith("ssh_forward_stop", { id: "one:rule" });
+    // Nudging reconnects carries no rule: native only ends waits it already owns.
+    await retrySshForwardsNow();
+    expect(invoke).toHaveBeenLastCalledWith("ssh_forward_retry_now");
   });
   it("validates dynamic loopback rules without copying a hidden local destination", async () => {
     const rule = {

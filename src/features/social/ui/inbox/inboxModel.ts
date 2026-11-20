@@ -68,3 +68,8 @@ export type MessageLine = {
   direction: "inbound" | "outbound";
   text: string;
 };
+
+/** Loaded timeline pages (newest first, as fetched) as one oldest-first list. */
+export function timelineLines(pages: readonly { events: readonly MessageLine[] }[]): MessageLine[] {
+  return [...pages].reverse().flatMap((page) => page.events);
+}

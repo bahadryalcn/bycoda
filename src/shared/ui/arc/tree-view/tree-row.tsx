@@ -9,6 +9,11 @@ export type TreeRowProps = ComponentPropsWithRef<"button"> & {
   selected?: boolean;
   cut?: boolean;
   dropTarget?: boolean;
+  /**
+   * Roving tabindex. `true` makes this row the tree's single Tab stop, `false` keeps it out of the Tab order
+   * while arrow-key navigation can still focus it. Leave unset for a row that manages its own `tabIndex`.
+   */
+  tabStop?: boolean;
 };
 
 /** Native tree row presentation adapted from the free Arc tree-view item. */
@@ -17,6 +22,7 @@ export function TreeRow({
   selected,
   cut = false,
   dropTarget = false,
+  tabStop,
   className,
   style,
   role = "treeitem",
@@ -28,6 +34,7 @@ export function TreeRow({
       type="button"
       {...props}
       role={role}
+      tabIndex={props.tabIndex ?? (tabStop === undefined ? undefined : tabStop ? 0 : -1)}
       aria-level={props["aria-level"] ?? (role === "treeitem" ? level + 1 : undefined)}
       aria-selected={props["aria-selected"] ?? selected}
       data-tree-cut={cut || undefined}

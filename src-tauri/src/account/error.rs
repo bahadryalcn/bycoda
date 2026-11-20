@@ -61,6 +61,14 @@ impl AccountError {
         )
     }
 
+    /// `reason` is a fixed phrase from the transport layer, never raw error text.
+    pub(crate) fn offline_because(reason: &str) -> Self {
+        Self::new(
+            ErrorKind::Offline,
+            format!("Could not reach bycoda sign-in ({reason}). Check your connection."),
+        )
+    }
+
     pub(crate) fn keychain() -> Self {
         Self::new(
             ErrorKind::Keychain,

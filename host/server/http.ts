@@ -5,8 +5,10 @@ import {
   HOST_PROTOCOL_VERSION,
   protocolMismatchMessage,
 } from "../../src/features/connections/model/protocol";
-import { elapsedSince } from "../../src/shared/lib/time/timestamps";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { AssistantResponseValidationSchema } from "../../src/shared/model/host-contracts/assistant";
+import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects";
+import { getHostRpcMethod } from "../../src/shared/model/host-contracts/methods";
 import { mcpMetricName, perfMetrics } from "../diagnostics/perf-metrics";
 import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
 import { requestingDeviceName } from "../desktop/remoteActivity";
@@ -16,14 +18,35 @@ import { serializedResponse } from "../sync/sync-transfer";
 import { HostVoiceToolDisclosure } from "../voice/voice-tool-disclosure";
 import type { ServerBindings } from "./bindings";
 import { endResponseAndAwaitWrite } from "./http-response-write";
+import { assertResponseFits, HostResultTooLargeError } from "./http-result-limit";
 import type { HttpToolRequest } from "./http-tool-context";
-import { dispatchOwnerRpc } from "./owner-rpc";
-import { body } from "./support";
+import {
+  dispatchOwnerRpc,
+  HostStoppingError,
+  isInternalFailure,
+  OwnerRpcDeadlineError,
+  ownerRpcDeadlineMs,
+} from "./owner-rpc";
+import { body, boundRequestReceive, REQUEST_RECEIVE_TIMEOUT_MS } from "./support";
 import { handleAssistantObservationTools } from "./tools-assistant-observation";
 import { handleConversationTools } from "./tools-conversation-redacted";
 import { handleRuntimeLogsTools } from "./tools-runtime-logs";
 import { handleSocialTools } from "./tools-social";
 import { handleVoiceTools } from "./tools-voice";
+
+/**
+ * A request that names another environment. The structured code lets clients tell this apart
+ * from unrelated errors that only mention "identity changed". The message text stays unchanged
+ * for older clients that still match it.
+ * shortcut: constant lives here until the shared protocol constants (#1082) own it.
+ */
+class HostIdentityMismatchError extends Error {
+  readonly code = "HOST_IDENTITY_MISMATCH";
+  constructor() {
+    super("Host identity changed; reconnect this machine explicitly");
+  }
+}
+
 export function createHttpRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -183,13 +206,17 @@ export function createHttpRuntime(
 ) {
   let closing = false;
   const requests = new Set<Promise<void>>();
+  // Signals of /rpc calls still in flight, aborted when the Host starts closing.
+  const liveRequests = new Set<AbortController>();
   const server = createServer(
-    { requestTimeout: 20_000, headersTimeout: 10_000, maxHeaderSize: 8192 },
+    { requestTimeout: REQUEST_RECEIVE_TIMEOUT_MS, headersTimeout: 10_000, maxHeaderSize: 8192 },
     (request, response) => {
       if (closing) {
         response.writeHead(503).end(JSON.stringify({ error: "Host is stopping." }));
         return;
       }
+      // Shorter receive window until the RPC credential is accepted (see disarmReceive below).
+      const disarmReceive = boundRequestReceive(request);
       const accepted = dependencies.engine.store.db.outsideScope(async () => {
         const mcpMetric = mcpMetricName(request.url ?? "");
         if (mcpMetric) {
@@ -228,17 +255,20 @@ export function createHttpRuntime(
             .end(JSON.stringify({ environmentId: dependencies.engine.store.environmentId }));
           return;
         }
+        // Receipt instant: every wait below, including FIFO storage queueing for the
+        // credential check, is already spent from the request's own deadlines.
+        const ingressAt = monotonicNow();
         let dispatchStarted: number | undefined;
         let dispatchMethod: unknown;
         let deviceEffectAdmitted = false;
         let releaseVoiceTool: (() => void) | undefined;
         let voiceDisclosure: HostVoiceToolDisclosure | undefined;
         let voiceBrowserOwner: string | undefined;
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        let liveAbort: AbortController | undefined;
         const resultScopeReleases: Array<() => void> = [];
         const resultScopeSettlements: Promise<void>[] = [];
-        let voiceToolLog:
-          | { action: string; requestId: string | null; startedAt: number; outcome: string }
-          | undefined;
+        let voiceToolLog: HttpToolRequest["voiceToolLog"];
         try {
           if (await dependencies.bulkHandler(request, response)) return;
           if (await dependencies.mobilePairing.handle(request, response)) return;
@@ -293,6 +323,8 @@ export function createHttpRuntime(
           }
           const tokenHash = tokenIdentity.hash;
           const pollState = { revoked: false };
+          // Accepted credential: the upload may use the server's full receive window.
+          disarmReceive();
           const input = await body(request);
           // Reading a request body yields: a device may have been revoked since
           // the headers arrived. Reject it before dispatching any operation.
@@ -333,14 +365,33 @@ export function createHttpRuntime(
             input.method !== "environment.describe" &&
             input.environmentId !== dependencies.engine.store.environmentId
           )
-            throw new Error("Host identity changed; reconnect this machine explicitly");
+            throw new HostIdentityMismatchError();
           let params =
             input.params && typeof input.params === "object" && !Array.isArray(input.params)
               ? (input.params as Record<string, unknown>)
               : {};
           const transportToken = token;
           const resultAuthorities: Array<() => Promise<boolean>> = [];
+          // Handlers see one signal for the client hanging up before its answer was
+          // written, the dispatcher's per-method deadline and the Host shutting down.
+          const requestAbort = new AbortController();
+          const signal = requestAbort.signal;
+          liveAbort = requestAbort;
+          liveRequests.add(requestAbort);
+          if (closing) requestAbort.abort(new HostStoppingError());
+          else if (response.destroyed) requestAbort.abort();
+          else
+            response.once("close", () => {
+              if (!response.writableEnded) requestAbort.abort();
+            });
+          const deadlineMs = ownerRpcDeadlineMs(String(input.method), params);
+          if (Number.isFinite(deadlineMs))
+            deadline = setTimeout(
+              () => requestAbort.abort(new DOMException("Host RPC deadline", "TimeoutError")),
+              deadlineMs,
+            );
           const domainContext = {
+            ingressAt,
             deviceEffectAdmitted: () => {
               deviceEffectAdmitted = true;
             },
@@ -390,6 +441,7 @@ export function createHttpRuntime(
                 dependencies.tasks.retarget(id, target, autoMerge, owner),
               ),
             authorized: async () => await dependencies.engine.store.authenticated(transportToken),
+            signal,
             closing: () => closing || response.destroyed,
           };
           // Scope the timer to dispatch, including all early returns and failures.
@@ -397,6 +449,10 @@ export function createHttpRuntime(
           dispatchStarted = performance.now();
           dispatchMethod = input.method;
           let result: unknown;
+          const methodHasEffect = hostRpcHasEffect(
+            String(input.method),
+            getHostRpcMethod(String(input.method))?.kind ?? "unknown",
+          );
           const endResult = async (
             value: unknown,
             verify?: () => Promise<void>,
@@ -408,7 +464,10 @@ export function createHttpRuntime(
               : inline === undefined
                 ? JSON.stringify({ result: value })
                 : `{"result":${inline}}`;
+            // After authority: a revoked device gets its 401, never a size hint. Before any
+            // write: the work is done and its receipt kept, so only the answer is withheld.
             await verify?.();
+            assertResponseFits(body, methodHasEffect);
             if (awaitWrite || voiceDisclosure)
               await endResponseAndAwaitWrite(response, body, () => voiceDisclosure?.markSent());
             else response.end(body);
@@ -468,7 +527,9 @@ export function createHttpRuntime(
             );
             if (!(await dependencies.socialPeers.authenticated(token)))
               throw new Error("Peer authority revoked.");
-            response.end(JSON.stringify({ result }));
+            const peerBody = JSON.stringify({ result });
+            assertResponseFits(peerBody, methodHasEffect);
+            response.end(peerBody);
             return;
           }
           if (input.method === "voice.tools.list" || input.method === "voice.tools.call") {
@@ -720,25 +781,44 @@ export function createHttpRuntime(
           } else await finishResult();
         } catch (error) {
           if (voiceToolLog) voiceToolLog.outcome = "error";
+          const internal = isInternalFailure(error);
           if (!response.destroyed && !response.headersSent)
             response
               .writeHead(
-                error instanceof RequestAuthorizationError ||
-                  error instanceof HostDomainAuthorizationError ||
-                  (error instanceof HostDomainOutcomeError &&
-                    (error.cause instanceof RequestAuthorizationError ||
-                      error.cause instanceof HostDomainAuthorizationError))
-                  ? 401
-                  : 400,
+                error instanceof OwnerRpcDeadlineError
+                  ? 504
+                  : error instanceof HostStoppingError
+                    ? 503
+                    : error instanceof RequestAuthorizationError ||
+                        error instanceof HostDomainAuthorizationError ||
+                        (error instanceof HostDomainOutcomeError &&
+                          (error.cause instanceof RequestAuthorizationError ||
+                            error.cause instanceof HostDomainAuthorizationError))
+                      ? 401
+                      : internal
+                        ? 500
+                        : 400,
               )
               .end(
                 JSON.stringify({
-                  error: error instanceof Error ? error.message : "Host request failed",
+                  error:
+                    !internal && error instanceof Error ? error.message : "Host request failed",
                   ...(deviceEffectAdmitted
                     ? { code: "HOST_DEVICE_OPERATION_UNCONFIRMED", delivery: "unknown" }
-                    : error instanceof HostDomainOutcomeError
-                      ? { delivery: error.delivery }
-                      : {}),
+                    : error instanceof OwnerRpcDeadlineError || error instanceof HostStoppingError
+                      ? { code: error.code, delivery: error.delivery }
+                      : error instanceof HostDomainOutcomeError
+                        ? { delivery: error.delivery }
+                        : {}),
+                  ...(error instanceof HostIdentityMismatchError ? { code: error.code } : {}),
+                  // An admitted device effect keeps its own unconfirmed code above.
+                  ...(error instanceof HostResultTooLargeError && !deviceEffectAdmitted
+                    ? {
+                        code: error.code,
+                        maxBytes: error.maxBytes,
+                        ...(error.effect ? { delivery: "unknown" } : {}),
+                      }
+                    : {}),
                   ...(typeof error === "object" &&
                   error !== null &&
                   "code" in error &&
@@ -751,6 +831,8 @@ export function createHttpRuntime(
               );
           else if (!response.destroyed && !response.writableEnded) response.destroy();
         } finally {
+          clearTimeout(deadline);
+          if (liveAbort) liveRequests.delete(liveAbort);
           for (const release of resultScopeReleases) release();
           await Promise.allSettled(resultScopeSettlements);
           if (voiceToolLog)
@@ -758,6 +840,7 @@ export function createHttpRuntime(
               action: voiceToolLog.action,
               requestId: voiceToolLog.requestId,
               elapsedMs: elapsedSince(voiceToolLog.startedAt),
+              ...(voiceToolLog.stage ? { stage: voiceToolLog.stage } : {}),
               outcome:
                 response.destroyed && !response.writableEnded
                   ? "disconnected"
@@ -789,8 +872,13 @@ export function createHttpRuntime(
     get closing() {
       return closing;
     },
+    /**
+     * Shutdown aborts every /rpc call in flight with `HostStoppingError`, so held polls and
+     * unbounded methods answer 503 after the stop grace instead of holding the drain.
+     */
     set closing(value: typeof closing) {
       closing = value;
+      if (value) for (const live of liveRequests) live.abort(new HostStoppingError());
     },
     requests,
     server,

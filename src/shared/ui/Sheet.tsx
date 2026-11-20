@@ -1,12 +1,15 @@
 import { optionalTextAttributes, type TextRoles } from "./Text";
 import {
+  useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
   type Ref,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
@@ -22,7 +25,13 @@ import {
   DIALOG_BODY_PADDING_CLASS_NAME,
   DIALOG_FOOTER_CLASS_NAME,
 } from "./Modal";
-import { OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
+import {
+  OverlayMenuLayer,
+  OverlayParent,
+  hasActiveOverlay,
+  overlayContainsTarget,
+  useOverlay,
+} from "./overlay";
 import { PanelHeader } from "./PanelHeader";
 import { Sash } from "./Sash";
 import styles from "./Sheet.module.css";
@@ -88,7 +97,7 @@ export type SheetProps = {
    * Non-modal: defaults to the sheet itself. `false` (non-modal) leaves focus where it is.
    */
   initialFocus?: string | false;
-  /** Non-modal viewport layer. Defaults to `LAYER.dialog`. */
+  /** Non-modal viewport layer. Defaults to `LAYER.dialog`; menus and tooltips inside stack just above it. */
   layer?: number;
   /** Non-modal viewport: distance from the top and bottom window edges (title and status bars). */
   inset?: { top?: number | string; bottom?: number | string };
@@ -121,6 +130,39 @@ function assign<T>(ref: Ref<T> | undefined, value: T | null) {
 }
 
 const cssSize = (value: number | string) => (typeof value === "number" ? `${value}px` : value);
+
+/**
+ * Container sheets stay off the overlay stack, so they return focus themselves: the control that
+ * had focus when the sheet opened gets it back once the sheet closes or unmounts. Focus that is
+ * lost (body) or still inside the closed sheet is restored; focus the user or another overlay
+ * already moved elsewhere is left alone.
+ */
+function useContainerFocusReturn(sheet: RefObject<HTMLElement | null>, active: boolean) {
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Capture the DOM focus owner before paint and restore it when the sheet closes.
+  useLayoutEffect(() => {
+    const node = sheet.current;
+    if (!active || !node) return;
+    const opener =
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement !== document.body &&
+      !node.contains(document.activeElement)
+        ? document.activeElement
+        : null;
+    if (!opener) return;
+    return () => {
+      // After the commit, so the sheet cannot reclaim focus first and a stacked overlay opened by
+      // the same interaction has already taken it.
+      queueMicrotask(() => {
+        const current = document.activeElement;
+        const lost = !current || current === document.body || current === document.documentElement;
+        if (!lost && !node.contains(current)) return;
+        if (hasActiveOverlay() || !opener.isConnected || opener.closest("[inert], [hidden]"))
+          return;
+        opener.focus({ preventScroll: true });
+      });
+    };
+  }, [sheet, active]);
+}
 
 /**
  * A side or bottom sheet. Modal sheets reuse Modal; both share the body `padding` rule. Non-modal sheets are
@@ -247,6 +289,8 @@ function NonModalSheet({
   // inside are its children and focus returns to the opener. Container panels stay out of it,
   // so a sheet in one pane never takes Escape from another.
   const overlayId = useOverlay(sheet, false, onClose, viewport && open);
+  const inheritedMenuLayer = useContext(OverlayMenuLayer);
+  useContainerFocusReturn(sheet, !viewport && open);
 
   // Container: Escape from anywhere in this pane (or the body) closes the sheet.
   useEffect(() => {
@@ -447,13 +491,19 @@ function NonModalSheet({
     </section>
   );
 
+  // A sheet above the popover layer lifts its own menus and tooltips just above it; one at or
+  // below keeps the inherited floor.
+  const menuLayer =
+    layer > LAYER.popover ? Math.max(inheritedMenuLayer, layer + 1) : inheritedMenuLayer;
   if (viewport)
     return createPortal(
-      <OverlayParent.Provider value={overlayId}>
-        <div inert={!open} data-state={open ? "open" : "closed"} className="contents">
-          {surface}
-        </div>
-      </OverlayParent.Provider>,
+      <OverlayMenuLayer.Provider value={menuLayer}>
+        <OverlayParent.Provider value={overlayId}>
+          <div inert={!open} data-state={open ? "open" : "closed"} className="contents">
+            {surface}
+          </div>
+        </OverlayParent.Provider>
+      </OverlayMenuLayer.Provider>,
       document.body,
     );
   return (

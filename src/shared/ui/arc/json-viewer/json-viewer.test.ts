@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { JsonViewer } from "./json-viewer";
+
+// Assert the current page independently of motion's exit frames.
+vi.mock("motion/react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("motion/react")>()),
+  AnimatePresence: ({ children }: { children: ReactNode }) => children,
+}));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -107,4 +113,55 @@ it("truncates a long string in the row but copies and exposes its full value", a
   expect(copy.tabIndex).toBe(-1);
   await act(async () => copy.click());
   expect(writeText).toHaveBeenCalledWith(long);
+});
+
+it("builds no search index until a query settles and keeps the search input element", async () => {
+  const reads = { count: 0 };
+  const hidden: Record<string, unknown> = {};
+  Object.defineProperty(hidden, "label", {
+    enumerable: true,
+    get() {
+      reads.count += 1;
+      return "Bravo";
+    },
+  });
+  const data = { hidden };
+  const render = (query: string) =>
+    act(async () => root.render(createElement(JsonViewer, { data, query, defaultExpandDepth: 0 })));
+  const input = () => container.querySelector<HTMLInputElement>('input[aria-label="Search JSON"]')!;
+  await render("");
+  const field = input();
+  // A collapsed branch is never read while nobody searches.
+  expect(reads.count).toBe(0);
+  await render("bra");
+  await act(async () => vi.advanceTimersByTime(149));
+  expect(reads.count).toBe(0);
+  await act(async () => vi.advanceTimersByTime(1));
+  expect(reads.count).toBeGreaterThan(0);
+  expect(container.querySelector("mark")?.textContent).toBe("Bra");
+  const branch = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')].find((item) =>
+    item.getAttribute("aria-label")?.startsWith("hidden,"),
+  )!;
+  expect(branch.getAttribute("aria-expanded")).toBe("true");
+  expect(input()).toBe(field);
+  expect(field.value).toBe("bra");
+});
+
+it("keeps long arrays paged and reaches a late match without building the index first", async () => {
+  const data = Array.from({ length: 5000 }, (_, index) => `v${index}x`);
+  const items = () => container.querySelectorAll('[role="treeitem"]').length;
+  const render = (query: string) =>
+    act(async () => root.render(createElement(JsonViewer, { data, query, defaultExpandDepth: 1 })));
+  await render("");
+  // Root, one page of children and the "show more" row.
+  expect(items()).toBe(52);
+  await render("V60X");
+  await act(async () => vi.advanceTimersByTime(150));
+  expect(container.textContent).toContain("1/1");
+  expect(container.querySelector("mark")?.textContent).toBe("v60x");
+  // The page grows only as far as the match: root, 61 children and the "show more" row.
+  expect(items()).toBe(63);
+  await render("");
+  await act(async () => vi.advanceTimersByTime(150));
+  expect(items()).toBe(52);
 });

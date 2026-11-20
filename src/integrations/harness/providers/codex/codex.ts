@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { resumeCodexThread } from "./codexThreadRecovery";
 import {
   queueProviderOperation,
@@ -56,6 +57,7 @@ import {
 import { resolveCodexBinary, spawnChild, watchChild } from "../../core/child";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import { announceSlowProviderStartup } from "../../core/providerStartupStatus";
+import { turnFinishedFollowUpText } from "../../core/providerNotices";
 import { forgetSessionCommands, reportSessionCommands } from "../../core/reportedCommands";
 import { skillDisabled, skillPathKey } from "../../core/skillPolicy";
 import {
@@ -480,8 +482,7 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
     !live.awaitingAsyncAnswers &&
     live.turnDone &&
     live.openAgentRows.size > 0;
-  if (!turnId && !continueParent)
-    throw new Error("The previous turn has finished. Send this follow-up as a new message.");
+  if (!turnId && !continueParent) throw new Error(turnFinishedFollowUpText());
 
   const rpc = await rpcTurnWriter(
     live.handle,
@@ -744,7 +745,9 @@ export async function cancelCodexTurn(
         live.muteUpdates = false;
         live.onEvent({
           type: "status",
-          text: "Could not confirm that the subagents stopped. Retry Stop to verify their outcome.",
+          text: t(
+            "Could not confirm that the subagents stopped. Retry Stop to verify their outcome.",
+          ),
         });
       }
       throw error;
@@ -1328,7 +1331,7 @@ async function runTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView)
     }
     live.onEvent({
       type: "session.error",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorText(error),
     });
     throw error;
   } finally {
@@ -1681,7 +1684,7 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
   } catch (error) {
     live.onEvent({
       type: "status",
-      text: error instanceof Error ? error.message : String(error),
+      text: errorText(error),
     });
     return;
   }
@@ -1764,9 +1767,7 @@ async function materializeGeneratedImage(
       }
       emitNative({
         type: "session.error",
-        message: `Could not save generated image: ${
-          cause instanceof Error ? cause.message : String(cause)
-        }`,
+        message: `Could not save generated image: ${errorText(cause)}`,
       });
     }
   });
@@ -2135,7 +2136,7 @@ async function handleServerRequest(
         } catch (error) {
           emitNative({
             type: "status",
-            text: error instanceof Error ? error.message : String(error),
+            text: errorText(error),
           });
           await nativeOutputSink(outputWork, () => live.rpc.respond(id, { answers: {} }))();
           return;
@@ -2197,7 +2198,10 @@ async function handleServerRequest(
           if (!live.cancelled && !live.muteUpdates)
             emitNative({
               type: "status",
-              text: `This MCP server requested a form or browser sign-in that ${PRODUCT_IDENTITY.displayName} does not support yet. Complete it in the server's own interface.`,
+              text: t(
+                "This MCP server requested a form or browser sign-in that {p0} does not support yet. Complete it in the server's own interface.",
+                { p0: PRODUCT_IDENTITY.displayName },
+              ),
             });
           await nativeOutputSink(outputWork, () =>
             live.rpc.respond(id, {
@@ -2258,7 +2262,7 @@ async function handleServerRequest(
         // An empty success or invented denial hides protocol incompatibility.
         emitNative({
           type: "status",
-          text: `Unsupported Codex request: ${method}`,
+          text: t("Unsupported Codex request: {p0}", { p0: method }),
         });
         await nativeOutputSink(outputWork, () =>
           live.rpc.respondError(id, {

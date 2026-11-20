@@ -63,6 +63,7 @@ export type * as modelRemoteActivityNoticeApi from "./public/remoteActivityNotic
 export type * as uiRemoteActivityNoticesApi from "./public/RemoteActivityNotices";
 export type * as modelApprovalIntentsApi from "./public/approvalIntents";
 export type * as modelAttachmentsApi from "./public/attachments";
+export type * as modelAttachmentFailureApi from "./public/attachmentFailure";
 export type * as modelAutoContinueApi from "./public/autoContinue";
 export type * as modelCheckpointApi from "./public/checkpoint";
 export type * as modelClaudeAdvisorApi from "./public/claudeAdvisor";

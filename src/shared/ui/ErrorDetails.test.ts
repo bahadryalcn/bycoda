@@ -35,8 +35,10 @@ afterEach(async () => {
 
 const trigger = () => host.querySelector<HTMLButtonElement>("button")!;
 const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
-const inDialog = (text: string) =>
-  [...dialog()!.querySelectorAll("button")].find((entry) => entry.textContent?.includes(text))!;
+const inDialog = (name: string) =>
+  [...dialog()!.querySelectorAll("button")].find(
+    (entry) => entry.getAttribute("aria-label") === name || entry.textContent === name,
+  )!;
 
 it("keeps the raw text out of the layout until Details is opened", async () => {
   await act(async () =>
@@ -76,7 +78,7 @@ it("reports a failed copy instead of claiming success", async () => {
   await act(async () => root.render(createElement(ErrorDetails, { detail: "boom" })));
   await act(async () => trigger().click());
   await act(async () => inDialog("Copy details").click());
-  expect(dialog()?.querySelector('[data-copy-state="failed"]')?.textContent).toContain(
+  expect(dialog()?.querySelector('[data-copy-state="failed"]')?.getAttribute("aria-label")).toBe(
     "Copy failed. Try again.",
   );
 });

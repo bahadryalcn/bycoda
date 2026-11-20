@@ -22,7 +22,7 @@ struct Bounds {
     height: f64,
 }
 
-const HELPER_HEIGHT: f64 = 140.0;
+const HELPER_HEIGHT: f64 = 168.0;
 const SETTINGS_SIDEBAR: f64 = 216.0;
 const INSET: f64 = 16.0;
 
@@ -84,6 +84,7 @@ mod mac {
     use super::{bundle_path, settings_helper_bounds, Bounds, LABEL};
     use crate::system_permissions::{
         entry, pane_name, status_report, PermissionId, PermissionState, CHANGED_EVENT,
+        RESTART_REQUIRED,
     };
     use objc2::msg_send;
     use objc2::runtime::{AnyClass, AnyObject, Bool};
@@ -217,9 +218,17 @@ mod mac {
         let _ = app.emit_to("main", CHANGED_EVENT, status_report());
     }
 
+    /// Granted, or switched on and waiting for the restart the app offers:
+    /// either way the owner has nothing left to do in System Settings.
+    fn settled(id: PermissionId) -> bool {
+        let current = entry(id);
+        current.state == PermissionState::Granted
+            || current.detail.as_deref() == Some(RESTART_REQUIRED)
+    }
+
     pub fn show(app: AppHandle, id: PermissionId) -> Result<(), String> {
         close(&app);
-        if entry(id).state == PermissionState::Granted {
+        if settled(id) {
             return Ok(());
         }
         let generation = GENERATION.load(Ordering::SeqCst);
@@ -261,7 +270,7 @@ mod mac {
             let Some(window) = app.get_webview_window(LABEL) else {
                 return;
             };
-            if tick.is_multiple_of(2) && entry(id).state == PermissionState::Granted {
+            if tick.is_multiple_of(2) && settled(id) {
                 finish(&app);
                 return;
             }
@@ -338,9 +347,9 @@ mod tests {
             }),
             Bounds {
                 x: 428.0,
-                y: 594.0,
+                y: 566.0,
                 width: 560.0,
-                height: 140.0
+                height: 168.0
             }
         );
         assert_eq!(
@@ -352,9 +361,9 @@ mod tests {
             }),
             Bounds {
                 x: -268.0,
-                y: 94.0,
+                y: 66.0,
                 width: 252.0,
-                height: 140.0
+                height: 168.0
             }
         );
     }

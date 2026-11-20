@@ -6,7 +6,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { PrivacyStorageError } from "./PrivacyStorageError";
 import { useGroupLock } from "../hooks/useGroupLock";
@@ -46,6 +46,10 @@ export function HiddenGroupsSettings({
     ? groups.filter((group) => group.name.toLocaleLowerCase().includes(search))
     : groups;
   const searchable = groups.length >= 6;
+  const busy = pendingGroup !== null || checking;
+  const busyReason = checking
+    ? t("Wait for the status check to finish.")
+    : t("Wait for the current visibility change to finish.");
   const changeVisibility = (id: string, write: () => Promise<boolean>) => {
     if (pendingGroup || recoveryInFlight.current) return;
     setPendingGroup(id);
@@ -107,8 +111,8 @@ export function HiddenGroupsSettings({
               query={query}
               onQueryChange={setQuery}
               count={t("Showing {p0} of {p1} groups", {
-                p0: visibleGroups.length,
-                p1: groups.length,
+                p0: formatNumber(visibleGroups.length),
+                p1: formatNumber(groups.length),
               })}
             />
           ) : null}
@@ -154,7 +158,7 @@ export function HiddenGroupsSettings({
                   </Text>
                   <Text as="p" leading="normal" className="settings-collection-meta">
                     {pendingGroup === group.id
-                      ? t("Updating...")
+                      ? t("Updating…")
                       : privacy.hiddenGroupIds.has(group.id)
                         ? t("Hidden on this device")
                         : t("Visible until restart or Lock all groups")}
@@ -164,7 +168,9 @@ export function HiddenGroupsSettings({
                   {privacy.hiddenGroupIds.has(group.id) ? (
                     <Button
                       className="shrink-0"
-                      disabled={pendingGroup !== null || checking}
+                      aria-label={t("Show temporarily: {p0}", { p0: group.name })}
+                      disabled={busy}
+                      disabledReason={busyReason}
                       onClick={() => restore(group.id, true)}
                     >
                       {t("Show temporarily")}
@@ -172,7 +178,9 @@ export function HiddenGroupsSettings({
                   ) : (
                     <Button
                       className="shrink-0"
-                      disabled={pendingGroup !== null || checking}
+                      aria-label={t("Hide again: {p0}", { p0: group.name })}
+                      disabled={busy}
+                      disabledReason={busyReason}
                       onClick={() => changeVisibility(group.id, () => hideGroup(group.id))}
                     >
                       {t("Hide again")}
@@ -180,7 +188,9 @@ export function HiddenGroupsSettings({
                   )}
                   <Button
                     className="shrink-0"
-                    disabled={pendingGroup !== null || checking}
+                    aria-label={t("Make visible: {p0}", { p0: group.name })}
+                    disabled={busy}
+                    disabledReason={busyReason}
                     onClick={() => restore(group.id, false)}
                   >
                     {t("Make visible")}

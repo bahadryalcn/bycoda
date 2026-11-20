@@ -52,6 +52,127 @@ describe("TranscriptSelectionMenu", () => {
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 
+  describe("auto-scroll with a re-measurable selection", () => {
+    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    const scrollWindow = () =>
+      act(async () => {
+        window.dispatchEvent(new Event("scroll"));
+        await frame();
+      });
+    const renderMeasured = (
+      measure: () => { rect: DOMRect; visible: boolean } | null,
+      onDismiss = vi.fn(),
+      extra: Record<string, unknown> = {},
+    ) => {
+      act(() =>
+        root.render(
+          createElement(TranscriptSelectionMenu, {
+            selection: { text: "Streamed words", rect: new DOMRect(10, 80, 100, 20), measure },
+            onDismiss,
+            onAddToChat: vi.fn(),
+            ...extra,
+          }),
+        ),
+      );
+      return onDismiss;
+    };
+
+    it("keeps the actions and re-reads the geometry on unrelated or streaming scroll", async () => {
+      const measure = vi.fn(() => ({ rect: new DOMRect(10, 40, 100, 20), visible: true }));
+      const onDismiss = renderMeasured(measure);
+      await scrollWindow();
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+        await frame();
+      });
+      expect(measure).toHaveBeenCalled();
+      expect(onDismiss).not.toHaveBeenCalled();
+      expect(document.querySelector('[role="toolbar"]')).not.toBeNull();
+    });
+
+    it("does not re-measure or dismiss when the action rail itself scrolls", async () => {
+      const measure = vi.fn(() => ({ rect: new DOMRect(10, 40, 100, 20), visible: true }));
+      const onDismiss = renderMeasured(measure);
+      const rail = document.querySelector('[data-selection-menu] [role="toolbar"]')!.parentElement!;
+      await act(async () => {
+        rail.dispatchEvent(new Event("scroll"));
+        await frame();
+      });
+      expect(measure).not.toHaveBeenCalled();
+      expect(onDismiss).not.toHaveBeenCalled();
+    });
+
+    it("hides the actions while the text is scrolled out of view and restores them when it returns", async () => {
+      let visible = false;
+      const measure = () => ({ rect: new DOMRect(10, -400, 100, 20), visible });
+      const onDismiss = renderMeasured(measure);
+      await scrollWindow();
+      expect(document.querySelector('[role="toolbar"]')).toBeNull();
+      visible = true;
+      await scrollWindow();
+      expect(document.querySelector('[role="toolbar"]')).not.toBeNull();
+      expect(onDismiss).not.toHaveBeenCalled();
+    });
+
+    it("dismisses only when the selected text is actually gone", async () => {
+      let lost = false;
+      const measure = () => (lost ? null : { rect: new DOMRect(10, 40, 100, 20), visible: true });
+      const onDismiss = renderMeasured(measure);
+      await scrollWindow();
+      expect(onDismiss).not.toHaveBeenCalled();
+      lost = true;
+      await scrollWindow();
+      expect(onDismiss).toHaveBeenCalledOnce();
+    });
+
+    it("keeps an open citation comment and its draft when the anchor text is lost", async () => {
+      let lost = false;
+      const measure = () => (lost ? null : { rect: new DOMRect(10, 40, 100, 20), visible: true });
+      const onDismiss = vi.fn();
+      const selection = {
+        text: "Quoted words",
+        responseText: "Quoted words",
+        responseId: "reply-1",
+        occurrence: 0,
+        rect: new DOMRect(10, 20, 100, 20),
+        measure,
+      };
+      act(() =>
+        root.render(
+          createElement(TranscriptSelectionMenu, {
+            sessionId: "session-1",
+            selection,
+            onAddToChat: vi.fn(),
+            onDismiss,
+          }),
+        ),
+      );
+      act(() => actionButton("Add citation").click());
+      lost = true;
+      await scrollWindow();
+      expect(onDismiss).not.toHaveBeenCalled();
+      expect(document.querySelector('[role="dialog"] textarea')).not.toBeNull();
+    });
+
+    it("never carries a measurement over to a different selection", async () => {
+      const first = vi.fn(() => ({ rect: new DOMRect(10, 300, 100, 20), visible: false }));
+      renderMeasured(first);
+      await scrollWindow();
+      expect(document.querySelector('[role="toolbar"]')).toBeNull();
+      const second = {
+        text: "Another selection",
+        rect: new DOMRect(10, 80, 100, 20),
+        measure: () => ({ rect: new DOMRect(10, 80, 100, 20), visible: true }),
+      };
+      act(() =>
+        root.render(
+          createElement(TranscriptSelectionMenu, { selection: second, onDismiss: vi.fn() }),
+        ),
+      );
+      expect(document.querySelector('[role="toolbar"]')).not.toBeNull();
+    });
+  });
+
   it("never retargets an open citation comment when a pane changes sessions", () => {
     const onAddToChat = vi.fn();
     const props = { onAddToChat, onDismiss: vi.fn() };

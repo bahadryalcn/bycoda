@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile, stat, unlink } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile, stat, unlink } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { createServer } from "node:net";
+import { createServer, type Socket } from "node:net";
 import { randomUUID } from "node:crypto";
 import { deviceBinaryCommand, deviceCommand, stopDeviceChild } from "./device-process";
 import {
@@ -17,15 +17,16 @@ import { DeviceControlLeases } from "./device-control-leases";
 import { iosCaptureDisplay } from "./ios-display";
 import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./device-inspection";
 import { cachedExpoGo, expoPreviewUrl } from "./expo-go";
-import type {
-  DeviceAction,
-  DeviceFrame,
-  DeviceHostStatus,
-  DeviceSummary,
+import {
+  DEVICE_HUB_VERSION,
+  type DeviceAction,
+  type DeviceFrame,
+  type DeviceHostStatus,
+  type DeviceSummary,
 } from "../../src/shared/model/host-contracts/native-devices";
 
 export * from "./device-authority";
-export const DEVICE_HUB_VERSION = "0.12.0";
+export { DEVICE_HUB_VERSION };
 export const AGENT_DEVICE_VERSION = "0.21.23";
 /** Use native screen points, not the CLI's cropped alert viewport scaling. */
 export function elementPressArgs(nodes: unknown, label: string): string[] {
@@ -64,6 +65,8 @@ const TOOLS = {
   hub: { name: "expo-device-hub", version: DEVICE_HUB_VERSION, entry: "dist/server/cli.mjs" },
   agent: { name: "agent-device", version: AGENT_DEVICE_VERSION, entry: "bin/agent-device.mjs" },
 };
+/** Install staging and replaced-cache siblings; the live cache is the bare version name. */
+const TOOL_LEFTOVER = /\.(stage|previous)-[0-9a-f-]{36}$/;
 type HubDevices = {
   simulators?: DeviceSummary[];
   emulators?: DeviceSummary[];
@@ -192,6 +195,8 @@ export class DeviceHost {
   private readonly deviceSerial = new Map<string, Promise<unknown>>();
   private readonly capturePending = new Map<string, Promise<DeviceFrame>>();
   private lastCapture?: { id: string; frame: DeviceFrame; time: number };
+  /** AVD name per connected emulator serial; each lookup is an adb round trip. */
+  private readonly emulatorNames = new Map<string, string>();
   private readonly agentSessions = new Set<string>();
   private readonly agentTargets = new Map<string, string>();
   private readonly stateDir: string;
@@ -418,25 +423,47 @@ export class DeviceHost {
       await assertDeviceAuthority(effect);
       if (installed) continue;
       const stage = `${dir}.stage-${randomUUID()}`;
-      await mkdir(stage, { recursive: true, mode: 0o700 });
-      await assertDeviceAuthority(effect);
-      await writeFile(
-        join(stage, "package.json"),
-        JSON.stringify({ private: true, dependencies: { [spec.name]: spec.version } }),
-        { mode: 0o600 },
+      try {
+        await mkdir(stage, { recursive: true, mode: 0o700 });
+        await assertDeviceAuthority(effect);
+        await writeFile(
+          join(stage, "package.json"),
+          JSON.stringify({ private: true, dependencies: { [spec.name]: spec.version } }),
+          { mode: 0o600 },
+        );
+        await this.command(
+          effect,
+          this.nodePath,
+          [npm, "install", "--no-audit", "--no-fund", "--omit=dev"],
+          { cwd: stage, env: this.env, timeoutMs: 600_000 },
+        );
+        await assertDeviceAuthority(effect);
+        if (!existsSync(join(stage, "node_modules", spec.name, spec.entry)))
+          throw new Error("Device tool install did not produce the expected executable");
+        await writeFile(join(stage, ".install-complete"), spec.version, { mode: 0o600 });
+        await this.promoteTool(stage, dir, effect);
+      } finally {
+        // Every writer above has settled. A promoted stage is already renamed away, so this only discards a failed one.
+        await rm(stage, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+    // A previous cache can be the only recoverable copy until its replacement is live.
+    await this.sweepToolLeftovers(tools);
+  }
+  /**
+   * Removes stage and replaced-cache siblings left by earlier installs. Runs inside
+   * runExclusive and only matches the UUID-suffixed names, never a live version directory.
+   */
+  private async sweepToolLeftovers(tools: (keyof typeof TOOLS)[]) {
+    // shortcut: assumes one Host per data directory; a second Host sharing it could lose an in-flight stage, upgrade to a lock marker if that becomes possible.
+    for (const tool of tools) {
+      const parent = dirname(this.dir(tool));
+      const names = await readdir(parent).catch(() => [] as string[]);
+      await Promise.all(
+        names
+          .filter((name) => TOOL_LEFTOVER.test(name))
+          .map((name) => rm(join(parent, name), { recursive: true, force: true }).catch(() => {})),
       );
-      await this.command(
-        effect,
-        this.nodePath,
-        [npm, "install", "--no-audit", "--no-fund", "--omit=dev"],
-        { cwd: stage, env: this.env, timeoutMs: 600_000 },
-      );
-      await assertDeviceAuthority(effect);
-      if (!existsSync(join(stage, "node_modules", spec.name, spec.entry)))
-        throw new Error("Device tool install did not produce the expected executable");
-      await writeFile(join(stage, ".install-complete"), spec.version, { mode: 0o600 });
-      // Preserve partial/previous directories; never delete tool caches or unrelated work.
-      await this.promoteTool(stage, dir, effect);
     }
   }
   private async promoteTool(stage: string, dir: string, effect?: DeviceEffectContext) {
@@ -464,6 +491,8 @@ export class DeviceHost {
       }
       throw cause;
     }
+    // The replaced cache is obsolete once the new one is live. A failed removal is retried by the next sweep.
+    if (previous) await rm(previous, { recursive: true, force: true }).catch(() => {});
   }
   start(effect?: DeviceEffectContext): Promise<DeviceHostStatus> {
     return this.runExclusive(async () => {
@@ -801,15 +830,26 @@ export class DeviceHost {
       `${tool}${this.platform === "win32" ? ".exe" : ""}`,
     );
   }
-  private async listWindowsAndroid(): Promise<DeviceSummary[]> {
+  /** `onlineOnly` skips the AVD list, which cannot change while an emulator boots. */
+  private async listWindowsAndroid(onlineOnly = false): Promise<DeviceSummary[]> {
     const options = { env: this.env, timeoutMs: 10_000 };
     const adb = this.androidBinary("adb");
     const [connected, avds] = await Promise.all([
       deviceCommand(adb, ["devices", "-l"], options),
-      existsSync(this.androidBinary("emulator"))
+      !onlineOnly && existsSync(this.androidBinary("emulator"))
         ? deviceCommand(this.androidBinary("emulator"), ["-list-avds"], options)
         : Promise.resolve(""),
     ]);
+    const rows = connected.split(/\r?\n/).slice(1).slice(0, 200);
+    // A serial that left the adb list may come back as another AVD.
+    const online = new Set(
+      rows
+        .map((row) => row.trim().split(/\s+/))
+        .filter(([, state]) => state === "device")
+        .map(([serial]) => serial),
+    );
+    for (const serial of this.emulatorNames.keys())
+      if (!online.has(serial)) this.emulatorNames.delete(serial);
     const names = avds
       .split(/\r?\n/)
       .map((name) => name.trim())
@@ -823,15 +863,12 @@ export class DeviceHost {
       booted: false,
       physical: false,
     }));
-    for (const row of connected.split(/\r?\n/).slice(1).slice(0, 200)) {
+    for (const row of rows) {
       const [serial, state, ...details] = row.trim().split(/\s+/);
       if (!serial || state !== "device") continue;
       const emulator = /^emulator-\d+$/.test(serial);
       const name = emulator
-        ? ((await deviceCommand(adb, ["-s", serial, "emu", "avd", "name"], options))
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .find((line) => line && line !== "OK") ?? serial)
+        ? await this.emulatorName(adb, serial, options)
         : details
             .find((item) => item.startsWith("model:"))
             ?.slice(6)
@@ -853,6 +890,20 @@ export class DeviceHost {
       else devices.push(online);
     }
     return devices.slice(0, 200);
+  }
+  private async emulatorName(
+    adb: string,
+    serial: string,
+    options: { env: NodeJS.ProcessEnv; timeoutMs: number },
+  ): Promise<string> {
+    const known = this.emulatorNames.get(serial);
+    if (known) return known;
+    const name = (await deviceCommand(adb, ["-s", serial, "emu", "avd", "name"], options))
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line && line !== "OK");
+    if (name) this.emulatorNames.set(serial, name);
+    return name ?? serial;
   }
   private async inventoryForDevice(id: string) {
     let inventory = await this.list();
@@ -1030,6 +1081,74 @@ export class DeviceHost {
       }
     }, effect);
   }
+  /** A boot that fails or is revoked stops its emulator; a booted one is left running for the user. */
+  private async bootWindowsAndroid(
+    device: DeviceSummary,
+    effect?: DeviceEffectContext,
+  ): Promise<DeviceSummary> {
+    const child = spawn(this.androidBinary("emulator"), ["-avd", device.name, "-no-window"], {
+      env: this.env,
+      windowsHide: true,
+      shell: false,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let failure: Error | undefined;
+    let log = "";
+    child.once("error", (cause) => {
+      failure = cause;
+    });
+    // Drained for the child's whole life: an unread pipe would stall the emulator.
+    child.stderr?.on("data", (chunk: Buffer) => {
+      log = `${log}${chunk.toString()}`.slice(-2000);
+    });
+    (child.stderr as Partial<Socket> | null)?.unref?.();
+    child.unref();
+    const failed = (message: string) =>
+      new Error(log.trim() ? `${message}: ${log.trim()}` : message);
+    try {
+      const deadline = Date.now() + 180_000;
+      let interval = 1000;
+      while (Date.now() < deadline) {
+        if (failure) throw failure;
+        if (child.exitCode !== null || child.signalCode !== null)
+          throw failed("Android emulator exited before boot completed");
+        await assertDeviceAuthority(effect);
+        const started = (await this.listWindowsAndroid(true)).find(
+          (item) => item.name === device.name && item.booted,
+        );
+        if (
+          started &&
+          (
+            await this.command(
+              effect,
+              this.androidBinary("adb"),
+              ["-s", started.id, "shell", "getprop", "sys.boot_completed"],
+              { env: this.env, timeoutMs: 10_000 },
+            )
+          ).trim() === "1"
+        )
+          return started;
+        await new Promise((resolve) => setTimeout(resolve, interval));
+        interval = Math.min(interval * 1.5, 5000);
+      }
+      throw failed(
+        "Android emulator did not finish booting in 180 seconds; refresh the device list before retrying",
+      );
+    } catch (cause) {
+      await this.stopEmulator(child);
+      throw cause;
+    }
+  }
+  /** emulator.exe is a launcher for qemu, so the whole tree goes; cleanup never needs authority. */
+  private async stopEmulator(child: ChildProcess) {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    if (child.pid)
+      await deviceCommand("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        env: this.env,
+        timeoutMs: 10_000,
+      }).catch(() => {});
+    await stopDeviceChild(child);
+  }
   boot(id: string, effect?: DeviceEffectContext): Promise<DeviceSummary> {
     return this.runExclusive(async () => {
       const device = await this.device(id);
@@ -1037,45 +1156,8 @@ export class DeviceHost {
       if (device.physical) throw new Error("Boot is available only for simulators and emulators");
       if (device.booted) return device;
       this.lastCapture = undefined;
-      if (this.platform === "win32" && device.platform === "android") {
-        const child = spawn(this.androidBinary("emulator"), ["-avd", device.name, "-no-window"], {
-          env: this.env,
-          windowsHide: true,
-          shell: false,
-          stdio: "ignore",
-        });
-        let failure: Error | undefined;
-        child.once("error", (cause) => {
-          failure = cause;
-        });
-        child.unref();
-        const deadline = Date.now() + 180_000;
-        while (Date.now() < deadline) {
-          if (failure) throw failure;
-          if (child.exitCode !== null || child.signalCode !== null)
-            throw new Error("Android emulator exited before boot completed");
-          await assertDeviceAuthority(effect);
-          const started = (await this.listWindowsAndroid()).find(
-            (item) => item.name === device.name && item.booted,
-          );
-          if (
-            started &&
-            (
-              await this.command(
-                effect,
-                this.androidBinary("adb"),
-                ["-s", started.id, "shell", "getprop", "sys.boot_completed"],
-                { env: this.env, timeoutMs: 10_000 },
-              )
-            ).trim() === "1"
-          )
-            return started;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-        throw new Error(
-          "Android emulator did not finish booting in 180 seconds; refresh the device list before retrying.",
-        );
-      }
+      if (this.platform === "win32" && device.platform === "android")
+        return this.bootWindowsAndroid(device, effect);
       const result = (await (
         await this.request(
           "/api/devices/boot",

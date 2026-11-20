@@ -388,6 +388,14 @@ describe("ActivityDock", () => {
       const [button] = stopButtons();
       expect(button.disabled).toBe(false);
       expect(await tooltipText(button)).toBe("Could not stop it. Try again.");
+      expect(visibleSessionTestText(button)).toBe("Retry stop");
+      const labels = [...button.querySelectorAll("[data-reserve]")].map((node) =>
+        node.getAttribute("data-reserve"),
+      );
+      expect(labels).toEqual(["Stop", "Stopping…", "Retry stop"]);
+      expect(dock()?.querySelector('[role="status"].sr-only')?.textContent).toContain(
+        "Could not stop it. Try again.",
+      );
     });
 
     it("has no per-agent button when only the whole turn can be interrupted", async () => {
@@ -406,19 +414,28 @@ describe("ActivityDock", () => {
         (button) => visibleSessionTestText(button) === "Stop all",
       );
       expect(await tooltipText(all!)).toContain("Interrupt the whole turn");
+      expect(all?.querySelector('[data-reserve="Stop all"]')).not.toBeNull();
+      expect(all?.querySelector('[data-reserve="Retry stop"]')).not.toBeNull();
       act(() => all?.click());
       expect(onStopAll).toHaveBeenCalled();
     });
 
-    it("offers Stop all background work where tasks stop one by one", () => {
+    it("offers Stop all background work in the expanded list where tasks stop one by one", async () => {
+      const onStopAll = vi.fn(async () => {});
       render({
         busy: true,
         blocks: [user, agent],
+        sessionId: "s-stop-all",
         perItemStop: true,
         onStopAgent: async () => {},
-        onStopAll: async () => {},
+        onStopAll,
       });
-      expect(visibleSessionTestText(container)).toContain("Stop all background work");
+      expect(container.querySelector("[data-dock-stop-all]")).toBeNull();
+      expand();
+      const stopAll = container.querySelector<HTMLButtonElement>("[data-dock-stop-all]")!;
+      expect(visibleSessionTestText(stopAll)).toBe("Stop all background work");
+      await act(async () => stopAll.click());
+      expect(onStopAll).toHaveBeenCalledOnce();
     });
 
     it("shows a stopped agent as stopped by you, with nothing left to stop", () => {

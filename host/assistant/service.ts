@@ -3,6 +3,7 @@ import {
   type PendingNotification,
 } from "./notifications/assistant-notifications";
 import { hostModelRoutingService } from "../model-routing/runtime";
+import { HostDomainRefusalError } from "../domains/context";
 import type { AssistantObservation } from "./observations/assistant-observation-journal";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -24,6 +25,7 @@ import {
 } from "./native/assistant-native-library-proof";
 import { AssistantTextPreflightError } from "./core/assistant-text-budget";
 import { ASSISTANT_QUEUE_FREE_READS, AssistantRequestQueue } from "./core/assistant-queue";
+import { purgeOrphanedMessageRuntime } from "./core/assistant-runtime-retention";
 import {
   assistantPresenceState,
   readAssistantPresence,
@@ -63,7 +65,12 @@ import {
   ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
   ASSISTANT_PRESENCE_FRESH_MS,
 } from "../../src/shared/model/host-contracts/assistant";
-import { AssistantRepository, type AssistantTable, type RecordValue } from "./repository";
+import {
+  AssistantRepository,
+  terminalAssistantJobs as terminal,
+  type AssistantTable,
+  type RecordValue,
+} from "./repository";
 import { tokenBudgetMode } from "./cost";
 import {
   assistantCacheMeasurement,
@@ -122,7 +129,12 @@ import { parseChiefReadRequests, type ChiefReadRequest } from "./chief/assistant
 import { appendAssistantDailyNote } from "./work/assistant-daily-note";
 import * as jobLog from "./work/assistant-job-activity";
 import { readAssistantTrash } from "./work/assistant-trash";
+import {
+  pruneChiefReadReceipts,
+  pruneVoiceContextVersions,
+} from "./work/assistant-receipt-retention";
 import { withJobHolds, assistantJobNotificationBody } from "./work/assistant-job-holds";
+import { observeSupervisionClock, stallConfirmed } from "../execution/confirmed-silence";
 import * as jobAfter from "./work/assistant-job-after";
 import { createAssistantProjectJob } from "./work/assistant-project-job";
 import { assistantReminderOp, fireDueReminders } from "./work/assistant-reminders";
@@ -304,8 +316,10 @@ export interface AssistantPorts {
     knownSessionIds?: string[],
     job?: AssistantJob,
   ): Promise<AssistantGoalStatus>;
-  setGoalBudgetHeld?(goalId: string, held: boolean): Promise<void>;
-  setGoalHoursHeld?(goalId: string, held: boolean): Promise<void>;
+  syncGoalHolds?(
+    reason: "assistant-budget" | "assistant-hours",
+    goalIds: readonly string[],
+  ): Promise<void>;
   hasRunningChildren?(goalIds: string[]): Promise<boolean>;
   readPresence?(): Promise<{ supported: boolean; locked: boolean; idleMs?: number }>;
   controlGoal?(
@@ -448,7 +462,7 @@ type ChiefIntent = {
   estimated?: boolean;
 };
 const DAY = 86400000;
-const terminal = new Set<AssistantJobStatus>(["done", "failed", "cancelled"]);
+const HOUR = 3600000;
 
 /** One Host-owned supervisor. All requests and ticks share admission. SQLite
  * transactions contain only local durable work; external effects use durable
@@ -792,7 +806,7 @@ export class HostAssistant {
     await this.ready;
     const rows = await this.store.db
       .prepare(
-        "SELECT n.value FROM assistant_runtime n WHERE n.id LIKE 'notification:%' AND n.deleted_at IS NULL AND json_extract(n.value,'$.value.acknowledgedAt') IS NULL AND json_extract(n.value,'$.value.supersededBy') IS NULL AND json_extract(n.value,'$.value.kind') IN ('task.done','task.needsInput') AND NOT EXISTS (SELECT 1 FROM assistant_runtime i WHERE i.id='observed-notification-intent:' || json_extract(n.value,'$.value.id') AND json_extract(i.value,'$.value.state') IN ('accepted','suppressed')) ORDER BY n.updated_at,n.id LIMIT 20",
+        "SELECT n.value FROM assistant_runtime n WHERE n.id>='notification:' AND n.id<'notification;' AND n.deleted_at IS NULL AND json_extract(n.value,'$.value.acknowledgedAt') IS NULL AND json_extract(n.value,'$.value.supersededBy') IS NULL AND json_extract(n.value,'$.value.kind') IN ('task.done','task.needsInput') AND NOT EXISTS (SELECT 1 FROM assistant_runtime i WHERE i.id='observed-notification-intent:' || json_extract(n.value,'$.value.id') AND json_extract(i.value,'$.value.state') IN ('accepted','suppressed')) ORDER BY n.updated_at,n.id LIMIT 20",
       )
       .all();
     return rows
@@ -813,7 +827,7 @@ export class HostAssistant {
   ): Promise<{ notificationId: string; projectId: string; state: "pending" | "unknown" }[]> {
     const rows = await this.store.db
       .prepare(
-        "SELECT value FROM assistant_runtime WHERE id LIKE 'observed-notification-intent:%' AND deleted_at IS NULL AND json_extract(value,'$.value.projectId')=? AND json_extract(value,'$.value.state') IN ('pending','unknown') ORDER BY updated_at,id LIMIT 100",
+        "SELECT value FROM assistant_runtime WHERE id>='observed-notification-intent:' AND id<'observed-notification-intent;' AND deleted_at IS NULL AND json_extract(value,'$.value.projectId')=? AND json_extract(value,'$.value.state') IN ('pending','unknown') ORDER BY updated_at,id LIMIT 100",
       )
       .all(projectId);
     return rows
@@ -1361,7 +1375,7 @@ export class HostAssistant {
     await this.setRuntime("briefing", briefing);
     const previous = await this.store.db
       .prepare(
-        "SELECT id,value FROM assistant_runtime WHERE id LIKE 'notification:%' AND json_extract(value,'$.value.kind')='briefing' AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL",
+        "SELECT id,value FROM assistant_runtime WHERE id>='notification:' AND id<'notification;' AND json_extract(value,'$.value.kind')='briefing' AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL",
       )
       .all();
     for (const row of previous)
@@ -2227,19 +2241,39 @@ export class HostAssistant {
       result.push(await this.messageProjectScope(message, new Set(), context));
     return result;
   }
-  private async messageAnnotations(message: AssistantMessage): Promise<AssistantMessage> {
+  private annotationRuntimeId(message: AssistantMessage) {
+    return message.role === "assistant"
+      ? `messageScopeSources:${message.id}`
+      : `messageRoomTurn:${message.id}`;
+  }
+  /** Reads a page's annotation runtime rows (per-message source, then its management turn) in two queries. */
+  private async annotationRuntimes(messages: AssistantMessage[]): Promise<Map<string, Runtime>> {
+    const sources = await this.repository.getMany<Runtime>(
+        "runtime",
+        messages.map((message) => this.annotationRuntimeId(message)),
+      ),
+      turnIds = new Set<string>();
+    for (const source of sources.values()) {
+      const id = (source.value as { managementTurnId?: unknown } | null)?.managementTurnId;
+      if (typeof id === "string" && id) turnIds.add(id);
+    }
+    const turns = await this.repository.getMany<Runtime>("runtime", [...turnIds]);
+    return new Map([...sources, ...turns]);
+  }
+  private async messageAnnotations(
+    message: AssistantMessage,
+    known?: Map<string, Runtime>,
+  ): Promise<AssistantMessage> {
     const { toolActions: _actions, ...value } = message;
-    const management = await this.runtime<{ managementTurnId?: string } | null>(
-      message.role === "assistant"
-        ? `messageScopeSources:${message.id}`
-        : `messageRoomTurn:${message.id}`,
+    // A preloaded page map is complete for its ids: a missing key means no live row.
+    const read = <T>(id: string, fallback: T): Promise<T> =>
+      known ? Promise.resolve((known.get(id)?.value as T) ?? fallback) : this.runtime(id, fallback);
+    const management = await read<{ managementTurnId?: string } | null>(
+      this.annotationRuntimeId(message),
       null,
     );
     if (management?.managementTurnId) {
-      const turn = await this.runtime<RoomManagementTurnState | null>(
-        management.managementTurnId,
-        null,
-      );
+      const turn = await read<RoomManagementTurnState | null>(management.managementTurnId, null);
       if (
         turn?.threadId === message.threadId &&
         (message.role === "assistant" || turn.ownerMessageId === message.id)
@@ -2485,8 +2519,9 @@ export class HostAssistant {
   }
   private async clearOwnerQuestionNotifications(id: string, supersededBy: string): Promise<void> {
     const rows = await this.store.db
-      .prepare("SELECT id,value FROM assistant_runtime WHERE id LIKE ? AND deleted_at IS NULL")
-      .all(`notification:decision:${id}%`);
+      .prepare("SELECT id,value FROM assistant_runtime WHERE id>=? AND id<? AND deleted_at IS NULL")
+      // Range over the PK index; the last code point bounds every key sharing the prefix.
+      .all(`notification:decision:${id}`, `notification:decision:${id}\u{10FFFF}`);
     for (const row of rows) {
       const notification = (JSON.parse(row.value) as Runtime).value as PendingNotification;
       await this.setRuntime(row.id, { ...notification, supersededBy });
@@ -2688,7 +2723,14 @@ export class HostAssistant {
   private readonly report = (error: unknown) => this.ports.onError?.(error);
   private readonly later = (run: () => Promise<unknown>) =>
     this.store.db.outsideScope(() => void this.serialize(run).catch(this.report));
-  private readonly kick = () => void this.tick().catch(this.report);
+  private readonly kick = () => {
+    // The timer is the sleep detector: a late beat marks the gap as unobserved, not as silence.
+    observeSupervisionClock(this.store, this.now());
+    // The summary worker is event- and deadline-driven; this minute tick is its safety net, for
+    // example a thread restored from the trash with a pending summary state.
+    this.threadSummaries.wake();
+    void this.tick().catch(this.report);
+  };
   start() {
     if (this.closing || this.timer) return;
     this.store.db.outsideScope(() => {
@@ -2795,6 +2837,7 @@ export class HostAssistant {
   private afterDeps = () => ({
     ...this.reminderDeps(),
     after: (id: string) => this.runtime<{ after: string } | null>(jobAfter.jobAfterKey(id), null),
+    getJob: (id: string) => this.repository.get<AssistantJob>("jobs", id),
   });
   private stamp() {
     const now = this.now();
@@ -3109,7 +3152,7 @@ export class HostAssistant {
           response.snapshot.threads = await Promise.all(
             response.snapshot.threads.map(async (thread) => {
               const { summaryProof: _proof, ...listed } =
-                await this.threadSummaries.projection(thread);
+                await this.threadSummaries.listingProjection(thread);
               return { ...listed, summary: "" };
             }),
           );
@@ -3128,10 +3171,12 @@ export class HostAssistant {
         }
         if (response.messages) {
           response.messages = await this.messageProjectScopes(response.messages);
-          for (let index = 0; index < response.messages.length; index++)
-            response.messages[index] = await this.messageAnnotations(
-              await this.accountSafeMessage(response.messages[index]),
-            );
+          const safe: AssistantMessage[] = [];
+          for (const message of response.messages)
+            safe.push(await this.accountSafeMessage(message));
+          const known = await this.annotationRuntimes(safe);
+          for (let index = 0; index < safe.length; index++)
+            response.messages[index] = await this.messageAnnotations(safe[index], known);
         }
         await this.syncKeepAwake();
         if (response.snapshot && this.keepAwakeStatus)
@@ -3858,8 +3903,15 @@ export class HostAssistant {
       }
       case "threads.sendStatus": {
         this.owner(principal);
+        // A refusal, not an unknown outcome: clients otherwise saw "connection interrupted, check the
+        // result" for the very check that reads it, after every Host restart.
         if (input.expectedHostInstance !== this.nativeSendInstance)
-          throw new Error("The original Host instance changed.");
+          throw new HostDomainRefusalError(
+            "CONTEXT_CHANGED",
+            "conflict",
+            false,
+            "The original Host instance changed.",
+          );
         await this.require<AssistantThread>("threads", input.threadId);
         const key = `reply:${input.threadId}:${input.idempotencyKey}`;
         const receipt = await this.runtime<{
@@ -3874,6 +3926,9 @@ export class HostAssistant {
         if (!receipt) return { sendReceipt: { status: "unknown" } };
         if (receipt.text !== input.text || (receipt.via && receipt.via !== "text"))
           throw new Error("Conversation receipt identity changed.");
+        // Refused before admission: no owner message exists, so the send definitely did not happen.
+        if (receipt.status === "refused" && !receipt.userMessageId)
+          return { sendReceipt: { status: "refused" } };
         if (!receipt.userMessageId || !receipt.userFingerprint)
           return { sendReceipt: { status: "unknown" } };
         const user = await this.require<AssistantMessage>("messages", receipt.userMessageId);
@@ -3898,12 +3953,31 @@ export class HostAssistant {
       case "threads.send": {
         this.owner(principal);
         if (input.expectedHostInstance && input.expectedHostInstance !== this.nativeSendInstance)
-          throw new Error("The original Host instance changed.");
+          throw new HostDomainRefusalError(
+            "CONTEXT_CHANGED",
+            "conflict",
+            false,
+            "The original Host instance changed.",
+          );
         if (!this.ports.reply)
           throw new Error("Conversation replies are unavailable on this Host.");
         const profile = await this.profile();
-        if (!profile.setupComplete || !profile.enabled || !assistantRoleExecution(profile, "reply"))
+        if (
+          !profile.setupComplete ||
+          !profile.enabled ||
+          !assistantRoleExecution(profile, "reply")
+        ) {
+          // Nothing was admitted. Record the refusal so a client's receipt check settles instead of
+          // reporting an unknown outcome forever; an existing receipt (a retry) is never replaced.
+          const refusedKey = `reply:${input.threadId}:${input.idempotencyKey}`;
+          if (!(await this.runtime<unknown>(refusedKey, null)))
+            await this.setRuntime(refusedKey, {
+              status: "refused",
+              text: input.text,
+              via: input.via,
+            });
           throw new Error("Configure and enable the assistant before starting a conversation.");
+        }
         const thread = await this.require<AssistantThread>("threads", input.threadId);
         const rawSummaryProof = await this.threadSummaries.proof(thread.id, thread.summary);
         const summarySources = rawSummaryProof
@@ -3919,7 +3993,7 @@ export class HostAssistant {
               (await this.ports.roomAccountProofsValid(thread.id, summarySources.accountProofs))));
         const replySummaryProof = summaryValid ? rawSummaryProof : undefined;
         const key = `reply:${thread.id}:${input.idempotencyKey}`;
-        const existing = await this.runtime<{
+        const stored = await this.runtime<{
           status: string;
           text: string;
           via?: "text" | "voice";
@@ -3930,6 +4004,9 @@ export class HostAssistant {
           tokenCap?: number;
           day?: string;
         } | null>(key, null);
+        // A refusal before admission (setup incomplete) saved no owner message, so the same key
+        // may start a fresh attempt once the Assistant is configured.
+        const existing = stored?.status === "refused" && !stored.userMessageId ? null : stored;
         if (existing) {
           if (existing.text !== input.text) throw new Error("Conversation retry payload changed.");
           if (existing.via && existing.via !== input.via)
@@ -4816,11 +4893,10 @@ export class HostAssistant {
       case "activity.clear": {
         this.owner(principal);
         await this.actionJournal.clear(input.jobId);
-        await this.store.transaction(async () => {
-          for (const item of await this.repository.list<AssistantActivity>("activity", 100000))
-            if (!input.jobId || item.jobId === input.jobId)
-              await this.repository.trash("activity", item.id, item.version, this.now());
-        }, "critical");
+        await this.store.transaction(
+          () => this.repository.trashActivity(input.jobId, this.now()),
+          "critical",
+        );
         return { ok: true };
       }
       case "presence.set": {
@@ -5027,6 +5103,7 @@ export class HostAssistant {
           else {
             if (table === "jobs") await this.ports.jobDeletion?.purge(id);
             await this.repository.purge(table, id);
+            if (table === "messages") await this.threadSummaries.reclaim();
           }
         }, "critical");
         return { ok: true };
@@ -5276,7 +5353,7 @@ export class HostAssistant {
       return { ...old, mode: tokenBudgetMode(old.total, profile.dailyTokenBudget) };
     const rows = await this.store.db
       .prepare(
-        "SELECT value FROM assistant_runtime WHERE id LIKE 'workerTurn:%' AND json_extract(value,'$.value.day')=?",
+        "SELECT value FROM assistant_runtime WHERE id>='workerTurn:' AND id<'workerTurn;' AND json_extract(value,'$.value.day')=?",
       )
       .all(day);
     const turns = rows.map(
@@ -5434,7 +5511,7 @@ export class HostAssistant {
       if (turn.settled && scope.jobId) {
         const answers = await this.store.db
           .prepare(
-            "SELECT id,value FROM assistant_runtime WHERE id LIKE 'reservation:%' AND json_extract(value,'$.value.phase')='answer' AND json_extract(value,'$.value.jobId')=?",
+            "SELECT id,value FROM assistant_runtime WHERE id>='reservation:' AND id<'reservation;' AND json_extract(value,'$.value.phase')='answer' AND json_extract(value,'$.value.jobId')=?",
           )
           .all(scope.jobId);
         for (const row of answers) {
@@ -5495,7 +5572,7 @@ export class HostAssistant {
       if (turn.operationId) {
         const reservations = await this.store.db
           .prepare(
-            "SELECT id,value FROM assistant_runtime WHERE id LIKE 'reservation:%' AND json_extract(value,'$.value.operationId')=?",
+            "SELECT id,value FROM assistant_runtime WHERE id>='reservation:' AND id<'reservation;' AND json_extract(value,'$.value.operationId')=?",
           )
           .all(turn.operationId);
         for (const row of reservations) {
@@ -5582,7 +5659,7 @@ export class HostAssistant {
             ? "owner-input"
             : record.status === "running" &&
                 knownActivity &&
-                this.now() - activity >= profile.stallMinutes * 60000
+                stallConfirmed(this.store, activity, profile.stallMinutes * 60000, this.now())
               ? "stalled"
               : "current";
         const state = { state: record.status, attention, contextAction: action };
@@ -5637,18 +5714,16 @@ export class HostAssistant {
           }),
         "critical",
       );
-    if (this.ports.setGoalBudgetHeld)
-      for (const job of await this.repository.list<AssistantJob>("jobs", 10000))
-        if (job.kind !== "quick" && job.goalId)
-          await this.ports.setGoalBudgetHeld(job.goalId, hold && !terminal.has(job.status));
+    await this.syncGoalHolds("assistant-budget", hold);
+  }
+  private async syncGoalHolds(reason: "assistant-budget" | "assistant-hours", hold: boolean) {
+    if (!this.ports.syncGoalHolds) return;
+    await this.ports.syncGoalHolds(reason, hold ? await this.repository.projectGoalIds(true) : []);
   }
   private async syncHoursHolds(profile: AssistantProfile): Promise<void> {
     const closed =
       !profile.enabled || !profile.setupComplete || !assistantActiveHours(profile, this.now());
-    if (this.ports.setGoalHoursHeld)
-      for (const job of await this.repository.list<AssistantJob>("jobs", 10000))
-        if (job.kind !== "quick" && job.goalId)
-          await this.ports.setGoalHoursHeld(job.goalId, closed && !terminal.has(job.status));
+    await this.syncGoalHolds("assistant-hours", closed);
     if (closed) {
       this.queue.abortTurns();
       this.ports.onPause?.();
@@ -5692,7 +5767,7 @@ export class HostAssistant {
   private async pendingChiefEvents(): Promise<AssistantActivity[]> {
     const rows = await this.store.db
       .prepare(
-        "SELECT value FROM assistant_runtime WHERE id LIKE 'chiefEvent:%' AND deleted_at IS NULL ORDER BY updated_at,id LIMIT 20",
+        "SELECT value FROM assistant_runtime WHERE id>='chiefEvent:' AND id<'chiefEvent;' AND deleted_at IS NULL ORDER BY updated_at,id LIMIT 20",
       )
       .all();
     return rows
@@ -5747,9 +5822,7 @@ export class HostAssistant {
           status: "running",
         };
         const ownerInstructions = await this.instructions("all");
-        const currentJobs = (await this.repository.list<AssistantJob>("jobs", 10000))
-            .filter((job) => job.kind !== "quick" && !terminal.has(job.status))
-            .slice(0, 100),
+        const currentJobs = await this.repository.scheduledJobs(true),
           questions: Array<AssistantQuestionStatus & { jobId: string }> = [];
         for (const job of currentJobs)
           for (const question of await this.runtime<AssistantQuestionStatus[]>(
@@ -6073,7 +6146,6 @@ export class HostAssistant {
   private async syncKeepAwake() {
     if (!this.ports.keepAwake) return;
     const profile = await this.profile();
-    const jobs = await this.repository.list<AssistantJob>("jobs", 10000);
     const eligible =
       !this.closing &&
       !this.emergencyStop &&
@@ -6086,17 +6158,14 @@ export class HostAssistant {
       (await this.effectivePresence()) === "away";
     const working = eligible && !!profile.keepAwakeWhileWorking;
     let running = false;
+    let queuedJobs = false;
     if (working && !away) {
       try {
         running = this.ports.hasRunningChildren
-          ? await this.ports.hasRunningChildren(
-              jobs.flatMap((job) => (job.goalId ? [job.goalId] : [])),
-            )
-          : jobs.some(
-              (job) =>
-                job.kind !== "quick" && ["planning", "running", "stalled"].includes(job.status),
-            );
+          ? await this.ports.hasRunningChildren(await this.repository.projectGoalIds())
+          : await this.repository.hasProjectJob("working");
         if (!running) running = await this.hasRunningManualTurn();
+        if (!running) queuedJobs = await this.repository.hasProjectJob("queued");
       } catch (error) {
         this.keepAwakeStatus = {
           ...(this.keepAwakeStatus ?? { supported: false, requested: false, active: false }),
@@ -6113,7 +6182,7 @@ export class HostAssistant {
       keepAwakeDemand({
         away,
         running: working && running,
-        queuedJobs: working && jobs.some((job) => job.kind !== "quick" && job.status === "queued"),
+        queuedJobs,
         canStartJobs: profile.autonomy !== "report" && !!profile.execution,
         policy: profile,
         now: this.now(),
@@ -6204,8 +6273,15 @@ export class HostAssistant {
       )
       .run(this.now(), this.now() - days * DAY);
   }
+  /**
+   * Hourly sweep. The due check is a plain read outside any write transaction, so an idle tick
+   * takes no exclusive lock; the check repeats inside the transaction so a sweep that finished
+   * meanwhile is not repeated.
+   */
   private async cleanupDeletedRecords() {
+    if (this.now() < (await this.runtime<number>("cleanupAt", 0))) return;
     await this.store.transaction(async () => {
+      if (this.now() < (await this.runtime<number>("cleanupAt", 0))) return;
       await this.applyConversationRetention();
       for (const table of ["jobs", "memory", "activity", "messages", "notetrash"] as const) {
         const expired = await this.store.db
@@ -6218,7 +6294,26 @@ export class HostAssistant {
           await this.repository.purge(table, String(row.id));
         }
       }
+      await purgeOrphanedMessageRuntime(this.store.db, this.now() - 7 * DAY);
+      await this.threadSummaries.reclaim();
+      await this.pruneReceipts();
+      await this.setRuntime("cleanupAt", this.now() + HOUR);
     }, "critical");
+  }
+  /** Hourly: bounds the voice provenance versions and Chief read receipts that nothing can still replay. */
+  private async pruneReceipts() {
+    const now = this.now();
+    if (now - (await this.runtime<number>("receiptRetentionAt", 0)) < 3600000) return;
+    const pending = await this.runtime<ChiefIntent | null>("chiefPendingIntent", null),
+      last = await this.runtime<ChiefIntent | null>("chiefIntent", null);
+    await pruneVoiceContextVersions(this.store, now);
+    await pruneChiefReadReceipts(
+      this.store,
+      [pending?.operationId, last?.operationId].filter(
+        (id): id is string => typeof id === "string",
+      ),
+    );
+    await this.setRuntime("receiptRetentionAt", now);
   }
   /** Called only with a live, exact project permit captured by the Host observation owner. */
   async acceptObservedTaskEvent(
@@ -6317,7 +6412,10 @@ export class HostAssistant {
     presence?: AssistantPresenceObservation,
   ) {
     await this.cleanupDeletedRecords();
-    await this.store.transaction(() => this.queueOwnerQuestionReminders(), "critical");
+    // Read outside the transaction; only a tick with a due reminder takes the write lock.
+    // The reminders are re-read inside it, so a question resolved meanwhile is not notified.
+    if ((await this.ownerQuestions.dueSnoozed()).length > 0)
+      await this.store.transaction(() => this.queueOwnerQuestionReminders(), "critical");
     const profile = await this.profile();
     if (profile.enabled && profile.setupComplete) await this.syncPresence(presence);
     if (profile.enabled && profile.setupComplete) {
@@ -6372,9 +6470,7 @@ export class HostAssistant {
     let usage = await this.usage(profile);
     let incompleteUsage = false;
     const events: AssistantActivity[] = [];
-    const jobs = (await this.repository.list<AssistantJob>("jobs", 10000)).sort(
-      compareAssistantJobPriority,
-    );
+    const jobs = (await this.repository.scheduledJobs()).sort(compareAssistantJobPriority);
     for (const original of jobs) {
       if (this.closing || this.emergencyStop) break;
       if (original.kind === "quick") {
@@ -6383,10 +6479,7 @@ export class HostAssistant {
       }
       let job: AssistantProjectJob = { ...original, projectIds: assistantJobProjectIds(original) };
       if (terminal.has(job.status) && job.tokensComplete !== false) continue;
-      if (
-        job.status === "queued" &&
-        (await jobAfter.holdForDependency(this.afterDeps(), job, jobs))
-      )
+      if (job.status === "queued" && (await jobAfter.holdForDependency(this.afterDeps(), job)))
         continue;
       if (
         job.status === "queued" &&
@@ -6502,7 +6595,12 @@ export class HostAssistant {
         const stalled =
           status.status === "running" &&
           status.lastActivityAt !== undefined &&
-          this.now() - status.lastActivityAt >= profile.stallMinutes * 60000;
+          stallConfirmed(
+            this.store,
+            status.lastActivityAt,
+            profile.stallMinutes * 60000,
+            this.now(),
+          );
         const nextStatus = job.pendingTaskDeletion
           ? "waiting"
           : job.awaitingOwnerRestart
@@ -6605,16 +6703,12 @@ export class HostAssistant {
       }, "critical");
     }
     if (events.length) await this.appendDailyNote(profile, events);
-    const reviewJobs = (await this.repository.list<AssistantJob>("jobs", 10000)).filter(
-      (job) =>
-        job.kind !== "quick" && job.goalId && !terminal.has(job.status) && job.status !== "paused",
-    );
     const reviewWindow = Math.floor(this.now() / 1800000);
     if (
-      (reviewJobs.length || manualState.digest.length) &&
       profile.autonomy === "chief" &&
       (await this.runtime<number>("chiefReviewWindow", -1)) !== reviewWindow &&
-      !(await this.pendingChiefEvents()).length
+      !(await this.pendingChiefEvents()).length &&
+      (manualState.digest.length || (await this.repository.hasProjectJob("reviewable")))
     )
       await this.store.transaction(async () => {
         await this.setRuntime("chiefReviewWindow", reviewWindow);

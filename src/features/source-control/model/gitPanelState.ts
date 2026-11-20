@@ -1,6 +1,7 @@
 import { CheckoutCache } from "./checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import { pathKey } from "../../../shared/lib/paths";
+import { t } from "../../../shared/i18n/git";
 
 export type AmendTarget = { branch: string | null; head: string | null };
 
@@ -20,6 +21,8 @@ export type GitOperationFeedback = {
   title: string;
   detail?: string;
   retry?: () => Promise<void>;
+  /** A different, explicit way to finish the same action (for example publishing with raw commit text). */
+  alternate?: { label: string; run: () => Promise<void> };
   url?: string;
 };
 
@@ -141,7 +144,7 @@ export async function withGitOperation<T>(
 ): Promise<T> {
   const entry = gitPanelRuntime(cwd);
   if (entry.state.busy)
-    throw new Error("Another Git operation is running. Wait for it to finish and retry.");
+    throw new Error(t("Another Git operation is running. Wait for it to finish and retry."));
   entry.state = { ...entry.state, busy: label, pending: label, feedback: null };
   entry.listeners.forEach((listener) => listener());
   try {

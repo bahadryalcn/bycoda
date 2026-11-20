@@ -5,6 +5,7 @@ import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import type { ToolId } from "./toolWindows";
 import type { BackgroundSessionTarget } from "../../features/tasks/model/backgroundSession";
 import { pathKey } from "../../shared/lib/paths";
+import { listenWindowAsync } from "../../platform/tauri/listenWindow";
 import { restoreWindowFocus } from "./windowFocus";
 
 export type WindowDestination =
@@ -29,6 +30,11 @@ const QUERY = "workspace_navigation_query";
 const CANDIDATE = "workspace_navigation_candidate";
 const OPEN = "workspace_navigation_open";
 const RESULT = "workspace_navigation_result";
+const READY = "workspace_navigation_ready";
+/** Upper bound for discovery; it ends early once every open window has answered. */
+const DISCOVERY_BOUND_MS = 150;
+/** Upper bound for a new conversation window to announce that it is listening. */
+const WINDOW_READY_TIMEOUT_MS = 10000;
 const samePath = (a: string, b: string) => pathKey(a) === pathKey(b);
 
 /** Existing conversation owners win. Tools never become conversation windows. */
@@ -63,24 +69,76 @@ export function chooseNavigationWindow(
   )[0];
 }
 
+/**
+ * Asks every window to reply. Resolves as soon as each window open at the start has answered;
+ * the bound only matters for a window that has no navigation listener.
+ */
 async function discover(): Promise<NavigationWindow[]> {
   const label = getCurrentWindow().label;
   const id = crypto.randomUUID();
   const candidates: NavigationWindow[] = [];
+  const expected = (await getAllWindows()).map((entry) => entry.label);
+  let everyoneAnswered!: () => void;
+  const answered = new Promise<void>((resolve) => {
+    everyoneAnswered = resolve;
+  });
   const stop = await getCurrentWindow().listen<{ id: string; window: NavigationWindow }>(
     CANDIDATE,
     ({ payload }) => {
-      if (payload.id === id) candidates.push(payload.window);
+      if (payload.id !== id) return;
+      candidates.push(payload.window);
+      if (expected.every((name) => candidates.some((entry) => entry.label === name)))
+        everyoneAnswered();
     },
   );
+  let bound: ReturnType<typeof setTimeout> | undefined;
   try {
     await emit(QUERY, { id, replyTo: label });
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await Promise.race([
+      answered,
+      new Promise<void>((resolve) => {
+        bound = setTimeout(resolve, DISCOVERY_BOUND_MS);
+      }),
+    ]);
     const alive = new Set((await getAllWindows()).map((entry) => entry.label));
     return candidates.filter((entry) => alive.has(entry.label));
   } finally {
+    clearTimeout(bound);
     stop();
   }
+}
+
+/**
+ * Opens a conversation window and waits for its READY announcement (sent once its navigation
+ * listeners are registered), then discovers once. The timeout keeps the previous ceiling: if the
+ * announcement never comes, one last discovery decides.
+ */
+async function openSessionWindow(
+  target: WindowDestination,
+  source: string,
+): Promise<NavigationWindow | undefined> {
+  const known = new Set((await getAllWindows()).map((entry) => entry.label));
+  let announced!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    announced = resolve;
+  });
+  const stop = await listenWindowAsync<{ label: string }>(READY, ({ payload }) => {
+    if (!known.has(payload.label)) announced();
+  });
+  let ceiling: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await invoke("open_new_window");
+    await Promise.race([
+      ready,
+      new Promise<void>((resolve) => {
+        ceiling = setTimeout(resolve, WINDOW_READY_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(ceiling);
+    stop();
+  }
+  return chooseNavigationWindow(await discover(), target, source);
 }
 
 const pending = new Map<string, Promise<boolean>>();
@@ -146,7 +204,11 @@ async function deliverWindowDestination(
 
 async function route(target: WindowDestination, requireSessionWindow: boolean): Promise<boolean> {
   const source = getCurrentWindow().label;
-  let owner = chooseNavigationWindow(await discover(), target, source);
+  let owner: NavigationWindow | undefined = chooseNavigationWindow(
+    await discover(),
+    target,
+    source,
+  );
   if (
     target.kind === "session" &&
     !requireSessionWindow &&
@@ -154,10 +216,7 @@ async function route(target: WindowDestination, requireSessionWindow: boolean): 
   )
     return false;
   if (!owner && requireSessionWindow && target.kind === "session") {
-    await invoke("open_new_window");
-    const deadline = Date.now() + 10000;
-    while (!owner && Date.now() < deadline)
-      owner = chooseNavigationWindow(await discover(), target, source);
+    owner = await openSessionWindow(target, source);
     if (!owner)
       throw new Error("The conversation window did not become ready. Retry opening the session.");
   }
@@ -219,7 +278,12 @@ export function useWindowNavigation(
         if (disposed) stop();
         else stops.push(stop);
       }),
-    ).catch(() => {});
+    )
+      // Listeners are registered: tell whichever window opened this one that it can be routed to.
+      .then(() => {
+        if (!disposed) return emit(READY, { label });
+      })
+      .catch(() => {});
     return () => {
       disposed = true;
       stops.forEach((stop) => stop());

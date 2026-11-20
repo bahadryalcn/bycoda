@@ -41,7 +41,7 @@ for (const theme of ["light", "dark"]) {
 for (const theme of ["light", "dark"]) {
   for (const width of [320, 800, 1280]) {
     test(`dictation stress settings ${theme} ${width}`, async ({ page }) => {
-      const output = join(process.cwd(), "temp/verification/voice-dictation-parity");
+      const output = join(process.cwd(), "temp/verification/assistant-settings-simplify/dictation");
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 1000 });
       const errors: string[] = [];
@@ -87,12 +87,14 @@ for (const theme of ["light", "dark"]) {
 for (const theme of ["light", "dark"]) {
   for (const width of [800, 1280]) {
     test(`dictation stress local models and microphone ${theme} ${width}`, async ({ page }) => {
-      const output = join(process.cwd(), "temp/verification/voice-dictation-parity");
+      const output = join(process.cwd(), "temp/verification/assistant-settings-simplify/dictation");
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 1000 });
       await page.goto(
         `/tests/browser/voice/dictation-permissions.html?theme=${theme}&stress=1&surface=settings&engine=local&recording-fixture=1`,
       );
+      await expect(page.getByText("Whisper Small", { exact: true })).not.toBeVisible();
+      await page.getByRole("button", { name: "Transcription models", exact: true }).click();
       await expect(page.getByText("Whisper Small", { exact: true })).toBeVisible();
       await expect(page.getByText("Whisper large-v3-turbo", { exact: true })).toBeVisible();
       await expect(page.getByText("Dictation is ready", { exact: true })).toBeVisible();
@@ -128,6 +130,7 @@ for (const state of ["error", "loading", "working"]) {
     await page.goto(
       `/tests/browser/voice/dictation-permissions.html?stress=1&surface=settings&engine=local&models=${state}`,
     );
+    await page.getByRole("button", { name: "Transcription models", exact: true }).click();
     await expect(
       page.getByText(
         state === "error"
@@ -150,7 +153,7 @@ for (const state of ["error", "loading"]) {
       await expect(
         page.getByText("Could not load transcription models. Retry to refresh the catalog."),
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
     } else {
       await expect(page.getByText("Loading transcription models…")).toBeVisible();
     }
@@ -376,9 +379,9 @@ for (const platform of ["macOS", "Windows", "Linux"])
             await expect(recovery).toBeVisible();
             await recovery.click();
             const guide = page.getByRole("dialog", { name: "Microphone", exact: true });
-            await guide.getByRole("button", { name: "Open Settings", exact: true }).click();
+            await guide.getByRole("button", { name: "Open settings", exact: true }).click();
             await expect(guide).toContainText(
-              "Could not open the permission prompt or settings. Follow the steps above, then check again.",
+              "Couldn’t open the permission prompt or settings. Follow the steps above, then check again.",
             );
             await guide.getByRole("button", { name: "Close", exact: true }).click();
             expect(

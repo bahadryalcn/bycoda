@@ -1,12 +1,23 @@
+import { errorText } from "../../../shared/lib/errors";
 import { createStore } from "../../../shared/lib/store";
 import {
   isHarnessAvailable,
   probeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
-import { inspectHarnessBinary, updateHarnessCli } from "../../../integrations/harness/core/child";
-import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
+import {
+  cancelHarnessUpdate,
+  inspectHarnessBinary,
+  updateHarnessCli,
+} from "../../../integrations/harness/core/child";
+import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 import { t } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
+import {
+  describeHarnessUpdateFailure,
+  HARNESS_UPDATE_BUSY_ERROR,
+  type HarnessUpdateFailure,
+  type HarnessUpdateStage,
+} from "./harnessUpdateFailure";
 import { refreshProviderCatalog } from "./catalogReceipts";
 import {
   announceHarnessUpdated,
@@ -30,7 +41,7 @@ export type HarnessUpdateRun =
   | { status: "idle" }
   | { status: "updating" }
   | { status: "updated"; version: string; catalogRefresh?: HarnessCatalogRefresh }
-  | { status: "failed"; error: string };
+  | { status: "failed"; failure: HarnessUpdateFailure };
 
 export type HarnessUpdateSnapshot = {
   /** Null until this window has checked. */
@@ -67,7 +78,7 @@ export function subscribeHarnessUpdates(listener: () => void): () => void {
 async function installedVersion(harness: HarnessId): Promise<string> {
   const inspection = await inspectHarnessBinary(harness);
   if (inspection.version) return inspection.version;
-  throw new Error(inspection.error ?? "The CLI reported no version.");
+  throw new Error(inspection.error ?? t("The CLI reported no version."));
 }
 
 let inflightCheck: Promise<HarnessVersionCheck[]> | null = null;
@@ -96,7 +107,7 @@ export function checkInstalledHarnessVersions(options?: {
       return checks;
     } catch (error) {
       setSnapshot({
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
       });
       throw error;
     } finally {
@@ -108,6 +119,28 @@ export function checkInstalledHarnessVersions(options?: {
 }
 
 const running = new Map<HarnessId, Promise<HarnessUpdateRun>>();
+/** Harnesses the user asked to cancel during the updater stage of this window's run. */
+const cancelRequested = new Set<HarnessId>();
+
+/**
+ * Stops the CLI updater this window started. Resolves false when no updater
+ * is running (not started yet, or already in the version check or catalog
+ * refresh), so the run continues and reports its real outcome.
+ */
+export function cancelHarnessUpdateRun(harness: HarnessId): Promise<boolean> {
+  if (!running.has(harness)) return Promise.resolve(false);
+  cancelRequested.add(harness);
+  return cancelHarnessUpdate(harness).then(
+    (stopped) => {
+      if (!stopped) cancelRequested.delete(harness);
+      return stopped;
+    },
+    (error: unknown) => {
+      cancelRequested.delete(harness);
+      throw error;
+    },
+  );
+}
 
 /** A second request for a harness already updating waits on the first run. */
 export function runHarnessUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
@@ -116,17 +149,25 @@ export function runHarnessUpdate(update: HarnessUpdate): Promise<HarnessUpdateRu
   setRun(update.harness, { status: "updating" });
   const run = performUpdate(update).then((result) => {
     running.delete(update.harness);
+    cancelRequested.delete(update.harness);
     setRun(update.harness, result);
     if (result.status === "updated") {
       markCurrent(update, result.version);
     }
     // The launch notice may have expired; completion still reaches the owner and notification log.
-    if (result.status === "updated" || result.status === "failed") {
+    // A cancel is the user's own action, so it does not need a toast.
+    if (
+      result.status === "updated" ||
+      (result.status === "failed" && result.failure.kind !== "cancelled")
+    ) {
       toast.show({
         id: `harness-update:${update.harness}`,
         title: HARNESS_TITLE[update.harness],
         tone: result.status === "failed" ? "danger" : "success",
-        message: result.status === "failed" ? result.error : `${t("Updated to ")}${result.version}`,
+        message:
+          result.status === "failed"
+            ? describeHarnessUpdateFailure(update.harness, result.failure).toastMessage
+            : t("Updated to {p0}", { p0: result.version }),
       });
     }
     return result;
@@ -161,17 +202,17 @@ function markCurrent(update: HarnessUpdate, version: string) {
  * separate attempt: adapters may retain old data or report no fresh catalog.
  */
 async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
-  let stage = "updater";
+  let stage: HarnessUpdateStage = "updater";
+  let updaterDetail: string | undefined;
   try {
-    await updateHarnessCli(update.harness, update.latest);
+    updaterDetail = await updateHarnessCli(update.harness, update.latest);
     stage = "version check";
     const after = await inspectHarnessBinary(update.harness);
     const version = parseHarnessVersion(update.harness, after.version ?? "");
     if (!version) {
-      throw new Error(after.error ?? `No valid version reported by ${after.path}.`);
+      throw new Error(after.error ?? t("No valid version reported by {p0}.", { p0: after.path }));
     }
-    if (version && !isHarnessVersionBehind(update.harness, version, update.latest)) {
-      stage = "model refresh";
+    if (!isHarnessVersionBehind(update.harness, version, update.latest)) {
       let catalogRefresh: HarnessCatalogRefresh;
       try {
         const receipt = await refreshProviderCatalog(update.harness, { force: true });
@@ -187,14 +228,31 @@ async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
       void announceHarnessUpdated(update.harness).catch(() => undefined);
       return { status: "updated", version, catalogRefresh };
     }
-    throw new Error(`Still on ${version} after updating.`);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    const message = `${update.harness} ${stage}: ${detail}`;
-    console.warn(`[bycoda] Harness update failed: ${message}`);
+    // Still on the old version: report it as its own failure, not a verified update.
+    console.warn(
+      `[bycoda] Harness update failed: ${update.harness} version check: still on ${version}`,
+    );
     return {
       status: "failed",
-      error: message,
+      failure: { kind: "stillOn", version, ...(updaterDetail ? { detail: updaterDetail } : {}) },
+    };
+  } catch (error) {
+    const detail = errorText(error);
+    if (stage === "updater" && detail === HARNESS_UPDATE_BUSY_ERROR) {
+      return { status: "failed", failure: { kind: "busy" } };
+    }
+    // Only the updater is cancellable; a failure after it is a real version-check result.
+    if (stage === "updater" && cancelRequested.has(update.harness)) {
+      return { status: "failed", failure: { kind: "cancelled" } };
+    }
+    console.warn(`[bycoda] Harness update failed: ${update.harness} ${stage}: ${detail}`);
+    return {
+      status: "failed",
+      failure: {
+        kind: "stage",
+        stage,
+        detail: updaterDetail ? detail + "\n" + updaterDetail : detail,
+      },
     };
   }
 }

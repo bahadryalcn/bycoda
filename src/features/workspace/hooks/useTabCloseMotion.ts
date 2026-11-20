@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { loadTabAnimationsEnabled } from "../../settings/model/settings";
 import { prefersReducedMotion as reducedMotion } from "../../settings/public/decorativeMotion";
+import { observeResize } from "../../../shared/lib/observeResize";
 
 export type TabMotionEntry<T extends { id: string }> = {
   id: string;
@@ -45,7 +46,7 @@ export function useTabCloseMotion<T extends { id: string }>(
   const callbacksRef = useRef(new Map<string, (node: HTMLElement | null) => void>());
   const onNodeRef = useRef(onNode);
   onNodeRef.current = onNode;
-  const observersRef = useRef(new Map<string, ResizeObserver>());
+  const unobserversRef = useRef(new Map<string, () => void>());
   const idsKey = items.map((item) => item.id).join("\0");
   const [trackedKey, setTrackedKey] = useState(idsKey);
   const [entries, setEntries] = useState(() => items.map(idleEntry));
@@ -109,8 +110,8 @@ export function useTabCloseMotion<T extends { id: string }>(
 
   const setTabNode = useCallback((id: string, node: HTMLElement | null) => {
     if ((nodesRef.current.get(id) ?? null) === node) return;
-    observersRef.current.get(id)?.disconnect();
-    observersRef.current.delete(id);
+    unobserversRef.current.get(id)?.();
+    unobserversRef.current.delete(id);
     if (node) nodesRef.current.set(id, node);
     else nodesRef.current.delete(id);
     onNodeRef.current?.(id, node);
@@ -121,10 +122,7 @@ export function useTabCloseMotion<T extends { id: string }>(
       if (width > 1) measureRef.current.set(id, width);
     };
     record();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(record);
-    observer.observe(node);
-    observersRef.current.set(id, observer);
+    unobserversRef.current.set(id, observeResize(node, record));
   }, []);
 
   const tabRef = useCallback(
@@ -151,7 +149,7 @@ export function useTabCloseMotion<T extends { id: string }>(
 
   useLayoutEffect(
     () => () => {
-      for (const observer of observersRef.current.values()) observer.disconnect();
+      for (const unobserve of unobserversRef.current.values()) unobserve();
     },
     [],
   );

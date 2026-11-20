@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { createInterface } from "node:readline";
 import { recordDuration } from "../../diagnostics/perf-metrics";
 import { resolveHubLaunch } from "./launch";
+import { hubChildLeadsGroup, killProcessTree, reapProcessGroup } from "./process-tree";
+import { splitStdoutLines } from "./stdout-lines";
 import type { InventoryDefinition } from "./inventory";
 import type { HubCache } from "./cache";
 
@@ -32,9 +33,16 @@ export type ChildOptions = {
   now: () => number;
   loadCache: () => Promise<HubCache | undefined>;
   saveCache: (cache: HubCache) => Promise<void>;
-  /** Called before a process is spawned so the hub can free capacity. */
-  beforeStart: (child: McpChild) => Promise<void>;
+  /** Called before a process is spawned so the hub can free capacity. It may wait for a slot;
+   * `signal` aborts that wait. The returned claim is released once the spawn attempt settles. */
+  beforeStart: (child: McpChild, signal: AbortSignal) => Promise<{ release(): void }>;
+  /** Called whenever a slot may have opened: exit, stop, or a child idle again after a reply. */
+  onCapacityChange?: () => void;
 };
+
+/** One start attempt: the wait for a slot is shared, so it is cancelled only when every
+ * caller that joined it has given up. */
+type StartAttempt = { ready: Promise<void>; waitAbort: AbortController; interested: number };
 
 const rpcError = (id: unknown, code: number, message: string): Rpc => ({
   jsonrpc: "2.0",
@@ -42,12 +50,17 @@ const rpcError = (id: unknown, code: number, message: string): Rpc => ({
   error: { code, message },
 });
 
+const cancelled = (signal?: AbortSignal) =>
+  signal?.reason instanceof Error ? signal.reason : new Error("MCP request cancelled.");
+
 /** One stdio server process for one (name, scope). Requests are remapped to internal ids
  * so concurrent clients keep their own ids; the process starts only when a request needs it. */
 export class McpChild {
   proc?: ChildProcess;
   private ready?: Promise<void>;
   private readonly pending = new Map<string, Pending>();
+  private attempt?: StartAttempt;
+  private spawnedAt?: number;
   private clientParams?: Record<string, unknown>;
   private initResult?: Rpc;
   private idleTimer?: NodeJS.Timeout;
@@ -72,8 +85,9 @@ export class McpChild {
     return this.pending.size;
   }
 
-  /** Returns the response for requests, or undefined for notifications. */
-  async handle(message: Rpc): Promise<Rpc | undefined> {
+  /** Returns the response for requests, or undefined for notifications. `signal` cancels the
+   * wait for a process slot or the shared start; a request already written to the child runs on. */
+  async handle(message: Rpc, signal?: AbortSignal): Promise<Rpc | undefined> {
     this.touch();
     const method = typeof message.method === "string" ? message.method : "";
     if (message.id === undefined) {
@@ -88,10 +102,10 @@ export class McpChild {
       if (cache && this.cacheUsable(cache))
         return { jsonrpc: "2.0", id: message.id, result: cache.initialize };
       try {
-        await this.start(true);
+        await this.start(true, signal);
         return { jsonrpc: "2.0", id: message.id, result: this.initResult };
       } catch (error) {
-        return rpcError(message.id, -32603, `${this.name} MCP failed to start: ${reason(error)}`);
+        return this.startFailure(message.id, error, signal);
       }
     }
     if (!this.proc && cache) {
@@ -102,9 +116,9 @@ export class McpChild {
         return { jsonrpc: "2.0", id: message.id, result: cache.lists[method] };
     }
     try {
-      await this.start(false);
+      await this.start(false, signal);
     } catch (error) {
-      return rpcError(message.id, -32603, `${this.name} MCP failed to start: ${reason(error)}`);
+      return this.startFailure(message.id, error, signal);
     }
     const reply = await this.send(message).catch((error: unknown) =>
       rpcError(message.id, -32603, `${this.name} MCP request failed: ${reason(error)}`),
@@ -112,40 +126,101 @@ export class McpChild {
     return { ...reply, id: message.id };
   }
 
+  private startFailure(id: unknown, error: unknown, signal?: AbortSignal): Rpc {
+    if (signal?.aborted) return rpcError(id, -32800, "MCP request cancelled.");
+    return rpcError(id, -32603, `${this.name} MCP failed to start: ${reason(error)}`);
+  }
+
   private cacheUsable(cache: HubCache): boolean {
     return cache.protocolVersion === this.clientParams?.protocolVersion;
   }
 
+  /** Joins the shared start (beginning it if needed). A caller that is cancelled stops waiting;
+   * the slot wait itself is aborted only when no joined caller is left. */
+  private start(fill: boolean, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(cancelled(signal));
+    const attempt = this.ready && this.attempt ? this.attempt : this.begin(fill);
+    attempt.interested++;
+    return new Promise<void>((resolve, reject) => {
+      let joined = true;
+      const leave = () => {
+        if (!joined) return false;
+        joined = false;
+        signal?.removeEventListener("abort", onAbort);
+        attempt.interested--;
+        return true;
+      };
+      const onAbort = () => {
+        if (!leave()) return;
+        if (attempt.interested === 0) attempt.waitAbort.abort(cancelled(signal));
+        reject(cancelled(signal));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      attempt.ready.then(
+        () => {
+          if (leave()) resolve();
+        },
+        (error: unknown) => {
+          if (leave()) reject(error);
+        },
+      );
+    });
+  }
+
   /** Starts the process and handshake once. `fill` waits for listings to be cached. */
-  private start(fill: boolean): Promise<void> {
-    if (this.ready) return this.ready;
+  private begin(fill: boolean): StartAttempt {
     const began = performance.now();
+    const waitAbort = new AbortController();
     // Deferred so the shared `ready` is set before any await can let a second caller in.
     const ready: Promise<void> = Promise.resolve().then(async () => {
-      await this.options.beforeStart(this);
-      await this.spawnProcess();
+      const claim = await this.options.beforeStart(this, waitAbort.signal);
+      try {
+        await this.spawnProcess();
+      } finally {
+        claim.release();
+      }
       const init = (await this.request("initialize", this.clientParams ?? DEFAULT_CLIENT)) as Rpc;
       this.write({ jsonrpc: "2.0", method: "notifications/initialized" });
       this.initResult = init;
       this.startedAt = this.options.now();
       this.handshaken = true;
       recordDuration("mcp.ext.start", performance.now() - began);
+      // No capacity notice here: this child is about to serve the call that started it, and a
+      // waiter must not evict it before that call is written.
       this.touch();
       const refresh = this.refreshCache(init);
       if (fill) await refresh;
       else void refresh.catch(() => undefined);
     });
+    const attempt: StartAttempt = { ready, waitAbort, interested: 0 };
     this.ready = ready;
+    this.attempt = attempt;
     ready.catch(() => {
-      if (this.ready === ready) this.ready = undefined;
+      // Only this attempt's own failure cleans up: a stop() or exit already cleared `ready`, and
+      // a newer attempt's process must not be killed by an older attempt's late rejection.
+      if (this.ready !== ready) return;
+      this.ready = undefined;
       this.stop();
     });
-    return ready;
+    return attempt;
   }
 
-  /** Running, handshaken and idle: the hub may stop it to free capacity. */
-  get evictable(): boolean {
-    return !!this.proc && this.handshaken && this.pending.size === 0;
+  /** True while the process is spawned but its handshake has not finished. */
+  get starting(): boolean {
+    return !!this.proc && !this.handshaken;
+  }
+
+  /** Milliseconds until a starting child has had `graceMs` to finish its handshake. */
+  startupLeftMs(graceMs: number): number | undefined {
+    if (!this.starting || this.spawnedAt === undefined) return undefined;
+    return Math.max(0, this.spawnedAt + graceMs - this.options.now());
+  }
+
+  /** The hub may stop it to free capacity: handshaken and idle, or still starting after the
+   * grace period. A child with a request in flight is never evictable. */
+  canEvict(graceMs: number): boolean {
+    if (!this.proc) return false;
+    return this.handshaken ? this.pending.size === 0 : this.startupLeftMs(graceMs) === 0;
   }
 
   private async spawnProcess(): Promise<void> {
@@ -160,18 +235,34 @@ export class McpChild {
       env,
       stdio: ["pipe", "pipe", "ignore"],
       windowsHide: true,
+      // Its own process group on POSIX, so npx/uvx grandchildren die with the launcher.
+      detached: hubChildLeadsGroup(),
       ...(launch.shell ? { windowsVerbatimArguments: true } : {}),
     });
     this.proc = proc;
+    this.spawnedAt = this.options.now();
     // Errors carry paths and arguments, so only the code is kept.
     proc.on("error", (error) =>
       this.childGone(proc, `spawn failed (${(error as NodeJS.ErrnoException).code ?? "error"})`),
     );
-    proc.on("exit", () => this.childGone(proc, "exited"));
+    proc.on("exit", () => {
+      // Whether it exited on its own or after stop(), it may have left descendants behind.
+      reapProcessGroup(proc);
+      this.childGone(proc, "exited");
+    });
     proc.stdin?.on("error", () => undefined);
-    createInterface({ input: proc.stdout!, crlfDelay: Infinity }).on("line", (line) =>
-      this.onLine(proc, line),
+    const lines = splitStdoutLines(
+      (line) => this.onLine(proc, line),
+      () => this.onOversizedLine(proc),
     );
+    proc.stdout?.on("data", (chunk: Buffer) => lines.push(chunk));
+    proc.stdout?.on("end", () => lines.end());
+  }
+
+  /** A line past the cap cannot be tied to one request id, so the child is stopped and its pending requests fail. */
+  private onOversizedLine(proc: ChildProcess): void {
+    if (this.proc !== proc) return;
+    this.stop();
   }
 
   private onLine(proc: ChildProcess, line: string): void {
@@ -191,6 +282,8 @@ export class McpChild {
       clearTimeout(waiting.timer);
       waiting.resolve(message);
       this.touch();
+      // Idle again, so the hub may reuse its slot for a waiting caller.
+      if (this.pending.size === 0) this.options.onCapacityChange?.();
       return;
     }
     // Server-to-client requests cannot be answered over stateless HTTP.
@@ -207,8 +300,10 @@ export class McpChild {
     this.proc = undefined;
     this.ready = undefined;
     this.handshaken = false;
+    this.spawnedAt = undefined;
     clearTimeout(this.idleTimer);
     this.rejectAll(new Error(`${this.name} MCP server ${why}`));
+    this.options.onCapacityChange?.();
   }
 
   private rejectAll(error: Error): void {
@@ -237,6 +332,7 @@ export class McpChild {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error("request timed out"));
+        if (this.pending.size === 0) this.options.onCapacityChange?.();
       }, this.options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
       this.pending.set(id, { resolve, reject, timer });
       this.write({ ...message, id });
@@ -285,7 +381,7 @@ export class McpChild {
     this.stop();
   }
 
-  /** Closes stdin, then kills the process if it has not exited after the grace period. */
+  /** Closes stdin, then kills the process tree if it has not exited after the grace period. */
   stop(): void {
     const proc = this.proc;
     if (!proc) return;
@@ -293,6 +389,7 @@ export class McpChild {
     this.ready = undefined;
     this.handshaken = false;
     this.startedAt = undefined;
+    this.spawnedAt = undefined;
     clearTimeout(this.idleTimer);
     this.rejectAll(new Error(`${this.name} MCP server stopped`));
     try {
@@ -300,9 +397,10 @@ export class McpChild {
     } catch {
       // The process is already gone; the kill timer below is harmless.
     }
-    const kill = setTimeout(() => proc.kill(), this.options.stopGraceMs ?? STOP_GRACE_MS);
+    const kill = setTimeout(() => killProcessTree(proc), this.options.stopGraceMs ?? STOP_GRACE_MS);
     kill.unref();
     proc.once("exit", () => clearTimeout(kill));
+    this.options.onCapacityChange?.();
   }
 }
 

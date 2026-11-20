@@ -198,7 +198,17 @@ export function createNativeBufferGitPersistence(
   const git = createGitObjectStore({ git: options.git ?? "git", gitDir, timeoutMs });
   // shortcut: views handed out by this process only; a view whose commit was pruned by gc fails closed.
   const views = new Map<number, string>();
-  let listing: { id: string; entries: { name: string; isDirectory: boolean }[] } | null = null;
+  // The last directory listed from one tree. Trees are content-addressed, so its names stay
+  // exact for that tree; `view` is the frozen view the listing was taken for.
+  let listing: {
+    tree: string;
+    directory: string;
+    view?: number;
+    entries: { name: string; isDirectory: boolean }[];
+    names: Set<string>;
+  } | null = null;
+  const listed = (tree: string, directory: string) =>
+    listing?.tree === tree && listing.directory === directory ? listing.names : undefined;
   let queue: Promise<unknown> = Promise.resolve();
   let ready: Promise<void> | null = null;
   let closed = false;
@@ -253,8 +263,13 @@ export function createNativeBufferGitPersistence(
   }
   async function treeAt(view?: number): Promise<string | null> {
     if (view !== undefined) bound(view, Number.MAX_SAFE_INTEGER);
+    // View 0 is the empty store; resolving the ref cannot change that answer.
+    if (view === 0) {
+      open();
+      return null;
+    }
     const current = await head();
-    if (!current || view === 0) return null;
+    if (!current) return null;
     if (view === undefined || view === current.sequence) return current.tree;
     if (view > current.sequence) throw failure();
     const tree = views.get(view);
@@ -506,6 +521,10 @@ export function createNativeBufferGitPersistence(
       bound(limit, MAX_ARTIFACT);
       const current = await head();
       if (!current) return null;
+      // A name absent from this tree's listed directory is missing in the commit: skip the lookup.
+      const slash = key.lastIndexOf("/");
+      if (listed(current.tree, key.slice(0, slash))?.has(key.slice(slash + 1)) === false)
+        return null;
       try {
         return await git.readBlob(`${current.commit}:${key}`, limit);
       } catch {
@@ -531,9 +550,13 @@ export function createNativeBufferGitPersistence(
         return { entries: [], nextAfter: null };
       }
       // Tree order is stable for an unchanged view; the cursor is a 1-based position in it.
-      const id = `${tree}:${directory}`;
-      if (listing?.id !== id) listing = { id, entries: await git.listDirectory(tree, directory) };
-      const all = listing.entries;
+      let current = listed(tree, directory) ? listing! : null;
+      if (!current) {
+        const all = await git.listDirectory(tree, directory);
+        current = { tree, directory, entries: all, names: new Set(all.map((entry) => entry.name)) };
+      }
+      listing = { ...current, view };
+      const all = current.entries;
       if (start > all.length) throw failure();
       const entries = all.slice(start, start + limit);
       return {
@@ -552,6 +575,11 @@ export function createNativeBufferGitPersistence(
         throw failure();
       const key = directory + "/" + name;
       artifactKey(key, true);
+      // The directories layer checks every legacy filesystem name against the view it just
+      // listed. Answering from that listing keeps a scan at one ls-tree instead of two git
+      // processes per legacy name (seconds per scan on Windows).
+      if (view !== undefined && listing?.view === view && listing.directory === directory)
+        return listing.names.has(name);
       const tree = await treeAt(view);
       if (!tree) return false;
       return !!(await git.batchCheck([`${tree}:${key}`]))[0];
@@ -641,6 +669,8 @@ export function createNativeBufferGitPersistence(
           return Number.isSafeInteger(total) ? total : undefined;
         };
         const beforeBytes = await size().catch(() => undefined);
+        // An open reader keeps old packs mapped (locked on Windows) while gc replaces them.
+        git.close();
         await git.exec(
           [
             "-c",
@@ -672,6 +702,7 @@ export function createNativeBufferGitPersistence(
       closed = true;
       views.clear();
       listing = null;
+      git.close();
     },
   };
 }

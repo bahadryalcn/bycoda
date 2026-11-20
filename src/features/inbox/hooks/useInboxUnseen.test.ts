@@ -145,6 +145,28 @@ describe("Inbox activity polling", () => {
     expect(activity.linkedSessionUpdates).toBe(previous.linkedSessionUpdates);
     expect(activity.linkedSessionUpdateIds).toBe(previous.linkedSessionUpdateIds);
   });
+  it("keeps one poll timer when recents and linked sessions change identity (#1184)", async () => {
+    vi.useFakeTimers();
+    listInboxItems.mockResolvedValue({ items: [remote], errors: {} });
+    function PropsHarness(props: { sessions: SessionSummary[] }) {
+      // A new recents array on every render, as an app-level recents update produces.
+      activity = useInboxActivity([], "/tmp/app", props.sessions);
+      return null;
+    }
+    const render = (sessions: SessionSummary[]) =>
+      act(async () => {
+        root.render(createElement(PropsHarness, { sessions }));
+      });
+
+    await render([session]);
+    expect(listInboxItems).toHaveBeenCalledTimes(1);
+    await render([{ ...session }]);
+    await render([{ ...session, id: "other-session" }]);
+    expect(listInboxItems).toHaveBeenCalledTimes(1);
+
+    await act(async () => vi.advanceTimersByTimeAsync(POLL_MS));
+    expect(listInboxItems).toHaveBeenCalledTimes(2);
+  });
   it("updates Inbox and linked-session indicators on category changes without consuming unread activity", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-14T12:00:00Z"));

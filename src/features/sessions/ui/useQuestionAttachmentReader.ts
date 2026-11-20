@@ -4,7 +4,8 @@ import type { Attachment } from "../model/session";
 import { questionDraftKey, type QuestionDraft } from "../model/questionDrafts";
 import type { UserQuestionPrompt } from "../model/userQuestion";
 import type { UserQuestion } from "../../../shared/model/userQuestion";
-import { MAX_ATTACHMENTS, revokeAttachment } from "../model/attachments";
+import { MAX_ATTACHMENTS, revokeAttachment, type SkippedAttachment } from "../model/attachments";
+import { collectSkippedAttachments } from "../model/attachmentSkips";
 import {
   pendingQuestionAttachment,
   prepareOwnedQuestionAttachments,
@@ -53,7 +54,7 @@ export function useQuestionAttachmentReader({
   question,
   t,
 }: Options) {
-  return (read: () => Promise<Attachment[]>) => {
+  return (read: (onSkipped: (skipped: SkippedAttachment[]) => void) => Promise<Attachment[]>) => {
     if (!canAttach || held || attachmentFlight.current || !parentChanged.canMutate()) return;
     const admission = parentChanged.admit();
     if (!admission) return;
@@ -64,7 +65,11 @@ export function useQuestionAttachmentReader({
     void (async () => {
       let incoming: Attachment[] = [];
       try {
-        incoming = await read();
+        const skips = collectSkippedAttachments();
+        incoming = await read(skips.onSkipped);
+        // Named before staging, so a later failure still replaces it with the real error.
+        const skipNotice = skips.notice();
+        if (skipNotice && mounted.current) setAttachmentError(skipNotice);
         if (
           Object.values(draftRef.current.attachments ?? {}).flat().length + incoming.length >
           MAX_ATTACHMENTS

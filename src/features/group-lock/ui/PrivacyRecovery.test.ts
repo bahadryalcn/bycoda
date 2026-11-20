@@ -52,7 +52,8 @@ it("shows one recovery in progress, retains failure, and never exposes revoked n
   });
   expect(state.recover).toHaveBeenCalledOnce();
   expect(check.getAttribute("aria-busy")).toBe("true");
-  expect(button("Make visible").disabled).toBe(true);
+  // Blocked controls with a reason stay focusable and report aria-disabled.
+  expect(button("Make visible").getAttribute("aria-disabled")).toBe("true");
   state.privacy.hasPassword = true;
   await render();
   expect(host.textContent).not.toContain("Synthetic hidden name");

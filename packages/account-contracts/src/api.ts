@@ -22,6 +22,7 @@ import {
   SecurityActivityQuery,
   AnnouncementList,
   AnonymousPing,
+  AnonymousUsage,
   ComputerList,
   ConnectInfoUpdate,
   PairRequestCreate,
@@ -339,6 +340,13 @@ export const ACCOUNT_API = {
     path: "/v1/anonymous/ping",
     auth: "none",
     body: AnonymousPing,
+    response: null,
+  }),
+  anonymousUsage: route({
+    method: "POST",
+    path: "/v1/anonymous/usage",
+    auth: "none",
+    body: AnonymousUsage,
     response: null,
   }),
 } as const;

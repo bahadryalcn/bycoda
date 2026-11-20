@@ -146,7 +146,8 @@ export function TaskWorkspacePicker({
       }
     })()
       .catch((reason) => {
-        if (live) setError(reason instanceof Error ? reason.message : String(reason));
+        // An inventory load is automatic: a passing disconnect stays with the connection notice.
+        if (live) setError(presentRemoteError(reason) ?? "");
       })
       .finally(() => {
         if (live) setFetchedKey(loadKey);

@@ -126,6 +126,26 @@ afterEach(async () => {
 });
 
 describe("SessionImportDialog", () => {
+  it("keeps the prompt recoverable and lets metadata size to its contents", async () => {
+    await render();
+    const row = [...document.querySelectorAll("li")].find((item) =>
+      item.textContent?.includes("Fix the login bug"),
+    )!;
+
+    const prompt = [...row.querySelectorAll("[data-tooltip-owner]")].find(
+      (item) => item.textContent === "Fix the login bug",
+    );
+    expect(prompt?.hasAttribute("data-truncate")).toBe(true);
+    expect(prompt?.classList.contains("flex-1")).toBe(true);
+    const metadata = [...row.querySelectorAll(".whitespace-nowrap")];
+    expect(metadata).toHaveLength(2);
+    expect(row.closest("ul")?.classList.contains("@container/import-rows")).toBe(true);
+    expect(metadata[1].classList.contains("@max-[480px]/import-rows:hidden")).toBe(true);
+    for (const value of metadata) {
+      expect([...value.classList].some((token) => token.startsWith("w-"))).toBe(false);
+    }
+  });
+
   it("opens /resume import scoped to its provider and folder", async () => {
     const scoped = candidate({
       provider: "codex",

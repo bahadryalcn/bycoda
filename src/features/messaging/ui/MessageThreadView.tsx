@@ -4,81 +4,28 @@ import { FailureState } from "../../../shared/ui/FailureState";
 import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { formatAttachmentSize } from "../../../shared/i18n/format";
 import { openExternal } from "../../../platform/tauri/openExternal";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Button } from "../../../shared/ui/Button";
+import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { MessageTimeline, type MessageTimelineItem } from "../../../shared/ui/MessageTimeline";
-import { ExternalLink, MessageMultiple, RefreshCw } from "../../../shared/ui/icons";
+import { MessageTimeline } from "../../../shared/ui/MessageTimeline";
+import { ChevronDown, ExternalLink, MessageMultiple, RefreshCw } from "../../../shared/ui/icons";
 import { useThreadMessages } from "../hooks/useThreadMessages";
-import { splitMessageText } from "../model/messageText";
 import { MESSAGING_PROVIDER_LABELS } from "../model/messageThreads";
 import type { MessageThread, MessagingAccount, ThreadMessage } from "../model/messagingTypes";
-import { emailReplyAddress } from "../model/threadMessages";
+import { emailReplyAddress, isAtThreadEnd } from "../model/threadMessages";
 import { MessageReplyComposer } from "./MessageReplyComposer";
 import { MessagingProviderMark } from "./MessagingProviderMark";
+import { createThreadMessageProjection } from "./threadMessageItems";
 
-function MessageBody({ body, onOpenLink }: { body: string; onOpenLink: (url: string) => void }) {
-  return (
-    <span className="whitespace-pre-wrap">
-      {splitMessageText(body).map((part, index) =>
-        part.kind === "link" ? (
-          <Button
-            // Parts are positional and never reordered within one body.
-            key={index}
-            variant="link"
-            layout="text"
-            // A wrapped URL keeps the bubble's start alignment instead of centering.
-            className="wrap-anywhere text-start"
-            onClick={() => onOpenLink(part.url)}
-          >
-            {part.text}
-          </Button>
-        ) : (
-          <span key={index}>{part.text}</span>
-        ),
-      )}
-    </span>
-  );
-}
-
-function messageItem(
-  message: ThreadMessage,
-  onOpenLink: (url: string) => void,
-): MessageTimelineItem {
-  return {
-    id: message.id,
-    own: message.outbound,
-    author: message.author || message.authorAddress || t("Unknown"),
-    // A message without a usable time sorts with the epoch and still renders.
-    time: Number.isFinite(message.at) ? message.at : 0,
-    body: message.body ? <MessageBody body={message.body} onOpenLink={onOpenLink} /> : null,
-    attachments: message.attachments.map((attachment, index) => {
-      const size = attachment.size ? formatAttachmentSize(attachment.size) : null;
-      return (
-        <Tooltip key={`${attachment.name}:${index}`} label={attachment.name} asChild>
-          <Text
-            as="span"
-            size="micro"
-            tone="secondary"
-            truncate
-            {...surfaceAttributes(
-              { frame: "pane" },
-              "max-w-full rounded-(--ui-radius-control) px-1.5",
-            )}
-          >
-            {size ? t("{p0} ({p1})", { p0: attachment.name, p1: size }) : attachment.name}
-          </Text>
-        </Tooltip>
-      );
-    }),
-  };
-}
-
-/** One conversation: header, messages oldest to newest and the reply composer. */
+/**
+ * One conversation: header, the newest messages (earlier ones on request) oldest to newest and
+ * the reply composer. A long conversation mounts only the rows near the viewport.
+ */
 export function MessageThreadView({
   thread,
   account,
@@ -88,22 +35,99 @@ export function MessageThreadView({
   account: MessagingAccount | undefined;
   onSent: (thread: MessageThread, message: ThreadMessage) => void;
 }) {
-  useLocale();
-  const { messages, error, loading, reload, append } = useThreadMessages(thread);
+  const locale = useLocale();
+  const {
+    messages,
+    error,
+    loading,
+    reload,
+    append,
+    hasEarlier,
+    loadingEarlier,
+    earlierError,
+    loadEarlier,
+  } = useThreadMessages(thread);
   const [linkError, setLinkError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const count = messages?.length ?? 0;
+  // The reader follows the newest message until they scroll up, so a refresh or an opened
+  // earlier page never drags them away from what they are reading.
+  const followEnd = useRef(true);
+  // Distance from the end of the scroller when earlier messages were requested, to keep the
+  // same messages in view once they are added above.
+  const earlierAnchor = useRef<number | null>(null);
+  // The button that opened an earlier page unmounts with the last one; focus then moves to the list.
+  const refocus = useRef(false);
+  // A message arrived while the reader was away from the end; the jump button brings them back.
+  const [unseen, setUnseen] = useState(false);
+  const loaded = messages !== null;
+  const firstId = messages?.[0]?.id;
+  const lastId = messages?.[messages.length - 1]?.id;
+  const previousLastId = useRef(lastId);
 
-  // Open at the newest message and follow new ones.
-  useLayoutEffect(() => {
+  const scrollToEnd = () => {
     const element = scrollRef.current;
     if (element) element.scrollTop = element.scrollHeight;
-  }, [count]);
+  };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Follow new messages in the DOM scroller or show the jump control when the reader has scrolled away.
+  useLayoutEffect(() => {
+    const arrived = lastId !== undefined && previousLastId.current !== lastId;
+    previousLastId.current = lastId;
+    if (followEnd.current) {
+      scrollToEnd();
+      setUnseen(false);
+    } else if (arrived) setUnseen(true);
+  }, [loaded, lastId]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Restore the scroller's anchor after inserting earlier messages above the reader.
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    const distance = earlierAnchor.current;
+    if (!element || distance === null) return;
+    earlierAnchor.current = null;
+    element.scrollTop = element.scrollHeight - distance;
+  }, [firstId]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Clear the pending DOM scroll anchor when the earlier page request fails.
+  useLayoutEffect(() => {
+    if (earlierError) earlierAnchor.current = null;
+  }, [earlierError]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Restore DOM focus to the conversation when the last page removes its load button.
+  useLayoutEffect(() => {
+    if (hasEarlier || !refocus.current) return;
+    refocus.current = false;
+    if (document.activeElement === document.body) scrollRef.current?.focus({ preventScroll: true });
+  }, [hasEarlier]);
 
-  const openLink = (url: string) => {
+  const onScroll = (element: HTMLDivElement) => {
+    const atEnd = isAtThreadEnd(element);
+    followEnd.current = atEnd;
+    if (atEnd) setUnseen(false);
+  };
+  const jumpToLatest = () => {
+    followEnd.current = true;
+    setUnseen(false);
+    scrollToEnd();
+    // The button unmounts on this click; keyboard focus moves to the conversation, not the page.
+    scrollRef.current?.focus({ preventScroll: true });
+  };
+  const onLoadEarlier = () => {
+    const element = scrollRef.current;
+    if (element) {
+      earlierAnchor.current = element.scrollHeight - element.scrollTop;
+      refocus.current = element.contains(document.activeElement);
+    }
+    followEnd.current = false;
+    loadEarlier();
+  };
+  // Keeps the reader at the end while measured rows replace estimates in the windowed list.
+  const keepEnd = () => {
+    if (followEnd.current) scrollToEnd();
+  };
+
+  const openLink = useStableCallback((url: string) => {
     setLinkError("");
     openExternal(url).catch(() => setLinkError(t("Could not open the link. Try again.")));
-  };
+  });
+  const [project] = useState(createThreadMessageProjection);
+  const items = messages ? project(messages, openLink, locale) : [];
   const providerLabel = t(MESSAGING_PROVIDER_LABELS[thread.provider]);
   const accountLine = account
     ? [account.label || providerLabel, account.identity].filter(Boolean).join(" · ")
@@ -163,7 +187,13 @@ export function MessageThreadView({
         ) : null}
       </header>
       {linkError ? <InlineError className="mx-4 mt-2">{linkError}</InlineError> : null}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div
+        ref={scrollRef}
+        // Focusable only by script, as the landing place when the last "Load earlier" button unmounts.
+        tabIndex={-1}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        onScroll={(event) => onScroll(event.currentTarget)}
+      >
         {messages == null ? (
           error ? (
             <FailureState
@@ -183,6 +213,27 @@ export function MessageThreadView({
                 {t("Could not refresh this conversation. {p0}", { p0: error })}
               </InlineError>
             ) : null}
+            {hasEarlier ? (
+              <div className="flex justify-center px-4 pt-2">
+                <CollectionFooter
+                  standalone
+                  hasMore
+                  loadMoreLabel={
+                    loadingEarlier ? t("Loading earlier messages…") : t("Load earlier messages")
+                  }
+                  loadMoreButtonProps={{ loading: loadingEarlier }}
+                  onLoadMore={onLoadEarlier}
+                />
+              </div>
+            ) : null}
+            {earlierError ? (
+              <InlineError
+                className="mx-4 mt-2"
+                retry={{ onRetry: onLoadEarlier, pending: loadingEarlier }}
+              >
+                {`${t("Could not load messages.")} ${earlierError}`}
+              </InlineError>
+            ) : null}
             {messages.length === 0 ? (
               <EmptyState
                 kind="empty"
@@ -192,19 +243,37 @@ export function MessageThreadView({
               />
             ) : (
               <MessageTimeline
+                windowed
                 label={t("Messages")}
                 className="px-4 py-3"
-                items={messages.map((message) => messageItem(message, openLink))}
+                items={items}
+                onSizeChange={keepEnd}
               />
             )}
           </>
         )}
       </div>
+      {unseen ? (
+        <div className="flex shrink-0 justify-center pb-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            shape="pill"
+            type="button"
+            startIcon={<ChevronDown className="icon-md" strokeWidth={2} />}
+            onClick={jumpToLatest}
+          >
+            {t("Jump to latest")}
+          </Button>
+        </div>
+      ) : null}
       <MessageReplyComposer
         key={`${thread.accountId}\u0000${thread.id}`}
         thread={thread}
         replyAddress={thread.provider === "email" ? emailReplyAddress(messages) : null}
         onSent={(message) => {
+          // The reader's own reply is always shown, wherever they had scrolled.
+          followEnd.current = true;
           append(message);
           onSent(thread, message);
         }}

@@ -7,6 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Check, Download, Play, RefreshCw, Square, TriangleAlert } from "../../../shared/ui/icons";
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { DEVICE_HUB_VERSION } from "../../../shared/model/host-contracts/native-devices";
 import { platformLabel } from "../model/deviceLabels";
 import type { DeviceHostStatus } from "../types";
 import { DevicePlatformIcon } from "./DevicePlatformIcon";
@@ -55,7 +56,8 @@ export function DeviceSetupPanel({
         <InfoPopover>
           <p>
             {t(
-              "Viewing never enables control. Live view follows the screen while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub 0.12.0 and optional control tools into the host cache, and Stop ends the owned tool processes.",
+              "Viewing never enables control. Live view follows the screen while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub {p0} and optional control tools into the host cache, and Stop ends the owned tool processes.",
+              { p0: DEVICE_HUB_VERSION },
             )}
           </p>
         </InfoPopover>
@@ -76,7 +78,9 @@ export function DeviceSetupPanel({
             <Text as="div" size="caption" tone="secondary">
               {deviceCount === undefined
                 ? `${t("Devices")} · ${t("Unknown")}`
-                : t("{p0} devices found", { p0: deviceCount })}
+                : deviceCount === 1
+                  ? t("1 device found")
+                  : t("{p0} devices found", { p0: deviceCount })}
             </Text>
           ) : null}
         </div>

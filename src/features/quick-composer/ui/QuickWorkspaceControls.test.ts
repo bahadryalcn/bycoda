@@ -178,7 +178,7 @@ it("does not steal focus after clicking outside the popup", async () => {
 it("recovers from failure to open a popup and disables controls outside repositories", async () => {
   vi.mocked(invoke).mockRejectedValueOnce(new Error("Window failed"));
   await act(async () => button("Choose branch").click());
-  expect(onError).toHaveBeenCalledWith("Error: Window failed");
+  expect(onError).toHaveBeenCalledWith("Could not open the workspace options.\n\nWindow failed");
   expect(onOpenChange).toHaveBeenLastCalledWith(false);
   bridge.repo = false;
   await render();

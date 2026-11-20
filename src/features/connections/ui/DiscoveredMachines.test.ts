@@ -60,10 +60,12 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   onAdd.mockClear();
+  account.state = { phase: "signed-out" };
 });
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -84,6 +86,28 @@ it("shows the sign-in prompt and an empty state when nothing is found or the com
 
 it("hides machines that are already added", async () => {
   await render([{ ...native, alreadyAdded: true }]);
+  expect(container.textContent).not.toContain("SSH config");
+});
+
+it("keeps confirmed native candidates through failed refreshes and skips overlapping ticks", async () => {
+  vi.useFakeTimers();
+  await render([native]);
+  let rejectRefresh!: (reason: Error) => void;
+  const read = vi.mocked(invoke);
+  read.mockClear().mockImplementationOnce(
+    () =>
+      new Promise((_, reject) => {
+        rejectRefresh = reject;
+      }),
+  );
+  const advance = (ms: number) => act(async () => vi.advanceTimersByTimeAsync(ms));
+  await advance(30_000);
+  expect(read).toHaveBeenCalledExactlyOnceWith("discover_machine_candidates");
+  await act(async () => rejectRefresh(new Error("Discovery temporarily unavailable")));
+  expect(container.textContent).toContain("SSH config");
+  read.mockResolvedValueOnce([]);
+  await advance(10_000);
+  expect(read).toHaveBeenCalledTimes(2);
   expect(container.textContent).not.toContain("SSH config");
 });
 
@@ -129,6 +153,34 @@ it("keeps Add disabled for an account computer without a published https route",
   vi.mocked(listOtherComputers).mockResolvedValue([{ ...studio, routes: [] }] as never);
   await render([]);
   expect(addButton().disabled).toBe(true);
+});
+
+it("adds a home-network account computer over SSH when an SSH entry has its address", async () => {
+  account.state = { phase: "signed-in", deviceId: "me-1" };
+  vi.mocked(listOtherComputers).mockResolvedValue([
+    {
+      ...studio,
+      routes: [{ endpoint: "http://192.168.2.108:61882", lanKey: "a".repeat(64) }],
+    },
+  ] as never);
+  await render([
+    {
+      ...native,
+      key: "known:192.168.2.108",
+      name: "192.168.2.108",
+      sources: ["known-hosts"],
+      sshUser: "kraba",
+      routes: [{ address: "192.168.2.108", kind: "lan" }],
+    },
+  ]);
+  expect(container.querySelectorAll("button")).toHaveLength(1);
+  await act(async () => addButton().click());
+  expect(onAdd).toHaveBeenCalledWith({
+    target: "kraba@192.168.2.108",
+    alternate: null,
+    name: "Studio",
+    environmentId: "env-1",
+  });
 });
 
 const many = Array.from({ length: 7 }, (_, index) => ({

@@ -1,5 +1,8 @@
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import type { HarnessId } from "../../../features/sessions/model/session";
+import { errorText } from "../../../shared/lib/errors";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 import {
   HARNESSES,
   setHarnessAttachmentsSupported,
@@ -23,6 +26,7 @@ import { isLiveHarness } from "./registry";
 import {
   emitHarnessAvailability,
   harnessAvailabilityProbedAt,
+  isHarnessAvailable,
   markHarnessAvailabilityProbed,
   setHarnessAvailability,
   type HarnessAvailability,
@@ -76,6 +80,77 @@ let inflight: Promise<void> | null = null;
  */
 const PROBE_TTL_MS = 30_000;
 
+/**
+ * One resolver call may not outlive this. A remote Host that stops answering
+ * would otherwise pin the shared probe forever, and `force` returns the pinned
+ * probe too.
+ */
+const PROBE_CALL_TIMEOUT_MS = 10_000;
+
+/**
+ * `harness_resolve_*` rejects with "<name> CLI not found. ..." (Antigravity
+ * puts the executable in parentheses before "not found") only when the binary
+ * is absent. Any other rejection is an IPC, Host or runtime failure that says
+ * nothing about whether the CLI is installed.
+ */
+const BINARY_NOT_FOUND = /\bCLI(?: \([^)]*\))? not found\b/;
+
+/** `present` / `missing` are answers; `failed` means the probe learned nothing about this provider. */
+type ProbeOutcome = "present" | "missing" | "failed";
+
+function safeErrorText(error: unknown): string {
+  return redactDiagnosticText(errorText(error));
+}
+
+async function probeOne(id: HarnessId, check: () => Promise<boolean>): Promise<ProbeOutcome> {
+  try {
+    return (await withTimeout(check(), PROBE_CALL_TIMEOUT_MS, `${id} availability probe`))
+      ? "present"
+      : "missing";
+  } catch (error) {
+    const text = safeErrorText(error);
+    if (BINARY_NOT_FOUND.test(text)) return "missing";
+    console.warn(`[harness] availability probe for "${id}" failed: ${text}`);
+    return "failed";
+  }
+}
+
+/** Resolves a binary; resolving at all means it exists. */
+function exists(resolve: () => Promise<unknown>): () => Promise<boolean> {
+  return async () => {
+    await resolve();
+    return true;
+  };
+}
+
+const CHECKS: Partial<Record<HarnessId, () => Promise<boolean>>> = {
+  acp: async () => {
+    const configs = await invokeProviderCommand<unknown[]>("generic_acp_list");
+    return configs.length > 0;
+  },
+  cursor: exists(() => resolveCursorBinary()),
+  claude: exists(() => resolveClaudeBinary()),
+  codex: exists(() => resolveCodexBinary()),
+  opencode: exists(() => resolveOpenCodeBinary()),
+  pi: exists(() => resolvePiBinary()),
+  omp: exists(() => resolveOmpBinary()),
+  fx: exists(() => resolveFxBinary()),
+  grok: exists(() => resolveGrokBinary()),
+  hermes: exists(() => resolveHermesBinary()),
+  antigravity: async () => {
+    const binary = await resolveAntigravityBinary();
+    // The agy CLI transport has no way to carry attachments.
+    setHarnessAttachmentsSupported("antigravity", binary.transport !== "stream-json");
+    // The same transport cannot ask before editing or hold a plan turn
+    // back, so the pickers must not offer those.
+    setHarnessModeLimits(
+      "antigravity",
+      binary.transport === "stream-json" ? STREAM_MODE_LIMITS : undefined,
+    );
+    return true;
+  },
+};
+
 export function harnessUnavailableHint(id: HarnessId): string {
   const { name, install } = CLI[id];
   const how = install ? ` (\`${install}\`)` : "";
@@ -90,114 +165,27 @@ export function probeHarnessAvailability(options?: { force?: boolean }): Promise
   }
   inflight = Promise.all(
     HARNESSES.map(async (id) => {
-      if (!isLiveHarness(id)) return [id, false] as const;
-      if (id === "acp") {
-        try {
-          const configs = await invokeProviderCommand<unknown[]>("generic_acp_list");
-          return [id, configs.length > 0] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "cursor") {
-        try {
-          await resolveCursorBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "claude") {
-        try {
-          await resolveClaudeBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "codex") {
-        try {
-          await resolveCodexBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "opencode") {
-        try {
-          await resolveOpenCodeBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "pi") {
-        try {
-          await resolvePiBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "omp") {
-        try {
-          await resolveOmpBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "fx") {
-        try {
-          await resolveFxBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "grok") {
-        try {
-          await resolveGrokBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "hermes") {
-        try {
-          await resolveHermesBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "antigravity") {
-        try {
-          const binary = await resolveAntigravityBinary();
-          // The agy CLI transport has no way to carry attachments.
-          setHarnessAttachmentsSupported("antigravity", binary.transport !== "stream-json");
-          // The same transport cannot ask before editing or hold a plan turn
-          // back, so the pickers must not offer those.
-          setHarnessModeLimits(
-            "antigravity",
-            binary.transport === "stream-json" ? STREAM_MODE_LIMITS : undefined,
-          );
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      return [id, false] as const;
+      const check = CHECKS[id];
+      if (!check || !isLiveHarness(id)) return [id, "missing"] as const;
+      return [id, await probeOne(id, check)] as const;
     }),
   )
     .then((entries) => {
       const next = {} as HarnessAvailability;
-      for (const [id, ok] of entries) next[id] = ok;
+      let complete = true;
+      for (const [id, outcome] of entries) {
+        // A failed probe keeps what we knew: it is not evidence the CLI is gone.
+        next[id] = outcome === "failed" ? isHarnessAvailable(id) : outcome === "present";
+        if (outcome === "failed") complete = false;
+      }
       setHarnessAvailability(next);
+      // Only a probe that answered for every provider may count as done: that
+      // starts the TTL and lets the UI claim "not found". Otherwise the next
+      // call retries instead of serving the failure from cache.
+      if (complete) markHarnessAvailabilityProbed();
       emitHarnessAvailability();
     })
     .finally(() => {
-      markHarnessAvailabilityProbed();
       inflight = null;
       // Subscribers waiting on the first probe read "probed" only after the mark above.
       emitHarnessAvailability();

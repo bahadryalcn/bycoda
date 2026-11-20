@@ -15,50 +15,85 @@ type Ledger = {
   cacheGeneration?: string;
 };
 
+/** Work shared by every instance over one ledger key, so a reopened scope never runs beside an old one. */
+type Lane = { serial: Promise<unknown>; pending: number; activeSources: Set<string> };
+const lanes = new Map<string, Lane>();
+function laneFor(key: string): Lane {
+  let lane = lanes.get(key);
+  if (!lane) {
+    lane = { serial: Promise.resolve(), pending: 0, activeSources: new Set() };
+    lanes.set(key, lane);
+  }
+  return lane;
+}
+/** Forgets a lane once nothing is queued or uploading on it; the ledger itself stays in storage. */
+function settleLane(key: string): void {
+  const lane = lanes.get(key);
+  if (lane && !lane.pending && !lane.activeSources.size) lanes.delete(key);
+}
+function isEmptyLedger(ledger: Ledger): boolean {
+  return (
+    !ledger.held?.length &&
+    !ledger.releases?.length &&
+    !Object.keys(ledger.claims ?? {}).length &&
+    Object.values(ledger.sources ?? {}).every((ids) => !ids.length)
+  );
+}
+
 export class AttachmentOwnership {
   private state: Ledger;
-  private serial: Promise<unknown> = Promise.resolve();
   private readonly key: string;
-  private readonly activeSources = new Set<string>();
   beginJob(source: string): void {
-    this.activeSources.add(source);
+    laneFor(this.key).activeSources.add(source);
   }
   finishJob(source: string): void {
-    this.activeSources.delete(source);
+    laneFor(this.key).activeSources.delete(source);
+    settleLane(this.key);
   }
   sourceNames(): string[] {
-    return Object.keys(this.state.sources);
+    return Object.keys(this.refresh().sources);
   }
   constructor(
     readonly ownerId: string,
     scope: string,
     private readonly request: AttachmentOwnershipRequest,
     private readonly storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
+    /** Called after an operation settles when this ledger is empty and no work uses it. */
+    private readonly onIdle?: (ownership: AttachmentOwnership) => void,
   ) {
     this.key = `bycoda:attachment-ownership:v1:${JSON.stringify([scope, ownerId])}`;
-    const raw = storage.getItem(this.key);
-    this.state = raw
+    this.state = this.load();
+  }
+  private load(): Ledger {
+    const raw = this.storage.getItem(this.key);
+    const state: Ledger = raw
       ? (JSON.parse(raw) as Ledger)
       : { held: [], sources: {}, releases: [], claims: {} };
-    this.state.claims ??= {};
+    state.claims ??= {};
     if (
-      !Array.isArray(this.state.held) ||
-      !this.state.held.every((id) => typeof id === "string") ||
-      !Array.isArray(this.state.releases) ||
-      !this.state.releases.every(
+      !Array.isArray(state.held) ||
+      !state.held.every((id) => typeof id === "string") ||
+      !Array.isArray(state.releases) ||
+      !state.releases.every(
         (entry) =>
           entry &&
           typeof entry.id === "string" &&
           (entry.claimId === undefined || typeof entry.claimId === "string"),
       ) ||
-      !this.state.sources ||
-      typeof this.state.sources !== "object" ||
-      !Object.values(this.state.sources).every(
+      !state.sources ||
+      typeof state.sources !== "object" ||
+      !Object.values(state.sources).every(
         (ids) => Array.isArray(ids) && ids.every((id) => typeof id === "string"),
       ) ||
-      !Object.values(this.state.claims).every((id) => typeof id === "string")
+      !Object.values(state.claims).every((id) => typeof id === "string")
     )
       throw new Error("Could not read attachment ownership ledger");
+    return state;
+  }
+  /** Another instance over the same key may have written since this one last read. */
+  private refresh(): Ledger {
+    this.state = this.load();
+    return this.state;
   }
   private save(next: Ledger) {
     // Persist first: a failed local write must never authorize a host release.
@@ -66,9 +101,20 @@ export class AttachmentOwnership {
     this.state = next;
   }
   private ordered<T>(operation: () => Promise<T>): Promise<T> {
-    const work = this.serial.catch(() => {}).then(operation);
-    this.serial = work;
-    return work;
+    const lane = laneFor(this.key);
+    lane.pending++;
+    const work = lane.serial
+      .catch(() => {})
+      .then(() => {
+        this.refresh();
+        return operation();
+      });
+    lane.serial = work;
+    return work.finally(() => {
+      lane.pending--;
+      settleLane(this.key);
+      if (!lanes.has(this.key) && isEmptyLedger(this.state)) this.onIdle?.(this);
+    });
   }
   /** Adds a durable reference without declaring any older reference removed. */
   retain(source: string, ids: string[]): Promise<void> {
@@ -124,7 +170,10 @@ export class AttachmentOwnership {
       () => ({
         ...sources,
         ...Object.fromEntries(
-          [...this.activeSources].map((source) => [source, this.state.sources[source] ?? []]),
+          [...laneFor(this.key).activeSources].map((source) => [
+            source,
+            this.state.sources[source] ?? [],
+          ]),
         ),
       }),
       true,
@@ -214,14 +263,15 @@ export class AttachmentOwnership {
     return this.ordered(() => this.drain());
   }
   claimId(id: string): string | undefined {
-    return this.state.claims[id];
+    return this.refresh().claims[id];
   }
   cacheClaimId(): string {
+    const ledger = this.refresh();
     if (
-      !this.state.cacheGeneration ||
-      this.state.releases.some((entry) => entry.claimId === this.state.cacheGeneration)
+      !ledger.cacheGeneration ||
+      ledger.releases.some((entry) => entry.claimId === ledger.cacheGeneration)
     )
-      this.save({ ...this.state, cacheGeneration: crypto.randomUUID() });
+      this.save({ ...ledger, cacheGeneration: crypto.randomUUID() });
     return this.state.cacheGeneration!;
   }
   /** A queue.get response has already atomically claimed these bytes on the host. */
@@ -298,7 +348,16 @@ export function attachmentOwnershipScope(
   const key = JSON.stringify([machineId, environmentId, ownerId]);
   let scope = scopes.get(key);
   if (!scope) {
-    scope = new AttachmentOwnership(ownerId, JSON.stringify([machineId, environmentId]), request);
+    scope = new AttachmentOwnership(
+      ownerId,
+      JSON.stringify([machineId, environmentId]),
+      request,
+      localStorage,
+      // Idle and empty: drop the cached instance; the next caller reloads the ledger.
+      (idle) => {
+        if (scopes.get(key) === idle) scopes.delete(key);
+      },
+    );
     scopes.set(key, scope);
   }
   return scope;
@@ -386,14 +445,7 @@ export function sweepEmptyAttachmentLedgers(): number {
     const key = localStorage.key(index);
     if (!key?.startsWith(prefix)) continue;
     try {
-      const ledger = JSON.parse(localStorage.getItem(key)!) as Ledger;
-      if (
-        !ledger.held?.length &&
-        !ledger.releases?.length &&
-        !Object.keys(ledger.claims ?? {}).length &&
-        Object.values(ledger.sources ?? {}).every((ids) => !ids.length)
-      )
-        empty.push(key);
+      if (isEmptyLedger(JSON.parse(localStorage.getItem(key)!) as Ledger)) empty.push(key);
     } catch {
       // An unreadable ledger may still matter to its owner: keep it.
     }

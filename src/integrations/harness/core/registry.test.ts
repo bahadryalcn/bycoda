@@ -64,6 +64,7 @@ import {
   isLiveHarness,
   listHarnesses,
   refreshHarnessCatalogs,
+  refreshHarnessCatalogsStrict,
   registerHarness,
   resetHarnessIdlePark,
   sendHarnessTurn,
@@ -1898,6 +1899,40 @@ describe("harness registry", () => {
 
     expect(claude).toHaveBeenCalledOnce();
     expect(pi).not.toHaveBeenCalled();
+  });
+
+  it("lets routine refreshes fail quietly but surfaces the failure to a strict caller", async () => {
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    const failure = new Error("probe failed");
+    registerHarness(
+      stub("pi", {
+        refreshCatalog: vi.fn(async () => {
+          throw failure;
+        }),
+      }),
+    );
+    try {
+      await expect(refreshHarnessCatalogs(["pi"])).resolves.toBeUndefined();
+      expect(debug).toHaveBeenCalled();
+      await expect(refreshHarnessCatalogsStrict(["pi"])).rejects.toBe(failure);
+    } finally {
+      debug.mockRestore();
+    }
+  });
+
+  it("reports which harnesses a strict refresh actually probed", async () => {
+    const claude = vi.fn(async () => undefined);
+    const pi = vi.fn(async () => {
+      throw new Error("pi down");
+    });
+    registerHarness(stub("claude", { refreshCatalog: claude }));
+    registerHarness(stub("pi", { refreshCatalog: pi }));
+    await expect(refreshHarnessCatalogsStrict(["claude"])).resolves.toEqual(new Set(["claude"]));
+    const failure = await refreshHarnessCatalogsStrict(["claude", "pi"]).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ message: "pi down" });
+    expect(claude).toHaveBeenCalledTimes(2);
   });
 
   it("does not spawn a catalog probe twice after a live list lands", async () => {

@@ -92,6 +92,7 @@ async function setup() {
     return { status: response.status, value };
   };
   cleanups.push(async () => {
+    finish?.();
     await closeHost(host);
     rmSync(directory, { recursive: true, force: true });
   });
@@ -106,6 +107,36 @@ async function setup() {
     finish: () => finish(),
   };
 }
+
+it("reads Host change cursors without loading the transcript", async () => {
+  const s = await setup();
+  const created = await s.engine.command({
+    type: "create",
+    workspaceMode: "current",
+    commandId: "metadata-only-cursor",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const readTranscript = vi.spyOn(s.store, "session");
+  try {
+    const { status, value } = await s.call("machine.changes", {
+      sessions: [{ sessionId: created.sessionId, revision: 0 }],
+    });
+    expect(status).toBe(200);
+    expect(value.result.sessions).toEqual([
+      {
+        sessionId: created.sessionId,
+        revision: expect.any(Number),
+        sourceEpoch: expect.any(String),
+      },
+    ]);
+    expect(readTranscript).not.toHaveBeenCalled();
+  } finally {
+    readTranscript.mockRestore();
+  }
+});
 
 it("coalesces unchanged list materialization without invalidating another project's list", async () => {
   const s = await setup();
@@ -543,8 +574,11 @@ it("replays the durable receipt after a lost response or host restart without st
     text: "single execution",
   };
   const accepted = await s.call("commands.dispatch", command);
-  expect(accepted.status).toBe(200);
-  await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+  expect(accepted).toMatchObject({
+    status: 200,
+    value: { result: { commandId: command.commandId } },
+  });
+  await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1), { timeout: 10_000 });
   const racingClient = await s.call(
     "commands.dispatch",
     { ...command, commandId: "receipt-racing-send", text: "second client races" },
@@ -559,9 +593,8 @@ it("replays the durable receipt after a lost response or host restart without st
     400,
   );
   s.finish();
-  await vi.waitFor(async () =>
-    expect((await s.store.session(created.sessionId)).status).toBe("idle"),
-  );
+  await s.engine.waitForRun(created.sessionId, accepted.value.result.runId);
+  expect((await s.store.session(created.sessionId)).status).toBe("idle");
   await s.close(s);
   const afterRestart = await openHost(s.directory, vi.fn());
   const response = await fetch(afterRestart.url, {
@@ -584,8 +617,8 @@ it("replays the durable receipt after a lost response or host restart without st
 it("keeps each loopback host authoritative and usable when the other host disconnects", async () => {
   const directoryA = mkdtempSync(join(tmpdir(), "bycoda-owner-a-"));
   const directoryB = mkdtempSync(join(tmpdir(), "bycoda-owner-b-"));
-  let finishA!: () => void;
-  let finishB!: () => void;
+  let finishA: (() => void) | undefined;
+  let finishB: (() => void) | undefined;
   const sendA = vi.fn(
     (_input: SendTurnInput) =>
       new Promise<void>((resolve) => {
@@ -601,6 +634,8 @@ it("keeps each loopback host authoritative and usable when the other host discon
   const hostA = await openHost(directoryA, sendA);
   const hostB = await openHost(directoryB, sendB);
   cleanups.push(async () => {
+    finishA?.();
+    finishB?.();
     await closeHost(hostA);
     await closeHost(hostB);
     rmSync(directoryA, { recursive: true, force: true });
@@ -658,18 +693,23 @@ it("keeps each loopback host authoritative and usable when the other host discon
     sessionId: sessionB.sessionId,
     text: "owner b",
   });
-  expect(sentA.status).toBe(200);
-  expect(sentB.status).toBe(200);
-  await vi.waitFor(() => {
-    expect(sendA).toHaveBeenCalledTimes(1);
-    expect(sendB).toHaveBeenCalledTimes(1);
-  });
-  finishA();
-  finishB();
-  await vi.waitFor(async () => {
-    expect((await hostA.store.session(sessionA.sessionId)).status).toBe("idle");
-    expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle");
-  });
+  expect(sentA).toMatchObject({ status: 200, value: { result: { commandId: "owner-a-send" } } });
+  expect(sentB).toMatchObject({ status: 200, value: { result: { commandId: "owner-b-send" } } });
+  await vi.waitFor(
+    () => {
+      expect(sendA).toHaveBeenCalledTimes(1);
+      expect(sendB).toHaveBeenCalledTimes(1);
+    },
+    { timeout: 10_000 },
+  );
+  finishA!();
+  finishB!();
+  await Promise.all([
+    hostA.engine.waitForRun(sessionA.sessionId, sentA.value.result.runId),
+    hostB.engine.waitForRun(sessionB.sessionId, sentB.value.result.runId),
+  ]);
+  expect((await hostA.store.session(sessionA.sessionId)).status).toBe("idle");
+  expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle");
 
   await closeHost(hostA);
   const stillOwnedByB = await rpc(
@@ -683,12 +723,14 @@ it("keeps each loopback host authoritative and usable when the other host discon
     },
     hostB.secondToken,
   );
-  expect(stillOwnedByB.status).toBe(200);
-  await vi.waitFor(() => expect(sendB).toHaveBeenCalledTimes(2));
-  finishB();
-  await vi.waitFor(async () =>
-    expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle"),
-  );
+  expect(stillOwnedByB).toMatchObject({
+    status: 200,
+    value: { result: { commandId: "owner-b-after-a-close" } },
+  });
+  await vi.waitFor(() => expect(sendB).toHaveBeenCalledTimes(2), { timeout: 10_000 });
+  finishB!();
+  await hostB.engine.waitForRun(sessionB.sessionId, stillOwnedByB.value.result.runId);
+  expect((await hostB.store.session(sessionB.sessionId)).status).toBe("idle");
 });
 
 it("releases a disconnected long poll without blocking the command lane", async () => {
@@ -707,6 +749,7 @@ it("releases a disconnected long poll without blocking the command lane", async 
     projects: [],
   });
   const controller = new AbortController();
+  const waitForChanges = vi.spyOn(s.store.changes, "wait");
   const waiting = s.call(
     "machine.changes",
     {
@@ -718,17 +761,26 @@ it("releases a disconnected long poll without blocking the command lane", async 
     s.token,
     controller.signal,
   );
-  await new Promise((resolve) => setTimeout(resolve, 75));
-  controller.abort();
-  await expect(waiting).rejects.toThrow();
+  try {
+    await vi.waitFor(() => expect(waitForChanges).toHaveBeenCalled(), { timeout: 10_000 });
+    controller.abort();
+    await expect(waiting).rejects.toThrow();
+  } finally {
+    controller.abort();
+    await waiting.catch(() => {});
+    waitForChanges.mockRestore();
+  }
   const sent = await s.call("commands.dispatch", {
     type: "send",
     commandId: "after-cancel-send",
     sessionId: created.sessionId,
     text: "still available",
   });
-  expect(sent.status).toBe(200);
-  await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+  expect(sent).toMatchObject({
+    status: 200,
+    value: { result: { commandId: "after-cancel-send" } },
+  });
+  await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1), { timeout: 10_000 });
   s.finish();
 });
 

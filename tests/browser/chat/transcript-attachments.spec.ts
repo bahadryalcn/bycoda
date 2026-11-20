@@ -18,7 +18,6 @@ for (const theme of ["light", "dark"] as const) {
     await expect(server).toBeVisible();
     for (let index = 0; index < 2; index++) {
       await page.getByRole("button", { name: "Send follow-up", exact: true }).click();
-      // The dock toggle is icon-only; its accessible name carries the count.
       await expect(toggle).toHaveAccessibleName(/2 running/);
       await expect(research).toBeVisible();
       await expect(server).toBeVisible();
@@ -64,7 +63,9 @@ for (const width of [390, 1000]) {
       await expect(dialog.locator("pre")).toHaveText("Attachment file content");
       await page.keyboard.press("Escape");
       await expect(dialog).toHaveCount(0);
-      await expect(file.getByRole("button")).toBeFocused();
+      await expect(
+        file.getByRole("button", { name: "Open notes.txt full screen", exact: true }),
+      ).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(page.getByRole("dialog").locator("pre")).toHaveText("Attachment file content");
       await page.keyboard.press("Escape");

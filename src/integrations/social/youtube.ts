@@ -132,6 +132,7 @@ export function createYouTubeAdapter(http: SocialHttp, now = Date.now): YouTubeA
     };
   };
   return {
+    ignoresPublishedPosts: true,
     quota,
     management: (token, channelId) => ({ http, quota, token, channelId }),
     async send(account, job, token, media, checkpoint, beforeSubmit, youtubeUpload) {

@@ -30,7 +30,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { ModalActions } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { saveSshConnection, type ServerRecord, type SshEndpoint } from "../model/serverInventory";
-import { errorText } from "./serverActionFeedback";
+import { errorText } from "../../../shared/lib/errors";
 import type { SshTerminalOpenResult } from "./serversTerminalContext";
 
 /** Stores endpoint references only. Password and private key material never enter this form. */
@@ -236,7 +236,7 @@ export function SshServerEditor({
         <FieldGroup legend={t("Connection")}>
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_9rem] items-start gap-3">
             <TextField
-              label={t("Host")}
+              label={t("Hostname")}
               placeholder="server.example.com"
               value={host}
               required

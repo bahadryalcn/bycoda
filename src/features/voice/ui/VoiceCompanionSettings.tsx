@@ -31,12 +31,8 @@ export function VoiceCompanionSettings({
   const openAssistant = (tab: "settings" | "memory") =>
     window.dispatchEvent(new CustomEvent("bycoda:open-assistant", { detail: { tab } }));
   return (
-    <Group title={t("Companion")} layout="full">
-      <Row
-        id="voice-persona"
-        label={assistantName ?? voicePersonaSummary(persona)}
-        description={t("Name, how it addresses you, tone, tasks and ground rules.")}
-      >
+    <Group title={t("Assistant")} layout="full">
+      <Row id="voice-persona" label={assistantName ?? voicePersonaSummary(persona)}>
         <Button
           startIcon={<Settings className="icon-sm" />}
           variant="ghost"
@@ -52,7 +48,7 @@ export function VoiceCompanionSettings({
         id="voice-memory"
         label={t("Memory")}
         descriptionVisible
-        description={t("Keeps short notes about you between conversations on this device.")}
+        description={t("Keeps short notes about you between conversations on this computer.")}
       >
         <Button onClick={() => openAssistant("memory")}>
           {t("Manage ({p0})", {

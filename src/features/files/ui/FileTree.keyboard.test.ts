@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileTree } from "./FileTree";
 import { forgetDir, listCachedDir, saveSelected } from "../model/fileTree";
+import { treeTabStop } from "./fileTreeSupport";
 
 const cwd = "/explorer-keyboard-test";
 vi.mock("@tauri-apps/api/core", () => ({
@@ -82,4 +83,41 @@ it("does not typeahead-select another file during composition", async () => {
   await act(async () => row().dispatchEvent(event));
   expect(row().getAttribute("aria-selected")).toBe("true");
   expect(event.defaultPrevented).toBe(false);
+});
+
+const rows = () => [...host.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+const tabStops = () =>
+  rows()
+    .filter((value) => value.tabIndex === 0)
+    .map((value) => value.title);
+
+it("keeps a single Tab stop on the selected row and moves it with arrow navigation", async () => {
+  expect(rows().length).toBeGreaterThan(1);
+  expect(tabStops()).toEqual([`${cwd}/a.ts`]);
+  expect(rows().filter((value) => value.tabIndex === -1)).toHaveLength(rows().length - 1);
+
+  await act(async () =>
+    row().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
+  );
+  expect(tabStops()).toEqual([`${cwd}/b.ts`]);
+  expect(document.activeElement).toBe(rows().find((value) => value.title === `${cwd}/b.ts`));
+});
+
+it("moves the Tab stop to a row that takes focus without changing the multi-selection", async () => {
+  const other = rows().find((value) => value.title === `${cwd}/b.ts`)!;
+  await act(async () => other.focus());
+  expect(tabStops()).toEqual([`${cwd}/b.ts`]);
+  expect(row().getAttribute("aria-selected")).toBe("true");
+});
+
+it("treeTabStop falls back to the nearest visible ancestor of a hidden active row", () => {
+  const dir = "/project";
+  expect(treeTabStop(dir, null, new Set())).toBeNull();
+  expect(treeTabStop(dir, dir, new Set())).toBeNull();
+  expect(treeTabStop(dir, `${dir}/a.ts`, new Set())).toBe(`${dir}/a.ts`);
+  expect(treeTabStop(dir, `${dir}/src/ui/a.ts`, new Set([`${dir}/src`, `${dir}/src/ui`]))).toBe(
+    `${dir}/src/ui/a.ts`,
+  );
+  expect(treeTabStop(dir, `${dir}/src/ui/a.ts`, new Set([`${dir}/src`]))).toBe(`${dir}/src/ui`);
+  expect(treeTabStop(dir, `${dir}/src/ui/a.ts`, new Set())).toBe(`${dir}/src`);
 });

@@ -214,7 +214,7 @@ describe("project background dialog", () => {
     const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')!;
     expect(dialog.className).toContain("max-h-[calc(100dvh-32px)]");
 
-    const heading = Array.from(dialog.querySelectorAll("span")).find(
+    const heading = Array.from(dialog.querySelectorAll<HTMLElement>(".settings-row-title")).find(
       (node) => node.textContent === "Background effect",
     )!;
     const info = heading.nextElementSibling as HTMLButtonElement;
@@ -222,9 +222,9 @@ describe("project background dialog", () => {
     expect(document.body.textContent).toContain("Shows the original artwork.");
     await act(async () => info.click());
     expect(
-      heading.parentElement?.parentElement?.nextElementSibling?.querySelector(
-        '[aria-label="Project background effect: None"]',
-      ),
+      heading
+        .closest(".settings-row")
+        ?.querySelector('[aria-label="Project background effect: None"]'),
     ).not.toBeNull();
 
     const trigger = document.querySelector<HTMLButtonElement>(
@@ -268,5 +268,41 @@ describe("project background dialog", () => {
     expect(preview.style.getPropertyValue("--chat-background-image")).toContain("alpha.png");
     expect(loadProjectChatBackgroundSettings("/work/alpha")?.effect).toBe("gradient-blur");
     expect(document.querySelector('[aria-label="Project background effect: Haze"]')).not.toBeNull();
+  });
+
+  // Regression for #1283: every setting row is the shared settings Row (label column and control
+  // column that wrap at narrow widths), and its control group is named by the row title.
+  it("lays out each setting as a shared wrapping row named by its title", async () => {
+    saveProjectChatBackgroundSettings("/work/layout", {
+      path: "/backgrounds/layout.png",
+      emptyOpacity: 0.2,
+      sessionOpacity: 0.3,
+      scope: "all",
+      effect: "none",
+    });
+    await act(async () =>
+      root.render(
+        createElement(ProjectBackgroundDialog, {
+          project: "/work/layout",
+          name: "Layout",
+          onClose: vi.fn(),
+        }),
+      ),
+    );
+    const titles = Array.from(document.querySelectorAll<HTMLElement>(".settings-row-title"));
+    expect(titles.map((node) => node.textContent)).toEqual(
+      expect.arrayContaining([
+        "Background effect",
+        "Show on",
+        "Empty chat visibility",
+        "Session visibility",
+      ]),
+    );
+    for (const title of titles) {
+      const row = title.closest(".settings-row");
+      const control = row?.querySelector<HTMLElement>(".settings-row-control");
+      expect(control).not.toBeNull();
+      expect(control?.getAttribute("aria-labelledby")).toBe(title.id);
+    }
   });
 });

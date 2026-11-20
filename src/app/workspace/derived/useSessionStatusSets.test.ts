@@ -5,7 +5,7 @@ import {
   type DelegationParent,
 } from "../../../shared/model/host-contracts/delegation";
 import { newSession, type Session } from "../../../features/sessions/model/session";
-import { computeSessionWaits } from "./useSessionStatusSets";
+import { computeSessionWaits, wakeRecheckDelay } from "./useSessionStatusSets";
 
 function session(id: string, patch: Partial<Session> = {}): Session {
   return { ...newSession("claude", "/repo"), id, blocks: [], ...patch };
@@ -102,5 +102,25 @@ describe("computeSessionWaits with listed host sessions", () => {
       false,
     );
     expect(computeSessionWaits([], [row({ id: "h" })], 0).has("h")).toBe(false);
+  });
+});
+
+describe("wakeRecheckDelay", () => {
+  const MAX_TIMEOUT_MS = 2_147_483_647;
+  const now = 1_000_000;
+
+  it("never schedules a delay setTimeout would overflow, however far the expiry", () => {
+    const monthAhead = now + 31 * 24 * 60 * 60 * 1000;
+    expect(wakeRecheckDelay(monthAhead, now)).toBeLessThanOrEqual(MAX_TIMEOUT_MS);
+    expect(wakeRecheckDelay(monthAhead, now)).toBe(60_000);
+  });
+
+  it("waits the exact remaining time plus one ms for a near expiry", () => {
+    expect(wakeRecheckDelay(now + 5_000, now)).toBe(5_001);
+  });
+
+  it("fires right away for an expiry that has already passed", () => {
+    expect(wakeRecheckDelay(now - 1, now)).toBe(1);
+    expect(wakeRecheckDelay(now, now)).toBe(1);
   });
 });

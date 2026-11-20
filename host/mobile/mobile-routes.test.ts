@@ -34,7 +34,27 @@ describe("createMobileRoutes", () => {
       tailnetReady.endpoint,
     ]);
   });
-  it("retries a failed slow probe one minute after it settles", async () => {
+  it("keeps the last Tailscale route through a transient failure and retries within seconds", async () => {
+    vi.useFakeTimers();
+    const tailscale = vi
+      .fn<() => Promise<MobileAccessStatus>>()
+      .mockResolvedValueOnce(tailnetReady)
+      .mockResolvedValueOnce({ state: "unavailable" })
+      .mockRejectedValueOnce(new Error("cli busy"))
+      .mockResolvedValueOnce({ state: "setup-required" });
+    const routes = createMobileRoutes({ lan: async () => lanReady, tailscale });
+    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
+    expect(tailscale).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
+    expect(tailscale).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await routes()).toEqual([{ endpoint: lanReady.endpoint, lanKey: lanReady.lanKey }]);
+    expect(tailscale).toHaveBeenCalledTimes(4);
+  });
+  it("retries a failed slow probe five seconds after it settles", async () => {
     vi.useFakeTimers();
     let fail!: (reason: Error) => void;
     const tailscale = vi
@@ -55,7 +75,7 @@ describe("createMobileRoutes", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(await routes()).toHaveLength(1);
     expect(tailscale).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(59_999);
+    await vi.advanceTimersByTimeAsync(4_999);
     expect(await routes()).toHaveLength(1);
     expect(tailscale).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(1);

@@ -10,6 +10,7 @@ export type VoiceRuntimeConfig = {
   idleUnloadMinutes?: number;
   /** Internal marker: honor an explicitly selected model without upgrading it. */
   whisperExact?: boolean;
+  whisperModel?: "small" | "turbo";
   python?: string;
   whisperPath?: string;
   ttsPath?: string;
@@ -45,9 +46,15 @@ export function voiceRuntimeConfig(value: unknown): VoiceRuntimeConfig {
     throw new Error("Invalid voice settings.");
   const result: VoiceRuntimeConfig = {};
   const input = value as Record<string, unknown>;
+  if (input.whisperModel !== undefined) {
+    if (input.whisperModel !== "small" && input.whisperModel !== "turbo")
+      throw new Error("Invalid voice model selection.");
+    result.whisperModel = input.whisperModel;
+    result.whisperExact = true;
+  }
   if (input.whisperExact !== undefined) {
     if (typeof input.whisperExact !== "boolean") throw new Error("Invalid voice model selection.");
-    result.whisperExact = input.whisperExact;
+    result.whisperExact = result.whisperModel ? true : input.whisperExact;
   }
   if (input.idleUnloadMinutes !== undefined) {
     if (
@@ -220,6 +227,15 @@ export async function inspectVoiceRuntime(
   options: { cloudKey?: VoiceCloudKeyStatus } = {},
 ): Promise<VoiceRuntimeStatus> {
   const config = voiceRuntimeConfig(value);
+  if (config.whisperModel) {
+    config.whisperPath = join(
+      homedir(),
+      ".bycoda",
+      "voice",
+      "models",
+      config.whisperModel === "turbo" ? "whisper-large-v3-turbo" : "whisper-small",
+    );
+  }
   const candidates = config.python
     ? [config.python]
     : [

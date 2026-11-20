@@ -19,7 +19,8 @@ import { useTaskTargetMachine } from "./useTaskTargetMachine";
 import { TaskFormAgent } from "./TaskFormAgent";
 import "./task-form.css";
 import { CrewTaskPicker } from "../../crews/ui/CrewTaskPicker";
-import { preflightTaskDraft, TASK_MACHINE_ERROR, type TaskDraft } from "../model/taskClient";
+import { preflightTaskDraft, type TaskDraft } from "../model/taskClient";
+import { taskClientErrors } from "../model/taskClientErrors";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
@@ -135,9 +136,9 @@ export function TaskForm({
   const blockedReason = !draft.title.trim()
     ? t("Add a title to continue.")
     : !looksLikeProject(draft.cwd)
-      ? t("Choose a project.")
+      ? t("Choose project")
       : machine == null
-        ? TASK_MACHINE_ERROR
+        ? taskClientErrors.machine()
         : !draft.crewDefinitionId && (workspaceBusy || !workspaceValid)
           ? t("Check the working branch under Advanced.")
           : undefined;
@@ -232,16 +233,14 @@ export function TaskForm({
                 leading="inherit"
                 className="task-form-targets-note"
               >
-                {target && !looksLikeProject(draft.cwd) ? (
-                  <span>{t("Choose project")}</span>
-                ) : machine && draft.id ? (
+                {machine && draft.id ? (
                   <Text truncate size="inherit" tone="inherit">
                     {t("Runs on ")}
                     {machine}
                   </Text>
                 ) : !machine ? (
                   <InlineMessage tone="warning" live="assertive">
-                    {TASK_MACHINE_ERROR}
+                    {taskClientErrors.machine()}
                   </InlineMessage>
                 ) : null}
                 {!draft.id && todoUnsupported ? (

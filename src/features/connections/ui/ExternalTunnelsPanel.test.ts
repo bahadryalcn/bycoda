@@ -142,7 +142,7 @@ function button(text: string) {
 }
 /** Opens the share dialog of the first computer (This computer) from the header action. */
 async function openShare() {
-  await act(async () => button("Share…").click());
+  await act(async () => button("Create link").click());
 }
 async function choose(label: string, value: string) {
   const radio = container.querySelector<HTMLButtonElement>(
@@ -297,12 +297,9 @@ it("separates dev and host targets and routes host start to the selected compute
   await render();
   await openShare();
   expect(container.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
-    "Share from This computer",
+    "Create link",
   );
   await choose("Computer", "Home Mac");
-  expect(container.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
-    "Share from Home Mac",
-  );
   await choose("Tunnel target", "bycoda host");
   const field = [...container.querySelectorAll("input")].find((input) => input.readOnly)!;
   expect(field.value).toBe("http://127.0.0.1:3777");
@@ -322,7 +319,7 @@ it("separates dev and host targets and routes host start to the selected compute
     true,
   );
   // A started tunnel closes the dialog; its link shows in the list.
-  expect(container.querySelector('[role="dialog"][aria-label^="Share from"]')).toBeNull();
+  expect(container.querySelector('[role="dialog"][aria-label="Create link"]')).toBeNull();
 });
 
 it("copies the public URL, shows a QR and removes sharing actions after stop", async () => {
@@ -435,7 +432,7 @@ it("shows the empty state with a Share action and one setup popover in the dialo
     throw new Error("unexpected method");
   });
   await render();
-  expect(container.textContent).toContain("Nothing is shared");
+  expect(container.textContent).toContain("No shared links");
   expect(container.querySelector('[aria-label="Tunnel status"]')).toBeNull();
   expect(container.querySelector('[aria-label="Tunnel setup"]')).toBeNull();
   await openShare();

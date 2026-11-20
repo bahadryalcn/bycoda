@@ -2,8 +2,10 @@ import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { DIAGNOSTIC_RETENTION_DAYS } from "@bycoda/account-contracts";
 import {
+  AnonymousUsageSetting,
   isAnonymousStatsEnabled,
   setAnonymousStatsEnabled,
+  statsDisclosure,
   subscribeAnonymousStats,
 } from "../../account";
 import { DiagnosticsSharingSetting } from "../../diagnostics";
@@ -86,9 +88,7 @@ export function PrivacyStartupSettings() {
           id="anonymous-statistics"
           label={t("Share anonymous usage statistics")}
           descriptionVisible
-          description={t(
-            "Once a day bycoda sends the app version and operating system with a random install id. Never your sessions, prompts, code or file names. Off by default.",
-          )}
+          description={statsDisclosure()}
         >
           <Toggle
             label={t("Share anonymous usage statistics")}
@@ -96,6 +96,7 @@ export function PrivacyStartupSettings() {
             onChange={setAnonymousStatsEnabled}
           />
         </Row>
+        <AnonymousUsageSetting />
         <Row
           label={t("Share diagnostic logs")}
           description={t(

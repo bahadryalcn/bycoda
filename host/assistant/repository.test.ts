@@ -119,3 +119,45 @@ it("accepts only the bounded paired timestamp/id wire cursor without any client 
   );
   expect(AssistantRequestValidationSchema.safeParse({ ...request, rowid: 10 }).success).toBe(false);
 });
+
+it("clears only live activity of the requested job in one pass, leaving other jobs and earlier-deleted rows untouched", async () => {
+  const f = await fixture();
+  const activity = (id: string, jobId?: string) =>
+    f.repository.put(
+      "activity",
+      {
+        id,
+        version: 0,
+        createdAt: 1,
+        updatedAt: 1,
+        kind: "note",
+        summary: id,
+        ...(jobId ? { jobId } : {}),
+      },
+      0,
+    );
+  const a1 = await activity("a1", "job-a");
+  const a2 = await activity("a2", "job-a");
+  await activity("b1", "job-b");
+  await activity("none");
+  await f.repository.trash("activity", a2.id, a2.version, 500);
+  const deletedAt = async (id: string) =>
+    (
+      await f.repository.store.db
+        .prepare("SELECT deleted_at FROM assistant_activity WHERE id=?")
+        .get(id)
+    )?.deleted_at;
+
+  await f.repository.trashActivity("job-a", 2000);
+  expect((await f.repository.list<{ id: string }>("activity")).map((row) => row.id).sort()).toEqual(
+    ["b1", "none"],
+  );
+  expect(await deletedAt(a1.id)).toBe(2000);
+  // An already-trashed row keeps its original deletion time instead of being re-stamped.
+  expect(await deletedAt(a2.id)).toBe(500);
+
+  await f.repository.trashActivity(undefined, 3000);
+  expect(await f.repository.list("activity")).toEqual([]);
+  expect(await deletedAt("b1")).toBe(3000);
+  expect(await deletedAt("none")).toBe(3000);
+});

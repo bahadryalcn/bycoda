@@ -14,6 +14,8 @@ import {
   type SshRunbookIntent,
 } from "../model/sshRunbooks";
 import type { ServerRecord } from "../model/serverInventory";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 import { SshRunbooks } from "./SshRunbooks";
 
 export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
@@ -49,7 +51,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
     try {
       await action();
     } catch (reason) {
-      if (mounted.current) setError(String(reason));
+      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       operationPending.current = false;
       if (mounted.current) setBusy(false);

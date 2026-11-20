@@ -41,9 +41,11 @@ vi.mock("../../sessions/model/models", () => ({
   catalogModelsFor: () => catalogModels,
   hasLiveCatalog: () => false,
 }));
-const refreshHarnessCatalogs = vi.fn(async () => undefined);
+const refreshHarnessCatalogs = vi.fn(async () => new Set<string>());
+// The card refreshes through the strict variant; the other-window listener uses the logging one.
 vi.mock("../../../integrations/harness/core/registry", () => ({
   refreshHarnessCatalogs: (...args: unknown[]) => refreshHarnessCatalogs(...(args as [])),
+  refreshHarnessCatalogsStrict: (...args: unknown[]) => refreshHarnessCatalogs(...(args as [])),
 }));
 const eventListeners = new Set<(event: { payload: unknown }) => void>();
 const emit = vi.fn(async (_event: string, payload: unknown) => {
@@ -145,7 +147,7 @@ describe("HarnessUpdateNotice", () => {
       openCodeRow.querySelector("button")!.click();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(openCodeRow.textContent).toContain("Upgrade failed for bun");
+    expect(openCodeRow.textContent).toContain("OpenCode could not be updated.");
     vi.useFakeTimers();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6000);
@@ -187,10 +189,10 @@ describe("HarnessUpdateNotice", () => {
     let finishUpdate!: () => void;
     vi.mocked(updateCli).mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise<string | undefined>((resolve) => {
           finishUpdate = () => {
             openCodeInstalled = "opencode v2.0.26";
-            resolve();
+            resolve(undefined);
           };
         }),
     );

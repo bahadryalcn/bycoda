@@ -2,6 +2,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -138,9 +139,12 @@ export function QuickGitPopupPicker({
   if (waiting)
     return (
       <Text as="div" size="caption" tone="inherit" className="flex items-center gap-3 px-3 py-3">
-        <Text as="p" size="inherit" tone="secondary" role="status" className="flex-1">
-          {settled ? t("Couldn’t load branches for this project.") : t("Loading branches…")}
-        </Text>
+        <LiveText
+          className="flex-1"
+          size="inherit"
+          tone="secondary"
+          text={settled ? t("Couldn’t load branches for this project.") : t("Loading…")}
+        />
         <Button variant="ghost" motion="none" type="button" className="" onClick={() => finish()}>
           {t("Close")}
         </Button>

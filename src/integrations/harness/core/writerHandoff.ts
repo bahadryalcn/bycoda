@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+
 /**
  * Desktop windows share one native session claim per conversation. When a
  * window finds the claim held, it asks the holding window to retire its idle
@@ -37,7 +39,7 @@ export function serveWriterHandoff(release: (sessionId: string) => Promise<boole
         channel.postMessage({
           type: "reply",
           id: message.id,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorText(error),
         }),
     );
   };

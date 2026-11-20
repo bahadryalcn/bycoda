@@ -9,6 +9,9 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatDate, t } from "../../../shared/i18n";
 import { revokeSshHttpProxyApproval } from "../model/sshHttpProxyApproval";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
+import { remoteBackoffDelay } from "../model/remotePollingPolicy";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { StatusBadge, type BadgeStatus } from "../../../shared/ui/Badge";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -136,7 +139,7 @@ export function SshRunbooks({
     try {
       await work();
     } catch (reason) {
-      if (mounted.current) setError(String(reason));
+      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       locked.current = false;
       if (mounted.current) setBusy(false);
@@ -176,7 +179,8 @@ export function SshRunbooks({
         }
       })
       .catch((reason) => {
-        if (mounted.current && sequence === loadSequence.current) setError(String(reason));
+        if (mounted.current && sequence === loadSequence.current)
+          setError(sanitizeConnectionError(errorText(reason)));
       })
       .finally(() => {
         if (mounted.current && sequence === loadSequence.current) setLoading(false);
@@ -208,7 +212,7 @@ export function SshRunbooks({
       })
       .catch((reason) => {
         // A status lookup that follows a failed operation must not replace that operation's error.
-        if (current) setError((previous) => previous || String(reason));
+        if (current) setError((previous) => previous || sanitizeConnectionError(errorText(reason)));
       });
     return () => {
       current = false;
@@ -216,31 +220,44 @@ export function SshRunbooks({
   }, [runId, busy]);
   useEffect(() => {
     if (!runId || busy || !sshRunActive(currentStatus)) return;
+    // Chained timeouts: the next poll is scheduled only after this one settles. Failures back off
+    // (shared remoteBackoffDelay, capped at 30 s) and hidden windows poll every 5 s; monitoring of
+    // an active run continues, and a manual Refresh status stays available throughout.
     let current = true,
-      pending = false;
-    const timer = setInterval(() => {
-      if (pending) return;
-      pending = true;
+      failures = 0,
+      timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = () => {
       void statusSshRunbook(runId)
         .then((value) => {
-          if (current && value.runId === runId) setStatus(value);
+          if (!current) return;
+          failures = 0;
+          if (value.runId === runId) setStatus(value);
         })
         .catch((reason) => {
-          if (current) setError(String(reason));
+          if (!current) return;
+          failures++;
+          setError(sanitizeConnectionError(errorText(reason)));
         })
         .finally(() => {
-          pending = false;
+          if (!current) return;
+          timer = setTimeout(
+            poll,
+            failures ? remoteBackoffDelay(failures) : document.hidden ? 5_000 : 1_000,
+          );
         });
-    }, 1000);
+    };
+    timer = setTimeout(poll, 1_000);
     return () => {
       current = false;
-      clearInterval(timer);
+      clearTimeout(timer);
     };
   }, [runId, currentStatus, busy]);
+  // The execution review only shows whether approval is still valid, so it needs one expiry timer.
   useEffect(() => {
     if (!review) return;
-    const timer = setInterval(() => setClock(Date.now()), 500);
-    return () => clearInterval(timer);
+    const { expiresAt } = review;
+    const timer = setTimeout(() => setClock(expiresAt), Math.max(0, expiresAt - Date.now()));
+    return () => clearTimeout(timer);
   }, [review]);
   return (
     <>

@@ -82,6 +82,61 @@ describe("createGitWatchCoalescer", () => {
 
     expect(notify).not.toHaveBeenCalled();
   });
+
+  it("cancels a nested folder's report merged under its parent's key", () => {
+    const notify = vi.fn();
+    const coalescer = createGitWatchCoalescer(notify);
+
+    coalescer.push([{ cwd: "C:/repo", index: true, refs: false }]);
+    coalescer.push([{ cwd: "C:/repo/packages/a", index: true, refs: true }]);
+    coalescer.cancel("C:\\repo\\packages\\a\\");
+    vi.advanceTimersByTime(2000);
+
+    // The parent still reports, but the released folder's refs change no longer widens the scope.
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith("C:/repo", "index");
+  });
+
+  it("keeps a nested folder's pending report when the parent is cancelled first", () => {
+    const notify = vi.fn();
+    const coalescer = createGitWatchCoalescer(notify);
+
+    coalescer.push([{ cwd: "C:/repo/packages/a", index: true, refs: true }]);
+    coalescer.push([{ cwd: "C:/repo", index: true, refs: false }]);
+    coalescer.cancel("C:/repo");
+    vi.advanceTimersByTime(2000);
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith("C:/repo/packages/a", "checkout");
+  });
+
+  it("drops the merged report once every folder of the checkout is cancelled", () => {
+    const notify = vi.fn();
+    const coalescer = createGitWatchCoalescer(notify);
+
+    coalescer.push([{ cwd: "C:/repo", index: true, refs: true }]);
+    coalescer.push([{ cwd: "C:/repo/packages/a", index: true, refs: false }]);
+    coalescer.cancel("C:/repo");
+    coalescer.cancel("C:/repo/packages/a");
+    vi.advanceTimersByTime(2000);
+
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("leaves unrelated checkouts pending when a nested folder is cancelled", () => {
+    const notify = vi.fn();
+    const coalescer = createGitWatchCoalescer(notify);
+
+    coalescer.push([
+      { cwd: "C:/repo/packages/a", index: true, refs: false },
+      { cwd: "C:/repo-other", index: true, refs: false },
+    ]);
+    coalescer.cancel("C:/repo/packages/a");
+    vi.advanceTimersByTime(250);
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith("C:/repo-other", "index");
+  });
 });
 
 describe("sameCheckout", () => {

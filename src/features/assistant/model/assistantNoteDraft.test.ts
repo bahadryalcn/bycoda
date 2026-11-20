@@ -196,7 +196,7 @@ it("parks legacy attempted identities that have no captured Host without recaptu
   );
   const reopened = new AssistantNoteDraft(null, disk, () => "new-id", "replacement"),
     request = vi.fn();
-  await expect(reopened.save(request)).rejects.toThrow("original Host");
+  await expect(reopened.save(request)).rejects.toThrow("original computer could not be verified");
   expect(request).not.toHaveBeenCalled();
   expect(reopened.value.id).toBe("stable-note");
 });

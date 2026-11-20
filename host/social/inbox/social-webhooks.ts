@@ -38,12 +38,14 @@ export async function receiveWebhook(
     const payload = JSON.parse(raw.toString("utf8"));
     if (payload.object !== "whatsapp_business_account" || !Array.isArray(payload.entry))
       throw new Error("Unsupported webhook object.");
+    // One account read per delivery: every change below resolves against this snapshot.
+    const accounts = await s.list<SocialAccount>("account");
     let ingested = 0;
     for (const entry of payload.entry) {
       for (const change of entry.changes ?? []) {
         if (change.field !== "messages" || change.value?.messaging_product !== "whatsapp") continue;
         const value = change.value;
-        const account = (await s.list<SocialAccount>("account")).find(
+        const account = accounts.find(
           (item) =>
             item.platform === "whatsapp" &&
             item.platformId === value.metadata?.phone_number_id &&
@@ -144,9 +146,11 @@ export async function receiveWebhook(
     !Array.isArray(payload.entry)
   )
     throw new Error("Unsupported webhook object.");
+  // One account read per delivery: every entry below resolves against this snapshot.
+  const accounts = await s.list<SocialAccount>("account");
   let ingested = 0;
   for (const entry of payload.entry) {
-    const account = (await s.list<SocialAccount>("account")).find(
+    const account = accounts.find(
       (item) =>
         item.platform === platform &&
         item.platformId === entry.id &&

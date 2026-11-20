@@ -99,8 +99,80 @@ it("meterWindowsWith returns the same titles as meterWindows and uses the transl
   expect(meterWindowsWith(undefined, t)).toEqual([]);
   const upper = ((key: string) => key.toUpperCase()) as typeof t;
   expect(meterWindowsWith(limits, upper).map((entry) => entry.title)).toEqual([
-    "5h",
+    "5-HOUR",
     "WEEKLY",
     "MONTHLY",
   ]);
+});
+
+it("titles the 5-hour window with the shared translated name and reads a reset window as Resets now", async () => {
+  const now = Date.now();
+  await act(async () =>
+    root.render(
+      createElement(UsageMeter, {
+        title: "5-hour",
+        now,
+        window: { usedPercent: 40, windowMinutes: 300, resetsAt: now - 1_000 },
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("5-hour · Resets now");
+  expect(container.textContent).not.toContain("reset due");
+});
+
+it("keeps account meters visible at narrow widths by wrapping them", async () => {
+  const now = Date.now();
+  const window = { usedPercent: 40, windowMinutes: 300, resetsAt: now + 3_600_000 };
+  await act(async () =>
+    root.render(
+      createElement(AccountUsageMeters, {
+        now,
+        limits: { ...idleRateLimits("codex"), status: "ok", session: window, weekly: window },
+      }),
+    ),
+  );
+  const row = container.firstElementChild!;
+  expect(row.querySelectorAll('[role="meter"]')).toHaveLength(2);
+  expect(row.className).toContain("flex-wrap");
+  expect(row.className).not.toMatch(/\bhidden\b|sm:flex/);
+});
+
+it("renders no fixed-width spacer when an account has no usage data", async () => {
+  await act(async () =>
+    root.render(
+      createElement(AccountUsageMeters, {
+        now: 0,
+        limits: { ...idleRateLimits("codex"), status: "error" },
+      }),
+    ),
+  );
+  expect(container.innerHTML).toBe("");
+});
+
+it("makes the exact reset time reachable without hover", async () => {
+  const now = Date.now();
+  await act(async () =>
+    root.render(
+      createElement(UsageMeter, {
+        title: "5h",
+        now,
+        window: { usedPercent: 23, windowMinutes: 300, resetsAt: now + 3_600_000 },
+      }),
+    ),
+  );
+  const focusable = container.querySelector<HTMLElement>('[tabindex="0"]')!;
+  expect(focusable).not.toBeNull();
+  expect(focusable.querySelector(".sr-only")?.textContent).toMatch(/^Resets /);
+
+  await act(async () =>
+    root.render(
+      createElement(UsageMeter, {
+        title: "Weekly",
+        now,
+        window: { usedPercent: 23, windowMinutes: 10080, resetsAt: null },
+      }),
+    ),
+  );
+  expect(container.querySelector('[tabindex="0"]')).toBeNull();
+  expect(container.querySelector(".sr-only")).toBeNull();
 });

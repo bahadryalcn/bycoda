@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
 import { formatAbsoluteTime, formatRelativeTime, orderGraphRefs } from "../model/gitGraphDisplay";
 import type { HistoryItemViewModel } from "../model/gitGraph";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { GraphAvatar, RefPill } from "./GitGraphParts";
 
 /**
@@ -67,7 +68,7 @@ export function GitGraphHoverCard({
       {commit.parents.length > 0 ? (
         <Text as="p" size="inherit" tone="secondary">
           {commit.parents.length > 1 ? t("Parents") : t("Parent")}{" "}
-          <Code size="micro">{commit.parents.map((parent) => parent.slice(0, 7)).join(", ")}</Code>
+          <Code size="micro">{commit.parents.map((parent) => shortSha(parent)).join(", ")}</Code>
         </Text>
       ) : null}
     </Text>

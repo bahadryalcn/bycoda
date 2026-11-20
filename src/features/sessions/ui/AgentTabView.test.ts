@@ -90,7 +90,7 @@ it.each(["worker", "main"])("offers the correct selection actions in %s chat", a
             }),
       ),
     );
-    const text = container.querySelector("pre")!.firstChild!;
+    const text = container.querySelector("[data-selectable-agent-response] p")!.firstChild!;
     const range = document.createRange();
     range.selectNodeContents(text);
     vi.spyOn(range, "getClientRects").mockReturnValue({

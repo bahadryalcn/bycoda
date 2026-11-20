@@ -257,7 +257,7 @@ test("Host-held read cannot disclose after privacy changes away and back", async
 });
 const sourceRow = (page: Page) =>
   page
-    .getByRole("list", { name: "File recovery copies", exact: true })
+    .getByRole("region", { name: "File recovery copies", exact: true })
     .locator("li")
     .filter({ hasText: "Earlier desktop window" });
 async function openCatalog(page: Page) {
@@ -587,7 +587,7 @@ test("the desktop recovery entry reaches retained reports with no conversations 
   await legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }).click();
   await page.getByRole("button", { name: "Find file recovery copies", exact: true }).click();
   await expect(
-    page.getByRole("list", { name: "File recovery copies", exact: true }).locator("li"),
+    page.getByRole("region", { name: "File recovery copies", exact: true }).locator("li"),
   ).toHaveCount(0);
   expect((await snapshot(page)).legacyReport.held).toBe(true);
   expect((await snapshot(page)).writes).toEqual([]);

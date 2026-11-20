@@ -10,6 +10,26 @@ type Lease = {
   shared: boolean;
 };
 const valid = (v: string) => /^[A-Za-z0-9_-]{1,128}$/.test(v);
+const INVALID = Symbol("invalid checkpoint lease");
+const READ_CONCURRENCY = 8;
+/** Maps with at most `limit` in flight; results keep input order. */
+async function mapBounded<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = [];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i]);
+      }
+    }),
+  );
+  return out;
+}
 const overlap = (a: string, b: string) => {
   const normalize = (p: string) => {
     p = p
@@ -29,31 +49,54 @@ export class CheckpointLeases {
     if (!valid(session) || !valid(turn)) throw new Error("Invalid checkpoint ID");
     return `host-${session}-${turn}.json`;
   }
-  private async read(): Promise<[string, Lease][]> {
+  /** Scans every lease file, reading with bounded concurrency. Broken entries are
+   * returned separately so each caller decides whether they are safe to skip. */
+  private async scan(): Promise<{ leases: [string, Lease][]; invalid: string[] }> {
     const names = await readdir(this.root).catch((e: NodeJS.ErrnoException) => {
       if (e.code === "ENOENT") return [];
       throw e;
     });
-    const result: [string, Lease][] = [];
-    for (const name of names.filter((n) => n.endsWith(".json"))) {
-      const bytes = await readFile(join(this.root, name), "utf8").catch(
-        (e: NodeJS.ErrnoException) => {
-          if (e.code === "ENOENT") return undefined;
-          throw e;
-        },
-      );
-      if (bytes === undefined) continue;
-      const lease = JSON.parse(bytes) as Lease;
-      if (
-        !valid(lease.sessionId) ||
-        !valid(lease.turnId) ||
-        !["host", "native"].includes(lease.owner) ||
-        typeof lease.cwd !== "string"
-      )
-        throw new Error("Invalid checkpoint lease");
-      result.push([name, lease]);
+    const files = names.filter((n) => n.endsWith(".json"));
+    const entries = await mapBounded(files, READ_CONCURRENCY, (name) => this.readLease(name));
+    const leases: [string, Lease][] = [];
+    const invalid: string[] = [];
+    entries.forEach((entry, i) => {
+      if (entry === undefined) return;
+      if (entry === INVALID) invalid.push(files[i]);
+      else leases.push([files[i], entry]);
+    });
+    return { leases, invalid };
+  }
+  private async readLease(name: string): Promise<Lease | typeof INVALID | undefined> {
+    const bytes = await readFile(join(this.root, name), "utf8").catch(
+      (e: NodeJS.ErrnoException) => {
+        if (e.code === "ENOENT") return undefined;
+        throw e;
+      },
+    );
+    if (bytes === undefined) return undefined;
+    let lease: Lease;
+    try {
+      lease = JSON.parse(bytes) as Lease;
+    } catch {
+      return INVALID;
     }
-    return result;
+    if (
+      !lease ||
+      typeof lease !== "object" ||
+      !valid(lease.sessionId) ||
+      !valid(lease.turnId) ||
+      !["host", "native"].includes(lease.owner) ||
+      typeof lease.cwd !== "string"
+    )
+      return INVALID;
+    return lease;
+  }
+  /** Fail closed: a broken lease may be a live turn, so ownership questions throw. */
+  private async read(): Promise<[string, Lease][]> {
+    const { leases, invalid } = await this.scan();
+    if (invalid.length) throw new Error("Invalid checkpoint lease");
+    return leases;
   }
   /** An unreadable lease is unknown, never evidence that a session is idle. */
   async hasSession(sessionId: string): Promise<boolean> {
@@ -114,9 +157,12 @@ export class CheckpointLeases {
   /** Candidate discovery only: the manifest remains authoritative. Publish
    * precedes capture and release follows settlement in both runtimes. */
   async sessions(owner: Lease["owner"], cwd: string): Promise<string[]> {
+    // Broken entries are skipped here only: discovery is not ownership, and the manifest
+    // decides. active, shared, hasSession and publish still fail closed on them.
+    const { leases } = await this.scan();
     return [
       ...new Set(
-        (await this.read())
+        leases
           .filter(([, lease]) => lease.owner === owner && overlap(cwd, lease.cwd))
           .map(([, lease]) => lease.sessionId),
       ),

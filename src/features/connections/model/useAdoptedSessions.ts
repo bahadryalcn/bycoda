@@ -27,6 +27,7 @@ import {
 } from "./adoptedSessions";
 import { createHostMetadataMirror } from "./adoptedSessionMetadata";
 import { adoptedSyncingIds, setAdoptedSyncing } from "./adoptedSyncing";
+import { adoptedSyncFailing } from "./adoptedSyncFailures";
 import { loadRemoteCapabilities, loadRemoteSession, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import type { HostProject, RemoteMachine } from "./protocol";
@@ -35,6 +36,7 @@ import { loadRecents, sameProjectPath } from "../../projects/public/recents";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { DIGESTS_CAPABILITY } from "../../sync/model/conversationHead";
 import { adoptedBeatFresh, notifyLocalHostReachable, setAdoptedWaker } from "./hostWake";
+import { remoteBackoffDelay } from "./remotePollingPolicy";
 
 const MACHINE_RECHECK_MS = 15_000;
 /** While the host's heartbeat reports what moved, this is the only timer: a
@@ -109,6 +111,8 @@ export function useAdoptedSessions(
     const declined = new Map<string, number>();
     let known: RemoteMachine | undefined;
     let knownAt = 0;
+    /** Consecutive scheduled passes that found the host unreachable; sets the idle wait. */
+    let failures = 0;
     /** Open conversations still waiting for their first comparison with the host copy. */
     const showSyncing = () =>
       setAdoptedSyncing(
@@ -129,6 +133,7 @@ export function useAdoptedSessions(
         const machine = known;
         if (!machine || stopped) {
           setReachable(false);
+          if (!sessionId) failures += 1;
           if (sessionId) throw new Error("Host unavailable. Check the connection and try again.");
           return;
         }
@@ -137,6 +142,7 @@ export function useAdoptedSessions(
         const capabilities = await loadRemoteCapabilities(machine.environmentId);
         setReachable(supportsAdoptedSessions(capabilities));
         if (!hostReachable.current || stopped) {
+          if (!sessionId) failures += 1;
           if (sessionId)
             throw new Error(
               "The host cannot refresh this conversation. Check the connection and host version.",
@@ -296,16 +302,23 @@ export function useAdoptedSessions(
         await mirrorAdoptedSessions(deps);
         if (!stopped) showSyncing();
         lastFailure = undefined;
+        failures = 0;
+        // A session that keeps failing at its revision is retried on the safety pass, not on
+        // the short cadence reserved for copies that are still arriving.
         outstanding = listed.some(
           (entry) =>
-            mirrored.get(entry.id) !== entry.revision && declined.get(entry.id) !== entry.revision,
+            mirrored.get(entry.id) !== entry.revision &&
+            declined.get(entry.id) !== entry.revision &&
+            !adoptedSyncFailing(mirrored, entry),
         );
       } catch (error) {
         setReachable(false);
         // An unreachable host is the connection notice's to explain, not a sync in progress.
         if (!sessionId) setAdoptedSyncing(new Set());
         outstanding = true;
-        known = undefined;
+        // The machine stays known, so a failing pass does not list machines again. A Host
+        // that changed is found by the machine-changed wake or by the recheck interval.
+        if (!sessionId) failures += 1;
         if (sessionId) throw error;
         // Host unreachable or too old; the next pass tries again. Queue delivery and the
         // live beat wait on this flag, so the reason is named once.
@@ -357,7 +370,10 @@ export function useAdoptedSessions(
     const nextDelay = () => {
       const legacy =
         document.visibilityState === "hidden" ? ADOPTED_POLL_HIDDEN_MS : ADOPTED_POLL_VISIBLE_MS;
-      if (!hostReachable.current || !adoptedBeatFresh()) return legacy;
+      // An unreachable host waits longer each failed pass (5 s, 6 s, 12 s ... 30 s, or the
+      // hidden cadence if that is longer); the wake triggers still run a pass at once.
+      if (!hostReachable.current) return Math.max(legacy, remoteBackoffDelay(failures));
+      if (!adoptedBeatFresh()) return legacy;
       if (!outstanding) {
         retries = 0;
         return ADOPTED_SAFETY_MS;
@@ -394,7 +410,15 @@ export function useAdoptedSessions(
       if (document.visibilityState !== "hidden") onWake();
     };
     const stopRecovered = subscribeRemoteRecovered((environmentId) => {
-      if (!environmentId || !known || known.environmentId === environmentId) onWake();
+      // While the mirror is down, any recovered Host wakes it: the kept machine's identity
+      // is not a filter for a Host that may have come back under another environment.
+      if (
+        !environmentId ||
+        !known ||
+        !hostReachable.current ||
+        known.environmentId === environmentId
+      )
+        onWake();
     });
     setAdoptedWaker(onBeat);
     window.addEventListener("focus", onWake);

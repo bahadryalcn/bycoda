@@ -4,6 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Sheet } from "../../../shared/ui/Sheet";
 import { Text } from "../../../shared/ui/Text";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { openPrivacySettings } from "../../../platform/tauri/privacySettings";
 import {
   closePermissionHelper,
@@ -16,9 +17,16 @@ import {
   permissionBadge,
   permissionInfo,
   permissionInstructions,
+  permissionMayNeedRestart,
+  permissionNeedsRestart,
   permissionReady,
 } from "../model/permissions";
+import { PermissionRestartButton } from "./PermissionRestartButton";
 
+/**
+ * Guides one permission: the status line first, then the step and one row of
+ * actions with a single primary (restart, Allow or Open settings).
+ */
 export function PermissionSetupSheet({ id, onClose }: { id: PermissionId; onClose: () => void }) {
   const {
     report,
@@ -92,59 +100,45 @@ export function PermissionSetupSheet({ id, onClose }: { id: PermissionId; onClos
       if (mounted.current) setBusy(null);
     }
   }
-  const status =
-    failed || (!loading && entry.state === "unknown")
-      ? t("Permission status is unavailable. Check again from the desktop app.")
-      : entry.state === "unknown" && loading
-        ? t("Checking permission status…")
+  const pendingRestart = !failed && permissionNeedsRestart(entry);
+  // The read may not see a switch made in System Settings until the restart.
+  const offerRestart =
+    !ready &&
+    !failed &&
+    (pendingRestart || (acted && permissionMayNeedRestart(id, report?.platform)));
+  const blocked = !ready && entry.state !== "restricted" && !pendingRestart;
+  const showAllow = blocked && entry.canRequest;
+  const showSettings = blocked && entry.canOpenSettings;
+  const status = failed
+    ? t("Permission status is unavailable. Check again from the desktop app.")
+    : entry.state === "unknown" && loading
+      ? t("Checking permission status…")
+      : entry.state === "unknown"
+        ? t("This system does not report this permission.")
         : ready
           ? t("Access is ready")
-          : entry.state === "restricted"
-            ? t("Access is restricted by system policy. Contact your administrator.")
-            : acted
-              ? t("Waiting for access")
-              : permissionBadge(entry.state).label;
+          : pendingRestart
+            ? t("Restart {p0} to apply access.", { p0: PRODUCT_IDENTITY.displayName })
+            : entry.state === "restricted"
+              ? t("Access is restricted by system policy. Contact your administrator.")
+              : acted
+                ? t("Waiting for access")
+                : permissionBadge(entry.state).label;
+  const tone = ready ? "success" : pendingRestart ? "warning" : "neutral";
   return (
     <Sheet title={permissionInfo(id).label} onClose={onClose} motion="none">
-      <div className="flex flex-col gap-4">
-        {entry.canRequest && (
-          <>
-            <Text as="p">{t("Ask for access")}</Text>
-            <Text as="p" tone="secondary">
-              {t("bycoda asks your operating system for access. Choose Allow if a prompt appears.")}
-            </Text>
-          </>
+      <div className="flex flex-col gap-3">
+        <InlineMessage tone={tone}>{status}</InlineMessage>
+        {showAllow && (
+          <Text as="p" tone="secondary">
+            {t("bycoda asks your operating system for access. Choose Allow if a prompt appears.")}
+          </Text>
         )}
-        <div className="flex flex-wrap gap-2">
-          {entry.canRequest && (
-            <Button
-              loading={busy === "request"}
-              disabled={busy !== null}
-              onClick={() => void act(true)}
-            >
-              {t("Allow")}
-            </Button>
-          )}
-          {entry.canOpenSettings && (
-            <Button
-              loading={busy === "settings"}
-              disabled={busy !== null}
-              onClick={() => void act(false)}
-            >
-              {t("Open Settings")}
-            </Button>
-          )}
-        </div>
-        {entry.canOpenSettings && entry.state !== "restricted" && (
-          <>
-            <Text as="p">{t("Change the system setting")}</Text>
-            <Text as="p" tone="secondary">
-              {permissionInstructions(id, report?.platform)}
-            </Text>
-          </>
+        {showSettings && (
+          <Text as="p" tone="secondary">
+            {permissionInstructions(id, report?.platform)}
+          </Text>
         )}
-        <Text as="p">{t("Check access")}</Text>
-        <InlineMessage tone={ready ? "success" : "neutral"}>{status}</InlineMessage>
         {ready && observedBlocked && id === "screen-recording" && report?.platform === "macos" && (
           <InlineMessage>
             {t("macOS now allows screen recording. If capture still fails, restart bycoda.")}
@@ -153,22 +147,48 @@ export function PermissionSetupSheet({ id, onClose }: { id: PermissionId; onClos
         {error && (
           <InlineError>
             {t(
-              "Could not open the permission prompt or settings. Follow the steps above, then check again.",
+              "Couldn’t open the permission prompt or settings. Follow the steps above, then check again.",
             )}
           </InlineError>
         )}
-        <Button
-          loading={busy === "check"}
-          loadingLabel={t("Checking…")}
-          disabled={busy !== null}
-          onClick={() =>
-            void check().catch(() => {
-              if (mounted.current) setError(true);
-            })
-          }
-        >
-          {t("Check again")}
-        </Button>
+        {!ready && (
+          <div className="flex flex-wrap gap-2">
+            {offerRestart && <PermissionRestartButton variant="primary" />}
+            {showAllow && (
+              <Button
+                variant={offerRestart ? "secondary" : "primary"}
+                loading={busy === "request"}
+                disabled={busy !== null}
+                onClick={() => void act(true)}
+              >
+                {t("Allow")}
+              </Button>
+            )}
+            {showSettings && (
+              <Button
+                variant={offerRestart || showAllow ? "secondary" : "primary"}
+                loading={busy === "settings"}
+                disabled={busy !== null}
+                onClick={() => void act(false)}
+              >
+                {t("Open settings")}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              loading={busy === "check"}
+              loadingLabel={t("Checking…")}
+              disabled={busy !== null}
+              onClick={() =>
+                void check().catch(() => {
+                  if (mounted.current) setError(true);
+                })
+              }
+            >
+              {t("Check again")}
+            </Button>
+          </div>
+        )}
       </div>
     </Sheet>
   );

@@ -60,6 +60,44 @@ fn commit_epoch(
     })
 }
 
+fn recover_epoch_gap(
+    channel: &Arc<NativeServiceChannel>,
+    original: &Original,
+    deadline: Instant,
+) -> Result<bool, String> {
+    if Instant::now() >= deadline {
+        return Err("cleanup deadline elapsed before Host lookup".into());
+    }
+    let route =
+        route(channel).map_err(|error| epoch_wire::gap_error("route unavailable", &error))?;
+    if original.route_fingerprint() != route {
+        return Err("route changed before Host lookup".into());
+    }
+    let params = epoch_wire::gap_params(original)
+        .map_err(|error| epoch_wire::gap_error("invalid local gap identity", &error))?;
+    let reply = epoch_call(channel, epoch_wire::GAP_RESOLVE, params.clone(), deadline)
+        .map_err(|error| epoch_wire::gap_error("Host lookup failed", &error))?;
+    if !epoch_wire::gap_outcome(&params, &reply.value)
+        .map_err(|error| epoch_wire::gap_error("invalid Host gap reply", &error))?
+    {
+        return Ok(false);
+    }
+    access(channel)
+        .and_then(|access| {
+            access.with(|store| {
+                let admission = journal::completion_admission(store)?;
+                let result = channel.with_current(&reply.guards(), || {
+                    authority::with_full_projection_transaction(store, |tx| {
+                        journal::epochs::record_gap_tx(tx.connection(), original)
+                    })
+                });
+                admission.finish(result)
+            })
+        })
+        .map_err(|error| epoch_wire::gap_error("Host fence could not be saved", &error))?;
+    Ok(true)
+}
+
 fn ensure_epoch(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,
@@ -71,9 +109,16 @@ fn ensure_epoch(
     let request = access(channel)?.with(|store| epoch_wire::open_params(store, &fingerprint))?;
     let response = epoch_call(channel, epoch_wire::OPEN, request, deadline)?;
     let epoch = commit_epoch(channel, &response)?;
-    let maintenance = access(channel)?.with(|store| epoch_wire::compact_params(store, &epoch))?;
+    let cleanup_deadline = deadline.min(Instant::now() + CLEANUP_BUDGET);
+    let maintenance = access(channel)?.with(|store| {
+        epoch_wire::maintenance_params(
+            store,
+            &epoch,
+            channel.delivery_epoch_gaps_supported,
+            |original| recover_epoch_gap(channel, original, cleanup_deadline),
+        )
+    })?;
     if let Some(params) = maintenance {
-        let cleanup_deadline = deadline.min(Instant::now() + CLEANUP_BUDGET);
         if let Ok(response) = epoch_call(channel, epoch_wire::COMPACT, params, cleanup_deadline) {
             let _ = commit_epoch(channel, &response);
         }
@@ -141,6 +186,16 @@ pub(super) fn supports_ack_host(descriptor: &Value) -> bool {
             methods
                 .iter()
                 .any(|method| method.as_str() == Some("native.services.delivery.ack"))
+        })
+}
+
+/// The Host answers an `acknowledge: "admission"` apply as soon as the original is durably
+/// admitted, and serves the typed outcome by the same original id.
+pub(super) fn supports_admission_host(descriptor: &Value) -> bool {
+    supports_ack_host(descriptor)
+        && descriptor["capabilities"].as_array().is_some_and(|caps| {
+            caps.iter()
+                .any(|cap| cap.as_str() == Some("native.services.delivery.admission.v1"))
         })
 }
 
@@ -659,19 +714,55 @@ fn status(
     if !channel.delivery_supported || route(channel)? != original.route_fingerprint() {
         return Err(held(original));
     }
-    let params = status_params(original);
-    let reply = if channel.websocket {
+    let reply = status_reply(channel, original, status_params(original), deadline)?;
+    persist_reply(reply, original, true, deadline)
+}
+
+fn status_reply(
+    channel: &Arc<NativeServiceChannel>,
+    original: &Original,
+    params: Value,
+    deadline: Instant,
+) -> Result<NativeServiceReply, String> {
+    if channel.websocket {
         match channel.wire("native.services.delivery.status", params.clone(), deadline) {
-            Ok(reply) => reply,
+            Ok(reply) => Ok(reply),
             Err(error) if error.unsupported && !error.uncertain => {
-                http(channel, "native.services.delivery.status", params, deadline)?
+                http(channel, "native.services.delivery.status", params, deadline)
             }
-            Err(_) => return Err(held(original)),
+            Err(_) => Err(held(original)),
         }
     } else {
-        http(channel, "native.services.delivery.status", params, deadline)?
-    };
-    persist_reply(reply, original, true, deadline)
+        http(channel, "native.services.delivery.status", params, deadline)
+    }
+}
+
+/// The Host acknowledged durable admission and is still running the effect. Read the outcome
+/// by the same original id until it is typed or the caller's deadline passes. This never
+/// applies again: running out of time, or any answer that is not exactly this original,
+/// leaves it unconfirmed and held for reconciliation, like a lost apply reply.
+fn settle_accepted(
+    channel: &Arc<NativeServiceChannel>,
+    original: &Original,
+    mut reply: NativeServiceReply,
+    deadline: Instant,
+) -> Result<NativeServiceReply, String> {
+    let mut wait = std::time::Duration::from_millis(25);
+    while reply.value["state"] == "accepted" {
+        if !exact_binding(&reply.value, original) {
+            return Err(held(original));
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Err(held(original));
+        }
+        std::thread::sleep(wait.min(deadline - now));
+        wait = (wait * 2).min(std::time::Duration::from_millis(250));
+        let mut params = status_params(original);
+        params["acknowledge"] = json!("admission");
+        reply = status_reply(channel, original, params, deadline)?;
+    }
+    Ok(reply)
 }
 
 fn apply(
@@ -686,6 +777,11 @@ fn apply(
     }
     let mut wrapper = status_params(original);
     wrapper["paramsJson"] = json!(params_json);
+    // Only a Host that advertises it: older Hosts keep the synchronous reply.
+    let admission = channel.delivery_supported && channel.delivery_admission_supported;
+    if admission {
+        wrapper["acknowledge"] = json!("admission");
+    }
     if channel.delivery_supported {
         if !crate::host_ws::native_profile::NativeProfileBroker::supports_service_params(
             "native.services.delivery.apply",
@@ -717,6 +813,11 @@ fn apply(
         } else {
             http(channel, "native.services.delivery.apply", wrapper, deadline)
                 .map_err(|_| held(&possible))?
+        };
+        let reply = if admission {
+            settle_accepted(channel, &possible, reply, deadline)?
+        } else {
+            reply
         };
         return persist_reply(reply, &possible, true, deadline);
     }

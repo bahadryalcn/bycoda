@@ -190,7 +190,7 @@
 .appearance[data-surface-frame]:not([data-surface-frame="none"])[data-surface-edge="start"] {
   border-width: 0;
   border-block-start-width: 1px;
-  border-inline-start-width: 1px;
+  border-inline-start-width: calc(var(--surface-frame-inline-start-visible, 1) * 1px);
 }
 .surface[data-surface-frame]:not([data-surface-frame="none"])[data-surface-edge="top"],
 .appearance[data-surface-frame]:not([data-surface-frame="none"])[data-surface-edge="top"] {

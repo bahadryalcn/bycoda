@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   cancelSessionSearch,
@@ -11,6 +12,9 @@ const EMPTY: SessionContentResult = {
   truncated: false,
   pending: 0,
 };
+/** Follow-up polls while sessions are still indexing; the gap doubles up to the cap. */
+const INDEX_POLL_MIN_MS = 2000;
+const INDEX_POLL_MAX_MS = 10000;
 
 /** Own the request lifecycle separately from the file-search channel. */
 export function useConversationSearch(enabled: boolean, options: Options, revision?: string) {
@@ -37,17 +41,21 @@ export function useConversationSearch(enabled: boolean, options: Options, revisi
     let cancelled = false;
     let owner: string | null = null;
     let timer: ReturnType<typeof setTimeout>;
+    let pollDelay = INDEX_POLL_MIN_MS;
     const requestOptions = optionsRef.current;
-    const run = async () => {
+    // Background polls keep the committed result and loading state untouched, so the
+    // spinner and aria-busy only reflect user-visible searches.
+    const run = async (background = false) => {
       const searchOwner = crypto.randomUUID();
       owner = searchOwner;
-      setState((previous) => ({
-        key,
-        result: previous.key === key ? previous.result : EMPTY,
-        error: null,
-        loading: true,
-        attempt: retryTick,
-      }));
+      if (!background)
+        setState((previous) => ({
+          key,
+          result: previous.key === key ? previous.result : EMPTY,
+          error: null,
+          loading: true,
+          attempt: retryTick,
+        }));
       try {
         const retryCurrentIndex = retryIndexKey.current === key;
         if (retryCurrentIndex) retryIndexKey.current = null;
@@ -64,13 +72,16 @@ export function useConversationSearch(enabled: boolean, options: Options, revisi
           loading: false,
           attempt: retryTick,
         });
-        if (result.pending > 0 && !result.indexError) timer = setTimeout(() => void run(), 2000);
+        if (result.pending > 0 && !result.indexError) {
+          timer = setTimeout(() => void run(true), pollDelay);
+          pollDelay = Math.min(pollDelay * 2, INDEX_POLL_MAX_MS);
+        }
       } catch (reason) {
         if (cancelled) return;
         setState((previous) => ({
           key,
           result: previous.key === key ? previous.result : EMPTY,
-          error: reason instanceof Error ? reason.message : String(reason),
+          error: errorText(reason),
           loading: false,
           attempt: retryTick,
         }));

@@ -799,3 +799,41 @@ it("keeps system notices intact: an owner client cannot edit, forge or strip one
     serve({ ...stale, messages: [...stale.messages, { ...notice, id: "never-queued" }] }),
   ).rejects.toThrow("cannot be edited");
 });
+it("never lets a stale client's retry add a removed row back, however old or many", async () => {
+  const db = new StoreDatabase(":memory:");
+  databases.push(db);
+  let now = 1_000_000;
+  const queues = new SessionQueues(db, () => now);
+  const empty = { messages: [] };
+  const add = (id: string): RemoteQueue => ({ messages: [message(id)], status: "active" });
+  // A retry has no deadline: a saved offline mutation may arrive long after, in any number
+  // of later removals, so a tombstone is neither aged out nor counted out.
+  await queues.consumed("chat", "oldest");
+  for (let i = 0; i < 1_100; i += 1) await queues.consumed("chat", `later-${i}`);
+  now += 400 * 24 * 60 * 60 * 1000;
+  await queues.consumed("chat", "latest");
+  for (const id of ["oldest", "later-0", "later-1099", "latest"])
+    expect((await queues.change("chat", empty, add(id), "pc1")).messages).toEqual([]);
+  // A tombstone of one conversation is not another conversation's.
+  expect((await queues.change("other", empty, add("oldest"), "pc1")).messages).toHaveLength(1);
+});
+it("keeps tombstones in a table that gained a removed_at column from an earlier build", async () => {
+  const db = new StoreDatabase(":memory:");
+  databases.push(db);
+  await db.exec(
+    "CREATE TABLE session_queue_removed (session_id TEXT NOT NULL, message_id TEXT NOT NULL, removed_at INTEGER, PRIMARY KEY(session_id, message_id)); INSERT INTO session_queue_removed VALUES ('chat', 'legacy', 5000)",
+  );
+  const queues = new SessionQueues(db, () => 9_000_000_000_000);
+  await queues.consumed("chat", "fresh");
+  for (const id of ["legacy", "fresh"])
+    expect(
+      (
+        await queues.change(
+          "chat",
+          { messages: [] },
+          { messages: [message(id)], status: "active" },
+          "pc1",
+        )
+      ).messages,
+    ).toEqual([]);
+});

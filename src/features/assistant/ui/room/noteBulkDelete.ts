@@ -1,4 +1,5 @@
 import type { AssistantNote } from "../../../../shared/model/host-contracts/assistant";
+import { unconfirmedError } from "../../model/unconfirmedOutcome";
 
 export type NoteDeleteResult = { ok?: boolean; trashId?: string };
 
@@ -24,7 +25,7 @@ export async function deleteNotesInOrder(
   for (const note of notes) {
     try {
       const result = await remove(note);
-      if (result.ok !== true) throw new Error("Note deletion was not confirmed.");
+      if (result.ok !== true) throw unconfirmedError("Note deletion");
       outcome.deleted += 1;
       if (result.trashId?.startsWith("notetrash:")) outcome.trashIds.push(result.trashId);
       else outcome.withoutReceipt.push(note.title);

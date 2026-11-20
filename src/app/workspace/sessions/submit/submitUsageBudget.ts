@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import type { SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 import {
@@ -137,7 +138,7 @@ export function gateUsageBudget(
       return accepted;
     } catch (error) {
       if (!isCurrent()) return false;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorText(error);
       ctx.enqueueHarnessEvent(sessionId, { type: "session.error", message });
       ctx.flushHarnessEvents();
       options?.onSettled?.({ status: "failed", text: "", error: message });

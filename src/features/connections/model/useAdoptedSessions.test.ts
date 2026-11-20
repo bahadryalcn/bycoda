@@ -613,9 +613,41 @@ it("falls back to its own cadence, with no tight loop, when the heartbeat stops 
   await act(async () => adoptedBeatFailed());
   expect(listCalls()).toBe(before + 1);
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
-  // One look every 5 s while unreachable, as before: never a retry loop.
-  expect(listCalls() - before).toBeLessThanOrEqual(13);
-  expect(listCalls() - before).toBeGreaterThanOrEqual(10);
+  // Backs off while unreachable (5 s, 6 s, 12 s, 24 s...): a few looks a minute, not twelve.
+  expect(listCalls() - before).toBeLessThanOrEqual(5);
+  expect(listCalls() - before).toBeGreaterThanOrEqual(3);
+});
+
+it("does not list the host's machines again on every failing pass while the host is down", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  idleHost(initial);
+  await act(async () => root.render(createElement(Probe, { initial })));
+  await act(async () => noteAdoptedBeat({ ids: [], reset: true }));
+  vi.mocked(remoteRequest).mockRejectedValue(new Error("offline"));
+  const machineLists = () =>
+    vi.mocked(invoke).mock.calls.filter(([command]) => command === "remote_machines").length;
+  const before = listCalls();
+  const machinesBefore = machineLists();
+  await act(async () => adoptedBeatFailed());
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  // The known machine is kept between failing passes and re-listed only on its recheck interval.
+  expect(listCalls() - before).toBeLessThanOrEqual(5);
+  expect(machineLists() - machinesBefore).toBeLessThanOrEqual(2);
+});
+
+it("runs a pass at once when the host recovers, even under another environment id", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  idleHost(initial);
+  await act(async () => root.render(createElement(Probe, { initial })));
+  await act(async () => noteAdoptedBeat({ ids: [], reset: true }));
+  vi.mocked(remoteRequest).mockRejectedValueOnce(new Error("offline"));
+  await act(async () => adoptedBeatFailed());
+  vi.mocked(remoteRequest).mockRejectedValue(new Error("offline"));
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  const before = listCalls();
+  // The host came back under a different environment id: the mirror must not wait out its back-off.
+  await act(async () => notifyRemoteRecovered("another-env"));
+  expect(listCalls() - before).toBe(1);
 });
 
 it("retries a conversation it could not mirror with growing delays, not every few seconds", async () => {

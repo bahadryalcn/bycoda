@@ -1,32 +1,11 @@
-import {
-  applyAppearancePreferences,
-  initAppearancePreferences,
-  loadAppearancePreferences,
-} from "../settings/model/appearancePreferences";
+import { bootSecondaryWindowAppearance } from "../settings/model/secondaryWindowAppearance";
 import { QueryProvider } from "../../app/QueryProvider";
 import "../../app/model/fileUiAdapters";
-import "../model-routing/public/rendererBootstrap";
+import { startRendererModelRoutingAfterPaint } from "../model-routing/public/rendererBootstrap";
 import React from "react";
 import { languageReady } from "../../shared/i18n";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { IS_MAC } from "../../platform/tauri/platform";
-import {
-  applyAccentColor,
-  applyThemeDarkLightness,
-  applyThemePreference,
-  applyThemeTint,
-  loadAccentColor,
-  loadThemeDarkLightness,
-  loadThemeHue,
-  loadThemePreference,
-  loadThemeSaturation,
-  SCHEME_CHANGE_EVENT,
-  subscribeThemeStorage,
-  watchSystemColorScheme,
-  type ColorScheme,
-} from "../settings/model/appearance";
 import { QuickGitPopup } from "./ui/QuickGitPopup";
 import { QuickComposer } from "./ui/QuickComposer";
 import { PrivacyLaunchGate } from "../group-lock/ui/PrivacyLaunchGate";
@@ -49,33 +28,12 @@ if (import.meta.hot)
     void nativeProjectionReceiver.dispose();
   });
 
-/**
- * Theme, shared control geometry and typography, without workspace glass, backgrounds or scale: the panel
- * draws its own card on a clear window. Storage keeps an open panel in sync;
- * every show also reloads the theme after a hidden window resumes.
- */
-function applyAppearance() {
-  applyAppearancePreferences(loadAppearancePreferences());
-  document.documentElement.classList.toggle("is-mac", IS_MAC);
-  applyAccentColor(loadAccentColor());
-  applyThemeTint(loadThemeHue(), loadThemeSaturation());
-  applyThemeDarkLightness(loadThemeDarkLightness());
-  applyThemePreference(loadThemePreference());
-}
-
-window.addEventListener(SCHEME_CHANGE_EVENT, (event) => {
-  const scheme = (event as CustomEvent<ColorScheme>).detail;
-  // The native blur follows the window's appearance, not the page's, so
-  // match it to the app theme rather than the system one.
-  void getCurrentWindow()
-    .setTheme(scheme)
-    .catch(() => undefined);
-});
-
-initAppearancePreferences();
-applyAppearance();
-subscribeThemeStorage(applyAppearance);
-watchSystemColorScheme();
+// Every show also reloads the theme after a hidden window resumes.
+const applyAppearance = bootSecondaryWindowAppearance();
+const onShown = () => {
+  applyAppearance();
+  startRendererModelRoutingAfterPaint();
+};
 
 void languageReady.then(async () => {
   if (getGroupLockView().settings.startInPrivacyMode) {
@@ -87,9 +45,9 @@ void languageReady.then(async () => {
       <QueryProvider>
         <PrivacyLaunchGate>
           {new URLSearchParams(window.location.search).get("popup") === "git" ? (
-            <QuickGitPopup onShown={applyAppearance} />
+            <QuickGitPopup onShown={onShown} />
           ) : (
-            <QuickComposer onShown={applyAppearance} />
+            <QuickComposer onShown={onShown} />
           )}
         </PrivacyLaunchGate>
       </QueryProvider>

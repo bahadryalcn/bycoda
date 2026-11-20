@@ -264,6 +264,25 @@ describe("ImportDialog files", () => {
 });
 
 describe("ImportDialog result", () => {
+  it("counts rejected rows past the report limit", async () => {
+    const rejected = Array.from({ length: 22 }, (_, index) => ({
+      row: index + 1,
+      issues: ["Row rejected."],
+    }));
+    const mock = clientMock({
+      audience: {
+        ...clientMock().audience,
+        import: vi.fn(async () => ({ imported: 1, rejected })),
+      },
+    });
+    await chosen(mock, textFile("people.csv", "platformId,name\n1,Ada"));
+    clickButton("Import 1 people");
+    await flush();
+    expect(bodyText()).toContain("Row 20: Row rejected.");
+    expect(bodyText()).not.toContain("Row 21: Row rejected.");
+    expect(bodyText()).toContain("And 2 more rows.");
+  });
+
   it("shows the Host reason, keeps the file and offers a retry when the import fails", async () => {
     const mock = clientMock({
       audience: {

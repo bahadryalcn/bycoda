@@ -63,6 +63,11 @@ for (const value of [
   "Zoom",
 ])
   used.add(value);
+// Recorded assistant action labels are chosen by id at render time, so their literals never
+// reach a `t(...)` call; read the Map entries and the generic fallback from their source.
+const recorded = fs.readFileSync("src/features/assistant/ui/room/recordedActionLabels.ts", "utf8");
+for (const match of recorded.matchAll(/\["[^"\n]+",\s*"([^"\n]+)"\]/g)) used.add(match[1]);
+used.add(/RECORDED_ACTION_FALLBACK_LABEL = "([^"\n]+)"/.exec(recorded)[1]);
 if (process.argv.includes("--extract")) {
   for (const key of used) source[key] = key;
   fs.writeFileSync(`${root}/en.json`, JSON.stringify(source, null, 2) + "\n");
@@ -95,7 +100,15 @@ if (process.argv.includes("--update-glossary-baseline")) {
   process.exit(0);
 }
 const slots = (text) => (text.match(/\{p\d+\}/g) ?? []).sort().join(",");
-const turkishEditorial = JSON.parse(fs.readFileSync("src/shared/i18n/tr-overrides.json", "utf8"));
+const editorial = new Map(
+  ["en", "tr"].map((locale) => [
+    locale,
+    JSON.parse(fs.readFileSync(`src/shared/i18n/${locale}-overrides.json`, "utf8")),
+  ]),
+);
+for (const [locale, overrides] of editorial)
+  for (const key of Object.keys(overrides))
+    if (!Object.hasOwn(source, key)) issues.push(`${locale}: unknown editorial source ${key}`);
 for (const locale of ["tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
   const catalog = JSON.parse(fs.readFileSync(`${root}/${locale}.json`, "utf8"));
   for (const key of Object.keys(source)) {
@@ -106,9 +119,8 @@ for (const locale of ["tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
   for (const key of Object.keys(catalog))
     if (!(key in source)) issues.push(`${locale}: unknown source ${key}`);
   if (locale === "tr") {
-    for (const [key, expected] of Object.entries(turkishEditorial)) {
-      // The translation helper also ignores historical entries no longer in use.
-      if (key in source && catalog[key] !== expected)
+    for (const [key, expected] of Object.entries(editorial.get(locale))) {
+      if (Object.hasOwn(source, key) && catalog[key] !== expected)
         issues.push(`tr: editorial correction lost ${key}`);
     }
   }

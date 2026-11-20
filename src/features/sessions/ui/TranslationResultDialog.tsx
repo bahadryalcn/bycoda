@@ -4,7 +4,8 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
-import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { usePresentationNow } from "./AgentClock";
 import { useModelSource } from "./modelSource";
 import {
   subscribeHarnessAvailability,
@@ -92,14 +93,19 @@ export function TranslationResultDialog({
   const [pending, setPending] = useState(() => canTranslate(translator));
   const [applyError, setApplyError] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const runStarted = useRef(0);
+  const now = usePresentationNow(pending);
   const runnable = canTranslate(translator);
+  // Each pending run restarts the count; the seconds below are read on the shared clock.
   useEffect(() => {
     if (!pending) return;
-    const started = Date.now();
+    runStarted.current = Date.now();
     setElapsed(0);
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => clearInterval(timer);
   }, [pending, attempt, translator]);
+  useEffect(() => {
+    if (!pending) return;
+    setElapsed(Math.max(0, Math.floor((now - runStarted.current) / 1000)));
+  }, [now, pending]);
   useEffect(() => {
     if (!routingReady || !requested || !runnable) return;
     const controller = new AbortController();
@@ -335,10 +341,10 @@ export function TranslationResultDialog({
                   {error === "authentication"
                     ? reprompt
                       ? t(
-                          "Sign in to the selected provider in Settings > Providers, then retry reprompt.",
+                          "Sign in to the selected provider in Settings → Providers, then retry reprompt.",
                         )
                       : t(
-                          "Sign in to the selected provider in Settings > Providers, then retry translation.",
+                          "Sign in to the selected provider in Settings → Providers, then retry translation.",
                         )
                     : error === "timeout"
                       ? reprompt

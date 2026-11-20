@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { OnboardingHeading } from "./OnboardingHeading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -82,12 +83,31 @@ function SwitchRow({
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** `info` sits beside the title; passing it (even as a placeholder) reserves its slot so the content below never moves. */
+function Section({
+  title,
+  info,
+  children,
+}: {
+  title: string;
+  info?: ReactNode;
+  children: ReactNode;
+}) {
+  const label = (
+    <SectionLabel as="div" className="onboarding-section-title">
+      {title}
+    </SectionLabel>
+  );
   return (
     <section className="onboarding-section">
-      <SectionLabel as="div" className="onboarding-section-title">
-        {title}
-      </SectionLabel>
+      {info === undefined ? (
+        label
+      ) : (
+        <div className="onboarding-section-heading">
+          {label}
+          {info}
+        </div>
+      )}
       {children}
     </section>
   );
@@ -293,7 +313,16 @@ export function OnboardingAppearance() {
             }))}
           />
         </Section>
-        <Section title={t("Agent crew")}>
+        <Section
+          title={t("Agent crew")}
+          info={
+            crewDetail ? (
+              <InfoPopover className="onboarding-section-info">{crewDetail}</InfoPopover>
+            ) : (
+              <span className="onboarding-section-info" aria-hidden="true" />
+            )
+          }
+        >
           <RadioTiles
             label={t("Agent crew")}
             className="onboarding-crew-grid"
@@ -346,11 +375,6 @@ export function OnboardingAppearance() {
               ),
             }))}
           />
-          {crewDetail ? (
-            <Text as="p" size="caption" tone="muted" leading="normal">
-              {crewDetail}
-            </Text>
-          ) : null}
         </Section>
         <SwitchRow
           label={t("Decorative animations")}

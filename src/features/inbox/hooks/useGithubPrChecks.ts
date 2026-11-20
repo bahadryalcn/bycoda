@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { focusManager, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { fetchPrChecks, type CodeHostProvider } from "../model/prChecks";
@@ -123,7 +124,7 @@ export function useGithubPrChecks(params: {
           lastGood.current?.identityId === identityId ? lastGood.current.checks : null;
         return {
           checks: previous,
-          error: reason instanceof Error ? reason.message : String(reason),
+          error: errorText(reason),
         };
       }
     },

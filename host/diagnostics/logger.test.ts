@@ -1,10 +1,30 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { buildCrashMarker, createFatalHandler, crashMarkerPath } from "./crash";
 import { installConsoleBridge, parseConsoleCategory } from "./console-bridge";
 import { createLogger, LogSink, parseLogLevel, setDefaultLogSink } from "./logger";
+
+// Spy on the sync fs calls so a regression back to them on the async flush path is caught.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    mkdirSync: vi.fn(actual.mkdirSync),
+    statSync: vi.fn(actual.statSync),
+    renameSync: vi.fn(actual.renameSync),
+    rmSync: vi.fn(actual.rmSync),
+  };
+});
 
 const dirs: string[] = [];
 const tempDir = () => {
@@ -64,6 +84,43 @@ it("rotates through host.1.log to host.3.log and drops the oldest", async () => 
   expect(readFileSync(sink.path, "utf8")).toContain("batch-5");
   expect(readFileSync(join(dir, "host.1.log"), "utf8")).toContain("batch-4");
   expect(readFileSync(join(dir, "host.3.log"), "utf8")).toContain("batch-2");
+  sink.close();
+});
+
+it("rotates on the async flush path without synchronous fs calls", async () => {
+  const dir = tempDir();
+  const sink = sinkIn(dir, { maxBytes: 200, keep: 2 });
+  const log = createLogger("host", sink);
+  for (const spy of [mkdirSync, statSync, renameSync, rmSync]) vi.mocked(spy).mockClear();
+  for (let i = 0; i < 4; i++) {
+    log.info(`async-${i} ${"x".repeat(150)}`);
+    await sink.flush();
+  }
+  expect(mkdirSync).not.toHaveBeenCalled();
+  expect(statSync).not.toHaveBeenCalled();
+  expect(renameSync).not.toHaveBeenCalled();
+  expect(rmSync).not.toHaveBeenCalled();
+  expect(existsSync(join(dir, "host.1.log"))).toBe(true);
+  expect(readFileSync(sink.path, "utf8")).toContain("async-3");
+  sink.close();
+});
+
+it("keeps batch order when flushes are requested before the previous batch starts", async () => {
+  const dir = tempDir();
+  const sink = sinkIn(dir);
+  const log = createLogger("host", sink);
+  log.info("first");
+  const pending = sink.flush();
+  log.info("second");
+  expect(sink.flush()).toBe(pending);
+  await pending;
+  log.info("third");
+  await sink.flush();
+  expect(readFileSync(sink.path, "utf8")).toBe(
+    "2026-11-09T10:00:00.000Z INFO  [host] first\n" +
+      "2026-11-09T10:00:00.000Z INFO  [host] second\n" +
+      "2026-11-09T10:00:00.000Z INFO  [host] third\n",
+  );
   sink.close();
 });
 

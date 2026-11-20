@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import { getShellSessions, subscribeShell } from "../../sessions/public/sessionsStore";
 import {
@@ -280,7 +281,7 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
             // pending on the Host, but a fresh query cannot reuse a late lease.
             // Handle only the acquire rejection here: a release failure after
             // a grant must remain guarded even if it carries the same code.
-            const text = error instanceof Error ? error.message : String(error);
+            const text = errorText(error);
             if (isLeaseHeld(error) || /\bHOST_WRITER_RETIREMENT_(?:FAILED|PENDING):/.test(text))
               return;
             throw error;
@@ -313,7 +314,7 @@ export async function acquireRunLease(sessionId: string): Promise<RunLeaseOutcom
       return { kind: "unavailable" };
     }
     if (isLeaseHeld(error)) return { kind: "held", text: leaseHeldText(error) };
-    const text = error instanceof Error ? error.message : String(error);
+    const text = errorText(error);
     // The Host checks existence before any writer retirement. A conversation it
     // does not know (a brand-new one, or one outside its projects) has no Host
     // writer to hand over, so the turn starts as before.

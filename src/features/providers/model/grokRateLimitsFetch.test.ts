@@ -7,17 +7,19 @@ const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   unwatch: vi.fn(),
   create: vi.fn(() => ({ sessionId: "grok-usage" })),
+  resolve: vi.fn(async () => ({ path: "/bin/grok" })),
 }));
 vi.mock("../../../platform/tauri/fs", () => ({ homeDir: async () => "/home/test" }));
 vi.mock("../../../integrations/harness/core/child", () => ({
   createChildProcessHandle: mocks.create,
-  resolveGrokBinary: async () => ({ path: "/bin/grok" }),
+  resolveGrokBinary: mocks.resolve,
   spawnChild: mocks.spawn,
   killChild: mocks.kill,
   watchChild: vi.fn(),
   unwatchChild: mocks.unwatch,
 }));
-vi.mock("../../../integrations/harness/core/jsonRpc", () => ({
+vi.mock("../../../integrations/harness/core/jsonRpc", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../integrations/harness/core/jsonRpc")>()),
   JsonRpcClient: class {
     request = mocks.request;
     close = mocks.close;
@@ -29,6 +31,8 @@ vi.mock("../../../integrations/harness/providers/grok/grokProtocol", () => ({
   grokSpawnArgs: () => ["agent", "stdio"],
 }));
 
+import { JsonRpcResponseError } from "../../../integrations/harness/core/jsonRpc";
+import { providerAccountSignedOut } from "./accountUsage";
 import { fetchGrokRateLimits, parseGrokBilling } from "./grokRateLimitsFetch";
 
 const billing = {
@@ -131,7 +135,9 @@ describe("Grok quota", () => {
 
   it("does not open browser login when cached authentication is absent", async () => {
     mocks.request.mockResolvedValue({ authMethods: [{ id: "grok.com" }] });
-    expect((await fetchGrokRateLimits()).status).toBe("unavailable");
+    const limits = await fetchGrokRateLimits();
+    expect(limits).toMatchObject({ status: "unavailable", reason: "signedOut" });
+    expect(providerAccountSignedOut(limits)).toBe(true);
     expect(mocks.request).toHaveBeenCalledTimes(1);
     expect(mocks.kill).toHaveBeenCalledOnce();
   });
@@ -145,14 +151,36 @@ describe("Grok quota", () => {
   it("stops before billing when cached authentication fails", async () => {
     mocks.request.mockImplementation(async (method: string) => {
       if (method === "initialize") return { authMethods: [{ id: "cached_token" }] };
-      throw new Error("Authentication required");
+      throw new JsonRpcResponseError("Fake refusal wording", -32000);
     });
-    expect((await fetchGrokRateLimits()).status).toBe("unavailable");
+    const limits = await fetchGrokRateLimits();
+    expect(limits).toMatchObject({ status: "unavailable", reason: "signedOut" });
+    expect(providerAccountSignedOut(limits)).toBe(true);
     expect(mocks.request.mock.calls.map(([method]) => method)).toEqual([
       "initialize",
       "authenticate",
     ]);
     expect(mocks.kill).toHaveBeenCalledOnce();
+  });
+
+  it("does not read a probe failure as signed out because of its wording", async () => {
+    mocks.request.mockImplementation(async (method: string) => {
+      if (method === "initialize") return { authMethods: [{ id: "cached_token" }] };
+      throw new Error("Authentication required: request timed out behind the proxy");
+    });
+    const limits = await fetchGrokRateLimits();
+    expect(limits.status).toBe("error");
+    expect(providerAccountSignedOut(limits)).toBe(false);
+    mocks.request.mockRejectedValue(new Error("Grok usage probe exited: not signed in"));
+    expect(providerAccountSignedOut(await fetchGrokRateLimits())).toBe(false);
+  });
+
+  it("reports a missing Grok CLI as unavailable without offering sign-in", async () => {
+    mocks.resolve.mockRejectedValueOnce(new Error("fake lookup failure"));
+    const limits = await fetchGrokRateLimits();
+    expect(limits).toMatchObject({ status: "unavailable", reason: "cliMissing" });
+    expect(providerAccountSignedOut(limits)).toBe(false);
+    expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
   it("retires the original handle when spawn fails", async () => {

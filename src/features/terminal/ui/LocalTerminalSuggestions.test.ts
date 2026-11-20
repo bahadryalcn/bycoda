@@ -157,9 +157,10 @@ it("preserves the keyboard choice when native suggestions arrive late", async ()
     await vi.advanceTimersByTimeAsync(100);
   });
   await key("ArrowDown");
-  expect(host.querySelector('[aria-selected="true"]')?.textContent).toBe("git diff");
+  // The selected row also carries its screen-reader key hint, so match the command text.
+  expect(host.querySelector('[aria-selected="true"]')?.textContent).toContain("git diff");
   await act(async () => resolve(["git status", "git diff", "git log"]));
-  expect(host.querySelector('[aria-selected="true"]')?.textContent).toBe("git diff");
+  expect(host.querySelector('[aria-selected="true"]')?.textContent).toContain("git diff");
   await key("Tab");
   expect(paste).toHaveBeenCalledExactlyOnceWith("diff");
 });
@@ -227,6 +228,17 @@ it("drops the list on control input or when the echo never arrives", async () =>
     await vi.advanceTimersByTimeAsync(200);
   });
   expect(host.querySelector("[data-ghost]")).toBeNull();
+});
+
+it("shows no permanent instruction sentence; keyboard guidance stays on the highlighted row", async () => {
+  await mount(true);
+  await type("git s");
+  expect(host.textContent).not.toContain("Tab to complete");
+  const active = host.querySelector('[aria-selected="true"]');
+  expect(active?.querySelector(".sr-only")?.textContent).toBe(
+    "Tab completes. Enter inserts. Escape closes.",
+  );
+  expect(active?.querySelector('[aria-hidden="true"]')?.textContent).toContain("Enter");
 });
 
 it("learns submitted local commands in memory and excludes sensitive and multiline input", async () => {

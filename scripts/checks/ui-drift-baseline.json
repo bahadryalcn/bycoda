@@ -5,9 +5,6 @@
     "src/app/shell/Sidebar.tsx": {
       "theme-palette-literal": 1
     },
-    "src/features/assistant/ui/AssistantSettings.tsx": {
-      "nested-surface": 1
-    },
     "src/features/inbox/ui/InboxProviderMark.tsx": {
       "theme-palette-literal": 5
     },

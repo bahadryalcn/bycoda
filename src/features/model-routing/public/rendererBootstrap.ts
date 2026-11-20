@@ -16,13 +16,24 @@ setAutomaticSubagentCatalogReader(() => ({
   },
 }));
 
-// Renderer startup owns polling; the defaults model is also imported by the headless Host.
-if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-  void import("./delegation")
-    .then(({ startDelegationProfileSync }) => startDelegationProfileSync())
-    .catch(() => undefined);
-  // Live prices and scores for smart setup; one Host call, failures keep the researched table.
-  void import("../model/liveCatalogFacts")
-    .then(({ refreshLocalLiveCatalogFacts }) => refreshLocalLiveCatalogFacts(10_000))
-    .catch(() => undefined);
+let started = false;
+
+/** Defer Host reads until the renderer has mounted and had a chance to paint. */
+export function startRendererModelRoutingAfterPaint(): () => void {
+  if (started || typeof window === "undefined" || !("__TAURI_INTERNALS__" in window))
+    return () => {};
+
+  let frame = window.requestAnimationFrame(() => {
+    frame = window.requestAnimationFrame(() => {
+      if (started) return;
+      started = true;
+      void import("./delegation")
+        .then(({ startDelegationProfileSync }) => startDelegationProfileSync())
+        .catch(() => undefined);
+      void import("../model/liveCatalogFacts")
+        .then(({ startLocalLiveCatalogFactsSync }) => startLocalLiveCatalogFactsSync(10_000))
+        .catch(() => undefined);
+    });
+  });
+  return () => window.cancelAnimationFrame(frame);
 }

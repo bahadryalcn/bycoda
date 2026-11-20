@@ -1,6 +1,8 @@
+/* The management panel and the report are panes of the tasks view: their narrow layout follows
+   their own width, not the window. */
 .sprint-management,
-.sprint-report,
-.sprint-planning {
+.sprint-report {
+  container: sprint-pane / inline-size;
   min-width: 0;
 }
 .sprint-management {
@@ -21,8 +23,7 @@
 /* Header: title, status and dates on the left; lifecycle actions and "New sprint" on the right. */
 .sprint-heading,
 .sprint-actions,
-.sprint-title,
-.sprint-planning-fields {
+.sprint-title {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -157,19 +158,6 @@
   padding: 0.375rem 0;
 }
 
-/* Bulk planning row (owned by SprintPlanningControls). */
-.sprint-planning {
-  padding: 0.625rem 0;
-}
-/* In bulk selection the planning controls sit in the board's own column, aligned with the toolbar. */
-.sprint-planning p {
-  margin: 0.375rem 0 0;
-}
-.sprint-planning-fields > div {
-  flex: 1;
-  min-width: 9rem;
-}
-
 /* Reports. */
 .sprint-title-block {
   min-inline-size: 0;
@@ -232,13 +220,10 @@
 .sprint-notes:empty {
   display: none;
 }
-@media (max-width: 560px) {
+@container sprint-pane (max-width: 560px) {
   .sprint-source {
     max-width: 100%;
     width: 100%;
-  }
-  .sprint-project-budget {
-    grid-template-columns: minmax(0, 1fr);
   }
   .sprint-row {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -250,10 +235,10 @@
     grid-column: 1 / -1;
     grid-row: 2;
   }
-  .sprint-planning-fields {
-    align-items: stretch;
-  }
-  .sprint-planning-fields > div {
-    flex-basis: 100%;
+}
+/* The sprint editor is a modal sized by the window, so its budget rows keep a viewport query. */
+@media (max-width: 560px) {
+  .sprint-project-budget {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

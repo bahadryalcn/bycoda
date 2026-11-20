@@ -41,7 +41,7 @@ export function RoomUndoBars() {
               <Button
                 disabled={Boolean(pending)}
                 onClick={() =>
-                  run("undo", t("Restoring..."), async () => {
+                  run("undo", t("Restoring…"), async () => {
                     const { remaining, error } = await restoreNotesInOrder(
                       undo.ids ?? [undo.id],
                       (id) => assistantRequest({ op: "trash.restore", id }, undo.environmentId),

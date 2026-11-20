@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SocialAccount, SocialCampaign, SocialJob } from "../../model/social";
 import type { SocialProgram } from "../../model/socialProgram";
-import { ContentList, campaignState, type ContentListProps } from "./ContentList";
+import {
+  ContentList,
+  campaignState,
+  latestPublishJobs,
+  type ContentListProps,
+} from "./ContentList";
 
 let element: HTMLDivElement;
 let root: Root;
@@ -90,23 +95,50 @@ afterEach(() => {
 
 describe("campaignState", () => {
   it("is the status of the newest publish job of that campaign", () => {
-    const state = campaignState(queuedPost, [
-      job("c2", "failed", 5),
-      job("c2", "queued", 9),
-      job("c3", "succeeded", 99),
-    ]);
+    const state = campaignState(
+      queuedPost,
+      latestPublishJobs([
+        job("c2", "failed", 5),
+        job("c2", "queued", 9),
+        job("c3", "succeeded", 99),
+      ]),
+    );
     expect(state).toBe("queued");
   });
 
   it("ignores replies and messages of the same campaign", () => {
     expect(
-      campaignState(queuedPost, [job("c2", "succeeded", 50, "reply"), job("c2", "queued", 5)]),
+      campaignState(
+        queuedPost,
+        latestPublishJobs([job("c2", "succeeded", 50, "reply"), job("c2", "queued", 5)]),
+      ),
     ).toBe("queued");
   });
 
   it("is Draft with no jobs, and Paused when a campaign without jobs is paused", () => {
-    expect(campaignState(draftPost, [])).toBe("draft");
-    expect(campaignState({ ...draftPost, paused: true }, [])).toBe("paused");
+    expect(campaignState(draftPost, latestPublishJobs([]))).toBe("draft");
+    expect(campaignState({ ...draftPost, paused: true }, latestPublishJobs([]))).toBe("paused");
+  });
+
+  it("keeps the first loaded job when two publish jobs share the newest time", () => {
+    const first = job("c2", "failed", 10);
+    const second = job("c2", "queued", 10);
+    expect(campaignState(queuedPost, latestPublishJobs([first, second]))).toBe("failed");
+    expect(campaignState(queuedPost, latestPublishJobs([second, first]))).toBe("queued");
+  });
+
+  it("reads the newest job from a map built in one pass over many jobs", () => {
+    const loaded = [
+      job("c2", "succeeded", 1),
+      job("c3", "failed", 2),
+      job("c2", "queued", 30),
+      job("c3", "review", 7),
+      job("c2", "failed", 20),
+    ];
+    const latest = latestPublishJobs(loaded);
+    expect(latest.get("c2")?.status).toBe("queued");
+    expect(latest.get("c3")?.status).toBe("review");
+    expect(campaignState(queuedPost, latest)).toBe("queued");
   });
 });
 

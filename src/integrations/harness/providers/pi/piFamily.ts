@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import {
   queueProviderOperation,
   assertProviderOperation,
@@ -11,7 +12,8 @@ import {
   type PiRpcWriterView,
 } from "../turnWriter";
 
-import { killChild } from "../../core/child";
+import { execChild, killChild } from "../../core/child";
+import { leanContext } from "../../core/nativeToolLimits";
 import {
   assertOptionalProviderProbeError,
   createProviderRetirementLedger,
@@ -57,6 +59,13 @@ import { OMP_FLAVOR } from "./piFlavor";
 import { OmpCompactionError, ompSessionCompactionAvailable } from "../omp/ompCompaction";
 import { spawnChild, watchChild, writeChild } from "../../core/child";
 import { withSlowStartupNotice } from "../../core/providerStartupStatus";
+import { compactionFailedText, messageStoppedBeforeSentText } from "../../core/providerNotices";
+import {
+  providerExitError,
+  pushExitStderrTail,
+  redactExitStderrLine,
+} from "../../core/exitDiagnostics";
+import { t } from "../../../../shared/i18n/core";
 import type { PiFlavor } from "./piFlavor";
 import { PiRpc } from "./piClient";
 import { piSubagentEvents } from "./piSubagents";
@@ -66,6 +75,7 @@ import {
   assistantDeltaFromEvent,
   buildPiPrompt,
   buildPiSpawnArgs,
+  supportsPiChatOnly,
   buildPiSteer,
   contextFromSessionStats,
   contextFromUsage,
@@ -108,8 +118,8 @@ import type {
   SteerTurnInput,
 } from "../../core/types";
 import {
-  COMPACTED_TEXT,
-  COMPACTING_TEXT,
+  compactedText,
+  compactingText,
   COMPACTION_STATUS_KEY,
 } from "../../../../features/sessions/model/compactionStatus";
 
@@ -146,6 +156,7 @@ type Live = {
   bindingTracked?: boolean;
   bindingRetired?: boolean;
   skillPolicyKey?: string;
+  chatOnly: boolean;
   rpc: PiRpc;
   cwd: string;
   providerSessionId: string;
@@ -339,7 +350,7 @@ export async function sendTurn(flavor: PiFlavor, input: SendTurnInput): Promise<
           throw error;
         }
         if (cancelledThreads.delete(input.sessionId)) {
-          input.onEvent({ type: "status", text: "The message was stopped before it was sent." });
+          input.onEvent({ type: "status", text: messageStoppedBeforeSentText() });
           return;
         }
 
@@ -768,6 +779,7 @@ async function ensureLive(
     existing &&
     existing.cwd === input.cwd &&
     existing.planning === wantPlanning &&
+    existing.chatOnly === leanContext(input.modelSettings) &&
     (flavor.id !== "omp" || existing.autoCompact === input.modelSettings?.autoCompact) &&
     existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
   ) {
@@ -804,7 +816,8 @@ async function ensureLive(
       } catch (error) {
         attempt.controller.signal.throwIfAborted();
         assertOptionalProviderProbeError(error);
-        if (!canResume || error instanceof OmpCompactionError) throw error;
+        if (!canResume || leanContext(input.modelSettings) || error instanceof OmpCompactionError)
+          throw error;
         resumeByThread.delete(input.sessionId);
         attempt.handle = retirementsFor(flavor).admit(
           createChildProcessHandle(input.sessionId, input.nativeControlTurn),
@@ -842,6 +855,25 @@ async function startLive(
   try {
     attempt.handle = handle;
     const { path } = await startupWait(attempt, state.resolveBinary());
+    const chatOnly = leanContext(input.modelSettings);
+    if (chatOnly) {
+      if (flavor.id !== "pi") throw new Error("Chat-only mode requires stock Pi.");
+      const help = await startupWait(
+        attempt,
+        execChild(
+          path,
+          ["--no-extensions", "--no-mcp", "--no-approve", "--help"],
+          input.cwd,
+          "pi",
+          null,
+          "utility",
+        ),
+      );
+      if (!supportsPiChatOnly(help))
+        throw new Error(
+          "This Pi version cannot enforce chat-only mode. Update Pi to use files:false.",
+        );
+    }
     if (
       flavor.id === "omp" &&
       ["on", "off"].includes(input.modelSettings?.autoCompact ?? "") &&
@@ -869,6 +901,7 @@ async function startLive(
       operation: input.operationContext?.operation,
       handle,
       skillPolicyKey: JSON.stringify(input.skillPolicy),
+      chatOnly,
       rpc,
       cwd: input.cwd,
       providerSessionId: resume ?? "",
@@ -905,6 +938,7 @@ async function startLive(
     liveRef.current = live;
     let skillPaths: string[] | undefined;
     if (
+      !chatOnly &&
       input.skillPolicy &&
       (input.skillPolicy.disabledNames.length || input.skillPolicy.disabledPaths.length)
     ) {
@@ -918,6 +952,7 @@ async function startLive(
       skillPaths = await startupWait(attempt, attempt.skillProbe);
     }
     attempt.controller.signal.throwIfAborted();
+    const stderrTail: string[] = [];
     watchChild(
       handle,
       (line) => rpc.pushLine(line),
@@ -925,7 +960,8 @@ async function startLive(
         live.bindingRetired = true;
         retirePiBinding(live, "pi-binding-process-exited");
         retireToolFragments(live, "pi-fragment-process-exited");
-        rpc.close(new Error(`${flavor.label} exited`));
+        const exitError = providerExitError(flavor.label, code, stderrTail);
+        rpc.close(exitError);
         if (liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
         const current = liveRef.current;
         if (!current?.muteUpdates) {
@@ -935,14 +971,15 @@ async function startLive(
           for (const question of current.questions.values()) question.resolve({ kind: "skipped" });
           for (const approval of current.approvals.values()) approval.resolve("deny");
         }
-        current?.turnFailed?.(new Error(`${flavor.label} exited`));
+        current?.turnFailed?.(exitError);
         if (current) {
           current.turnDone = null;
           current.turnFailed = null;
         }
       },
       (line) => {
-        console.debug(`[${flavor.id}]`, line);
+        pushExitStderrTail(stderrTail, line);
+        console.debug(`[${flavor.id}]`, redactExitStderrLine(line));
       },
     );
 
@@ -954,6 +991,7 @@ async function startLive(
         buildPiSpawnArgs(flavor, {
           resume,
           model: modelRef ? native : undefined,
+          ...(chatOnly ? { chatOnlyCwd: input.cwd } : {}),
           plan: input.intent === "plan",
           ...(skillPaths ? { skillPaths } : {}),
         }),
@@ -1050,7 +1088,7 @@ async function runTurn(
     if (live.cancelled) return;
     live.onEvent({
       type: "session.error",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorText(error),
     });
     throw error;
   } finally {
@@ -1169,7 +1207,7 @@ function handleFrame(
       }
     }
     if (type === "advisor_yielded") {
-      live.onEvent({ type: "status", text: "Advisor reviewed this turn" });
+      live.onEvent({ type: "status", text: t("Advisor reviewed this turn") });
       return;
     }
     if (type === "session_info_update") {
@@ -1270,7 +1308,7 @@ function handleFrame(
       type: "status",
       key: COMPACTION_STATUS_KEY,
       running: true,
-      text: COMPACTING_TEXT,
+      text: compactingText(),
     });
   } else if (type === "compaction_end") {
     const failed = rec.aborted === true || !!stringField(rec, "errorMessage");
@@ -1278,10 +1316,10 @@ function handleFrame(
       type: "status",
       key: COMPACTION_STATUS_KEY,
       running: false,
-      text: failed ? "" : COMPACTED_TEXT,
+      text: failed ? "" : compactedText(),
     });
     const reason = stringField(rec, "errorMessage");
-    if (reason) live.onEvent({ type: "status", text: `Could not compact context: ${reason}` });
+    if (reason) live.onEvent({ type: "status", text: compactionFailedText(reason) });
   } else {
     const status = statusFromPiEvent(rec);
     if (status) live.onEvent({ type: "status", text: status });
@@ -1440,7 +1478,7 @@ function flushTurnError(flavor: PiFlavor, live: Live): void {
   live.turnError = null;
   live.onEvent({
     type: "session.error",
-    message: message || `${flavor.label} turn failed`,
+    message: message || t("{p0} turn failed", { p0: flavor.label }),
   });
 }
 
@@ -1708,7 +1746,7 @@ async function applyModel(
           text:
             error instanceof Error
               ? error.message
-              : "Fast mode is unavailable for the current model.",
+              : t("Fast mode is unavailable for the current model."),
         });
       }
     }

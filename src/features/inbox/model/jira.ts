@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { boundedSet } from "../../../shared/lib/store";
+import { boundedGet, boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
 import { jiraCommentDocument, type JiraCommentImage } from "./jiraCommentDocument";
 
@@ -202,15 +202,8 @@ export function rememberJiraFilterIssues(issues: readonly JiraIssue[]) {
   for (const issue of issues) boundedSet(knownFilterIssues, issue.id, issue, 512);
 }
 
-/** Detail payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
+/** Detail and thread payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
 const DETAILS_CACHE_LIMIT = 128;
-function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
-  if (!cache.has(key)) return null;
-  const value = cache.get(key)!;
-  cache.delete(key);
-  cache.set(key, value);
-  return value;
-}
 
 export function peekJiraIssueDetails(key: string): JiraIssueDetails | null {
   return boundedGet(detailsByKey, key);
@@ -226,7 +219,7 @@ export async function jiraIssueDetails(key: string): Promise<JiraIssueDetails> {
 }
 
 export function peekJiraIssueThread(key: string): JiraIssueThread | null {
-  return threadByKey.get(key) ?? null;
+  return boundedGet(threadByKey, key);
 }
 
 export async function jiraIssueThread(
@@ -243,7 +236,7 @@ export async function jiraIssueThread(
   const promise = invoke<JiraIssueThread>("jira_issue_thread", { key })
     .then((thread) => {
       if (generation === cacheGeneration && threadInflight.get(key) === promise) {
-        threadByKey.set(key, thread);
+        boundedSet(threadByKey, key, thread, DETAILS_CACHE_LIMIT);
       }
       return thread;
     })

@@ -22,7 +22,7 @@ function Fixture() {
     <main style={{ maxInlineSize: "100%", padding: 12 }}>
       <button onClick={() => setLightbox(true)}>Open image</button>
       <button onClick={() => setText("```typescript\n" + code + "\n```")}>Finish code</button>
-      <section data-table-panel style={{ inlineSize: "min(320px, 100%)", minInlineSize: 0 }}>
+      <section data-table-panel style={{ inlineSize: "min(280px, 100%)", minInlineSize: 0 }}>
         <AgentMarkdown text={table} />
       </section>
       <section data-code-panel style={{ inlineSize: "min(600px, 100%)", minInlineSize: 0 }}>

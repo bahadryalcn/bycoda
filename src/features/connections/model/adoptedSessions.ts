@@ -15,6 +15,7 @@ export function registerStoredBlockForm(form: (block: Block) => Block | null): v
   storedBlockForm = form;
 }
 import { isSessionGoal } from "../../../shared/model/providerGoal";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import { keepFullTranscript, restoreLocalFiles, sameRemoteBlock } from "./remotePreview";
 import {
@@ -30,6 +31,13 @@ import {
   type ConversationHead,
   type Reconciled,
 } from "../../sync/model/conversationHead";
+import {
+  ADOPTED_SYNC_FAILURE_FLAG_AFTER,
+  backingOff,
+  clearSyncFailure,
+  noteSyncFailure,
+  pruneSyncFailures,
+} from "./adoptedSyncFailures";
 
 /** A host session adopted from this machine's desktop app (`sessions.adopted`). */
 export type AdoptedEntry = {
@@ -664,9 +672,13 @@ const baselines = new WeakMap<Map<string, number>, Map<string, Session>>();
  * a snapshot is a whole transcript. */
 const snapshots = new WeakMap<Map<string, number>, Map<string, HostSession>>();
 /** Sessions seen running on the host whose finished transcript has not been
- * applied here yet, with when it was first missed. They stay "continuing
- * elsewhere" so no local turn starts on the stale copy. */
+ * applied here yet, with how long they have waited so far (`undefined` until the
+ * first pass that sees them finished). They stay "continuing elsewhere" so no
+ * local turn starts on the stale copy. */
 const awaitingHost = new WeakMap<Map<string, number>, Map<string, number | undefined>>();
+/** When the last pass that listed the host read its clock (monotonic). Cleared by a
+ * pass that could not list, so the wait never spans an outage. */
+const lastListed = new WeakMap<Map<string, number>, number>();
 /** The least time between two looks at a flagged conversation nobody has
  * answered yet (the host's heartbeat can name it every second or so). */
 export const ADOPTED_FLAGGED_REFETCH_MS = 5_000;
@@ -679,10 +691,14 @@ const flaggedFetches = new WeakMap<
 const awaitingAnswer = (session: Session | undefined): session is Session =>
   !!session?.adoptedSyncConflict && !!session.adoptedDivergence && !session.adoptedDivergence.keep;
 /** How long a finished host turn may fail to arrive before the conversation
- * is handed to an explicit sync instead of staying held. */
+ * is handed to an explicit sync instead of staying held. Counted only across
+ * passes that listed the host (see `mirrorAdoptedSessions`), not wall-clock time. */
 export const ADOPTED_ARRIVAL_LIMIT_MS = 60_000;
+/** The longest gap between two listing passes that still counts as waiting. The
+ * scheduler never waits longer than this while a copy is pending (its safety
+ * interval), so a longer gap is a sleep or a stall, not the host being slow. */
+export const ADOPTED_ARRIVAL_GAP_LIMIT_MS = 60_000;
 export const ADOPTED_SNAPSHOT_LIMIT = 6;
-
 /** How the user answered a genuine conflict. Keeping this computer's version
  * needs no host: it is recorded on the session (`keepAdoptedDivergence`). */
 export type AdoptedResolution = "keep-other" | "keep-both";
@@ -824,7 +840,22 @@ async function applyAdoptedSnapshot(
 /** One mirror pass. Returns the ids the host is still running, so the caller
  * can hold local sending for them. */
 export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Set<string>> {
-  const entries = await deps.list();
+  let entries: AdoptedEntry[];
+  try {
+    entries = await deps.list();
+  } catch (error) {
+    // An outage ends the run of passes the arrival wait is counted across.
+    lastListed.delete(deps.mirrored);
+    throw error;
+  }
+  const listedAt = monotonicNow();
+  const previousListed = lastListed.get(deps.mirrored);
+  lastListed.set(deps.mirrored, listedAt);
+  // Time since the previous listing counts as waiting only when it is short
+  // enough to be the scheduler's own pause. After a sleep it is not, so the
+  // first pass after wake cannot judge a copy that never had a chance to arrive.
+  const gap = previousListed === undefined ? 0 : elapsedSince(previousListed, listedAt);
+  const waitedSincePrevious = gap <= ADOPTED_ARRIVAL_GAP_LIMIT_MS ? gap : 0;
   let base = baselines.get(deps.mirrored);
   if (!base) baselines.set(deps.mirrored, (base = new Map()));
   const liveIds = new Set(entries.map((entry) => entry.id));
@@ -864,14 +895,14 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
         awaiting.delete(id);
         continue;
       }
-      if (since === undefined) awaiting.set(id, Date.now());
-      else if (Date.now() - since > ADOPTED_ARRIVAL_LIMIT_MS) {
+      if (since === undefined) awaiting.set(id, 0);
+      else if (since + waitedSincePrevious > ADOPTED_ARRIVAL_LIMIT_MS) {
         // Still unreadable: nothing is replaced; the Sync row takes over. It is
         // not a conflict, so it reads as an unfinished sync (no divergence).
         const current = deps.local().find((session) => session.id === id);
         if (current) deps.conflict?.(current);
         awaiting.delete(id);
-      }
+      } else awaiting.set(id, since + waitedSincePrevious);
     }
     return new Set(awaiting.keys());
   };
@@ -879,6 +910,7 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
   let fetched = flaggedFetches.get(deps.mirrored);
   if (!fetched) flaggedFetches.set(deps.mirrored, (fetched = new Map()));
   for (const id of fetched.keys()) if (!liveIds.has(id)) fetched.delete(id);
+  pruneSyncFailures(deps.mirrored, liveIds);
   // A flagged conversation waits for the user's answer, and the host may move on
   // every second while it streams: it is compared again at most every few
   // seconds, and not at all while neither side has moved since the last look.
@@ -890,7 +922,8 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
     return Date.now() - last.at < ADOPTED_FLAGGED_REFETCH_MS;
   };
   for (const entry of planAdoptedFetches(entries, deps.local(), deps.mirrored)) {
-    if (settling(entry)) continue;
+    if (settling(entry) || backingOff(deps.mirrored, entry)) continue;
+    let failure: { error: unknown } | undefined;
     try {
       const before = deps.local().find((session) => session.id === entry.id);
       const host = await deps.load(entry.id, known.get(entry.id));
@@ -936,13 +969,27 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
       remember(entry.id, host);
       base.set(entry.id, baselineOf(host));
       deps.mirrored.set(entry.id, host.revision);
-    } catch {
-      // Retried on the next pass.
+    } catch (error) {
+      // Retried on the next pass, once its backoff has passed (or at a newer host revision).
+      failure = { error };
     } finally {
       const after = deps.local().find((session) => session.id === entry.id);
       if (awaitingAnswer(after))
         fetched.set(entry.id, { at: Date.now(), revision: entry.revision, blocks: after.blocks });
       else fetched.delete(entry.id);
+      if (!failure) clearSyncFailure(deps.mirrored, entry.id);
+      else {
+        const count = noteSyncFailure(deps.mirrored, entry, failure.error, "open");
+        // A session held for a running host turn keeps its hold until the arrival limit; the
+        // others get the Sync row now, as an unfinished sync (no divergence is claimed).
+        if (
+          count === ADOPTED_SYNC_FAILURE_FLAG_AFTER &&
+          after &&
+          !awaitingAnswer(after) &&
+          !awaiting.has(entry.id)
+        )
+          deps.conflict?.(after);
+      }
     }
   }
   // Closed sessions are caught up in storage, so history shows the host copy
@@ -961,6 +1008,8 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
         continue;
       // A running session already stored here waits for its turn to end.
       if (entry.status === "running" && present.has(entry.id)) continue;
+      if (backingOff(deps.mirrored, entry)) continue;
+      let failure: { error: unknown } | undefined;
       try {
         const stored = await deps.stored(entry.id);
         if (stored) present.add(entry.id);
@@ -1040,8 +1089,12 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
         }
         // A tab opened after planning the loaded-session fetches. No host
         // transcript was applied to it; leave it eligible for the next pass.
-      } catch {
-        // Retried on the next pass.
+      } catch (error) {
+        // Retried on the next pass, once its backoff has passed (or at a newer host revision).
+        failure = { error };
+      } finally {
+        if (!failure) clearSyncFailure(deps.mirrored, entry.id);
+        else noteSyncFailure(deps.mirrored, entry, failure.error, "closed");
       }
     }
   }

@@ -105,6 +105,9 @@ describe("Host WS method contracts", () => {
       retry: "safe-query",
       responseTimeoutMs: 12_000,
     });
+    // A Room send waits for the model's reply; the 12 s default cut every longer reply on the socket
+    // and the phone's voice call stopped at "Assistant reply". The socket must outwait the client.
+    expect(getHostRpcMethod("assistant.request")?.responseTimeoutMs).toBeGreaterThan(120_000);
   });
 
   it("negotiates explicit environment and versions without carrying credentials", () => {

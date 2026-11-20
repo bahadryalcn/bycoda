@@ -493,6 +493,72 @@ it("bounds UTF8 inputs/output honestly and performs no per-thread queries on an 
   prepare.mockRestore();
 });
 
+/** Counts the worker's candidate scan, the query that used to run every second forever. */
+const candidateScans = (prepare: { mock: { calls: unknown[][] } }) =>
+  prepare.mock.calls.filter(([sql]) => String(sql).includes("SELECT s.thread_id AS id")).length;
+
+it("does not poll the summary states while idle", async () => {
+  const f = await fixture();
+  await f.fill();
+  await f.summary().drain();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const prepare = vi.spyOn(f.store.db, "prepare");
+  try {
+    f.summary().start();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(candidateScans(prepare)).toBe(1);
+  } finally {
+    prepare.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+it("wakes on a queued message and retries a blocked thread at its saved deadline", async () => {
+  const f = await fixture({
+    generate: async () => {
+      throw new AssistantTextPreflightError();
+    },
+  });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    f.summary().start();
+    await f.fill();
+    await vi.waitFor(() => expect(f.calls).toHaveLength(1));
+    const prepare = vi.spyOn(f.store.db, "prepare");
+    // Blocked with an unchanged capacity key: the deadline passes without another model call.
+    f.advance(60001);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(f.calls).toHaveLength(1);
+    // A changed capacity key is retried by the deadline alone, with no new message or refresh.
+    await f.patch({ perWakeTokenCap: 9000 });
+    f.advance(60001);
+    await vi.advanceTimersByTimeAsync(60000);
+    await vi.waitFor(() => expect(f.calls).toHaveLength(2));
+    // Let the pass that made the second call finish (it rescans once to save the next deadline).
+    await vi.advanceTimersByTimeAsync(1000);
+    // Between deadlines the worker stays quiet.
+    const scans = candidateScans(prepare);
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(candidateScans(prepare)).toBe(scans);
+    prepare.mockRestore();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("picks up a durable pending summary on the first pass after a restart", async () => {
+  const f = await fixture();
+  await f.fill();
+  await f.restart();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    f.summary().start();
+    await vi.waitFor(() => expect(f.calls).toHaveLength(1));
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("uses actual remaining capacity and day in a known-zero refusal key, so a new day can retry with unchanged saved configuration", async () => {
   const f = await fixture({
     generate: async () => {
@@ -611,4 +677,102 @@ it("lists threads in a snapshot without summary text, so the read needs no open 
   await expect(f.service.withResponseDisclosure(response, {} as never, effect)).resolves.toBe(
     "sent",
   );
+});
+
+it("omits a trashed queued message instead of wedging the thread on a source block", async () => {
+  const f = await fixture(),
+    first = await f.append("Trashed before it was summarized");
+  await f.fill(20);
+  await f.service.request(
+    { op: "messages.delete", id: first.id, expectedVersion: first.version },
+    "owner",
+  );
+  await f.summary().drain();
+  expect(f.calls).toHaveLength(1);
+  expect(f.calls[0].messages).toHaveLength(20);
+  expect(f.calls[0].messages.map((message) => message.id)).not.toContain(first.id);
+  expect(await f.current()).toMatchObject({ summary: "Verified summary 1" });
+  expect((await f.current()).summaryState?.status).not.toBe("blocked");
+});
+it("advances the cursor past a batch whose queued messages vanish after the queue read, without a model call", async () => {
+  const f = await fixture();
+  await f.fill(20);
+  const worker = f.summary() as unknown as {
+    ports: { message: (id: string) => Promise<unknown> };
+    live: (id: string) => Promise<boolean>;
+  };
+  vi.spyOn(worker.ports, "message").mockResolvedValue(null);
+  vi.spyOn(worker, "live").mockResolvedValue(false);
+  await f.summary().drain();
+  const last = await f.store.db
+      .prepare("SELECT max(sequence) AS n FROM assistant_summary_queue")
+      .get(),
+    state = await f.store.db
+      .prepare("SELECT value FROM assistant_summary_states WHERE thread_id=?")
+      .get(f.thread.id);
+  expect(f.calls).toHaveLength(0);
+  expect(JSON.parse(state!.value)).toMatchObject({ cursor: last!.n, pending: false });
+  expect((await f.current()).summaryState?.status).toBe("ready");
+});
+it("reclaims queue rows of purged messages but keeps trashed rows, live artifacts and their replay", async () => {
+  const f = await fixture(),
+    purged = await f.append("Purged after the retention window"),
+    trashed = await f.append("Trashed but still restorable");
+  await f.fill(19);
+  await f.summary().drain();
+  const summarized = await f.current(),
+    rowsOf = async (id: string) =>
+      Number(
+        (
+          await f.store.db
+            .prepare("SELECT count(*) AS n FROM assistant_summary_queue WHERE message_id=?")
+            .get(id)
+        )?.n,
+      );
+  for (const message of [purged, trashed])
+    await f.service.request(
+      { op: "messages.delete", id: message.id, expectedVersion: message.version },
+      "owner",
+    );
+  await f.service.request({ op: "trash.purge", id: `messages:${purged.id}` }, "owner");
+  expect(await rowsOf(purged.id)).toBe(0);
+  expect(await rowsOf(trashed.id)).toBe(1);
+  expect(await f.summary().proof(f.thread.id, "", summarized.summaryProof!.id)).toMatchObject({
+    id: summarized.summaryProof!.id,
+  });
+  expect(
+    await f.store.db.prepare("SELECT count(*) AS n FROM assistant_summary_artifacts").get(),
+  ).toMatchObject({ n: 1 });
+});
+it("drops every summary row of a thread that no longer exists but never a running intent", async () => {
+  const f = await fixture();
+  await f.fill();
+  await f.summary().drain();
+  const count = async (table: string) =>
+    Number(
+      (await f.store.db.prepare(`SELECT count(*) AS n FROM assistant_summary_${table}`).get())?.n,
+    );
+  await f.store.db
+    .prepare(
+      'INSERT INTO assistant_summary_intents(id,value) VALUES(\'orphan-running\',\'{"threadId":"gone","status":"running"}\'),(\'orphan-done\',\'{"threadId":"gone","status":"complete"}\')',
+    )
+    .run();
+  await f.store.db
+    .prepare(
+      "INSERT INTO assistant_summary_artifacts(id,value) VALUES('orphan','{\"threadId\":\"gone\"}')",
+    )
+    .run();
+  await f.store.db
+    .prepare("INSERT INTO assistant_summary_requests(id,thread_id) VALUES('orphan-request','gone')")
+    .run();
+  const live = { queue: await count("queue"), artifacts: (await count("artifacts")) - 1 };
+  await f.summary().reclaim();
+  expect(await count("queue")).toBe(live.queue);
+  expect(await count("artifacts")).toBe(live.artifacts);
+  expect(await count("requests")).toBe(0);
+  expect(
+    await f.store.db
+      .prepare("SELECT id FROM assistant_summary_intents WHERE id LIKE 'orphan%'")
+      .all(),
+  ).toEqual([{ id: "orphan-running" }]);
 });

@@ -1,0 +1,59 @@
+.plan-step-dot {
+  position: absolute;
+  bottom: -16px;
+  left: -8px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  /* ui-drift-ignore: feature-typography -- The painted mark uses the same mode ink as its drawn check. */
+  color: var(--mode-color);
+  font-variant-numeric: tabular-nums;
+  filter: drop-shadow(0 0 4px var(--mode-glow));
+  /* ui-drift-ignore: feature-motion -- The numbered mark and check animate in sync with this bespoke burst. */
+  animation: plan-step-dot var(--duration) var(--delay) var(--motion-ease-exit) both;
+}
+
+.plan-step-disc {
+  position: absolute;
+  inset: 0;
+}
+
+.plan-step-dot > .plan-step-number,
+.plan-step-dot > .plan-step-check {
+  position: relative;
+}
+
+@keyframes plan-step-dot {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+    fill: color-mix(in srgb, var(--mode-color) 12%, transparent);
+  }
+  10% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  20%,
+  38% {
+    transform: scale(1);
+  }
+  34% {
+    fill: color-mix(in srgb, var(--mode-color) 12%, transparent);
+  }
+  44% {
+    transform: scale(1.14);
+    fill: var(--mode-color);
+  }
+  52% {
+    transform: scale(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8);
+    fill: var(--mode-color);
+  }
+}

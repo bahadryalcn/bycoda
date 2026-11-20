@@ -1,9 +1,12 @@
 # Voice companion
 
-In **Settings > Voice assistant**, voice and dictation have separate groups.
-Core voice controls and speaker selection stay visible. The dictation group shows
-language, recognition provider, model and shortcut mode. Dictionary, text cleanup
-and processing options open separately. **Sleep and wake** holds idle sleep, return calls and wake phrases.
+In **Settings > Voice assistant**, **Voice conversations** puts the conversation
+switch and wake phrase together. **Microphone** contains the input device, test
+recording and access check. Expand **Permissions** for system access and recovery.
+**Voice engine** selects how the assistant hears and replies. The **Dictation**
+group shows language, recognition, and shortcut mode. Expand **Transcription models**
+to manage local models. Dictionary, text cleanup and processing options open
+separately. **When you step away** holds idle sleep and return calls.
 **Advanced turn detection** contains the optional OpenAI detector. **Appearance and
 voice style** contains visual previews and the style editor. These sections retain
 their drafts and settings while closed. Opening them never starts capture.
@@ -14,7 +17,7 @@ visible; optional explanations are under the information buttons.
 
 ## Dictation controls
 
-Choose **Microphone** independently of assistant setup. **Record test** records up
+Choose an **Input device** independently of assistant setup. **Record test** records up
 to ten seconds locally; **Play recording** lets you hear the input. Audio is never
 transcribed or uploaded by this test. Discarding, changing microphones or leaving
 the screen releases capture and removes the recording.
@@ -33,8 +36,8 @@ dictionary. Existing drafts are not rewritten when a dictionary entry changes.
 Dictionary edits and invalid wake/sleep phrase drafts survive navigation and closing Settings
 for this window. Save or Cancel clears the dictionary draft. A failed dictionary or voice-style
 save keeps the editor open; retry the same action. Automatic preferences retain their saved
-value and show Retry beside the failed setting. Search results for disabled dictation controls
-explain the prerequisite and focus its switch without enabling dictation or starting capture.
+value and show Retry beside the failed setting. Search results for disabled dictation
+controls and wake/sleep phrases explain the prerequisite and can focus its switch.
 
 **Clean up dictated text** is off by default. When enabled, it sends the recognized
 phrase and your cleanup instructions to a separate Codex utility turn. Surrounding
@@ -95,7 +98,7 @@ or **Talk**. Closing voice never stops coding work.
 
 Cloud voice retries temporary connection failures with fresh credentials: five
 quick attempts (1, 2, 5, 10 and 30 seconds), then once a minute for up to 30
-minutes. It shows **Reconnecting...** with a **Stop** button, and retries at once
+minutes. It shows **Reconnecting…** with a **Stop** button, and retries at once
 when the network comes back. A stable minute restores the quick attempts.
 If the connection dropped before your last request was answered, the assistant
 says so after reconnecting and asks whether to continue instead of repeating it.
@@ -296,15 +299,13 @@ setup prevent the call. With the setting off, returning keeps the microphone clo
 
 ## Visual style and compact mode
 
-The expanded companion has one header with a **More voice options** button for its
-secondary actions, such as finishing the turn and muting the speaker. The status
-row shows the assistant's avatar inside the voice core, the connection state and
-readouts: the voice engine (hover or focus it to see where audio goes) and, while
-connected, the microphone input level and the session time. The core's rings turn
-while voice is connected, turn faster while a reply is prepared, react to your
-voice and the assistant's, and stop when voice is off or the microphone is paused.
-The **Global** scope toggle sits below. Your speech and replies appear as chat
-bubbles.
+The expanded companion centers a particle orb, connection status, scope and round
+call controls. The orb scales down in a shorter panel. Blue light and particles
+respond to the microphone. While waiting for a reply, the particles orbit against
+violet and pink light. During playback they move in waves over teal light. The
+scene settles when the call stops or the microphone is muted. Reduced motion shows
+a still frame for each state. Hover or focus the engine name to see where audio
+goes. **Conversation** opens the transcript and moves the status into a smaller row.
 
 Drag any edge or corner of the expanded companion to resize it. The opposite
 edge stays in place, and the panel stays inside the window. Size and position
@@ -313,12 +314,12 @@ are saved on this device. Double-click an edge to return to automatic sizing.
 Choose **Settings → Voice assistant → Companion → Visual style** to select
 **bycoda mark** (default), **Wave**, **Dots** or **Orb**. Each option has a live
 preview. The style applies to the launcher, the compact companion and the
-floating overlay; the expanded companion always shows the voice core. Changing
+floating overlay; the expanded call view uses the particle orb. Changing
 the style updates an open companion immediately and keeps the
 voice connection running. The choice is saved on this device.
 
-The expanded floating window uses the same voice core, assistant avatar and
-conversation bubbles as the in-app companion. Drag its header to move it, or
+The expanded floating window uses the avatar and voice core from the in-app
+transcript view, along with its conversation bubbles. Drag its header to move it, or
 focus the header and use arrow keys. Double-click the header to compact it.
 Returning to the app keeps the microphone and voice session running.
 
@@ -369,7 +370,7 @@ floats, the app shows a **Return voice companion to this window** button in the
 same place.
 
 The floating window offers the same visual, session title, latest line,
-**Start voice**, **Pause mic**/**Resume**, speaker mute, **Silence**, **Disconnect voice** and
+**Start voice**, **Mute microphone** (a toggle: its pressed state is the mute), **Mute speaker** (a toggle), **Stop speaking**, **Disconnect voice** and
 compact/expand actions. Its close button (**Return voice companion to the app**)
 puts the companion back in bycoda and brings the app forward; voice keeps running.
 Use **Disconnect voice** to end the conversation. Drag its visual or empty surface to move it;
@@ -478,7 +479,7 @@ about 0.26 s of clear speech is needed to interrupt it.
 Replies are spoken sentence by sentence: the first sentence plays while the
 provider is still writing the rest. Natural voices play at their own sample rate
 (44.1–48 kHz). The voice model loads on start and stays warm during the connection. Speaking again or choosing
-**Silence** cancels synthesis and scheduled audio. A late response cannot restart
+**Stop speaking** cancels synthesis and scheduled audio. A late response cannot restart
 cancelled playback. The synthesizer is shared between desktop windows; a busy
 window reports that state instead of interrupting another window's voice.
 
@@ -498,8 +499,11 @@ virtual environment, `~/.bycoda/voice`, PATH and standard Windows Python folders
 and launcher versions. The scan has a total time limit. A settings check that
 cannot finish offers **Try again**; **Install** remains available while checking.
 
-Use **Locate existing** to choose the Python executable and model directories or
-enter their paths. Blank paths mean automatic detection. Missing components and
+If starting local voice or dictation fails the setup check, open **Voice settings**
+from the error. Use **Locate existing** on the setup row and choose **Automatic
+detection** to look for an existing installation. If the check succeeds, bycoda
+uses the detected files. If it fails, choose the Python executable and model
+directories or enter their paths. Blank paths mean automatic detection. Missing components and
 failure details are available behind **Technical details**. A custom model path
 must point to the actual model files, such as a cache snapshot, rather than a
 repository's parent cache directory. Changing the engine or paths disconnects an active voice
@@ -527,6 +531,8 @@ that the runtime can actually load them.
   otherwise runs on the CPU.
 - **GPU** requires an NVIDIA GPU with CUDA support for High quality replies. Voice does
   not start until GPU support is installed; it never silently falls back to CPU.
+  If bycoda cannot detect the GPU, **Use automatic selection** on the setup row
+  lets you explicitly switch to Automatic processing.
 - **CPU** keeps recognition and natural replies off the GPU.
 
 High quality replies are much slower on the CPU and can sound choppy. On Windows,
@@ -596,6 +602,12 @@ Nothing is sent until you press Send, so you can edit the text first.
   like any other recognized audio. **Dictation model** chooses the provider's
   transcription model; the first entry is the default.
 
+On Windows, bycoda Host uses the Windows certificate store for its outbound
+connections alongside Node's certificate authorities. A certificate error means
+the Host could not verify the connection. If OpenAI reports exhausted speech
+recognition quota, check API billing or configure `OPENAI_API_KEY` with available
+quota on the Host. A temporary rate limit can be retried after a pause.
+
 Select the button while it is preparing to cancel. Dictation keeps listening when
 you switch to another tab or view; while its message box is off screen, the
 footer shows **Dictating in** with the session name. Select it to return, or
@@ -631,7 +643,7 @@ system permission prompt before starting another check.
 camera, screen recording, accessibility, notifications, Full Disk Access) with
 the system's current answer. A permission that is already allowed shows only its
 badge. **Allow** shows the system prompt in place when one exists; if access is
-still missing afterwards, or when the system has no prompt, **Open Settings**
+still missing afterwards, or when the system has no prompt, **Open settings**
 opens a short guide that launches the right settings pane, names the toggle and
 closes itself once the system reports access. On macOS a small card docks to
 System Settings and shows where to add bycoda. Permissions the system does not
@@ -711,7 +723,7 @@ continue while you ask questions. A tracked turn ending can announce its last
 response, without certifying that the work succeeded. Voice has no direct approval
 or publishing action.
 
-**Pause mic** disables actual input tracks. **Silence** stops speech playback.
+**Mute microphone** disables actual input tracks. **Stop speaking** stops speech playback.
 Ask explicitly to stop coding work. Drag the grip or focus it and use arrow keys
 to move the window. Its saved position is clamped to the current viewport. Drag
 it past the app's edge, or choose **Float outside the app**, to move it outside
@@ -945,19 +957,22 @@ before cloud connection seeding. Missing registration or an uncertain reply keep
 the provider disconnected. Privacy revocation waits for that exact runtime's
 closure; reopening the panel does not prove an old connection has closed.
 
-**Wake and sleep phrases** (Settings → Voice assistant → Conversation style, off by
+**Wake and sleep phrases** (Settings → Voice assistant → Voice conversations, off by
 default) let you open and close the conversation by voice. While no conversation is
 open, the desktop is unlocked and you are not Away or on Do not disturb, the
-microphone listens on this computer only for your wake phrase, and a visible
-indicator with **Turn off** shows it. Short sounds are recognized with the local
+microphone listens on this computer only for your wake phrase. The assistant
+avatar shows a green dot while listening and an amber dot when listening needs
+attention. Open the arrow beside the avatar to see the status and switch **Wake
+and sleep phrases** on or off. Short sounds are recognized with the local
 voice pack (never a cloud provider), compared with the phrase and discarded;
-nothing is saved or sent. On a match the listener releases the microphone and Talk
-starts as if you pressed it. Saying your sleep phrase on its own, optionally
+nothing is saved or sent. On a match the listener releases the microphone. The
+workspace comes forward and opens the voice companion, even when the keyboard
+and mouse have been idle. Saying your sleep phrase on its own, optionally
 followed by the assistant's name, ends the conversation and returns to Ready with
 the microphone closed; running work continues. Defaults follow the voice (or app)
 language, for example "Hey {name}" and "Görüşürüz" in Turkish, and update when the
 language changes until you type your own (2 to 40 characters). Without the local
-voice pack the indicator says **Wake phrase needs the local voice pack**; after
+voice pack the menu says **Wake phrase needs the local voice pack**; after
 many bursts of background speech it pauses for five minutes. The semantic turn
 experiment does not enable the wake phrase.
 
@@ -965,6 +980,13 @@ Wake listening pauses while dictation is active and resumes afterward only if
 the wake setting and presence checks still allow it. Editing a phrase preserves
 your unsaved text when settings change elsewhere; untouched fields follow the
 latest saved value.
+
+Desktop windows share a microphone capture slot when the WebView supports Web
+Locks. Starting Talk, dictation, or a microphone check takes priority over the
+passive wake listener. Wake listening retries transient failures while the
+desktop remains unlocked. Permission and setup errors wait for owner action.
+If an active conversation continues while its workspace is minimized, it keeps
+its original project tool source until the conversation ends.
 
 Synthetic offline Turkish audio and subscription-login smoke checks can verify
 the individual runtime paths. They do not prove physical microphone acoustics,
@@ -979,10 +1001,13 @@ accessibility, notifications, camera and Full Disk Access. Each row lists its us
 Opening this page reads status without asking for access. Unknown means bycoda could
 not read the OS answer, not that access is allowed.
 
-Choose **Allow** or **Open Settings** to open the setup guide. Follow the exact OS
+Choose **Allow** or **Open settings** to open the setup guide. Follow the exact OS
 path in the guide; it checks access while open and confirms the OS change. On macOS,
-the helper reveals bycoda in Finder so you can add the running app to the list. A
-screen recording change may still require restarting bycoda if capture fails.
+the helper reveals bycoda in Finder so you can add the running app to the list.
+macOS applies screen recording and Full Disk Access to a running app only after it
+restarts: when bycoda sees the switch is on (or after you open System Settings from
+the guide), the row shows **Restart to apply** with **Restart now**. Full Disk Access
+is read by opening a file macOS protects with it.
 Unsigned macOS builds can lose grants after updates.
 
 Windows microphone access requires both **Microphone access** and **Let desktop apps

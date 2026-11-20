@@ -5,7 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mock = vi.hoisted(() => ({ capture: vi.fn(), open: vi.fn(), canOpen: true }));
 vi.mock("../../../platform/tauri/privacySettings", () => ({ openPrivacySettings: mock.open }));
-vi.mock("../model/microphoneAccess", () => ({
+vi.mock("../model/microphoneAccess", async (original) => ({
+  ...(await original<typeof import("../model/microphoneAccess")>()),
   openMicrophone: mock.capture,
   microphoneBlockedMessage: () => "Microphone blocked",
   webviewMicrophoneBlockedMessage: () => "Webview blocked",
@@ -52,10 +53,10 @@ it("leaves permission unknown without prompting and checks only after an explici
   expect(mock.capture).not.toHaveBeenCalled();
   expect(element.textContent).toContain("Not checked");
   await click("Check microphone access");
-  expect(mock.capture).toHaveBeenCalledExactlyOnceWith({
-    audio: { deviceId: { exact: "selected-device" } },
-    video: false,
-  });
+  expect(mock.capture).toHaveBeenCalledExactlyOnceWith(
+    { audio: { deviceId: { exact: "selected-device" } }, video: false },
+    { signal: expect.any(AbortSignal) },
+  );
   expect(stop).toHaveBeenCalledOnce();
   expect(element.textContent).toContain("Microphone allowed");
 });
@@ -107,7 +108,7 @@ it("shows denial recovery without treating opening settings as a grant", async (
   expect(element.textContent).toContain("Microphone blocked");
   await click("Review access");
   expect(mock.open).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain("Check access");
+  expect(document.body.textContent).toContain("Check again");
   expect(element.textContent).not.toContain("Microphone allowed");
 });
 

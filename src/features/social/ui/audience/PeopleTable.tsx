@@ -126,10 +126,17 @@ function TagsCell({ person }: { person: SocialPerson }) {
 }
 
 /**
- * Compact people table. Rows open the person panel; checkboxes select for bulk actions.
- * Name, Status, Score and Updated sort the loaded rows.
+ * Sort key that matches no column: every row compares as empty, so the Host order stays as it is.
+ * Used while more pages remain, because a sort would only reorder the loaded page.
  */
-// shortcut: sorting covers only the loaded page, move it to the Host query when lists grow past one page.
+const HOST_ORDER = { key: "", direction: "asc" } as const;
+
+/**
+ * Compact people table. Rows open the person panel; checkboxes select for bulk actions.
+ * Name, Status, Score and Updated sort once every page is loaded. Until then the headers are
+ * not sortable and the Host order is shown.
+ */
+// shortcut: sorting waits for the last page; move the sort key into the people.list keyset cursor to sort across pages.
 export function PeopleTable({
   people,
   selected,
@@ -158,6 +165,7 @@ export function PeopleTable({
       {
         key: "name",
         sizing: "flex",
+        sortable: !hasMore,
         label: t("Name"),
         render: (_, row) => <PersonCell person={row.person} onOpen={onOpen} />,
       },
@@ -172,6 +180,7 @@ export function PeopleTable({
       {
         key: "stage",
         sizing: "content",
+        sortable: !hasMore,
         label: t("Status"),
         render: (_, row) => (
           <Badge size="sm" tone={stageTone(row.person.stage)}>
@@ -182,6 +191,7 @@ export function PeopleTable({
       {
         key: "score",
         sizing: "content",
+        sortable: !hasMore,
         label: t("Score"),
         numeric: true,
         hideBelow: "md",
@@ -198,11 +208,12 @@ export function PeopleTable({
       {
         key: "updatedAt",
         sizing: "content",
+        sortable: !hasMore,
         label: t("Updated"),
         render: (_, row) => <UpdatedDate value={row.person.updatedAt} />,
       },
     ],
-    [onOpen],
+    [onOpen, hasMore],
   );
   // The table reports the whole selection; translate it into the per-person calls the screen uses.
   const onSelectionChange = (keys: string[]) => {
@@ -220,6 +231,7 @@ export function PeopleTable({
       columns={columns}
       rowKey="id"
       caption={t("People")}
+      sortState={hasMore ? HOST_ORDER : undefined}
       scrollKey="social:people"
       selectable
       selectedKeys={[...selected]}
@@ -231,13 +243,18 @@ export function PeopleTable({
       activeKey={activePersonId}
       footer={
         hasMore ? (
-          <CollectionFooter
-            standalone
-            hasMore
-            onLoadMore={onLoadMore}
-            loadMoreLabel={t("Load more people")}
-            loadMoreButtonProps={{ variant: "secondary", loading: loadingMore }}
-          />
+          <>
+            <Text size="caption" tone="muted">
+              {t("Load all people to sort.")}
+            </Text>
+            <CollectionFooter
+              standalone
+              hasMore
+              onLoadMore={onLoadMore}
+              loadMoreLabel={t("Load more people")}
+              loadMoreButtonProps={{ variant: "secondary", loading: loadingMore }}
+            />
+          </>
         ) : null
       }
     />

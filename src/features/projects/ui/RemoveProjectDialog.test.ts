@@ -147,11 +147,9 @@ it("blocks deletion when the conversation count failed and offers a read retry",
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "Cannot read conversations",
     );
-    await act(async () => button("Retry").click());
+    await act(async () => button("Try again").click());
     expect(button("Delete").disabled).toBe(false);
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      "3 saved conversations",
-    );
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("3 saved sessions");
   } finally {
     await act(async () => root.unmount());
     container.remove();

@@ -28,6 +28,8 @@ import { crewHistoryQuery } from "./crew-history-query";
 import { THREAD_CREW_WRITES } from "../conversation/conversation-thread-crew-tools";
 import { candidateObservations } from "./crew-observations";
 import * as membership from "./crew-membership";
+import { updateLibraryGroup } from "./crew-groups";
+import { CrewsAgentGroupUpdateParamsSchema } from "../../src/shared/model/host-contracts/crews";
 import {
   initializeCrewSchedulerProjection,
   readCrewSchedulerRuns,
@@ -44,6 +46,7 @@ import {
   COORDINATOR_DELETED,
   COORDINATOR_STOPPED,
   LAUNCH_GENERATION,
+  crewMemberRunIds,
   launchGeneration,
 } from "./crew-managed-session";
 import { finishRunDuration } from "../execution/run-duration";
@@ -402,12 +405,34 @@ export class HostCrews {
   async readForAssistantThread(action: string, input: Record<string, unknown>, projectId: string) {
     await this.ready;
     await this.store.project(projectId);
-    const before = this.stateRevision(await this.read(), projectId);
-    const view = await this.listForAssistantThread(projectId);
-    const after = this.stateRevision(await this.read(), projectId);
-    if (before !== after) throw new Error("Crew changed while reading. Refresh its state.");
+    const snapshot = await readCrewProjectState(this.store, projectId);
+    const revision = this.stateRevision(snapshot, projectId);
+    const libraryRead = [
+      "crews.definitions.list",
+      "crews.definition.get",
+      "crews.agents.list",
+      "crews.agent.get",
+    ].includes(action);
     let value: unknown;
-    if (action === "crews.list") {
+    if (action === "crews.schema") {
+      value = await this.call(action, input, projectId);
+    } else if (libraryRead) {
+      // The library and its revision come from the same snapshot. A library
+      // query must never reconcile coordinators or fetch tasks from run history.
+      value = callConversationCrewRead(
+        action,
+        input,
+        redactCrewProfiles({
+          definitions: snapshot.definitions.filter(
+            (row) => !row.projectId || row.projectId === projectId,
+          ),
+          agents: (snapshot.agents ?? []).filter(
+            (row) => !row.projectId || row.projectId === projectId,
+          ),
+          runs: [],
+        }),
+      );
+    } else if (action === "crews.list") {
       const offset = Number(input.offset ?? 0),
         limit = Number(input.limit ?? 30);
       if (
@@ -418,6 +443,7 @@ export class HostCrews {
         limit > 100
       )
         throw new Error("Provide bounded crew pagination");
+      const view = await this.listForAssistantThread(projectId);
       value = Object.fromEntries(
         ["definitions", "agents", "runs"].map((key) => {
           const rows = view[key as keyof typeof view] as unknown[];
@@ -432,17 +458,23 @@ export class HostCrews {
         }),
       );
     } else if (Object.hasOwn(CONVERSATION_CREW_READ_TOOLS, action)) {
-      value = callConversationCrewRead(action, input, view);
+      value = callConversationCrewRead(action, input, await this.listForAssistantThread(projectId));
     } else if (action === "crews.get") {
-      value = view.runs.find((run) => run.id === input.runId);
+      value = (await this.listForAssistantThread(projectId)).runs.find(
+        (run) => run.id === input.runId,
+      );
       if (!value) throw new Error("Crew work is not available to this project.");
-    } else if (action === "crews.schema" || action === "crews.inspect") {
+    } else if (action === "crews.inspect") {
       value = await this.call(action, input, projectId);
     } else throw new Error("Unknown Crew read.");
     await this.store.db.checkAuthorization();
-    if (after !== this.stateRevision(await this.read(), projectId))
+    if (
+      action !== "crews.schema" &&
+      !libraryRead &&
+      revision !== this.stateRevision(await readCrewProjectState(this.store, projectId), projectId)
+    )
       throw new Error("Crew changed while reading. Refresh its state.");
-    return { expectedRevision: after, source: { projectId }, value };
+    return { expectedRevision: revision, source: { projectId }, value };
   }
   /** Only the exact native-reviewed tool facade calls this owner operation. The
    * real thread remains provenance; the canonical owner path creates a real coordinator. */
@@ -1318,6 +1350,18 @@ export class HostCrews {
         return { deleted: true };
       });
     }
+    if (action === "crews.agent.group.update") {
+      // One transaction and one state write: the group moves as a whole or not at all.
+      return this.store.db.scope(async () => {
+        if (principal) throw new Error("Only the owner may change a library group");
+        // The legacy owner path hands raw params over, so the shape is checked here.
+        const { group, rename, members } = CrewsAgentGroupUpdateParamsSchema.parse(input);
+        const state = await this.read();
+        const updated = updateLibraryGroup(state, { projectId, group, rename, members }, this.now);
+        if (updated) await this.write(state);
+        return { updated };
+      });
+    }
     if (action === "crews.save")
       return await this.save(
         input.definition ?? JSON.parse(message(input.definitionJson, 100000)),
@@ -1621,7 +1665,10 @@ export class HostCrews {
     )
       return;
     const text = input.text;
-    for (const run of (await this.read()).runs.filter((r) => r.status !== "finished")) {
+    // Resolve crew membership by index first: an ordinary conversation must not decode run history.
+    for (const runId of await crewMemberRunIds(this.store, String(input.sessionId))) {
+      const run = await readCrewRun(this.store, runId);
+      if (!run || run.status === "finished") continue;
       const task = (await this.tasks.list(run.projectId)).find(
         (t) =>
           t.crewRunId === run.id &&
@@ -1705,15 +1752,15 @@ export class HostCrews {
       const active = await this.readActiveRuns();
       for (const run of active) {
         if (run.routingWait && !run.coordinatorSessionId) {
-          if (
-            run.sourceTaskId &&
-            !(await this.tasks.list(run.projectId)).some(
-              (task) =>
-                task.id === run.sourceTaskId &&
-                (task.status === "queued" || task.status === "running"),
+          if (run.sourceTaskId) {
+            // Point read of the one source task; the project's task history is never listed per tick.
+            const source = await this.tasks.get(run.sourceTaskId);
+            if (
+              source?.projectId !== run.projectId ||
+              (source.status !== "queued" && source.status !== "running")
             )
-          )
-            continue;
+              continue;
+          }
           await this.launchCoordinator(run);
           continue;
         }
@@ -1743,10 +1790,9 @@ export class HostCrews {
           notifications[key] = signature;
           return true;
         };
-        for (const task of (await this.tasks.list(run.projectId)).filter(
-          (t) =>
-            t.crewRunId === run.id &&
-            (t.status === "review" || t.status === "blocked" || t.needsInput),
+        // Only this run's tasks, through the run index; a task write elsewhere costs this run nothing.
+        for (const task of (await this.tasks.listCrewRun(run.id, run.projectId)).filter(
+          (t) => t.status === "review" || t.status === "blocked" || t.needsInput,
         )) {
           const signature = `${task.status}:${task.updatedAt}`;
           if (run.notifications[`task:${task.id}`] !== signature) {

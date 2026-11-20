@@ -38,6 +38,27 @@ describe("session title metadata", () => {
     });
   });
 
+  it("finds the title object after unrelated braces in the reply", () => {
+    expect(
+      parseGeneratedSessionTitle(
+        'Using the {title, workItem} format: {"title":"Fix login redirect","workItem":null}',
+        "fix the login redirect",
+      ),
+    ).toEqual({ title: "Fix login redirect", workItem: null });
+  });
+
+  it("keeps a referenced work item found after unrelated braces", () => {
+    expect(
+      parseGeneratedSessionTitle(
+        'Format {title, workItem}: {"title":"Fix session links","workItem":{"kind":"pr","number":42}}',
+        "Please fix PR #42",
+      ),
+    ).toEqual({
+      title: "Fix session links",
+      workItem: { kind: "pr", number: 42 },
+    });
+  });
+
   it("can refresh a generated title for an event added to an existing session", () => {
     expect(shouldGenerateSessionTitle(false, false, true)).toBe(true);
     expect(shouldGenerateSessionTitle(false, false)).toBe(false);

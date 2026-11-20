@@ -9,6 +9,7 @@ import {
   GitlabSettings,
   LinearSettings,
 } from "./InboxSettings";
+import { GITHUB_CLI_INSTALL_WATCH_MS, GITHUB_CLI_POLL_MS } from "./useGithubCliStatus";
 import { INTEGRATIONS, IntegrationsPage } from "./integrations/IntegrationsSettings";
 import { RevealedSetting } from "../../../shared/ui/settings";
 
@@ -104,6 +105,101 @@ it("does not label a failed GitHub status read as a missing CLI", async () => {
   expect(container.textContent).toContain("Check failed");
   expect(container.textContent).not.toContain("Not installed");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host unavailable");
+});
+
+const installingStatus = {
+  connected: false,
+  installed: false,
+  authenticated: false,
+  installing: true,
+};
+const badgeText = () => container.querySelector('[role="status"]')?.textContent;
+
+it("keeps the GitHub CLI Installing state steady while it silently polls", async () => {
+  vi.useFakeTimers();
+  try {
+    let reads = 0;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command !== "git_github_status") throw new Error(`Unexpected command: ${command}`);
+      reads += 1;
+      // A fresh object per read, as `invoke` returns: an identical one would not re-render.
+      return reads < 4
+        ? { ...installingStatus }
+        : { connected: true, installed: true, authenticated: true, installing: false };
+    });
+    await act(async () => root.render(createElement(GithubSettings)));
+    expect(badgeText()).toBe("Installing");
+    for (let poll = 1; poll <= 2; poll += 1) {
+      await act(async () => vi.advanceTimersByTimeAsync(2000));
+      // The row never falls back to Checking between background reads.
+      expect(reads).toBe(poll + 1);
+      expect(badgeText()).toBe("Installing");
+      expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    }
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(badgeText()).toBe("Connected");
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(reads).toBe(4);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("stops watching a stuck GitHub CLI install and resumes only on an explicit check", async () => {
+  // The watch deadline reads the monotonic clock; drive it from the fake clock.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const monotonic = vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+  try {
+    let reads = 0;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command !== "git_github_status") throw new Error(`Unexpected command: ${command}`);
+      reads += 1;
+      return { ...installingStatus };
+    });
+    await act(async () => root.render(createElement(GithubSettings)));
+    // One act per poll: React flushes the state change that schedules the next read on exit.
+    for (
+      let elapsed = 0;
+      elapsed < GITHUB_CLI_INSTALL_WATCH_MS + 4000;
+      elapsed += GITHUB_CLI_POLL_MS
+    )
+      await act(async () => vi.advanceTimersByTimeAsync(GITHUB_CLI_POLL_MS));
+    expect(badgeText()).toBe("Taking longer");
+    const stopped = reads;
+    expect(stopped).toBeLessThanOrEqual(GITHUB_CLI_INSTALL_WATCH_MS / GITHUB_CLI_POLL_MS + 2);
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(reads).toBe(stopped);
+    await click("Check again");
+    expect(reads).toBe(stopped + 1);
+    expect(badgeText()).toBe("Installing");
+    await act(async () => vi.advanceTimersByTimeAsync(GITHUB_CLI_POLL_MS));
+    expect(reads).toBe(stopped + 2);
+  } finally {
+    monotonic.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+it("stops polling a GitHub CLI install when a background read fails and keeps retry", async () => {
+  vi.useFakeTimers();
+  try {
+    let reads = 0;
+    vi.mocked(invoke).mockImplementation(async () => {
+      reads += 1;
+      if (reads === 2) throw new Error("Desktop unavailable");
+      return installingStatus;
+    });
+    await act(async () => root.render(createElement(GithubSettings)));
+    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    expect(badgeText()).toBe("Check failed");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Desktop unavailable");
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(reads).toBe(2);
+    await click("Check again");
+    expect(badgeText()).toBe("Installing");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("uses Linear save status and keeps a rejected credential for correction", async () => {

@@ -38,7 +38,7 @@ for (const theme of ["light", "dark"])
         await page.getByTestId("visual-caller").getByRole("button").first().click();
         if (view === "project")
           await page
-            .locator('input[placeholder="Search projects..."]')
+            .locator('input[placeholder="Search projects…"]')
             .fill("unmatched-fixture-project");
         await expect(
           page.getByText(view === "cwd" ? "No other projects" : "No projects found", {
@@ -132,7 +132,7 @@ for (const theme of ["light", "dark"])
         if (view === "project") {
           await page.getByTestId("visual-caller").getByRole("button").first().click();
           await page
-            .locator('input[placeholder="Search projects..."]')
+            .locator('input[placeholder="Search projects…"]')
             .fill("unmatched-fixture-project");
           await expect(page.getByText("No projects found", { exact: true })).toBeVisible();
         }

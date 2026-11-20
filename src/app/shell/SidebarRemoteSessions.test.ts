@@ -7,7 +7,10 @@ import { Sidebar } from "./Sidebar";
 import { rememberRemoteProject } from "../../features/connections/model/remoteProjects";
 import { refreshRemoteProjectSessions } from "../../features/connections/model/connections";
 import { LOADING_DELAY_MS } from "../../shared/hooks/useDelayedVisible";
-import { resetRemoteHealth } from "../../features/connections/model/remoteHealth";
+import {
+  recordRemoteConnection,
+  resetRemoteHealth,
+} from "../../features/connections/model/remoteHealth";
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -25,6 +28,7 @@ vi.mock("../../features/source-control/hooks/useGitFileStatuses", () => ({
 }));
 vi.mock("./SidebarUpdate", () => ({ SidebarUpdateFooter: () => null }));
 vi.mock("../../features/files/ui/FileTree", () => ({ FileTree: () => null }));
+vi.mock("../../features/crews/ui/CrewSessions", () => ({ CrewSidebar: () => "Crew work" }));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -67,7 +71,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function renderRemoteProject(environmentId = "env-mac") {
+async function renderRemoteProject(environmentId = "env-mac", extra: object = {}) {
   const project = rememberRemoteProject(environmentId, {
     id: "p1",
     cwd: "/Users/me/shop",
@@ -88,30 +92,24 @@ async function renderRemoteProject(environmentId = "env-mac") {
     onOpenFile: vi.fn(),
     onTabChange: vi.fn(),
     onFilesSearchOpenChange: vi.fn(),
+    ...extra,
   } as unknown as ComponentProps<typeof Sidebar>;
   await act(async () => root.render(createElement(Sidebar, props)));
   await act(async () => {});
 }
 
-it("explains an orphaned project's connection and offers machine settings", async () => {
-  await renderRemoteProject("previous-host-identity");
-  expect(document.body.textContent).toContain("Can’t reach this machine");
-  expect(document.body.textContent).toContain(
-    "Connect this project’s machine to load its sessions.",
-  );
+it("shows one short line for an orphaned project, leaving the explanation to the session pane", async () => {
+  await renderRemoteProject("previous-host-identity", { onOpenCrewSession: vi.fn() });
+  // Crews read through the same machine; their failure would repeat the notice in red.
+  expect(document.body.textContent).not.toContain("Crew");
+  // The list shows the one shared notice for a machine this computer does not have, not a
+  // second load status beside it, and no illustration, reason or button the page already has.
+  const notice = container.querySelector('[data-machine-unavailable="not-added"]');
+  expect(notice?.textContent).toContain("isn’t available");
+  expect(notice?.textContent).not.toContain("Add it in Connections");
+  expect(notice?.querySelector("button, img")).toBeNull();
+  expect(document.body.textContent).not.toContain("Can’t reach this machine");
   expect(document.body.textContent).not.toContain("Loading sessions");
-  const settings = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Connection settings",
-  );
-  expect(settings).toBeDefined();
-  const opened = vi.fn();
-  window.addEventListener("bycoda:open-connections", opened);
-  try {
-    await act(async () => settings!.click());
-    expect(opened).toHaveBeenCalledTimes(1);
-  } finally {
-    window.removeEventListener("bycoda:open-connections", opened);
-  }
 });
 
 it("says it is loading a remote project's sessions until they arrive", async () => {
@@ -219,4 +217,64 @@ it("labels cached rows as unverified while the initial owner read is pending", a
   expect(document.body.textContent).toContain("Showing last loaded data");
   await act(async () => answer([freshSession]));
   expect(document.body.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
+});
+
+it("keeps the loaded session list when the machine goes offline", async () => {
+  await renderRemoteProject();
+  await act(async () => answer([freshSession]));
+  expect(document.body.textContent).toContain("Current conversation");
+
+  await act(async () => recordRemoteConnection("env-mac", new Error("Machine is unreachable")));
+
+  expect(document.body.textContent).toContain("Current conversation");
+  expect(container.querySelector("[data-machine-unavailable]")).toBeNull();
+});
+
+// The list kept its last "ready" state while the machine was offline: rows stayed undimmed,
+// no notice said they were stale, and its poller kept asking the machine.
+it("dims a retained session list, says the machine is unreachable and stops reading it", async () => {
+  await renderRemoteProject();
+  await act(async () => answer([freshSession]));
+
+  // From now on the machine does not answer, so its reconnect attempts keep it offline.
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "remote_machines") return [machine];
+    throw new Error("Machine is unreachable");
+  });
+  vi.mocked(invoke).mockClear();
+  await act(async () => recordRemoteConnection("env-mac", new Error("Machine is unreachable")));
+  // The fallback poller asks every three seconds in the foreground.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 3_500)));
+
+  expect(document.body.textContent).toContain("Current conversation");
+  expect(document.body.textContent).toContain("Can’t reach MacBook");
+  expect(container.querySelector("[data-session-list-panel] .opacity-60")).not.toBeNull();
+  const reads = vi
+    .mocked(invoke)
+    .mock.calls.filter(([, args]) => (args as { method?: string })?.method === "sessions.list");
+  expect(reads).toEqual([]);
+});
+
+it("shows the shared notice for an offline machine when no list was loaded yet", async () => {
+  // Every request to the machine fails, so nothing marks it connected while the list opens.
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "remote_machines") return [machine];
+    throw new Error("Machine is unreachable");
+  });
+  recordRemoteConnection("env-mac", new Error("Machine is unreachable"));
+  await renderRemoteProject();
+
+  expect(container.querySelector('[data-machine-unavailable="offline"]')).not.toBeNull();
+  expect(document.body.textContent).not.toContain("Loading sessions");
+});
+
+it("replaces a cached session list when the machine refuses this computer", async () => {
+  await renderRemoteProject();
+  await act(async () => answer([freshSession]));
+  await act(async () =>
+    recordRemoteConnection("env-mac", "Host rejected request [RPC_AUTHORIZATION] (401)"),
+  );
+
+  expect(document.body.textContent).not.toContain("Current conversation");
+  expect(container.querySelector('[data-machine-unavailable="pairing-refused"]')).not.toBeNull();
 });

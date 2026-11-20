@@ -12,6 +12,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { useLocale, useT } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
 import { useSessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
@@ -213,6 +214,10 @@ export type SessionPaneProps = {
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
   onRemoteSnapshot?: (shellId: string, snapshot?: HostSession) => void;
   onRefreshAdoptedSession?: RefreshAdoptedSession;
+  /** Reads this conversation's stored history again after it failed to load. */
+  onRetrySessionHistory?: (sessionId: string) => void;
+  onLoadSessionHistory?: (sessionId: string) => Promise<number>;
+  onPrepareSessionHistory?: (sessionId: string) => Promise<boolean>;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
   onManageWorktrees?: () => void;
@@ -228,7 +233,7 @@ export type SessionPaneProps = {
   onSaveDraft: (sessionId: string, text: string, attachments: Attachment[]) => boolean | void;
   onRemoveDraft: (sessionId: string, draftBlockId: string) => boolean | void;
   onStop: (sessionId: string) => void;
-  onCompactContext: (sessionId: string) => boolean;
+  onCompactContext: (sessionId: string) => boolean | Promise<boolean>;
   onNewSession?: (sessionId: string, options?: NewSessionOptions) => void;
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (sessionId: string) => void;
@@ -434,6 +439,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onBranchChange: onBranchChangeProp,
   onWorktreeChange: onWorktreeChangeProp,
   onRefreshAdoptedSession,
+  onRetrySessionHistory,
+  onLoadSessionHistory,
+  onPrepareSessionHistory,
   onWorkspaceModeChange: onWorkspaceModeChangeProp,
   onWorktreeBaseChange: onWorktreeBaseChangeProp,
   onManageWorktrees,
@@ -500,6 +508,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
     if (owner) return mutateParentInput(owner, operation);
     return canMutateParentInputs(session.id) ? operation() : false;
   };
+  const afterStoredHistory = <Result,>(operation: () => Result) => {
+    if (!session.storedHistory || !onPrepareSessionHistory) return operation();
+    return onPrepareSessionHistory(session.id)
+      .catch(() => false)
+      .then((ready) => {
+        if (ready) return operation();
+        toast.show({ tone: "warning", message: t("Earlier messages could not be loaded.") });
+        return false as const;
+      });
+  };
   const onSubmit = (...args: Parameters<Props["onSubmit"]>) =>
     rootMutation(() => onSubmitProp(...args));
   const onSaveDraft = (...args: Parameters<Props["onSaveDraft"]>) =>
@@ -507,20 +525,20 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const onRemoveDraft = (...args: Parameters<Props["onRemoveDraft"]>) =>
     rootMutation(() => onRemoveDraftProp(...args));
   const onModelChange = (...args: Parameters<Props["onModelChange"]>) =>
-    rootMutation(() => onModelChangeProp(...args));
+    afterStoredHistory(() => rootMutation(() => onModelChangeProp(...args)));
   const onModelSettingsChange = (...args: Parameters<Props["onModelSettingsChange"]>) =>
-    rootMutation(() => onModelSettingsChangeProp(...args));
+    afterStoredHistory(() => rootMutation(() => onModelSettingsChangeProp(...args)));
   const onRuntimeModeChange = (...args: Parameters<Props["onRuntimeModeChange"]>) =>
-    rootMutation(() => onRuntimeModeChangeProp(...args));
+    afterStoredHistory(() => rootMutation(() => onRuntimeModeChangeProp(...args)));
   const onCwdChange = (...args: Parameters<Props["onCwdChange"]>) =>
-    rootMutation(() => onCwdChangeProp(...args));
+    afterStoredHistory(() => rootMutation(() => onCwdChangeProp(...args)));
   const onBranchChange = (...args: Parameters<Props["onBranchChange"]>) =>
-    rootMutation(() => onBranchChangeProp(...args));
+    afterStoredHistory(() => rootMutation(() => onBranchChangeProp(...args)));
   const onWorkspaceModeChange = (...args: Parameters<Props["onWorkspaceModeChange"]>) =>
-    rootMutation(() => onWorkspaceModeChangeProp(...args));
+    afterStoredHistory(() => rootMutation(() => onWorkspaceModeChangeProp(...args)));
   const onWorktreeBaseChange = (...args: Parameters<Props["onWorktreeBaseChange"]>) => {
     if (!canMutateParentInputs(session.id)) rootParentRef.current?.();
-    return onWorktreeBaseChangeProp(...args);
+    return afterStoredHistory(() => onWorktreeBaseChangeProp(...args));
   };
   const onQuestionReply = (...args: Parameters<Props["onQuestionReply"]>) =>
     rootMutation(() => onQuestionReplyProp(...args));
@@ -542,9 +560,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     rootMutation(() => onUsageLimitDismissProp(...args));
   const onWorktreeChange = onWorktreeChangeProp
     ? async (...args: Parameters<NonNullable<Props["onWorktreeChange"]>>) => {
-        const result = rootMutation(() => onWorktreeChangeProp(...args));
+        const result = await afterStoredHistory(() =>
+          rootMutation(() => onWorktreeChangeProp(...args)),
+        );
         if (result === false) throw new Error("Session input is temporarily closed.");
-        return await result;
+        return result;
       }
     : undefined;
   const onInboxCardDismiss = onInboxCardDismissProp
@@ -577,7 +597,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     : undefined;
   const onSelectProviderAccount = onSelectProviderAccountProp
     ? (...args: Parameters<NonNullable<Props["onSelectProviderAccount"]>>) =>
-        rootMutation(() => onSelectProviderAccountProp(...args))
+        afterStoredHistory(() => rootMutation(() => onSelectProviderAccountProp(...args)))
     : undefined;
   const onNewSession = onNewSessionProp
     ? (...args: Parameters<NonNullable<Props["onNewSession"]>>) =>
@@ -653,7 +673,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       !managed &&
       !session.busy &&
       !session.continuingElsewhere &&
-      !session.historyLoading &&
+      (!session.historyLoading || !!session.storedHistory) &&
       !session.worktreePreparing &&
       workspaceSwitchingSessionId !== session.id &&
       !windowMovingSessionIds?.has(session.id) &&
@@ -780,6 +800,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     filePlanLoading,
     rewindMode,
     fileRevertNotice,
+    dismissFileRevertNotice,
     rewindDraftSignal,
     requestMessageRewind,
     rewindLastTurnToDraft,
@@ -985,18 +1006,30 @@ const LocalSessionPane = memo(function LocalSessionPane({
     blocked: !!session.pendingQuestion || editingLastTurn || btw.open,
   });
   useComposerReadingMotion(composerDockedRef, dockComposer, composerReading);
+  // Typing never re-renders this pane: the hook commits only presence and the consumed
+  // seed, and hands the latest text to the closure snapshot on demand.
   const {
-    value: composerDraft,
+    present: composerDraftPresent,
     initialDraft: composerDraftSeed,
+    text: composerDraftText,
     change: setComposerDraftState,
   } = useSessionComposerDraft(session.id);
-  const draftRef = useRef<string | undefined>(composerDraft);
   const parentChanged = useParentInputClosure({
     kind: "session-parent",
     sessionId: session.id,
+    // Replaced, never mutated, by the session store: streamed-token renders skip their deep compare.
+    stableKeys: [
+      "composerSeed",
+      "inboxCard",
+      "noteCard",
+      "handoffCard",
+      "pendingQuestion",
+      "submittedQuestions",
+      "modelSettings",
+    ],
     snapshot: () => ({
-      draft: draftRef.current,
-      committedDraft: composerDraft,
+      draft: composerDraftText(),
+      committedDraftPresent: composerDraftPresent,
       composerSeed: session.composerSeed,
       inboxCard: session.inboxCard,
       noteCard: session.noteCard,
@@ -1019,7 +1052,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // Composer is memoized: every handler keeps one identity and calls the
   // latest closure, so it re-renders only when something it shows changed.
   const composerDraftChange = useStableCallback((text: string) => {
-    draftRef.current = text;
     setComposerDraftState(text);
     setComposerDraft(session.id, text);
     parentChanged();
@@ -1066,9 +1098,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const composerSaveDraft = useStableCallback(
     (text: string, attachments: Attachment[], original?: ParentAdmission) =>
-      original
-        ? rootMutation(() => onSaveDraftProp(session.id, text, attachments), original)
-        : onSaveDraft(session.id, text, attachments),
+      afterStoredHistory(() =>
+        original
+          ? rootMutation(() => onSaveDraftProp(session.id, text, attachments), original)
+          : onSaveDraft(session.id, text, attachments),
+      ),
   );
   const composerSubmit = useStableCallback(
     (
@@ -1170,7 +1204,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
         (block) => block.role === "user" && !block.draft && !block.internal,
       );
       // The conversation guards are shared by every accepted user message.
-      if (!messages.length || !canRewindConversation(stableSession, messages[0].id)) return [];
+      const candidate = stableSession.storedHistory
+        ? { ...stableSession, historyLoading: false }
+        : stableSession;
+      if (!messages.length || !canRewindConversation(candidate, messages[0].id)) return [];
       return messages.flatMap((block) => (block.questionAnswers?.length ? [] : [block.id]));
     }, [stableSession, onRewindMessage, managed, sendBlockedReason]),
     shallowArrayEqual,
@@ -1190,14 +1227,25 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ...(block.appRequestId ? { appRequestId: block.appRequestId } : {}),
     }),
   );
-  const removeDraft = useStableCallback((block: Block) => onRemoveDraft(session.id, block.id));
+  const removeDraft = useStableCallback((block: Block) => {
+    const result = afterStoredHistory(() => onRemoveDraft(session.id, block.id));
+    if (result instanceof Promise)
+      void result.catch((error) => console.warn("Draft removal failed", error));
+    else return result;
+  });
   // Editing takes the saved draft back into the composer: the card goes and its
   // text and files return as unsent input, kept and saved like any other draft.
   const editDraft = useStableCallback((block: Block) => {
     const value = userBlockRecall(block);
-    if (!value || onRemoveDraft(session.id, block.id) === false) return false;
-    setDraftEditSignal({ sessionId: session.id, id: crypto.randomUUID(), value });
-    return true;
+    if (!value) return false;
+    const result = afterStoredHistory(() => {
+      if (onRemoveDraft(session.id, block.id) === false) return false;
+      setDraftEditSignal({ sessionId: session.id, id: crypto.randomUUID(), value });
+      return true;
+    });
+    if (result instanceof Promise)
+      void result.catch((error) => console.warn("Draft edit failed", error));
+    else return result;
   });
   const recalledMessageApplied = useStableCallback((id: string) => {
     acknowledgeDraftSignal(id);
@@ -1383,7 +1431,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       quoteRequest={quoteRequest}
       initialDraft={
         savedDraftProjection.initialDraft ??
-        (composerDraft === undefined
+        (!composerDraftPresent
           ? session.inboxCard || session.noteCard || session.handoffCard
             ? undefined
             : session.composerSeed
@@ -1750,7 +1798,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
             </Alert>
           ) : null}
           {fileRevertNotice ? (
-            <Alert tone={fileRevertNotice.skipped.length ? "warning" : "info"}>
+            <Alert
+              tone={fileRevertNotice.skipped.length ? "warning" : "info"}
+              onDismiss={dismissFileRevertNotice}
+            >
               <Text
                 as="div"
                 size="body"
@@ -1807,7 +1858,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   message={
                     embedded
                       ? t("Plan and manage your social accounts here.")
-                      : "Explore this item with your agent."
+                      : t("Explore this item with your agent.")
                   }
                 />
               </ScrollArea>
@@ -1863,12 +1914,21 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           : liveBlocks
                       }
                       performanceTraceId={performanceTraceId}
-                      historyLoading={session.historyLoading}
+                      historyLoading={session.historyLoading && !session.storedHistory}
                       historyLoadError={session.historyLoadError}
-                      remoteHistoryHasMore={remoteHistoryHasMore}
+                      onRetryHistory={
+                        onRetrySessionHistory ? () => onRetrySessionHistory(session.id) : undefined
+                      }
+                      remoteHistoryHasMore={
+                        remoteHistoryHasMore || session.storedHistory?.before != null
+                      }
                       remoteHistoryLoading={remoteHistoryLoading}
                       remoteHistoryError={remoteHistoryError}
-                      onLoadRemoteHistory={onLoadRemoteHistory}
+                      onLoadRemoteHistory={
+                        session.storedHistory && onLoadSessionHistory
+                          ? () => onLoadSessionHistory(session.id)
+                          : onLoadRemoteHistory
+                      }
                       onLoadRemoteBlock={onLoadRemoteBlock}
                       canRewindMessage={canRewindMessage}
                       onRewindMessage={rewindMessage}

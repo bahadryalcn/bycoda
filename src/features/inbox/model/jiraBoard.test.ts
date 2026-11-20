@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   columnTransitions,
   jiraBoardIssues,
+  jiraBoardsInVisibleProjects,
   jiraMoveIssue,
   jiraTransitionIssue,
   rankAnchor,
@@ -42,6 +43,24 @@ it("scopes the board roster and its cards to selected projects and boards", asyn
     "jira_board_issues",
     expect.objectContaining({ projectIds: ["1"] }),
   );
+});
+it("narrows one board catalog to visible projects like the native per-project fetch", () => {
+  const projects = [
+    { id: "1", key: "ENG", name: "Engineering" },
+    { id: "2", key: "OPS", name: "Operations" },
+  ];
+  const boards = [
+    { id: 7, name: "Eng", kind: "scrum" as const, projectId: "1" },
+    { id: 8, name: "Ops", kind: "kanban" as const, projectId: "2" },
+    { id: 9, name: "Detached", kind: "kanban" as const },
+  ];
+  expect(jiraBoardsInVisibleProjects(boards, projects, [])).toEqual(boards);
+  expect(jiraBoardsInVisibleProjects(boards, projects, ["unknown"])).toEqual(boards);
+  expect(jiraBoardsInVisibleProjects(boards, projects, ["2"]).map((board) => board.id)).toEqual([
+    7,
+  ]);
+  expect(jiraBoardsInVisibleProjects(boards, projects, ["1", "2"])).toEqual([]);
+  expect(jiraBoardsInVisibleProjects(boards, [], ["1"])).toEqual([]);
 });
 it("keeps board, sprint, cursor and mutation identities in the native contract", async () => {
   vi.mocked(invoke).mockResolvedValue({ issues: [], nextPageToken: null });

@@ -2,6 +2,7 @@ import { useT } from "../../../shared/i18n";
 import { useState } from "react";
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
+import { providerAccountErrorTextWith } from "../../providers/public/providerAccountError";
 import { Modal } from "../../../shared/ui/Modal";
 import { ProviderSignInPanel, type ProviderSignInState } from "./ProviderSignInPanel";
 
@@ -23,14 +24,16 @@ export function ProviderSignInDialog({
   const t = useT();
   // The attempt belongs to the provider account it started for; another account starts idle.
   const ownerKey = `${harness}\u0000${accountId ?? ""}`;
+  // The failure is presented at render, so it follows a language change.
   const [attempt, setAttempt] = useState<{
     key: string;
     state: ProviderSignInState;
-    error: string | null;
+    error: unknown;
   }>({ key: ownerKey, state: "idle", error: null });
   const current = attempt.key === ownerKey ? attempt : null;
   const state: ProviderSignInState = current?.state ?? "idle";
-  const error = current?.error ?? null;
+  const error =
+    state === "error" ? providerAccountErrorTextWith(current?.error, "signIn", t) : null;
 
   const signIn = () => {
     setAttempt({ key: ownerKey, state: "running", error: null });
@@ -40,14 +43,7 @@ export function ProviderSignInDialog({
         onSignedIn?.();
       },
       (reason: unknown) => {
-        setAttempt({
-          key: ownerKey,
-          state: "error",
-          error:
-            reason instanceof Error
-              ? reason.message
-              : t("Could not sign in to {p0}.", { p0: HARNESS_TITLE[harness] }),
-        });
+        setAttempt({ key: ownerKey, state: "error", error: reason });
       },
     );
   };
@@ -63,6 +59,7 @@ export function ProviderSignInDialog({
     >
       <ProviderSignInPanel
         harness={harness}
+        accountId={accountId}
         state={state}
         error={error}
         onSignIn={signIn}

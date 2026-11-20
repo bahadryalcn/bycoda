@@ -1,3 +1,4 @@
+import { errorText } from "../lib/errors";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useLocale, useT } from "../i18n";
 import {
@@ -30,7 +31,7 @@ export function isModuleLoadError(error: unknown): boolean {
     moduleLoadFailures.has(error)
   )
     return true;
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorText(error);
   return /failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module|loading (?:chunk|css chunk) .+ failed|outdated optimize dep/i.test(
     message,
   );
@@ -88,6 +89,7 @@ export function FailureState({
   onRetry?: () => void | Promise<unknown>;
   /** Marks a retry the caller already runs, for example one started elsewhere. */
   retrying?: boolean;
+  /** Omit for the shared "Try again" wording, the same label InlineError uses. */
   retryLabel?: string;
   /** Another recovery step (Open settings), rendered by the component. */
   action?: NoticeAction;
@@ -108,7 +110,7 @@ export function FailureState({
   const [retryPending, setRetryPending] = useState(false);
   const retryGuard = useRef(false);
   const preview = useRef<HTMLPreElement>(null);
-  const full = error instanceof Error ? error.message : String(error ?? "");
+  const full = errorText(error ?? "");
   const copyFeedback = useCopyFeedback({ resetKeys: [title, full] });
   const copy = copyFeedback.status;
   const truncated = full.length > FAILURE_PREVIEW_CHARS;
@@ -155,7 +157,7 @@ export function FailureState({
     selection.addRange(range);
   }, [copy]);
 
-  const retryText = retryLabel ?? t("Retry");
+  const retryText = retryLabel ?? t("Try again");
   // The central connection notice explains an unreachable machine once, with its own Reconnect.
   if (shownCentrally) return null;
   if (size === "inline") {
@@ -234,7 +236,7 @@ export function FailureState({
               loading={retryBusy || undefined}
               onClick={() => void retry()}
             >
-              {retryLabel ?? t("Try again")}
+              {retryText}
             </Button>
           ) : null}
           {action ? <NoticeButton action={action} /> : null}

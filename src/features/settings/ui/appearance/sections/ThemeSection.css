@@ -1,9 +1,9 @@
 /* Palettes fill the control column; saved themes scroll as one horizontal strip. */
-#appearance-topic-colors .theme-palettes {
+[data-appearance-topic="colors"] .theme-palettes {
   inline-size: 100%;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 7.5rem), 1fr));
 }
-#appearance-topic-colors .theme-saved {
+[data-appearance-topic="colors"] .theme-saved {
   inline-size: 100%;
 }
 

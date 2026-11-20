@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../../store";
+import { observeSupervisionClock } from "../../execution/confirmed-silence";
 import { HostAssistant, type AssistantPorts } from "../service";
 import { describeVerification, NO_VERIFICATION } from "./assistant-goal-verification";
 import { assistantJobNotificationBody } from "./assistant-job-holds";
@@ -217,6 +218,65 @@ describe("Jobs-mode stall recovery", () => {
     expect(manageSession.mock.calls[0][0]).toMatchObject({ sessionId: "s1", reason: "nudge" });
     const activity = (await f.service.request({ op: "snapshot" }, "owner")).snapshot!.activity;
     expect(activity.filter((entry) => entry.kind === "session.nudged")).toHaveLength(1);
+  });
+
+  it("does not nudge after a Host sleep alone, but still nudges real silence", async () => {
+    let now = 10_000_000,
+      mono = 5_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => mono);
+    try {
+      const activityAt = now - 5 * 60000;
+      const manageSession = vi.fn(
+        async (_input: { sessionId: string; reason: string }) => undefined,
+      );
+      const f = await setup({
+        now: () => now,
+        manageSession,
+        createGoal: async () => ({ goalId: "goal" }),
+        goalStatus: async () => ({
+          status: "running",
+          taskIds: [],
+          sessionIds: ["s1"],
+          progress: { done: 0, total: 1 },
+          lastActivityAt: activityAt,
+        }),
+      });
+      vi.spyOn(f.store, "session").mockResolvedValue({
+        status: "running",
+        runId: "run1",
+        runActivity: { runId: "run1", lastActivityAt: activityAt },
+      } as never);
+      await f.service.request(
+        {
+          op: "jobs.create",
+          title: "Job",
+          request: "Do work",
+          projectId: "project",
+          idempotencyKey: "sleep",
+        },
+        "owner",
+      );
+      observeSupervisionClock(f.store, now);
+      await f.service.tick();
+      // The machine sleeps for an hour: wall time jumps, the monotonic clock does not.
+      now += 60 * 60000;
+      mono += 500;
+      observeSupervisionClock(f.store, now);
+      await f.service.tick();
+      expect(manageSession).not.toHaveBeenCalled();
+      const snapshot = (await f.service.request({ op: "snapshot" }, "owner")).snapshot!;
+      expect(snapshot.jobs?.some((job) => job.status === "stalled")).toBe(false);
+      // Silence the Host actually observed after the wake still stalls the job.
+      for (let beat = 0; beat < 11; beat++) {
+        now += 60000;
+        mono += 60000;
+        observeSupervisionClock(f.store, now);
+        await f.service.tick();
+      }
+      expect(manageSession).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("leaves nudges to the Chief in Chief mode and to the owner in report mode", async () => {

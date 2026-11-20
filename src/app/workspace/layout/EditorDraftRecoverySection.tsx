@@ -1,11 +1,12 @@
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { RefreshCw, Search } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 import { formatRelative } from "../../../features/sessions/model/recentSessions";
@@ -16,6 +17,7 @@ import {
 } from "../files/useEditorDraftRecovery";
 import type { EditorDraftRecoveryMetadata } from "../../../features/files/data/editorDraftRecovery";
 import { pathKey } from "../../../shared/lib/paths";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 export type EditorDraftRecoverySectionProps = {
@@ -31,11 +33,7 @@ export function EditorDraftRecoverySection({
   onClearReportPaths,
 }: EditorDraftRecoverySectionProps) {
   const t = useT();
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const clock = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(clock);
-  }, []);
+  const now = useMinuteNow();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"unsaved" | "all">("unsaved");
   const reported = useMemo(
@@ -68,7 +66,7 @@ export function EditorDraftRecoverySection({
           <SearchInput
             focusOwner="group"
             aria-label={t("Search file recovery copies")}
-            placeholder={t("Search file recovery copies")}
+            placeholder={t("Filter by file name or window")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -83,26 +81,25 @@ export function EditorDraftRecoverySection({
           <RefreshCw className="icon-sm" strokeWidth={1.75} />
         </Button>
       </div>
-      <Text role="status" as="div" size="caption" tone="secondary" className="recovery-status">
-        <span>
-          {t("{p0} unsaved drafts · {p1} copies", { p0: unsaved.length, p1: candidates.length })}
-        </span>
-        {rows.length !== scoped.length ? (
-          <span>{t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })}</span>
-        ) : null}
-        {reported ? (
-          <>
-            <span>
-              {t(
-                "These copies match reported file names. Check their content; the earlier report remains protected.",
-              )}
-            </span>
-            <Button size="sm" variant="ghost" onClick={onClearReportPaths}>
-              {t("Show all file copies")}
-            </Button>
-          </>
-        ) : null}
-      </Text>
+      {rows.length !== scoped.length || reported ? (
+        <Text as="div" size="caption" tone="secondary" className="recovery-status">
+          {rows.length !== scoped.length ? (
+            <LiveText text={t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })} />
+          ) : null}
+          {reported ? (
+            <>
+              <span>
+                {t(
+                  "These copies match reported file names. Check their content; the earlier report remains protected.",
+                )}
+              </span>
+              <Button size="sm" variant="ghost" onClick={onClearReportPaths}>
+                {t("Show all file copies")}
+              </Button>
+            </>
+          ) : null}
+        </Text>
+      ) : null}
       {recovery.error ? (
         <Alert tone="danger">
           <span>
@@ -122,7 +119,7 @@ export function EditorDraftRecoverySection({
       ) : null}
       <div className="recovery-body">
         {rows.length ? (
-          <ul {...surfaceAttributes({ dividers: "pane" })} aria-label={t("File recovery copies")}>
+          <ul {...surfaceAttributes({ dividers: "pane" })}>
             {rows.map((row) => {
               const key = editorDraftRecoveryKey(row);
               const pending = recovery.pendingKeys.has(key);

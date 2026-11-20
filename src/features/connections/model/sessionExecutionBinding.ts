@@ -192,15 +192,24 @@ export function hydrateHostSessionBindings(): Promise<void> {
 
 /** Await durable owner publication before command admission or Native fallback. */
 export async function flushHostSessionBindings(shellId?: string): Promise<void> {
+  // A hydration this call started read every durable owner after the call began,
+  // so the re-read below would repeat that serial page scan. A call joining an
+  // earlier hydration or running on a hydrated window still re-reads: another
+  // window may have written since that read.
+  let justHydrated = !hydrated && !hydrating;
   await hydrateHostSessionBindings();
   let failure: { error: unknown } | undefined;
   do {
+    const projectionCurrent = justHydrated && writes.length === 0;
+    justHydrated = false;
     try {
       await drain();
     } catch (error) {
       // Re-read below so this window projects the stored owner, not the failed one.
       failure ??= { error };
     }
+    // Nothing was queued and nothing failed: the hydrated projection is the stored owners.
+    if (projectionCurrent && !failure) continue;
     if (shellId !== undefined) {
       const latest = await readBindingEvidence(shellId);
       if (writes.length) continue;

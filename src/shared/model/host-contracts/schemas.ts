@@ -73,7 +73,12 @@ export const ConnectionProbeResultSchema = z.strictObject({
 
 export const SubscriptionTargetSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("environment") }),
-  z.strictObject({ kind: z.literal("project"), projectId: IdentifierSchema }),
+  z.strictObject({
+    kind: z.literal("project"),
+    projectId: IdentifierSchema,
+    /** Hosts advertising `transport.ws.projects.delta.v1`: changed rows against the last list. */
+    delta: z.literal(true).optional(),
+  }),
   /** Model catalog as `models.list` returns it (capability `models.catalog.stream.v1`). */
   z.strictObject({ kind: z.literal("models"), projectId: IdentifierSchema.optional() }),
   z.strictObject({

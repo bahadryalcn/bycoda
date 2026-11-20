@@ -1,5 +1,8 @@
 import { expect, it, vi } from "vitest";
 import { handleVoiceRpc } from "./rpc-voice";
+vi.mock("../voice/voice-transcription-catalog", () => ({
+  openRouterTranscriptionModels: async () => [{ id: "test/model", label: "Test model" }],
+}));
 
 const status = vi.fn(async () => ({ openrouter: true }));
 const dependencies = {
@@ -36,13 +39,26 @@ it("serves cloud status to a paired owner device but refuses guests and browser 
 });
 
 it("keeps cloud credentials and setup methods local even for an owner device", async () => {
-  for (const method of ["voice.cloud.setKey", "voice.cloud.models", "voice.dictation.process"])
+  for (const method of ["voice.cloud.setKey", "voice.realtime.secret", "voice.dictation.process"])
     await expect(handleVoiceRpc(dependencies, call(method, { owner: true }))).rejects.toThrow(
       "only on this computer",
     );
   const local = call("voice.cloud.status", { address: "127.0.0.1" });
   await handleVoiceRpc(dependencies, local);
   expect(local.result).toEqual({ openrouter: true });
+});
+
+it("serves public transcription models to the paired owner without exposing credentials", async () => {
+  const method = "voice.cloud.models";
+  const owner = call(method, { owner: true });
+  await handleVoiceRpc(dependencies, owner);
+  expect(owner.result).toEqual([{ id: "test/model", label: "Test model" }]);
+  await expect(
+    handleVoiceRpc(dependencies, call(method, { owner: true, origin: "https://x" })),
+  ).rejects.toThrow("only on this computer");
+  await expect(handleVoiceRpc(dependencies, call(method, { owner: false }))).rejects.toThrow(
+    "only on this computer",
+  );
 });
 
 it("gates cloud transcription by the same rule", async () => {

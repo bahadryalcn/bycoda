@@ -101,9 +101,6 @@
     color: var(--foreground);
   }
 }
-.clear:focus-visible {
-  --focus-outline-offset: 1px;
-}
 .hint {
   color: var(--text-muted);
   font-size: var(--text-xs);

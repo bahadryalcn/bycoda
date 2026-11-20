@@ -38,6 +38,7 @@ import {
   type HarnessId,
 } from "../model/session";
 import { compactQuestion } from "../model/btwQuestion";
+import { presentBtwThreadErrorWith } from "../model/btwError";
 
 type Options = {
   parentSessionId?: string;
@@ -626,10 +627,7 @@ export function BtwSheet({
                 {t("Couldn’t finish")}
               </Text>
               <Text as="div" tone="danger" leading="normal" className="mt-1">
-                {persisted.error ||
-                  t("{p0} could not answer this side question.", {
-                    p0: HARNESS_TITLE[harness],
-                  })}
+                {presentBtwThreadErrorWith(persisted, HARNESS_TITLE[harness], t)}
               </Text>
             </div>
             <Button variant="ghost" type="button" onClick={btw.retry} className="shrink-0">
@@ -661,7 +659,7 @@ export function BtwSheet({
             hideBranchPicker
             hideTopBar
             placeholder={t("Ask a side question…")}
-            inputAriaLabel="By-the-way question"
+            inputAriaLabel={t("Side question")}
             allowedModelHarnesses={[harness]}
             initialDraft={btw.seed.text}
             onDraftChange={btw.changeDraft}

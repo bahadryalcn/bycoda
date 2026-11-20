@@ -36,7 +36,7 @@ export function MemoryTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           onAdd={() => setMemoryEdit("new")}
           onEdit={setMemoryEdit}
           onToggle={(entry, active) =>
-            mutate(entry.id, t("Saving..."), {
+            mutate(entry.id, t("Saving…"), {
               op: "memory.save",
               id: entry.id,
               kind: entry.kind,

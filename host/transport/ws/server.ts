@@ -32,13 +32,28 @@ import {
 } from "../../../src/shared/model/host-contracts";
 import { HostDispatchError, type HostDispatchContext } from "../dispatch";
 import { createLogger } from "../../diagnostics/logger";
-import { elapsedSince, monotonicNow } from "../../../src/shared/lib/time/timestamps";
+import { elapsedSince, monotonicNow, wallClockGap } from "../../../src/shared/lib/time/timestamps";
 import { effectFailureDelivery } from "./effect-failure-delivery";
 import { HostReadWorkBudget } from "../read-budget";
+import { AdmissionSources } from "./admission-source";
+import { ControlLane, ControlLaneBusy } from "./control-lane";
+import { PeerMessageBudget, WS_MESSAGE_BUDGET } from "./message-budget";
 import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
 import { HostStreamError, type HostSubscriptionHub } from "./subscriptions";
-import { dispatchErrorCode, principalCapabilities, rejectUpgrade, waitFor } from "./server-helpers";
-import { authorizeWith, invalidRequestMessage, type AuthMode } from "./server-helpers";
+import {
+  dispatchErrorCode,
+  hostHeaderAllowed,
+  principalCapabilities,
+  rejectUpgrade,
+  waitFor,
+} from "./server-helpers";
+import { isTunnelUpgradeUrl } from "../../dev-servers/dev-server-tunnel";
+import {
+  authorizeWith,
+  invalidRequestMessage,
+  withoutPayload,
+  type AuthMode,
+} from "./server-helpers";
 
 export const HOST_WS_READ_CAPABILITY = "transport.ws.read.v2";
 const READ_METHODS = ["environment.describe", "projects.list"] as const;
@@ -76,9 +91,10 @@ export type HostWebSocketOptions = {
   /** Exact reverse-proxy Host values require deliberate composition. No wildcards.
    * A function is read on every upgrade so a learned proxy name (Tailscale Serve) applies live. */
   allowedHosts?: readonly string[] | (() => readonly string[]);
+  /** Gives a loopback proxy a retryable refusal while its exact name is being discovered. */
+  retryUnknownHost?: (host: string) => boolean;
   limits?: Partial<
-    Pick<
-      typeof WS_LIMITS,
+    Record<
       | "maxPendingRpc"
       | "maxAuthenticatedSockets"
       | "maxSocketsPerDevice"
@@ -90,11 +106,15 @@ export type HostWebSocketOptions = {
       | "maxReadJobsPerDevice"
       | "maxControlJobs"
       | "maxControlJobsPerDevice"
+      | "maxControlRequestsPerSocket"
+      | "maxSubscriptionControlsPerSocket"
+      | "maxQueuedSubscriptionControlsPerSocket"
       | "handshakeTimeoutMs"
       | "heartbeatIntervalMs"
       | "heartbeatResponseTimeoutMs"
       | "defaultResponseTimeoutMs"
-      | "maxSocketQueuedBytes"
+      | "maxSocketQueuedBytes",
+      number
     >
   >;
 };
@@ -110,14 +130,73 @@ type Peer = {
   /** Request id -> method and start, so a close names what it abandoned. */
   inflight: Map<string, { method: string; startedAt: number }>;
   openedAt: number;
+  /** Ids of every control request, queued subscription controls included; none can be cancelled. */
   controls: Set<string>;
+  /** Subscription open, ack and close queue here instead of failing against the control cap. */
+  subscriptionLane: ControlLane;
   helloTimer: ReturnType<typeof setTimeout>;
   pongTimer?: ReturnType<typeof setTimeout>;
+  /** `monotonicNow()` of the first shed frame in an unbroken run over the queue cap. */
+  overCapSince?: number;
+  /** Wall-clock time of the outstanding ping; sleep shows up as a gap against it. */
+  pingSentAt: number;
+  pongGraceUsed: boolean;
+  /** Payload bytes handed to `socket.send`; with `bufferedAmount` it yields bytes actually flushed. */
+  sentBytes: number;
+  /** Flushed bytes when the pong deadline was last armed; progress past it proves a draining link. */
+  pongFlushedAt: number;
+  /** Deadline extensions granted to a draining link for the outstanding ping. */
+  pongDrainExtensions: number;
+  /** Wall-clock time of the last inbound frame or pong; a dead socket stops advancing it. */
+  lastInboundAt: number;
+  /** Charged for every inbound message before it is parsed. */
+  messageBudget: PeerMessageBudget;
   closeTimer?: ReturnType<typeof setTimeout>;
   heartbeatCheck?: AbortController;
 };
 
 class RequestExpired extends Error {}
+
+/** A queue that stays over its cap this long is a dead or hopeless link, not one lagging stream. */
+const SLOW_CONSUMER_GRACE_MS = 30_000;
+
+/**
+ * A ping is written behind every frame already queued on the socket, so on a slow link its pong
+ * cannot arrive within one response window while a large snapshot drains. A peer whose queue is
+ * still flushing earns another window, at most this many per ping; a peer that stops flushing,
+ * or outlasts them, is retired as before.
+ */
+const HEARTBEAT_DRAIN_EXTENSIONS = 5;
+
+/** Bytes the socket has actually flushed; never moves backwards, a stalled peer freezes it. */
+function flushedBytes(peer: Peer): number {
+  return peer.sentBytes - peer.socket.bufferedAmount;
+}
+
+/**
+ * The same-device socket a legitimate reconnect may retire once the per-device cap is reached.
+ * A socket qualifies only when it has been silent for a bounded time: either its ping is still
+ * unanswered past the response window, or it has missed a whole heartbeat cycle plus that window.
+ * Any socket with recent inbound traffic is left alone; among qualifiers the stalest goes first.
+ */
+function retiredSocketFor(
+  deviceSockets: readonly Peer[],
+  now: number,
+  unansweredMs: number,
+  silentMs: number,
+): Peer | undefined {
+  let retired: Peer | undefined;
+  for (const peer of deviceSockets) {
+    const idle = elapsedSince(peer.lastInboundAt, now);
+    const unanswered = peer.pongTimer !== undefined && idle >= unansweredMs;
+    if (!unanswered && idle < silentMs) continue;
+    if (!retired || peer.lastInboundAt < retired.lastInboundAt) retired = peer;
+  }
+  return retired;
+}
+
+/** A finished result that cannot fit one frame; only this request fails, never the socket. */
+class ResultTooLarge extends Error {}
 
 /**
  * Authenticated native read pilot. This is not the full WS session transport:
@@ -158,6 +237,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
   const peers = new Set<Peer>();
   const upgrading = new Set<Duplex>();
   const sources = new Map<string, number>();
+  const admissionSources = new AdmissionSources();
   const authenticationJobs = new Map<object, { source: string; controller: AbortController }>();
   const authenticationSources = new Map<string, number>();
   let closing = false;
@@ -203,7 +283,18 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     } else if (peer.socket.readyState !== WebSocket.CLOSED) peer.socket.terminate();
   }
 
-  function send(peer: Peer, value: unknown, normalized?: NormalizedJsonWire): boolean {
+  /**
+   * A stream event the socket queue refuses returns `"slow"` and leaves the socket open, so the
+   * hub resyncs that one subscription. Essential stream frames (resync, close) and every
+   * non-stream frame may use a small reserve above the cap. The socket closes only when
+   * even the reserve is exhausted or the queue stays over the cap past the grace period.
+   */
+  function send(
+    peer: Peer,
+    value: unknown,
+    normalized?: NormalizedJsonWire,
+    stream?: { essential: boolean },
+  ): boolean | "slow" {
     if (peer.closed || peer.socket.readyState !== WebSocket.OPEN) return false;
     let serialized: string;
     let byteLength = -1;
@@ -212,7 +303,11 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       serialized = capture?.serialized ?? JSON.stringify(value);
       byteLength = capture?.byteLength ?? Buffer.byteLength(serialized);
       if (byteLength > WS_LIMITS.maxMessageBytes) throw new Error("Response too large.");
-      const wire = capture ? capture.wire : JSON.parse(serialized);
+      // The wire is JSON.parse output either way, so the payload is JSON by
+      // construction; validate the envelope without walking a large payload.
+      const wire = withoutPayload(capture ? capture.wire : JSON.parse(serialized)) as {
+        method?: unknown;
+      } | null;
       if (wire?.method === "subscription.event") SubscriptionEventSchema.parse(wire);
       else RpcResponseSchema.parse(wire);
     } catch (error) {
@@ -226,14 +321,34 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       closePeer(peer, 1011, "Response cannot be represented by this transport.");
       return false;
     }
-    if (peer.socket.bufferedAmount + byteLength > limits.maxSocketQueuedBytes) {
-      resultLog.warn("slow consumer", {
-        bytes: byteLength,
-        bufferedBytes: peer.socket.bufferedAmount,
-        maxQueuedBytes: limits.maxSocketQueuedBytes,
-      });
-      closePeer(peer, 1013, "Slow consumer; reconnect explicitly.");
-      return false;
+    const queued = peer.socket.bufferedAmount + byteLength;
+    if (queued <= limits.maxSocketQueuedBytes) peer.overCapSince = undefined;
+    else {
+      const shed = !!stream && !stream.essential;
+      const now = monotonicNow();
+      if (shed) peer.overCapSince ??= now;
+      const sustained =
+        peer.overCapSince !== undefined &&
+        elapsedSince(peer.overCapSince, now) > SLOW_CONSUMER_GRACE_MS;
+      if (shed && !sustained) {
+        resultLog.info("slow stream shed", {
+          bytes: byteLength,
+          bufferedBytes: peer.socket.bufferedAmount,
+          maxQueuedBytes: limits.maxSocketQueuedBytes,
+        });
+        return "slow";
+      }
+      // Essential and non-stream frames ride the reserve above the cap.
+      if (sustained || queued > Math.floor(limits.maxSocketQueuedBytes * 1.25)) {
+        resultLog.warn("slow consumer", {
+          bytes: byteLength,
+          bufferedBytes: peer.socket.bufferedAmount,
+          maxQueuedBytes: limits.maxSocketQueuedBytes,
+          sustained,
+        });
+        closePeer(peer, 1013, "Slow consumer; reconnect explicitly.");
+        return false;
+      }
     }
     peer.socket.send(serialized, (error) => {
       if (error) {
@@ -241,6 +356,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         closePeer(peer, 1011, "Connection write failed.");
       }
     });
+    peer.sentBytes += byteLength;
     return true;
   }
 
@@ -351,11 +467,18 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       closePeer(peer, 1008, "Duplicate in-flight request identity.");
       return;
     }
-    // Reserve before the first authorization await, including detached work.
+    // Reserve before the first authorization await, including detached work. Subscription
+    // controls reserve a place in their own lane (a slot, else the FIFO queue); the rest of the
+    // controls and the reads keep their separate caps, so a stream burst starves neither.
+    const subscriptionControl = subscriptionMethods.includes(request.method);
+    const laneLease = subscriptionControl ? peer.subscriptionLane.reserve() : undefined;
     if (
-      control
-        ? peer.controls.size >= 8
-        : peer.pending.size - peer.controls.size >= limits.maxPendingRpc
+      subscriptionControl
+        ? !laneLease
+        : control
+          ? peer.controls.size - peer.subscriptionLane.outstanding >=
+            limits.maxControlRequestsPerSocket
+          : peer.pending.size - peer.controls.size >= limits.maxPendingRpc
     ) {
       failure(peer, request.id, RPC_ERROR_CODES.overloaded, "Too many pending requests.", {
         category: "overload",
@@ -366,19 +489,25 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     }
     const controller = new AbortController();
     peer.pending.set(request.id, controller);
-    peer.inflight.set(request.id, { method: request.method, startedAt: monotonicNow() });
+    const ingressAt = monotonicNow();
+    peer.inflight.set(request.id, { method: request.method, startedAt: ingressAt });
     if (control) peer.controls.add(request.id);
     const definition = getHostRpcMethod(request.method)!;
-    const deadline = setTimeout(
-      () => controller.abort(new RequestExpired()),
-      Math.min(
-        options.limits?.defaultResponseTimeoutMs ?? definition.responseTimeoutMs,
-        definition.responseTimeoutMs,
-      ),
+    const responseTimeoutMs = Math.min(
+      options.limits?.defaultResponseTimeoutMs ?? definition.responseTimeoutMs,
+      definition.responseTimeoutMs,
     );
+    // The deadline runs from ingress, so time spent queued in the lane counts against it.
+    const deadline = setTimeout(() => controller.abort(new RequestExpired()), responseTimeoutMs);
     deadline.unref();
     let dispatchStarted = false;
     try {
+      // A queued subscription control waits its admission time at most; nothing has run yet.
+      if (laneLease)
+        await laneLease.held(
+          controller.signal,
+          Math.min(definition.admissionTimeoutMs, responseTimeoutMs),
+        );
       if (!(await waitFor(authorized(peer, "shared"), controller.signal))) {
         failure(
           peer,
@@ -407,6 +536,8 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         send(peer, { jsonrpc: "2.0", id: request.id, result: { accepted } });
         return;
       }
+      // Checks overlap, effects do not: open, ack and close take effect in arrival order.
+      if (laneLease) await laneLease.ordered(controller.signal);
       if (request.method === "subscriptions.open" && options.subscriptions) {
         const opened = options.subscriptions.open(
           {
@@ -414,8 +545,9 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             principalId: peer.principal.id,
             authorized: () => authorized(peer),
             executionAuthorized: () => executionAuthorized(peer),
-            send: (event) => send(peer, event),
-            sendNormalized: (capture) => send(peer, undefined, capture),
+            send: (event, essential = false) => send(peer, event, undefined, { essential }),
+            sendNormalized: (capture, essential = false) =>
+              send(peer, undefined, capture, { essential }),
           },
           SubscriptionOpenParamsSchema.parse(request.params),
         );
@@ -459,6 +591,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             environmentId: options.environmentId,
             requestId: request.id,
             principal: { kind: "device", id: peer.principal.id },
+            ingressAt,
             authorized: () => authorized(peer),
             executionAuthorized: () => executionAuthorized(peer),
             trackWork: (work) =>
@@ -492,15 +625,12 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             });
             throw checked.error;
           }
-          const validated = checked.data;
-          // Keep the pre-toJSON JSON check for bulk exactly where it was. Typed
-          // transforms may strip fields or construct new values; normalize that
-          // output with its real enclosing result key before reusing bytes.
-          const bulkValue = lease ? JsonValueSchema.parse(validated) : undefined;
+          // Typed transforms may strip fields or construct new values; normalize
+          // that output with its real enclosing result key before reusing bytes.
           const capture =
             definition.resultSchema === JsonValueSchema
               ? initial
-              : normalizeJsonField(lease ? bulkValue : validated, "result");
+              : normalizeJsonField(checked.data, "result");
           const delivered = lease
             ? options.bulk!.encodeNormalized(lease, capture, WS_LIMITS.maxMessageBytes - 1024)
             : readNormalizedJsonWire(capture).wire;
@@ -540,6 +670,17 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             "result",
             result.capture,
           );
+          // An oversized result fails this request with a typed error; closing the
+          // socket would drop every other request and subscription and invite a retry loop.
+          const bytes = readNormalizedJsonWire(response).byteLength;
+          if (bytes > WS_LIMITS.maxMessageBytes) {
+            resultLog.warn("result too large", {
+              method: request.method,
+              bytes,
+              maxBytes: WS_LIMITS.maxMessageBytes,
+            });
+            throw new ResultTooLarge("Result too large.");
+          }
           // send still validates the complete actual wire envelope/schema and
           // enforces frame/backpressure limits after the final authority awaits.
           send(peer, undefined, response);
@@ -565,6 +706,29 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             : {}),
           ...(definition.kind === "command" ? { commandId: String(request.params.commandId) } : {}),
         });
+      else if (error instanceof ControlLaneBusy)
+        failure(peer, request.id, RPC_ERROR_CODES.overloaded, "Subscription controls are busy.", {
+          category: "overload",
+          retryable: true,
+          delivery: "not-sent",
+        });
+      else if (error instanceof ResultTooLarge)
+        failure(
+          peer,
+          request.id,
+          RPC_ERROR_CODES.internalError,
+          "Result too large to send; narrow the request.",
+          {
+            category: "unavailable",
+            retryable: false,
+            ...(hostRpcHasEffect(request.method, definition.kind)
+              ? { delivery: "unknown" as const }
+              : {}),
+            ...(definition.kind === "command"
+              ? { commandId: String(request.params.commandId) }
+              : {}),
+          },
+        );
       else if (error instanceof HostDispatchError) {
         failure(
           peer,
@@ -645,14 +809,26 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       clearTimeout(deadline);
       const started = peer.inflight.get(request.id);
       // A slow request explains a later client deadline or interruption. `*.wait`
-      // methods are long polls that hold the request open by design.
-      if (started && !request.method.endsWith(".wait") && elapsedSince(started.startedAt) >= 5_000)
+      // methods, and requests that ask to be held (`waitMs`, such as the desktop
+      // command take), are long polls: only time past their own wait is slow. Logging
+      // every held take buried the real stalls in the Host log.
+      const heldMs =
+        typeof request.params?.waitMs === "number" && request.params.waitMs > 0
+          ? request.params.waitMs
+          : 0;
+      if (
+        started &&
+        !request.method.endsWith(".wait") &&
+        elapsedSince(started.startedAt) >= 5_000 + heldMs
+      )
         resultLog.warn("slow request", {
           method: request.method,
           ms: Math.round(elapsedSince(started.startedAt)),
         });
       peer.inflight.delete(request.id);
       peer.pending.delete(request.id);
+      // Together, so the control cap never sees a lane request without its lease.
+      laneLease?.release();
       peer.controls.delete(request.id);
     }
   }
@@ -668,7 +844,18 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       pending: new Map(),
       inflight: new Map(),
       openedAt: monotonicNow(),
+      pingSentAt: 0,
+      pongGraceUsed: false,
+      sentBytes: 0,
+      pongFlushedAt: 0,
+      pongDrainExtensions: 0,
+      lastInboundAt: Date.now(),
+      messageBudget: new PeerMessageBudget(WS_MESSAGE_BUDGET, monotonicNow()),
       controls: new Set(),
+      subscriptionLane: new ControlLane(
+        limits.maxSubscriptionControlsPerSocket,
+        limits.maxQueuedSubscriptionControlsPerSocket,
+      ),
       helloTimer: setTimeout(
         () => closePeer(peer, 1008, "Connection negotiation timed out."),
         limits.handshakeTimeoutMs,
@@ -676,10 +863,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     };
     peer.helloTimer.unref();
     peers.add(peer);
-    socket.on("pong", () => {
-      clearTimeout(peer.pongTimer);
-      peer.pongTimer = undefined;
-    });
+    socket.on("pong", () => markInbound(peer));
     socket.on("close", (code, reason) => {
       // Closed by the client or the network before the Host chose to close it.
       closePeer(peer, code, `peer closed: ${reason.toString("utf8").slice(0, 120) || "no reason"}`);
@@ -691,6 +875,16 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     );
     socket.on("message", (data, binary) => {
       if (peer.closed) return;
+      markInbound(peer);
+      // Charged before parsing so refused floods cost no JSON, Zod or error-reply work.
+      const size = Array.isArray(data)
+        ? data.reduce((total, chunk) => total + chunk.byteLength, 0)
+        : data.byteLength;
+      const verdict = peer.messageBudget.admit(size, monotonicNow());
+      if (verdict !== "accept") {
+        if (verdict === "close") closePeer(peer, 1008, "Message rate limit exceeded.");
+        return;
+      }
       if (binary) {
         closePeer(peer, 1003, "Only JSON text messages are supported.");
         return;
@@ -749,39 +943,12 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
   }
 
   function validHost(request: IncomingMessage): boolean {
-    const address = options.server.address();
-    if (!address || typeof address === "string") return false;
-    const allowed = [
-      `127.0.0.1:${address.port}`,
-      `localhost:${address.port}`,
-      `[::1]:${address.port}`,
-      ...((typeof options.allowedHosts === "function"
-        ? options.allowedHosts()
-        : options.allowedHosts) ?? []),
-    ];
-    const host = request.headers.host;
-    if (typeof host !== "string") return false;
-    if (allowed.includes(host)) return true;
-    // SSH may map a different local port onto this listener. The hostname must
-    // still be literal loopback; credentials and hello bind the actual Host.
-    try {
-      const endpoint = new URL(`http://${host}`);
-      const port = Number(endpoint.port || 80);
-      return (
-        endpoint.host === host.toLowerCase() &&
-        !endpoint.username &&
-        !endpoint.password &&
-        ["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname) &&
-        Number.isInteger(port) &&
-        port >= 1 &&
-        port <= 65_535
-      );
-    } catch {
-      return false;
-    }
+    return hostHeaderAllowed(request, options.server, options.allowedHosts);
   }
 
   const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    // `/ws-tunnel` has its own upgrade listener (dev-server-tunnel.ts).
+    if (isTunnelUpgradeUrl(request.url)) return;
     const remoteSource =
       socket instanceof Object && "remoteAddress" in socket
         ? String(socket.remoteAddress ?? "unknown")
@@ -797,7 +964,6 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       rejectUpgrade(socket, 401);
       return;
     }
-    const source = `${mobile ? "mobile" : "direct"}:${remoteSource}`;
     const protocol = request.headers["sec-websocket-protocol"]
       ?.split(",")
       .map((value) => value.trim());
@@ -806,13 +972,25 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       closing ||
       request.url !== "/ws" ||
       request.headers.origin !== undefined ||
-      !validHost(request) ||
       !protocol?.includes(WS_SUBPROTOCOL) ||
       !token
     ) {
       rejectUpgrade(socket, token ? 400 : 401);
       return;
     }
+    if (!validHost(request)) {
+      const proxy =
+        remoteSource === "127.0.0.1" ||
+        remoteSource === "::1" ||
+        remoteSource === "::ffff:127.0.0.1";
+      const host = request.headers.host;
+      const retry = proxy && typeof host === "string" && options.retryUnknownHost?.(host);
+      rejectUpgrade(socket, retry ? 503 : 400);
+      return;
+    }
+    // Behind a loopback proxy the socket address is shared by every phone. Forwarding headers are
+    // never read; a device is told apart only by a token this Host already verified.
+    const source = admissionSources.sourceFor(token, remoteSource, mobile);
     if (
       upgrading.size >= limits.maxUnauthenticatedSockets ||
       (sources.get(source) ?? 0) >= limits.maxUnauthenticatedSocketsPerSource ||
@@ -872,14 +1050,22 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           return;
         }
         if (closing || socket.destroyed) return;
+        // Verified now, so this device's next handshakes count against its own bucket.
+        admissionSources.remember(token, principal.id);
         const deviceSockets = [...peers].filter(
           (peer) => !peer.closed && peer.principal.id === principal.id,
         );
         if (deviceSockets.length >= limits.maxSocketsPerDevice) {
           // Half-dead sockets (sleep, wifi change) linger until the heartbeat
-          // gives up. A heartbeat-suspect socket of the same device yields to
-          // the new connection instead of refusing it.
-          const stale = deviceSockets.find((peer) => peer.pongTimer);
+          // gives up. Once this connection is authenticated, the same device's
+          // stalest silent socket yields to it instead of refusing it. Sockets
+          // with recent traffic are never retired.
+          const stale = retiredSocketFor(
+            deviceSockets,
+            Date.now(),
+            limits.heartbeatResponseTimeoutMs,
+            limits.heartbeatIntervalMs + limits.heartbeatResponseTimeoutMs,
+          );
           if (stale) closePeer(stale, 1001, "Replaced by a newer connection.");
         }
         if (
@@ -903,12 +1089,52 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
   options.server.on("upgrade", upgrade);
   function ping(peer: Peer): void {
     if (peer.closed || peer.socket.readyState !== WebSocket.OPEN || peer.pongTimer) return;
-    peer.pongTimer = setTimeout(() => {
-      closePeer(peer, 1001, "Connection heartbeat timed out.");
-      peer.socket.terminate();
-    }, limits.heartbeatResponseTimeoutMs);
-    peer.pongTimer.unref();
+    peer.pingSentAt = Date.now();
+    peer.pongGraceUsed = false;
+    peer.pongDrainExtensions = 0;
+    armPongTimer(peer);
     peer.socket.ping();
+    peer.pongFlushedAt = flushedBytes(peer);
+  }
+  /**
+   * Any inbound frame, not only a pong, proves the peer is alive: a phone downloading a large
+   * snapshot keeps acking while its pong is still queued behind that snapshot. The ping stays
+   * in the send queue, so ordering is untouched and the next tick simply pings again.
+   */
+  function markInbound(peer: Peer): void {
+    peer.lastInboundAt = Date.now();
+    clearTimeout(peer.pongTimer);
+    peer.pongTimer = undefined;
+  }
+  function armPongTimer(peer: Peer): void {
+    peer.pongTimer = setTimeout(() => onPongOverdue(peer), limits.heartbeatResponseTimeoutMs);
+    peer.pongTimer.unref();
+  }
+  /**
+   * The pong timer runs before the event loop reads the socket, so after a sleep a pong the
+   * kernel already buffered is not seen yet. A wait that ran more than a full extra response
+   * period past its timeout is therefore granted one more period, once. A peer that stays
+   * silent through it is still retired on schedule. Date.now is deliberate here: the wall
+   * clock keeps running through sleep, which is the signal this check looks for.
+   */
+  function onPongOverdue(peer: Peer): void {
+    if (peer.closed) return;
+    const stall = wallClockGap(peer.pingSentAt, Date.now(), limits.heartbeatResponseTimeoutMs);
+    if (!peer.pongGraceUsed && stall > limits.heartbeatResponseTimeoutMs) {
+      peer.pongGraceUsed = true;
+      armPongTimer(peer);
+      return;
+    }
+    // Silence alone is not death while the queue ahead of the ping is still flushing.
+    const flushed = flushedBytes(peer);
+    if (peer.pongDrainExtensions < HEARTBEAT_DRAIN_EXTENSIONS && flushed > peer.pongFlushedAt) {
+      peer.pongDrainExtensions += 1;
+      peer.pongFlushedAt = flushed;
+      armPongTimer(peer);
+      return;
+    }
+    closePeer(peer, 1001, "Connection heartbeat timed out.");
+    peer.socket.terminate();
   }
   const heartbeat = setInterval(() => {
     for (const peer of peers) {
@@ -930,10 +1156,12 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         })
         .catch((error: unknown) => {
           if (
-            error instanceof HostDispatchError &&
-            ["overloaded", "service-unavailable"].includes(error.code)
+            controller.signal.reason instanceof RequestExpired ||
+            (error instanceof HostDispatchError &&
+              ["overloaded", "service-unavailable"].includes(error.code))
           ) {
-            // Health admission is unavailable, not evidence of revocation.
+            // A slow or unavailable authorization store is not evidence of
+            // revocation; closing here would drop every peer in the same tick.
             // Keep transport liveness checked; work still requires authorization.
             ping(peer);
             return;

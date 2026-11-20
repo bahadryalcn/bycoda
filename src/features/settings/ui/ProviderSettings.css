@@ -32,7 +32,7 @@
 .provider-cli-container[hidden] {
   display: none;
 }
-#setting-harness-updates > .settings-group-content:empty {
+[data-setting-id="harness-updates"] > .settings-group-content:empty {
   display: none;
 }
 
@@ -62,13 +62,11 @@
    while the detail column scrolls, and scrolls on its own only when taller than the window. */
 .provider-cli-selector {
   position: sticky;
-  /* Below the sticky page bar (its padding plus a compact-height title line), so rows never
-     slide under it. */
-  inset-block-start: calc(var(--ui-control-height-compact) + 32px);
+  inset-block-start: var(--settings-page-bar-height);
   display: grid;
   gap: 2px;
   min-inline-size: 0;
-  max-block-size: calc(100vh - var(--ui-control-height-compact) - 6rem);
+  max-block-size: calc(100vh - var(--settings-page-bar-height) - 6rem);
   overflow-y: auto;
   align-content: start;
 }
@@ -197,7 +195,9 @@
 }
 
 /* Accounts: rows share the settings row padding and hairlines. */
-#setting-provider-accounts > .settings-group-content {
+/* Outranks the shared group frame (settings.css, overflow: visible). */
+.settings-group[data-settings-variant][data-settings-layout][data-setting-id="provider-accounts"]
+  > .settings-group-content {
   overflow: clip;
 }
 .provider-accounts-body[hidden] {

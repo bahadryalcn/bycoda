@@ -129,8 +129,9 @@ export function NoticeLink({ action }: { action: NoticeAction }) {
       layout="text"
       loading={action.pending ?? false}
       disabled={action.disabled}
+      truncate
       aria-label={action.ariaLabel}
-      tooltip={action.disabled ? action.disabledReason : undefined}
+      disabledReason={action.disabledReason}
       onClick={action.onClick}
     >
       {action.label}
@@ -153,7 +154,7 @@ export function NoticeButton({ action }: { action: NoticeAction }) {
       loading={action.pending ?? false}
       disabled={action.disabled}
       aria-label={action.ariaLabel}
-      tooltip={action.disabled ? action.disabledReason : undefined}
+      disabledReason={action.disabledReason}
       onClick={action.onClick}
     >
       {action.label}

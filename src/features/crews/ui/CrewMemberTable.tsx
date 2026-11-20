@@ -6,8 +6,9 @@ import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { ChevronDown, GitBranch, Plus, Trash2 } from "../../../shared/ui/icons";
 import type { CrewAgent, CrewRole } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
@@ -247,22 +248,23 @@ export function CrewMemberTable({
                 </Button>
               ) : null}
             </div>
-            {section.issue ? (
-              <Text role="status" as="p" tone="danger">
-                {section.issue}
-              </Text>
-            ) : null}
+            {section.issue ? <InlineError>{section.issue}</InlineError> : null}
             {shown.length ? (
               <ul className="flex min-w-0 flex-col gap-0">
                 {shown.map((agent) => {
                   const problem = issues.members[agent.id];
                   const open = expandedId === agent.id;
                   const name = agent.name || t("Unnamed member");
+                  const linkState = data.identitySupported
+                    ? memberLink(agent, data.agents)?.state
+                    : undefined;
+                  const groups = !problem && agent.groups?.length ? agent.groups.join(", ") : "";
+                  const hasMeta = linkState === "customized" || agent.handle || problem || groups;
                   return (
-                    <li key={agent.id} className="min-w-0">
+                    <li key={agent.id} className="@container/member-row min-w-0">
                       <ActionHost
                         hoverReveal
-                        className="grid! grid-cols-[auto_minmax(0,1fr)_minmax(8rem,14rem)_auto] items-center gap-x-2"
+                        className="grid! grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 @min-[28rem]/member-row:grid-cols-[auto_minmax(0,1fr)_minmax(8rem,14rem)_auto] @min-[28rem]/member-row:gap-y-0"
                         data-member-row={agent.id}
                       >
                         <Checkbox
@@ -285,37 +287,42 @@ export function CrewMemberTable({
                               />
                             </span>
                           }
-                          tooltip={open ? t("Collapse") : t("Expand")}
                           onClick={() => onExpandedChange(open ? null : agent.id)}
                         >
                           <span className="flex min-w-0 flex-1 items-baseline gap-2 text-start">
-                            <Text
-                              size="body"
-                              tone="inherit"
-                              weight="medium"
-                              truncate
-                              className="min-w-0"
-                            >
-                              {name}
-                            </Text>
-                            {data.identitySupported ? (
-                              <MemberLinkMark link={memberLink(agent, data.agents)?.state} />
-                            ) : null}
-                            {agent.handle ? (
-                              <Text className="shrink-0">@{agent.handle}</Text>
-                            ) : null}
-                            {problem ? (
-                              <Text tone="danger" className="shrink-0">
-                                {problem === "model" ? t("Choose a model") : t("Add a name")}
+                            <OverflowTooltip label={name}>
+                              <Text
+                                size="body"
+                                tone="inherit"
+                                weight="medium"
+                                truncate
+                                className="min-w-0 flex-1"
+                              >
+                                {name}
                               </Text>
-                            ) : agent.groups?.length ? (
-                              <Text truncate className="min-w-0 flex-1 basis-0">
-                                {agent.groups.join(", ")}
-                              </Text>
+                            </OverflowTooltip>
+                            {hasMeta ? (
+                              <span className="flex max-w-[50%] shrink-0 items-baseline gap-2">
+                                <MemberLinkMark link={linkState} />
+                                {agent.handle ? (
+                                  <Text truncate className="min-w-0">
+                                    @{agent.handle}
+                                  </Text>
+                                ) : null}
+                                {problem ? (
+                                  <Text tone="danger" truncate className="min-w-0">
+                                    {problem === "model" ? t("Choose a model") : t("Add a name")}
+                                  </Text>
+                                ) : groups ? (
+                                  <Text truncate className="min-w-0">
+                                    {groups}
+                                  </Text>
+                                ) : null}
+                              </span>
                             ) : null}
                           </span>
                         </Button>
-                        <div className="flex min-w-0 justify-end">
+                        <div className="col-start-2 col-span-2 row-start-2 flex min-w-0 justify-start @min-[28rem]/member-row:col-auto @min-[28rem]/member-row:row-auto @min-[28rem]/member-row:justify-end">
                           {agent.selection === "fixed" ? (
                             <MemberModelPicker
                               cwd={cwd}
@@ -388,9 +395,7 @@ export function CrewMemberTable({
         </p>
       ) : null}
       {issues.size === "large" ? (
-        <Text role="status" as="p" tone="danger">
-          {t("A crew can have at most 20 members.")}
-        </Text>
+        <InlineError>{t("A crew can have at most 20 members.")}</InlineError>
       ) : null}
     </div>
   );

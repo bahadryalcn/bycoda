@@ -282,7 +282,7 @@ it("offers local file-manager reveal in the remote context menu", async () => {
   );
   const menu = document.querySelector('[role="menu"]')!;
   const reveal = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
-    /^(Reveal in Finder|Reveal in File Explorer|Open Containing Folder)$/.test(
+    /^(Reveal in Finder|Reveal in File Explorer|Open containing folder)$/.test(
       item.textContent ?? "",
     ),
   )!;

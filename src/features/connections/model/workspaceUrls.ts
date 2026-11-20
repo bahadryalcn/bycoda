@@ -1,26 +1,34 @@
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openExternal } from "../../../platform/tauri/openExternal";
 import { featureHost } from "./hostFeatureClient";
 import { remoteRequest } from "./connections";
 import { parseRemotePath } from "./remoteProjects";
 import type { DevServer, DevServerEndpoint, DevServerScan } from "../../host-tools/devServerTypes";
 
+function developmentHostname(url: URL): string {
+  return url.hostname.replace(/^\[|\]$|\.$/g, "");
+}
+
+function isLoopbackDevelopmentHost(host: string): boolean {
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    ["::1", "::", "0.0.0.0"].includes(host) ||
+    /^127(?:\.\d{1,3}){3}$/.test(host)
+  );
+}
+
 export function isHostDevelopmentUrl(input: string): boolean {
   try {
     const url = new URL(input);
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return false;
-    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (!["http:", "https:"].includes(url.protocol)) return false;
+    const host = developmentHostname(url);
     return (
-      host === "localhost" ||
-      host.endsWith(".localhost") ||
-      host === "::1" ||
-      host === "::" ||
-      host === "0.0.0.0" ||
-      host.startsWith("127.") ||
-      host.startsWith("10.") ||
-      /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) ||
-      host.startsWith("192.168.") ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+      isLoopbackDevelopmentHost(host) ||
+      /^10(?:\.\d{1,3}){3}$/.test(host) ||
+      /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2}$/.test(host) ||
+      /^192\.168(?:\.\d{1,3}){2}$/.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}$/.test(host) ||
       /^(fc|fd)[a-f0-9]{2}:/.test(host)
     );
   } catch {
@@ -48,12 +56,8 @@ export async function accessibleDevelopmentUrl(
   if (!match) {
     const scan = await remoteRequest<DevServerScan>(machine.id, "devServers.list", { projectId });
     if (scan.status !== "ok") throw new Error(scan.error || "Development server discovery failed.");
-    const host = url.hostname.replace(/^\[|\]$/g, "");
-    const loopback =
-      host === "localhost" ||
-      host.endsWith(".localhost") ||
-      host.startsWith("127.") ||
-      ["::1", "::", "0.0.0.0"].includes(host);
+    const host = developmentHostname(url);
+    const loopback = isLoopbackDevelopmentHost(host);
     const matches = scan.servers
       .filter((server) => server.projectId === projectId && server.association !== "uncertain")
       .flatMap((server) =>
@@ -96,24 +100,22 @@ export async function accessibleDevelopmentUrl(
 }
 
 export async function openWorkspaceUrl(cwd: string | undefined, input: string) {
-  if (
-    cwd &&
-    parseRemotePath(cwd) &&
-    isHostDevelopmentUrl(input) &&
-    new URL(input).protocol === "https:"
-  ) {
+  if (!cwd || !isHostDevelopmentUrl(input)) return openExternal(input);
+
+  const url = new URL(input);
+  if (url.username || url.password)
+    throw new Error("Choose an HTTP or HTTPS development server URL without credentials.");
+  if (parseRemotePath(cwd) && url.protocol === "https:") {
     await featureHost(cwd, "browser.shared");
     const { openHostToolsWindow } = await import("../../host-tools/ToolsWorkspace");
     await openHostToolsWindow({
       cwd,
       sessionId: "",
-      title: new URL(input).host,
+      title: url.host,
       initialTab: "browser",
       initialUrl: input,
     });
     return;
   }
-  const url =
-    cwd && isHostDevelopmentUrl(input) ? await accessibleDevelopmentUrl(cwd, input) : input;
-  await openUrl(url);
+  await openExternal(await accessibleDevelopmentUrl(cwd, input));
 }

@@ -15,6 +15,11 @@ import { inventoryFiles, type AccountDirs, type InventoryFiles } from "./invento
 type Rpc = Record<string, any>;
 
 export const MAX_HUB_CHILDREN = 48;
+/** Longest a start waits for a process slot at capacity before failing. */
+export const CAPACITY_WAIT_MS = 5_000;
+/** A child still handshaking after this long may be evicted to free a slot. Shorter than the
+ * wait, so a stuck start can free a slot within one wait. */
+export const STARTUP_GRACE_MS = 4_000;
 const RSS_SAMPLE_MS = 10_000;
 const PRUNE_IDLE_MS = 60 * 60_000;
 /** The describe call is on the session spawn path; the web side re-fetches a hub-less answer. */
@@ -31,6 +36,10 @@ export type HubOptions = {
   projectCwd?: (projectId: string) => Promise<string | undefined>;
   now?: () => number;
   maxChildren?: number;
+  /** Longest a start waits for a slot at `maxChildren`. Defaults to {@link CAPACITY_WAIT_MS}. */
+  capacityWaitMs?: number;
+  /** Handshake time after which a starting child may be evicted. Defaults to {@link STARTUP_GRACE_MS}. */
+  startupGraceMs?: number;
   idleMs?: Partial<Record<HubMode, number>>;
   requestTimeoutMs?: number;
   stopGraceMs?: number;
@@ -56,6 +65,8 @@ export type HubPeek = {
   tools: unknown[];
 };
 
+type SlotTicket = { wake: () => void; closed: boolean };
+
 /** Hosts inherited stdio MCP servers behind `/mcp/ext/<name>`, one child per (name, scope). */
 export class McpHub {
   private readonly children = new Map<string, McpChild>();
@@ -65,6 +76,10 @@ export class McpHub {
   private readonly now: () => number;
   private readonly maxChildren: number;
   private readonly codexSets: (cwd?: string) => Promise<Set<string>[]>;
+  /** Children that hold a slot before their process exists (between reserve and spawn). */
+  private readonly claimed = new Set<McpChild>();
+  /** Starts waiting for a slot, oldest first; only the head may take a freed slot. */
+  private readonly slotQueue: SlotTicket[] = [];
   private rss = new Map<number, number>();
   private rssSampledAt = 0;
   private rssSampling?: Promise<void>;
@@ -125,6 +140,7 @@ export class McpHub {
     scopeKey: string,
     message: Rpc,
     cwd?: string,
+    signal?: AbortSignal,
   ): Promise<Rpc | undefined> {
     return await measure("mcp.ext.request", async () => {
       const definition = (await this.inventory(cwd)).find(
@@ -150,11 +166,12 @@ export class McpHub {
           now: this.now,
           loadCache: () => this.loadCache(cacheKey),
           saveCache: async (cache) => this.saveCache(cacheKey, cache),
-          beforeStart: (starting) => this.reserve(starting),
+          beforeStart: (starting, waitSignal) => this.reserve(starting, waitSignal),
+          onCapacityChange: () => this.wakeWaiters(),
         });
         this.children.set(key, child);
       }
-      return await child.handle(message);
+      return await child.handle(message, signal);
     });
   }
 
@@ -186,21 +203,26 @@ export class McpHub {
     deadlineMs: number = CLIENT_DEADLINE_MS,
   ): Promise<Rpc | undefined> {
     let timer: NodeJS.Timeout | undefined;
+    // Cancels a wait for a process slot once the caller has been answered or has timed out.
+    const cancel = new AbortController();
     const late = new Promise<Rpc>((resolve) => {
       timer = setTimeout(
-        () =>
+        () => {
+          cancel.abort();
           resolve({
             jsonrpc: "2.0",
             id: message.id ?? null,
             error: { code: -32001, message: `${name} MCP timed out.` },
-          }),
+          });
+        },
         Math.max(1, Math.min(deadlineMs, CLIENT_DEADLINE_MS)),
       );
     });
     try {
-      return await Promise.race([this.serve(name, scopeKey, message, cwd), late]);
+      return await Promise.race([this.serve(name, scopeKey, message, cwd, cancel.signal), late]);
     } finally {
       clearTimeout(timer);
+      cancel.abort();
     }
   }
 
@@ -234,19 +256,89 @@ export class McpHub {
     await this.cacheStore.write(name, cache).catch(() => undefined);
   }
 
-  /** Keeps at most `maxChildren` processes. Shared idle children go first, then least recent. */
-  private async reserve(starting: McpChild): Promise<void> {
-    const running = [...this.children.values()].filter((child) => child !== starting && child.proc);
-    if (running.length < this.maxChildren) return;
-    const victim = running
-      .filter((child) => child.evictable)
+  /** Keeps at most `maxChildren` processes (a claimed, not yet spawned one counts). At the cap
+   * it waits, oldest start first, for a slot: a child that finishes its work or exits, or one
+   * that has been handshaking past the grace period, frees one. Fails after `capacityWaitMs`;
+   * `signal` (the caller gave up) and `shutdown()` end the wait without taking a slot. */
+  private async reserve(starting: McpChild, signal: AbortSignal): Promise<{ release(): void }> {
+    const ticket: SlotTicket = { wake: () => undefined, closed: false };
+    this.slotQueue.push(ticket);
+    const waitMs = this.options.capacityWaitMs ?? CAPACITY_WAIT_MS;
+    const limit = Date.now() + waitMs;
+    try {
+      for (;;) {
+        if (ticket.closed) throw new Error("MCP hub is shutting down.");
+        if (signal.aborted)
+          throw signal.reason instanceof Error
+            ? signal.reason
+            : new Error("MCP request cancelled.");
+        const head = this.slotQueue[0] === ticket;
+        if (head && this.claim(starting))
+          return {
+            release: () => {
+              this.claimed.delete(starting);
+              this.wakeWaiters();
+            },
+          };
+        const left = limit - Date.now();
+        if (left <= 0) throw new Error("MCP hub is at capacity; retry shortly.");
+        await new Promise<void>((resolve) => {
+          const done = () => {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", done);
+            resolve();
+          };
+          // The head also wakes when the earliest starting child reaches the end of its grace.
+          const graceLeft = head ? this.nextGraceMs() : undefined;
+          const timer = setTimeout(done, Math.max(25, Math.min(left, graceLeft ?? left)));
+          signal.addEventListener("abort", done, { once: true });
+          ticket.wake = done;
+        });
+      }
+    } finally {
+      this.slotQueue.splice(this.slotQueue.indexOf(ticket), 1);
+      // The next waiter may now be the head.
+      this.wakeWaiters();
+    }
+  }
+
+  /** Takes a slot for `starting`, stopping one idle (or stalled starting) child if the cap is full. */
+  private claim(starting: McpChild): boolean {
+    const held = [...this.children.values()].filter(
+      (child) => child !== starting && (child.proc || this.claimed.has(child)),
+    );
+    if (held.length < this.maxChildren) {
+      this.claimed.add(starting);
+      return true;
+    }
+    const grace = this.options.startupGraceMs ?? STARTUP_GRACE_MS;
+    // Idle children go first (shared, then least recent); a stalled starting one is the last resort.
+    const victim = held
+      .filter((child) => child.canEvict(grace))
       .sort(
         (a, b) =>
+          Number(a.starting) - Number(b.starting) ||
           Number(a.scopeKey !== "shared") - Number(b.scopeKey !== "shared") ||
           a.lastUsed - b.lastUsed,
       )[0];
-    if (!victim) throw new Error("MCP hub is at capacity; retry shortly.");
+    if (!victim) return false;
     victim.stop();
+    this.claimed.add(starting);
+    return true;
+  }
+
+  private nextGraceMs(): number | undefined {
+    const grace = this.options.startupGraceMs ?? STARTUP_GRACE_MS;
+    let next: number | undefined;
+    for (const child of this.children.values()) {
+      const left = child.startupLeftMs(grace);
+      if (left !== undefined && (next === undefined || left < next)) next = left;
+    }
+    return next;
+  }
+
+  private wakeWaiters(): void {
+    for (const ticket of Array.from(this.slotQueue)) ticket.wake();
   }
 
   private prune(): void {
@@ -427,8 +519,11 @@ export class McpHub {
   }
 
   shutdown(): void {
+    // Waiters must not spawn after shutdown.
+    for (const ticket of this.slotQueue) ticket.closed = true;
     for (const child of this.children.values()) child.stop();
     this.children.clear();
+    this.wakeWaiters();
   }
 }
 

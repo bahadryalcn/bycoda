@@ -4,8 +4,12 @@ import {
   INSTAGRAM_DIRECT_MEDIA_LIMITS,
   type InstagramDirectMediaKind,
 } from "../../../integrations/social/adapters/instagram-direct-media";
+import { bytesToBase64 } from "../../../shared/lib/base64";
 import { remoteRequest } from "../../connections/model/connections";
-import { classifyRemoteError } from "../../connections/public/remoteFailure";
+import {
+  classifyRemoteError,
+  isTransientTransportError,
+} from "../../connections/public/remoteFailure";
 import type {
   SocialBrowserIntent,
   SocialBrowserState,
@@ -30,7 +34,7 @@ import {
   type AiSummary,
   type AutonomySetInput,
   type BrowserSettings,
-  type BrowserViewFrame,
+  type BrowserViewRead,
   type BrowserViewInput,
   type CaptureRuleSaveInput,
   type CaptureRuleSetEnabledInput,
@@ -86,6 +90,9 @@ const NO_REQUEST_ID_ACTIONS = new Set<string>([
   "x.lists",
 ]);
 
+/** Waits before re-sending a video chunk after a dropped link; one entry per retry. */
+const UPLOAD_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
+
 export function socialClient(machineId: string) {
   const request = <T>(
     action: string,
@@ -128,13 +135,31 @@ export function socialClient(machineId: string) {
       }
       throw error;
     });
+    // Sends one chunk. After a dropped link the Host may or may not have committed it, so
+    // resume from the Host's own offset: re-send at the same offset, or accept a lost ack.
+    const sendChunk = async (offset: number, base64: string, end: number): Promise<number> => {
+      let verify = false;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          if (verify) {
+            const { offset: committed } = await upload({ mode: "status", uploadId });
+            if (committed === end) return committed;
+            if (committed !== offset) return -1;
+          }
+          return (await upload({ mode: "chunk", uploadId, offset, base64 })).offset ?? -1;
+        } catch (error) {
+          const delay = UPLOAD_RETRY_DELAYS_MS[attempt];
+          if (delay === undefined || !isTransientTransportError(error)) throw error;
+          verify = true;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    };
     try {
       for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
         const bytes = new Uint8Array(await file.slice(offset, offset + 1024 * 1024).arrayBuffer());
-        let binary = "";
-        for (const byte of bytes) binary += String.fromCharCode(byte);
-        const result = await upload({ mode: "chunk", uploadId, offset, base64: btoa(binary) });
-        if (result.offset !== offset + bytes.length)
+        const acknowledged = await sendChunk(offset, bytesToBase64(bytes), offset + bytes.length);
+        if (acknowledged !== offset + bytes.length)
           throw new Error(
             instagram
               ? t("Instagram attachment upload order could not be verified.")
@@ -469,8 +494,9 @@ export function socialClient(machineId: string) {
         request<InboxUnifiedResult>("inbox.unified", input),
       setStatus: (input: InboxSetStatusInput, requestId?: string) =>
         request<InboxSetStatusResult>("inbox.setStatus", input, requestId),
-      /** The person's events across channels; `truncated` marks a capped result. */
-      timeline: (personId: string) => request<InboxTimelineResult>("inbox.timeline", { personId }),
+      /** The person's events across channels, one page at a time; `next` is the cursor for older events. */
+      timeline: (personId: string, cursor?: string) =>
+        request<InboxTimelineResult>("inbox.timeline", { personId, ...(cursor ? { cursor } : {}) }),
       replyOptions: (threadId: string) =>
         request<InboxReplyOptions>("inbox.replyOptions", { threadId }),
       settings: (input: InboxSettingsInput, requestId?: string) =>
@@ -530,9 +556,9 @@ export function socialClient(machineId: string) {
       },
     },
     /** Live view (not social.request): one JPEG frame of the account's browser session. */
-    /** Null until the first frame arrives. */
-    browserViewFrame: (accountId: string) =>
-      remoteRequest<BrowserViewFrame | null>(machineId, "social.browser.view.frame", { accountId }),
+    /** Null until the first frame arrives. `after` is the `seq` already held; the same picture comes back unchanged. */
+    browserViewFrame: (accountId: string, after?: number) =>
+      remoteRequest<BrowserViewRead>(machineId, "social.browser.view.frame", { accountId, after }),
     browserViewInput: (accountId: string, event: BrowserViewInput) =>
       remoteRequest<void>(machineId, "social.browser.view.input", { accountId, event }),
     workspaceSnapshot: (input: SocialWorkspaceQuery = {}, fresh = false) =>
@@ -709,21 +735,17 @@ export function socialClient(machineId: string) {
     upload: async (file: File) => {
       if (file.size > 5 * 1024 * 1024) throw new Error(t("Images can be at most 5 MiB."));
       const bytes = new Uint8Array(await file.arrayBuffer());
-      let binary = "";
-      for (const byte of bytes) binary += String.fromCharCode(byte);
       return remoteRequest<ManagedSocialUpload>(machineId, "social.media.upload", {
-        base64: btoa(binary),
+        base64: bytesToBase64(bytes),
       });
     },
     uploadDocument: async (file: File) => {
       if (file.type !== "application/pdf" || !file.size || file.size > 5 * 1024 * 1024)
         throw new Error(t("Select a PDF document up to 5 MiB."));
       const bytes = new Uint8Array(await file.arrayBuffer());
-      let binary = "";
-      for (const byte of bytes) binary += String.fromCharCode(byte);
       return remoteRequest<ManagedSocialUpload>(machineId, "social.media.upload", {
         kind: "document",
-        base64: btoa(binary),
+        base64: bytesToBase64(bytes),
       });
     },
     uploadVideo: async (

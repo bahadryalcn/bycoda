@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import {
   useCallback,
   useEffect,
@@ -15,13 +16,14 @@ import {
 import type { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { forgetRemoteQueue } from "../../features/connections/model/useRemoteQueue";
 import {
-  bulkDeleteOutcome,
-  bulkDeleteSummary,
+  bulkDeleteNotice,
+  bulkDeleteNoticeTextWith,
   deleteSessionsInBulk,
   splitRunningSessions,
+  type BulkDeleteNotice,
 } from "../../features/sessions/model/bulkSessionDelete";
 import { confirmSessionDelete } from "../../features/sessions/model/confirmSessionDelete";
-import { t } from "../../shared/i18n";
+import { t, useT } from "../../shared/i18n";
 
 export type SessionBulkDeleteOptions = {
   cwd: string;
@@ -62,7 +64,7 @@ type BulkDeleteRun = {
   /** Called first in the cleanup, before progress clears. */
   release: () => void;
   onDeleted: SessionBulkDeleteOptions["onDeleted"];
-  setBulkNotice: (notice: string | null) => void;
+  setBulkNotice: (notice: BulkDeleteNotice | null) => void;
   setDeleteProgress: Dispatch<SetStateAction<DeleteProgress | null>>;
   setDeleteNoticeCwd: (cwd: string) => void;
   setDeleteNoticeError: (error: boolean) => void;
@@ -132,7 +134,7 @@ async function runBulkDelete({
         result.skipped.length === 0,
     );
     setBulkNotice(
-      bulkDeleteOutcome({
+      bulkDeleteNotice({
         ...result,
         skipped: [...running, ...result.skipped],
       }),
@@ -142,11 +144,12 @@ async function runBulkDelete({
     setDeleteNoticeSuccess(false);
     setDeleteNoticeCwd(cwd);
     setDeleteNoticeError(true);
-    setBulkNotice(
-      t("Could not delete conversations: {p0}", {
-        p0: error instanceof Error ? error.message : String(error),
+    setBulkNotice({
+      kind: "text",
+      text: t("Could not delete sessions: {p0}", {
+        p0: errorText(error),
       }),
-    );
+    });
   } finally {
     release();
     setDeleteProgress(null);
@@ -171,7 +174,7 @@ export function useSessionBulkDelete({
   onRemoteSessionDeleted,
   onDeleted,
 }: SessionBulkDeleteOptions) {
-  const [bulkNotice, setBulkNotice] = useState<string | null>(null);
+  const [bulkNotice, setBulkNotice] = useState<BulkDeleteNotice | null>(null);
   const [deleteProgress, setDeleteProgress] = useState<DeleteProgress | null>(null);
   const [deleteNoticeError, setDeleteNoticeError] = useState(false);
   const [deleteNoticeSuccess, setDeleteNoticeSuccess] = useState(false);
@@ -198,7 +201,10 @@ export function useSessionBulkDelete({
       setDeleteNoticeSuccess(false);
       setDeleteNoticeCwd(cwd);
       setDeleteNoticeError(true);
-      setBulkNotice(t("Connect this project's machine to delete its sessions."));
+      setBulkNotice({
+        kind: "text",
+        text: t("Connect this project's machine to delete its sessions."),
+      });
       return;
     }
     const deleteOne =
@@ -228,7 +234,7 @@ export function useSessionBulkDelete({
       setDeleteNoticeSuccess(false);
       setDeleteNoticeCwd(cwd);
       setDeleteNoticeError(false);
-      setBulkNotice(bulkDeleteSummary({ skipped: running, failed: [] }));
+      setBulkNotice(bulkDeleteNotice({ deleted: [], skipped: running, failed: [] }));
       return;
     }
     bulkDeleteActive.current = true;
@@ -253,8 +259,10 @@ export function useSessionBulkDelete({
     });
   };
 
+  const translate = useT();
   return {
-    bulkNotice,
+    // Words are produced here, at render, so the notice follows the owner's language.
+    bulkNotice: bulkNotice ? bulkDeleteNoticeTextWith(bulkNotice, translate) : null,
     deleteProgress,
     deleteNoticeError,
     deleteNoticeSuccess,

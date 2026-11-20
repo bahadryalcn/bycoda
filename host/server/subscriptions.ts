@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { JsonValueSchema, WS_LIMITS } from "../../src/shared/model/host-contracts";
+import { JsonValueSchema, WS_LIMITS, type JsonValue } from "../../src/shared/model/host-contracts";
+import { normalizeJsonWire, readNormalizedJsonWire } from "../transport/normalized-wire";
 import {
   HostBulkTransfers,
   automationBulkDeleteKeys,
@@ -13,6 +14,11 @@ import {
   taskBulkDeleteKeys,
 } from "../transport/http/bulk";
 import { StreamDeltaEncoder, tailStreamKey, tailStreamSessionId } from "../sync/stream-delta";
+import {
+  ProjectDeltaEncoder,
+  projectStreamKey,
+  projectStreamProjectId,
+} from "../sync/project-delta";
 import { HostSubscriptionHub } from "../transport/ws/subscriptions";
 import type { ServerBindings } from "./bindings";
 import { onProviderAccountStatusChange } from "./native";
@@ -102,6 +108,8 @@ export function createSubscriptionsRuntime(
   });
   // Sender state of tail streams (newest page first, compact deltas), per principal and session.
   const streamDeltas = new StreamDeltaEncoder();
+  // Sender state of project list streams opened with `delta`, per principal and project.
+  const projectDeltas = new ProjectDeltaEncoder();
   const subscriptionHub = new HostSubscriptionHub({
     environmentId: dependencies.engine.store.environmentId,
     load: async (target, principalId, signal, context) =>
@@ -123,7 +131,9 @@ export function createSubscriptionsRuntime(
           let baseRevision: number | undefined;
           let sourceEpoch: string | undefined;
           let kind: "snapshot" | "delta" = "snapshot";
-          if (target.kind === "environment")
+          if (target.kind === "environment") {
+            // Taken before the reads: an age-out during them still shows on the next tick.
+            const freshClients = dependencies.desktop.live.freshDirectoryClients();
             // `projects` stays the legacy list; `directory` is the authoritative groups,
             // privacy proof and desktop-only entries (capability projects.directory.stream.v1).
             value = {
@@ -134,7 +144,9 @@ export function createSubscriptionsRuntime(
                 dependencies.desktop.live.groupLock.access(principalId),
               ),
             };
-          else if (target.kind === "models")
+            // Only a load that finished vouches for this age; a failed one keeps the timer retrying.
+            directoryFreshClients = freshClients;
+          } else if (target.kind === "models")
             // Same service and authority as `models.list`; `pending` shrinks as providers land.
             value = await dependencies.engine.store.db.withAuthorization(context.authorized, () =>
               dependencies.modelsService.list(
@@ -148,7 +160,23 @@ export function createSubscriptionsRuntime(
               dependencies.engine.store.projectVersion(target.projectId),
             );
             const current = await dependencies.projectSessionList(target.projectId);
-            value = { etag: current.etag, sessions: current.list };
+            if (target.delta !== true) value = { etag: current.etag, sessions: current.list };
+            else {
+              signal.throwIfAborted();
+              const read = projectDeltas.encode(
+                projectStreamKey(principalId, target.projectId),
+                current,
+                context.revision,
+                context.forceSnapshot,
+              );
+              revision = read.revision;
+              if (read.kind === "unchanged") return read;
+              value = read.value;
+              if (read.kind === "delta") {
+                kind = "delta";
+                baseRevision = read.base;
+              }
+            }
           } else {
             if (
               !(await dependencies.engine.store.withReadCancellation(signal, () =>
@@ -218,19 +246,32 @@ export function createSubscriptionsRuntime(
             revision = sync.value.revision;
           }
           signal.throwIfAborted();
-          const data = JsonValueSchema.parse(JSON.parse(JSON.stringify(value)));
+          // One serialization: the schema check, the bulk size decision and the hub's
+          // fingerprint all read this capture instead of re-stringifying the snapshot.
+          const initial = normalizeJsonWire(value);
+          const wire = readNormalizedJsonWire(initial).wire as JsonValue;
+          JsonValueSchema.parse(wire);
+          const data = bulkTransfers.encodeNormalized(
+            lease,
+            initial,
+            WS_LIMITS.streamChunkBytes - 1024,
+          ) as JsonValue;
           return {
             kind,
             revision,
             baseRevision,
             ...(sourceEpoch ? { sourceEpoch } : {}),
-            data: bulkTransfers.encode(lease, data, WS_LIMITS.streamChunkBytes - 1024),
+            data,
+            // A bulk descriptor replaces the content, so only an inline snapshot has a capture.
+            ...(data === wire ? { capture: initial } : {}),
           };
         } finally {
           bulkTransfers.release(lease);
         }
       }),
   });
+  // The desktop snapshots the last environment load counted; undefined until one succeeds.
+  let directoryFreshClients: string | undefined;
   const streamProjects = new Map<string, string>();
   const streamProjectVersions = new Map<string, number>();
   // Session streams refresh from their own save counter, or when an unattributed
@@ -243,6 +284,12 @@ export function createSubscriptionsRuntime(
       targets.flatMap((target) => (target.kind === "session" ? [target.sessionId] : [])),
     );
     streamDeltas.retain((key) => sessions.has(tailStreamSessionId(key)));
+    const deltaProjects = new Set(
+      targets.flatMap((target) =>
+        target.kind === "project" && target.delta === true ? [target.projectId] : [],
+      ),
+    );
+    projectDeltas.retain((key) => deltaProjects.has(projectStreamProjectId(key)));
     for (const id of streamProjects.keys()) if (!sessions.has(id)) streamProjects.delete(id);
     for (const id of streamSessionVersions.keys())
       if (!sessions.has(id)) streamSessionVersions.delete(id);
@@ -260,18 +307,15 @@ export function createSubscriptionsRuntime(
     const globalChange =
       unattributedVersion !== dependencies.engine.store.unattributedChangeVersion;
     unattributedVersion = dependencies.engine.store.unattributedChangeVersion;
-    let attributed = false;
     for (const [projectId, version] of streamProjectVersions) {
       const current = dependencies.engine.store.projectVersion(projectId);
       if (current === version) continue;
-      attributed = true;
       streamProjectVersions.set(projectId, current);
       subscriptionHub.invalidate({ kind: "project", projectId });
     }
     for (const [projectId, scope] of streamProjectScopes) {
       const current = dependencies.engine.store.versions.scope(projectId, false);
       if (current === scope) continue;
-      attributed = true;
       streamProjectScopes.set(projectId, current);
       for (const [sessionId, project] of streamProjects)
         if (project === projectId) subscriptionHub.invalidate({ kind: "session", sessionId });
@@ -279,13 +323,13 @@ export function createSubscriptionsRuntime(
     for (const [sessionId, version] of streamSessionVersions) {
       const current = dependencies.engine.store.versions.session(sessionId, false);
       if (current === version) continue;
-      attributed = true;
       streamSessionVersions.set(sessionId, current);
       subscriptionHub.invalidate({ kind: "session", sessionId });
     }
-    // A commit no project version explains (queue, approval, settings…) still
-    // refreshes every stream, as before targeted invalidation.
-    if (globalChange || !attributed) subscriptionHub.invalidate();
+    // Only SQL outside the session tables (queue, approval, settings…) has no version to
+    // explain it and still refreshes every stream. A commit whose session-table writes
+    // moved no streamed version changed nothing a project or session stream shows.
+    if (globalChange) subscriptionHub.invalidate();
     else subscriptionHub.invalidate({ kind: "environment" });
   });
   // The desktop project directory lives outside the store: a rail change arrives in a
@@ -296,14 +340,19 @@ export function createSubscriptionsRuntime(
     previousDirectoryChange?.();
     refreshDirectoryStreams();
   };
-  const directoryAging = setInterval(() => {
-    if (subscriptionHub.targets().some((target) => target.kind === "environment"))
+  const agingTimer = setInterval(() => {
+    // Retired streams drop their version entries here, not only when another stream loads.
+    pruneStreamVersions();
+    if (!subscriptionHub.targets().some((target) => target.kind === "environment")) return;
+    // Reload only when a desktop snapshot crossed the stale threshold since the last load;
+    // an unset age (no load finished yet) keeps refreshing, as before.
+    if (dependencies.desktop.live.freshDirectoryClients() !== directoryFreshClients)
       refreshDirectoryStreams();
   }, DIRECTORY_AGING_CHECK_MS);
-  directoryAging.unref();
+  agingTimer.unref();
   const unsubscribeChanges = () => {
     unsubscribeStoreChanges();
-    clearInterval(directoryAging);
+    clearInterval(agingTimer);
     clearTimeout(modelsTimer);
     modelsTimer = undefined;
     unsubscribeAccountStatus();
@@ -346,17 +395,43 @@ export function createSubscriptionsRuntime(
       subscriptionHub.resnapshot({ kind: "session", sessionId });
     }
   };
+  const invalidateAllProjectStreams = () => {
+    for (const projectId of streamProjectVersions.keys())
+      subscriptionHub.invalidate({ kind: "project", projectId });
+  };
   dependencies.desktop.live.onChange = (sessionIds) => {
     previousDesktopChange?.(sessionIds);
     subscriptionHub.invalidate({ kind: "environment" });
+    const unmapped: string[] = [];
     for (const sessionId of sessionIds) {
       subscriptionHub.invalidate({ kind: "session", sessionId });
       const projectId = streamProjects.get(sessionId);
       if (projectId) subscriptionHub.invalidate({ kind: "project", projectId });
+      else unmapped.push(sessionId);
     }
-    // Desktop-only project membership can be outside the Host session store.
-    for (const projectId of streamProjectVersions.keys())
-      subscriptionHub.invalidate({ kind: "project", projectId });
+    if (!unmapped.length) return;
+    // A changed session without a stream here still belongs to the project of its Host
+    // store row. Only a desktop-only session (no row; its membership lives in the desktop
+    // database) can be in any project, so only that case refreshes every project stream.
+    void dependencies
+      .sessionRead(undefined, () =>
+        Promise.all(
+          unmapped.map(async (sessionId) => {
+            const row = await dependencies.engine.store.db
+              .prepare("SELECT project_id FROM session_state WHERE id=?")
+              .get(sessionId);
+            return row ? String(row.project_id) : undefined;
+          }),
+        ),
+      )
+      .then(
+        (projectIds) => {
+          if (projectIds.includes(undefined)) invalidateAllProjectStreams();
+          for (const projectId of projectIds)
+            if (projectId) subscriptionHub.invalidate({ kind: "project", projectId });
+        },
+        () => invalidateAllProjectStreams(),
+      );
   };
   // Discovery lands provider by provider and sign-in probes finish in bursts, so a short
   // trailing debounce keeps the hub at one reload per burst.

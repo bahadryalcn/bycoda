@@ -17,4 +17,21 @@ export const taskClientErrors = {
   preflightHost: () => t("Update the selected host to check preparation requirements."),
   registeredProject: () => t("Choose a registered project before checking preparation."),
   reorderSameMachine: () => t("Reorder tasks on the same machine"),
+  machine: () => t("This project’s machine isn’t connected, or its bycoda Host needs an update."),
+  agent: () => t("This agent cannot run tasks in the background."),
+  todoHost: (machineName: string) =>
+    t("Update bycoda Host on {p0} to add to-do items", { p0: machineName }),
+  sessionGone: () => t("This session is no longer available."),
+  epicChecking: () => t("Epic creation is already being checked."),
+  epicReconnect: () => t("Reconnect the original host to check the previous epic creation."),
+  epicUnchecked: () => t("The previous epic creation could not be checked."),
+  epicScope: () => t("The previous epic identity has an unexpected project scope."),
+  epicUnresolved: () =>
+    t("The previous epic creation is unresolved. Restore its original draft before retrying."),
+  epicAcknowledgement: () => t("The epic creation acknowledgement could not be verified."),
+  chooseProject: () => t("Choose at least one project."),
+  goalMachine: () => t("A goal’s projects must all be on one machine."),
+  goalVerifyHost: () => t("Update the selected host to verify the completed goal."),
+  goalDirectHost: () =>
+    t("Update the selected host to run goal tasks directly in the selected checkout."),
 };

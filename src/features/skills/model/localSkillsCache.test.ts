@@ -59,6 +59,15 @@ it("does not restore a cleared cache with an older scan", async () => {
   expect(cachedLocalSkills("/work/a")).toEqual([skill("new")]);
 });
 
+it("bounds remembered folders by recency and keeps the shared remote scope", async () => {
+  listSkills.mockResolvedValue([skill("x")]);
+  for (let index = 0; index < 40; index++) await loadLocalSkills(`/work/${index}`);
+  await loadLocalSkills("remote://machine/project");
+  expect(cachedLocalSkills("/work/0")).toBeNull();
+  expect(cachedLocalSkills("/work/39")).toEqual([skill("x")]);
+  expect(cachedLocalSkills("remote://other/project")).toEqual([skill("x")]);
+});
+
 it("releases a failed shared scan so the next refresh can retry", async () => {
   listSkills.mockRejectedValueOnce(new Error("scan failed")).mockResolvedValueOnce([]);
   const results = await Promise.allSettled([

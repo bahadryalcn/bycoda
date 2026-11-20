@@ -6,9 +6,10 @@ import {
   MANAGED_DELIVERY_REVIEW_REQUIRED,
   withHostGitMutation,
 } from "./git-mutations";
-import { isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
-import { readFile, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   hostConflictStages,
@@ -535,25 +536,46 @@ export class BranchCache {
   }
 }
 
-/** The branch named by a checkout's own `HEAD` file, read without spawning git.
- * Undefined means "ask git": a subfolder, a detached or reftable HEAD, or any read problem. */
-async function headBranchFromFiles(cwd: string): Promise<string | undefined> {
+/** The branch named by the enclosing checkout's `HEAD` file, read without spawning git.
+ * Session lists poll every folder, and a Windows spawn blocks the Host event loop, so
+ * subfolders walk up to their checkout and a missing folder or non-repository answers
+ * "" (what git would), as does a detached HEAD. Undefined means "ask git": a reftable
+ * HEAD or a read problem. */
+export async function headBranchFromFiles(cwd: string): Promise<string | undefined> {
   try {
-    let gitDir = join(cwd, ".git");
+    if (!(await stat(cwd)).isDirectory()) return "";
+  } catch {
+    return "";
+  }
+  try {
+    let root = cwd;
     let marker: string;
-    try {
-      marker = await readFile(gitDir, "utf8");
-    } catch (error) {
-      // `.git` is a directory in a normal checkout: read its HEAD below.
-      if ((error as NodeJS.ErrnoException).code !== "EISDIR") return undefined;
-      marker = "";
+    for (;;) {
+      try {
+        marker = await readFile(join(root, ".git"), "utf8");
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // `.git` is a directory in a normal checkout: read its HEAD below.
+        if (code === "EISDIR") {
+          marker = "";
+          break;
+        }
+        if (code !== "ENOENT" && code !== "ENOTDIR") return undefined;
+        const parent = dirname(root);
+        if (parent === root) return "";
+        root = parent;
+      }
     }
+    let gitDir = join(root, ".git");
     if (marker) {
       const target = /^gitdir:\s*(.+?)\s*$/m.exec(marker)?.[1];
       if (!target) return undefined;
-      gitDir = isAbsolute(target) ? target : resolvePath(cwd, target);
+      gitDir = isAbsolute(target) ? target : resolvePath(root, target);
     }
     const head = (await readFile(join(gitDir, "HEAD"), "utf8")).trim();
+    // Detached: `git symbolic-ref --quiet` would exit 1, which the cache records as "".
+    if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(head)) return "";
     const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head)?.[1];
     // `.invalid` is the reftable placeholder; only plain local branches are answered here.
     return ref && ref !== ".invalid" ? ref : undefined;
@@ -665,28 +687,69 @@ const HEAD_PRESERVING: ReadonlySet<string> = new Set<GitActionCommand>([
   "git_fetch",
 ]);
 
+const SNAPSHOT_MS = 10_000;
+const SNAPSHOT_REFS_BYTES = 2 * 1024 * 1024;
+
+/** Hashes a git command's output as it streams, so large diffs and indexes never
+ * have to fit in a buffer. Fails with the command that could not be read. */
+function gitOutputDigest(root: string, args: string[]): Promise<string> {
+  let timedOut = false;
+  const failed = () =>
+    new Error(
+      `Git management snapshot could not read \`git ${args.join(" ")}\`${timedOut ? ` within ${SNAPSHOT_MS / 1000} seconds` : ""}. No action was executed.`,
+    );
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const child = spawn("git", ["--no-pager", ...args], {
+      cwd: root,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+      env: {
+        ...process.env,
+        LC_ALL: "C.UTF-8",
+        GIT_OPTIONAL_LOCKS: "0",
+        GIT_TERMINAL_PROMPT: "0",
+      },
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, SNAPSHOT_MS);
+    child.stdout.on("data", (chunk: Buffer) => hash.update(chunk));
+    child.once("error", () => {
+      clearTimeout(timer);
+      reject(failed());
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(hash.digest("hex"));
+      else reject(failed());
+    });
+  });
+}
+
 /** An opaque receipt: credentials in remote configuration never leave the host. */
 export async function gitManagementSnapshot(
   root: string,
 ): Promise<{ token: string; refs: Record<string, string> }> {
   await ensureWorkTree(root);
-  const read = (args: string[]) =>
-    git(root, args, { timeout: 10_000, maxBuffer: 2 * 1024 * 1024 }).catch(() => {
-      throw new Error(
-        "Git management snapshot is unavailable or exceeds the safe size/time limit. No action was executed.",
-      );
-    });
+  const refsArgs = ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)"];
   const parts = await Promise.all([
     realpath(root),
     gitOrNull(root, ["rev-parse", "--verify", "HEAD"]),
     gitOrNull(root, ["symbolic-ref", "--quiet", "HEAD"]),
-    read(["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)"]),
-    read(["config", "--list", "--null", "--includes"]),
-    read(["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    read(["diff", "--no-ext-diff", "--binary", "--"]),
-    read(["diff", "--cached", "--no-ext-diff", "--binary", "--"]),
-    read(["remote", "-v"]),
-    read(["ls-files", "--stage", "-z"]),
+    // Refs are parsed and returned, so they stay buffered and bounded.
+    git(root, refsArgs, { timeout: SNAPSHOT_MS, maxBuffer: SNAPSHOT_REFS_BYTES }).catch(() => {
+      throw new Error(
+        "Git management snapshot has too many references or could not read them. No action was executed.",
+      );
+    }),
+    gitOutputDigest(root, ["config", "--list", "--null", "--includes"]),
+    gitOutputDigest(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    gitOutputDigest(root, ["diff", "--no-ext-diff", "--binary", "--"]),
+    gitOutputDigest(root, ["diff", "--cached", "--no-ext-diff", "--binary", "--"]),
+    gitOutputDigest(root, ["remote", "-v"]),
+    gitOutputDigest(root, ["ls-files", "--stage", "-z"]),
   ]);
   const refs: Record<string, string> = Object.fromEntries(
     (parts[3] ?? "")

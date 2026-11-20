@@ -1,3 +1,5 @@
+import { bytesToBase64 } from "../../../shared/lib/base64";
+
 /** Per-frame speech evidence: loudness and voicing (pitch periodicity). */
 export type FrameFeatures = { rms: number; periodicity: number };
 
@@ -221,9 +223,13 @@ export class VoiceVad {
     }
     return result;
   }
-  /** Audio of the utterance in progress once it holds real speech, for live previews. */
-  current(): Int16Array | undefined {
+  /**
+   * Audio of the utterance in progress once it holds real speech, for live previews.
+   * `minSamples` skips the buffer copy until the utterance is at least that long.
+   */
+  current(minSamples = 0): Int16Array | undefined {
     if (!this.talking || this.voiced < this.rate * VAD_TUNING.minUtteranceVoiced) return undefined;
+    if (this.count < minSamples) return undefined;
     return this.audio();
   }
   /** Ends the current utterance now, e.g. when dictation stops mid-sentence. */
@@ -274,10 +280,7 @@ export function pcmBase64(input: Int16Array) {
     const view = new DataView(bytes.buffer);
     input.forEach((sample, index) => view.setInt16(index * 2, sample, true));
   }
-  let raw = "";
-  for (let i = 0; i < bytes.length; i += 8192)
-    raw += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  return btoa(raw);
+  return bytesToBase64(bytes);
 }
 
 export function decodePcmBase64(encoded: string): Int16Array {

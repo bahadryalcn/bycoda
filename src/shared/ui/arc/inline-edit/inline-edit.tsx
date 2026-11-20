@@ -55,8 +55,8 @@ export interface InlineEditProps {
   placeholder?: string;
   /** Wraps onto several lines and grows in height. Enter still saves; Shift+Enter adds a line break. */
   multiline?: boolean;
-  /** `title` for names and headings, `body` for descriptions. */
-  variant?: "title" | "body";
+  /** `title` for headings, `compact-title` for pane headers, `body` for descriptions. */
+  variant?: "title" | "compact-title" | "body";
   /** The element that holds the text, so a title can stay a heading. */
   as?: "span" | "p" | "h1" | "h2" | "h3";
   className?: string;
@@ -404,7 +404,8 @@ function InlineEditControl({
       for (const type of ["beforeinput", "paste", "drop"])
         node.removeEventListener(type, guard, true);
     };
-  });
+    // The guard reads inputPort and composing through refs, so it stays current without rebinding on each render. The control element mounts only while editing and swaps between textarea and input with multiline, so those are the only changes that move the node.
+  }, [inputObserver, editing, multiline]);
 
   function mutateInput(_kind: string, apply: () => void) {
     const port = inputPort.current;

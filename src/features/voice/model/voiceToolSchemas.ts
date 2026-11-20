@@ -118,7 +118,7 @@ export const voiceTools = [
   {
     name: "app_tool_call",
     description:
-      "Call one discovered bycoda tool using its exact action, input schema and verified target. Reuse the same requestId for the identical mutation after an uncertain result; never invent approval or report acceptance as completion. A desktop.screenshot or browser frame result arrives as a separate image message when the provider supports images (OpenAI Realtime) and the result says imageDelivered: true; only then describe what you see. If imageDelivered is false or absent, say plainly that you cannot see the screen and use desktop.snapshot or desktop.find text instead.",
+      "Call one discovered bycoda tool using its family, exact action field, input schema and verified target. Catalog names such as conversation_crews_schema are labels; use action crews.schema with family conversation. Reuse the same requestId for the identical mutation after an uncertain result; never invent approval or report acceptance as completion. A desktop.screenshot or browser frame result arrives as a separate image message when the provider supports images (OpenAI Realtime) and the result says imageDelivered: true; only then describe what you see. If imageDelivered is false or absent, say plainly that you cannot see the screen and use desktop.snapshot or desktop.find text instead.",
     properties: {
       projectPath: { type: "string", maxLength: 4096 },
       sessionId: { type: "string", maxLength: 300 },

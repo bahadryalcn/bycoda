@@ -171,6 +171,37 @@ it(
 );
 
 it(
+  "compacts at most 512 old receipts per pass through batched writes, keeping each exact receipt",
+  withClock(async (setNow) => {
+    const { directory, store } = await openStore();
+    try {
+      const ids = Array.from({ length: 520 }, () => newRequestId());
+      for (const id of ids) await store.recordReceipt(`signature-${id}`, receiptFor(id));
+      setNow(T0 + 8 * DAY_MS);
+      const runMany = vi.spyOn(store.db, "runMany");
+      try {
+        await store.pruneReceipts();
+        expect(runMany).toHaveBeenCalled();
+      } finally {
+        runMany.mockRestore();
+      }
+      expect(
+        await store.db
+          .prepare(
+            "SELECT (SELECT COUNT(*) FROM compact_command_receipts) AS compact, (SELECT COUNT(*) FROM receipts) AS full",
+          )
+          .get(),
+      ).toEqual({ compact: 512, full: 8 });
+      for (const id of ids)
+        expect(await store.receipt(id, `signature-${id}`)).toEqual(receiptFor(id));
+    } finally {
+      await store.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }),
+);
+
+it(
   "never deletes an uncompacted receipt by age: its id still replays after the horizon",
   withClock(async (setNow) => {
     const { directory, store } = await openStore();

@@ -45,10 +45,16 @@ function mount(toolWindow = false, mouse = false) {
   let navigation!: ReturnType<typeof useRailNavigation>;
   let change!: (next: Partial<State>) => void;
   let setTabs!: Dispatch<SetStateAction<Set<string>>>;
+  let bump!: () => void;
   const activate = vi.fn();
+  // Every history validity check reads the open tab set, so its lookups measure re-filtering.
+  const initialTabs = new Set(["a", "b", "c"]);
+  const tabLookups = vi.spyOn(initialTabs, "has");
   function Harness() {
     const [current, setCurrent] = useState({ ...initial, notesViewOpen: toolWindow });
-    const [tabs, updateTabs] = useState(new Set(["a", "b", "c"]));
+    const [tabs, updateTabs] = useState(initialTabs);
+    const [, setBump] = useState(0);
+    bump = () => setBump((n) => n + 1);
     state = current;
     setTabs = updateTabs;
     change = (next) => setCurrent((prev) => ({ ...prev, ...next }));
@@ -115,6 +121,12 @@ function mount(toolWindow = false, mouse = false) {
     },
     showWorkspace() {
       act(() => navigation.onShowWorkspace());
+    },
+    /** An App commit that changes none of the navigation inputs; returns tab lookups it caused. */
+    unrelatedCommit() {
+      const before = tabLookups.mock.calls.length;
+      act(() => bump());
+      return tabLookups.mock.calls.length - before;
     },
     close(id: string) {
       act(() => setTabs((prev) => new Set([...prev].filter((tab) => tab !== id))));
@@ -223,6 +235,17 @@ it("prunes closed and transferred tabs instead of reopening them", () => {
   w.forward();
   expect(w.state.activeTabId).toBe("a");
   expect(w.nav.canForward).toBe(false);
+});
+
+// Issue #780: the history effect re-filtered both stacks on every App commit.
+it("does not re-filter the history stacks on an App commit that changes no navigation input", () => {
+  const w = mount();
+  w.go({ activeTabId: "b", projectCwd: "/b" });
+  expect(w.unrelatedCommit()).toBe(0);
+  // A real input change still prunes: the closed tab drops out of Back.
+  w.close("a");
+  expect(w.nav.canBack).toBe(false);
+  expect(w.unrelatedCommit()).toBe(0);
 });
 
 it("skips Notes if disabled and restores the Social project", () => {

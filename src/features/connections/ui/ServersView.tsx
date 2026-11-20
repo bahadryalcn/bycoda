@@ -11,7 +11,8 @@ import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
-import { copyWithFeedback, errorText, machineAddress } from "./serverActionFeedback";
+import { errorText } from "../../../shared/lib/errors";
+import { copyWithFeedback, machineAddress } from "./serverActionFeedback";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
@@ -465,7 +466,7 @@ export function ServersView({
                   anchor={filtersAnchor}
                   align="end"
                   width={280}
-                  role="dialog"
+                  kind="dialog"
                   aria-label={t("Server filters")}
                   onDismiss={() => setFiltersOpen(false)}
                 >
@@ -562,8 +563,8 @@ export function ServersView({
                 {
                   kind: "item",
                   id: "add-machine",
-                  label: t("Add machine"),
-                  description: t("Connect a machine running bycoda Host"),
+                  label: t("Add a computer"),
+                  description: t("Connect a computer running bycoda Host"),
                 },
                 { kind: "sep" },
                 { kind: "item", id: "import-termius", label: t("Import from Termius") },
@@ -920,7 +921,7 @@ export function ServersView({
           anchor={colorTarget.at}
           align="start"
           width={248}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Server color")}
           onDismiss={() => setColorTarget(undefined)}
         >
@@ -969,7 +970,7 @@ export function ServersView({
           anchor={deleteTarget.at}
           align="start"
           width={280}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Delete {p0}?", { p0: deleteTarget.server.name })}
           onDismiss={() => {
             if (!deleting) setDeleteTarget(undefined);

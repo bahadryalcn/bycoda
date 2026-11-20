@@ -1,9 +1,10 @@
-import { listDir, type FsEntry } from "../../../platform/tauri/fs";
+import { dirListingStamp, listDir, type FsEntry } from "../../../platform/tauri/fs";
 import { classifyRemoteError, isConnectionFailure } from "../../connections/public/remoteFailure";
 import { reportRemoteConnection } from "../../connections/public/remoteHealth";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { pathSegments } from "./fileName";
 import { joinPath, parentPath, pathKey } from "../../../shared/lib/paths";
+import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 
 const expandedByProject = new Map<string, Set<string>>();
 const selectedByProject = new Map<string, string | null>();
@@ -11,7 +12,25 @@ const dirs = new Map<string, FsEntry[]>();
 const verifiedListings = new WeakMap<FsEntry[], number>();
 const presentation = new WeakMap<readonly FsEntry[], { all: FsEntry[]; included: FsEntry[] }>();
 const entryIndexes = new WeakMap<readonly FsEntry[], Map<string, number>>();
-const pollBackoff = new Map<string, { misses: number; nextAt: number }>();
+/**
+ * Per polled folder: the unchanged-poll backoff, plus the folder stamp taken
+ * before its last full read. An unchanged stamp lets a poll skip the read.
+ */
+const pollBackoff = new Map<
+  string,
+  { misses: number; nextAt: number; stamp?: string; readAt?: number }
+>();
+/**
+ * A matching stamp skips at most this long: ignore labels can change without
+ * the folder changing (`.gitignore` higher up, a file becoming tracked), so a
+ * full read still happens periodically.
+ */
+const STAMP_REVERIFY_MS = 60_000;
+
+function pollDelay(path: string, misses: number): number {
+  const base = isRemoteProjectPath(path) ? 5000 : 3000;
+  return Math.min(30_000, base * 2 ** misses);
+}
 
 const yieldListing = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 /** Exact comparison without hashing every path character again on unchanged polls. */
@@ -239,7 +258,28 @@ export async function refreshCachedDirs(
         if (!dirs.has(path)) continue;
         const backoff = pollBackoff.get(path);
         if (pollOnly && backoff && backoff.nextAt > Date.now()) continue;
+        // Taken before the read, so a change during the read mismatches next poll.
+        const stamp = pollOnly ? await dirListingStamp(path) : null;
+        // The folder may have been collapsed while the stamp was read.
+        if (!dirs.has(path)) continue;
         const previousEntries = dirs.get(path);
+        if (
+          stamp &&
+          previousEntries &&
+          backoff?.stamp === stamp &&
+          backoff.readAt !== undefined &&
+          Date.now() - backoff.readAt < STAMP_REVERIFY_MS
+        ) {
+          // Same folder as the last full read: nothing to list, ignore-check or send.
+          verifiedListings.set(previousEntries, Date.now());
+          const misses = Math.min(backoff.misses + 1, 4);
+          pollBackoff.set(path, {
+            ...backoff,
+            misses,
+            nextAt: Date.now() + pollDelay(path, misses),
+          });
+          continue;
+        }
         const read = refreshDir(path);
         const epoch = dirEpochs.get(path);
         try {
@@ -248,10 +288,10 @@ export async function refreshCachedDirs(
           const unchanged = previousEntries === next;
           if (!unchanged) changed.push(path);
           const misses = unchanged ? Math.min((backoff?.misses ?? 0) + 1, 4) : 0;
-          const base = isRemoteProjectPath(path) ? 5000 : 3000;
           pollBackoff.set(path, {
             misses,
-            nextAt: Date.now() + Math.min(30_000, base * 2 ** misses),
+            nextAt: Date.now() + pollDelay(path, misses),
+            ...(stamp ? { stamp, readAt: Date.now() } : {}),
           });
           // An unchanged listing keeps its array identity, so per-directory
           // subscribers (`peekDir` snapshots) see no change.
@@ -333,6 +373,17 @@ export function notifyDirsChanged(root?: string, pollOnly = false, forcePoll = f
   else refreshAll = true;
   if (!pollOnly) contentChange = true;
   scheduleRefresh();
+}
+
+/**
+ * Reload the open folders of one connected machine after it answered again.
+ * Folders of this computer and of other machines are left alone.
+ */
+export function notifyMachineDirsChanged(environmentId: string) {
+  const prefix = `${REMOTE_PATH_PREFIX}${environmentId}/`;
+  for (const root of activeRoots.keys()) {
+    if (root.replace(/\\/g, "/").startsWith(prefix)) notifyDirsChanged(root);
+  }
 }
 
 function scheduleRefresh() {

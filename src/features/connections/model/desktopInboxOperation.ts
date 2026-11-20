@@ -82,6 +82,7 @@ export async function executeDesktopInboxOperation(
     });
     return {
       ...value,
+      ...(operation.omittedProjects ? { omittedProjects: operation.omittedProjects } : {}),
       items: value.items.filter((item) => wanted(item.provider)),
       errors: Object.fromEntries(
         Object.entries(value.errors)

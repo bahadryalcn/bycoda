@@ -74,15 +74,14 @@
 .avatar:empty::before {
   content: attr(data-initial);
 }
-/* The stage core keeps the ring-to-avatar ratio of the small one. */
-.core[data-size="stage"] {
-  inline-size: 136px;
-  block-size: 136px;
+.callOrb {
+  display: block;
+  flex: none;
+  inline-size: min(var(--voice-core-stage-size, 260px), 74%);
+  block-size: auto;
+  aspect-ratio: 1;
+  pointer-events: none;
 }
-.core[data-size="stage"] .avatar {
-  inline-size: 56px;
-  block-size: 56px;
-}
-.core:is([data-state="off"], [data-state="muted"]) .avatar {
+.core[data-state="muted"] .avatar {
   opacity: 0.6;
 }

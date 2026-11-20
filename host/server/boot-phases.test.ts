@@ -1,5 +1,7 @@
-import { expect, it } from "vitest";
-import { bootPhase, createBootTimer } from "./boot-phases";
+import { afterEach, expect, it, vi } from "vitest";
+import { BOOT_STALL_WARNING_MS, bootPhase, createBootTimer, readyWithin } from "./boot-phases";
+
+afterEach(() => vi.useRealTimers());
 
 function recorder() {
   const lines: string[] = [];
@@ -78,4 +80,51 @@ it("times an awaited step without changing its result or its failure", async () 
     'info boot {"phase":"tasks","ms":250}',
     'warn boot failed {"phase":"lifecycle","ms":7}',
   ]);
+});
+
+it("names a step that has not settled at each stall interval until it ends", async () => {
+  vi.useFakeTimers();
+  const { lines, log } = recorder();
+  let clock = 0;
+  let finish!: () => void;
+  const step = bootPhase(
+    "recovery-managed",
+    () => new Promise<void>((resolve) => (finish = resolve)),
+    log,
+    () => clock,
+  );
+  clock = BOOT_STALL_WARNING_MS;
+  await vi.advanceTimersByTimeAsync(BOOT_STALL_WARNING_MS);
+  clock = 2 * BOOT_STALL_WARNING_MS;
+  await vi.advanceTimersByTimeAsync(BOOT_STALL_WARNING_MS);
+  finish();
+  await step;
+  await vi.advanceTimersByTimeAsync(BOOT_STALL_WARNING_MS);
+  expect(lines).toEqual([
+    'warn boot stalled {"phase":"recovery-managed","ms":30000}',
+    'warn boot stalled {"phase":"recovery-managed","ms":60000}',
+    'info boot {"phase":"recovery-managed","ms":60000}',
+  ]);
+});
+
+it("lets start-up continue without an optional service that misses its deadline", async () => {
+  vi.useFakeTimers();
+  const { lines, log } = recorder();
+  let clock = 0;
+  let finish!: () => void;
+  const ready = new Promise<void>((resolve) => (finish = resolve));
+  const waited = readyWithin("recovery-service-social", ready, 1_000, log, () => clock);
+  clock = 1_000;
+  await vi.advanceTimersByTimeAsync(1_000);
+  await expect(waited).resolves.toBeUndefined();
+  clock = 5_000;
+  finish();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(lines).toEqual([
+    'warn boot degraded {"phase":"recovery-service-social","ms":1000}',
+    'info boot {"phase":"recovery-service-social","ms":5000,"late":true}',
+  ]);
+  // A readiness failure within the deadline still fails start-up.
+  const failure = new Error("social store failed");
+  await expect(readyWithin("social", Promise.reject(failure), 1_000, log)).rejects.toBe(failure);
 });

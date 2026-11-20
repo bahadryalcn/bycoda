@@ -25,6 +25,7 @@ import {
   shiftMonth,
   shiftWeek,
   weekDays,
+  visibleRange,
   type CalendarView,
 } from "./calendarModel";
 import { draftFromCampaign, emptyDraft } from "./contentDraft";
@@ -49,10 +50,16 @@ export function ContentScreen({
   onNavigate,
 }: SocialScreenProps) {
   const confirmation = useConfirm();
-  const data = useContentData(client, projectId, active);
   const editor = useSocialMediaEditor(client);
   const [view, setView] = useState<CalendarView>("week");
   const [anchor, setAnchor] = useState(() => Date.now());
+  // The calendar asks the Host for the posts scheduled in the days it shows, not for the newest pages.
+  const data = useContentData(
+    client,
+    projectId,
+    active,
+    view === "list" ? undefined : visibleRange(view, anchor),
+  );
   const [accountFilter, setAccountFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<ContentListStatus>("all");
   const workspace = useContentDraft(client, projectId);
@@ -60,16 +67,20 @@ export function ContentScreen({
   const snapshot = data.snapshot;
   const accounts = snapshot?.accounts ?? [];
   const entries = useMemo(
-    () => calendarEntries(snapshot?.jobs ?? [], accounts),
-    [snapshot, accounts],
+    () => calendarEntries(data.scheduledJobs, accounts),
+    [data.scheduledJobs, accounts],
   );
+  const findCampaign = (campaignId: string) =>
+    snapshot?.campaigns.find((item) => item.id === campaignId) ??
+    data.scheduledCampaigns.find((item) => item.id === campaignId);
   const newGate: ActionGate = !projectId
     ? { disabled: true, disabledReason: t("Choose a project first.") }
     : !snapshot
       ? { disabled: true, disabledReason: t("Loading accounts…") }
       : { disabled: false };
   const lockedReason =
-    draft.campaignId && postHasLockingJob(draft.campaignId, snapshot?.jobs ?? [])
+    draft.campaignId &&
+    postHasLockingJob(draft.campaignId, [...(snapshot?.jobs ?? []), ...data.scheduledJobs])
       ? t("This post was already scheduled or sent, so it can't be edited here.")
       : undefined;
 
@@ -257,10 +268,14 @@ export function ContentScreen({
               onAccountFilter={setAccountFilter}
               onStatusFilter={setStatusFilter}
               onOpen={(campaignId) => {
-                const campaign = snapshot?.campaigns.find((item) => item.id === campaignId);
+                const campaign = findCampaign(campaignId);
                 if (campaign) openCampaign(campaign);
               }}
             />
+          ) : data.scheduledLoading ? (
+            <LoadingText delay={false} className="content-platform-note">
+              {t("Loading…")}
+            </LoadingText>
           ) : (
             <ContentCalendar
               view={view}
@@ -268,19 +283,20 @@ export function ContentScreen({
               entries={entries}
               onPickDay={(day) => openNew(day)}
               onOpen={(campaignId) => {
-                const campaign = snapshot?.campaigns.find((item) => item.id === campaignId);
+                const campaign = findCampaign(campaignId);
                 if (campaign) openCampaign(campaign);
               }}
             />
           )}
         </>
       )}
+      {/* Older pages only matter to the list; the calendar already holds everything scheduled in its days. */}
       <CollectionFooter
-        hasMore={data.hasMore}
+        hasMore={view === "list" && data.hasMore}
         loading={data.loadingMore}
-        error={data.moreError}
+        error={view === "list" ? data.moreError : undefined}
         partial={
-          data.hasMore
+          view === "list" && data.hasMore
             ? t("More posts are available. Load more to include older posts in this view.")
             : undefined
         }

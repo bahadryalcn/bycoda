@@ -855,6 +855,38 @@ describe("sanitizeSessionForPersist", () => {
     expect(sanitizeSessionForPersist(session).blocks[0]?.btwThreads).toEqual([thread]);
   });
 
+  it("keeps a known BTW error code and drops an unknown one", () => {
+    const session = newSession("codex", "/tmp/project");
+    const failed = (id: string, extra: Partial<BtwThread>): BtwThread => ({
+      id,
+      sourceEndBlockId: "u1",
+      createdAt: 1,
+      updatedAt: 2,
+      status: "error",
+      messages: [{ id: `${id}-m`, role: "user", text: "Why?", createdAt: 1 }],
+      ...extra,
+    });
+    session.blocks = [
+      {
+        id: "u1",
+        role: "user",
+        text: "Explain this",
+        btwThreads: [
+          failed("coded", { errorCode: "workingDirectoryRequired", error: "English text" }),
+          failed("unknown", {
+            errorCode: "notACode" as BtwThread["errorCode"],
+            error: "Provider said no",
+          }),
+        ],
+      },
+    ];
+
+    const [coded, unknown] = sanitizeSessionForPersist(session).blocks[0]?.btwThreads ?? [];
+    expect(coded).toMatchObject({ errorCode: "workingDirectoryRequired", error: "English text" });
+    expect(unknown?.errorCode).toBeUndefined();
+    expect(unknown?.error).toBe("Provider said no");
+  });
+
   it("persists provider metrics recorded on a user turn", () => {
     const session = newSession("claude", "/tmp/project");
     session.blocks = [

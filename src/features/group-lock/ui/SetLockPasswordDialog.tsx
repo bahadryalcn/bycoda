@@ -3,13 +3,21 @@ import { Text } from "../../../shared/ui/Text";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { formatCooldown, WRONG_PASSWORD_DELAY_MS } from "../model/attemptThrottle";
+import { WRONG_PASSWORD_DELAY_MS } from "../model/attemptThrottle";
 import { changeLockPassword, lockCooldownMs, setLockPassword } from "../model/groupLock";
 import { PASSWORD_MIN_LENGTH, passwordProblem } from "../model/passwordRecord";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
-import { pause, useCooldown, verifyFailureMessage } from "./PasswordPromptDialog";
+import { CooldownNotice } from "./CooldownNotice";
+import { isTransientTransportError } from "../../connections/public/remoteFailure";
+import {
+  cooldownMessage,
+  pause,
+  promptErrorMessage,
+  useCooldown,
+  verifyFailureMessage,
+} from "./PasswordPromptDialog";
 
 type Props = {
   /** `set` for the first password, `change` to replace the current one. */
@@ -51,10 +59,13 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
     };
   }, []);
 
+  const message = cooldownMessage(cooldown.remainingMs) ?? error;
+  const hasMessage = message != null;
+
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes retry focus with the current or new password field becoming editable after a failed verification.
   useEffect(() => {
-    if (!busy && error) ({ current, next, confirm })[errorField].current?.focus();
-  }, [busy, error, errorField]);
+    if (!busy && hasMessage) ({ current, next, confirm })[errorField].current?.focus();
+  }, [busy, hasMessage, errorField]);
 
   const clear = () => {
     for (const field of [current, next, confirm]) {
@@ -107,19 +118,14 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
       onClose();
     } catch (reason) {
       if (!alive.current) return;
-      clear();
-      setError(t(reason instanceof Error ? reason.message : String(reason)));
+      // A lost Host result is not a refused password: keep the fields typed so the retry is one
+      // click, as the unlock prompt does. Any other failure clears the secrets.
+      if (!isTransientTransportError(reason)) clear();
+      setError(promptErrorMessage(reason));
     } finally {
       if (alive.current) setBusy(false);
     }
   };
-
-  const message =
-    cooldown.remainingMs > 0
-      ? t("Too many wrong passwords. Try again in {p0}.", {
-          p0: formatCooldown(cooldown.remainingMs),
-        })
-      : error;
 
   return (
     <Modal
@@ -191,7 +197,9 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
           }
           aria-invalid={(message != null && errorField === "confirm") || undefined}
         />
-        {message ? (
+        {cooldown.remainingMs > 0 ? (
+          <CooldownNotice id="set-lock-password-error">{message}</CooldownNotice>
+        ) : message ? (
           <Alert id="set-lock-password-error" tone="danger">
             {message}
           </Alert>

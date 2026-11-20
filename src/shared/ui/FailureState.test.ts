@@ -140,11 +140,11 @@ it("uses InlineError for inline failure and guards an asynchronous retry", async
     ),
   );
   expect(container.querySelector('[data-tone="danger"]')).not.toBeNull();
-  await act(async () => button("Retry").click());
-  await act(async () => button("Retry").click());
+  await act(async () => button("Try again").click());
+  await act(async () => button("Try again").click());
   expect(onRetry).toHaveBeenCalledOnce();
   await act(async () => finish());
-  expect(button("Retry").disabled).toBe(false);
+  expect(button("Try again").disabled).toBe(false);
 });
 
 it("renders structured actions in a block and as text links inline", async () => {
@@ -157,7 +157,7 @@ it("renders structured actions in a block and as text links inline", async () =>
   expect([...container.querySelectorAll("button")].map((el) => el.textContent)).toEqual([
     "Open settings",
     "Dismiss",
-    "Retry",
+    "Try again",
   ]);
   act(() => button("Open settings").click());
   expect(onClick).toHaveBeenCalledOnce();

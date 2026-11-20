@@ -7,6 +7,7 @@ import {
   type GitHistoryCommit,
   type GitOperation,
 } from "../../../platform/tauri/fs";
+import { shortSha } from "../../../shared/lib/shortSha";
 
 export type ConflictProvenance = { label: string; subject?: string; detail: string };
 
@@ -54,7 +55,7 @@ export function useConflictProvenance(cwd: string | undefined, ours: string, the
           commit?.subject ??
           (identity ? await gitCommitMessage(cwd, identity).catch(() => "") : "");
         return {
-          label: branch || (hash ? hash.slice(0, 7) : marker),
+          label: branch || (hash ? shortSha(hash) : marker),
           subject: message.split(/\r?\n/)[0] || undefined,
           detail: [marker, commit?.sha, message].filter(Boolean).join(" · "),
         };

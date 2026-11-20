@@ -1,0 +1,11 @@
+/* Shared visually-hidden text for Arc parts that keep copy for screen readers only. Arc modules
+   pull it in with `composes: srOnly from ...` instead of re-declaring the same block. Parts whose
+   hidden box also clips with rect() or sets margin/border keep their own rule. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

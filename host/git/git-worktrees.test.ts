@@ -10,7 +10,7 @@ import {
   hostWorktrees,
   invalidateHostWorktrees,
   renameHostWorktreeBranch,
-  resolveHostWorktree,
+  resolveHostWorktreeAsync,
 } from "./git-worktrees";
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -185,7 +185,7 @@ it("creates registered host worktrees and binds new sessions to the selected che
     isMain: false,
     missing: false,
   });
-  expect(resolveHostWorktree(cwd, tree.path)).toBe(tree.path);
+  expect(await resolveHostWorktreeAsync(cwd, tree.path)).toBe(tree.path);
   const listed = await hostWorktrees(cwd);
   expect(listed.worktrees.map((item) => item.branch)).toEqual(["main", "feature/task"]);
   const receipt = await engine.command({
@@ -245,7 +245,7 @@ it("reuses a worktree list briefly and refreshes it after this host changes work
   const outside = join(root, "outside");
   git("worktree", "add", "-q", "-b", "outside", outside);
   expect((await hostWorktrees(cwd)).worktrees).toHaveLength(1);
-  expect(resolveHostWorktree(cwd, outside)).toContain("outside");
+  expect(await resolveHostWorktreeAsync(cwd, outside)).toContain("outside");
   expect((await hostWorktrees(cwd)).worktrees).toHaveLength(2);
 
   // Creating one through the host is visible at once.
@@ -255,5 +255,7 @@ it("reuses a worktree list briefly and refreshes it after this host changes work
   git("worktree", "remove", "--force", outside);
   invalidateHostWorktrees(cwd);
   expect((await hostWorktrees(cwd)).worktrees.map((tree) => tree.branch)).not.toContain("outside");
-  expect(() => resolveHostWorktree(cwd, outside)).toThrow("Choose an available worktree");
+  await expect(resolveHostWorktreeAsync(cwd, outside)).rejects.toThrow(
+    "Choose an available worktree",
+  );
 });

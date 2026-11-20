@@ -5,6 +5,7 @@ import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { pathKey } from "../../../shared/lib/paths";
 import type { Session } from "../../sessions/public/session";
 import { taskMachineFor } from "../../tasks/public/taskCreation";
+import { writeHostAutomation } from "./hostAutomationClient";
 import { HOST_AUTOMATION_PROJECT_TASKS, HOST_AUTOMATION_ROOM } from "./hostAutomations";
 import {
   AutomationsProposeResultSchema,
@@ -252,15 +253,17 @@ export async function saveAutomationProposal() {
       }
     }
     saved ??= HostAutomationSchema.parse(
-      await remoteRequest(
-        machine.id,
-        "automations.save",
-        {
-          automation: { ...automation, expectedAbsent: true },
-        },
-        false,
-        true,
-        machine.environmentId,
+      await writeHostAutomation(machine.id, async () =>
+        remoteRequest(
+          machine.id,
+          "automations.save",
+          {
+            automation: { ...automation, expectedAbsent: true },
+          },
+          false,
+          true,
+          machine.environmentId,
+        ),
       ),
     );
     const acknowledged = saved;

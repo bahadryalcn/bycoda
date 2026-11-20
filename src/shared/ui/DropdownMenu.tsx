@@ -1,7 +1,16 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 import { contextMenuSlotClassName as slot } from "./arc/context-menu/context-menu";
 import { MenuRow } from "./MenuRow";
 import { LAYER } from "../lib/layers";
+import { observeResize } from "../lib/observeResize";
 import { Popover, popupListClassName, type PopoverAnchor } from "./Popover";
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { Check, ChevronRight } from "./icons";
@@ -61,6 +70,16 @@ type Controller = {
 type Branch = { id: string; anchor: HTMLElement; keyboard: boolean };
 
 const SUBMENU_CLOSE_MS = 120;
+/** Content-width menus fall back to this minimum until their anchor can be measured. */
+const CONTENT_MIN_WIDTH = 228;
+
+function anchorElement(anchor: PopoverAnchor): HTMLElement | null {
+  return anchor instanceof HTMLElement
+    ? anchor
+    : anchor && "current" in anchor
+      ? anchor.current
+      : null;
+}
 
 /**
  * Controlled action menu on Popover: items, groups, separators, radio and checkbox rows, shortcut
@@ -201,6 +220,15 @@ function MenuSurface({
   const uid = useId();
   const [branch, setBranch] = useState<Branch | null>(null);
   const [activeId, setActiveId] = useState<string | undefined>(initialActiveId);
+  const [contentWidth, setContentWidth] = useState(CONTENT_MIN_WIDTH);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps a content-width menu's minimum width in step with its anchor, measured outside render
+  useLayoutEffect(() => {
+    const node = width === "content" ? anchorElement(anchor) : null;
+    if (!node) return;
+    const measure = () => setContentWidth(node.getBoundingClientRect().width);
+    measure();
+    return observeResize(node, measure);
+  }, [anchor, width]);
   const actions = actionsOf(items);
   const enabled = actions.filter((action) => !action.disabled);
   // With a search field the highlight is state (aria-activedescendant); otherwise it is DOM focus.
@@ -536,16 +564,7 @@ function MenuSurface({
       autoFocus={takesFocus}
       side={side}
       align={align}
-      minWidth={
-        width === "content"
-          ? ((anchor instanceof HTMLElement
-              ? anchor
-              : anchor && "current" in anchor
-                ? anchor.current
-                : null
-            )?.getBoundingClientRect().width ?? 228)
-          : width
-      }
+      minWidth={width === "content" ? contentWidth : width}
       gap={gap}
       maxHeight={maxHeight}
       layer={depth ? LAYER.submenu + depth - 1 : undefined}

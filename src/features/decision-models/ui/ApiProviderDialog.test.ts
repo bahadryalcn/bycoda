@@ -98,6 +98,31 @@ describe("ApiProviderDialog", () => {
     expect(key.value).toBe("");
   });
 
+  it("keeps the typed key after a failed add so a retry needs no retyping (#792)", async () => {
+    const onAdd = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(created);
+    mounted = mountDecisionUi(
+      createElement(ApiProviderDialog, {
+        catalog: [openRouter],
+        catalogError: null,
+        onAdd,
+        onTest: vi.fn(async () => ({ sourceId: "new", ok: true })),
+        onClose: vi.fn(),
+      }),
+    );
+    await settleDecisionUi();
+    const key = document.querySelector<HTMLInputElement>("input[type='password']");
+    if (!key) throw new Error("Key field not found");
+    setInputValue(key, "sk-test-value");
+    clickButton("Add and test");
+    await settleDecisionUi();
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(key.value).toBe("sk-test-value");
+    clickButton("Add and test");
+    await settleDecisionUi();
+    expect(onAdd).toHaveBeenCalledTimes(2);
+    expect(onAdd.mock.calls[1]?.[1]).toBe("sk-test-value");
+  });
+
   it("marks a provider whose details are not verified", async () => {
     mounted = mountDecisionUi(
       createElement(ApiProviderDialog, {

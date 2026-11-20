@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type { NativeDeliveryIdentity } from "../../src/shared/model/host-contracts/native-delivery-identity";
 import type { NativeDeliveryResultSource } from "../../src/shared/model/host-contracts/native-delivery-identity";
 import type { NativeDeliveryConsumedResult } from "../../src/shared/model/host-contracts/native-delivery-identity";
+import { WS_LIMITS } from "../../src/shared/model/host-contracts/policy";
 import type { NativeBufferDeliveryProof } from "../domains/native-delivery/ports";
 import {
   NATIVE_SERVICES_RPC_SCHEMAS,
@@ -13,6 +14,11 @@ import {
   createNativeDeliveryEpochs,
   initializeNativeDeliveryEpochs,
 } from "./native-delivery-epochs";
+import {
+  initializeNativeDeliveryQuota,
+  NATIVE_DELIVERY_QUOTA_NULL_RESERVED_BYTES,
+  readNativeDeliveryQuota,
+} from "./native-delivery-quota";
 import {
   parseNativeDeliveryEpochOriginalId,
   type NativeDeliveryEpochFence,
@@ -34,7 +40,7 @@ export type NativeDeliveryRow = NativeDeliveryIdentity & {
     | { state: "admitted" | "recorded" | "retired"; epoch?: never }
   );
 // Retain legacy results; new formatter executions have a smaller enforced bound.
-const MAX_RESULT_BYTES = 32 * 1024 * 1024;
+const MAX_RESULT_BYTES = NATIVE_DELIVERY_QUOTA_NULL_RESERVED_BYTES;
 
 const MAX_TOTAL_RESULT_BYTES = 64 * 1024 * 1024;
 const MAX_PRINCIPAL_RESULT_BYTES = 32 * 1024 * 1024;
@@ -176,6 +182,7 @@ export async function initializeNativeDeliveryStore(db: StoreDatabase) {
           );
       }
       await initializeNativeDeliveryEpochs(db);
+      await initializeNativeDeliveryQuota(db);
       await db.exec("COMMIT");
     } catch (error) {
       await db.exec("ROLLBACK").catch(() => undefined);
@@ -384,6 +391,7 @@ export function createNativeDeliveryStore(store: HostStore) {
       status: epochs.status,
       compact: epochs.compact,
       close: epochs.close,
+      resolveGap: epochs.resolveGap,
     },
     read,
     readMetadata,
@@ -455,68 +463,63 @@ export function createNativeDeliveryStore(store: HostStore) {
         return Buffer.from(raw, "hex").toString("base64");
       });
     },
-    admit(principal: string, kind: NativeDeliveryKind, identity: NativeDeliveryIdentity) {
-      return store.transaction(async () => {
-        const parsed = parseNativeDeliveryEpochOriginalId(identity.originalId);
-        const epoch = parsed ? await epochs.assertAdmission(principal, identity) : null;
-        const row = await store.db
-          .prepare(`SELECT kind,sha256,byte_length,epoch_owner_id,epoch_generation,epoch_sequence FROM native_delivery_receipts
+    admit(
+      principal: string,
+      kind: NativeDeliveryKind,
+      identity: NativeDeliveryIdentity,
+      options?: { admitBefore?: number },
+    ) {
+      return store.transaction(
+        async () => {
+          const parsed = parseNativeDeliveryEpochOriginalId(identity.originalId);
+          const epoch = parsed ? await epochs.assertAdmission(principal, identity) : null;
+          const row = await store.db
+            .prepare(`SELECT kind,sha256,byte_length,epoch_owner_id,epoch_generation,epoch_sequence FROM native_delivery_receipts
           WHERE environment_id=? AND principal_id=? AND original_id=?`)
-          .get(store.environmentId, principal, identity.originalId);
-        if (row) {
-          if (row.kind !== kind)
-            throw new Error("Native delivery original target conflicts with retained intent");
-          match(row, identity);
-          epochs.validateRow(row, identity);
-          return false;
-        }
-        if (!parsed) await epochs.assertAdmission(principal, identity);
-        const count = await store.db
-          .prepare(`SELECT COUNT(*) AS total,
-          SUM(CASE WHEN environment_id=? AND principal_id=? THEN 1 ELSE 0 END) AS own,
-          COALESCE(SUM(CASE WHEN kind='native.services.workspace.format'
-            THEN COALESCE(reserved_bytes,?) + CASE WHEN state='retired' THEN 0 ELSE COALESCE(result_bytes,0) END ELSE 0 END),0) AS bytes,
-          COALESCE(SUM(CASE WHEN kind='native.services.workspace.format' AND environment_id=? AND principal_id=?
-            THEN COALESCE(reserved_bytes,?) + CASE WHEN state='retired' THEN 0 ELSE COALESCE(result_bytes,0) END ELSE 0 END),0) AS own_bytes
-          FROM native_delivery_receipts`)
-          .get(
-            store.environmentId,
-            principal,
-            MAX_RESULT_BYTES,
-            store.environmentId,
-            principal,
-            MAX_RESULT_BYTES,
-          );
-        if (Number(count?.total) >= MAX_ROWS || Number(count?.own ?? 0) >= MAX_PRINCIPAL_ROWS)
-          throw new Error(
-            "Native delivery journal capacity is unavailable; retained originals remain held",
-          );
-        const reservation =
-          kind === "native.services.workspace.format"
-            ? NATIVE_FORMAT_MAX_RESULT_BYTES
-            : maximumResult(kind);
-        if (
-          kind === "native.services.workspace.format" &&
-          (Number(count?.bytes) + reservation > MAX_TOTAL_RESULT_BYTES ||
-            Number(count?.own_bytes) + reservation > MAX_PRINCIPAL_RESULT_BYTES)
-        )
-          throw new Error(
-            "Native delivery result capacity is unavailable before admission; retained originals remain held",
-          );
-        await store.db
-          .prepare(`INSERT INTO native_delivery_receipts
+            .get(store.environmentId, principal, identity.originalId);
+          if (row) {
+            if (row.kind !== kind)
+              throw new Error("Native delivery original target conflicts with retained intent");
+            match(row, identity);
+            epochs.validateRow(row, identity);
+            return false;
+          }
+          if (!parsed) await epochs.assertAdmission(principal, identity);
+          const quota = await readNativeDeliveryQuota(store.db, store.environmentId, principal);
+          if (quota.total >= MAX_ROWS || quota.own >= MAX_PRINCIPAL_ROWS)
+            throw new Error(
+              "Native delivery journal capacity is unavailable; retained originals remain held",
+            );
+          const reservation =
+            kind === "native.services.workspace.format"
+              ? NATIVE_FORMAT_MAX_RESULT_BYTES
+              : maximumResult(kind);
+          if (
+            kind === "native.services.workspace.format" &&
+            (quota.bytes + reservation > MAX_TOTAL_RESULT_BYTES ||
+              quota.ownBytes + reservation > MAX_PRINCIPAL_RESULT_BYTES)
+          )
+            throw new Error(
+              "Native delivery result capacity is unavailable before admission; retained originals remain held",
+            );
+          store.db.assertAdmissionOpen(options?.admitBefore);
+          await store.db
+            .prepare(`INSERT INTO native_delivery_receipts
           (environment_id,principal_id,kind,original_id,sha256,byte_length,state,reserved_bytes,epoch_owner_id,epoch_generation,epoch_sequence) VALUES (?,?,?,?,?,?,'admitted',?,?,?,?)`)
-          .run(
-            ...key(principal, kind, identity),
-            identity.sha256,
-            identity.byteLength,
-            reservation,
-            epoch?.ownerId ?? null,
-            epoch?.generation ?? null,
-            epoch?.sequence ?? null,
-          );
-        return true;
-      }, "critical");
+            .run(
+              ...key(principal, kind, identity),
+              identity.sha256,
+              identity.byteLength,
+              reservation,
+              epoch?.ownerId ?? null,
+              epoch?.generation ?? null,
+              epoch?.sequence ?? null,
+            );
+          return true;
+        },
+        "critical",
+        { admitBefore: options?.admitBefore },
+      );
     },
     prepareProof(
       principal: string,
@@ -640,32 +643,108 @@ export function createNativeDeliveryStore(store: HostStore) {
       }, "critical");
     },
   };
-  return {
-    ...journal,
-    /** Admission failure/ambiguity stays outside the catch: no cleanup authority
-     * exists until this invocation actually wins the retained original. */
-    async execute(
+  /** Originals whose admitted effect is running in THIS process right now. It is memory
+   * only: a restart loses it, and an admitted original without an entry is unknown and
+   * never re-run. It proves liveness of the sole owner continuation, nothing else. */
+  const inflight = new Set<string>();
+  const detachedByPrincipal = new Map<string, number>();
+  let detachedTotal = 0;
+  function reserveDetachedEffect(principal: string) {
+    const count = detachedByPrincipal.get(principal) ?? 0;
+    if (detachedTotal >= WS_LIMITS.maxControlJobs || count >= WS_LIMITS.maxControlJobsPerDevice)
+      return;
+    detachedByPrincipal.set(principal, count + 1);
+    detachedTotal++;
+    return () => {
+      detachedTotal--;
+      const remaining = detachedByPrincipal.get(principal)! - 1;
+      if (remaining === 0) detachedByPrincipal.delete(principal);
+      else detachedByPrincipal.set(principal, remaining);
+    };
+  }
+  const inflightKey = (
+    principal: string,
+    kind: NativeDeliveryKind,
+    original: { originalId: string },
+  ) => JSON.stringify([store.environmentId, principal, kind, original.originalId]);
+  const execution = {
+    /** True while this process's winning invocation is still running the original's effect. */
+    isInflight: (
+      principal: string,
+      kind: NativeDeliveryKind,
+      identity: { originalId: string },
+    ): boolean => inflight.has(inflightKey(principal, kind, identity)),
+    /**
+     * Durably admits the original, then runs its effect once. It resolves as soon as the
+     * admission decision is durable; `settled` resolves (never rejects) when the effect and
+     * its record are done. A duplicate never replays the effect. An early reply borrows a
+     * dedicated physical slot until settlement. At capacity, the original caller stays attached.
+     *
+     * `admitBefore` is the caller's ingress deadline and bounds only admission. The effect
+     * and its record run on the Host's own continuation and are never cut by it.
+     *
+     * Admission failure/ambiguity stays outside the catch: no cleanup authority
+     * exists until this invocation actually wins the retained original.
+     */
+    async begin(
       principal: string,
       kind: NativeDeliveryKind,
       identity: NativeDeliveryIdentity,
       effect: () => Promise<unknown>,
-    ): Promise<void> {
+      options?: { admitBefore?: number; acknowledgeAdmission?: boolean },
+    ): Promise<{ acknowledgeEarly: boolean; settled: Promise<void> }> {
       const original = {
         originalId: identity.originalId,
         sha256: identity.sha256,
         byteLength: identity.byteLength,
       };
-      if (!(await journal.admit(principal, kind, original))) return;
+      const key = inflightKey(principal, kind, original);
+      // Registered before the admission commits, so a status read that sees the admitted
+      // row can already tell a live original from an abandoned one.
+      if (inflight.has(key)) return { acknowledgeEarly: false, settled: Promise.resolve() };
+      inflight.add(key);
+      const release = options?.acknowledgeAdmission ? reserveDetachedEffect(principal) : undefined;
+      let admitted = false;
       try {
-        const result = await epochs.withAdmittedExecution(principal, kind, original, effect);
-        await journal.record(principal, kind, original, result);
-      } catch (error) {
-        // The sole owner continuation has exited. Process-owned failure
-        // bookkeeping may release only its own capacity, even after authority
-        // loss; it cannot disclose data, retry an effect or mint a user grant.
-        warnExecutionFailure(kind, error);
-        await releaseFailedReservation(principal, kind, original).catch(() => {});
+        admitted = await journal.admit(principal, kind, original, options);
+      } finally {
+        if (!admitted) {
+          inflight.delete(key);
+          release?.();
+        }
       }
+      if (!admitted) return { acknowledgeEarly: false, settled: Promise.resolve() };
+      const settled = (async () => {
+        try {
+          const result = await epochs.withAdmittedExecution(principal, kind, original, effect);
+          await journal.record(principal, kind, original, result);
+        } catch (error) {
+          // The sole owner continuation has exited. Process-owned failure
+          // bookkeeping may release only its own capacity, even after authority
+          // loss; it cannot disclose data, retry an effect or mint a user grant.
+          warnExecutionFailure(kind, error);
+          await releaseFailedReservation(principal, kind, original).catch(() => {});
+        } finally {
+          inflight.delete(key);
+          release?.();
+        }
+      })();
+      return { acknowledgeEarly: release !== undefined, settled };
+    },
+  };
+  return {
+    ...journal,
+    ...execution,
+    async execute(
+      principal: string,
+      kind: NativeDeliveryKind,
+      identity: NativeDeliveryIdentity,
+      effect: () => Promise<unknown>,
+      options?: { admitBefore?: number },
+    ): Promise<void> {
+      await (
+        await execution.begin(principal, kind, identity, effect, options)
+      ).settled;
     },
   };
 }

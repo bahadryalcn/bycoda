@@ -358,7 +358,6 @@ export const PromptOutline = memo(function PromptOutline({
         onMouseLeave={leaveRail}
         onBlur={blurRail}
         onKeyDown={onKeyDown}
-        // z-30: in-pane overlay above the transcript; no in-pane layer scale exists, so the literal stays.
         className="absolute top-1/2 right-4 z-(--layer-pane-sheet) flex -translate-y-1/2 flex-col items-end w-(--outline-width) max-h-(--outline-max-height) @max-[58rem]:hidden"
       >
         {bars.map((prompt, index) => {

@@ -1,6 +1,9 @@
 import { useSyncExternalStore } from "react";
-import { t, useLocale, formatDate } from "../../../shared/i18n";
+import { t, useLocale, formatDate, formatNumber } from "../../../shared/i18n";
+import { redactDiagnosticText } from "@bycoda/account-contracts";
+import { stripAnsi } from "../../../shared/lib/ansi";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { type HarnessId } from "../../sessions/model/session";
 import { SettingsFeedback } from "../../../shared/ui/settings";
@@ -42,17 +45,19 @@ export function CatalogReceiptStatus({
   });
 
   if (receipt?.status === "error") {
+    // The sentence is fixed and translated; the provider's raw text stays behind Details.
+    const count = formatNumber(receipt.count);
+    const summary = receipt.retained
+      ? t("Could not refresh models. Showing the earlier list ({p0}).", { p0: count })
+      : t("Could not refresh models. Showing the built-in list ({p0}).", { p0: count });
+    const detail = redactDiagnosticText(stripAnsi(receipt.error)).trim();
     return (
-      <SettingsFeedback state="error" action={retry(t("Retry"))}>
-        {receipt.retained
-          ? t("Could not refresh models: {p0} Showing the earlier list ({p1}).", {
-              p0: receipt.error,
-              p1: receipt.count,
-            })
-          : t("Could not refresh models: {p0} Showing the built-in list ({p1}).", {
-              p0: receipt.error,
-              p1: receipt.count,
-            })}
+      <SettingsFeedback
+        state="error"
+        action={retry(t("Retry"))}
+        extra={detail ? <ErrorDetails title={summary} detail={detail} /> : undefined}
+      >
+        {summary}
       </SettingsFeedback>
     );
   }

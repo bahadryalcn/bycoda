@@ -257,7 +257,8 @@ export function bindNativeServicesOwner(
         return { stopped: true as const };
       }),
     desktop: {
-      take: () => guarded(() => adapters.desktop.take(deviceHash)),
+      take: (options?: { waitMs?: number; signal?: AbortSignal }) =>
+        guarded(() => adapters.desktop.take(deviceHash, { ...options, authorized })),
       finish: (id, result, error) =>
         guarded(async () => {
           await assertNativeDeliveryEffect(

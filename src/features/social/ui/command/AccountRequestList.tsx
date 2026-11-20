@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
+import { usePollingRefresh } from "../../hooks/usePollingRefresh";
 import type { AccountRequestMode, SocialAccountRequest } from "../../model/accountRequests";
 import type { SocialBrowserWorkflow } from "../../model/socialBrowser";
 import { SOCIAL_PLATFORM_NAMES } from "../../model/social";
@@ -52,31 +53,22 @@ export function AccountRequestList({
     onCountChange?.(count);
   }, [count, onCountChange]);
 
-  const refresh = useCallback(async () => {
-    try {
-      const result = await client.accountRequests.list();
-      setItems(result.items.filter((item) => item.status === "pending"));
-      setLoadFailed(false);
-    } catch {
-      setLoadFailed(true);
-    }
-  }, [client]);
-
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Polls the Host's pending account requests only while the screen is active.
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      await refresh();
-      if (!cancelled) timer = setTimeout(tick, POLL_MS);
-    };
-    void tick().catch(() => setLoadFailed(true));
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [active, refresh]);
+  const refresh = usePollingRefresh({
+    active,
+    scope: client,
+    intervalMs: POLL_MS,
+    load: async (isCurrent) => {
+      try {
+        const result = await client.accountRequests.list();
+        if (!isCurrent()) return;
+        setItems(result.items.filter((item) => item.status === "pending"));
+        setLoadFailed(false);
+      } catch (error) {
+        if (isCurrent()) setLoadFailed(true);
+        throw error;
+      }
+    },
+  });
 
   const approve = (request: SocialAccountRequest, mode: AccountRequestMode) =>
     write(`${mode}:${request.id}`, async () => {

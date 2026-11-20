@@ -24,14 +24,20 @@ vi.mock("../../../../shared/ui/settings", () => ({
     label,
     children,
     onReset,
+    resetLabel,
   }: {
     label: ReactNode;
     children: ReactNode;
     onReset?: () => void;
+    resetLabel?: string;
   }) => (
     <div role="group" aria-label={String(label)}>
       {children}
-      {onReset ? <button onClick={onReset}>Reset {String(label)}</button> : null}
+      {onReset ? (
+        <button aria-label={resetLabel ?? "Restore default"} onClick={onReset}>
+          Reset
+        </button>
+      ) : null}
     </div>
   ),
 }));
@@ -178,13 +184,34 @@ it("lists only the keys an override sets and removes it", () => {
   const onChange = render(draft);
   const overrides = container.querySelector("section[aria-label=Overrides]")!;
   expect(overrides.textContent).toContain("Claude Code · Work");
-  expect(overrides.querySelectorAll("[role=group]")).toHaveLength(1);
+  const group = overrides.querySelector("[role=group][aria-label='Claude Code · Work']");
+  expect(group).not.toBeNull();
   const remove = overrides.querySelector(
-    "button[aria-label='Remove override']",
+    "button[aria-label='Remove all Claude Code · Work overrides']",
   ) as HTMLButtonElement;
   act(() => remove.click());
   expect(onChange.mock.calls[0]![0].routing.delegation.accounts).toEqual({});
   expect(onChange.mock.calls[0]![0].routing.delegation.global).toEqual({
     crossSubagentMaxEffort: "medium",
   });
+});
+
+it("removes one key of an override without removing the whole layer", () => {
+  const draft = draftWith({
+    entries: [entry("claude", "work")],
+    delegation: {
+      global: {},
+      providers: {},
+      accounts: { "claude\nwork": { crossSubagentMaxEffort: "high" } },
+    },
+  });
+  const onChange = render(draft);
+  const overrides = container.querySelector("section[aria-label=Overrides]")!;
+  const group = overrides.querySelector("[role=group][aria-label='Claude Code · Work']")!;
+  const reset = group.querySelector("button[aria-label$=' override']") as HTMLButtonElement;
+  expect(reset.getAttribute("aria-label")).not.toBe("Remove all Claude Code · Work overrides");
+  act(() => reset.click());
+  expect(
+    onChange.mock.calls[0]![0].routing.delegation.accounts["claude\nwork"]?.crossSubagentMaxEffort,
+  ).toBeUndefined();
 });

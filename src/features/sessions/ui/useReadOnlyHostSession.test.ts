@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   privacy: { lock: {} },
   locked: false,
+  lazy: false,
+  hidden: false,
 }));
 vi.mock("../../group-lock/model/groupLock", () => ({
   getGroupLockView: () => mocks.privacy,
@@ -29,10 +31,13 @@ vi.mock("../../connections/model/connections", () => ({
   loadRemoteBlock: mocks.block,
   sessionAccessForMachine: () => ({ dispatch: mocks.dispatch }),
 }));
+vi.mock("../../connections/model/remoteSessionSnapshotCache", () => ({
+  machineSupportsLazyHistory: () => mocks.lazy,
+}));
 vi.mock("../../connections/model/sessionExecutionClient", () => ({
   sessionExecutionClient: (environmentId: string) => ({ environmentId, dispatch: mocks.dispatch }),
 }));
-import { useReadOnlyHostSession } from "./useReadOnlyHostSession";
+import { readOnlyPollDelay, useReadOnlyHostSession } from "./useReadOnlyHostSession";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -53,6 +58,9 @@ beforeEach(() => {
   localStorage.clear();
   mocks.privacy = { lock: {} };
   mocks.locked = false;
+  mocks.lazy = false;
+  mocks.hidden = false;
+  vi.spyOn(document, "hidden", "get").mockImplementation(() => mocks.hidden);
   visible = true;
   shell = {
     ...newDefaultSession("/project"),
@@ -103,8 +111,21 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+async function advance(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+async function setHidden(hidden: boolean) {
+  mocks.hidden = hidden;
+  await act(async () => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+}
 
 it("reads the exact local Host worker through bounded preview pages without mounting any dispatch owner", async () => {
   await render();
@@ -207,4 +228,93 @@ it("retains loaded worker history while hidden and during the next refresh", asy
   await render();
   expect(view.session.blocks).toBe(blocks);
   expect(view.session.historyLoading).toBe(false);
+});
+
+it("polls a running session often and an idle one rarely", async () => {
+  vi.useFakeTimers();
+  await render();
+  expect(mocks.load).toHaveBeenCalledTimes(1);
+  await advance(9_999);
+  expect(mocks.load).toHaveBeenCalledTimes(1);
+  mocks.load.mockResolvedValue({ ...snapshot, status: "running" });
+  await advance(1);
+  expect(mocks.load).toHaveBeenCalledTimes(2);
+  await advance(2_500);
+  expect(mocks.load).toHaveBeenCalledTimes(3);
+  expect(readOnlyPollDelay(true, 0)).toBe(2_500);
+  expect(readOnlyPollDelay(false, 0)).toBe(10_000);
+});
+
+it("pauses while the window is hidden and polls at once when it is shown", async () => {
+  vi.useFakeTimers();
+  mocks.load.mockResolvedValue({ ...snapshot, status: "running" });
+  await render();
+  const blocks = view.session.blocks;
+  await setHidden(true);
+  await advance(60_000);
+  expect(mocks.load).toHaveBeenCalledTimes(1);
+  expect(view.session.blocks).toBe(blocks);
+  await setHidden(false);
+  expect(mocks.load).toHaveBeenCalledTimes(2);
+  await advance(2_500);
+  expect(mocks.load).toHaveBeenCalledTimes(3);
+});
+
+it("does not poll a loaded session that mounts into a hidden window", async () => {
+  vi.useFakeTimers();
+  await render();
+  visible = false;
+  await render();
+  mocks.hidden = true;
+  visible = true;
+  await render();
+  await advance(60_000);
+  expect(mocks.load).toHaveBeenCalledTimes(1);
+  expect(view.session.blocks).toHaveLength(1);
+  await setHidden(false);
+  expect(mocks.load).toHaveBeenCalledTimes(2);
+});
+
+it("backs off after consecutive failures, keeps the snapshot and resets on success", async () => {
+  vi.useFakeTimers();
+  mocks.load.mockResolvedValue({ ...snapshot, status: "running" });
+  await render();
+  mocks.load.mockRejectedValue(new Error("Disconnected"));
+  await advance(2_500);
+  expect(mocks.load).toHaveBeenCalledTimes(2);
+  expect(view.session.blocks).toHaveLength(1);
+  await advance(4_999);
+  expect(mocks.load).toHaveBeenCalledTimes(2);
+  await advance(1);
+  expect(mocks.load).toHaveBeenCalledTimes(3);
+  await advance(9_999);
+  expect(mocks.load).toHaveBeenCalledTimes(3);
+  mocks.load.mockResolvedValue({ ...snapshot, status: "running" });
+  await advance(1);
+  expect(mocks.load).toHaveBeenCalledTimes(4);
+  await advance(2_500);
+  expect(mocks.load).toHaveBeenCalledTimes(5);
+  expect(view.error).toBeUndefined();
+  expect(readOnlyPollDelay(true, 1)).toBe(5_000);
+  expect(readOnlyPollDelay(true, 20)).toBe(60_000);
+});
+
+it("asks capable Hosts for a revision check instead of a repeated tail read", async () => {
+  mocks.lazy = true;
+  await render();
+  expect(mocks.load).toHaveBeenCalledWith(
+    "machine",
+    "canonical",
+    undefined,
+    expect.objectContaining({ pages: true, partialHistory: true }),
+  );
+  mocks.lazy = false;
+  await act(async () => view.retry());
+  expect(mocks.load).toHaveBeenLastCalledWith(
+    "machine",
+    "canonical",
+    expect.anything(),
+    expect.objectContaining({ partialHistory: false }),
+  );
+  expect(mocks.dispatch).not.toHaveBeenCalled();
 });

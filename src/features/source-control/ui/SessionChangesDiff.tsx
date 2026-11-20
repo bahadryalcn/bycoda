@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
@@ -13,10 +14,17 @@ import {
   type CheckpointFile,
 } from "../../sessions/public/checkpoint";
 
-import { forEachConcurrent } from "../../../shared/lib/concurrent";
+import { useNeededSections } from "../hooks/useNeededSections";
 import { runDiffWorker } from "../model/diffWorker";
+import {
+  createLazyDiffLoader,
+  LAZY_DIFF_CONCURRENCY,
+  LAZY_DIFF_EAGER,
+  type LazyDiffItem,
+} from "../model/lazyDiffLoader";
 import { reuseLoadedDiff } from "../model/workingTreeReload";
 import { buildUnifiedFileAsync, type UnifiedFileDiff } from "../model/unifiedDiff";
+import { StaleReviewNotice } from "./StaleReviewNotice";
 import { UnifiedDiffView, type UnifiedDiffFileModel } from "./UnifiedDiffView";
 
 type Props = {
@@ -41,7 +49,8 @@ type CachedModel = {
   locale: ReturnType<typeof useLocale>;
 };
 
-const DIFF_LOAD_CONCURRENCY = 4;
+type SessionDiffItem = LazyDiffItem & { file: CheckpointFile };
+
 const REFRESH_DEBOUNCE_MS = 500;
 
 /** Read-only review of the exact before/after snapshots owned by one session. */
@@ -54,6 +63,9 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
   const [retry, setRetry] = useState(0);
   const focusPathRef = useRef(focusPath);
   focusPathRef.current = focusPath;
+  const refocusRef = useRef<(() => void) | null>(null);
+  const refreshRef = useRef<(() => void) | null>(null);
+  const { needed, pumpRef, onSectionNeeded } = useNeededSections();
 
   useEffect(() => {
     setError(null);
@@ -65,91 +77,77 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
 
     let disposed = false;
     let generation = 0;
-    const loadedByPath = new Map<string, LoadedDiff>();
+    let items: SessionDiffItem[] = [];
     // A new session or target starts from the loading surface; a refresh keeps
     // the previous diffs on screen until the new ones arrive.
     setFiles(null);
     setDiffs(new Map());
+    // Bodies load for the files that are visible, focused or among the first
+    // few, and reach the view in per-frame batches instead of one render per file.
+    const loader = createLazyDiffLoader<SessionDiffItem, LoadedDiff>({
+      concurrency: LAZY_DIFF_CONCURRENCY,
+      eagerCount: LAZY_DIFF_EAGER,
+      needed,
+      load: async (item, previous) => {
+        const diff = await sessionCheckpointFileDiff(sessionId, cwd, item.file.relative);
+        const candidate: LoadedDiff = {
+          binary: diff.binary,
+          tooLarge: diff.tooLarge,
+          original: diff.original,
+          current: diff.current,
+          unified: null,
+        };
+        // Same texts as on screen: keep that object, skip the parse.
+        const reused = reuseLoadedDiff(previous, candidate);
+        if (reused !== candidate) return reused;
+        return {
+          ...candidate,
+          unified:
+            !diff.binary && !diff.tooLarge
+              ? await runDiffWorker(
+                  (remote) => remote.build(diff.original, diff.current),
+                  () => buildUnifiedFileAsync(diff.original, diff.current),
+                  { size: diff.original.length + diff.current.length },
+                )
+              : null,
+        };
+      },
+      failure: (caught) => ({
+        binary: false,
+        tooLarge: false,
+        original: "",
+        current: "",
+        unified: null,
+        error: errorText(caught),
+      }),
+      onChange: setDiffs,
+    });
+    pumpRef.current = loader.pump;
+    refocusRef.current = () => loader.setFocus(focusItemId(items, focusPathRef.current));
     const run = () => {
       const current = ++generation;
-      setError(null);
+      // The error stays until a read succeeds, so the stale notice does not flicker
+      // while a retry is in flight.
       void sessionCheckpointStatus(sessionId, cwd)
-        .then(async (status) => {
+        .then((status) => {
           if (disposed || current !== generation) return;
           setFiles(status.files);
           setError(null);
-          const known = new Set(status.files.map((file) => file.relative));
-          for (const path of loadedByPath.keys()) {
-            if (!known.has(path)) loadedByPath.delete(path);
-          }
-          setDiffs((existing) =>
-            [...existing.keys()].every((id) => known.has(id))
-              ? existing
-              : new Map([...existing].filter(([id]) => known.has(id))),
-          );
-          const pendingFiles = [...status.files];
-          await forEachConcurrent(
-            status.files,
-            DIFF_LOAD_CONCURRENCY,
-            async () => {
-              // Reorder only work that has not started when focus changes.
-              const file = prioritizeFile(pendingFiles, focusPathRef.current)[0];
-              pendingFiles.splice(pendingFiles.indexOf(file), 1);
-              let loaded: LoadedDiff;
-              try {
-                const diff = await sessionCheckpointFileDiff(sessionId, cwd, file.relative);
-                if (disposed || current !== generation) return;
-                const candidate: LoadedDiff = {
-                  binary: diff.binary,
-                  tooLarge: diff.tooLarge,
-                  original: diff.original,
-                  current: diff.current,
-                  unified: null,
-                };
-                const reused = reuseLoadedDiff(loadedByPath.get(file.relative), candidate);
-                loaded =
-                  reused !== candidate
-                    ? reused
-                    : {
-                        ...candidate,
-                        unified:
-                          !diff.binary && !diff.tooLarge
-                            ? await runDiffWorker(
-                                (remote) => remote.build(diff.original, diff.current),
-                                () => buildUnifiedFileAsync(diff.original, diff.current),
-                                { size: diff.original.length + diff.current.length },
-                              )
-                            : null,
-                      };
-              } catch (caught: unknown) {
-                loaded = {
-                  binary: false,
-                  tooLarge: false,
-                  original: "",
-                  current: "",
-                  unified: null,
-                  error: caught instanceof Error ? caught.message : String(caught),
-                };
-              }
-              if (disposed || current !== generation) return;
-              loadedByPath.set(file.relative, loaded);
-              setDiffs((existing) => {
-                if (existing.get(file.relative) === loaded) return existing;
-                const next = new Map(existing);
-                next.set(file.relative, loaded);
-                return next;
-              });
-            },
-            () => !disposed && current === generation,
-          );
+          items = status.files.map(sessionDiffItem);
+          loader.setFocus(focusItemId(items, focusPathRef.current));
+          // The change does not say which snapshots moved, so every loaded body
+          // is fetched again once it is needed.
+          loader.setItems(items, { refresh: true });
         })
         .catch((caught: unknown) => {
           if (disposed || current !== generation) return;
+          // Keeps `files` and the loaded diffs: a failed refresh must not drop a review that
+          // was valid a moment ago.
           setError(presentRemoteError(caught, { explicit: true }));
-          setFiles([]);
         });
     };
 
+    refreshRef.current = run;
     run();
     let refreshTimer = 0;
     const unsubscribe = subscribeReviewChanged((changedSessionId) => {
@@ -162,12 +160,27 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
     });
     return () => {
       disposed = true;
+      pumpRef.current = null;
+      refocusRef.current = null;
+      refreshRef.current = null;
+      loader.dispose();
       window.clearTimeout(refreshTimer);
       unsubscribe();
     };
-  }, [cwd, sessionId, retry]);
-  // A failed first load reruns once the machine's link is back.
-  useReloadOnReconnect(cwd, () => setRetry((value) => value + 1), { active: error !== null });
+  }, [cwd, sessionId, retry, needed, pumpRef]);
+  // Retry before anything loaded restarts the load; after a failed refresh it re-reads in
+  // place, so the review on screen keeps its scroll, focus and expanded files.
+  const reload = () => {
+    if (files !== null && refreshRef.current) refreshRef.current();
+    else setRetry((value) => value + 1);
+  };
+  // A failed load or refresh reruns once the machine's link is back.
+  useReloadOnReconnect(cwd, reload, { active: error !== null });
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reprioritize outstanding diff reads when the focused file changes.
+  useEffect(() => {
+    refocusRef.current?.();
+  }, [focusPath]);
 
   const modelCache = useRef(new Map<string, CachedModel>());
   const models = useMemo<UnifiedDiffFileModel[]>(() => {
@@ -235,17 +248,17 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
       </div>
     );
   }
-  if (error) {
+  // The full-panel failure is only for a review that never loaded.
+  if (error && files == null) {
     if (shownCentrally) return null;
     return (
       <div className="grid h-full place-items-center p-6">
         <FailureState
           key="load-error"
-
           context="panel"
           title={t("Couldn’t load session changes")}
           description={error}
-          onRetry={() => setRetry((value) => value + 1)}
+          onRetry={reload}
         />
       </div>
     );
@@ -253,23 +266,46 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
   if (files == null) {
     return <SurfaceLoading />;
   }
-  if (files.length === 0) {
-    return (
-      <div className="grid h-full place-items-center">
-        <EmptyState context="panel" description={t("No session changes")} />
-      </div>
-    );
-  }
 
-  return <UnifiedDiffView files={models} focusPath={focusPath} totals={totals} />;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {error ? <StaleReviewNotice error={error} onRetry={reload} /> : null}
+      {files.length === 0 ? (
+        <div className="grid min-h-0 flex-1 place-items-center">
+          <EmptyState context="panel" description={t("No session changes")} />
+        </div>
+      ) : (
+        <UnifiedDiffView
+          files={models}
+          focusPath={focusPath}
+          totals={totals}
+          onSectionNeeded={onSectionNeeded}
+        />
+      )}
+    </div>
+  );
 }
 
-function prioritizeFile(
-  files: readonly CheckpointFile[],
+/** The snapshot's row is its signature: any change to it, or a refresh, loads the body again. */
+function sessionDiffItem(file: CheckpointFile): SessionDiffItem {
+  return {
+    id: file.relative,
+    signature: [
+      file.path,
+      file.status,
+      file.additions,
+      file.deletions,
+      file.exact,
+      file.undoable,
+    ].join("\0"),
+    file,
+  };
+}
+
+function focusItemId(
+  items: readonly SessionDiffItem[],
   focusPath: string | undefined,
-): CheckpointFile[] {
-  if (!focusPath) return [...files];
-  const focused = files.find((file) => file.path === focusPath || file.relative === focusPath);
-  if (!focused) return [...files];
-  return [focused, ...files.filter((file) => file !== focused)];
+): string | undefined {
+  if (!focusPath) return undefined;
+  return items.find((item) => item.file.path === focusPath || item.file.relative === focusPath)?.id;
 }

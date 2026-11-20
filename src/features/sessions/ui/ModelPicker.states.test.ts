@@ -44,6 +44,7 @@ vi.mock("../../../shared/ui/Popover", () => ({
 import { ModelControlPills, ModelPicker, preloadModelPicker } from "./ModelPicker";
 import { ModelSourceContext, type ModelSource } from "./modelSource";
 import { renameProviderAccount, saveProviderAccount } from "../../providers/model/providerAccounts";
+import { setLanguagePreference } from "../../../shared/i18n";
 import {
   resetDisabledModels,
   resetHarnessModelOverlays,
@@ -70,6 +71,7 @@ afterEach(async () => {
   resetHarnessModelOverlays();
   container.remove();
   vi.unstubAllGlobals();
+  await setLanguagePreference("en");
 });
 
 const toggle = (id: string, value: string) => ({
@@ -143,7 +145,15 @@ describe("model picker account states", () => {
     );
     expect(trigger().querySelector("[data-model-account]")?.textContent).toBe("lab");
     await act(async () => trigger().click());
-    expect(options()).toEqual(["Opus 5.5 personal", "Opus 5.5 work", "Opus 5.5 lab"]);
+    expect(
+      [...container.querySelectorAll('[role="option"]')].map((row) =>
+        row.getAttribute("aria-label"),
+      ),
+    ).toEqual([
+      "Opus 5.5, Claude Code, personal",
+      "Opus 5.5, Claude Code, work",
+      "Opus 5.5, Claude Code, lab",
+    ]);
   });
 
   it("keeps a lone default account out of the trigger", async () => {
@@ -237,7 +247,11 @@ describe("model picker with a remote Host catalog", () => {
     );
     expect(trigger().querySelector("[data-model-account]")?.textContent).toBe("Host second");
     await act(async () => trigger().click());
-    expect(options()).toEqual(["Opus 5.5 Host main", "Opus 5.5 Host second"]);
+    expect(
+      [...container.querySelectorAll('[role="option"]')].map((row) =>
+        row.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Opus 5.5, Claude Code, Host main", "Opus 5.5, Claude Code, Host second"]);
     expect(container.textContent).not.toContain("this computer");
   });
 
@@ -262,12 +276,23 @@ describe("model picker with a remote Host catalog", () => {
 
   it("follows a republished Host account list", async () => {
     const source = (label: string) =>
-      hostSource([opus], { accounts: { claude: [{ id: "default", label }] } });
+      hostSource([opus], {
+        accounts: {
+          claude: [
+            { id: "default", label },
+            { id: "host-second", label: "Other" },
+          ],
+        },
+      });
     await renderHost(source("Before"));
     await act(async () => trigger().click());
-    expect(options()).toEqual(["Opus 5.5 Before"]);
+    expect(container.querySelector('[role="option"]')?.getAttribute("aria-label")).toContain(
+      "Before",
+    );
     await renderHost(source("After"));
-    expect(options()).toEqual(["Opus 5.5 After"]);
+    expect(container.querySelector('[role="option"]')?.getAttribute("aria-label")).toContain(
+      "After",
+    );
   });
 });
 
@@ -509,6 +534,37 @@ describe("model picker unsupported Reasoning and Fast", () => {
     expect(container.textContent).not.toContain("Reasoning");
     await act(async () => pill.click());
     expect(onSettingsChange).toHaveBeenCalledWith({ fast: "true" });
+  });
+
+  it("localizes the toggle pill name and its On/Off state in the active language", async () => {
+    await setLanguagePreference("tr");
+    setHarnessModels("cursor", [
+      {
+        id: "cursor:fast-only",
+        harness: "cursor",
+        name: "Fast only",
+        settings: [toggle("fast", "false")],
+      },
+    ]);
+    const render = (values: Record<string, string>) =>
+      act(async () =>
+        root.render(
+          createElement(ModelControlPills, {
+            harness: "cursor",
+            model: "cursor:fast-only",
+            values,
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      );
+    await render({});
+    const off = container.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
+    expect(off.getAttribute("aria-label")).toBe("Hızlı: Kapalı");
+    expect(off.textContent).toContain("Hızlı");
+    await render({ fast: "true" });
+    const on = container.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')!;
+    expect(on.getAttribute("aria-label")).toBe("Hızlı: Açık");
+    expect(container.textContent).not.toContain("Fast");
   });
 
   it("shows Reasoning and Fast on the trigger when the model supports both", async () => {

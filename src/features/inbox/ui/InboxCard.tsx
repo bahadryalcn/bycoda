@@ -3,6 +3,7 @@ import { projectName } from "../../../shared/lib/paths";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -10,7 +11,6 @@ import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Text } from "../../../shared/ui/Text";
 import { MessageMultiple } from "../../../shared/ui/icons";
 import {
-  formatRelativeTime,
   gitlabAttentionLabel,
   inboxItemKey,
   inboxItemRef,
@@ -19,18 +19,21 @@ import {
 import { prefetchInboxItem } from "../model/inboxPrefetch";
 import { useInboxItemUnseen } from "../model/inboxSeen";
 import { InboxCardPreview } from "./InboxCardPreview";
-import { inboxStatusMark } from "./InboxPresentation";
+import { InboxRelativeTime, hasInboxRelativeTime } from "./InboxRelativeTime";
+import { inboxLabelItems, inboxStatusMark } from "./InboxPresentation";
 
 export const InboxCard = memo(function InboxCard({
   item,
   active,
   relatedSessionCount,
   onSelect,
+  comfortable = false,
 }: {
   item: InboxItem;
   active: boolean;
   relatedSessionCount: number;
   onSelect: (item: InboxItem) => void;
+  comfortable?: boolean;
 }) {
   useLocale();
   const visibilityRef = useRef<HTMLDivElement>(null);
@@ -63,7 +66,7 @@ export const InboxCard = memo(function InboxCard({
   const status = inboxStatusMark(item);
   const kindLabel =
     item.kind === "pr" ? (item.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
-  const time = formatRelativeTime(item.updatedAt);
+  const hasTime = hasInboxRelativeTime(item.updatedAt);
   const tracker = item.provider === "linear" || item.provider === "jira";
   const jira = item.provider === "jira";
   const category = item.stateType?.trim().toLowerCase();
@@ -125,7 +128,7 @@ export const InboxCard = memo(function InboxCard({
       <ActionHost
         selected={active}
         data-seen={unseen ? undefined : "true"}
-        className="w-full min-w-0"
+        className={comfortable ? "w-full min-w-0 flex-col items-stretch gap-0" : "w-full min-w-0"}
       >
         <Button
           variant="item"
@@ -163,14 +166,15 @@ export const InboxCard = memo(function InboxCard({
               tone="primary"
               leading="snug"
               weight={unseen ? "medium" : "regular"}
-              truncate
+              truncate={!comfortable}
+              lines={comfortable ? 2 : undefined}
               className="min-w-0 flex-1"
             >
               {item.title}
             </Text>
-            {time ? (
+            {hasTime ? (
               <Text as="span" size="micro" tone="secondary" className="shrink-0 tabular-nums">
-                {time}
+                <InboxRelativeTime at={item.updatedAt} />
               </Text>
             ) : null}
             {unseen ? <StatusDot data-inbox-unread tone="accent" label={t("Unread")} /> : null}
@@ -197,6 +201,11 @@ export const InboxCard = memo(function InboxCard({
             {statusMark(true)}
           </Text>
         </Button>
+        {comfortable && item.labels.length > 0 ? (
+          <div className="min-w-0 px-2 pb-2">
+            <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(item.labels)} />
+          </div>
+        ) : null}
         {hover.card(() => (
           <InboxCardPreview
             item={item}

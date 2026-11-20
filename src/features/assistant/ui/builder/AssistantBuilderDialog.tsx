@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
+import { LANGUAGES as APP_LANGUAGES } from "../../../../shared/i18n/languages";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { Button } from "../../../../shared/ui/Button";
 import { Check, Square, X } from "../../../../shared/ui/icons";
@@ -120,16 +121,7 @@ export function AssistantBuilderDialog({
                   value={interview.language}
                   disabled={interview.busy}
                   onValueChange={interview.setLanguage}
-                  options={[
-                    { value: "tr-TR", label: "Türkçe" },
-                    { value: "en-US", label: "English" },
-                    { value: "de-DE", label: "Deutsch" },
-                    { value: "fr-FR", label: "Français" },
-                    { value: "es-ES", label: "Español" },
-                    { value: "pt-PT", label: "Português" },
-                    { value: "zh-CN", label: "简体中文" },
-                    { value: "ja-JP", label: "日本語" },
-                  ]}
+                  options={APP_LANGUAGES.map(({ tag, label }) => ({ value: tag, label }))}
                 />
                 <BuilderModelStep
                   choice={choice}

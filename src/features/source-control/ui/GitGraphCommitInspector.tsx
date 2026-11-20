@@ -17,6 +17,8 @@ import {
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { useFormat } from "../../../shared/i18n";
+import { fileCountLabel } from "../model/gitGraphDisplay";
 import { useGitResource } from "../hooks/useGitResource";
 import { buildUnifiedFile } from "../model/unifiedDiff";
 import { UnifiedDiffView } from "./UnifiedDiffView";
@@ -42,6 +44,7 @@ export function GitGraphCommitInspector({
   onMode?: (mode: "changes" | "blame") => void;
 }) {
   useLocale();
+  const format = useFormat();
   const readFiles = useCallback(() => gitCommitFiles(cwd, commit.sha), [cwd, commit.sha]);
   const files = useGitResource(cwd, `graph-files:${cwd}:${commit.sha}`, true, readFiles, false);
   const [fileQuery, setFileQuery] = useState("");
@@ -106,7 +109,7 @@ export function GitGraphCommitInspector({
               onClick={onBranch}
               disabled={disabled}
             >
-              {t("Create Branch…")}
+              {t("Create branch…")}
             </Button>
             {onClose ? (
               <Button
@@ -126,12 +129,14 @@ export function GitGraphCommitInspector({
           {commit.subject}
         </Heading>
         <Text as="p" size="caption" tone="secondary" className="mt-1">
-          {commit.author} · {new Date(commit.timestamp * 1000).toLocaleString()}
+          {commit.author} ·{" "}
+          {format.formatDate(commit.timestamp * 1000, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })}
         </Text>
         <Text as="p" size="caption" tone="secondary" className="flex gap-2 tabular-nums">
-          <span>
-            {files.data?.length ?? "…"} {t("files")}
-          </span>
+          <span>{files.data ? fileCountLabel(files.data.length, format) : "…"}</span>
           <DiffStat additions={totals.additions} deletions={totals.deletions} showZero />
         </Text>
       </header>

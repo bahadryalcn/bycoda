@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { HostSession } from "../../src/features/connections/model/protocol";
 import { HostStore, summary } from "../store";
+import { sessionNeedsInput } from "../../src/features/sessions/model/session";
 import { sessionAttention, sessionSnoozed, sessionUnread } from "./session-attention";
 
 const cleanups: (() => Promise<unknown> | void)[] = [];
@@ -183,4 +184,35 @@ it("migrates a legacy snapshot without attention fields and persists its first r
     lastViewedRevision: 2,
     revision: read.revision,
   });
+});
+
+it("evaluates only the known block delta instead of rescanning the transcript", () => {
+  const history = Array.from({ length: 500 }, (_, index) => ({
+    id: `a${index}`,
+    role: "assistant" as const,
+    text: `reply ${index}`,
+  }));
+  const old = { ...base(), lastViewedRevision: 1, session: { ...base().session, blocks: history } };
+  const user = { id: "u", role: "user" as const, text: "next" };
+  let reads = 0;
+  const blocks = new Proxy([...history, user], {
+    get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/.test(key)) reads++;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const input = { ...old, revision: 2, session: { ...old.session, blocks } };
+  // Warm the per-array pending-approval cache, which is not part of this scan.
+  sessionNeedsInput(input.session);
+  reads = 0;
+  const positions = new Map(history.map((block, index) => [block.id, index]));
+  expect(sessionAttention(input, old, false, new Map([[user.id, user]]), positions)).toMatchObject({
+    unread: false,
+    agentActivityRevision: 0,
+  });
+  expect(reads).toBe(0);
+  const reply = { id: "a499", role: "assistant" as const, text: "reply 499 continued" };
+  expect(
+    sessionAttention(input, old, false, new Map([[reply.id, reply]]), positions),
+  ).toMatchObject({ unread: true, agentActivityRevision: 2 });
 });

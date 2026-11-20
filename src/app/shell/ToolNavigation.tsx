@@ -11,10 +11,10 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  AppWindow,
   Bot,
   CircleDot,
   DashboardSquare,
+  ExternalLink,
   Globe,
   Inbox,
   StickyNote,
@@ -280,7 +280,7 @@ export function ToolNavigation() {
             loading={opening === "single"}
             onClick={() => void open(false)}
           >
-            <AppWindow className="icon-sm" aria-hidden />
+            <ExternalLink className="icon-sm" aria-hidden />
           </Button>
           <Button
             variant="ghost"

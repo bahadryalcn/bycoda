@@ -260,3 +260,36 @@ it("transfers an actual owner-recorded large formatter result through finite aut
   ).toBeDefined();
   expect(format).toHaveBeenCalledTimes(1);
 });
+
+it.each(["http", "ws"] as const)(
+  "acknowledges durable admission and settles by original id identically over %s",
+  async (transport) => {
+    vi.restoreAllMocks();
+    const f = await fixture("2026-10-29-host-native-delivery"),
+      ws = await f.connect();
+    const call = (method: string, params: Record<string, unknown>) =>
+      transport === "http" ? f.callHttp(method, params) : ws.call(method, params);
+    const pending = await pendingFinish(f, ws);
+    const paramsJson = JSON.stringify({ id: pending.id, result: { text: "acknowledged" } });
+    const identity = deliveryIdentity(paramsJson),
+      target = "native.services.conversation.desktop.finish";
+    expect(
+      await call("native.services.delivery.apply", {
+        ...identity,
+        target,
+        paramsJson,
+        acknowledge: "admission",
+      }),
+    ).toEqual({ ...identity, target, state: "accepted" });
+    await vi.waitFor(async () =>
+      expect(
+        await call("native.services.delivery.status", {
+          ...identity,
+          target,
+          acknowledge: "admission",
+        }),
+      ).toMatchObject({ state: "recorded", result: { accepted: true } }),
+    );
+    expect(await pending.waiting).toEqual({ text: "acknowledged" });
+  },
+);

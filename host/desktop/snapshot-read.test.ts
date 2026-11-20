@@ -40,14 +40,12 @@ function read(
   duringStamp?: () => void,
 ) {
   const controller = new AbortController();
+  // One helper call returns the snapshot with its owner stamps.
   const reads = {
-    read: vi
-      .fn()
-      .mockResolvedValueOnce(record)
-      .mockImplementationOnce(async () => {
-        duringStamp?.();
-        return rows;
-      }),
+    read: vi.fn().mockImplementationOnce(async () => {
+      duringStamp?.();
+      return { record, rows: record ? rows : [] };
+    }),
   };
   const assertCurrent = vi.fn();
   const running = vi.fn(() => true);
@@ -85,8 +83,10 @@ describe("cancellable desktop snapshot consistency", () => {
       expect(value?.status).toBe("running");
       expect(value?.session.busy).toBe(true);
       expect(value).not.toHaveProperty("source");
-      expect(job.reads.read).toHaveBeenCalledTimes(2);
-      expect(job.assertCurrent).toHaveBeenCalledTimes(2);
+      // Regression: two reads started two helper processes, blocking the Host loop twice.
+      expect(job.reads.read).toHaveBeenCalledTimes(1);
+      expect(job.reads.read.mock.calls[0][0]).toMatchObject({ method: "snapshotStamp" });
+      expect(job.assertCurrent).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -144,7 +144,7 @@ describe("cancellable desktop snapshot consistency", () => {
     change(latest);
     const job = read(snapshot(), [latest]);
     await expect(job.run()).rejects.toMatchObject({ kind: "source-changed" });
-    expect(job.reads.read).toHaveBeenCalledTimes(2);
+    expect(job.reads.read).toHaveBeenCalledTimes(1);
     expect(job.running).not.toHaveBeenCalled();
   });
 
@@ -176,7 +176,7 @@ describe("cancellable desktop snapshot consistency", () => {
     expect(after.running).not.toHaveBeenCalled();
   });
 
-  it("does not perform second read when session absent", async () => {
+  it("reads once when the session is absent", async () => {
     const job = read(undefined, []);
     await expect(job.run()).resolves.toBeUndefined();
     expect(job.reads.read).toHaveBeenCalledTimes(1);

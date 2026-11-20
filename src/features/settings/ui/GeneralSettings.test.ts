@@ -115,3 +115,34 @@ it("reports session-only language resets when persisted preferences remain uncha
     }
   }
 });
+
+it("does not restate sleep and screen labels as row descriptions", () => {
+  const markup = renderToStaticMarkup(createElement(GeneralPage, { onOpenWhatsNew: () => {} }));
+  expect(markup).not.toContain("Choose when this computer can sleep again");
+  expect(markup).not.toContain("Keep the display awake while sleep prevention is active.");
+  expect(markup).not.toContain("Keep this computer awake while an agent is working.");
+  expect(markup).toContain("Applies to this computer, not remote computers running agents.");
+});
+
+it("keeps feedback privacy guidance without repeating the action as a description", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(GeneralPage, { onOpenWhatsNew: () => {} })));
+    const row = container.querySelector('[data-setting-id="send-feedback"]')!;
+    expect(row.textContent).not.toContain("Report a problem or suggest an improvement.");
+    const help = row.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!;
+    await act(async () => help.click());
+    expect(document.body.textContent).toContain("Nothing from your sessions, code, logs");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it("does not repeat the update action as an idle status line", () => {
+  const markup = renderToStaticMarkup(createElement(UpdateRow, { onOpenWhatsNew: () => {} }));
+  expect(markup).toContain("Check for updates");
+  expect(markup).not.toContain("Check for a newer version.");
+});

@@ -2,7 +2,7 @@
 import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { isConnectionFailure } from "../../connections/model/remoteFailure";
+import { isConnectionFailure, presentRemoteError } from "../../connections/model/remoteFailure";
 import { reportRemoteConnection } from "../../connections/model/remoteHealth";
 import { CrewManagementDialog, CrewSessions } from "./CrewSessions";
 import { CrewWorkManager } from "./CrewWorkManager";
@@ -61,7 +61,7 @@ it("hands an uninitialized remote query failure to the common notice without an 
   const error = new Error("Machine is unreachable");
   await render({ error });
   expect(container.textContent).toContain("Not connected");
-  expect(container.textContent).not.toContain("Crew host unavailable. Retry");
+  expect(container.textContent).not.toContain("Retry");
   expect(reportRemoteConnection).toHaveBeenCalledWith(cwd, "crews", error);
 });
 
@@ -86,7 +86,7 @@ it("retains the last Crew work rows during a shared connection interruption", as
     error: new Error("RPC_CONNECTION_INTERRUPTED: Host connection interrupted"),
   });
   expect(container.textContent).toContain("Review connection recovery");
-  expect(container.textContent).not.toContain("Crew host unavailable. Retry");
+  expect(container.textContent).not.toContain("Retry");
   expect(container.textContent).not.toContain("Not connected");
 });
 
@@ -96,8 +96,8 @@ it("keeps a service failure and its local retry even with an empty cached collec
     data,
     error: new Error("Host rejected request: Crew storage unavailable"),
   });
-  const retry = [...container.querySelectorAll("button")].find((button) =>
-    button.textContent?.includes("Crew host unavailable. Retry"),
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Try again",
   )!;
   expect(retry).toBeTruthy();
   await act(async () => retry.click());
@@ -107,9 +107,33 @@ it("keeps a service failure and its local retry even with an empty cached collec
 
 it("retains standalone connection retry when no common owner is mounted", async () => {
   feedback.coordinated = false;
-  await render({ error: new Error("Machine is unreachable") });
-  expect(container.textContent).toContain("Crew host unavailable. Retry");
+  const error = new Error("Machine is unreachable");
+  await render({ error });
+  expect(container.textContent).toContain(presentRemoteError(error, { explicit: true }));
+  expect(container.textContent).toContain("Try again");
   expect(container.textContent).not.toContain("Not connected");
+});
+
+it("shows the presented Host failure as visible text and keeps the raw message behind Details", async () => {
+  const raw = "Host rejected request: Crew storage unavailable";
+  const data = { definitions: [], runs: [] } as unknown as NonNullable<CrewState["data"]>;
+  const refetch = await render({ data, error: new Error(raw) });
+  const presented = presentRemoteError(new Error(raw), { explicit: true });
+  // The visible sentence is the presented reason, not a button label or tooltip.
+  expect(container.textContent).toContain(presented);
+  expect(container.querySelector("[title]")).toBeNull();
+  // The raw Host text is one disclosure away, and the retry stays a named button.
+  const details = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Details",
+  )!;
+  await act(async () => details.click());
+  // The details popover renders in a portal, outside the sidebar container.
+  expect(document.body.textContent).toContain(raw);
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Try again",
+  )!;
+  await act(async () => retry.click());
+  expect(refetch).toHaveBeenCalledOnce();
 });
 
 it("does not report recovery before the query has a verified result", async () => {
@@ -150,7 +174,7 @@ it("keeps recovery inside Crew management's modal even when a shared notice prov
   });
   expect(dialog.textContent).toContain("Machine is unreachable");
   const retry = [...dialog.querySelectorAll("button")].find(
-    (button) => button.textContent === "Retry",
+    (button) => button.textContent === "Try again",
   )!;
   expect(retry).toBeTruthy();
   await act(async () => {
@@ -164,7 +188,7 @@ it("keeps recovery inside Crew management's modal even when a shared notice prov
   expect(document.body.textContent).not.toContain("Not connected");
   await renderDialog(null);
   expect(dialog.querySelector('[data-loading-layout="fill"]')).not.toBeNull();
-  expect(dialog.textContent).not.toContain("Retry");
+  expect(dialog.textContent).not.toContain("Try again");
   expect(document.body.textContent).not.toContain("Not connected");
 });
 

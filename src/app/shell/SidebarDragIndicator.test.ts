@@ -131,15 +131,15 @@ describe("sidebar view tabs without dragging", () => {
         (button) => button.textContent === label,
       )!;
     const firstMenu = openMenu(0);
-    expect(item(firstMenu, "Move Left").disabled).toBe(true);
-    expect(item(firstMenu, "Move Right").disabled).toBe(false);
+    expect(item(firstMenu, "Move left").disabled).toBe(true);
+    expect(item(firstMenu, "Move right").disabled).toBe(false);
     const original = tabLabels();
-    act(() => item(firstMenu, "Move Right").click());
+    act(() => item(firstMenu, "Move right").click());
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(tabLabels()).toEqual([original[1], original[0], original[2]]);
     const lastMenu = openMenu(2);
-    expect(item(lastMenu, "Move Left").disabled).toBe(false);
-    expect(item(lastMenu, "Move Right").disabled).toBe(true);
+    expect(item(lastMenu, "Move left").disabled).toBe(false);
+    expect(item(lastMenu, "Move right").disabled).toBe(true);
   });
 });
 
@@ -215,7 +215,7 @@ describe("session drag preview and gap", () => {
     rect.mockReturnValue(new DOMRect(10, 20, 120, 100));
     pointer(window, "pointermove", 125, 119);
     const preview = document.querySelector<HTMLElement>("[data-drag-preview]")!;
-    expect(preview.style.width).toBe("120px");
+    expect(preview.style.getPropertyValue("--drag-preview-width")).toBe("120px");
     expect(preview.style.transform).toBe("translate3d(10px, 76px, 0)");
     pointer(window, "pointermove", 1, 10);
     expect(preview.style.transform).toBe("translate3d(10px, 20px, 0)");

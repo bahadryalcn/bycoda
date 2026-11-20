@@ -101,11 +101,11 @@ test("crew ages only used seats and keeps assigned names above each member", asy
   });
   await page.setViewportSize({ width: 1100, height: 700 });
   await page.goto("/tests/browser/crews/crew-scene.html");
-  const labels = page.locator(".crew-scene__label");
+  const labels = page.locator("[data-live-scene] .crew-scene__label");
   const expectLabelsAboveHeads = async () => {
     await expect
       .poll(() =>
-        page.locator(".crew-scene__stage").evaluate((stage) => {
+        page.locator("[data-live-scene] .crew-scene__stage").evaluate((stage) => {
           const canvas = stage.querySelector("canvas")!;
           const pixels = canvas
             .getContext("2d")!
@@ -134,24 +134,22 @@ test("crew ages only used seats and keeps assigned names above each member", asy
       .toBe(true);
   };
   await expect(labels).toHaveCount(6);
-  await expect(page.locator('.crew-scene__label[data-age="3"]')).toHaveCount(6);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-age="3"]')).toHaveCount(6);
   await expectLabelsAboveHeads();
   await page.screenshot({ path: testInfo.outputPath("empty.png") });
   await page.getByRole("button", { name: "Start session", exact: true }).click();
-  await expect(page.locator('.crew-scene__label[data-age="0"]')).toHaveCount(6);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-age="0"]')).toHaveCount(6);
   await expectLabelsAboveHeads();
   await page.screenshot({ path: testInfo.outputPath("first-message.png") });
   await page.getByRole("button", { name: "Use helpers", exact: true }).click();
   await expect(labels.filter({ hasText: /^Designer$/ })).toHaveAttribute("data-age", "3");
-  await expect(page.locator('.crew-scene__label[data-role="lead"]')).toHaveAttribute(
-    "data-age",
-    "2",
-  );
-  await expect(page.locator('.crew-scene__label[data-role="advisor"]')).toHaveAttribute(
-    "data-age",
-    "0",
-  );
-  await expect(page.locator('.crew-scene__label[data-age="0"]')).toHaveCount(4);
+  await expect(
+    page.locator('[data-live-scene] .crew-scene__label[data-role="lead"]'),
+  ).toHaveAttribute("data-age", "2");
+  await expect(
+    page.locator('[data-live-scene] .crew-scene__label[data-role="advisor"]'),
+  ).toHaveAttribute("data-age", "0");
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-age="0"]')).toHaveCount(4);
   await page.getByRole("button", { name: "Finish", exact: true }).click();
   await expect(labels.filter({ hasText: /^Designer$/ })).toHaveAttribute("data-working", "false");
   await page.getByRole("button", { name: "Rename", exact: true }).click();
@@ -190,8 +188,11 @@ test("crew ages only used seats and keeps assigned names above each member", asy
     await page.screenshot({ path: testInfo.outputPath(`crowd-${width}.png`) });
   }
   await page.getByRole("button", { name: "Growth off", exact: true }).click();
-  await expect(page.locator('.crew-scene__label[data-age="3"]')).toHaveCount(12);
+  await expect(page.locator('[data-live-scene] .crew-scene__label[data-age="3"]')).toHaveCount(12);
   await page.getByRole("button", { name: "Toggle background", exact: true }).click();
-  await expect(page.locator(".crew-scene--background")).toHaveAttribute("aria-hidden", "true");
+  await expect(page.locator("[data-live-scene] .crew-scene--background")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
   await page.screenshot({ path: testInfo.outputPath("background.png") });
 });

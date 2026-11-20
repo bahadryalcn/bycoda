@@ -211,8 +211,17 @@ const metadataFields = {
       error: z.string(),
       fingerprint: z.string(),
       takeover: z.boolean().optional(),
+      // Built by the same owner-notice helper as `ownerNotices`, so it carries their `kind`; older
+      // records predate it. Rejecting the field failed every `tasks.list` read for that task.
       runtimeRetryNotice: z
-        .strictObject({ id: z.string(), message: z.string(), at: z.number() })
+        .strictObject({
+          id: z.string(),
+          kind: z
+            .enum(["remaining_finding", "external_check", "auto_continued", "info"])
+            .optional(),
+          message: z.string(),
+          at: z.number(),
+        })
         .optional(),
     })
     .optional(),
@@ -352,7 +361,11 @@ export const TasksFinishWithFindingsParamsSchema = TasksIdParamsSchema.extend({
   expectedUpdatedAt: z.number().finite(),
 });
 export const TasksMoveParamsSchema = TasksIdParamsSchema.extend({ to: TaskStatusSchema });
-export const TasksReorderParamsSchema = z.strictObject({ taskIds: z.array(z.string()) });
+export const TasksReorderParamsSchema = z.strictObject({
+  taskIds: z.array(z.string()),
+  /** The `updatedAt` the caller saw for every id in `taskIds`; any other value rejects the move. */
+  expectedUpdatedAt: z.record(z.string(), z.number().finite()).optional(),
+});
 export const TasksRetargetParamsSchema = TasksIdParamsSchema.extend({
   workspace: TaskWorkspaceSchema.optional(),
   autoMerge: z.boolean().optional(),

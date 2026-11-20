@@ -58,8 +58,17 @@ const profile = (degree = "1st", label = "Message", href = composeUrl) =>
 /** Message rows keep the msg-* classes, but the sender link moved and timestamps lost datetime. */
 const messageRow = (id = "urn:li:msg_message:new", text = "Hello", sender = "owner") =>
   `<li class="msg-s-message-list__event"><div class="msg-s-event-listitem" data-event-urn="${id}"><a class="msg-s-event-listitem__link" href="/in/${sender}/"><img alt=""></a><div class="msg-s-event-listitem__message-bubble"><p class="msg-s-event-listitem__body">${text}</p></div></div></li>`;
-const conversation = (rows = "", recipient = "friend", draft = "", thread = false) =>
-  `${identity}<section class="msg-thread"><a class="ember-view" href="/in/${recipient}/">Recipient</a>${thread ? '<a href="/messaging/thread/thread-123/">Open conversation</a>' : ""}<ul class="msg-s-message-list">${rows}</ul><div class="msg-form__contenteditable" contenteditable="true">${draft}</div><button class="msg-form__send-button">Gönder</button></section>`;
+const conversation = (
+  rows = "",
+  recipient = "friend",
+  draft = "",
+  thread = false,
+  sendButtons = "Gönder",
+) =>
+  `${identity}<section class="msg-thread"><a class="ember-view" href="/in/${recipient}/">Recipient</a>${thread ? '<a href="/messaging/thread/thread-123/">Open conversation</a>' : ""}<ul class="msg-s-message-list">${rows}</ul><div class="msg-form__contenteditable" contenteditable="true">${draft}</div>${sendButtons
+    .split("|")
+    .map((label) => `<button class="msg-form__send-button">${label}</button>`)
+    .join("")}</section>`;
 type Options = {
   render?(url: string): string;
   click?(element: Element): void;
@@ -160,6 +169,48 @@ describe("LinkedIn free first-degree conversation initiation", () => {
     expect(f.order[index + 1]).toBe("click:message-send");
     expect(f.ctx.markSubmitted).toHaveBeenCalledTimes(1);
     expect(f.page.cookies).not.toHaveBeenCalled();
+  });
+  it.each(["Send", "Senden", "Envoyer", "Enviar", "发送", "送信"])(
+    "sends once with the localized %s button and still marks before the click",
+    async (label) => {
+      let sent = false;
+      const f = fixture(profile(), {
+        render: (url) =>
+          url.includes("/in/")
+            ? profile()
+            : conversation(sent ? messageRow() : "", "friend", "", sent, label),
+        click: (el) => {
+          if (el.textContent === label) {
+            sent = true;
+            f.window.document.body.innerHTML = conversation(
+              messageRow(),
+              "friend",
+              "",
+              true,
+              label,
+            );
+          }
+        },
+      });
+      await linkedInStartMessage(f.ctx, job());
+      expect(sent).toBe(true);
+      expect(f.ctx.markSubmitted).toHaveBeenCalledTimes(1);
+      const index = f.order.indexOf("submitted");
+      expect(f.order[index - 1]).toBe("identity");
+      expect(f.order[index + 1]).toBe("click:message-send");
+    },
+  );
+  it.each([
+    ["an unrecognised label", "Löschen"],
+    ["two matching send buttons", "Senden|Envoyer"],
+  ])("refuses without any click for %s", async (_name, buttons) => {
+    const f = fixture(profile(), {
+      render: (url) =>
+        url.includes("/in/") ? profile() : conversation("", "friend", "", false, buttons),
+    });
+    await expect(linkedInStartMessage(f.ctx, job())).rejects.toMatchObject({ code: "unsupported" });
+    expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
+    expect(f.order.some((entry) => entry.startsWith("click:message-send"))).toBe(false);
   });
   it.each(["2nd", "3. derece", ""])(
     "does not initiate for unverified free eligibility %s",

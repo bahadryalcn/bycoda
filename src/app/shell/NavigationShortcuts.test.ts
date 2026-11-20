@@ -21,6 +21,8 @@ async function tooltipText(element: HTMLElement): Promise<string> {
   });
   return text;
 }
+// The binding test hovers many controls, each waiting out the tooltip delay for real.
+vi.setConfig({ testTimeout: 30_000 });
 /** Key caps render without the "+" joiner. */
 const CAPS = MOD.replace("+", "");
 
@@ -117,8 +119,8 @@ it("shows live bindings on the projects toggle, history and rail actions without
     const button = (label: string) =>
       container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
     // Hints ride in the shared tooltip (label plus key caps), never a native title.
-    expect(button("Toggle Projects").title).toBe("");
-    expect(await tooltipText(button("Toggle Projects"))).toBe(`Toggle Projects${CAPS}B`);
+    expect(button("Toggle sidebar").title).toBe("");
+    expect(await tooltipText(button("Toggle sidebar"))).toBe(`Toggle sidebar${CAPS}B`);
     expect(await tooltipText(button("Back"))).toBe(`Back${CAPS}[`);
     expect(await tooltipText(button("Forward"))).toBe(`Forward${CAPS}]`);
     // The rail rows show their shortcut as visible text and in the shared tooltip, never a native title.
@@ -128,7 +130,7 @@ it("shows live bindings on the projects toggle, history and rail actions without
     expect(button("Settings").textContent).toContain(`${MOD},`);
 
     for (const [command, label] of [
-      ["App: Toggle Sidebar", "Toggle Projects"],
+      ["App: Toggle Sidebar", "Toggle sidebar"],
       ["Tab: Back", "Back"],
       ["App: Search", "Search"],
       ["App: Settings", "Settings"],
@@ -151,9 +153,9 @@ it("shows live bindings on the projects toggle, history and rail actions without
         saveKeybindingOverride(command, {});
       });
     }
-    await act(async () => button("Toggle Projects").click());
+    await act(async () => button("Toggle sidebar").click());
     expect(toggle).toHaveBeenCalledOnce();
-    expect(await tooltipText(button("Toggle Projects"))).toBe(`Toggle Projects${CAPS}B`);
+    expect(await tooltipText(button("Toggle sidebar"))).toBe(`Toggle sidebar${CAPS}B`);
   } finally {
     await act(async () => root.unmount());
     localStorage.clear();

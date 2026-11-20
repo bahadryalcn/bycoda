@@ -43,7 +43,6 @@ import type { TaskContext } from "./context";
 import type { ConversationDelegation } from "../delegation/service";
 import type {
   TaskAssistantMetadataCache,
-  TaskEtagCache,
   TaskListCache,
   TaskPointIndex,
   TaskProjectListCache,
@@ -188,12 +187,11 @@ export class HostTasks {
   }
 
   /** Automatic admission holds remain independent of the owner's manual pause. */
-  setGoalPauseReason(
-    goalId: string,
+  syncGoalPauseReason(
     reason: "assistant-budget" | "assistant-hours",
-    paused: boolean,
+    goalIds: readonly string[],
   ): Promise<void> {
-    return goalBudget.setGoalPauseReason(this.context, goalId, reason, paused);
+    return goalBudget.syncGoalPauseReason(this.context, reason, goalIds);
   }
 
   protected publishGoalPause(goalId: string): Promise<void> {
@@ -264,7 +262,10 @@ export class HostTasks {
 
   protected readonly externalRunSources: Array<() => number | Promise<number>> = [];
 
-  protected readonly registeredBudgetRuns = new Set<string>();
+  /** Task id -> key of the run this process has already handed to the budget ledger. Only the
+   * current run is cached: a task that leaves its run or is deleted drops its entry. The ledger
+   * stays authoritative, so a dropped entry costs one lookup and never a second registration. */
+  protected readonly registeredBudgetRuns = new Map<string, string>();
 
   trackExternalRuns(source: () => number | Promise<number>): void {
     return taskActions.trackExternalRuns(this.context, source);
@@ -363,8 +364,6 @@ export class HostTasks {
   /** Published only for an actual committed removal, never a failed/absent delete. */
   onDelete?: (task: { id: string; projectId: string }) => void;
 
-  protected etagCache?: TaskEtagCache;
-
   protected listCache?: TaskListCache;
 
   protected projectListCache = new Map<string, TaskProjectListCache>();
@@ -417,6 +416,11 @@ export class HostTasks {
 
   list(projectId?: string, includeAssistantMetadata = true): Promise<HostTask[]> {
     return storage.list(this.context, projectId, includeAssistantMetadata);
+  }
+
+  /** Tasks of one crew run in creation order, read by the run index instead of the whole project. */
+  listCrewRun(runId: string, projectId: string): Promise<HostTask[]> {
+    return storage.listCrewRun(this.context, runId, projectId);
   }
 
   /** Shared read-only index; task writes invalidate the revision cache. */
@@ -481,8 +485,8 @@ export class HostTasks {
     return ownerCompletion.finishWithFindings(this.context, id, expectedUpdatedAt);
   }
 
-  reorder(ids: unknown): Promise<HostTask[]> {
-    return taskActions.reorder(this.context, ids);
+  reorder(ids: unknown, expectedUpdatedAt?: Readonly<Record<string, number>>): Promise<HostTask[]> {
+    return taskActions.reorder(this.context, ids, expectedUpdatedAt);
   }
 
   /** Retarget a reviewed result without launching another worker. */

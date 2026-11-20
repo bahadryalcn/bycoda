@@ -49,7 +49,7 @@ export function QuickDeleteWorktreeDialog({
         }
       })
       .catch((reason) => {
-        if (!cancelled) setError(String(reason));
+        if (!cancelled) setError(presentRemoteError(reason, { explicit: true }));
       });
     return () => {
       cancelled = true;
@@ -71,7 +71,7 @@ export function QuickDeleteWorktreeDialog({
           setStatus({ path: tree.path, value });
         })
         .catch((reason) => {
-          if (!cancelled) setError(String(reason));
+          if (!cancelled) setError(presentRemoteError(reason, { explicit: true }));
         });
     }
     return () => {

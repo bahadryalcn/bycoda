@@ -1,22 +1,37 @@
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { useEffect, type ReactNode, type Ref } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { IS_MAC } from "../../../../platform/tauri/platform";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { t } from "../../../../shared/i18n";
 import { AssistantAvatarMark } from "../../../assistant/public/avatar";
 import { Button } from "../../../../shared/ui/Button";
 import { AppWindow } from "../../../../shared/ui/icons";
+import { InlineError } from "../../../../shared/ui/InlineError";
+import { Popover } from "../../../../shared/ui/Popover";
 import { Portal } from "../../../../shared/ui/Portal";
 import { StatusDot } from "../../../../shared/ui/StatusDot";
+import { Switch } from "../../../../shared/ui/Switch";
 import { keybindingPressed } from "../../../settings/public/settings";
 import { useKeybindingShortcut } from "../../../settings/public/useKeybindingShortcut";
 import type { VoiceVisual } from "../../model/voiceSettings";
+import { voiceSaveFailures } from "../../model/voiceSettingsSave";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
 import { VoiceVisualizer } from "../VoiceVisualizer";
+import type { useVoiceWake } from "../useVoiceWake";
 import styles from "../VoiceCompanion.module.css";
 import { useVoiceLauncherSlot } from "./voiceLauncherSlot";
 
 export const VOICE_OPEN_COMPANION = "Voice: Open Companion";
+
+export type VoiceWakeControls = ReturnType<typeof useVoiceWake> & { onSetup: () => void };
 
 /** Default chord: Mod+Shift+K. Rebinding and disabling go through `keybindingPressed`. */
 export function voiceOpenShortcutPressed(event: KeyboardEvent): boolean {
@@ -84,6 +99,8 @@ export function VoiceLauncher({
   avatar,
   state,
   onOpen,
+  returnToWindow = false,
+  wakeControls,
 }: {
   ref: Ref<HTMLButtonElement>;
   visual: VoiceVisual;
@@ -91,6 +108,8 @@ export function VoiceLauncher({
   avatar: string | undefined;
   state: VoiceVisualState;
   onOpen: () => void;
+  returnToWindow?: boolean;
+  wakeControls?: VoiceWakeControls;
 }) {
   const shortcut = useKeybindingShortcut(VOICE_OPEN_COMPANION);
   const open = useStableCallback(onOpen);
@@ -105,8 +124,13 @@ export function VoiceLauncher({
   }, [open]);
   const slot = useVoiceLauncherSlot();
   const compact = slot?.hasAttribute("data-compact") === true;
-  const label = name ? t("Talk to {p0}", { p0: name }) : t("Voice companion");
+  const label = returnToWindow
+    ? t("Return voice companion to this window")
+    : name
+      ? t("Talk to {p0}", { p0: name })
+      : t("Voice companion");
   const tone = voiceStatusTone(state);
+  const wake = wakeControls?.indicator;
   const icon = name ? (
     <span className={styles.launcherAvatar} data-state={state}>
       <AssistantAvatarMark
@@ -127,30 +151,123 @@ export function VoiceLauncher({
           halo="floating"
         />
       )}
+      {wake && (
+        <StatusDot
+          className={styles.launcherWakeDot}
+          data-wake-status={wake.kind}
+          tone={wake.kind === "listening" ? "success" : "warning"}
+          appearance="solid"
+          halo="floating"
+        />
+      )}
     </span>
   ) : (
     <VoiceVisualizer visual={visual} state="off" small="icon" />
   );
   return (
     <VoiceLauncherFrame>
-      <Button
-        ref={ref}
-        shape="pill"
-        variant={slot ? "ghost" : "secondary"}
-        iconOnly={compact}
-        {...(slot
-          ? { className: styles.launcherButton }
-          : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
-        data-docked={slot ? "" : undefined}
-        label={label}
-        tooltip={compact ? label : name ? t("Voice assistant") : undefined}
-        shortcut={shortcut}
-        tooltipSide={compact ? "right" : "top"}
-        startIcon={compact ? undefined : icon}
-        onClick={onOpen}
-      >
-        {compact ? icon : name || t("Voice")}
-      </Button>
+      <div className={styles.launcherControls}>
+        <Button
+          ref={ref}
+          shape="pill"
+          variant={slot ? "ghost" : "secondary"}
+          iconOnly={compact}
+          {...(slot
+            ? { className: styles.launcherButton }
+            : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
+          data-docked={slot ? "" : undefined}
+          label={label}
+          tooltip={compact || returnToWindow ? label : name ? t("Voice assistant") : undefined}
+          shortcut={shortcut}
+          tooltipSide={compact ? "right" : "top"}
+          startIcon={compact ? undefined : icon}
+          onClick={onOpen}
+        >
+          {compact ? icon : name || t("Voice")}
+        </Button>
+        {wakeControls && <VoiceWakeMenu controls={wakeControls} />}
+      </div>
     </VoiceLauncherFrame>
   );
+}
+
+function VoiceWakeMenu({ controls }: { controls: VoiceWakeControls }) {
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const label = t("Voice settings");
+  const { indicator } = controls;
+  const status = indicator ? wakeStatusText(indicator) : undefined;
+  const failure = useSyncExternalStore(voiceSaveFailures.subscribe, voiceSaveFailures.get)[
+    "voice-wake"
+  ];
+  return (
+    <>
+      <Button
+        ref={anchor}
+        iconOnly
+        size="xs"
+        variant="ghost"
+        label={label}
+        tooltipSide="top"
+        aria-description={status}
+        aria-haspopup="dialog"
+        aria-controls={open ? id : undefined}
+        expanded={open}
+        opens="up"
+        onClick={() => setOpen((current) => !current)}
+      />
+      {open && (
+        <Popover
+          id={id}
+          anchor={anchor}
+          side="top"
+          align="end"
+          kind="dialog"
+          size="sm"
+          aria-label={label}
+          className={styles.wakeMenu}
+          onDismiss={() => setOpen(false)}
+        >
+          <Switch
+            label={t("Wake and sleep phrases")}
+            labelPosition="start"
+            checked={controls.enabled}
+            onCheckedChange={controls.setEnabled}
+            description={status}
+          />
+          {failure && (
+            <InlineError action={{ label: t("Retry"), onClick: failure.retry }}>
+              {t("This change could not be saved. The saved value is still in use.")}
+            </InlineError>
+          )}
+          {indicator?.kind === "pack" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setOpen(false);
+                controls.onSetup();
+              }}
+            >
+              {t("Set up voice")}
+            </Button>
+          )}
+        </Popover>
+      )}
+    </>
+  );
+}
+
+function wakeStatusText(wake: NonNullable<VoiceWakeControls["indicator"]>) {
+  switch (wake.kind) {
+    case "listening":
+      return t("Listening for “{p0}” only", { p0: wake.phrase });
+    case "paused":
+      return t("Paused: too much background speech");
+    case "pack":
+      return t("Wake phrase needs the local voice pack");
+    case "error":
+      return t("Wake phrase stopped listening. Check the microphone.");
+  }
 }

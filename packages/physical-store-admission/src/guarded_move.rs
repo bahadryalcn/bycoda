@@ -2,9 +2,9 @@
 //! creates private, exclusive recovery/staging directories and supplies their
 //! held handles; this module never deletes the quarantined source.
 use crate::{
-    guarded_copy::copy_child_no_follow,
+    guarded_copy::copy_child_no_follow_unread,
     guarded_metadata::child_metadata,
-    guarded_snapshot::{snapshot_child, SnapshotEntry},
+    guarded_snapshot::{same_metadata, snapshot_child, snapshot_child_metadata, SnapshotEntry},
     rename_no_replace_at::rename_no_replace_at,
 };
 use cap_fs_ext::MetadataExt;
@@ -103,8 +103,13 @@ pub fn move_with_recovery(
         check_admission()?;
         // Build and validate the private copy before moving the source. Unsupported
         // ACLs, streams or attributes therefore fail without retiring it.
-        copy_child_no_follow(source, source_name, stage, OsStr::new("entry"))?;
-        if original != snapshot_child(source, source_name)? {
+        // The copy skips its own read-back: the staged digest below is compared
+        // with the original source digest, and the quarantined source is
+        // digested again after retirement, so content is proven without
+        // re-reading both files per copy. The metadata-only walk keeps the
+        // early "source changed during copy" refusal without a full re-read.
+        copy_child_no_follow_unread(source, source_name, stage, OsStr::new("entry"))?;
+        if !same_metadata(&original, &snapshot_child_metadata(source, source_name)?) {
             return Err(io::Error::other("Source changed during copy"));
         }
         #[cfg(unix)]

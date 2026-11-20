@@ -1,9 +1,10 @@
+import { errorText } from "../../../shared/lib/errors";
 import { fetchJiraInboxPage, type JiraListContinuation } from "./jiraInboxPage";
 import type { GithubStatus } from "./githubStatus";
 import { formatGithubRelativeTime as formatRelativeTime } from "../../../shared/i18n/format";
 import { invoke } from "@tauri-apps/api/core";
 import { createStore } from "../../../shared/lib/store";
-import { githubRead } from "./githubReadGate";
+import { githubRead, resetGithubReadBlock } from "./githubReadGate";
 import { clearGithubRepositories, discoverGithubRepositories } from "./githubRepositories";
 export { githubRepo, githubRepositories } from "./githubRepositories";
 import { pathKey } from "../../../shared/lib/paths";
@@ -440,8 +441,12 @@ export function inboxListFetchedAt(
   return inboxListCaches.get(inboxListCacheKey(projects, query))?.fetchedAt ?? 0;
 }
 
-export function githubStatus(): Promise<GithubStatus> {
-  return invoke<GithubStatus>("git_github_status");
+export async function githubStatus(): Promise<GithubStatus> {
+  const status = await invoke<GithubStatus>("git_github_status");
+  // Signed out: the next sign-in may be another account with its own quota, so an old pause
+  // no longer applies. The status read only reports state; no credential is touched.
+  if (!status.connected) resetGithubReadBlock("local");
+  return status;
 }
 
 /** Whether the active GitHub CLI account has starred Bycoda. */
@@ -1388,7 +1393,7 @@ export function collectInboxResults(
 }
 
 function inboxErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorText(error);
 }
 
 export function inboxIdentityKey(item: {

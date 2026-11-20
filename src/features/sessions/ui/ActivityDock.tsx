@@ -2,6 +2,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge } from "../../../shared/ui/Badge";
+import { Divider } from "../../../shared/ui/Divider";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -19,8 +20,12 @@ import {
   type ProviderAccount,
 } from "../../providers/public/providerAccounts";
 import { Check, ChevronRight, CircleAlert, Square, X } from "../../../shared/ui/icons";
-import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/reactiveReads";
-import { type ActivityDock as ActivityDockModel, type DockAgent } from "../model/activityDock";
+import { useActivityDock, useDockCountParts, useStopAllControl } from "../model/reactiveReads";
+import {
+  groupDockAgents,
+  type ActivityDock as ActivityDockModel,
+  type DockAgent,
+} from "../model/activityDock";
 import { canStopAgent } from "../model/backgroundStop";
 import { hasPendingApproval, type Block, type HarnessId } from "../model/session";
 import { executionUserIndex } from "../model/executionTurn";
@@ -251,10 +256,29 @@ function DockBody({
   const hasAgents = listed.length > 0;
   const open = expanded && hasAgents;
   const listId = `activity-dock-agents-${sessionId}`;
-  const counts = useDockCountLabel(dock);
+  const counts = useDockCountParts(dock);
   const clock = (dock.state === "working" || dock.state === "waiting") && !clockInTranscript;
   const stopAllWhenWired = useStopAllControl(dock, stop.perItem);
   const stopAll = stop.onAll ? stopAllWhenWired : null;
+  const stopAllButton = stopAll ? (
+    <Button
+      data-dock-stop-all=""
+      className="shrink-0"
+      variant="ghost"
+      type="button"
+      tooltip={stop.failed.has(STOP_ALL) ? t("Could not stop it. Try again.") : stopAll.title}
+      startIcon={<Square className="icon-xs" strokeWidth={1.75} />}
+      reserveLabels={[stopAll.label, t("Stopping…"), t("Retry stop")]}
+      disabled={stop.stopping.has(STOP_ALL)}
+      onClick={() => stop.request(STOP_ALL, () => stop.onAll!())}
+    >
+      {stop.stopping.has(STOP_ALL)
+        ? t("Stopping…")
+        : stop.failed.has(STOP_ALL)
+          ? t("Retry stop")
+          : stopAll.label}
+    </Button>
+  ) : null;
 
   return (
     <Text
@@ -270,6 +294,11 @@ function DockBody({
         }`,
       )}
     >
+      {/* Announces a failed stop; the button itself only reads "Retry stop". */}
+      <LiveText
+        className="sr-only"
+        text={stop.failed.size ? t("Could not stop it. Try again.") : ""}
+      />
       <Text as="div" size="inherit" tone="secondary" className="relative" data-activity-status-row>
         <div className="relative flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
           <div className="activity-dock-summary">
@@ -301,57 +330,53 @@ function DockBody({
             ) : null}
           </div>
           {dock.state === "needs-input" ? <DockApprovalActions blocks={blocks} /> : null}
-          {stopAll ? (
+          {!hasAgents ? (
+            stopAllButton
+          ) : (
             <Button
-              className="shrink-0"
               variant="ghost"
               type="button"
-              tooltip={stopAll.title}
-              disabled={stop.stopping.has(STOP_ALL)}
-              onClick={() => stop.request(STOP_ALL, () => stop.onAll!())}
+              expanded={open}
+              opens="up"
+              controlHeight="auto"
+              padding={{ block: "xs" }}
+              aria-controls={listId}
+              data-dock-toggle=""
+              label={t(
+                open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
+                { p0: counts.map(({ text }) => text).join(" · ") },
+              )}
+              tooltip={open ? t("Hide background work") : t("Show background work")}
+              onClick={() => setExpanded(!open)}
+              className="max-w-full min-w-0"
             >
-              <Square className="icon-xs" strokeWidth={1.75} />
-              {stop.stopping.has(STOP_ALL)
-                ? t("Stopping…")
-                : stop.failed.has(STOP_ALL)
-                  ? t("Could not stop. Retry")
-                  : stopAll.label}
+              <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <Text size="inherit" tone="inherit">
+                  {t("Background work")}
+                </Text>
+                <span className="flex min-w-0 flex-wrap items-center gap-1">
+                  {counts.map(({ text, tone }) => (
+                    <Badge key={text} size="xs" appearance="subtle" tone={tone}>
+                      {text}
+                    </Badge>
+                  ))}
+                </span>
+              </span>
             </Button>
-          ) : null}
-          {hasAgents ? (
-            <>
-              <Button
-                variant="ghost"
-                type="button"
-                expanded={open}
-                opens="up"
-                aria-controls={listId}
-                data-dock-toggle=""
-                label={t(
-                  open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
-                  { p0: counts },
-                )}
-                tooltip={open ? t("Hide background work") : t("Show background work")}
-                onClick={() => setExpanded(!open)}
-                className="shrink-0"
-              >
-                <span className="tabular-nums">{counts}</span>
-              </Button>
-            </>
-          ) : null}
+          )}
         </div>
       </Text>
       {open ? (
-        <div
-          id={listId}
-          ref={lockList}
-          className="activity-dock-list flex max-h-60 flex-col gap-0.5 overflow-x-hidden overflow-y-auto overscroll-none px-1 pb-1"
-        >
-          {/* Running rows lead, so their Stop buttons are not buried under
+        <div id={listId}>
+          <Divider inset="md" decorative />
+          {stopAllButton ? <div className="flex justify-end px-3 pt-1">{stopAllButton}</div> : null}
+          <div
+            ref={lockList}
+            className="activity-dock-list flex max-h-60 flex-col gap-0.5 overflow-x-hidden overflow-y-auto overscroll-none px-1 py-1"
+          >
+            {/* Running rows lead, so their Stop buttons are not buried under
               finished ones. The sort is stable: transcript order otherwise. */}
-          {[...listed]
-            .sort((a, b) => Number(b.status === "running") - Number(a.status === "running"))
-            .map((agent) => (
+            {renderDockAgentGroups(listed, t("Workflow"), (agent) => (
               <DockAgentRow
                 key={agent.blockId}
                 agent={agent}
@@ -360,9 +385,33 @@ function DockBody({
                 stop={stop}
               />
             ))}
+          </div>
         </div>
       ) : null}
     </Text>
+  );
+}
+
+function renderDockAgentGroups(
+  agents: readonly DockAgent[],
+  workflowLabel: string,
+  row: (agent: DockAgent) => React.ReactNode,
+) {
+  const { standalone, phases } = groupDockAgents(
+    [...agents].sort((a, b) => Number(b.status === "running") - Number(a.status === "running")),
+  );
+  return (
+    <>
+      {standalone.map(row)}
+      {phases.map(({ id, phase, agents }) => (
+        <div key={id}>
+          <Text size="caption" tone="muted" className="px-2 py-1">
+            {phase ? `${workflowLabel} · ${phase}` : workflowLabel}
+          </Text>
+          {agents.map(row)}
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -542,6 +591,8 @@ function DockAgentRow({
           variant="ghost"
           type="button"
           disabled={stopping}
+          startIcon={<Square className="icon-xs" strokeWidth={1.75} />}
+          reserveLabels={[t("Stop"), t("Stopping…"), t("Retry stop")]}
           aria-label={t(stopping ? "Stopping {p0}" : "Stop {p0}", { p0: agent.name })}
           tooltip={
             stop.failed.has(key)
@@ -554,12 +605,7 @@ function DockAgentRow({
           }
           onClick={() => stop.request(key, () => stop.onAgent!(agent))}
         >
-          <Square className="icon-xs" strokeWidth={1.75} />
-          {stopping
-            ? t("Stopping…")
-            : stop.failed.has(key)
-              ? t("Could not stop. Retry")
-              : t("Stop")}
+          {stopping ? t("Stopping…") : stop.failed.has(key) ? t("Retry stop") : t("Stop")}
         </Button>
       ) : null}
     </div>

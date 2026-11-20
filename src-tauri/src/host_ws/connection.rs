@@ -18,9 +18,10 @@ use std::{
 };
 use tokio::{net::TcpStream, sync::mpsc as channel, time};
 use tokio_tungstenite::{
-    connect_async_with_config,
+    client_async_tls_with_config,
     tungstenite::{
         client::IntoClientRequest,
+        error::UrlError,
         http::{header, HeaderValue},
         protocol::WebSocketConfig,
         Error, Message,
@@ -28,6 +29,77 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+/// Budgets of one connection attempt, one per phase. A slow link spends its time in
+/// round trips, so a single budget over the whole attempt fails a connection that is
+/// progressing; each phase instead gets its own bound and the attempt as a whole is
+/// bounded by their sum. A phase that exhausts its budget fails as `unavailable`
+/// (temporary) and falls to the normal retry schedule.
+struct HandshakePhases {
+    /// TCP connect, including name resolution.
+    transport: Duration,
+    /// TLS (certificate verification) and the HTTP upgrade. The Host spends up to one
+    /// handshake budget on authenticating the upgrade, so this gets two.
+    upgrade: Duration,
+    /// Authenticated `connection.hello` exchange; the Host allows one budget after open.
+    hello: Duration,
+}
+impl HandshakePhases {
+    fn new(contracts: &Contracts) -> Self {
+        let base = contracts.duration("handshakeTimeoutMs");
+        Self {
+            transport: base,
+            upgrade: base * 2,
+            hello: base,
+        }
+    }
+}
+
+/// Runs one handshake phase under its own budget. Only a timeout is reported here;
+/// the phase's own failure keeps its authentication/identity/schema classification.
+async fn within<T>(
+    shared: &Shared,
+    generation: u64,
+    phase: &'static str,
+    budget: Duration,
+    work: impl std::future::Future<Output = Result<T, (&'static str, bool)>>,
+) -> Result<T, (&'static str, bool)> {
+    let started = Instant::now();
+    match time::timeout(budget, work).await {
+        Ok(result) => result,
+        Err(_) => {
+            shared.timed_out(generation, phase, started.elapsed());
+            Err(("unavailable", false))
+        }
+    }
+}
+
+/// Same address derivation as `connect_async`, so the TLS connector, the default
+/// verification and the Nagle setting do not change; only the phases are separated.
+async fn open_transport(
+    request: &tokio_tungstenite::tungstenite::http::Request<()>,
+) -> Result<TcpStream, (&'static str, bool)> {
+    let uri = request.uri();
+    let host = uri
+        .host()
+        .map(|host| host.trim_start_matches('[').trim_end_matches(']'))
+        .ok_or(("identity", true))?;
+    let port = uri
+        .port_u16()
+        .or_else(|| match uri.scheme_str() {
+            Some("wss") => Some(443),
+            Some("ws") => Some(80),
+            _ => None,
+        })
+        .ok_or_else(|| upgrade_error(&Error::Url(UrlError::UnsupportedUrlScheme)))?;
+    let socket = TcpStream::connect((host, port))
+        .await
+        .map_err(|error| upgrade_error(&Error::Io(error)))?;
+    socket
+        .set_nodelay(true)
+        .map_err(|error| upgrade_error(&Error::Io(error)))?;
+    Ok(socket)
+}
 
 struct Connected {
     socket: Socket,
@@ -108,19 +180,56 @@ async fn connect(
         .max_message_size(Some(contracts.limit("maxMessageBytes")))
         .max_frame_size(Some(contracts.limit("maxMessageBytes")))
         .max_write_buffer_size(contracts.limit("maxSocketQueuedBytes"));
-    let (mut socket, response) = connect_async_with_config(request, Some(config), true)
-        .await
-        .map_err(|error| upgrade_error(&error))?;
-    if response
-        .headers()
-        .get(header::SEC_WEBSOCKET_PROTOCOL)
-        .and_then(|v| v.to_str().ok())
-        != Some(contracts.protocol())
-    {
-        let _ = socket.close(None).await;
-        // A Host that speaks another subprotocol still serves HTTP.
-        return Err(("unsupported", true));
-    }
+    let phases = HandshakePhases::new(contracts);
+    let stream = within(
+        shared,
+        generation,
+        "handshake transport",
+        phases.transport,
+        open_transport(&request),
+    )
+    .await?;
+    let socket = within(
+        shared,
+        generation,
+        "handshake upgrade",
+        phases.upgrade,
+        async {
+            let (mut socket, response) =
+                client_async_tls_with_config(request, stream, Some(config), None)
+                    .await
+                    .map_err(|error| upgrade_error(&error))?;
+            if response
+                .headers()
+                .get(header::SEC_WEBSOCKET_PROTOCOL)
+                .and_then(|v| v.to_str().ok())
+                != Some(contracts.protocol())
+            {
+                let _ = socket.close(None).await;
+                // A Host that speaks another subprotocol still serves HTTP.
+                return Err(("unsupported", true));
+            }
+            Ok(socket)
+        },
+    )
+    .await?;
+    within(
+        shared,
+        generation,
+        "handshake hello",
+        phases.hello,
+        negotiate(shared, contracts, generation, socket),
+    )
+    .await
+}
+
+/// The authenticated hello: the Host identity, wire/schema versions and method set.
+async fn negotiate(
+    shared: &Shared,
+    contracts: &Contracts,
+    generation: u64,
+    mut socket: Socket,
+) -> Result<Connected, (&'static str, bool)> {
     let id = format!("hello.{generation}.{}", uuid::Uuid::new_v4());
     let hello = json!({"jsonrpc":"2.0","id":id,"method":"connection.hello","params":{
         "environmentId":shared.route.environment_id,"clientId":format!("desktop.{}", uuid::Uuid::new_v4()),
@@ -301,11 +410,8 @@ pub(super) async fn worker(
             None => break,
         };
         shared.state(generation, "connecting", None);
-        let connecting = Instant::now();
-        let handshake = time::timeout(
-            contracts.duration("handshakeTimeoutMs"),
-            connect(&shared, &contracts, generation),
-        );
+        // Bounded by its phase budgets inside `connect`, not by one deadline over all of it.
+        let handshake = connect(&shared, &contracts, generation);
         tokio::pin!(handshake);
         let result = loop {
             prune_reconnect_queue(&shared, &mut queued, generation, Instant::now());
@@ -314,10 +420,7 @@ pub(super) async fn worker(
                 _ = shared.changed.notified() => { if shared.stopped() { break 'worker; } },
                 _ = time::sleep(wait) => {},
                 request = rx.recv() => match request { Some(request) => queued.push_back(request), None => break 'worker },
-                result = &mut handshake => break result.unwrap_or_else(|_| {
-                    shared.timed_out(generation, "handshake", connecting.elapsed());
-                    Err(("unavailable", false))
-                }),
+                result = &mut handshake => break result,
             }
         };
         let (category, permanent) = match result {
@@ -1541,3 +1644,6 @@ mod result_contract_tests;
 
 #[cfg(test)]
 mod host_overload_tests;
+
+#[cfg(test)]
+mod handshake_budget_tests;

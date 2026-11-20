@@ -86,6 +86,8 @@ it("asks the composer to open its model picker", async () => {
 
 it("offers supported message recovery when direct resume is unavailable", async () => {
   await render({ limit: { resetsAt: Date.now() - 1000 } });
+  // The minute clock trails the reset; the zero-delay deadline timer records the reset itself.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
   expect(button("Resume")).toBeUndefined();
   expect(container.textContent).toContain("Send a message to continue.");
 });
@@ -93,6 +95,25 @@ it("offers supported message recovery when direct resume is unavailable", async 
 it("keeps the local direct resume action operational", async () => {
   const onResume = vi.fn();
   await render({ limit: {}, onResume });
-  await act(async () => button("Resume")!.click());
+  await act(async () => button("Try again")!.click());
   expect(onResume).toHaveBeenCalledOnce();
+});
+
+it("says an unknown reset is unknown and never offers to arm it", async () => {
+  await render({ limit: {}, onResume: vi.fn(), onResumeAtReset: vi.fn() });
+  expect(container.textContent).toContain("Reset time unknown");
+  expect(button("Resume at reset")).toBeUndefined();
+});
+
+it("names the auto-resume toggle by the action it performs", async () => {
+  const onResumeAtReset = vi.fn();
+  const resetsAt = Date.now() + 3_600_000;
+  await render({ limit: { resetsAt }, onResumeAtReset });
+  await act(async () => button("Resume at reset")!.click());
+  expect(onResumeAtReset).toHaveBeenLastCalledWith(true);
+
+  await render({ limit: { resetsAt, resumeAtReset: true }, onResumeAtReset });
+  expect(button("Resume at reset")).toBeUndefined();
+  await act(async () => button("Cancel auto-resume")!.click());
+  expect(onResumeAtReset).toHaveBeenLastCalledWith(false);
 });

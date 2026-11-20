@@ -31,7 +31,7 @@ import {
 import { normalizeNoteTags, noteTitle, type Note, type NoteUpsert } from "../../notes";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import type { Worktree, Worktrees } from "../../source-control/model/worktrees";
-import { pathKey } from "../../../shared/lib/paths";
+import { pathKey, sameProjectPath } from "../../../shared/lib/paths";
 import { conversationSessionPage } from "../../../shared/model/conversationSessionPage";
 import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
@@ -60,7 +60,10 @@ export type AppSessionPlacement = {
 export type AgentAppHost = {
   start(launch: QuickLaunch, id: string, placement?: AppSessionPlacement): Promise<void>;
   sessions(cwd: string): Promise<AppSessionListing[]>;
+  /** Exact read by id; callers re-check that it belongs to the source project. */
   session(id: string): Promise<Session | null>;
+  /** Wakes a waiter when the session's record changes; callers keep a fallback timer. */
+  subscribeSession?(id: string, listener: () => void): () => void;
   /** Return only an identity proven against its persisted owner. */
   sessionReference?(id: string): Promise<LocalSessionLocator | null>;
   send(id: string, prompt: string, requestId: string): Promise<{ alreadySubmitted: boolean }>;
@@ -111,6 +114,7 @@ const FIELDS = new Map<string, readonly string[]>([
 ]);
 
 const WAIT_POLL_MS = 500;
+const WAIT_POLL_MAX_MS = 2_000;
 const waitingSources = new Set<string>();
 
 function fields(action: string, input: Record<string, unknown>) {
@@ -161,10 +165,11 @@ function requireProject(source: Session): string {
 
 async function projectSession(source: Session, id: string, host: AgentAppHost): Promise<Session> {
   const cwd = requireProject(source);
-  if (!(await host.sessions(cwd)).some((session) => session.id === id))
-    throw new Error("Session was not found in this project");
+  // One exact identity read; project membership comes from the fetched session itself,
+  // not from listing every session in the project.
   const target = await host.session(id);
-  if (!target) throw new Error("Session was not found in this project");
+  if (!target || target.orchestrationLeadId || !sameProjectPath(target.cwd, cwd))
+    throw new Error("Session was not found in this project");
   return target;
 }
 
@@ -298,9 +303,10 @@ export async function handleAgentApp(
         })),
       };
     case "sessions.list": {
-      const page = conversationSessionPage(await host.sessions(requireProject(source)), input);
+      const cwd = requireProject(source);
+      const page = conversationSessionPage(await host.sessions(cwd), input);
       return {
-        cwd: requireProject(source),
+        cwd,
         ...page,
         sessions: await Promise.all(
           page.sessions.map(async (session) => {
@@ -355,11 +361,20 @@ export async function handleAgentApp(
       if (waitingSources.has(source.id))
         throw new Error("This session is already waiting; wait for one session at a time");
       waitingSources.add(source.id);
+      // Subscribe before the first read so a commit during a read still wakes the next sleep.
+      let dirty = false;
+      let wake: (() => void) | undefined;
+      const unsubscribe = host.subscribeSession?.(id, () => {
+        dirty = true;
+        wake?.();
+      });
       try {
         const appRequestId =
           sentRequestId && (await agentRequestKey(source.id, sentRequestId, 512));
         const deadline = Date.now() + (timeoutSeconds as number) * 1000;
+        let interval = WAIT_POLL_MS;
         for (;;) {
+          dirty = false;
           const target = await host.session(id);
           if (!target) throw new Error("Session was not found in this project");
           const turn = sessionConversationTurn(target, appRequestId, maxChars);
@@ -370,9 +385,22 @@ export async function handleAgentApp(
             : !target.busy;
           if (settled || Date.now() >= deadline)
             return { sessionId: id, settled, busy: !!target.busy, turn };
-          await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
+          if (!dirty) {
+            const delay = Math.min(interval, deadline - Date.now());
+            await new Promise<void>((resolve) => {
+              const done = () => {
+                clearTimeout(timer);
+                wake = undefined;
+                resolve();
+              };
+              const timer = setTimeout(done, delay);
+              wake = done;
+            });
+          }
+          interval = Math.min(interval * 2, WAIT_POLL_MAX_MS);
         }
       } finally {
+        unsubscribe?.();
         waitingSources.delete(source.id);
       }
     }
@@ -454,8 +482,7 @@ export async function handleAgentApp(
       const newFolderName = optionalString(input.newFolderName, "newFolderName", 100);
       if (!!folderId === !!newFolderName)
         throw new Error("Supply exactly one of folderId or newFolderName");
-      if (!(await host.sessions(cwd)).some((session) => session.id === sessionId))
-        throw new Error("Session was not found in this project");
+      await projectSession(source, sessionId, host);
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
         const createdId = crypto.randomUUID();
         const result = await executeOrganizationOperation(

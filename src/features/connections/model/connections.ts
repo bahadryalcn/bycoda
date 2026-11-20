@@ -18,10 +18,18 @@ import {
 } from "./protocol";
 import { MachineChannelStreamError, subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { remoteProjectFor } from "./remoteProjects";
-import { railSessions, type RemoteRailSession } from "./remoteRailSessions";
+import {
+  railEntryAfterFailure,
+  railSessions,
+  untrustedRailList,
+  type RailListEntry,
+  type RemoteRailSession,
+} from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
+import { classifyRemoteError } from "./remoteFailure";
 import { isMachineEnabled, startNativeDisabledMachinesSync } from "./machineEnabled";
 import { subscribeMachineFocused } from "./machineFocus";
+import { monotonicNow } from "../../../shared/lib/time/timestamps";
 import {
   bindMachineEnvironment,
   captureConnectionGeneration,
@@ -46,11 +54,18 @@ import {
 import { RemoteSessionLists } from "./remoteSessionLists";
 import { applyProjectChange, noteOwnSessionRequest } from "./remoteListActivity";
 import { machineStatusPollDelay, remoteBackoffDelay } from "./remotePollingPolicy";
-import { startRailPoller } from "./remoteRailPoller";
+import {
+  RAIL_LOAD_TIMEOUT_MS,
+  createSlotLimiter,
+  startRailPoller,
+  type SlotLimiter,
+} from "./remoteRailPoller";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
+import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
 import { queueRemoteSummaryCache } from "./remoteSummaryCache";
 import { forgetDeletedRemotePage } from "./remotePageCache";
 import { isLocalSyncMachine } from "./localSync";
+import { sameMachineRoutes } from "./machineRoute";
 import { sessionExecutionClient } from "./sessionExecutionClient";
 import type { SessionExecutionClient } from "../../../shared/model/host-contracts/session-execution";
 import { decodeSessionSync } from "./sessionSyncDecode";
@@ -82,6 +97,7 @@ export const refreshRemoteProjectSessions = () =>
   window.dispatchEvent(new Event(REMOTE_HISTORY_CHANGE));
 let cachedMachines: RemoteMachine[] = [];
 let machinesLoaded = false;
+const inventoryListeners = new Set<() => void>();
 /** The inventory projects the same native records; health/host consumers keep one cache. */
 export function adoptRemoteMachineInventory(machines: RemoteMachine[]) {
   machines.forEach((machine) => bindMachineEnvironment(machine.id, machine.environmentId));
@@ -98,6 +114,18 @@ export function adoptRemoteMachineInventory(machines: RemoteMachine[]) {
   }
   cachedMachines = machines;
   machinesLoaded = true;
+  inventoryListeners.forEach((listener) => listener());
+}
+/** Hears every change to the saved machine list (read, added, edited or removed). */
+export function subscribeRemoteMachineList(listener: () => void): () => void {
+  inventoryListeners.add(listener);
+  return () => inventoryListeners.delete(listener);
+}
+/** Whether the saved machine list has been read: until then a missing machine is unknown, not absent. */
+export const remoteMachinesLoaded = () => machinesLoaded;
+/** The saved machine with this Host identity, as last read from the native store. */
+export function savedMachineForEnvironment(environmentId: string): RemoteMachine | undefined {
+  return cachedMachines.find((entry) => entry.environmentId === environmentId);
 }
 export const OPEN_CONNECTIONS_EVENT = "bycoda:open-connections";
 export const OPEN_REMOTE_PROJECT_EVENT = "bycoda:open-remote-project";
@@ -305,7 +333,10 @@ export function remoteShellBoundTo(sessionId: string, exceptShellId?: string): s
 
 /** Binds a shell to a host session, or unbinds it. A host session id is unique
  * to the host, so a shell binding to it takes it over from any other shell:
- * two tabs never show (and send into) the same host session through bindings. */
+ * two tabs never show (and send into) the same host session through bindings.
+ * A binding is local state: it announces only REMOTE_TAB_BINDING_CHANGE and
+ * leaves the Host-derived session lists, their etags and the machine channel
+ * subscriptions alone. Only REMOTE_HISTORY_CHANGE (an explicit refresh) drops them. */
 export function rememberRemoteSession(shellId: string, sessionId?: string) {
   try {
     const all = JSON.parse(localStorage.getItem(TAB_KEY) ?? "{}");
@@ -318,7 +349,6 @@ export function rememberRemoteSession(shellId: string, sessionId?: string) {
   } catch {
     /* tab selection is best effort */
   }
-  window.dispatchEvent(new Event(REMOTE_HISTORY_CHANGE));
   window.dispatchEvent(new Event(REMOTE_TAB_BINDING_CHANGE));
 }
 
@@ -411,8 +441,11 @@ export function remoteRequest<T>(
           `${method}: The connection changed after this device request began. Its outcome is unknown. Do not repeat the request; inspect the original device or preview status.`,
         )
       : new Error(SUPERSEDED_CONNECTION);
-  const send = () =>
-    withAccountTunnelRecovery(method, machine, current, () =>
+  const send = () => {
+    // When this request began, so a timeout is only counted toward "unreachable" if it
+    // started after the previous counted timeout resolved (see recordRemoteConnection).
+    const startedAt = monotonicNow();
+    return withAccountTunnelRecovery(method, machine, current, () =>
       invokeHostRequest<T>(method, {
         machineId,
         method,
@@ -442,7 +475,7 @@ export function remoteRequest<T>(
       },
       (reason: unknown) => {
         if (!current()) throw superseded(reason);
-        if (machine) recordRemoteConnection(machine.environmentId, reason);
+        if (machine) recordRemoteConnection(machine.environmentId, reason, { startedAt });
         if (machine && feature)
           recordFeatureHealth(machine.environmentId, feature, false, generation);
         // This exact bounded marker is generated by the Native HTTP decoder.
@@ -462,6 +495,7 @@ export function remoteRequest<T>(
         throw reason;
       },
     );
+  };
   if (method === "commands.dispatch" && requiresDesktopControlReceipts(params)) {
     return (
       expectedEnvironment ? loadRemoteCapabilities(expectedEnvironment) : Promise.resolve(undefined)
@@ -474,34 +508,52 @@ export function remoteRequest<T>(
   return send();
 }
 
-const pendingSessionSyncs = new Map<string, Promise<SessionSync>>();
-const pendingSessionPages = new Map<
-  string,
-  Promise<{
-    sync: SessionSyncResponse;
-    before?: number;
-    totalBlocks: number;
-    revision: number;
-    value: HostSession;
-  }>
->();
+/** Reads in flight, by machine and then by read identity. The cap applies per machine,
+ * so one machine that stops answering cannot refuse the reads of the others. */
+const REMOTE_READS_PER_MACHINE = 64;
+type PendingReads<T> = Map<string, Map<string, Promise<T>>>;
+type SessionPageRead = {
+  sync: SessionSyncResponse;
+  before?: number;
+  totalBlocks: number;
+  revision: number;
+  value: HostSession;
+};
+const pendingSessionSyncs: PendingReads<SessionSync> = new Map();
+const pendingSessionPages: PendingReads<SessionPageRead> = new Map();
 export function resetRemoteSessionReadsForTests(): void {
   pendingSessionSyncs.clear();
   pendingSessionPages.clear();
 }
+/** Joins an identical read already in flight on the machine, or starts one. An entry
+ * leaves the map only when its request settles. */
 function sharedRead<T>(
-  pending: Map<string, Promise<T>>,
+  pending: PendingReads<T>,
+  machineId: string,
   key: string,
   read: () => Promise<T>,
 ): Promise<T> {
-  const existing = pending.get(key);
+  let reads = pending.get(machineId);
+  const existing = reads?.get(key);
   if (existing) return existing;
-  if (pending.size >= 64)
-    return Promise.reject(new Error("Too many remote reads are already in progress"));
+  // The text carries the Host's busy marker (remoteFailure.ts): retry later, not a host error.
+  if ((reads?.size ?? 0) >= REMOTE_READS_PER_MACHINE)
+    return Promise.reject(
+      new Error(
+        "Host read capacity is busy: too many remote reads are in progress for this machine",
+      ),
+    );
+  if (!reads) {
+    reads = new Map();
+    pending.set(machineId, reads);
+  }
   const operation: Promise<T> = read().finally(() => {
-    if (pending.get(key) === operation) pending.delete(key);
+    const current = pending.get(machineId);
+    if (current?.get(key) !== operation) return;
+    current.delete(key);
+    if (current.size === 0) pending.delete(machineId);
   });
-  pending.set(key, operation);
+  reads.set(key, operation);
   return operation;
 }
 
@@ -572,7 +624,7 @@ async function syncRemoteSession(
       loaded?.map((block) => block.id),
       digests,
     ]);
-    return sharedRead(pendingSessionSyncs, key, async () => {
+    return sharedRead(pendingSessionSyncs, machineId, key, async () => {
       const options = {
         revision,
         ...(known?.sourceEpoch ? { sourceEpoch: known.sourceEpoch } : {}),
@@ -829,7 +881,7 @@ async function readRemoteSessionPage(
   client?: SessionExecutionClient,
 ) {
   const key = JSON.stringify([machineId, sessionId, before, revision, digests]);
-  return sharedRead(pendingSessionPages, key, async () => {
+  return sharedRead(pendingSessionPages, machineId, key, async () => {
     const done = startPerformanceSpan(before === undefined ? "remote-tail" : "remote-history");
     try {
       const page = client
@@ -992,6 +1044,7 @@ export async function disconnectMachine(machineId: string): Promise<void> {
   if (environmentId) invalidateRemoteCapabilities(environmentId);
   if (environmentId) forgetRemoteConnection(environmentId);
   cachedMachines = cachedMachines.filter((entry) => entry.id !== machineId);
+  inventoryListeners.forEach((listener) => listener());
   window.dispatchEvent(new Event(CHANGE));
 }
 
@@ -1002,74 +1055,144 @@ export function useRemoteMachines(enabled = true): {
   error?: string;
   refresh: () => void;
 } {
-  const [refreshVersion, setRefreshVersion] = useState(0);
-  const refreshMachines = useCallback(() => setRefreshVersion((value) => value + 1), []);
-  const [state, setState] = useState<{
-    machines: RemoteMachine[];
-    loaded: boolean;
-    loading: boolean;
-    error?: string;
-  }>({ machines: cachedMachines, loaded: machinesLoaded, loading: enabled });
-  useEffect(() => {
-    if (!enabled) return;
-    let disposed = false;
-    let version = 0;
-    let pending = false;
-    let failures = 0;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = () => {
-      clearTimeout(retryTimer);
-      pending = true;
-      const requestVersion = ++version;
-      setState((previous) => ({ ...previous, loading: true }));
-      void invoke<RemoteMachine[]>("remote_machines")
-        .then((value) => {
-          if (!disposed && requestVersion === version) {
-            failures = 0;
-            adoptRemoteMachineInventory(Array.isArray(value) ? value : []);
-            setState({
-              machines: cachedMachines,
-              loaded: true,
-              loading: false,
-            });
-          }
-        })
-        .catch((reason) => {
-          // A temporary connection failure should not blank every remote
-          // panel while a fresh machine list is requested.
-          if (!disposed && requestVersion === version) {
-            setState((previous) => ({
-              ...previous,
-              machines: cachedMachines,
-              loading: false,
-              error: String(reason).replace(/^Error: /, ""),
-            }));
-            failures = Math.min(4, failures + 1);
-            retryTimer = setTimeout(refresh, remoteBackoffDelay(failures));
-          }
-        })
-        .finally(() => {
-          if (requestVersion === version) pending = false;
-        });
+  const inventory = useSyncExternalStore(
+    enabled ? subscribeMachineInventory : subscribeNothing,
+    readMachineInventory,
+    readMachineInventory,
+  );
+  return {
+    machines: inventory.machines,
+    loaded: inventory.loaded,
+    // Before the first answer the list is loading, not verified empty.
+    loading: enabled && (inventory.loading || (!inventory.loaded && !inventory.error)),
+    ...(enabled && inventory.error ? { error: inventory.error } : {}),
+    refresh: requestMachineInventoryRefresh,
+  };
+}
+
+type MachineInventory = {
+  machines: RemoteMachine[];
+  loaded: boolean;
+  loading: boolean;
+  error?: string;
+};
+// One machine inventory read for every `useRemoteMachines` instance: a rail row
+// and its connection hook share one fetch, one retry timer and one set of
+// window listeners, and only a changed list or state re-renders them.
+let machineInventory: MachineInventory = { machines: [], loaded: false, loading: false };
+const machineInventoryListeners = new Set<() => void>();
+let inventoryVersion = 0;
+let inventoryPending = false;
+let inventoryFailures = 0;
+let inventoryRetryTimer: ReturnType<typeof setTimeout> | undefined;
+let stopInventoryWindowListeners: (() => void) | undefined;
+const subscribeNothing = () => () => {};
+
+function publishMachineInventory(next: MachineInventory) {
+  machineInventory = next;
+  machineInventoryListeners.forEach((listener) => listener());
+}
+
+/** The stable snapshot. While nobody listens it follows the module cache, which
+ * other readers (`remoteMachineFor`, connect, update) keep current. */
+function readMachineInventory(): MachineInventory {
+  if (
+    !stopInventoryWindowListeners &&
+    (machineInventory.machines !== cachedMachines || machineInventory.loaded !== machinesLoaded)
+  )
+    machineInventory = {
+      ...machineInventory,
+      machines: cachedMachines,
+      loaded: machinesLoaded,
     };
-    const wake = () => {
-      if (!disposed && !pending && !document.hidden) refresh();
-    };
-    refresh();
-    window.addEventListener(CHANGE, refresh);
-    window.addEventListener("focus", wake);
-    window.addEventListener("online", wake);
-    document.addEventListener("visibilitychange", wake);
-    return () => {
-      disposed = true;
-      clearTimeout(retryTimer);
-      window.removeEventListener(CHANGE, refresh);
-      window.removeEventListener("focus", wake);
-      window.removeEventListener("online", wake);
-      document.removeEventListener("visibilitychange", wake);
-    };
-  }, [enabled, refreshVersion]);
-  return { ...state, refresh: refreshMachines };
+  return machineInventory;
+}
+
+const sameMachines = (a: RemoteMachine[], b: RemoteMachine[]) =>
+  a === b || (a.length === b.length && JSON.stringify(a) === JSON.stringify(b));
+
+/** A foreground read (first load or an explicit refresh) shows `loading`; a
+ * background one (focus, online, change events, retries) never flips it. */
+function refreshMachineInventory(foreground: boolean) {
+  clearTimeout(inventoryRetryTimer);
+  inventoryPending = true;
+  const requestVersion = ++inventoryVersion;
+  if (!machineInventory.loading && (foreground || !machineInventory.loaded))
+    publishMachineInventory({ ...machineInventory, loading: true });
+  void invoke<RemoteMachine[]>("remote_machines")
+    .then((value) => {
+      if (requestVersion !== inventoryVersion) return;
+      inventoryFailures = 0;
+      adoptRemoteMachineInventory(Array.isArray(value) ? value : []);
+      const previous = machineInventory;
+      const machines = sameMachines(previous.machines, cachedMachines)
+        ? previous.machines
+        : cachedMachines;
+      if (previous.loading || !previous.loaded || previous.error || previous.machines !== machines)
+        publishMachineInventory({ machines, loaded: true, loading: false });
+    })
+    .catch((reason) => {
+      // A temporary connection failure should not blank every remote
+      // panel while a fresh machine list is requested.
+      if (requestVersion !== inventoryVersion) return;
+      const error = String(reason).replace(/^Error: /, "");
+      const previous = machineInventory;
+      if (previous.loading || previous.error !== error || previous.machines !== cachedMachines)
+        publishMachineInventory({ ...previous, machines: cachedMachines, loading: false, error });
+      inventoryFailures = Math.min(4, inventoryFailures + 1);
+      inventoryRetryTimer = setTimeout(
+        () => refreshMachineInventory(false),
+        remoteBackoffDelay(inventoryFailures),
+      );
+    })
+    .finally(() => {
+      if (requestVersion === inventoryVersion) inventoryPending = false;
+    });
+}
+
+/** Re-reads the shared inventory; nothing happens while no hook is enabled. */
+function requestMachineInventoryRefresh() {
+  if (stopInventoryWindowListeners) refreshMachineInventory(true);
+}
+
+function subscribeMachineInventory(listener: () => void) {
+  machineInventoryListeners.add(listener);
+  if (machineInventoryListeners.size === 1) startMachineInventory();
+  return () => {
+    machineInventoryListeners.delete(listener);
+    if (machineInventoryListeners.size === 0) stopMachineInventory();
+  };
+}
+
+function startMachineInventory() {
+  readMachineInventory();
+  const onChange = () => refreshMachineInventory(false);
+  const wake = () => {
+    if (!inventoryPending && !document.hidden) refreshMachineInventory(false);
+  };
+  window.addEventListener(CHANGE, onChange);
+  window.addEventListener("focus", wake);
+  window.addEventListener("online", wake);
+  document.addEventListener("visibilitychange", wake);
+  stopInventoryWindowListeners = () => {
+    window.removeEventListener(CHANGE, onChange);
+    window.removeEventListener("focus", wake);
+    window.removeEventListener("online", wake);
+    document.removeEventListener("visibilitychange", wake);
+  };
+  // The first listener reads the list again; the cache may be stale after a quiet period.
+  refreshMachineInventory(false);
+}
+
+function stopMachineInventory() {
+  stopInventoryWindowListeners?.();
+  stopInventoryWindowListeners = undefined;
+  clearTimeout(inventoryRetryTimer);
+  // An answer still in flight is dropped; the next first listener asks again.
+  inventoryVersion++;
+  inventoryPending = false;
+  inventoryFailures = 0;
+  machineInventory = { ...machineInventory, loading: false };
 }
 
 const STATUS = "bycoda:remote-machine-status";
@@ -1079,7 +1202,12 @@ type StatusWatcher = {
   timer?: ReturnType<typeof setTimeout>;
   /** Checks now when the machine is down; a focus change is new demand, not new evidence. */
   wake?: () => void;
+  /** Removes the window listeners that resume the checks. */
+  dispose?: () => void;
 };
+// The status watcher only checks while the computer is online; it checks less while hidden.
+const computerOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
+const windowHidden = () => typeof document !== "undefined" && document.hidden;
 const statusWatchers = new Map<string, StatusWatcher>();
 subscribeMachineFocused((environmentId) => {
   const machineId = cachedMachines.find((entry) => entry.environmentId === environmentId)?.id;
@@ -1092,6 +1220,17 @@ export function reportRemoteMachineStatus(machineId: string, online: boolean, er
   const environmentId = cachedMachines.find((entry) => entry.id === machineId)?.environmentId;
   if (environmentId)
     recordRemoteConnection(environmentId, online ? undefined : (error ?? "Machine is unreachable"));
+  // A busy Host or one timeout is no evidence the machine is down (the connection state
+  // ignores it too). Only the run of timeouts that made the connection unreachable, or a
+  // failure that is not temporary, flips it offline; otherwise the next real answer would
+  // announce a recovery and reload every view of a machine that never went down.
+  if (
+    !online &&
+    error !== undefined &&
+    classifyRemoteError(error).kind === "temporary" &&
+    (!environmentId || readRemoteConnection(environmentId).status !== "unreachable")
+  )
+    return;
   const wasOffline = machineOnline.get(machineId) === false;
   if (machineOnline.get(machineId) === online) return;
   machineOnline.set(machineId, online);
@@ -1112,12 +1251,32 @@ function watchMachineStatus(machineId: string): () => void {
     statusWatchers.set(machineId, watcher);
     let failures = 0;
     let polling = false;
-    watcher.wake = () => {
-      if (polling || !failures || statusWatchers.get(machineId) !== watcher) return;
+    const schedule = (delay: number) => {
       clearTimeout(watcher.timer);
-      void poll();
+      if (computerOnline() && statusWatchers.get(machineId) === watcher)
+        watcher.timer = setTimeout(() => void poll(), delay);
+    };
+    // Coming back online or to a visible window resumes a check that was held back.
+    const resume = () => void poll();
+    watcher.wake = () => {
+      if (failures) resume();
+    };
+    const visibilityChanged = () => {
+      if (!windowHidden()) resume();
+      else if (!polling) {
+        const environmentId = cachedMachines.find((entry) => entry.id === machineId)?.environmentId;
+        schedule(machineStatusPollDelay(failures, environmentId, true));
+      }
+    };
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    watcher.dispose = () => {
+      window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", visibilityChanged);
     };
     const poll = async () => {
+      if (polling || !computerOnline() || statusWatchers.get(machineId) !== watcher) return;
+      clearTimeout(watcher.timer);
       polling = true;
       const machine = cachedMachines.find((entry) => entry.id === machineId);
       const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
@@ -1140,16 +1299,17 @@ function watchMachineStatus(machineId: string): () => void {
         }
       } catch (reason) {
         if (current()) {
-          failures = Math.min(4, failures + 1);
           reportRemoteMachineStatus(machineId, false, reason);
+          // Back off only while the machine counts as down; a busy answer keeps the normal pace.
+          if (machineOnline.get(machineId) === false) failures = Math.min(4, failures + 1);
         }
       }
       polling = false;
-      if (statusWatchers.get(machineId) === watcher)
-        watcher.timer = setTimeout(
-          () => void poll(),
-          !current() ? 0 : machineStatusPollDelay(failures, machine?.environmentId),
-        );
+      // Offline: no timer until `online` resumes the check, so nothing is sent to a machine
+      // while the computer cannot reach it.
+      schedule(
+        !current() ? 0 : machineStatusPollDelay(failures, machine?.environmentId, windowHidden()),
+      );
     };
     void poll();
   }
@@ -1157,6 +1317,7 @@ function watchMachineStatus(machineId: string): () => void {
     const watcher = statusWatchers.get(machineId);
     if (!watcher || --watcher.count > 0) return;
     clearTimeout(watcher.timer);
+    watcher.dispose?.();
     statusWatchers.delete(machineId);
   };
 }
@@ -1243,8 +1404,13 @@ export type RemoteProjectSessions = {
 };
 
 /** Lists a remote project's host sessions, keeping the last list visible
- * while the machine is unreachable. */
-export function useRemoteProjectSessions(project: string, enabled = true): RemoteProjectSessions {
+ * while the machine is unreachable. `readable` false keeps that list without reading
+ * (no request, channel or poller) until the machine can be asked again. */
+export function useRemoteProjectSessions(
+  project: string,
+  enabled = true,
+  readable = true,
+): RemoteProjectSessions {
   const remote = enabled ? remoteProjectFor(project) : undefined;
   const {
     machines,
@@ -1292,6 +1458,16 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
       setLoaded(false);
       lastVerified.current = undefined;
       setDataState({ phase: "loading" });
+      return;
+    }
+    // A machine that cannot be asked keeps the last list; its recovery re-runs this and reads.
+    // A refresh it cut off never answers, so the list stops claiming one is running.
+    if (!readable) {
+      setDataState((previous) =>
+        previous.phase === "refreshing"
+          ? { phase: "stale", updatedAt: lastVerified.current }
+          : previous,
+      );
       return;
     }
     setDataState({ phase: "refreshing", updatedAt: lastVerified.current });
@@ -1417,7 +1593,7 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
       disposed = true;
       stopFallback();
     };
-  }, [project, remote?.projectId, machine?.id, refresh, capabilityVersion]);
+  }, [project, remote?.projectId, machine?.id, refresh, capabilityVersion, readable]);
   // Effects run after render. Never expose the previous project's cards with
   // the new project's click handlers during that transition.
   const current = sessionList.project === project;
@@ -1447,12 +1623,27 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
   };
 }
 
+/** Keeps the previous array while the new one reaches the same machines the same way. */
+function useRouteStableMachines(machines: RemoteMachine[]): RemoteMachine[] {
+  const [stable, setStable] = useState(machines);
+  if (stable !== machines && !sameMachineRoutes(stable, machines)) setStable(machines);
+  return stable;
+}
+
 /** Lists the host sessions of every remote project on the rail, so one that
  * runs on its machine shows up without its project being opened here. A
  * project whose machine does not answer keeps its last list. */
 export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSession[] {
   const key = projects.join("\n");
-  const { machines } = useRemoteMachines(projects.length > 0);
+  const { machines: inventory } = useRemoteMachines(projects.length > 0);
+  // Pollers and machine channels restart only when a machine they reach changes its identity
+  // or route, not when the inventory is re-read, renamed or gains an unrelated machine.
+  const railEnvironments = new Set(
+    projects.map((project) => remoteProjectFor(project)?.environmentId),
+  );
+  const machines = useRouteStableMachines(
+    inventory.filter((entry) => railEnvironments.has(entry.environmentId)),
+  );
   const [sessions, setSessions] = useState<RemoteRailSession[]>([]);
   const [capabilityVersion, setCapabilityVersion] = useState(0);
   useEffect(() => subscribeRemoteCapabilities(() => setCapabilityVersion((v) => v + 1)), []);
@@ -1468,17 +1659,10 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
       return;
     }
     // The cached list may be old: nothing in it counts as running until the host says so.
-    const lists = new Map<string, { list: HostSessionSummary[]; fresh: boolean }>(
+    const lists = new Map<string, RailListEntry>(
       targets.map(({ project }) => [
         project,
-        {
-          list: cachedSessions(project).map((session) => ({
-            ...session,
-            status: "idle" as const,
-            needsInput: false,
-          })),
-          fresh: false,
-        },
+        { list: untrustedRailList(cachedSessions(project)), fresh: false, failures: 0 },
       ]),
     );
     let shown = "";
@@ -1491,7 +1675,7 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
     };
     publish();
     const save = (project: string, next: HostSessionSummary[]) => {
-      lists.set(project, { list: next, fresh: true });
+      lists.set(project, { list: next, fresh: true, failures: 0 });
       const stored = JSON.stringify(next);
       try {
         if (localStorage.getItem(historyKey(project)) !== stored) {
@@ -1501,6 +1685,13 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
       } catch {
         /* the list is refetched next time */
       }
+      publish();
+    };
+    // A machine that stops answering must not keep its last running/needs-input state on the rail.
+    const fail = (project: string, reason: unknown) => {
+      const entry = lists.get(project);
+      if (!entry) return;
+      lists.set(project, railEntryAfterFailure(entry, reason));
       publish();
     };
     const capable = targets.filter(({ machine }) =>
@@ -1515,10 +1706,65 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
           load: ({ machine, remote }, force) =>
             sharedSessionLists.load(machine.id, remote.projectId, force),
           onResult: ({ project }, next) => save(project, next),
+          onError: ({ project, machine, remote }, reason) => {
+            // A read that never settled stays shared as pending; drop it so the retry asks again.
+            if (reason instanceof TimeoutError)
+              sharedSessionLists.invalidateProject(machine.id, remote.projectId);
+            fail(project, reason);
+          },
         }),
       );
+    // One limiter per machine, as for the fallback poller: a rail with many projects on one
+    // machine must not open that many parallel reads over its single link.
+    let disposed = false;
+    const limiters = new Map<string, SlotLimiter>();
     for (const target of capable) {
       const { project, remote, machine } = target;
+      let limiter = limiters.get(machine.id);
+      if (!limiter) {
+        limiter = createSlotLimiter();
+        limiters.set(machine.id, limiter);
+      }
+      const slots = limiter;
+      // After a failure the next delivery re-reads the list, even if it reports no change.
+      let recovering = false;
+      // A read already waiting for a slot reads the latest state when it starts: more demand
+      // while it waits does not queue a second one.
+      let queued = false;
+      const queueLoad = () => {
+        if (queued) return;
+        queued = true;
+        void slots
+          .run(
+            () => {
+              queued = false;
+              // A read that never settles must not hold its slot.
+              return withTimeout(
+                sharedSessionLists.load(machine.id, remote.projectId),
+                RAIL_LOAD_TIMEOUT_MS,
+                "Session list",
+              );
+            },
+            () => disposed,
+          )
+          .then((next) => {
+            if (next && !disposed) save(project, next);
+          })
+          .catch((error) => {
+            if (disposed) return;
+            console.warn("connections operation failed", error);
+            // A read that never settled stays shared as pending; drop it so the retry asks again.
+            if (error instanceof TimeoutError)
+              sharedSessionLists.invalidateProject(machine.id, remote.projectId);
+            recovering = true;
+            fail(project, error);
+          });
+      };
+      const reload = () => {
+        recovering = false;
+        sharedSessionLists.invalidateProject(machine.id, remote.projectId);
+        queueLoad();
+      };
       cleanups.push(
         subscribeRemoteMachineChannel(
           machine.id,
@@ -1536,26 +1782,23 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
               changed &&
               applyProjectChange(sharedSessionLists, machine, remote, changed, changes.reset);
             if (next) save(project, next);
-            else if (changed || changes.reset) {
-              sharedSessionLists.invalidateProject(machine.id, remote.projectId);
-              void sharedSessionLists
-                .load(machine.id, remote.projectId)
-                .then((next) => save(project, next))
-                .catch((error) => {
-                  console.warn("connections operation failed", error);
-                });
-            }
+            else if (changed || changes.reset || recovering) reload();
+          },
+          (reason) => {
+            // Only this list's stream was refused; the machine still answers.
+            if (reason instanceof MachineChannelStreamError) return;
+            recovering = true;
+            fail(project, reason);
           },
         ),
       );
-      void sharedSessionLists
-        .load(machine.id, remote.projectId)
-        .then((next) => save(project, next))
-        .catch((error) => {
-          console.warn("connections operation failed", error);
-        });
+      queueLoad();
     }
-    return () => cleanups.forEach((cleanup) => cleanup());
+    return () => {
+      disposed = true;
+      limiters.forEach((slots) => slots.drain());
+      cleanups.forEach((cleanup) => cleanup());
+    };
   }, [key, machines, capabilityVersion]);
   return sessions;
 }

@@ -52,7 +52,7 @@ retaining its historical locator without rewriting its digest proof.
 Locked/hidden project copies are concealed. When origins cannot be mapped to a
 known visible project while groups are locked, those copies are concealed too.
 Standalone files use their own parent folder rather than the selected project's
-Host or execution directory. Clearing the conversation recovery list does not
+Host or execution directory. Clearing the session recovery list does not
 delete file copies.
 
 In **Earlier file reports**, choose **This computer** for this desktop profile's

@@ -1,11 +1,13 @@
 use crate::control::receipts::WindowIssuer;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 struct Preview {
     content: String,
@@ -266,9 +268,6 @@ fn preview_asset(root: &Path, relative: &str) -> Result<PathBuf, String> {
     if hidden {
         return Err("Hidden files are not served by HTML previews".into());
     }
-    if candidate.metadata().map_err(|e| e.to_string())?.len() > 16 * 1024 * 1024 {
-        return Err("Preview asset is too large".into());
-    }
     Ok(candidate)
 }
 
@@ -300,25 +299,155 @@ fn mime(path: &Path) -> &'static str {
     }
 }
 
-fn preview_content(path: &str) -> Result<(Vec<u8>, &'static str), String> {
-    preview_content_with(previews(), path, |asset| {
-        let file = std::fs::File::open(asset).map_err(|e| e.to_string())?;
-        let mut bytes = Vec::new();
-        file.take(16 * 1024 * 1024 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-        if bytes.len() > 16 * 1024 * 1024 {
-            return Err("Preview asset is too large".into());
+/// Largest body one preview response carries. Bigger assets are served as byte ranges.
+const MAX_PREVIEW_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
+
+struct Served {
+    status: u16,
+    body: Vec<u8>,
+    content_type: &'static str,
+    content_range: Option<String>,
+}
+
+impl Served {
+    fn full(body: Vec<u8>, content_type: &'static str) -> Self {
+        Self {
+            status: 200,
+            body,
+            content_type,
+            content_range: None,
         }
-        Ok(bytes)
+    }
+    fn text(status: u16, message: &str, content_range: Option<String>) -> Self {
+        Self {
+            status,
+            body: message.as_bytes().to_vec(),
+            content_type: "text/plain; charset=utf-8",
+            content_range,
+        }
+    }
+}
+
+fn preview_content(path: &str, range: Option<&str>) -> Result<Served, String> {
+    preview_content_with(previews(), path, range, read_asset)
+}
+
+#[derive(Debug, PartialEq)]
+enum RangePlan {
+    Full,
+    /// `end` is exclusive.
+    Partial {
+        start: u64,
+        end: u64,
+    },
+    Unsatisfiable,
+}
+
+fn parse_digits(text: &str) -> Option<u64> {
+    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
+}
+
+/// Plans one `bytes=` range. Forms that are malformed, multi-range or not bytes are
+/// ignored (full body), as RFC 9110 allows; a range that starts past the end is unsatisfiable.
+fn plan_range(header: Option<&str>, len: u64) -> RangePlan {
+    let Some(spec) = header.and_then(|h| h.trim().strip_prefix("bytes=")) else {
+        return RangePlan::Full;
+    };
+    if spec.contains(',') {
+        return RangePlan::Full;
+    }
+    let Some((first, last)) = spec.trim().split_once('-') else {
+        return RangePlan::Full;
+    };
+    let (first, last) = (first.trim(), last.trim());
+    if first.is_empty() {
+        let Some(suffix) = parse_digits(last) else {
+            return RangePlan::Full;
+        };
+        if suffix == 0 || len == 0 {
+            return RangePlan::Unsatisfiable;
+        }
+        return RangePlan::Partial {
+            start: len - suffix.min(len),
+            end: len,
+        };
+    }
+    let Some(start) = parse_digits(first) else {
+        return RangePlan::Full;
+    };
+    if start >= len {
+        return RangePlan::Unsatisfiable;
+    }
+    let end = if last.is_empty() {
+        len
+    } else {
+        let Some(last) = parse_digits(last) else {
+            return RangePlan::Full;
+        };
+        if last < start {
+            return RangePlan::Full;
+        }
+        last.saturating_add(1).min(len)
+    };
+    RangePlan::Partial { start, end }
+}
+
+/// Reads only the bytes a response needs, so memory per response stays bounded
+/// regardless of the file size.
+fn read_asset(asset: &Path, range: Option<&str>) -> Result<Served, String> {
+    let mut file = std::fs::File::open(asset).map_err(|e| e.to_string())?;
+    let len = file.metadata().map_err(|e| e.to_string())?.len();
+    let content_type = mime(asset);
+    let (start, end, partial) = match plan_range(range, len) {
+        RangePlan::Unsatisfiable => {
+            return Ok(Served::text(
+                416,
+                "Requested range is not satisfiable.",
+                Some(format!("bytes */{len}")),
+            ));
+        }
+        RangePlan::Full if len > MAX_PREVIEW_RESPONSE_BYTES => {
+            return Ok(Served::text(
+                413,
+                "Preview asset is too large for one response. Request byte ranges.",
+                None,
+            ));
+        }
+        RangePlan::Full => (0, len, false),
+        RangePlan::Partial { start, end } => {
+            (start, end.min(start + MAX_PREVIEW_RESPONSE_BYTES), true)
+        }
+    };
+    let wanted = end - start;
+    file.seek(SeekFrom::Start(start))
+        .map_err(|e| e.to_string())?;
+    let mut body = Vec::with_capacity(wanted as usize);
+    file.take(wanted)
+        .read_to_end(&mut body)
+        .map_err(|e| e.to_string())?;
+    if body.len() as u64 != wanted {
+        return Err("Preview asset changed while it was being read".into());
+    }
+    if !partial {
+        return Ok(Served::full(body, content_type));
+    }
+    Ok(Served {
+        status: 206,
+        body,
+        content_type,
+        content_range: Some(format!("bytes {start}-{}/{len}", end - 1)),
     })
 }
 
 fn preview_content_with(
     registry: &Mutex<PreviewRegistry>,
     path: &str,
-    read: impl FnOnce(&Path) -> Result<Vec<u8>, String>,
-) -> Result<(Vec<u8>, &'static str), String> {
+    range: Option<&str>,
+    read: impl FnOnce(&Path, Option<&str>) -> Result<Served, String>,
+) -> Result<Served, String> {
     let (token, relative) = path
         .trim_start_matches('/')
         .split_once('/')
@@ -332,7 +461,7 @@ fn preview_content_with(
         return Err("Preview has closed".into());
     };
     if relative == "index.html" {
-        return Ok((
+        return Ok(Served::full(
             entry.content.as_bytes().to_vec(),
             "text/html; charset=utf-8",
         ));
@@ -346,7 +475,7 @@ fn preview_content_with(
     drop(entries);
     // Filesystem latency must not hold the registry against close or unrelated previews.
     let asset = preview_asset(&root, relative)?;
-    let bytes = read(&asset)?;
+    let served = read(&asset, range)?;
     let entries = registry.lock().map_err(|e| e.to_string())?;
     let current = entries.entries.get(token).ok_or("Preview has closed")?;
     if !Arc::ptr_eq(&current.owner, &owner)
@@ -355,88 +484,138 @@ fn preview_content_with(
     {
         return Err("Preview has closed".into());
     }
-    Ok((bytes, mime(&asset)))
+    Ok(served)
 }
 
+/// Simultaneous asset reads across every preview window (the active-read ceiling).
 const MAX_PREVIEW_READS: usize = 8;
-struct PreviewReadPermit(Arc<AtomicUsize>);
-impl PreviewReadPermit {
-    fn acquire(active: Arc<AtomicUsize>) -> Option<Self> {
-        let mut count = active.load(Ordering::Acquire);
-        loop {
-            if count >= MAX_PREVIEW_READS {
-                return None;
-            }
-            match active.compare_exchange_weak(
-                count,
-                count + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => break,
-                Err(current) => count = current,
-            }
-        }
-        Some(Self(active))
-    }
+/// Requests allowed to wait for a read slot; a page's sub-resource burst fits, a flood does not.
+const MAX_PREVIEW_QUEUED: usize = 256;
+/// Longest a request waits for a read slot before it is answered 503.
+const PREVIEW_QUEUE_WAIT: Duration = Duration::from_secs(15);
+
+struct PreviewBusy;
+
+/// Bounded FIFO admission: at most `max_reads` run, at most `max_queued` wait, and no
+/// request waits longer than `wait`. Everything past those bounds fails fast with 503.
+struct PreviewAdmission {
+    reads: Arc<Semaphore>,
+    queued: AtomicUsize,
+    max_queued: usize,
+    wait: Duration,
 }
-impl Drop for PreviewReadPermit {
+
+/// Holds one queue position and frees it when the wait ends or the request is dropped.
+struct QueueSlot<'a>(&'a AtomicUsize);
+impl Drop for QueueSlot<'_> {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
+impl PreviewAdmission {
+    fn new(max_reads: usize, max_queued: usize, wait: Duration) -> Self {
+        Self {
+            reads: Arc::new(Semaphore::new(max_reads)),
+            queued: AtomicUsize::new(0),
+            max_queued,
+            wait,
+        }
+    }
+
+    async fn acquire(&self) -> Result<OwnedSemaphorePermit, PreviewBusy> {
+        if let Ok(permit) = self.reads.clone().try_acquire_owned() {
+            return Ok(permit);
+        }
+        let slot = self
+            .queued
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                (count < self.max_queued).then_some(count + 1)
+            })
+            .map(|_| QueueSlot(&self.queued))
+            .map_err(|_| PreviewBusy)?;
+        let waited = tokio::time::timeout(self.wait, self.reads.clone().acquire_owned()).await;
+        drop(slot);
+        match waited {
+            Ok(Ok(permit)) => Ok(permit),
+            _ => Err(PreviewBusy),
+        }
+    }
+}
+
 pub fn respond_async(request: tauri::http::Request<Vec<u8>>, responder: tauri::UriSchemeResponder) {
-    static ACTIVE: OnceLock<Arc<AtomicUsize>> = OnceLock::new();
-    let active = ACTIVE.get_or_init(|| Arc::new(AtomicUsize::new(0))).clone();
-    let Some(permit) = PreviewReadPermit::acquire(active) else {
-        responder.respond(preview_response(
-            503,
-            b"Preview is busy. Reload to retry.".to_vec(),
-            "text/plain; charset=utf-8",
-        ));
-        return;
-    };
+    static ADMISSION: OnceLock<PreviewAdmission> = OnceLock::new();
+    let admission = ADMISSION.get_or_init(|| {
+        PreviewAdmission::new(MAX_PREVIEW_READS, MAX_PREVIEW_QUEUED, PREVIEW_QUEUE_WAIT)
+    });
     tauri::async_runtime::spawn(async move {
-        let response = tauri::async_runtime::spawn_blocking(move || {
-            let _permit = permit;
-            respond(request)
-        })
-        .await
-        .unwrap_or_else(|_| {
-            preview_response(
-                500,
-                b"Preview read failed.".to_vec(),
+        let response = match admission.acquire().await {
+            Ok(permit) => tauri::async_runtime::spawn_blocking(move || {
+                let _permit = permit;
+                respond(request)
+            })
+            .await
+            .unwrap_or_else(|_| {
+                preview_response(
+                    500,
+                    b"Preview read failed.".to_vec(),
+                    "text/plain; charset=utf-8",
+                    None,
+                )
+            }),
+            Err(PreviewBusy) => preview_response(
+                503,
+                b"Preview is busy. Reload to retry.".to_vec(),
                 "text/plain; charset=utf-8",
-            )
-        });
+                None,
+            ),
+        };
         responder.respond(response);
     });
 }
 
 pub fn respond(request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
     let result = if request.method() == tauri::http::Method::GET {
-        preview_content(request.uri().path())
+        preview_content(request.uri().path(), requested_range(&request))
     } else {
         Err("Unsupported preview request".into())
     };
-    let (status, body, content_type) = match result {
-        Ok((body, content_type)) => (200, body, content_type),
-        Err(error) => (404, error.into_bytes(), "text/plain; charset=utf-8"),
-    };
-    preview_response(status, body, content_type)
+    match result {
+        Ok(served) => preview_response(
+            served.status,
+            served.body,
+            served.content_type,
+            served.content_range,
+        ),
+        Err(error) => preview_response(404, error.into_bytes(), "text/plain; charset=utf-8", None),
+    }
+}
+
+/// The `Range` the page asked for. `If-Range` names a validator this server cannot check
+/// (assets have no ETag), so the Range is ignored and the body follows the normal rules.
+fn requested_range(request: &tauri::http::Request<Vec<u8>>) -> Option<&str> {
+    if request.headers().contains_key("if-range") {
+        return None;
+    }
+    request.headers().get("range")?.to_str().ok()
 }
 
 fn preview_response(
     status: u16,
     body: Vec<u8>,
     content_type: &'static str,
+    content_range: Option<String>,
 ) -> tauri::http::Response<Vec<u8>> {
-    tauri::http::Response::builder()
+    let mut builder = tauri::http::Response::builder()
         .status(status)
         .header("Content-Type", content_type)
+        .header("Accept-Ranges", "bytes")
         .header("Cache-Control", "no-store")
-        .header("X-Content-Type-Options", "nosniff")
+        .header("X-Content-Type-Options", "nosniff");
+    if let Some(range) = content_range {
+        builder = builder.header("Content-Range", range);
+    }
+    builder
         .header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; media-src 'self' data: blob: https:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'")
         .header("Permissions-Policy", "microphone=(), camera=(), display-capture=()")
         .body(body)
@@ -554,33 +733,133 @@ mod tests {
             )
             .unwrap();
         let registry = Mutex::new(entries);
-        let result = preview_content_with(&registry, &format!("/{token}/asset.css"), |_| {
-            let mut registry = registry
-                .try_lock()
-                .expect("asset I/O must release registry");
-            registry.close(&owner, &token).unwrap();
-            Ok(b"late private bytes".to_vec())
-        });
-        assert_eq!(result.unwrap_err(), "Preview has closed");
+        let result =
+            preview_content_with(&registry, &format!("/{token}/asset.css"), None, |_, _| {
+                let mut registry = registry
+                    .try_lock()
+                    .expect("asset I/O must release registry");
+                registry.close(&owner, &token).unwrap();
+                Ok(Served::full(b"late private bytes".to_vec(), "text/css"))
+            });
+        assert_eq!(result.err().as_deref(), Some("Preview has closed"));
         std::fs::remove_dir_all(folder).unwrap();
     }
 
-    #[test]
-    fn preview_read_admission_is_bounded_and_released_after_completion() {
-        let active = Arc::new(AtomicUsize::new(0));
-        let mut permits: Vec<_> = (0..MAX_PREVIEW_READS)
-            .map(|_| PreviewReadPermit::acquire(active.clone()).unwrap())
+    #[tokio::test]
+    async fn parallel_reads_beyond_the_ceiling_queue_and_all_complete() {
+        let admission = Arc::new(PreviewAdmission::new(2, 16, Duration::from_secs(5)));
+        let running = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let tasks: Vec<_> = (0..10)
+            .map(|_| {
+                let (admission, running, peak) = (admission.clone(), running.clone(), peak.clone());
+                tokio::spawn(async move {
+                    let permit = admission.acquire().await.ok()?;
+                    let now = running.fetch_add(1, Ordering::AcqRel) + 1;
+                    peak.fetch_max(now, Ordering::AcqRel);
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    running.fetch_sub(1, Ordering::AcqRel);
+                    drop(permit);
+                    Some(())
+                })
+            })
             .collect();
-        assert!(PreviewReadPermit::acquire(active.clone()).is_none());
-        permits.pop();
-        let next = PreviewReadPermit::acquire(active.clone()).unwrap();
-        drop(permits);
-        drop(next);
-        assert_eq!(active.load(Ordering::Acquire), 0);
-        let response = preview_response(503, b"busy".to_vec(), "text/plain; charset=utf-8");
+        for task in tasks {
+            assert!(task.await.unwrap().is_some(), "queued read must not 503");
+        }
+        assert_eq!(peak.load(Ordering::Acquire), 2);
+        assert_eq!(admission.queued.load(Ordering::Acquire), 0);
+        assert_eq!(admission.reads.available_permits(), 2);
+    }
+
+    #[tokio::test]
+    async fn full_queue_and_expired_wait_answer_busy_and_free_their_slots() {
+        let admission = Arc::new(PreviewAdmission::new(1, 1, Duration::from_millis(40)));
+        let held = admission.acquire().await.ok().unwrap();
+        let waiter = tokio::spawn({
+            let admission = admission.clone();
+            async move { admission.acquire().await.is_err() }
+        });
+        while admission.queued.load(Ordering::Acquire) == 0 {
+            tokio::task::yield_now().await;
+        }
+        // The queue holds one waiter, so a further request is rejected immediately.
+        assert!(admission.acquire().await.is_err());
+        // The waiter hits the deadline while the read slot stays held.
+        assert!(waiter.await.unwrap());
+        assert_eq!(admission.queued.load(Ordering::Acquire), 0);
+        drop(held);
+        assert!(admission.acquire().await.is_ok());
+        let response = preview_response(503, b"busy".to_vec(), "text/plain; charset=utf-8", None);
         assert_eq!(response.status(), 503);
         assert_eq!(response.headers()["Cache-Control"], "no-store");
         assert_eq!(response.headers()["X-Content-Type-Options"], "nosniff");
+    }
+
+    #[test]
+    fn plan_range_serves_bounded_slices_and_ignores_unsupported_forms() {
+        let len = 1000;
+        assert_eq!(
+            plan_range(Some("bytes=0-99"), len),
+            RangePlan::Partial { start: 0, end: 100 }
+        );
+        assert_eq!(
+            plan_range(Some("bytes=500-"), len),
+            RangePlan::Partial {
+                start: 500,
+                end: 1000
+            }
+        );
+        // The last byte position is clamped to the file end, not rejected.
+        assert_eq!(
+            plan_range(Some("bytes=900-5000"), len),
+            RangePlan::Partial {
+                start: 900,
+                end: 1000
+            }
+        );
+        assert_eq!(
+            plan_range(Some("bytes=-10"), len),
+            RangePlan::Partial {
+                start: 990,
+                end: 1000
+            }
+        );
+        assert_eq!(
+            plan_range(Some("bytes=-5000"), len),
+            RangePlan::Partial {
+                start: 0,
+                end: 1000
+            }
+        );
+        assert_eq!(
+            plan_range(Some("bytes=1000-"), len),
+            RangePlan::Unsatisfiable
+        );
+        assert_eq!(plan_range(Some("bytes=-0"), len), RangePlan::Unsatisfiable);
+        assert_eq!(plan_range(Some("bytes=-5"), 0), RangePlan::Unsatisfiable);
+        // Multi-range, reversed, signed or non-bytes forms fall back to the full body.
+        for header in [
+            "bytes=0-1,4-5",
+            "bytes=5-2",
+            "bytes=+1-4",
+            "bytes=a-b",
+            "items=0-1",
+            "bytes=",
+        ] {
+            assert_eq!(plan_range(Some(header), len), RangePlan::Full, "{header}");
+        }
+        assert_eq!(plan_range(None, len), RangePlan::Full);
+    }
+
+    #[test]
+    fn partial_responses_carry_content_range_and_accept_ranges() {
+        let response =
+            preview_response(206, vec![1, 2], "video/mp4", Some("bytes 0-1/3000".into()));
+        assert_eq!(response.status(), 206);
+        assert_eq!(response.headers()["Content-Range"], "bytes 0-1/3000");
+        assert_eq!(response.headers()["Accept-Ranges"], "bytes");
+        assert_eq!(response.headers()["Cache-Control"], "no-store");
     }
 
     #[test]
@@ -761,13 +1040,13 @@ mod tests {
         assert!(String::from_utf8(response.into_body())
             .unwrap()
             .contains("<script>"));
-        let (_, mime) = preview_content(&format!("/{token}/ma%C4%9Faza%20%231.css")).unwrap();
-        assert_eq!(mime, "text/css; charset=utf-8");
-        assert!(preview_content(&format!("/{token}/../secret.txt")).is_err());
-        assert!(preview_content(&format!("/{token}/%2e%2e/secret.txt")).is_err());
-        assert!(preview_content(&format!("/{token}/file:///secret.txt")).is_err());
+        let served = preview_content(&format!("/{token}/ma%C4%9Faza%20%231.css"), None).unwrap();
+        assert_eq!(served.content_type, "text/css; charset=utf-8");
+        assert!(preview_content(&format!("/{token}/../secret.txt"), None).is_err());
+        assert!(preview_content(&format!("/{token}/%2e%2e/secret.txt"), None).is_err());
+        assert!(preview_content(&format!("/{token}/file:///secret.txt"), None).is_err());
         previews().lock().unwrap().close(&owner, &token).unwrap();
-        assert!(preview_content(&format!("/{token}/index.html")).is_err());
+        assert!(preview_content(&format!("/{token}/index.html"), None).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -796,10 +1075,12 @@ mod tests {
             "<h1>Remote</h1>".into(),
         );
         assert_eq!(
-            preview_content(&format!("/{token}/index.html")).unwrap().0,
+            preview_content(&format!("/{token}/index.html"), None)
+                .unwrap()
+                .body,
             b"<h1>Remote</h1>"
         );
-        assert!(preview_content(&format!("/{token}/style.css")).is_err());
+        assert!(preview_content(&format!("/{token}/style.css"), None).is_err());
         previews().lock().unwrap().close(&owner, &token).unwrap();
     }
 

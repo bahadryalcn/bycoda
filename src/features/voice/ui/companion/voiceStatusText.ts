@@ -17,24 +17,24 @@ export function voiceStatusText(state: {
         : playback
           ? "Assistant speaking"
           : phase === "transcribing"
-            ? "Transcribing locally..."
+            ? "Transcribing locally…"
             : phase === "replying"
-              ? "Preparing a reply..."
+              ? "Preparing a reply…"
               : phase === "speaking"
-                ? "Receiving speech..."
+                ? "Receiving speech…"
                 : hearingInput
                   ? "Microphone is receiving sound"
                   : "Listening"
       : status === "reconnecting"
-        ? "Reconnecting..."
+        ? "Reconnecting…"
         : status === "sleeping"
           ? "Asleep"
           : status === "ready"
             ? "Ready. Microphone is off."
             : status === "connecting"
               ? realtime
-                ? "Connecting voice..."
-                : "Preparing local voice..."
+                ? "Connecting voice…"
+                : "Preparing local voice…"
               : "Ready to connect",
   );
 }

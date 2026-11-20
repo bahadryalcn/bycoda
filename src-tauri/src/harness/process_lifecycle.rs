@@ -36,11 +36,14 @@ impl OwnedChild {
         {
             let job = Arc::new(
                 crate::owned_process_job::OwnedProcessJob::new()
-                    .map_err(|_| io::Error::other("Owned process job unavailable"))?,
+                    .map_err(|error| io::Error::other(error.to_string()))?,
             );
+            // The job error holds only the failed step and Win32 code (for
+            // example CreateProcess os error 2), which diagnoses a missing or
+            // blocked binary without exposing a path.
             let child = job
                 .spawn(command)
-                .map_err(|_| io::Error::other("Owned process job spawn failed"))?;
+                .map_err(|error| io::Error::other(error.to_string()))?;
             Ok(Self {
                 child,
                 job: Some(job),

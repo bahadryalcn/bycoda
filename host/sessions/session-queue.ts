@@ -732,8 +732,13 @@ export class SessionQueues {
     });
   }
   private async removed(id: string, rowId: string): Promise<void> {
+    // Tombstones live as long as the conversation (`delete` clears them). A stale client's
+    // retry (a lost reply, a saved offline edit) carries no deadline, no base revision and
+    // its rows no creation time, so no age or count limit can tell a retry that must still
+    // be refused from one that may be accepted: pruning lets an old mutation add a removed
+    // row back. Named columns also fit a table that gained `removed_at` from an earlier build.
     await this.db
-      .prepare("INSERT OR IGNORE INTO session_queue_removed VALUES (?, ?)")
+      .prepare("INSERT OR IGNORE INTO session_queue_removed (session_id, message_id) VALUES (?, ?)")
       .run(id, rowId);
   }
 }

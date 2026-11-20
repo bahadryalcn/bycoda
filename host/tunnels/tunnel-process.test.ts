@@ -13,6 +13,7 @@ import {
   tunnelEnvironment,
   tunnelOutput,
   probeTunnelOrigin,
+  TUNNEL_OUTAGE_MS,
   type TunnelEvent,
 } from "./tunnel-providers";
 
@@ -103,6 +104,123 @@ describe("tunnel provider adapters", () => {
       expect(events).toEqual([{ type: "error", issue }]);
       expect(JSON.stringify(events)).not.toContain("private-secret");
     }
+  });
+
+  describe("after the tunnel is ready", () => {
+    const registered = (index: number) => `INF Registered tunnel connection connIndex=${index}\n`;
+    const edgeLost = (index: number) =>
+      `ERR Unable to establish connection with Cloudflare edge connIndex=${index} private-secret\n`;
+    const origin = "ERR Unable to reach the origin service. private-secret\n";
+    function readyCloudflare(connections = 4) {
+      let clock = 0;
+      const events: TunnelEvent[] = [];
+      const stream = tunnelOutput(
+        "cloudflare",
+        (event) => events.push(event),
+        () => clock,
+      ).stream();
+      stream.write(Buffer.from("INF https://host-a.trycloudflare.com\n"));
+      for (let index = 0; index < connections; index += 1) {
+        stream.write(Buffer.from(registered(index)));
+      }
+      expect(events).toEqual([{ type: "ready", publicUrl: "https://host-a.trycloudflare.com" }]);
+      return {
+        events,
+        write: (text: string) => stream.write(Buffer.from(text)),
+        advance: (ms: number) => void (clock += ms),
+      };
+    }
+
+    it("keeps the tunnel through isolated origin errors", () => {
+      const tunnel = readyCloudflare();
+      for (let count = 0; count < 20; count += 1) {
+        tunnel.write(origin);
+        tunnel.advance(TUNNEL_OUTAGE_MS);
+      }
+      expect(tunnel.events).toHaveLength(1);
+    });
+
+    it("keeps the tunnel while other connections stay healthy, even for a long time", () => {
+      const tunnel = readyCloudflare();
+      tunnel.write(edgeLost(2));
+      tunnel.advance(TUNNEL_OUTAGE_MS * 4);
+      tunnel.write(edgeLost(2));
+      tunnel.write(registered(2));
+      tunnel.advance(TUNNEL_OUTAGE_MS * 4);
+      tunnel.write(edgeLost(1));
+      expect(tunnel.events).toHaveLength(1);
+    });
+
+    it("reports a sustained outage only after every connection stayed down", () => {
+      const tunnel = readyCloudflare(2);
+      tunnel.write(edgeLost(0));
+      tunnel.write(edgeLost(1));
+      tunnel.advance(TUNNEL_OUTAGE_MS - 1);
+      tunnel.write(edgeLost(1));
+      expect(tunnel.events).toHaveLength(1);
+      tunnel.advance(1);
+      tunnel.write(edgeLost(0));
+      expect(tunnel.events).toEqual([
+        expect.objectContaining({ type: "ready" }),
+        { type: "error", issue: "connection-failed" },
+      ]);
+      expect(JSON.stringify(tunnel.events)).not.toContain("private-secret");
+      tunnel.write(edgeLost(0));
+      expect(tunnel.events).toHaveLength(2);
+    });
+
+    it("clears the outage clock when a connection registers again", () => {
+      const tunnel = readyCloudflare(1);
+      tunnel.write(edgeLost(0));
+      tunnel.advance(TUNNEL_OUTAGE_MS - 1);
+      tunnel.write(registered(0));
+      tunnel.advance(TUNNEL_OUTAGE_MS);
+      tunnel.write(edgeLost(0));
+      tunnel.advance(TUNNEL_OUTAGE_MS - 1);
+      tunnel.write(edgeLost(0));
+      expect(tunnel.events).toHaveLength(1);
+    });
+
+    it("retires the tunnel at once when the provider has no connection left", () => {
+      const tunnel = readyCloudflare();
+      tunnel.write("INF no more connections active and exiting\n");
+      expect(tunnel.events.at(-1)).toEqual({ type: "error", issue: "connection-failed" });
+    });
+
+    it("still reports rejected credentials after ready", () => {
+      let clock = 0;
+      const events: TunnelEvent[] = [];
+      const stream = tunnelOutput(
+        "ngrok",
+        (event) => events.push(event),
+        () => clock,
+      ).stream();
+      stream.write(Buffer.from('{"msg":"started tunnel","url":"https://a.ngrok.app"}\n'));
+      stream.write(Buffer.from("ERR_NGROK_4018 private-secret\n"));
+      expect(events.at(-1)).toEqual({ type: "error", issue: "credential-missing" });
+    });
+
+    it("treats ngrok origin errors as isolated and a lost session as an outage", () => {
+      let clock = 0;
+      const events: TunnelEvent[] = [];
+      const stream = tunnelOutput(
+        "ngrok",
+        (event) => events.push(event),
+        () => clock,
+      ).stream();
+      stream.write(Buffer.from('{"msg":"started tunnel","url":"https://a.ngrok.app"}\n'));
+      expect(events).toEqual([{ type: "ready", publicUrl: "https://a.ngrok.app" }]);
+      stream.write(Buffer.from("ERR_NGROK_8012 failed to connect to upstream\n"));
+      stream.write(Buffer.from("failed to establish session\n"));
+      clock += TUNNEL_OUTAGE_MS - 1;
+      stream.write(Buffer.from('{"msg":"client session established"}\n'));
+      clock += TUNNEL_OUTAGE_MS;
+      stream.write(Buffer.from("failed to establish session\n"));
+      expect(events).toHaveLength(1);
+      clock += TUNNEL_OUTAGE_MS;
+      stream.write(Buffer.from("failed to establish session\n"));
+      expect(events.at(-1)).toEqual({ type: "error", issue: "connection-failed" });
+    });
   });
 
   it("uses hidden shell-free children, reports missing CLI and kills only the returned handle on timeout", async () => {

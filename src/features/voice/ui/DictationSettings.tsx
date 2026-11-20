@@ -14,8 +14,9 @@ import { DictationModelSettings } from "./DictationModelSettings";
 import { VoiceCloudKey } from "./VoiceCloudKey";
 import { DictationDictionarySettings } from "./DictationDictionarySettings";
 import { ProcessingRow } from "./VoiceProcessingRow";
+import { VoiceSetupRow } from "./VoiceSetupRow";
 
-/** Recognition choices stay visible; dictionary and text options expand on demand. */
+/** Language, shortcut and recognition stay visible; model management opens on demand. */
 export function DictationSettings({
   settings,
   change,
@@ -146,14 +147,6 @@ export function DictationSettings({
               />
             </Row>
           ) : null}
-          {settings.dictationEngine === "local" ? (
-            <LocalDictationModels settings={settings} change={change} />
-          ) : (
-            <DictationModelSettings settings={settings} change={change} />
-          )}
-          {settings.dictationEnabled && settings.dictationEngine === "openrouter" ? (
-            <VoiceCloudKey provider="openrouter" />
-          ) : null}
           <Row
             id="dictation-shortcut-mode"
             label={t("Dictation shortcut mode")}
@@ -175,6 +168,23 @@ export function DictationSettings({
               }
             />
           </Row>
+          {speechEnabled && !settings.enabled ? (
+            <VoiceSetupRow setup={setup} settings={settings} change={change} />
+          ) : null}
+          {settings.dictationEngine === "local" ? (
+            <AdvancedSettings
+              title={t("Transcription models")}
+              settingIds={["dictation-local-models"]}
+              keepMounted
+            >
+              <LocalDictationModels settings={settings} change={change} />
+            </AdvancedSettings>
+          ) : (
+            <DictationModelSettings settings={settings} change={change} />
+          )}
+          {settings.dictationEngine === "openrouter" ? (
+            <VoiceCloudKey provider="openrouter" />
+          ) : null}
           <DictationDictionarySettings settings={settings} change={change} />
           <DictationCleanupSettings settings={settings} change={change} />
           <AdvancedSettings

@@ -3,7 +3,9 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeMode } from "../model/session";
+import { setLanguagePreference, t } from "../../../shared/i18n";
 import { AccessPicker } from "./AccessPicker";
+import { runtimeModeCopy } from "./runtimeModeCopy";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -40,6 +42,80 @@ const option = (label: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("[role='option']")].find((el) =>
     el.textContent?.includes(label),
   );
+
+const NEXT_TURN = "Access changes apply to the next turn. Stop and resend to apply them now.";
+const count = (text: string, part: string) => text.split(part).length - 1;
+
+function render(props: { busy?: boolean; value?: RuntimeMode }) {
+  act(() =>
+    root.render(
+      createElement(AccessPicker, {
+        value: props.value ?? "supervised",
+        onChange: vi.fn(),
+        busy: props.busy,
+      }),
+    ),
+  );
+}
+
+const trigger = () => container.querySelector<HTMLButtonElement>("[data-access-picker-trigger]")!;
+
+describe("AccessPicker localization", () => {
+  afterEach(async () => {
+    await setLanguagePreference("en");
+  });
+
+  it("names the trigger and its mode meaning in the app language", async () => {
+    await setLanguagePreference("tr");
+    render({ value: "auto-accept-edits" });
+    expect(trigger().getAttribute("aria-label")).toBe("Düzenlemeleri otomatik kabul et");
+    expect(runtimeModeCopy(t, "full-access").hint).toBe(
+      "Plan dışı turlarda komutlara, düzenlemelere ve desteklenen MCP onaylarına istem göstermeden izin ver.",
+    );
+    act(() => trigger().click());
+    expect(option("Gözetimli")).toBeDefined();
+    expect(option("Otomatik")?.textContent).toContain(
+      "Bir yapay zekâ denetçisi eylemleri onaylayabilir veya reddedebilir.",
+    );
+  });
+
+  it("keeps the English name and meaning in English", () => {
+    render({ value: "supervised" });
+    expect(trigger().getAttribute("aria-label")).toBe("Supervised");
+    expect(runtimeModeCopy(t, "supervised").hint).toBe("Ask before commands and file changes.");
+  });
+});
+
+describe("AccessPicker next-turn explanation", () => {
+  it("shows no explanation while idle", () => {
+    render({ busy: false });
+    act(() => trigger().click());
+    expect(document.querySelector("[data-picker-footer]")).toBeNull();
+    expect(count(document.body.textContent ?? "", NEXT_TURN)).toBe(0);
+  });
+
+  it("keeps the sentence behind one info button, never inline in the menu or the hint", () => {
+    render({ busy: true });
+    act(() => trigger().click());
+    const footer = document.querySelector<HTMLElement>("[data-picker-footer]")!;
+    expect(footer.textContent).not.toContain(NEXT_TURN);
+    expect(count(document.body.textContent ?? "", NEXT_TURN)).toBe(0);
+    act(() => footer.querySelector<HTMLButtonElement>("button")!.click());
+    expect(count(document.body.textContent ?? "", NEXT_TURN)).toBe(1);
+    expect(document.querySelector("[data-access-picker]")).not.toBeNull();
+  });
+
+  it("still picks a mode after reading the explanation", () => {
+    const onChange = vi.fn();
+    act(() =>
+      root.render(createElement(AccessPicker, { value: "supervised", onChange, busy: true })),
+    );
+    act(() => trigger().click());
+    act(() => document.querySelector<HTMLButtonElement>("[data-picker-footer] button")!.click());
+    act(() => option("Full access")?.click());
+    expect(onChange).toHaveBeenCalledWith("full-access");
+  });
+});
 
 describe("AccessPicker unavailable modes", () => {
   it("shows an unavailable mode with its reason and refuses to pick it", () => {

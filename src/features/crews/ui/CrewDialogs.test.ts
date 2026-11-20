@@ -88,7 +88,7 @@ async function open(call: ReturnType<typeof vi.fn>, accessSupported = true, proj
       accessSupported,
     },
     call,
-    refetch: vi.fn(),
+    refetch: vi.fn().mockResolvedValue(undefined),
   } as unknown as Props["state"];
   await act(async () =>
     root.render(createElement(StartCrewDialog, { cwd: "/p", state, onClose: vi.fn() })),

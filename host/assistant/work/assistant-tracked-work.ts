@@ -78,7 +78,7 @@ export class AssistantTrackedWork {
       // Terminal items go first, then the oldest; a full table never blocks new work.
       const rows = await this.store.db
         .prepare(
-          "SELECT id FROM assistant_runtime WHERE id LIKE 'tracked:%' AND deleted_at IS NULL ORDER BY json_extract(value,'$.value.terminalAt') IS NULL,updated_at,id",
+          "SELECT id FROM assistant_runtime WHERE id>='tracked:' AND id<'tracked;' AND deleted_at IS NULL ORDER BY json_extract(value,'$.value.terminalAt') IS NULL,updated_at,id",
         )
         .all();
       for (const row of rows.slice(0, Math.max(0, rows.length - MAX_TRACKED_WORK)))
@@ -90,7 +90,7 @@ export class AssistantTrackedWork {
     await this.prWatch.tick().catch((error) => this.deps.onError?.(error));
     const rows = await this.store.db
       .prepare(
-        "SELECT value FROM assistant_runtime WHERE id LIKE 'tracked:%' AND deleted_at IS NULL ORDER BY updated_at,id LIMIT ?",
+        "SELECT value FROM assistant_runtime WHERE id>='tracked:' AND id<'tracked;' AND deleted_at IS NULL ORDER BY updated_at,id LIMIT ?",
       )
       .all(MAX_TRACKED_WORK * 2);
     for (const raw of rows) {

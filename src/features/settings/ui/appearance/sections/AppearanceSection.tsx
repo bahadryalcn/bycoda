@@ -12,6 +12,7 @@ export function AppearanceSection({
   return (
     <section
       id={`appearance-topic-${id}`}
+      data-appearance-topic={id}
       tabIndex={-1}
       className="appearance-section"
       aria-label={title}

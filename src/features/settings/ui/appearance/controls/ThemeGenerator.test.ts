@@ -12,7 +12,7 @@ describe("chipImageAction", () => {
     expect(chipImageAction({ status: "loading" })).toBe("wait");
   });
 
-  it("reuses a finished image without drawing again", () => {
+  it("keeps a finished image for review without drawing again", () => {
     const image = {
       id: "a",
       path: "/library/a.png",
@@ -21,7 +21,7 @@ describe("chipImageAction", () => {
       source: "generated" as const,
       prompt: null,
     };
-    expect(chipImageAction({ status: "done", image })).toBe("apply");
+    expect(chipImageAction({ status: "done", image })).toBe("review");
   });
 
   it("draws when the chip has no image or the last one failed", () => {

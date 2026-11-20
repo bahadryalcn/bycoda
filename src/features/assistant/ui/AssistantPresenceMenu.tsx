@@ -22,7 +22,8 @@ export function AssistantPresenceMenu({
   if (presence.hidden) return null;
   const { label, state, error } = presence;
   const items: DropdownMenuItem[] = [
-    ...presence.items,
+    // The inline error below already announces the failure; the menu row would say it twice.
+    ...presence.items.filter((item) => item.kind !== "item" || item.id !== "failure"),
     { kind: "sep" },
     {
       kind: "item",
@@ -39,22 +40,14 @@ export function AssistantPresenceMenu({
         variant="ghost"
         disabled={presence.busy || presence.pending}
         label={t("Availability: {p0}", { p0: label })}
-        tooltip={
-          error
-            ? t("Availability change was not confirmed.")
-            : t("Availability: {p0}", { p0: label })
-        }
+        title=""
         aria-haspopup="menu"
         aria-expanded={presence.open}
         onClick={() => (presence.open ? presence.end() : presence.begin().catch(() => undefined))}
       >
         <AssistantPresenceIndicator state={state} label={label} className="max-w-24" />
       </Button>
-      {error && (
-        <InlineError icon={null} className="sr-only">
-          {t("Availability change was not confirmed.")}
-        </InlineError>
-      )}
+      {error && <InlineError>{t("Availability change could not be confirmed.")}</InlineError>}
       {presence.open && (
         <DropdownMenu
           anchor={trigger}

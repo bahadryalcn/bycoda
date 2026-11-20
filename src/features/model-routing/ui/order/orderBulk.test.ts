@@ -2,7 +2,13 @@ import { expect, it, vi } from "vitest";
 import { EMPTY_MODEL_ROUTING } from "../../../../shared/model/host-contracts/model-routing";
 import { orderDraft } from "../../model/modelRoutingDraft";
 import type { SetupCandidate } from "../../model/smartSetup";
-import { addAccountModels, addEntriesToPool, removeEntries, setEntriesEffort } from "./orderBulk";
+import {
+  addAccountModels,
+  addChoiceFor,
+  addEntriesToPool,
+  removeEntries,
+  setEntriesEffort,
+} from "./orderBulk";
 import { groupByAccount, jobsUsingOrder } from "./orderGrouping";
 
 vi.mock("../../../sessions/public/models", () => ({
@@ -95,6 +101,16 @@ it("adds the account's catalog models the order does not list yet", () => {
   );
   expect(next.routing.entries.map((item) => item.model)).toEqual(["m1", "m2"]);
   expect(next.percentages[next.routing.entries[1]!.id]).toBe("");
+});
+
+it("adds from the last provider when offered, else the first offered choice, else nothing", () => {
+  const choice = (harness: string) =>
+    ({ target: { harness, model: "m" } }) as unknown as SetupCandidate;
+  const offered = [choice("codex"), choice("claude")];
+  expect(addChoiceFor(offered, "claude")?.target.harness).toBe("claude");
+  expect(addChoiceFor(offered, "grok")?.target.harness).toBe("codex");
+  expect(addChoiceFor(offered)?.target.harness).toBe("codex");
+  expect(addChoiceFor([])).toBeUndefined();
 });
 
 it("names the group when the whole selection would empty it, before removing anything", () => {

@@ -26,6 +26,7 @@ import {
 } from "../model/tourState";
 import { firstRunTourSteps } from "../model/tourSteps";
 import { configureFileAccess } from "../../../platform/tauri/fileAccess";
+import { describeLocalError } from "../../connections/public/remoteFailure";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { t } from "../../../shared/i18n";
@@ -76,7 +77,9 @@ export function OnboardingHost({
     setAccessBusy(true);
     setAccessError("");
     void configureFileAccess()
-      .catch((error) => setAccessError(String(error)))
+      .catch((error) =>
+        setAccessError(describeLocalError(error, t("Could not set up file access."))),
+      )
       .finally(() => setAccessBusy(false));
   };
   // Native storage owns the decision, including migration of existing installs, and its

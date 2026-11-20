@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useRef, useState } from "react";
 import type {
@@ -29,6 +30,7 @@ import {
   type AssistantJobDraft,
 } from "../../model/assistantJobs";
 import { captureAssistantHostRead } from "../../model/assistantHostRead";
+import { createLocalDraftWriter } from "../../model/assistantLocalDraft";
 import {
   tabs,
   jobIntentsKey,
@@ -68,7 +70,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     if (!expectedEnvironmentId)
       return Promise.reject(
         new Error(
-          "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+          "The original computer could not be verified. Keep this draft and reconnect that computer.",
         ),
       );
     return ownerRequest(input, expectedEnvironmentId);
@@ -92,8 +94,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
           }
         },
         (cause: unknown) => {
-          if (epoch === projectReadEpoch.current)
-            setProjectReadError(cause instanceof Error ? cause.message : String(cause));
+          if (epoch === projectReadEpoch.current) setProjectReadError(errorText(cause));
         },
       );
   }
@@ -237,17 +238,24 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const jobBatch = useRef<AssistantJobBatch | null>(null);
   const [jobReviewFrozen, setJobReviewFrozen] = useState(false);
   const jobReviewEnvironment = useRef<string | undefined>(undefined);
+  const [jobReviewWriter] = useState(() => createLocalDraftWriter("bycoda.assistant.job-review"));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the review writer's page lifecycle listener and flush on unmount.
+  useEffect(() => jobReviewWriter.attach(), [jobReviewWriter]);
   useEffect(() => {
-    if (jobReview && !jobReviewFrozen)
-      try {
-        localStorage.setItem(
-          "bycoda.assistant.job-review",
-          JSON.stringify({ source: jobText, rows: jobReview, frozen: false }),
-        );
-      } catch {
-        /* Save validates durable intent before dispatch. */
-      }
-  }, [jobReview, jobText, jobReviewFrozen]);
+    // A frozen review is a durable intent written before dispatch; a pending unfrozen write must not replace it.
+    if (jobReviewFrozen) {
+      jobReviewWriter.cancel();
+      return;
+    }
+    // Dialog closed: store the last reviewed rows now instead of waiting for the debounce.
+    if (!jobReview) {
+      jobReviewWriter.flush();
+      return;
+    }
+    jobReviewWriter.schedule(() =>
+      JSON.stringify({ source: jobText, rows: jobReview, frozen: false }),
+    );
+  }, [jobReview, jobText, jobReviewFrozen, jobReviewWriter]);
   const jobIntents = useRef<Record<string, string>>(readJobIntents() ?? {});
   useEffect(() => {
     // Another window wrote the map: refresh the in-memory copy so new keys are reused here.
@@ -351,13 +359,13 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const currentProject = projects.find((project) => project.path === props.projectPath);
   const defaultProjectId = currentProject?.id ?? currentProject?.path ?? "";
 
+  const [jobDraftWriter] = useState(() => createLocalDraftWriter("bycoda.assistant.job-draft"));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the draft writer's page lifecycle listener and flush on unmount.
+  useEffect(() => jobDraftWriter.attach(), [jobDraftWriter]);
   useEffect(() => {
-    try {
-      localStorage.setItem("bycoda.assistant.job-draft", jobText);
-    } catch {
-      /* The in-memory draft remains available. */
-    }
-  }, [jobText]);
+    // Typing only records the value; the shared debounce writes it, and close or pagehide flushes it.
+    jobDraftWriter.schedule(() => jobText);
+  }, [jobText, jobDraftWriter]);
   const [appliedNavigation, setAppliedNavigation] = useState<{
     tab: string | undefined;
     token: unknown;
@@ -422,7 +430,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   }
   const onOpenSession = props.onOpenSession
     ? (id: string, sourceEnvironmentId = props.environmentId ?? environmentId) => {
-        run(`navigation:${id}`, t("Opening session..."), async () => {
+        run(`navigation:${id}`, t("Opening session…"), async () => {
           if (sourceEnvironmentId) await props.onOpenSession!(id, sourceEnvironmentId);
           else await props.onOpenSession!(id);
         });
@@ -430,7 +438,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     : undefined;
 
   function returnToAssistant() {
-    run("presence.return", t("Preparing briefing..."), async () => {
+    run("presence.return", t("Preparing briefing…"), async () => {
       setReturnMessage("");
       await assistantRequest({ op: "presence.set", state: "present" });
       const now = new Date();
@@ -520,6 +528,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     jobBatch,
     jobReviewFrozen,
     setJobReviewFrozen,
+    jobReviewWriter,
     jobReviewEnvironment,
     jobIntents,
     jobKey,

@@ -1,17 +1,16 @@
 import { ActionHost } from "../../../shared/ui/ActionHost";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
-import { SettingsFeedback } from "../../../shared/ui/settings";
+import { Group, Select, SettingsFeedback } from "../../../shared/ui/settings";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { Heading } from "../../../shared/ui/Heading";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
@@ -19,18 +18,26 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
-import { CircleHelp, RefreshCw, ListFilter, RotateCcw } from "../../../shared/ui/icons";
+import { CircleHelp, RefreshCw } from "../../../shared/ui/icons";
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { HostProject, RemoteMachine } from "../../connections";
-import { Select } from "../../../shared/ui/settings";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import styles from "./ExternalMcpAccess.module.css";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 
 const groups = ["conversation", "runtime-logs", "social"] as const;
-type Group = (typeof groups)[number];
-type Scopes = Partial<Record<Group, ("read" | "write")[]>>;
+type GroupId = (typeof groups)[number];
+type Scopes = Partial<Record<GroupId, ("read" | "write")[]>>;
+
+// Wire ids stay in `groups` and the RPC payload; only display text is translated. An id this
+// build does not know (a future or removed group) is shown as stored.
+function groupLabel(group: string) {
+  if (group === "conversation") return t("Conversation");
+  if (group === "runtime-logs") return t("Runtime logs");
+  if (group === "social") return t("Social media");
+  return group;
+}
 type Grant = {
   id: string;
   name: string;
@@ -84,7 +91,7 @@ function CreateToken({
     projects.find((p) => p.cwd === cwd)?.id ?? projects[0]?.id ?? "",
   );
   const [days, setDays] = useState("30");
-  const [modes, setModes] = useState<Record<Group, string>>({
+  const [modes, setModes] = useState<Record<GroupId, string>>({
     conversation: "read",
     "runtime-logs": "",
     social: "",
@@ -237,10 +244,10 @@ function CreateToken({
           <FieldGroup legend={t("Tool groups and scopes")} disabled={busy}>
             {groups.map((group) => (
               <div key={group} className={styles.scope}>
-                <span>{group}</span>
+                <span>{groupLabel(group)}</span>
                 <Select
                   hideLabel
-                  label={group}
+                  label={groupLabel(group)}
                   value={modes[group]}
                   disabled={busy}
                   options={[
@@ -289,6 +296,7 @@ function CreateToken({
 
 export function ExternalMcpAccess({ cwd }: { cwd: string }) {
   useLocale();
+  const format = useFormat();
   const [data, setData] = useState<{
     machine: RemoteMachine;
     projects: HostProject[];
@@ -398,21 +406,10 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         .includes(query.trim().toLocaleLowerCase()),
   );
   return (
-    <Text
-      as="section"
-      size="secondary"
-      tone="inherit"
-      leading="inherit"
-      id="setting-external-mcp-access"
-      className={styles.section}
-      aria-labelledby="external-mcp-heading"
-      data-setting-id="external-mcp-access"
-      tabIndex={-1}
-    >
-      <div className={styles.header}>
-        <Heading size="item" level={2} id="external-mcp-heading">
-          {t("External MCP access")}
-        </Heading>
+    <Group
+      id="external-mcp-access"
+      title={t("External MCP access")}
+      action={
         <div className={styles.actions}>
           <Button
             ref={info}
@@ -443,7 +440,8 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             {t("Create token")}
           </Button>
         </div>
-      </div>
+      }
+    >
       {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
       {loading && !data && (
         <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>
@@ -460,31 +458,19 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             />
           </div>
           <div className={styles.toolbarSlot}>
-            <Button
+            <FilterTrigger
               ref={filterAnchor}
-              variant="ghost"
-              iconOnly
               label={t("Filters")}
-              selected={filter !== "all"}
+              activeCount={filter !== "all" ? 1 : 0}
+              onReset={() => {
+                setFilter("all");
+                setQuery("");
+              }}
+              resetLabel={t("Reset filters")}
               aria-expanded={filtersOpen}
               aria-haspopup="dialog"
               onClick={() => setFiltersOpen(!filtersOpen)}
-            >
-              <ListFilter />
-            </Button>
-            {filter !== "all" || query ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Reset filters")}
-                onClick={() => {
-                  setFilter("all");
-                  setQuery("");
-                }}
-              >
-                <RotateCcw className="icon-sm" strokeWidth={1.75} />
-              </Button>
-            ) : null}
+            />
             {data ? (
               <Text
                 size="caption"
@@ -502,7 +488,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       {filtersOpen ? (
         <Popover
           anchor={filterAnchor}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Filter tokens")}
           onDismiss={() => setFiltersOpen(false)}
           width={260}
@@ -520,15 +506,6 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                 { value: "revoked", label: t("Revoked") },
               ]}
             />
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setFilter("all");
-                setQuery("");
-              }}
-            >
-              {t("Reset filters")}
-            </Button>
           </Text>
         </Popover>
       ) : null}
@@ -545,14 +522,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       {!loading && data?.tokens.length && shownTokens.length === 0 ? (
         <SettingsFeedback state="empty">{t("No tokens match your filters.")}</SettingsFeedback>
       ) : null}
-      <ScrollArea
-        axis="both"
-        gutter="stable"
-        {...surfaceAttributes(
-          { variant: "card", frame: "card", edge: "all", radius: "card" },
-          styles.list,
-        )}
-      >
+      <ScrollArea axis="both" gutter="stable" className={styles.list}>
         {shownTokens.map((grant) => (
           <ActionHost key={grant.id} variant="settings" separator className={styles.row}>
             <div className={styles.identity}>
@@ -574,7 +544,8 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                 </Badge>
               </Text>
               <Text size="caption" tone="secondary" leading="inherit" className={styles.metadata}>
-                {t("Expires")}: {new Date(grant.expiresAt).toLocaleString()}
+                {t("Expires")}:{" "}
+                {format.formatDate(grant.expiresAt, { dateStyle: "medium", timeStyle: "short" })}
               </Text>
               <section>
                 <SectionLabel as="h3">{t("Scopes")}</SectionLabel>
@@ -591,7 +562,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                     label={t("Scopes")}
                     items={Object.entries(grant.scopes).map(([group, modes]) => ({
                       id: group,
-                      label: `${group}: ${modes.map((mode) => (mode === "read" ? t("Read") : t("Write"))).join(", ")}`,
+                      label: `${groupLabel(group)}: ${modes.map((mode) => (mode === "read" ? t("Read") : t("Write"))).join(", ")}`,
                     }))}
                   />
                 </Text>
@@ -619,9 +590,8 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         <Popover
           anchor={info}
           width={420}
-          autoFocus
           onDismiss={() => setHelp(false)}
-          role="dialog"
+          kind="dialog"
           aria-label={t("MCP connection examples")}
         >
           <Text as="div" tone="primary" leading="inherit" className={styles.help}>
@@ -657,6 +627,6 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           onCreated={() => void refresh()}
         />
       )}
-    </Text>
+    </Group>
   );
 }

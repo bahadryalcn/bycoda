@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
@@ -59,7 +60,7 @@ function JobDiscussionSource() {
         setThread(result.thread);
       })
       .catch((cause: unknown) => {
-        if (active) setError(cause instanceof Error ? cause.message : String(cause));
+        if (active) setError(errorText(cause));
       });
     return () => {
       active = false;
@@ -72,7 +73,7 @@ function JobDiscussionSource() {
       </InlineError>
     );
   if (!thread || !room.snapshot || !room.canonicalSnapshot)
-    return <LoadingText>{t("Opening job discussion...")}</LoadingText>;
+    return <LoadingText>{t("Opening job discussion…")}</LoadingText>;
   return <JobDiscussionConversation thread={thread} />;
 }
 

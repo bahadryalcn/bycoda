@@ -213,7 +213,7 @@ export function LocalSessionReferenceLink({
           width={320}
           maxHeight={340}
           flow="scroll"
-          role="dialog"
+          kind="dialog"
           aria-label={t("Session details")}
           onDismiss={() => setDetails(false)}
           className="p-3"

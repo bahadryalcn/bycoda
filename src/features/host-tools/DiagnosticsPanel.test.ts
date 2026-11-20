@@ -153,6 +153,23 @@ it("plots real history with CPU gaps and displays system memory separately", asy
   expect(cpu.querySelector("path")!.getAttribute("d")!.match(/M/g)).toHaveLength(2);
   expect(cpu.textContent).toContain("150%");
   expect(cpu.querySelectorAll("circle")[1].getAttribute("cx")).toBe("312");
+  expect(cpu.querySelector("svg")?.getAttribute("aria-label")).toContain("Maximum 150%");
+  expect(cpu.querySelector("svg")?.getAttribute("aria-label")).not.toContain(
+    "CPU reading unavailable",
+  );
+  expect(cpu.querySelector("svg title")).toBeNull();
+  const showTable = cpu.querySelector("details")!;
+  expect(showTable.querySelector("summary")?.textContent).toContain("Show as table");
+  await act(async () => {
+    showTable.open = true;
+    showTable.dispatchEvent(new Event("toggle"));
+  });
+  expect(cpu.querySelectorAll("tbody tr")).toHaveLength(history.length);
+  expect(cpu.querySelector("tbody")?.textContent).toContain("150%");
+  // Memory readings use the shared byte formatter, not a hard-coded MiB suffix.
+  expect(
+    container.querySelector(".resource-chart-memory svg")?.getAttribute("aria-label"),
+  ).toContain("Latest 128 B");
   expect(container.querySelector("[role=meter]")!.getAttribute("aria-valuenow")).toBe("50");
   expect(container.querySelector(".resource-history-caption")?.textContent).toContain("4 / 60");
   const details = container.querySelector<HTMLButtonElement>('[aria-label="Measurement details"]')!;
@@ -177,5 +194,5 @@ it("keeps the previous charts visible when refreshing fails", async () => {
   await act(async () => container.querySelector("button")!.click());
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Host offline");
-  expect(container.querySelector(".resource-value")?.textContent).toBe("5.0%");
+  expect(container.querySelector(".resource-value")?.textContent).toBe("5%");
 });

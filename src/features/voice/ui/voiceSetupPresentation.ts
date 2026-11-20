@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { t } from "../../../shared/i18n";
 import type { VoiceRuntimeConfig, VoiceSetupStatus } from "../model/localVoiceClient";
 
@@ -15,7 +16,7 @@ export function setupConfigKey(config: VoiceRuntimeConfig) {
   ]);
 }
 export function checkFailure(cause: unknown): Failure {
-  const detail = cause instanceof Error ? cause.message : String(cause);
+  const detail = errorText(cause);
   return {
     message:
       detail === "Disconnect voice before installing."

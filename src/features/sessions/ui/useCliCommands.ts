@@ -13,18 +13,26 @@ import {
 import { loadDisabledSkillPaths, type Skill } from "../../skills/model/skills";
 import type { HarnessId } from "../model/session";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
+import { boundedGet, boundedSet } from "../../../shared/lib/store";
 
 const DISK_TTL_MS = 30_000;
+/** Folders kept in memory; the least recently used one is dropped first. */
+const DISK_CACHE_LIMIT = 32;
 const disk = new Map<string, { at: number; commands: DiskCommand[] }>();
 const NO_DISK_COMMANDS: DiskCommand[] = [];
 const pendingDisk = new Map<string, Promise<ClaudeCommandEntry[]>>();
 
-function discoverCommands(cwd: string): Promise<ClaudeCommandEntry[]> {
+/** The last command read for this folder, or `null`. Stale entries are still returned; the caller decides. */
+export function cachedDiskEntry(cwd: string): { at: number; commands: DiskCommand[] } | null {
+  return boundedGet(disk, cwd);
+}
+
+export function discoverCommands(cwd: string): Promise<ClaudeCommandEntry[]> {
   const pending = pendingDisk.get(cwd);
   if (pending) return pending;
   const request = listClaudeCommands(cwd)
     .then((commands) => {
-      disk.set(cwd, { at: Date.now(), commands });
+      boundedSet(disk, cwd, { at: Date.now(), commands }, DISK_CACHE_LIMIT);
       return commands;
     })
     .finally(() => {
@@ -60,12 +68,12 @@ export function useCliCommands(input: {
   const [, setLoadedRevision] = useState(0);
   const diskCommands =
     harness === "claude" && localCwd
-      ? (disk.get(localCwd)?.commands ?? NO_DISK_COMMANDS)
+      ? (cachedDiskEntry(localCwd)?.commands ?? NO_DISK_COMMANDS)
       : NO_DISK_COMMANDS;
 
   useEffect(() => {
     if (harness !== "claude" || !localCwd) return;
-    const cached = disk.get(localCwd);
+    const cached = cachedDiskEntry(localCwd);
     if (cached && Date.now() - cached.at < DISK_TTL_MS) return;
     // Opening the composer loads once; opening the menu refreshes a stale list.
     if (!menuOpen && cached) return;

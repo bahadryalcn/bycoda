@@ -923,3 +923,45 @@ describe("Official social API adapter contracts", () => {
     expect(contentSupport(account("youtube"), publish)).toBeUndefined();
   });
 });
+
+describe("Published-ID list in adapter polls", () => {
+  const ignoring = ["reddit", "telegram", "x", "youtube"] as const;
+  it("marks only adapters that never read the list, never one that pages it", () => {
+    const adapters = createSocialAdapters(new SocialHttp(vi.fn()));
+    expect(
+      Object.entries(adapters)
+        .filter(([, adapter]) => adapter.ignoresPublishedPosts)
+        .map(([platform]) => platform)
+        .sort(),
+    ).toEqual([...ignoring]);
+    for (const adapter of Object.values(adapters))
+      expect(adapter.ignoresPublishedPosts && adapter.ownedPostPages).toBeFalsy();
+    // Adapters that consume the list keep receiving it.
+    for (const platform of ["facebook", "instagram", "linkedin"] as const)
+      expect(adapters[platform].ownedPostPages).toBe(true);
+  });
+  it.each(ignoring)(
+    "%s polls identically whether or not published IDs are passed",
+    async (platform) => {
+      const run = async (posts: string[]) => {
+        const fetcher = vi.fn(async () => Response.json({ ok: true, result: [], data: [] }));
+        const acct = {
+          ...account(platform),
+          scopes: ["tweet.read", "users.read", "dm.read", "mentions", "messages", "comments"],
+        };
+        const adapter = createSocialAdapters(new SocialHttp(fetcher))[platform];
+        const outcome = await adapter.poll(acct, "123:synthetic", posts, "7").then(
+          (value) => ({ value }),
+          (error: unknown) => ({
+            error: error instanceof SocialPlatformError ? error.code : "other",
+          }),
+        );
+        return {
+          outcome,
+          requests: fetcher.mock.calls.map((call) => String((call as unknown[])[0])),
+        };
+      };
+      expect(await run(["post-1", "post-2"])).toEqual(await run([]));
+    },
+  );
+});

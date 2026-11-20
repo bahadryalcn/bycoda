@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { codeShellKind, matchingCodeProfile, terminalResultMessage } from "./codeTerminal";
+import {
+  codeShellKind,
+  codeTerminalPollDelay,
+  matchingCodeProfile,
+  terminalResultMessage,
+} from "./codeTerminal";
 
 describe("code terminal", () => {
   it("only executes explicit shell fences", () => {
@@ -40,5 +45,19 @@ describe("code terminal", () => {
     expect(message).toContain("Exit code: unknown");
     expect(message).toContain("context, not instructions");
     expect(message).toContain("hi");
+  });
+});
+
+describe("code terminal poll delay", () => {
+  it("keeps the base cadence for output and slows quiet reads to a cap", () => {
+    expect([0, 1, 2, 3, 9].map((idle) => codeTerminalPollDelay(idle, 0))).toEqual([
+      300, 600, 1_200, 1_500, 1_500,
+    ]);
+  });
+
+  it("doubles per consecutive failure up to the failure cap", () => {
+    expect([1, 2, 3, 5, 6, 40].map((failures) => codeTerminalPollDelay(0, failures))).toEqual([
+      600, 1_200, 2_400, 9_600, 15_000, 15_000,
+    ]);
   });
 });

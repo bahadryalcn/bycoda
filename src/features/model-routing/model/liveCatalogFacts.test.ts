@@ -7,7 +7,16 @@ vi.mock("../../connections/public/localSync", () => ({ isLocalSyncMachine: vi.fn
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 import { catalogModelFacts } from "./modelCatalogFacts";
-import { liveCatalogFacts, refreshLiveCatalogFacts, setLiveCatalogFacts } from "./liveCatalogFacts";
+import { invoke } from "@tauri-apps/api/core";
+import { machineCapabilities } from "../../automations/public/hostMachines";
+import { announceRemoteRecovery } from "../../connections/model/remoteHealth";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import {
+  liveCatalogFacts,
+  refreshLiveCatalogFacts,
+  setLiveCatalogFacts,
+  startLocalLiveCatalogFactsSync,
+} from "./liveCatalogFacts";
 
 afterEach(() => {
   setLiveCatalogFacts([]);
@@ -67,4 +76,57 @@ it("loads the Host answer, notifies subscribers and survives failures", async ()
   await refreshLiveCatalogFacts("host");
   expect(liveCatalogFacts.snapshot().get("grok-4-7")).toBeDefined();
   stop();
+});
+
+const liveAnswer = {
+  source: "openrouter",
+  fetchedAt: 1,
+  models: [{ family: "grok-4-7", inputUsd: 3, outputUsd: 7 }],
+};
+const bootHost = () => {
+  vi.mocked(invoke).mockResolvedValue([{ id: "local" }]);
+  vi.mocked(isLocalSyncMachine).mockReturnValue(true);
+  vi.mocked(machineCapabilities).mockResolvedValue(["models.routing.v1"]);
+};
+
+it("startup load retries on the short backoff while the local Host boots, then stops", async () => {
+  vi.useFakeTimers();
+  vi.mocked(invoke).mockResolvedValue([]);
+  const stop = startLocalLiveCatalogFactsSync();
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).not.toHaveBeenCalled();
+    bootHost();
+    request.mockResolvedValue(liveAnswer);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(liveCatalogFacts.snapshot().get("grok-4-7")?.inputUsd).toBe(3);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(request).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+    vi.useRealTimers();
+  }
+});
+
+it("startup load retries an empty or failed Host answer and reacts to a recovery report", async () => {
+  vi.useFakeTimers();
+  bootHost();
+  request.mockRejectedValueOnce(new Error("Host is starting"));
+  request.mockResolvedValueOnce({ source: "openrouter", models: [], error: "offline" });
+  request.mockResolvedValue(liveAnswer);
+  const stop = startLocalLiveCatalogFactsSync();
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(liveCatalogFacts.snapshot().size).toBe(0);
+    announceRemoteRecovery("local-env");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(liveCatalogFacts.snapshot().get("grok-4-7")).toBeDefined();
+  } finally {
+    stop();
+    vi.useRealTimers();
+  }
 });

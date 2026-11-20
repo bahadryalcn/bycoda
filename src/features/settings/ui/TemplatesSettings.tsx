@@ -10,6 +10,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { Plus } from "../../../shared/ui/icons";
 import { Group, Row, SettingsFeedback, SettingsSaveBar } from "../../../shared/ui/settings";
+import { errorText } from "../../../shared/lib/errors";
 import { templateChanges } from "./templatesChanges";
 import {
   CURSOR_PLACEHOLDER,
@@ -48,13 +49,15 @@ let retainedDraft: {
 export function clearRetainedTemplateDraft() {
   retainedDraft = null;
 }
-function templateStorageAvailable() {
+// Cached per stored string: the render path asks on every keystroke, and only a changed raw value needs a parse.
+let storageCheck: { raw: string | null; available: boolean } | null = null;
+function checkTemplateStorage(raw: string | null) {
   try {
-    const raw: unknown = JSON.parse(localStorage.getItem("bycoda.promptTemplates") ?? "[]");
-    if (!Array.isArray(raw)) return false;
+    const parsed: unknown = JSON.parse(raw ?? "[]");
+    if (!Array.isArray(parsed)) return false;
     return (
-      raw.length === loadPromptTemplates().length &&
-      raw.every(
+      parsed.length === loadPromptTemplates().length &&
+      parsed.every(
         (item) =>
           item &&
           typeof item.id === "string" &&
@@ -65,6 +68,44 @@ function templateStorageAvailable() {
   } catch {
     return false;
   }
+}
+function templateStorageAvailable() {
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem("bycoda.promptTemplates");
+  } catch {
+    return false;
+  }
+  if (storageCheck?.raw !== raw) storageCheck = { raw, available: checkTemplateStorage(raw) };
+  return storageCheck.available;
+}
+
+type TemplateProblem = { field: "name" | "body" | "trigger"; message: string };
+
+// One rule per message, so the user can see which field broke and why.
+function templateProblem(
+  row: PromptTemplate,
+  triggers: ReadonlySet<string>,
+): TemplateProblem | null {
+  const trigger = normalizeTrigger(row.trigger);
+  if (!row.name.trim()) return { field: "name", message: t("Enter a name.") };
+  if (!row.body.trim()) return { field: "body", message: t("Enter template text.") };
+  if (row.body.length > MAX_TEMPLATE_BODY) {
+    return {
+      field: "body",
+      message: t("Use at most {p0} characters.", { p0: String(MAX_TEMPLATE_BODY) }),
+    };
+  }
+  if (trigger && !isValidTrigger(trigger)) {
+    return {
+      field: "trigger",
+      message: t("Use 1 to 24 letters, numbers or dashes for the trigger."),
+    };
+  }
+  if (trigger && triggers.has(trigger)) {
+    return { field: "trigger", message: t("This trigger is already used by another template.") };
+  }
+  return null;
 }
 
 export function TemplatesSettings() {
@@ -92,14 +133,21 @@ export function TemplatesSettings() {
   const triggerRef = useRef<HTMLInputElement>(null);
   const dirty = !sameTemplates(rows, baseline);
   const changedElsewhere = !sameTemplates(saved, baseline);
-  const available = templateStorageAvailable();
-  const selected = rows.find((row) => row.id === selectedId) ?? rows[0];
-  const matches = rows.filter((row) =>
-    [row.name, row.trigger ?? "", row.body]
-      .join(" ")
-      .toLocaleLowerCase()
-      .includes(query.trim().toLocaleLowerCase()),
+  // Read during render through the store, so a storage change re-renders without a per-keystroke parse.
+  const available = useSyncExternalStore(
+    subscribePromptTemplates,
+    templateStorageAvailable,
+    templateStorageAvailable,
   );
+  const selected = rows.find((row) => row.id === selectedId) ?? rows[0];
+  const matches = query.trim()
+    ? rows.filter((row) =>
+        [row.name, row.trigger ?? "", row.body]
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(query.trim().toLocaleLowerCase()),
+      )
+    : rows;
   useEffect(() => {
     retainedDraft = dirty ? { rows, baseline, selected: selectedId } : null;
   }, [rows, baseline, selectedId, dirty]);
@@ -133,10 +181,11 @@ export function TemplatesSettings() {
     setSavedMessage(false);
     retainedDraft = null;
   };
-  const save = () => {
+  /** True only once storage returns what was written; any refusal keeps the rows. */
+  const save = (): boolean => {
     if (!templateStorageAvailable()) {
       setError(t("Template storage is unavailable. Retry reading before saving."));
-      return;
+      return false;
     }
     if (!sameTemplates(loadPromptTemplates(), baseline)) {
       setError(
@@ -144,35 +193,30 @@ export function TemplatesSettings() {
           "Templates changed in another window. Reload before saving to avoid overwriting those changes.",
         ),
       );
-      return;
+      return false;
     }
     const triggers = new Set<string>();
     for (const row of rows) {
-      const trigger = normalizeTrigger(row.trigger);
-      const field = !row.name.trim()
-        ? "name"
-        : !row.body.trim() || row.body.length > MAX_TEMPLATE_BODY
-          ? "body"
-          : trigger && (!isValidTrigger(trigger) || triggers.has(trigger))
-            ? "trigger"
-            : null;
-      if (field) {
-        setFieldError({ id: row.id, field });
+      const problem = templateProblem(row, triggers);
+      if (problem) {
+        setFieldError({ id: row.id, field: problem.field });
         setSelectedId(row.id);
-        setError(t("Check the selected template's name, text and unique trigger."));
+        setError(problem.message);
         requestAnimationFrame(() =>
-          (field === "name"
+          (problem.field === "name"
             ? nameRef.current
-            : field === "body"
+            : problem.field === "body"
               ? bodyRef.current
               : triggerRef.current
           )?.focus(),
         );
-        return;
+        return false;
       }
+      const trigger = normalizeTrigger(row.trigger);
       if (trigger) triggers.add(trigger);
     }
     try {
+      // A write that throws is the only refusal storage gives; returning is the acknowledgment.
       savePromptTemplates(rows);
       const current = loadPromptTemplates();
       setRows([...current]);
@@ -180,8 +224,10 @@ export function TemplatesSettings() {
       setError(null);
       setSavedMessage(true);
       retainedDraft = null;
+      return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorText(reason));
+      return false;
     }
   };
   const addTemplate = () => {

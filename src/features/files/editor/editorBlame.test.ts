@@ -136,6 +136,11 @@ describe("editorBlame", () => {
     const first = view.dom.querySelector(".cm-blameCommit") as HTMLElement;
     first.dispatchEvent(new MouseEvent("mouseenter"));
     const card = document.body.querySelector(".cm-blameCard");
+    expect(card?.getAttribute("data-surface-variant")).toBe("floating");
+    expect(card?.getAttribute("data-surface-radius")).toBe("popup");
+    expect(card?.getAttribute("data-surface-elevation")).toBe("floating");
+    expect(card?.querySelector(".cm-blameCardSha")?.getAttribute("data-tone")).toBe("muted");
+    expect(card?.querySelector(".cm-blameCardDate")?.getAttribute("data-tone")).toBe("secondary");
     expect(card?.textContent).toContain("aaaaaaa");
     expect(card?.textContent).toContain("Ann");
     expect(card?.textContent).toContain(`commit ${A}`);

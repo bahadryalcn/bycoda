@@ -1,7 +1,12 @@
-import { useCallback, type MutableRefObject } from "react";
+import { useCallback, useRef, type MutableRefObject } from "react";
 import { flushSync } from "react-dom";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
-import { getSession, persistFingerprint } from "../../../features/sessions/data/sessionStore";
+import {
+  getEarlierStoredHistory,
+  getSession,
+  persistFingerprint,
+  type SessionHydrationOptions,
+} from "../../../features/sessions/data/sessionStore";
 import { rememberLoadedSession } from "../../../features/sessions/data/sessionCache";
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import { leafIds, newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
@@ -33,6 +38,98 @@ export interface SessionLoadingDeps {
   refreshHistory: (cwd: string) => Promise<void>;
 }
 
+type HydrationOwners = Pick<
+  SessionLoadingDeps,
+  "sessionsRef" | "setSessions" | "loadedSessionCache" | "removingSessionIds" | "sessionLoadEpochs"
+>;
+
+/**
+ * Publishes a stored session's earlier pages into live state, only while the live copy is still the
+ * one that asked. `adopted` is that copy for a retry, whose fresh tail read is a different object
+ * with the same content: the turns on screen are kept until the first page replaces them.
+ */
+export function hydrationHandlers(
+  {
+    sessionsRef,
+    setSessions,
+    loadedSessionCache,
+    removingSessionIds,
+    sessionLoadEpochs,
+  }: HydrationOwners,
+  sessionId: string,
+  epoch: number,
+  adopted?: Session,
+): SessionHydrationOptions {
+  let owner = adopted;
+  return {
+    onHydrated: (original, hydrated) => {
+      const asked = owner ?? original;
+      owner = undefined;
+      if (
+        removingSessionIds.current.has(sessionId) ||
+        (sessionLoadEpochs.current.get(sessionId) ?? 0) !== epoch
+      )
+        return;
+      // Repairs may finish after a new turn, edit, queue operation or tab
+      // reload. Never overwrite that state with the older loaded snapshot.
+      const owns = (value: Session) =>
+        value.id === sessionId &&
+        !value.busy &&
+        value.blocks === asked.blocks &&
+        value.queuedMessages === asked.queuedMessages;
+      if (
+        original.historyLoading &&
+        !hydrated.historyLoading &&
+        hydrated.providerSessionId &&
+        !hydrated.worktreeRemoved &&
+        isLiveHarness(hydrated.harness) &&
+        sessionsRef.current.some(owns)
+      ) {
+        bindHarnessSession(
+          hydrated.harness,
+          hydrated.id,
+          hydrated.providerSessionId,
+          sessionWorkCwd(hydrated),
+          hydrated.providerAccountId,
+          hydrated.blocks,
+        );
+      }
+      const cached = loadedSessionCache.current.get(sessionId);
+      if (cached && owns(cached)) loadedSessionCache.current.set(sessionId, hydrated);
+      setSessions((previous) =>
+        previous.map((value) =>
+          owns(value)
+            ? {
+                ...value,
+                blocks: hydrated.blocks,
+                queuedMessages: hydrated.queuedMessages,
+                queueStatus: hydrated.queueStatus,
+                historyLoading: hydrated.historyLoading,
+                storedHistory: hydrated.storedHistory,
+                historyLoadError: undefined,
+              }
+            : value,
+        ),
+      );
+    },
+    onHydrationFailed: (original) => {
+      const asked = owner ?? original;
+      if ((sessionLoadEpochs.current.get(sessionId) ?? 0) !== epoch) return;
+      setSessions((previous) =>
+        previous.map((value) =>
+          value.id === sessionId && value.blocks === asked.blocks && value.historyLoading
+            ? {
+                ...value,
+                historyLoadError:
+                  "Earlier messages could not be loaded. Reopen this chat to retry.",
+              }
+            : value,
+        ),
+      );
+    },
+  };
+}
+
 /** Stored-session loading: cache, in-flight loads, open-on-demand and pop-out. */
 export function useSessionLoading({
   sessionsRef,
@@ -59,7 +156,7 @@ export function useSessionLoading({
 
   const loadStoredSession = useCallback((sessionId: string): Promise<Session | null> => {
     const cached = loadedSessionCache.current.get(sessionId);
-    if (cached && !cached.historyLoading) {
+    if (cached && (!cached.historyLoading || cached.storedHistory)) {
       // The cache owns closed sessions only. Transfer this reference into
       // live state instead of retaining a stale duplicate while it changes.
       loadedSessionCache.current.delete(sessionId);
@@ -72,67 +169,12 @@ export function useSessionLoading({
 
     const epoch = sessionLoadEpochs.current.get(sessionId) ?? 0;
     const loading = getSession(sessionId, {
-      onHydrated: (original, hydrated) => {
-        if (
-          removingSessionIds.current.has(sessionId) ||
-          (sessionLoadEpochs.current.get(sessionId) ?? 0) !== epoch
-        )
-          return;
-        // Repairs may finish after a new turn, edit, queue operation or tab
-        // reload. Never overwrite that state with the older loaded snapshot.
-        const owns = (value: Session) =>
-          value.id === sessionId &&
-          !value.busy &&
-          value.blocks === original.blocks &&
-          value.queuedMessages === original.queuedMessages;
-        if (
-          original.historyLoading &&
-          !hydrated.historyLoading &&
-          hydrated.providerSessionId &&
-          !hydrated.worktreeRemoved &&
-          isLiveHarness(hydrated.harness) &&
-          sessionsRef.current.some(owns)
-        ) {
-          bindHarnessSession(
-            hydrated.harness,
-            hydrated.id,
-            hydrated.providerSessionId,
-            sessionWorkCwd(hydrated),
-            hydrated.providerAccountId,
-            hydrated.blocks,
-          );
-        }
-        const cached = loadedSessionCache.current.get(sessionId);
-        if (cached && owns(cached)) loadedSessionCache.current.set(sessionId, hydrated);
-        setSessions((previous) =>
-          previous.map((value) =>
-            owns(value)
-              ? {
-                  ...value,
-                  blocks: hydrated.blocks,
-                  queuedMessages: hydrated.queuedMessages,
-                  queueStatus: hydrated.queueStatus,
-                  historyLoading: hydrated.historyLoading,
-                  historyLoadError: undefined,
-                }
-              : value,
-          ),
-        );
-      },
-      onHydrationFailed: (original) => {
-        if ((sessionLoadEpochs.current.get(sessionId) ?? 0) !== epoch) return;
-        setSessions((previous) =>
-          previous.map((value) =>
-            value.id === sessionId && value.blocks === original.blocks && value.historyLoading
-              ? {
-                  ...value,
-                  historyLoadError:
-                    "Earlier messages could not be loaded. Reopen this chat to retry.",
-                }
-              : value,
-          ),
-        );
-      },
+      ...hydrationHandlers(
+        { sessionsRef, setSessions, loadedSessionCache, removingSessionIds, sessionLoadEpochs },
+        sessionId,
+        epoch,
+      ),
+      deferHistory: true,
     })
       .then((loaded) => {
         if (
@@ -152,6 +194,124 @@ export function useSessionLoading({
       }
     });
     return loading;
+  }, []);
+
+  const onLoadSessionHistory = useCallback(
+    async (sessionId: string): Promise<number> => {
+      const original = sessionsRef.current.find((session) => session.id === sessionId);
+      const privacy = getGroupLockView();
+      if (
+        !original?.storedHistory ||
+        removingSessionIds.current.has(sessionId) ||
+        isProjectLockedIn(privacy.lock, original.cwd) ||
+        isProjectLockedIn(privacy.lock, sessionWorkCwd(original))
+      )
+        return 0;
+      const page = await getEarlierStoredHistory(original);
+      if (!page || removingSessionIds.current.has(sessionId) || getGroupLockView() !== privacy)
+        return 0;
+      const current = sessionsRef.current.find((session) => session.id === sessionId);
+      if (!current || current.storedHistory !== original.storedHistory) return 0;
+      setSessions((previous) =>
+        previous.map((session) =>
+          session === current
+            ? {
+                ...session,
+                blocks: [...page.blocks, ...session.blocks],
+                storedHistory: page.cursor,
+              }
+            : session,
+        ),
+      );
+      return page.blocks.length;
+    },
+    [removingSessionIds, sessionsRef, setSessions],
+  );
+
+  const historyForExecution = useRef(new Map<string, Promise<boolean>>());
+  const ensureSessionHistoryForExecution = useCallback(
+    (sessionId: string): Promise<boolean> => {
+      const pending = historyForExecution.current.get(sessionId);
+      if (pending) return pending;
+      const original = sessionsRef.current.find((session) => session.id === sessionId);
+      if (!original?.storedHistory) return Promise.resolve(!!original && !original.historyLoading);
+      const privacy = getGroupLockView();
+      if (
+        isProjectLockedIn(privacy.lock, original.cwd) ||
+        isProjectLockedIn(privacy.lock, sessionWorkCwd(original))
+      )
+        return Promise.resolve(false);
+      const epoch = sessionLoadEpochs.current.get(sessionId) ?? 0;
+      const loading = getSession(sessionId)
+        .then((hydrated) => {
+          const current = sessionsRef.current.find((session) => session.id === sessionId);
+          if (
+            !hydrated ||
+            !current?.storedHistory ||
+            current.busy ||
+            current.storedHistory.revision !== original.storedHistory?.revision ||
+            current.queuedMessages !== original.queuedMessages ||
+            current.cwd !== original.cwd ||
+            sessionWorkCwd(current) !== sessionWorkCwd(original) ||
+            getGroupLockView() !== privacy ||
+            removingSessionIds.current.has(sessionId) ||
+            (sessionLoadEpochs.current.get(sessionId) ?? 0) !== epoch
+          )
+            return false;
+          hydrationHandlers(
+            { sessionsRef, setSessions, loadedSessionCache, removingSessionIds, sessionLoadEpochs },
+            sessionId,
+            epoch,
+          ).onHydrated?.(current, hydrated);
+          lastPersisted.current.set(sessionId, persistFingerprint(hydrated));
+          return !sessionsRef.current.find((session) => session.id === sessionId)?.historyLoading;
+        })
+        .finally(() => historyForExecution.current.delete(sessionId));
+      historyForExecution.current.set(sessionId, loading);
+      return loading;
+    },
+    [
+      lastPersisted,
+      loadedSessionCache,
+      removingSessionIds,
+      sessionLoadEpochs,
+      sessionsRef,
+      setSessions,
+    ],
+  );
+
+  const retryingHistory = useRef(new Set<string>());
+  /**
+   * Reads a conversation's history again after it failed. The turns on screen stay while the read
+   * runs; the failure clears at once so Retry cannot be pressed twice, and a new failure shows again.
+   */
+  const onRetrySessionHistory = useCallback((sessionId: string) => {
+    const failed = sessionsRef.current.find(
+      (session) =>
+        session.id === sessionId &&
+        session.historyLoading &&
+        session.historyLoadError &&
+        !session.busy,
+    );
+    if (!failed || retryingHistory.current.has(sessionId)) return;
+    retryingHistory.current.add(sessionId);
+    setSessions((previous) =>
+      previous.map((value) =>
+        value.id === sessionId && value.blocks === failed.blocks
+          ? { ...value, historyLoadError: undefined }
+          : value,
+      ),
+    );
+    const handlers = hydrationHandlers(
+      { sessionsRef, setSessions, loadedSessionCache, removingSessionIds, sessionLoadEpochs },
+      sessionId,
+      sessionLoadEpochs.current.get(sessionId) ?? 0,
+      failed,
+    );
+    // The tail read can fail before any page is requested; that is the same failure again.
+    getSession(sessionId, handlers)
+      .catch(() => handlers.onHydrationFailed?.(failed))
+      .finally(() => retryingHistory.current.delete(sessionId));
   }, []);
 
   const ensureOpenSession = useCallback(
@@ -301,9 +461,11 @@ export function useSessionLoading({
 
   return {
     invalidateLoadedSession,
-    loadStoredSession,
     ensureOpenSession,
     onPopOutSession,
     onPrefetchHistorySession,
+    onRetrySessionHistory,
+    onLoadSessionHistory,
+    ensureSessionHistoryForExecution,
   };
 }

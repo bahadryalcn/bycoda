@@ -24,14 +24,19 @@ for (const width of [1280, 800])
         await expect.poll(distance).toBeGreaterThan(100);
         // WebKit keeps animating a wheel scroll after its first event. Press the button only
         // once the reader's scroll has stopped, so a late wheel frame cannot undo the jump.
+        // One equal pair can be a pause between momentum frames, so require several in a row.
         let previous = -1;
+        let steady = 0;
         await expect
-          .poll(async () => {
-            const now = await distance();
-            const settled = now === previous;
-            previous = now;
-            return settled;
-          })
+          .poll(
+            async () => {
+              const now = await distance();
+              steady = now === previous ? steady + 1 : 0;
+              previous = now;
+              return steady >= 4;
+            },
+            { intervals: [100], timeout: 15_000 },
+          )
           .toBe(true);
       };
       await scrollUp();
@@ -245,9 +250,9 @@ for (const width of [1280, 800])
       // Warning notices announce politely (role="status"); only danger uses role="alert".
       await expect(
         dialog.getByRole("status").filter({
-          hasText: "This rewind preview is blocked or expired. Cancel and open a new preview.",
+          hasText: "This rewind preview has expired. Cancel and open a new preview.",
         }),
-      ).toHaveText("This rewind preview is blocked or expired. Cancel and open a new preview.");
+      ).toHaveText("This rewind preview has expired. Cancel and open a new preview.");
       if (testInfo.project.name === "chromium") {
         await mkdir("temp/verification/i3", { recursive: true });
         await page.screenshot({

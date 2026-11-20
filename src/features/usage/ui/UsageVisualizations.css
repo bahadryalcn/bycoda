@@ -17,6 +17,11 @@
   text-align: start;
   font-variant-numeric: tabular-nums;
 }
+.usage-hour-details {
+  display: grid;
+  gap: calc(var(--space-1) / 2);
+}
+
 .usage-hour-detail {
   display: grid;
   gap: var(--space-1);

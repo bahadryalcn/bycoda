@@ -25,6 +25,7 @@ Owns the "active minute" metric. UI (`src/features/activity/`) tracks input and 
 
 - A minute is active only with the window in the foreground and input in the last five minutes.
 - Lock, sleep and clock jumps never backfill: after a late tick the tracker waits for new input.
+- Minutes a final flush (unmount, Host change) could not deliver go to the per-Host outbox in `model/activityOutbox.ts` and are sent only to that Host on its next mount.
 - Everything merges by bitwise OR, so windows, devices and retries count a minute once.
 - Only dates, time zones and minute maps are stored or sent: no project, session or content.
 - The Host file is written atomically; a corrupt file is kept as evidence and counting restarts.

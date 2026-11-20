@@ -13,13 +13,15 @@ import {
   backgroundMachines,
   hostProjectCwd,
   hostProjectFor,
-} from "../../automations/model/hostAutomationClient";
+  machineCapabilities,
+  machineProjects,
+} from "../../automations/public/hostMachines";
 import {
   collectMachineResults,
   type LastGoodLists,
   type MachineResult,
 } from "../../automations/model/machineResults";
-import { machineCapabilities, machineProjects } from "../../automations/model/machineSnapshot";
+import { sharedMachineListReads } from "../../automations/model/machineListReads";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import {
   defaultProviderAccountId,
@@ -34,8 +36,8 @@ import {
   type HostGoal,
   type HostGoalInput,
 } from "./hostGoals";
+import { taskClientErrors } from "./taskClientErrors";
 import {
-  TASK_AGENT_ERROR,
   requireTaskContinuation,
   requireTaskAccount,
   requireTaskWorkspaces,
@@ -44,8 +46,6 @@ import {
 } from "./taskClient";
 import type { TaskWorkspace } from "./taskWorkspace";
 import type { TaskRunBudget } from "./taskBudget";
-
-export const GOAL_MACHINE_ERROR = "A goal’s projects must all be on one machine.";
 
 /** A goal's project as this desktop addresses it. */
 export type BoardGoalProject = { id: string; cwd: string; name: string };
@@ -175,7 +175,7 @@ export function hostGoalFromDraft(
   projectIds: string[],
   leadProjectId: string,
 ): HostGoalInput {
-  if (!isRemoteProvider(draft.harness)) throw new Error(TASK_AGENT_ERROR);
+  if (!isRemoteProvider(draft.harness)) throw new Error(taskClientErrors.agent());
   return {
     id,
     ...(draft.finalReview ? { finalReview: true } : {}),
@@ -238,6 +238,7 @@ export function boardGoalsFromHost(
 }
 
 const lastBoardGoals: LastGoodLists<BoardGoal> = new Map();
+const boardGoalReads = sharedMachineListReads<BoardGoal>();
 
 /** Keeps a machine's last-known goals in step with a mutation its host
  * acknowledged, so a later failed read cannot show the earlier state again. */
@@ -257,21 +258,34 @@ export function listBoardGoalResults(
   return collectMachineResults(
     lastBoardGoals,
     machines,
-    async (machine) => {
-      const [goals, projects, capabilities] = await Promise.all([
-        remoteRequest<HostGoal[]>(machine.id, "goals.list"),
-        machineProjects(machine),
-        machineCapabilities(machine),
-      ]);
-      return boardGoalsFromHost(machine, projects, goals).map((goal) => ({
-        ...goal,
-        settingsSupported: capabilities.includes("goals.settings"),
-        finalReviewSupported: capabilities.includes(HOST_GOAL_FINAL_REVIEW),
-      }));
-    },
+    // The board, the daily summary and the background notifier share one request per machine.
+    (machine) => boardGoalReads.read(machine, readBoardGoals),
     (goal) => ({ ...goal, stale: true }),
     down,
   );
+}
+
+async function readBoardGoals(machine: RemoteMachine): Promise<BoardGoal[]> {
+  const [goals, projects, capabilities] = await Promise.all([
+    remoteRequest<HostGoal[]>(machine.id, "goals.list"),
+    machineProjects(machine),
+    machineCapabilities(machine),
+  ]);
+  return boardGoalsFromHost(machine, projects, goals).map((goal) => ({
+    ...goal,
+    settingsSupported: capabilities.includes("goals.settings"),
+    finalReviewSupported: capabilities.includes(HOST_GOAL_FINAL_REVIEW),
+  }));
+}
+
+/** Sends a goal write and drops the shared reads of its machine, even when the outcome
+ * is unknown, so no later reader joins a list read that began before the write. */
+async function writeGoal<T>(machineId: string, write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } finally {
+    boardGoalReads.invalidate(machineId);
+  }
 }
 
 /** Every machine's goals, last-known ones included. */
@@ -286,7 +300,7 @@ export async function createGoal(
   draft: GoalDraft,
 ): Promise<BoardGoal> {
   const creation = (draft.creation ??= { id: crypto.randomUUID() });
-  if (creation.busy) throw new Error("Epic creation is already being checked.");
+  if (creation.busy) throw new Error(taskClientErrors.epicChecking());
   creation.busy = true;
   // Freeze form values before any asynchronous capability or project lookup.
   const snapshot = structuredClone({ ...draft, creation: undefined });
@@ -300,50 +314,45 @@ export async function createGoal(
           machine.id === pending.machine.id &&
           machine.environmentId === pending.machine.environmentId,
       );
-      if (!original)
-        throw new Error("Reconnect the original host to check the previous epic creation.");
+      if (!original) throw new Error(taskClientErrors.epicReconnect());
       const goals = await remoteRequest<HostGoal[]>(original.id, "goals.list");
-      if (!Array.isArray(goals))
-        throw new Error("The previous epic creation could not be checked.");
+      if (!Array.isArray(goals)) throw new Error(taskClientErrors.epicUnchecked());
       const recovered = goals.find((goal) => goal.id === creation.id);
       if (recovered) {
         if (JSON.stringify(recovered.projectIds) !== JSON.stringify(pending.input.projectIds))
-          throw new Error("The previous epic identity has an unexpected project scope.");
+          throw new Error(taskClientErrors.epicScope());
         return boardGoalsFromHost(pending.machine, pending.projects, [recovered])[0];
       }
       // Absence cannot settle an in-flight server request. Keep its identity and
       // payload; expectedAbsent makes a retry race safe on the Host.
-      if (fingerprint !== pending.fingerprint)
-        throw new Error(
-          "The previous epic creation is unresolved. Restore its original draft before retrying.",
-        );
-      const created = await remoteRequest<HostGoal>(
-        original.id,
-        "goals.create",
-        { goal: { ...pending.input, expectedAbsent: true } },
-        false,
-        true,
+      if (fingerprint !== pending.fingerprint) throw new Error(taskClientErrors.epicUnresolved());
+      const created = await writeGoal(original.id, () =>
+        remoteRequest<HostGoal>(
+          original.id,
+          "goals.create",
+          { goal: { ...pending.input, expectedAbsent: true } },
+          false,
+          true,
+        ),
       );
       if (!created || created.id !== creation.id)
-        throw new Error("The epic creation acknowledgement could not be verified.");
+        throw new Error(taskClientErrors.epicAcknowledgement());
       return boardGoalsFromHost(pending.machine, pending.projects, [created])[0];
     }
     draft = snapshot;
-    if (!draft.cwds.length) throw new Error("Choose at least one project.");
+    if (!draft.cwds.length) throw new Error(taskClientErrors.chooseProject());
     if (draft.cwds.some((cwd) => !sameGoalMachine(draft.cwds[0], cwd)))
-      throw new Error(GOAL_MACHINE_ERROR);
+      throw new Error(taskClientErrors.goalMachine());
     const machine = taskMachineFor(machines, draft.cwds[0], draft.machineId);
     await requireTaskAccount(machine, draft.providerAccountId);
     await requireTaskHarnessCapabilities(machine, draft);
     if (draft.finalReview && !(await machineCapabilities(machine)).includes(HOST_GOAL_FINAL_REVIEW))
-      throw new Error("Update the selected host to verify the completed goal.");
+      throw new Error(taskClientErrors.goalVerifyHost());
     if (
       draft.isolate === false &&
       !(await machineCapabilities(machine)).includes(HOST_DIRECT_GOALS)
     )
-      throw new Error(
-        "Update the selected host to run goal tasks directly in the selected checkout.",
-      );
+      throw new Error(taskClientErrors.goalDirectHost());
     await requireTaskContinuation(machine, draft.continueUntilDone);
     await requireTaskWorkspaces(
       machine,
@@ -365,17 +374,19 @@ export async function createGoal(
       fingerprint,
     };
     firstDispatch = true;
-    const created = await remoteRequest<HostGoal>(
-      machine.id,
-      "goals.create",
-      {
-        goal: { ...input, expectedAbsent: true },
-      },
-      false,
-      true,
+    const created = await writeGoal(machine.id, () =>
+      remoteRequest<HostGoal>(
+        machine.id,
+        "goals.create",
+        {
+          goal: { ...input, expectedAbsent: true },
+        },
+        false,
+        true,
+      ),
     );
     if (!created || created.id !== creation.id)
-      throw new Error("The epic creation acknowledgement could not be verified.");
+      throw new Error(taskClientErrors.epicAcknowledgement());
     return boardGoalsFromHost(machine, projects, [created])[0];
   } catch (error) {
     // A definite pre-dispatch refusal permits edits; unknown failures retain
@@ -393,7 +404,9 @@ function goalRequest<T = unknown>(
   method: string,
   params: Record<string, unknown> = {},
 ): Promise<T> {
-  return remoteRequest<T>(goal.machineId, method, { goalId: goal.id, ...params }, false, true);
+  return writeGoal(goal.machineId, () =>
+    remoteRequest<T>(goal.machineId, method, { goalId: goal.id, ...params }, false, true),
+  );
 }
 
 /** Replace host-owned fields so a successful response can clear old errors,

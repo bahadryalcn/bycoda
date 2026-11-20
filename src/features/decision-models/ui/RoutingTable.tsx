@@ -144,31 +144,40 @@ export function RoutingTable({
       setDraft((current) => ({ ...current, [task]: setRouteThreshold(current[task], value) }));
     }
   };
-  const save = () => {
+  /** True only once the Host acknowledged exactly the draft that was sent. */
+  const save = (): Promise<boolean> => {
     if (
       invalid ||
       !dirty ||
       busy ||
       retainedTransactionValue<boolean>(`decision:${identity}:routing:pending`)
     )
-      return;
+      return Promise.resolve(false);
     setRetainedPending(true);
     setSaveError(null);
-    void onSave(draft).then(
+    return onSave(draft).then(
       (result) => {
         const acknowledged =
           typeof result === "object" && result !== null && "routing" in result
             ? (result as { routing: DecisionRouting }).routing
             : draft;
+        // An edit made while the Host was saving stays in the draft and is not acknowledged;
+        // only the baseline moves to what the Host now holds.
+        const edited =
+          retainedTransactionValue<DecisionRouting>(`decision:${identity}:routing:draft`) !== draft;
         setDraftSource(acknowledged);
-        setDraft(acknowledged);
-        setSaved(true);
-        setThresholdText({});
+        if (!edited) {
+          setDraft(acknowledged);
+          setThresholdText({});
+        }
+        setSaved(!edited);
         setRetainedPending(false);
+        return !edited;
       },
       (error: unknown) => {
         setSaveError(error);
         setRetainedPending(false);
+        return false;
       },
     );
   };

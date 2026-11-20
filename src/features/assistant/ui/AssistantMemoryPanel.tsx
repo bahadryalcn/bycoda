@@ -65,7 +65,7 @@ export function AssistantMemoryPanel(props: Props) {
           {t("Add memory")}
         </Button>
       </header>
-      <LiveText className="sr-only" text={props.searching ? t("Loading...") : ""} />
+      <LiveText className="sr-only" text={props.searching ? t("Loading…") : ""} />
       {props.searchError}
       {!props.searching && !props.searchError && !props.entries.length && (
         <EmptyState

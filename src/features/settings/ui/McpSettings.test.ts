@@ -135,6 +135,29 @@ async function openDetail(name: string) {
   expect(sheet(), `detail sheet for ${name}`).not.toBeNull();
 }
 
+it("keeps a configuration draft open when discovery loses its server", async () => {
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await openDetail("docs");
+  const editor = sheet()!.querySelector<HTMLTextAreaElement>("textarea")!;
+  const draft = '{"args":["keep"]}';
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      editor,
+      draft,
+    );
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(sheetButtons("Save")[0]?.disabled).toBe(false);
+
+  invoke.mockImplementation(async (command: string) => (command === "mcp_discover" ? [] : ""));
+  await refreshStatus();
+
+  expect(rowButton("docs")).toBeNull();
+  expect(sheet()?.querySelector("textarea")?.value).toBe(draft);
+  expect(sheet()?.textContent).toContain("Unavailable");
+  expect(sheetButtons("Save")[0]?.disabled).toBe(true);
+});
+
 it("groups providers that share a name into one row and keeps progress on the exact action", async () => {
   let finishLogin!: () => void;
   invoke.mockImplementation(async (command: string) => {
@@ -246,7 +269,7 @@ async function selectProject(path: string) {
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label^="Switch project"]')!.click(),
   );
-  expect(document.querySelector('input[placeholder="Search projects..."]')).not.toBeNull();
+  expect(document.querySelector('input[placeholder="Search projects…"]')).not.toBeNull();
   // Each project option names the project's folder (its full path shows only as a tooltip).
   const name = path.split("/").pop()!;
   const option = Array.from(

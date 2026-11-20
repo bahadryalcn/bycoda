@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { newRequestId } from "../../../shared/lib/id/requestId";
+import { unconfirmedError } from "./unconfirmedOutcome";
 
 const SCOPE = "assistant-thread-sends.v2";
 const LEGACY = "bycoda.assistant.send-intents";
@@ -245,7 +246,7 @@ export async function sendAssistantNative<T>(
     throw new Error("The send identity changed. Check the conversation before retrying.");
   const version =
     current?.version ?? acquired.entries.find((entry) => entry.key === storageKey)?.version;
-  if (version === undefined) throw new Error("The send identity was not confirmed.");
+  if (version === undefined) throw unconfirmedError("The send identity");
   if (previous !== null) {
     const old = previous as Partial<AssistantSendIntent>;
     if (

@@ -4,11 +4,17 @@ import { join } from "node:path";
 import { YOUTUBE_MAX_VIDEO_BYTES } from "../../src/integrations/social/youtube-upload";
 
 export const SOCIAL_BUFFERED_VIDEO_BYTES = 64 * 1024 * 1024;
+/** An upload with no accepted chunk for this long is deleted. */
+const IDLE_EXPIRY_MS = 30 * 60_000;
+/** Progress extends the idle window, never past this age counted from `begin`. */
+const MAX_LIFETIME_MS = 4 * 60 * 60_000;
 type Upload = {
   actor: string;
   size: number;
   offset: number;
   expires: number;
+  /** Absolute bound: refreshing `expires` can never outlive it. */
+  deadline: number;
   busy: boolean;
 };
 /** Owner-selected bytes only. No arbitrary local paths or remote URLs are read. */
@@ -48,11 +54,13 @@ export class SocialVideoUploads {
       )
         throw new Error("Finish or cancel the existing video upload first.");
       const uploadId = randomUUID();
+      const started = this.now();
       this.pending.set(uploadId, {
         actor,
         size,
         offset: 0,
-        expires: this.now() + 30 * 60_000,
+        expires: started + IDLE_EXPIRY_MS,
+        deadline: started + MAX_LIFETIME_MS,
         busy: true,
       });
       try {
@@ -87,6 +95,8 @@ export class SocialVideoUploads {
       throw new Error("Video upload is invalid, expired or busy.");
     state.busy = true;
     try {
+      // Read-only resume point: the offset the Host committed, which a lost reply may not have reached the client.
+      if (input.mode === "status") return { uploadId, offset: state.offset };
       if (input.mode === "cancel") {
         await this.authorize();
         await unlink(join(staging, uploadId));
@@ -121,6 +131,7 @@ export class SocialVideoUploads {
           await handle.close();
         }
         state.offset += bytes.length;
+        state.expires = Math.min(this.now() + IDLE_EXPIRY_MS, state.deadline);
       } else if (input.mode === "finish") {
         if (state.offset !== state.size) throw new Error("Video upload is incomplete.");
         if (registerAttachment) {

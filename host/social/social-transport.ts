@@ -138,7 +138,7 @@ export class SocialTransport {
             )
           : this.browser.availability();
       if (method === "social.browser.view.frame")
-        return liveViewFrame(String(params.accountId ?? ""));
+        return liveViewFrame(String(params.accountId ?? ""), params.after);
       if (method === "social.browser.view.input")
         return liveViewInput(String(params.accountId ?? ""), params.event);
       if (method === "social.browser.instagram.live")

@@ -16,13 +16,14 @@ Choose **Sign in with browser** on the Account page. bycoda opens your default b
 the sign-in page; pick Google, Facebook, Apple, GitHub or an emailed code. When the browser
 says you are signed in, return to bycoda. Sign-in finishes within five minutes; press
 **Cancel** to stop waiting.
+If bycoda cannot open the browser, it ends that attempt and shows the error. You can retry from the same screen.
 
 - Your sign-in secret is kept in the system credential store (Windows Credential Manager,
   macOS Keychain or the Linux Secret Service), never in a file.
 - **Sign out** removes the secret from this computer. Your local data is not touched.
 - If your session ends (for example you signed this computer out from another device),
   bycoda says so and returns to the signed-out state.
-- Offline, bycoda shows the account details it last confirmed for up to seven days.
+- Offline, bycoda shows the account details it last confirmed for up to seven days. A connection that stops answering is treated the same way after 15 seconds, so sign-in and sync never wait forever.
 
 ## The account center
 
@@ -137,6 +138,14 @@ blocks your work (if you ignore it, it comes back on the next launch, three time
 and statistics stay off). When on, bycoda sends at most once a day a random install id, the
 app version, operating system, release channel and date, and nothing else. Without an account
 the same switch is in Settings → Privacy. Turning it off stops sending immediately.
+
+**Share anonymous token totals** has its own switch in Settings → Privacy and Account →
+Privacy & data. It starts off. When enabled, desktop sends completed UTC days of measured
+Bycoda turn usage since you enabled it, with a random installation ID. The service receives
+only dates, token totals, estimated API-equivalent USD and counts of priced and unpriced
+turns. It keeps the daily reports for 400 days. The estimate uses known rates and omits
+unpriced turns. Turning the switch off stops future reports. Desktop can catch up on up to
+seven days after an outage.
 
 ### Diagnostic logs
 

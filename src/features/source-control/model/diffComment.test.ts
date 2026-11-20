@@ -1,5 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { diffCommentLocation, formatDiffComment } from "./diffComment";
+import {
+  diffCommentLocation,
+  formatDiffComment,
+  readDiffCommentDraft,
+  writeDiffCommentDraft,
+} from "./diffComment";
+
+describe("diff comment drafts", () => {
+  const line = (kind: "add" | "del", number: number) => ({
+    path: "src/a.ts",
+    line: {
+      kind,
+      text: "x",
+      oldNumber: kind === "del" ? number : null,
+      newNumber: kind === "add" ? number : null,
+    },
+  });
+
+  it("keeps a draft per line and kind, and clears it when emptied", () => {
+    writeDiffCommentDraft(line("add", 5), "first");
+    writeDiffCommentDraft(line("del", 5), "second");
+    expect(readDiffCommentDraft(line("add", 5))).toBe("first");
+    expect(readDiffCommentDraft(line("del", 5))).toBe("second");
+    expect(readDiffCommentDraft(line("add", 6))).toBe("");
+    expect(readDiffCommentDraft({ ...line("add", 5), path: "src/b.ts" })).toBe("");
+
+    writeDiffCommentDraft(line("add", 5), "  ");
+    writeDiffCommentDraft(line("del", 5), "");
+    expect(readDiffCommentDraft(line("add", 5))).toBe("");
+    expect(readDiffCommentDraft(line("del", 5))).toBe("");
+  });
+});
 
 describe("diff comments", () => {
   it("formats a comment on a current line for the composer", () => {

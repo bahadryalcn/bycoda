@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { TerminalTools, type TerminalTool } from "../../../src/features/terminal/ui/TerminalTools";
+import { RemoteShellSuggestionsOverlay } from "../../../src/features/terminal/ui/RemoteShellSuggestionsOverlay";
 import type {
   SshShellController,
   SshShellState,
@@ -93,6 +94,14 @@ export function RemoteSuggestionsFixture() {
         suggestionsAllowed={false}
         remoteShell={shell}
       />
+      {terminal && (mode === null || mode === "remote") ? (
+        <RemoteShellSuggestionsOverlay
+          shell={shell}
+          terminal={terminal}
+          selectionMode={mode === "remote"}
+          onClose={() => setMode(null)}
+        />
+      ) : null}
       <div ref={element} />
     </div>
   );

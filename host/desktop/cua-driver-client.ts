@@ -83,17 +83,28 @@ export class CuaDriverClient {
     this.proc = proc;
     this.binary = binary;
     this.generation++;
-    let buffer = Buffer.alloc(0);
+    // A response line (a screenshot can be megabytes) arrives in many small chunks. Keep the
+    // unfinished tail as a chunk list, scan only each new chunk for the newline and join once
+    // when a line completes, so the cost stays linear in the line size.
+    let partial: Buffer[] = [];
+    let partialBytes = 0;
     proc.stdout?.on("data", (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
+      let rest = chunk;
       let newline: number;
-      while ((newline = buffer.indexOf(10)) >= 0) {
-        const line = decoder.decode(buffer.subarray(0, newline));
-        buffer = buffer.subarray(newline + 1);
+      while ((newline = rest.indexOf(10)) >= 0) {
+        partial.push(rest.subarray(0, newline));
+        const line = decoder.decode(partial.length === 1 ? partial[0] : Buffer.concat(partial));
+        partial = [];
+        partialBytes = 0;
+        rest = rest.subarray(newline + 1);
         this.receive(line);
       }
-      if (buffer.length > MAX_LINE_BYTES) {
-        buffer = Buffer.alloc(0);
+      if (rest.length === 0) return;
+      partial.push(rest);
+      partialBytes += rest.length;
+      if (partialBytes > MAX_LINE_BYTES) {
+        partial = [];
+        partialBytes = 0;
         if (this.proc === proc) this.close();
       }
     });

@@ -157,6 +157,7 @@ export function createRegistryRuntime(
       "crews.deleteRun": dependencies.crewOperation("crews.deleteRun"),
       "crews.agent.save": dependencies.crewOperation("crews.agent.save"),
       "crews.agent.delete": dependencies.crewOperation("crews.agent.delete"),
+      "crews.agent.group.update": dependencies.crewOperation("crews.agent.group.update"),
       "crews.start": dependencies.crewOperation("crews.start"),
       "crews.get": dependencies.crewOperation("crews.get"),
       "crews.assign": dependencies.crewOperation("crews.assign"),

@@ -1,6 +1,8 @@
 import { t } from "../../../../../shared/i18n";
 import { IS_LINUX, IS_MAC } from "../../../../../platform/tauri/platform";
 import {
+  applyMainOpacity,
+  applySidebarOpacity,
   BODY_GLASS_DEFAULT,
   WINDOW_GLASS_DEFAULT,
   SIDEBAR_OPACITY_DEFAULT,
@@ -14,9 +16,10 @@ import {
   SIDEBAR_BLUR_MAX,
 } from "../../../model/appearance";
 import { saveLiveBackground } from "../../../model/liveBackground";
-import { Group, Row, Slider, SettingsFeedback, Toggle } from "../../../../../shared/ui/settings";
+import { Group, Row, SettingsFeedback, Toggle } from "../../../../../shared/ui/settings";
 import { WindowGlassFeedback } from "../../WindowGlassFeedback";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "../../useAppearanceSettings";
+import { DraftSlider } from "./DraftSlider";
 
 /**
  * Translucency controls are always rendered. When glass cannot apply (live background covering the
@@ -79,13 +82,14 @@ export function GlassControl({
         disabled={!active}
         disabledReason={reason}
       >
-        <Slider
+        <DraftSlider
           label={t("Sidebar opacity")}
           value={percent}
-          display={`${percent}%`}
+          format={(next) => `${next}%`}
           min={Math.round(SIDEBAR_OPACITY_MIN * 100)}
           max={Math.round(SIDEBAR_OPACITY_MAX * 100)}
-          onChange={appearance.onOpacity}
+          apply={(next) => applySidebarOpacity(next / 100)}
+          commit={appearance.onOpacity}
           disabled={!active}
         />
       </Row>
@@ -110,13 +114,14 @@ export function GlassControl({
           disabled={!active}
           disabledReason={reason}
         >
-          <Slider
+          <DraftSlider
             label={t("Main pane opacity")}
             value={mainPercent}
-            display={`${mainPercent}%`}
+            format={(next) => `${next}%`}
             min={Math.round(MAIN_OPACITY_MIN * 100)}
             max={Math.round(MAIN_OPACITY_MAX * 100)}
-            onChange={appearance.onMainOpacity}
+            apply={(next) => applyMainOpacity(next / 100)}
+            commit={appearance.onMainOpacity}
             disabled={!active}
           />
         </Row>
@@ -128,13 +133,13 @@ export function GlassControl({
         disabled={!active || !IS_MAC}
         disabledReason={IS_MAC ? reason : undefined}
       >
-        <Slider
+        <DraftSlider
           label={t("Blur radius")}
           value={appearance.blur}
-          display={`${appearance.blur}px`}
+          format={(next) => `${next}px`}
           min={SIDEBAR_BLUR_MIN}
           max={SIDEBAR_BLUR_MAX}
-          onChange={appearance.onBlur}
+          commit={appearance.onBlur}
           disabled={!active || !IS_MAC}
         />
       </Row>

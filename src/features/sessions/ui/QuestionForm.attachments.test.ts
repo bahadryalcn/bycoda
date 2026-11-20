@@ -172,8 +172,33 @@ describe("question attachments", () => {
     Object.defineProperty(event, "clipboardData", { value: { files: [image], items: [] } });
     await act(async () => node.querySelector("textarea")!.dispatchEvent(event));
     expect(event.defaultPrevented).toBe(true);
-    expect(mocks.fromFiles).toHaveBeenCalledWith([image], { persistBlobs: false });
+    expect(mocks.fromFiles).toHaveBeenCalledWith([image], {
+      persistBlobs: false,
+      onSkipped: expect.any(Function),
+    });
     expect(node.textContent).toContain(file.name);
+  });
+
+  it("attaches the valid pasted files and names the oversized one instead of rejecting all", async () => {
+    render();
+    const huge = new File(["x"], "backup.zip", { type: "application/zip" });
+    const image = new File(["image"], "screen.png", { type: "image/png" });
+    mocks.fromFiles.mockImplementationOnce(
+      async (
+        _files: File[],
+        options?: { onSkipped?: (skipped: { name: string; reason: string }[]) => void },
+      ) => {
+        options?.onSkipped?.([{ name: "backup.zip", reason: "too-large" }]);
+        return [file];
+      },
+    );
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { files: [huge, image], items: [] } });
+    await act(async () => node.querySelector("textarea")!.dispatchEvent(event));
+
+    expect(node.textContent).toContain(file.name);
+    expect(node.textContent).toContain("backup.zip is larger than 20 MB and was not attached.");
+    expect(node.textContent).not.toContain("Try attaching them again");
   });
 
   it("uses the shared file-drop read path", async () => {

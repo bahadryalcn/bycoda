@@ -310,7 +310,7 @@ export function AssistantBriefingCard({
             ? ""
             : t(
                 speaking === "loading"
-                  ? "Preparing audio..."
+                  ? "Preparing audio…"
                   : "Reading the briefing. This does not open the microphone.",
               )
         }

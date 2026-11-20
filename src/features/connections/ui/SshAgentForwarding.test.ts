@@ -76,6 +76,40 @@ it("expires without renewing or reconnecting and only an explicit retry gets a f
   expect(native.invoke).toHaveBeenCalledTimes(2);
   expect(button("Approve and connect").disabled).toBe(false);
 });
+it("stops the countdown tick at expiry and restarts it only for a new review", async () => {
+  vi.useFakeTimers();
+  await render();
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  // Regression for #1239: the expired review must leave no clock interval behind.
+  expect(vi.getTimerCount()).toBe(0);
+  native.invoke.mockResolvedValue({ ...review(), reviewId: "new-review" });
+  await act(async () => button("Request new review").click());
+  expect(vi.getTimerCount()).toBeGreaterThan(0);
+  expect(button("Approve and connect").disabled).toBe(false);
+});
+it("pauses the countdown while hidden, catches up when shown, and still expires while hidden", async () => {
+  vi.useFakeTimers();
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  const visibility = async (value: boolean) => {
+    hidden.mockReturnValue(value);
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+  };
+  const advance = (ms: number) => act(async () => vi.advanceTimersByTimeAsync(ms));
+  try {
+    await render();
+    await visibility(true);
+    await advance(5_000);
+    expect(document.body.textContent).toContain("30 s");
+    await visibility(false);
+    expect(document.body.textContent).toContain("25 s");
+    await visibility(true);
+    await advance(25_000);
+    expect(button("Approve and connect").disabled).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    hidden.mockRestore();
+  }
+});
 it("invalidates a changed endpoint before approval and does not auto-review the replacement", async () => {
   await render();
   const changed = { ...server, sshEndpoint: { ...server.sshEndpoint!, host: "other.invalid" } };

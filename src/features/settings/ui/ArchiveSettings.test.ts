@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { archiveProject, rememberProject } from "../../projects/model/recents";
 import { formatDate, ArchivePage } from "./ArchiveSettings";
 import { formatArchiveDate } from "../../../shared/i18n/format";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import * as lockState from "../../group-lock/model/lockState";
 import * as projectData from "../../projects/model/projectData";
 
@@ -170,4 +171,49 @@ it("confirms a project restore from storage rather than from the callback return
   await act(async () => button("Restore")!.click());
   expect(container.textContent).not.toContain("could not be restored");
   expect(container.textContent).toContain("No archived projects.");
+});
+
+it("windows a large archive and filters it in place on the same list", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 44 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
+  resetRetainedState();
+  const sessions = Array.from({ length: 400 }, (_, index) => ({
+    id: `s${index}`,
+    cwd: "/work/app",
+    title: index % 100 === 7 ? `Needle ${index}` : `Chat ${index}`,
+    harness: "codex" as const,
+    model: "m",
+    runtimeMode: "supervised" as const,
+    createdAt: 1,
+    updatedAt: 1_000 + index,
+    archived: true,
+  }));
+  await act(async () =>
+    root.render(createElement(ArchivePage, { ...baseProps, sessions, sessionsStatus: undefined })),
+  );
+  const mounted = () => container.querySelectorAll("[data-collection-key]").length;
+  expect(mounted()).toBeGreaterThan(0);
+  expect(mounted()).toBeLessThan(60);
+  expect(container.textContent).toContain("Showing 400 of 400 archived conversations");
+
+  const search = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Search archived conversations"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      " NEEDLE ",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.textContent).toContain("Showing 4 of 400 archived conversations");
+  expect(mounted()).toBe(4);
+  expect(container.querySelector('[data-collection-key="s7"]')).not.toBeNull();
+  expect(container.querySelectorAll("[data-continuous-list]")).toHaveLength(1);
 });

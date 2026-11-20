@@ -467,13 +467,19 @@ pub fn ensure_window_reachable(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
+/// Logical minimum for secondary session windows. Smaller than the main
+/// workspace's, since a window hosts one conversation, but wide enough for the
+/// custom title row (menu, tabs, layout button, caption buttons) and the
+/// Working bar to stay usable instead of overlapping or clipping.
+const SESSION_WINDOW_MIN_SIZE: (f64, f64) = (480.0, 320.0);
+
 fn configure_session_window(config: &mut tauri::utils::config::WindowConfig, reveal: bool) {
     config.visible = reveal;
     config.focus = reveal;
-    // Secondary windows host individual conversations, so they must not inherit
-    // the main workspace's minimum size when its config is cloned.
-    config.min_width = None;
-    config.min_height = None;
+    // Not the main workspace's minimum (inherited by the cloned config), and
+    // not none: a sliver-sized window cannot fit the title row.
+    config.min_width = Some(SESSION_WINDOW_MIN_SIZE.0);
+    config.min_height = Some(SESSION_WINDOW_MIN_SIZE.1);
 }
 
 pub fn open_session_window(app: &AppHandle, reveal: bool) -> Result<WebviewWindow, String> {
@@ -585,7 +591,7 @@ fn build_session_window_with_url(
 
 /// The page colour to fill the window with when glass is off. Not a constant:
 /// Linux can turn glass off in dark mode, not just light.
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Rgb {
     pub r: u8,
     pub g: u8,
@@ -1223,6 +1229,7 @@ mod primary_workspace;
 pub use primary_workspace::{
     is_primary_workspace, primary_workspace_label, PRIMARY_WORKSPACE_CHANGED,
 };
+pub(crate) mod exit_shutdown;
 pub mod quit_finalization;
 pub use quit_finalization::{confirm_quit, request_quit};
 
@@ -1444,7 +1451,7 @@ mod tests {
     }
 
     #[test]
-    fn session_windows_do_not_inherit_the_main_workspace_minimum_size() {
+    fn session_windows_use_their_own_title_row_minimum_size() {
         let main = tauri::utils::config::WindowConfig {
             min_width: Some(800.0),
             min_height: Some(520.0),
@@ -1453,9 +1460,16 @@ mod tests {
         for reveal in [false, true] {
             let mut config = main.clone();
             configure_session_window(&mut config, reveal);
-            assert_eq!(config.min_width, None);
-            assert_eq!(config.min_height, None);
+            assert_eq!(config.min_width, Some(480.0));
+            assert_eq!(config.min_height, Some(320.0));
         }
+        // Unconfigured configs (no main minimum) still get the bound.
+        let mut bare = tauri::utils::config::WindowConfig::default();
+        configure_session_window(&mut bare, true);
+        assert_eq!(
+            (bare.min_width, bare.min_height),
+            (Some(480.0), Some(320.0))
+        );
         assert_eq!(main.min_width, Some(800.0));
         assert_eq!(main.min_height, Some(520.0));
     }

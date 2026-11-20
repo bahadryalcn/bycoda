@@ -62,20 +62,26 @@ async function fixture() {
   await tasks.ready;
   let goals = new HostGoals(store, engine, tasks);
   await goals.ready;
-  const notes = new AsyncHostNotes(() => [path]),
-    ports = assistantExecutionPorts(store, goals, tasks, () => notes);
+  const notes = new AsyncHostNotes(() => [path]);
   const save = vi.fn<AsyncHostNotes["save"]>((...args) => notes.save(...args));
-  ports.quickNotes = () => ({ get: (id) => notes.get(id), save });
-  ports.createGoal = vi.fn(async () => {
-    throw new Error("A quick note must not create a Goal");
-  });
-  ports.chiefWake = vi.fn(async () => {
-    throw new Error("A quick note must not wake Chief");
-  });
-  ports.reply = vi.fn(async () => {
-    throw new Error("A quick note must not request an LLM reply");
-  });
-  let service = new HostAssistant(store, ports);
+  const overrides = {
+    quickNotes: () => ({ get: (id: string) => notes.get(id), save }),
+    createGoal: vi.fn(async () => {
+      throw new Error("A quick note must not create a Goal");
+    }),
+    chiefWake: vi.fn(async () => {
+      throw new Error("A quick note must not wake Chief");
+    }),
+    reply: vi.fn(async () => {
+      throw new Error("A quick note must not request an LLM reply");
+    }),
+  };
+  const openAssistant = () =>
+    new HostAssistant(store, {
+      ...assistantExecutionPorts(store, goals, tasks, () => notes),
+      ...overrides,
+    });
+  let service = openAssistant();
   await service.ready;
   const rpc = (raw: unknown) => assistantDomain(service, store)(raw, context);
   await rpc({
@@ -103,7 +109,7 @@ async function fixture() {
       return store;
     },
     notes,
-    ports,
+    ports: overrides,
     save,
     engine,
     rpc,
@@ -120,15 +126,7 @@ async function fixture() {
       await tasks.ready;
       goals = new HostGoals(store, engine, tasks);
       await goals.ready;
-      const fresh = assistantExecutionPorts(store, goals, tasks, () => notes);
-      Object.assign(ports, {
-        listNotes: fresh.listNotes,
-        getNote: fresh.getNote,
-        saveNote: fresh.saveNote,
-        listProjects: fresh.listProjects,
-        jobDeletion: fresh.jobDeletion,
-      });
-      service = new HostAssistant(store, ports);
+      service = openAssistant();
       await service.ready;
     },
     job: async () =>

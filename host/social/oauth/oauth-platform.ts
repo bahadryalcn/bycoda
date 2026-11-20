@@ -1,6 +1,7 @@
 import type { SocialAccount, SocialPlatform } from "../../../src/features/social/model/social";
 import type { SocialHttp } from "../../../src/integrations/social/adapter";
 import type { SocialCredential } from "../social-credentials";
+import { SocialRefreshError } from "./refresh-error";
 
 export type SocialOAuthConfig = {
   clientId: string;
@@ -97,8 +98,10 @@ export async function refreshWithRefreshToken(
   credential: SocialCredential,
 ): Promise<SocialCredential> {
   const config = runtime.config;
-  if (!config || !credential.refreshToken)
-    throw new Error("This connection requires owner reconnection.");
+  // Missing host OAuth configuration is not the account's fault: retried with backoff.
+  if (!config) throw new Error("This connection requires owner reconnection.");
+  if (!credential.refreshToken)
+    throw new SocialRefreshError("permanent", "This connection requires owner reconnection.");
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: credential.refreshToken,
@@ -121,14 +124,31 @@ export async function refreshWithRefreshToken(
     redirect: "error",
     signal: AbortSignal.timeout(15000),
   });
-  if (!response.ok) throw new Error("Account refresh failed. Reconnect the account.");
+  if (!response.ok) {
+    // Only the standard OAuth error code is read; the body is never kept or surfaced.
+    const code = await response
+      .json()
+      .then((body: unknown) =>
+        body && typeof body === "object" ? (body as { error?: unknown }).error : undefined,
+      )
+      .catch(() => undefined);
+    throw new SocialRefreshError(
+      (response.status === 400 || response.status === 401) && code === "invalid_grant"
+        ? "permanent"
+        : "transient",
+      "Account refresh failed. Reconnect the account.",
+    );
+  }
   const result = (await response.json()) as OAuthTokenResponse;
   if (!result.access_token || !Number.isFinite(result.expires_in) || Number(result.expires_in) <= 0)
     throw new Error("Account refresh returned invalid credentials.");
   if (result.scope) {
     const scopes = [...new Set(result.scope.split(/[ ,]+/).filter(Boolean))].sort();
     if (JSON.stringify(scopes) !== JSON.stringify([...account.scopes].sort()))
-      throw new Error("Account scopes changed. Reconnect and review its permissions.");
+      throw new SocialRefreshError(
+        "permanent",
+        "Account scopes changed. Reconnect and review its permissions.",
+      );
   }
   return {
     accessToken: result.access_token,

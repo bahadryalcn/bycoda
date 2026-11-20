@@ -23,6 +23,7 @@ import {
   validateFiles,
   type Value,
 } from "./social-browser-meta-shared";
+import { FACEBOOK_MESSAGE_SEND_LABELS, FACEBOOK_POST_LABELS } from "./browser/ui-labels";
 import {
   instagramComment,
   instagramMessage,
@@ -292,12 +293,11 @@ async function facebookPublish(context: BrowserRecipeContext, job: SocialJob) {
       context.files.map((entry) => entry.path),
     );
   }
-  const submit = await mark(context, '[role="dialog"] [role="button"],[role="dialog"] button', [
-    "Post",
-    "Paylaş",
-    "Gönderi paylaş",
-    "Gönder",
-  ]);
+  const submit = await mark(
+    context,
+    '[role="dialog"] [role="button"],[role="dialog"] button',
+    FACEBOOK_POST_LABELS,
+  );
   return capture(
     context,
     /\/api\/graphql\/(?:\?|$)/,
@@ -396,12 +396,11 @@ async function facebookMessage(context: BrowserRecipeContext, job: SocialJob) {
     '[role="main"] [role="textbox"][contenteditable="true"][aria-label="Message"],[role="main"] [role="textbox"][contenteditable="true"][aria-label="Mesaj"],[role="main"] [role="textbox"][contenteditable="true"][aria-label="Aa"]',
   );
   await context.page.fill(editor, text);
-  const submit = await mark(context, '[role="main"] [role="button"],[role="main"] button', [
-    "Send",
-    "Gönder",
-    "Press Enter to send",
-    "Göndermek için Enter tuşuna bas",
-  ]);
+  const submit = await mark(
+    context,
+    '[role="main"] [role="button"],[role="main"] button',
+    FACEBOOK_MESSAGE_SEND_LABELS,
+  );
   return capture(
     context,
     /\/ajax\/mercury\/send_messages\.php(?:\?|$)/,

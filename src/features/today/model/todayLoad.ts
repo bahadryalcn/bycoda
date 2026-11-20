@@ -20,15 +20,22 @@ export type TodaySources = {
   turns: UsageTurnReport["turns"];
   pricing: UsagePricing;
   at: number;
+  /** Start of the read window; a later read may reuse these rows only if it needs no earlier ones. */
+  since: number;
 };
 
-/** Provider log rows per account, recorded turns and prices, each degrading to an empty answer. */
+/**
+ * Provider log rows per account, recorded turns and prices. A source that cannot be read keeps the
+ * `previous` read's answer when that covered the whole window (the last good figures stay on screen,
+ * flagged `failed`), and otherwise degrades to an empty answer.
+ */
 export async function fetchTodaySources(
   period: TodayPeriod,
-  previousTurns?: UsageTurnReport["turns"],
+  previous?: TodaySources,
 ): Promise<{ value: TodaySources; failed: boolean }> {
   const now = Date.now();
   const since = Math.floor(todayWindow(period, now).start / 900_000) * 900_000;
+  const kept = previous && previous.since <= since ? previous : undefined;
   const accounts = PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts);
   const [reports, turns, prices] = await Promise.all([
     Promise.all(
@@ -40,7 +47,11 @@ export async function fetchTodaySources(
             failed: false,
           };
         } catch {
-          return { account, rows: [], failed: true };
+          const earlier = kept?.usage.find(
+            (entry) =>
+              entry.account.provider === account.provider && entry.account.id === account.id,
+          );
+          return { account, rows: earlier?.rows ?? [], failed: true };
         }
       }),
     ),
@@ -54,9 +65,10 @@ export async function fetchTodaySources(
     failed: turns === null || (accounts.length > 0 && reports.some((report) => report.failed)),
     value: {
       usage: reports.map(({ account, rows }) => ({ account, rows })),
-      turns: turns?.turns ?? previousTurns ?? [],
-      pricing: createUsagePricing(prices?.models),
+      turns: turns?.turns ?? kept?.turns ?? [],
+      pricing: prices || !kept ? createUsagePricing(prices?.models) : kept.pricing,
       at: now,
+      since,
     },
   };
 }

@@ -22,6 +22,7 @@ import type {
   Session,
   TaskListItem,
   ToolPreview,
+  WorkflowAgentParent,
 } from "../../../features/sessions/model/session";
 import {
   dropContextWindow,
@@ -56,11 +57,11 @@ import {
   queuedModelTarget,
   sameQueuedModelTarget,
 } from "../../../features/sessions/model/messageQueue";
-import { loadResumeAtReset } from "../../../features/settings/model/settings";
+import { loadAgentDefault } from "../../../features/settings/model/agentDefaultsStore";
 import { selectedAnswerLabels } from "../../../features/sessions/model/userQuestion";
 import type { HarnessEvent } from "./types";
 import {
-  COMPACTING_TEXT,
+  compactingText,
   COMPACTION_STATUS_KEY,
   isRunningCompaction,
 } from "../../../features/sessions/model/compactionStatus";
@@ -130,6 +131,8 @@ function isSupersededToolUpdate(event: ToolUpdatedEvent, following: HarnessEvent
     following.preview === event.preview &&
     following.agentModel === event.agentModel &&
     following.agentPrompt === event.agentPrompt &&
+    following.workflow?.callId === event.workflow?.callId &&
+    following.workflow?.phase === event.workflow?.phase &&
     !event.fileChanges &&
     !following.fileChanges &&
     !event.paths &&
@@ -202,6 +205,7 @@ export function applyHarnessEvent(
         streaming: true,
         agentModel: event.agentModel,
         agentPrompt: event.agentPrompt,
+        workflow: event.workflow,
         ...(event.background ? { background: true } : {}),
       });
     case "tool.updated":
@@ -217,6 +221,7 @@ export function applyHarnessEvent(
           event.status !== "completed" && event.status !== "failed" && event.status !== "stopped",
         agentModel: event.agentModel,
         agentPrompt: event.agentPrompt,
+        workflow: event.workflow,
       });
     case "agent.step":
       return recordAgentStep(session, event);
@@ -491,7 +496,9 @@ export function applyHarnessEvent(
           // Armed even before the reset time is known; a later lookup fills it in.
           // A repeated limit event keeps the choice already made for this one.
           resumeAtReset:
-            session.usageLimit?.resumeAtReset ?? options.resumeAtReset ?? loadResumeAtReset(),
+            session.usageLimit?.resumeAtReset ??
+            options.resumeAtReset ??
+            loadAgentDefault("resumeAtReset"),
         },
       };
     case "interjection":
@@ -1016,7 +1023,7 @@ function applyCompactionStatus(
     return appendBlock(session, {
       id: crypto.randomUUID(),
       role: "system",
-      text: text || COMPACTING_TEXT,
+      text: text || compactingText(),
       statusKey: COMPACTION_STATUS_KEY,
       statusRunningSince: Date.now(),
     });
@@ -1234,6 +1241,7 @@ function upsertTool(
     streaming: boolean;
     agentModel?: string;
     agentPrompt?: string;
+    workflow?: WorkflowAgentParent;
     background?: boolean;
   },
 ): Session {
@@ -1254,20 +1262,23 @@ function upsertTool(
     const truncated = !!detail && (capped.truncated || patch.detailTruncated === true);
     const preview = fillPreview(patch.preview, detail, patch.kind, patch.title);
     const label = finalToolLabel(session, patch.kind, displayLabel(patch), preview);
-    return appendBlock(session, {
+    const startedAt = Date.now();
+    const block: Block = {
       id: crypto.randomUUID(),
       role: "tool",
       ...(inlineVisual ? { inlineVisual } : {}),
       text: label,
       streaming: patch.streaming,
-      ...(patch.agentModel || isAgentTool(patch.kind, label)
+      ...(patch.agentModel || patch.workflow || isAgentTool(patch.kind, label)
         ? {
             agentRun: {
               name: label,
               ...(patch.agentModel ? { model: patch.agentModel } : {}),
               ...(prompt ? { prompt } : {}),
+              ...(patch.workflow ? { workflow: patch.workflow } : {}),
               steps: [],
-              startedAt: Date.now(),
+              startedAt,
+              ...(patch.workflow && !patch.streaming ? { endedAt: startedAt } : {}),
             },
           }
         : {}),
@@ -1281,7 +1292,18 @@ function upsertTool(
         ...(preview ? { preview } : {}),
         ...(patch.background ? { background: true } : {}),
       },
-    });
+    };
+    if (!patch.workflow) return appendBlock(session, block);
+    // Artifact reads can finish after the next prompt or during a prose stream.
+    // Keep children next to their owning call without sealing current prose.
+    const parent = findToolIndex(session, { callId: patch.workflow.callId });
+    if (parent < 0) return session;
+    let after = parent + 1;
+    while (session.blocks[after]?.agentRun?.workflow?.callId === patch.workflow.callId) after++;
+    const blocks = session.blocks.slice();
+    blocks.splice(after, 0, block);
+    registerBlockChanges(session.blocks, blocks, [block]);
+    return { ...session, blocks };
   }
   const prev = session.blocks[index];
   const capped = capToolDetailMeta(patch.detail);
@@ -1317,6 +1339,9 @@ function upsertTool(
     (prev.tool?.outputTruncated === true) === truncated &&
     (!patch.agentModel || prev.agentRun?.model === patch.agentModel) &&
     (!prompt || prev.agentRun?.prompt === prompt) &&
+    (!patch.workflow ||
+      (prev.agentRun?.workflow?.callId === patch.workflow.callId &&
+        prev.agentRun?.workflow?.phase === patch.workflow.phase)) &&
     (!prev.agentRun || prev.agentRun.name === agentName) &&
     !endsAgentRun(prev.agentRun, patch.streaming) &&
     samePreview(prev.tool?.preview, preview)
@@ -1329,7 +1354,7 @@ function upsertTool(
     ...(inlineVisual ? { inlineVisual } : {}),
     text: label,
     streaming: patch.streaming,
-    ...(patch.agentModel || prev.agentRun
+    ...(patch.agentModel || patch.workflow || prev.agentRun
       ? {
           agentRun: {
             steps: prev.agentRun?.steps ?? [],
@@ -1337,6 +1362,7 @@ function upsertTool(
             name: agentName,
             ...(patch.agentModel ? { model: patch.agentModel } : {}),
             ...(prompt ? { prompt } : {}),
+            ...(patch.workflow ? { workflow: patch.workflow } : {}),
             ...(endsAgentRun(prev.agentRun, patch.streaming) ? { endedAt: Date.now() } : {}),
           },
         }
@@ -1525,6 +1551,7 @@ function recordAgentStep(
       ? { agentType: event.agentType ?? run?.agentType }
       : {}),
     ...(run?.prompt ? { prompt: run.prompt } : {}),
+    ...(run?.workflow ? { workflow: run.workflow } : {}),
     steps,
     ...(run?.startedAt !== undefined ? { startedAt: run.startedAt } : {}),
     ...(run?.endedAt !== undefined ? { endedAt: run.endedAt } : {}),

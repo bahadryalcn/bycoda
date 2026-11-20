@@ -48,6 +48,43 @@ it("lists and switches only clean existing local branches", async () => {
   });
 });
 
+// Regression: each list started four git processes, and every start blocks the Host
+// event loop on Windows. A watched, unchanged checkout now runs no git at all.
+it("reuses the list while the watched refs revision is unchanged", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "bycoda-host-branches-"));
+  dirs.push(cwd);
+  const git = (...args: string[]) => execFileSync("git", args, { cwd });
+  git("init", "-b", "main");
+  git(
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "initial",
+  );
+  let etag = "1.1";
+  const revision = async () => ({ etag, watching: true });
+  expect((await hostBranches(cwd, revision)).branches).toEqual(["main"]);
+  // Changed outside the Host, not yet reported by the watch: the cached list is served.
+  git("branch", "later");
+  expect((await hostBranches(cwd, revision)).branches).toEqual(["main"]);
+  etag = "1.2";
+  expect((await hostBranches(cwd, revision)).branches).toEqual(["later", "main"]);
+  // An unwatched checkout always reads.
+  git("branch", "unwatched");
+  expect((await hostBranches(cwd, async () => ({ etag, watching: false }))).branches).toContain(
+    "unwatched",
+  );
+  // A Host branch change shows at once, before the watch settles.
+  expect(await createHostBranch(cwd, "made-here")).toMatchObject({ current: "made-here" });
+  expect((await hostBranches(cwd, revision)).current).toBe("made-here");
+  git("checkout", "-q", "--detach");
+  expect((await hostBranches(cwd)).current).toBeNull();
+});
+
 it("keeps local branch identity stable when a tag has the same name (#39)", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "bycoda-host-branches-"));
   dirs.push(cwd);

@@ -1,10 +1,10 @@
 import { Text } from "../../../shared/ui/Text";
-import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useState } from "react";
 import { type SessionFolderTarget, type SessionFolder } from "../model/sessionFolders";
-import { Folder, Plus, X } from "../../../shared/ui/icons";
+import { Folder, Plus } from "../../../shared/ui/icons";
 import {
+  PickerCloseButton,
   PickerList,
   PopoverSearchHeader,
   usePickerList,
@@ -73,24 +73,13 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
         onValueChange={setQuery}
         onEscape={onDismiss}
         {...list.searchProps}
-        trailing={
-          <Button
-            iconOnly
-            label={t("Cancel")}
-            variant="ghost"
-            type="button"
-            onClick={onDismiss}
-            className="shrink-0"
-          >
-            <X className="icon-sm" />
-          </Button>
-        }
+        trailing={<PickerCloseButton label={t("Cancel")} onClick={onDismiss} />}
       />
       <PickerList
         label={t("Session folders")}
         controller={list}
         emptyLabel={t("Type a name to create the first folder")}
-        className="max-h-[min(240px,40vh)]"
+        listHeight="standard"
       />
     </div>
   );

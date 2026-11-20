@@ -20,6 +20,9 @@ const MAX_PAIRINGS = 32;
 const RATE_WINDOW_MS = 60_000;
 const MAX_CREATE_PER_OWNER = 10;
 const MAX_REDEMPTIONS = 120;
+const MAX_HTTP_REDEMPTIONS_PER_SOURCE = 120;
+const MAX_HTTP_REDEMPTIONS = 600;
+const MAX_REDEMPTION_SOURCES = 64;
 const SECRET_FORMAT = /^[A-Za-z0-9_-]{43}$/;
 const PAIRING_ID_FORMAT = /^[a-f0-9-]{36}$/i;
 const INVALID_TICKET = "Mobile pairing ticket is invalid or expired. Create a new QR code.";
@@ -85,6 +88,8 @@ export class MobilePairing {
   private readonly tickets = new Map<string, string>();
   private readonly creationRates = new Map<string, Rate>();
   private redemptionRate: Rate = { startedAt: 0, count: 0 };
+  private httpRedemptionRate: Rate = { startedAt: 0, count: 0 };
+  private readonly sourceRedemptionRates = new Map<string, Rate>();
   private redemptionTail: Promise<void> = Promise.resolve();
   private closed = false;
 
@@ -251,7 +256,20 @@ export class MobilePairing {
     entry.claimHash = claimHash;
     entry.deviceName = name;
     entry.credential = credential;
+    this.retainForRetry(entry);
     return { ...credential };
+  }
+
+  /**
+   * A paired entry keeps its retry credential for a full TTL from issuance, not from the QR
+   * expiry, so a redeem response lost near expiry can still be recovered. Retries still need
+   * the ticket, the same claim ID, and a registered device; the credential is dropped on time.
+   */
+  private retainForRetry(entry: Pairing): void {
+    clearTimeout(entry.expiryTimer);
+    entry.expiresAt = this.now() + MOBILE_PAIRING_TTL_MS;
+    entry.expiryTimer = setTimeout(() => this.remove(entry.id), MOBILE_PAIRING_TTL_MS);
+    entry.expiryTimer.unref();
   }
 
   /** Additive desktop preflight. The phone's ticket/redeem protocol is unchanged. */
@@ -300,7 +318,6 @@ export class MobilePairing {
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Referrer-Policy", "no-referrer");
     try {
-      this.redeemRate();
       if (request.method !== "POST" || request.headers.origin !== undefined) {
         throw new MobilePairingError("Unsupported mobile pairing origin or method.", 403);
       }
@@ -315,6 +332,8 @@ export class MobilePairing {
         throw new MobilePairingError("Mobile pairing request is too large.", 413);
       }
       const input = await this.readBody(request);
+      // Count only requests that reach proof or ticket validation, keyed by the socket peer.
+      this.httpRedeemRate(request.socket.remoteAddress ?? "unknown");
       response.end(
         JSON.stringify({
           result: proving ? await this.prove(input) : await this.enqueueClaim(input),
@@ -336,6 +355,8 @@ export class MobilePairing {
     for (const id of this.pairings.keys()) this.remove(id);
     this.creationRates.clear();
     this.redemptionRate = { startedAt: 0, count: 0 };
+    this.httpRedemptionRate = { startedAt: 0, count: 0 };
+    this.sourceRedemptionRates.clear();
   }
 
   private async owner(token: string): Promise<string> {
@@ -397,6 +418,35 @@ export class MobilePairing {
     this.creationRates.set(owner, rate);
   }
 
+  /**
+   * Each source has its own bucket under a larger Host-wide ceiling. The table is bounded:
+   * when full, the oldest source's counter is dropped, which only loosens that source's limit.
+   */
+  private httpRedeemRate(source: string): void {
+    const now = this.now();
+    if (now - this.httpRedemptionRate.startedAt >= RATE_WINDOW_MS)
+      this.httpRedemptionRate = { startedAt: now, count: 0 };
+    let sourceRate = this.sourceRedemptionRates.get(source);
+    if (!sourceRate || now - sourceRate.startedAt >= RATE_WINDOW_MS) {
+      this.sourceRedemptionRates.delete(source);
+      if (this.sourceRedemptionRates.size >= MAX_REDEMPTION_SOURCES) {
+        const oldest = this.sourceRedemptionRates.keys().next().value;
+        if (oldest !== undefined) this.sourceRedemptionRates.delete(oldest);
+      }
+      sourceRate = { startedAt: now, count: 0 };
+      this.sourceRedemptionRates.set(source, sourceRate);
+    }
+    if (
+      sourceRate.count >= MAX_HTTP_REDEMPTIONS_PER_SOURCE ||
+      this.httpRedemptionRate.count >= MAX_HTTP_REDEMPTIONS
+    ) {
+      throw new MobilePairingError("Too many pairing attempts. Try again shortly.", 429);
+    }
+    sourceRate.count++;
+    this.httpRedemptionRate.count++;
+  }
+
+  /** In-process redemptions only; HTTP requests are limited by httpRedeemRate. */
   private redeemRate(): void {
     const now = this.now();
     if (now - this.redemptionRate.startedAt >= RATE_WINDOW_MS)

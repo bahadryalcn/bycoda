@@ -1,6 +1,6 @@
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
@@ -15,14 +15,20 @@ import { channelName, PlatformIcon } from "../common/PlatformIcon";
 import { SocialAvatar } from "../common/SocialAvatar";
 import { LinkedInCommentActions } from "../linkedin/LinkedInCommentActions";
 import { inboxApi } from "./inboxApi";
-import { statusText, statusTone, type MessageLine } from "./inboxModel";
+import { statusText, statusTone, timelineLines, type MessageLine } from "./inboxModel";
 import { MessageTimeline } from "./MessageTimeline";
-import { INBOX_STATUSES, type InboxItem, type InboxStatus } from "./inboxTypes";
+import {
+  INBOX_STATUSES,
+  INBOX_TAG_MAX_LENGTH,
+  INBOX_TAGS_MAX,
+  type InboxItem,
+  type InboxStatus,
+} from "./inboxTypes";
 import { ReplyBox } from "./ReplyBox";
 import { InstagramCommentActions } from "./InstagramCommentActions";
 import {
+  useInboxAccounts,
   useInboxInvalidate,
-  useInboxSnapshot,
   useInboxThread,
   useInboxTimeline,
 } from "./useInboxData";
@@ -48,13 +54,32 @@ export function ConversationView({
   const api = inboxApi(client);
   const thread = useInboxThread(client, threadId);
   const timeline = useInboxTimeline(client, item?.person?.id);
-  const snapshot = useInboxSnapshot(client);
+  const snapshot = useInboxAccounts(client, false);
   const invalidate = useInboxInvalidate(client);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [tagDraft, setTagDraft] = useState("");
   const [statusOpen, setStatusOpen] = useState(false);
   const statusButton = useRef<HTMLButtonElement>(null);
+  const article = useRef<HTMLElement>(null);
+  // Offset and height of the timeline before an older page is requested; read back once it renders.
+  const olderAnchor = useRef<{ top: number; height: number } | null>(null);
+  const pageCount = timeline.data?.pages.length ?? 0;
+  // The DOM only prepends the older rows; the reader's offset is restored here so their place stays put.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- scroll offsets are DOM state that React does not track, so this effect must write them after commit
+  useLayoutEffect(() => {
+    const saved = olderAnchor.current;
+    olderAnchor.current = null;
+    const list = article.current?.querySelector<HTMLElement>(".inbox-timeline");
+    if (saved && list) list.scrollTop = saved.top + list.scrollHeight - saved.height;
+  }, [pageCount]);
+
+  const loadOlder = async () => {
+    const list = article.current?.querySelector<HTMLElement>(".inbox-timeline");
+    olderAnchor.current = list ? { top: list.scrollTop, height: list.scrollHeight } : null;
+    const result = await timeline.fetchNextPage();
+    if (result.isError) olderAnchor.current = null;
+  };
 
   if (!threadId) return <EmptyHint message={t("Choose a conversation to read and reply.")} />;
   if (thread.isPending) return <LoadingText>{t("Loading conversation…")}</LoadingText>;
@@ -78,12 +103,7 @@ export function ConversationView({
     (account) => account.id === conversation.accountId && account.platform === "instagram",
   );
   const lines: MessageLine[] = item?.person
-    ? (timeline.data?.events ?? []).map((event) => ({
-        id: event.id,
-        at: event.at,
-        direction: event.direction,
-        text: event.text,
-      }))
+    ? timelineLines(timeline.data?.pages ?? [])
     : [...conversation.events]
         .sort((a, b) => a.at - b.at)
         .map((event) => ({
@@ -108,8 +128,7 @@ export function ConversationView({
     }
   };
 
-  const setStatus = (status: InboxStatus) =>
-    run(() => api.setStatus(conversation.id, status, item?.tags));
+  const setStatus = (status: InboxStatus) => run(() => api.setStatus(conversation.id, status));
 
   // Secondary status changes live in one menu; the current status is not offered.
   const statusItems = INBOX_STATUSES.filter((status) => status !== item?.status).map((status) => ({
@@ -122,21 +141,29 @@ export function ConversationView({
     void setStatus(id as InboxStatus).catch(() => undefined);
   };
 
+  // A tag change sends one tag delta (add or remove); the Host applies it to the stored list. The
+  // `saving` guard keeps a second change from starting while one is in flight.
+  const tagsFull = (item?.tags.length ?? 0) >= INBOX_TAGS_MAX;
+
   const addTag = async () => {
     const tag = tagDraft.trim();
-    if (!tag || !item) return;
+    if (!tag || !item || saving || tagsFull) return;
     if (item.tags.includes(tag)) {
       setTagDraft("");
       return;
     }
-    if (await run(() => api.setStatus(conversation.id, item.status, [...item.tags, tag])))
-      setTagDraft("");
+    if (await run(() => api.addTag(conversation.id, tag))) setTagDraft("");
+  };
+
+  const removeTag = (tag: string) => {
+    if (!item || saving) return;
+    void run(() => api.removeTag(conversation.id, tag));
   };
 
   const title = item?.person?.name ?? item?.title ?? conversation.platformThreadId;
 
   return (
-    <article className="inbox-conversation">
+    <article ref={article} className="inbox-conversation">
       <header className="inbox-conversation-head">
         <div className="inbox-conversation-heading">
           {item ? <SocialAvatar name={title} platform={item.platform} size="lg" /> : null}
@@ -203,7 +230,13 @@ export function ConversationView({
       {item ? (
         <div className="inbox-tag-editor">
           {item.tags.map((tag) => (
-            <Badge key={tag} size="sm">
+            <Badge
+              key={tag}
+              size="sm"
+              truncate
+              onRemove={() => removeTag(tag)}
+              removeLabel={t("Remove {p0}", { p0: tag })}
+            >
               {tag}
             </Badge>
           ))}
@@ -212,7 +245,8 @@ export function ConversationView({
             hideLabel
             fieldClassName="inbox-tag-field"
             value={tagDraft}
-            disabled={saving}
+            maxLength={INBOX_TAG_MAX_LENGTH}
+            disabled={saving || tagsFull}
             placeholder={t("Add tag")}
             onChange={(event) => setTagDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -222,6 +256,14 @@ export function ConversationView({
               }
             }}
           />
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={saving || tagsFull || !tagDraft.trim()}
+            onClick={() => void addTag().catch(() => undefined)}
+          >
+            {t("Add")}
+          </Button>
         </div>
       ) : null}
 
@@ -238,7 +280,7 @@ export function ConversationView({
           {t("This conversation could not be opened.")}
         </InlineError>
       ) : null}
-      {item?.person && timeline.isError ? (
+      {item?.person && timeline.isError && !timeline.data ? (
         <InlineError
           retry={{
             label: t("Try again"),
@@ -253,6 +295,37 @@ export function ConversationView({
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
 
+      {item?.person && timeline.hasNextPage ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={timeline.isFetchingNextPage}
+          onClick={() => {
+            void loadOlder().catch(() => undefined);
+          }}
+        >
+          {t("Load older messages")}
+        </Button>
+      ) : null}
+      {item?.person && timeline.data && !timeline.hasNextPage && timeline.data.pages.length > 1 ? (
+        <Text as="p" size="caption" tone="muted" leading="inherit" className="inbox-note">
+          {t("No older messages.")}
+        </Text>
+      ) : null}
+      {item?.person && timeline.isFetchNextPageError ? (
+        <InlineError
+          retry={{
+            label: t("Try again"),
+            pending: timeline.isFetchingNextPage,
+            onRetry: () => {
+              void loadOlder().catch(() => undefined);
+            },
+          }}
+        >
+          {t("Could not load older messages.")}
+        </InlineError>
+      ) : null}
+
       <MessageTimeline lines={lines} />
       {item?.person && timeline.isPending ? (
         <LoadingText>{t("Loading conversation…")}</LoadingText>
@@ -264,11 +337,6 @@ export function ConversationView({
           className="inbox-note"
           description={t("No messages in this conversation yet.")}
         />
-      ) : null}
-      {timeline.data?.truncated ? (
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="inbox-note">
-          {t("Older messages are not shown.")}
-        </Text>
       ) : null}
 
       {conversation.instagramSource === "live_comment" ? (

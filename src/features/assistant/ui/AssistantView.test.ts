@@ -122,6 +122,14 @@ afterEach(async () => {
   vi.useRealTimers();
   Reflect.deleteProperty(navigator, "locks");
 });
+// #784: drafts are written by a debounced writer; pagehide flushes it so a test can read storage now.
+function flushDrafts() {
+  window.dispatchEvent(new Event("pagehide"));
+}
+// #789: a long conversation is windowed, so this counts only the mounted message rows.
+function mountedMessages() {
+  return container.querySelectorAll("[data-message-id]").length;
+}
 async function render(props: Parameters<typeof AssistantView>[0] = {}) {
   if (!root) {
     container = document.createElement("div");
@@ -145,9 +153,9 @@ async function render(props: Parameters<typeof AssistantView>[0] = {}) {
 it("keeps background privacy qualification out of the Room layout", async () => {
   mock.roomPrivacy = { pending: true, error: null };
   await render();
-  expect(container.textContent).not.toContain("Confirming Room privacy protection...");
+  expect(container.textContent).not.toContain("Confirming Room privacy protection…");
   await click("Assistant status");
-  expect(document.body.textContent).toContain("Confirming Room privacy protection...");
+  expect(document.body.textContent).toContain("Confirming Room privacy protection…");
 });
 
 it("opens Room at its global conversation even when a coding project is selected", async () => {
@@ -253,10 +261,11 @@ it("keeps the confirmed availability while the owner's presence change is pendin
       : base(input),
   );
   await render();
+  // The announcement is a LiveText status region whose text carries the state.
   const presence = () =>
-    document
-      .querySelector('[role="status"][aria-label^="Current availability"]')
-      ?.getAttribute("aria-label");
+    [...document.querySelectorAll('[role="status"]')]
+      .find((node) => node.textContent?.startsWith("Current availability"))
+      ?.textContent?.toString();
   await click("Assistant status");
   expect(presence()).toContain("Here");
   await click("I'm back");
@@ -463,11 +472,17 @@ it("shows recorded actions with their transcript and hides the whole row when a 
   await act(async () => sourceThread.click());
   expect(container.textContent).toContain("Accepted owner request with recorded activity");
   expect(container.querySelector("details summary")?.textContent).toContain("Recorded actions");
-  expect(container.textContent).toContain("Get tasks");
-  expect(container.textContent).toContain("accepted-job");
+  expect(container.textContent).toContain("Get task");
+  // #794: a linked job missing from the snapshot shows a localized label, never its raw id.
+  const jobsSummary = [...container.querySelectorAll("details summary")].find((summary) =>
+    summary.textContent?.includes("Jobs"),
+  ) as HTMLElement;
+  await act(async () => jobsSummary.click());
+  expect(container.textContent).toContain("Job unavailable");
+  expect(container.textContent).not.toContain("accepted-job");
   await render({ initialTab: "conversations", projectPath: "/one", visibleProjectPaths: ["/one"] });
   expect(container.textContent).not.toContain("Accepted owner request with recorded activity");
-  expect(container.textContent).not.toContain("Get tasks");
+  expect(container.textContent).not.toContain("Get task");
   expect(container.textContent).not.toContain("accepted-job");
 });
 it("keeps global emergency-stop uncertainty visible without leaking a hidden source after a lock", async () => {
@@ -544,6 +559,7 @@ it("reviews multiline jobs and retains the failed request with its original idem
     .map(([input]) => input);
   expect(retried).toHaveLength(3);
   expect(retried[2]).toEqual(attempts[1]);
+  flushDrafts();
   expect(localStorage.getItem("bycoda.assistant.job-draft")).toBe("");
 });
 
@@ -662,7 +678,7 @@ it("restores the composite trash identity after deleting a job", async () => {
   mock.snapshot!.jobs = [job()];
   await render();
   await click("Job actions");
-  await click("Delete...");
+  await click("Delete…");
   await click("Delete job only");
   expect(container.textContent).toContain("Deleted");
   await click("Undo");
@@ -705,7 +721,7 @@ it("defaults to job-only deletion while showing every canonical task beyond the 
   );
   await render({ initialTab: "jobs" });
   await click("Job actions");
-  await click("Delete...");
+  await click("Delete…");
   expect(document.body.textContent).toContain("Another canonical task");
   const check = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')!;
   expect(check.checked).toBe(false);
@@ -757,7 +773,7 @@ it("freezes selected task scope after an uncertain deletion and Keeps the actual
   });
   await render({ initialTab: "jobs" });
   await click("Job actions");
-  await click("Delete...");
+  await click("Delete…");
   const check = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')!;
   await act(async () => check.click());
   await click("Delete job and tasks");
@@ -856,7 +872,9 @@ it("coalesces conversation draft writes while keeping current input", async () =
       : base(input, environment),
   );
   const textarea = await renderConversationDraft();
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
+  // #789: the long conversation is windowed, so fewer than all 100 rows are mounted.
+  expect(mountedMessages()).toBeGreaterThan(0);
+  expect(mountedMessages()).toBeLessThan(100);
   const writes = vi.spyOn(localStorage, "setItem");
   const project = vi.spyOn(privacyModel, "projectAssistantSnapshot");
   const messages = vi.spyOn(privacyModel, "visibleAssistantMessages");
@@ -1103,7 +1121,7 @@ it("clears the captured complete conversation while retaining its unsent draft a
   });
   await render({ initialTab: "conversations" });
   await click("Conversation actions");
-  await click("Clear conversation...");
+  await click("Clear conversation…");
   expect(document.body.textContent).toContain("Move all messages in this conversation");
   await click("Clear all messages");
   expect(mock.request).toHaveBeenCalledWith(
@@ -1183,7 +1201,7 @@ it("refreshes summaries only explicitly and keeps a lost ACK nonce through retry
     await new Promise((resolve) => setTimeout(resolve, 500));
   });
   expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
-    "Summary refresh was not confirmed.",
+    "Summary refresh could not be confirmed.",
   );
   expect(container.textContent).toContain("Summary unavailable");
   expect(container.textContent).not.toContain("Sensitive upstream");
@@ -1801,7 +1819,7 @@ it("parks a legacy attempted job review without a captured Host and preserves it
   await render();
   await click("Review jobs");
   await click("Check and retry");
-  expect(document.body.textContent).toContain("original Host could not be verified");
+  expect(document.body.textContent).toContain("original computer could not be verified");
   expect(mock.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(false);
   expect(JSON.parse(localStorage.getItem("bycoda.assistant.job-review")!).rows[0].key).toBe(
     "stable-key",
@@ -2088,6 +2106,9 @@ it("keeps replan input editable and blocks dispatch while local storage is unava
     );
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  // #784: typing only schedules the write; pagehide flushes it and surfaces the storage failure.
+  flushDrafts();
+  await act(async () => {});
   expect(textarea.value).toBe("Keep this feedback");
   expect(document.body.textContent).toContain("Could not save this draft");
   await click("Replan");
@@ -2123,6 +2144,9 @@ it("keeps priority selection and blocks dispatch until its intent can be saved",
   expect(option).toBeTruthy();
   await act(async () => option.click());
   expect(document.querySelector('[aria-label="Priority: High"]')).toBeTruthy();
+  // #784: the write is debounced; pagehide flushes it and surfaces the storage failure.
+  flushDrafts();
+  await act(async () => {});
   expect(document.body.textContent).toContain("Could not save this draft");
   await click("Save");
   expect(mock.request.mock.calls.filter(([input]) => input.op === "jobs.priority")).toHaveLength(0);
@@ -2349,7 +2373,7 @@ it("does not fall back to a mutable global briefing when the daily receipt is mi
   };
   await render({ initialTab: "notes" });
   await click("Summarize today");
-  expect(document.body.textContent).toContain("Daily summary was not confirmed");
+  expect(document.body.textContent).toContain("Daily summary could not be confirmed");
   expect(document.body.textContent).not.toContain("Wrong global briefing");
   expect(mock.request.mock.calls.some(([input]) => input.op === "snapshot")).toBe(false);
 });
@@ -2391,13 +2415,20 @@ it("pages timestamp siblings using the exact oldest loaded message identity", as
     return { messages: Array.from({ length: 100 }, (_, i) => message(i)) };
   });
   await render({ initialTab: "conversations" });
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
+  // #789: a long conversation mounts only a window of rows (the first ones without layout).
+  expect(mountedMessages()).toBeGreaterThan(0);
+  expect(mountedMessages()).toBeLessThan(100);
+  expect(container.textContent).toContain("Timestamp sibling 100");
   await click("Load earlier messages");
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(200);
-  expect(container.textContent).toContain("Timestamp sibling 0");
-  expect(container.textContent).toContain("Timestamp sibling 199");
+  expect(
+    mock.request.mock.calls.filter(
+      ([input]) => input.op === "threads.messages" && input.beforeId === "canonical-100",
+    ),
+  ).toHaveLength(1);
+  expect(mountedMessages()).toBeGreaterThan(0);
+  expect(mountedMessages()).toBeLessThan(200);
   const texts = [...container.querySelectorAll("[data-message-id]")].map((row) => row.textContent);
-  expect(new Set(texts).size).toBe(200);
+  expect(new Set(texts).size).toBe(texts.length);
 });
 it("keeps loaded history after a cursor error and retries the same canonical zero-timestamp cursor", async () => {
   const thread = {
@@ -2439,13 +2470,14 @@ it("keeps loaded history after a cursor error and retries the same canonical zer
   });
   await render({ initialTab: "conversations" });
   await click("Load earlier messages");
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
+  // #789: only a window of rows is mounted, so assert history stays loaded rather than all 100 rows.
+  expect(mountedMessages()).toBeGreaterThan(0);
   expect(container.textContent).toContain("Retained history 0");
   expect(container.textContent).toContain("history cursor changed");
   await click("Load earlier messages");
   expect(olderCalls).toBe(2);
-  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
-  expect(container.textContent).toContain("Retained history 99");
+  expect(mountedMessages()).toBeGreaterThan(0);
+  expect(container.textContent).toContain("Retained history 0");
 });
 
 it("shows the default portrait, a chosen avatar or the name initial in the header and a labelled Stop control that resumes when paused", async () => {

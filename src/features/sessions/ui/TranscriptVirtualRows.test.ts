@@ -544,16 +544,24 @@ it("registers selectionchange tracking only for virtualized lists, keeping copy 
 });
 
 function resizeHarness() {
-  const callbacks: ResizeObserverCallback[] = [];
+  const observers: Array<{ callback: ResizeObserverCallback; targets: Set<Element> }> = [];
   vi.stubGlobal(
     "ResizeObserver",
     class {
+      entry: { callback: ResizeObserverCallback; targets: Set<Element> };
       constructor(callback: ResizeObserverCallback) {
-        callbacks.push(callback);
+        this.entry = { callback, targets: new Set() };
+        observers.push(this.entry);
       }
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      observe(target: Element) {
+        this.entry.targets.add(target);
+      }
+      unobserve(target: Element) {
+        this.entry.targets.delete(target);
+      }
+      disconnect() {
+        this.entry.targets.clear();
+      }
     },
   );
   let width = 500;
@@ -562,31 +570,36 @@ function resizeHarness() {
   ) {
     return new DOMRect(0, top(this), width, height(this));
   });
-  return (next: number) => {
+  // The layout watch coalesces observer entries into one microtask, so the report is awaited.
+  return async (next: number) => {
     width = next;
-    act(() => {
-      for (const callback of callbacks) callback([], {} as ResizeObserver);
+    await act(async () => {
+      for (const { callback, targets } of observers)
+        callback(
+          [...targets].map((target) => ({ target }) as unknown as ResizeObserverEntry),
+          {} as ResizeObserver,
+        );
     });
   };
 }
 
-it("re-measures rows once per width change outside a live resize", () => {
+it("re-measures rows once per width change outside a live resize", async () => {
   const setWidth = resizeHarness();
   mount(rows(1000));
   measureCalls.count = 0;
-  setWidth(450);
-  setWidth(400);
+  await setWidth(450);
+  await setWidth(400);
   expect(measureCalls.count).toBe(2);
 });
 
-it("keeps measured row sizes through a live resize and re-measures once at its end", () => {
+it("keeps measured row sizes through a live resize and re-measures once at its end", async () => {
   const setWidth = resizeHarness();
   mount(rows(1000));
   measureCalls.count = 0;
   const end = beginResizeGesture();
-  setWidth(450);
-  setWidth(400);
-  setWidth(350);
+  await setWidth(450);
+  await setWidth(400);
+  await setWidth(350);
   expect(measureCalls.count).toBe(0);
   act(() => end());
   expect(measureCalls.count).toBe(1);

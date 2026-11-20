@@ -2,6 +2,13 @@
   "approvals": [
     {
       "baseline": "invariants-baseline.json",
+      "rule": "rust-sync-command-blocking-work",
+      "from": 0,
+      "to": 18,
+      "reason": "New rule rust-sync-command-blocking-work (issue 695) recorded with its existing debt outside the converted notes, drafts, workspace, fs and file-access commands."
+    },
+    {
+      "baseline": "invariants-baseline.json",
       "rule": "oxlint/no-restricted-properties",
       "from": 24,
       "to": 25,

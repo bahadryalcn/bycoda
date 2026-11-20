@@ -1,3 +1,5 @@
+import { errorText } from "../../../shared/lib/errors";
+
 export type DocumentKind = "pdf" | "docx" | "doc" | "spreadsheet" | "csv" | "tsv";
 
 const KIND_BY_EXTENSION: Record<string, DocumentKind> = {
@@ -33,19 +35,61 @@ export function documentKind(path: string): DocumentKind | null {
   return KIND_BY_EXTENSION[name.slice(dot)] ?? null;
 }
 
-/** A readable reason the bytes can't be opened, or null when they can. */
-export function documentSizeProblem(size: number): string | null {
-  if (size <= MAX_DOCUMENT_BYTES) return null;
-  return `File is too large to preview (maximum ${MAX_DOCUMENT_BYTES / 1024 / 1024} MB).`;
+/**
+ * Why a document can't be previewed. A reason, not a sentence: workers and parsers
+ * stay free of UI imports, and `describeDocumentProblem` words it in the active
+ * language. `unreadable` carries the library's or host's own text, which is shown
+ * redacted and never translated.
+ */
+export type DocumentProblem =
+  | { reason: "unreadable"; detail: string }
+  | { reason: "timeout"; ms: number }
+  | {
+      reason:
+        | "tooLarge"
+        | "passwordProtected"
+        | "corrupt"
+        | "workerFailed"
+        | "contentTooLarge"
+        | "imagesTooLarge"
+        | "notDocx"
+        | "archiveIncomplete"
+        | "archiveInconsistent"
+        | "notWorkbook"
+        | "unclosedQuote"
+        | "binaryData"
+        | "invalidPageSize"
+        | "invalidRasterSize";
+    };
+
+/** Throwable form of a `DocumentProblem`; its message is a reason code for logs, not UI copy. */
+export class DocumentProblemError extends Error {
+  readonly problem: DocumentProblem;
+  constructor(problem: DocumentProblem) {
+    super(`Document problem: ${problem.reason}`);
+    this.name = "DocumentProblemError";
+    this.problem = problem;
+  }
 }
 
-/** Turn a library failure into text that says what to do about it. */
-export function documentErrorMessage(cause: unknown): string {
-  const message = cause instanceof Error ? cause.message : String(cause);
+/** The reason the bytes can't be opened, or null when they can. */
+export function documentSizeProblem(size: number): DocumentProblem | null {
+  return size <= MAX_DOCUMENT_BYTES ? null : { reason: "tooLarge" };
+}
+
+/** The raw failure text a connection-error gate can recognize; only `unreadable` has any. */
+export function documentProblemDetail(problem: DocumentProblem | null | undefined) {
+  return problem?.reason === "unreadable" ? problem.detail : undefined;
+}
+
+/** Classify a library, host or parser failure; the viewer words the result. */
+export function documentProblem(cause: unknown): DocumentProblem {
+  if (cause instanceof DocumentProblemError) return cause.problem;
+  const message = errorText(cause);
   if (/password|encrypt/i.test(message) || /PasswordException/.test(String(cause))) {
-    return "This file is password-protected. Open it in the default app instead.";
+    return { reason: "passwordProtected" };
   }
-  return message || "The file could not be read; it may be corrupt.";
+  return message ? { reason: "unreadable", detail: message } : { reason: "corrupt" };
 }
 
 /** Spreadsheet column label for a zero-based index: 0 → A, 26 → AA. */

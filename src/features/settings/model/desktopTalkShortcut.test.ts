@@ -41,7 +41,7 @@ it("registers the saved chord and follows sibling changes until detached", () =>
   });
   const calls = native.invoke.mock.calls.length;
   stop();
-  saveKeybindingOverride(DESKTOP_TALK_COMMAND, { shortcut: "Control+Shift+KeyJ" });
+  saveKeybindingOverride(DESKTOP_TALK_COMMAND, { shortcut: "Control+Shift+KeyH" });
   expect(native.invoke).toHaveBeenCalledTimes(calls);
 });
 it("reports a native registration failure to the caller", async () => {

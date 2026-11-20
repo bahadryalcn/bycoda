@@ -1,4 +1,5 @@
 import type { ProjectActionCatalog } from "../../projects";
+import type { Session } from "../../sessions";
 import type { VoiceWorkspaceInspectDeps } from "./voiceWorkspaceInspect";
 import { pathKey } from "../../../shared/lib/paths";
 
@@ -20,6 +21,7 @@ export type VoiceWorkspaceSession = {
   archived?: boolean;
   updatedAt?: number;
   historyLoading?: boolean;
+  storedHistory?: Session["storedHistory"];
   historyLoadError?: string;
   worktreeRemoved?: boolean;
   orchestrationLeadId?: string;

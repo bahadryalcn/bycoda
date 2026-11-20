@@ -112,6 +112,8 @@ it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
       `button[aria-label="${phase === "error" ? "Retry loading conversation" : "Refresh conversation"}"]`,
     )!;
     expect(button.disabled).toBe(phase === "loading" || phase === "refreshing");
+    // The toast button stays short; the data name lives in the aria-label and the copy.
+    if (attention) expect(button.textContent).toBe(phase === "error" ? "Retry" : "Refresh");
     if (phase === "error")
       expect(document.body.querySelector("[data-toast-region]")?.textContent).toContain(
         "Read failed",
@@ -175,14 +177,17 @@ it("keeps an independent data error actionable beside a shared connection warnin
   act(() =>
     root.render(
       createElement(RemoteDataStatus, {
-        state: { phase: "error", error: "Host rejected request: Queue storage unavailable" },
+        state: {
+          phase: "error",
+          error: "Host rejected request: SSH connection failed for this operation",
+        },
         connectionIssueHandled: true,
         onRefresh,
       }),
     ),
   );
   expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
-    "Queue storage unavailable",
+    "SSH connection failed for this operation",
   );
   act(() => container.querySelector("button")!.click());
   expect(onRefresh).toHaveBeenCalledOnce();

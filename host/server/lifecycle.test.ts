@@ -1,5 +1,7 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as hostLog from "../diagnostics/logger";
+import { BOOT_OPTIONAL_READY_MS } from "./boot-phases";
 import { armShutdownDeadline, createLifecycleRuntime, shutdownExitCode } from "./lifecycle";
 
 vi.mock("../assistant/observations/assistant-observation-producers", () => ({
@@ -51,11 +53,51 @@ describe("host shutdown drains", () => {
     expect(closing.pendingDrains()).toEqual(["tunnels"]);
   });
 
+  it("stops the decision-model servers on shutdown and names a stalled stop", async () => {
+    const stopped = vi.fn(async () => undefined);
+    const runtime = await createLifecycleRuntime(
+      dependenciesWith({ decisionModels: { close: stopped } }) as never,
+      () => undefined,
+    );
+    await runtime.closeResources();
+    expect(stopped).toHaveBeenCalledTimes(1);
+
+    const stalled = await createLifecycleRuntime(
+      dependenciesWith({
+        decisionModels: { close: () => new Promise<void>(() => undefined) },
+      }) as never,
+      () => undefined,
+    );
+    const closing = stalled.closeResources();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(closing.pendingDrains()).toEqual(["decisionModels"]);
+  });
+
   it("settles with no pending drains when everything closes", async () => {
     const runtime = await createLifecycleRuntime(dependenciesWith({}) as never, () => undefined);
     const closing = runtime.closeResources();
     await closing;
     expect(closing.pendingDrains()).toEqual([]);
+  });
+
+  it("waits for Assistant room commands to close on shutdown (#1099)", async () => {
+    let finish!: () => void;
+    const commandsClosed = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const close = vi.fn(() => commandsClosed);
+    const runtime = await createLifecycleRuntime(
+      dependenciesWith({ roomFiles: { folders: { close } } }) as never,
+      () => undefined,
+    );
+    const closing = runtime.closeResources();
+    try {
+      await vi.waitFor(() => expect(closing.pendingDrains()).toEqual(["assistantCommands"]));
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      finish();
+      await closing;
+    }
   });
 });
 
@@ -99,5 +141,66 @@ describe("shutdownExitCode", () => {
     expect(shutdownExitCode("SIGTERM", true)).toBe(1);
     expect(shutdownExitCode("SIGINT", true)).toBe(1);
     expect(shutdownExitCode("SIGTERM", false)).toBe(0);
+  });
+});
+
+describe("host boot recovery", () => {
+  it("logs bounded background startup failure fields without the raw message (#424)", async () => {
+    const warn = vi.fn();
+    const logger = hostLog.createLogger("host.startup");
+    const logging = vi.spyOn(hostLog, "createLogger").mockReturnValue({ ...logger, warn });
+    const error = Object.assign(new Error("private startup path"), {
+      code: "E".repeat(100),
+      syscall: "open",
+    });
+    const server = new EventEmitter();
+    const runtime = await createLifecycleRuntime(
+      dependenciesWith({
+        server,
+        tunnels: {
+          boot: async () => {
+            throw error;
+          },
+          close: async () => undefined,
+        },
+      }) as never,
+      () => undefined,
+    );
+    try {
+      server.emit("listening");
+      await runtime.startup;
+      expect(warn).toHaveBeenCalledWith('Host background startup step "automatic-tunnel" failed.', {
+        step: "automatic-tunnel",
+        error: "Error",
+        code: "E".repeat(64),
+        syscall: "open",
+        fingerprint: expect.stringMatching(/^[a-f\d]{12}$/),
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(error.message);
+    } finally {
+      logging.mockRestore();
+      await runtime.closeResources();
+    }
+  });
+
+  it("does not hold start-up behind a wedged optional service", async () => {
+    vi.useFakeTimers();
+    const wedged = new Promise<void>(() => undefined);
+    const runtime = createLifecycleRuntime(
+      dependenciesWith({
+        social: { ready: wedged, dispose: () => undefined, stop: () => undefined },
+        socialPeers: { ready: Promise.resolve() },
+        providerInbox: { ready: wedged },
+      }) as never,
+      () => undefined,
+    );
+    let booted = false;
+    void runtime.then(() => {
+      booted = true;
+    });
+    await vi.advanceTimersByTimeAsync(BOOT_OPTIONAL_READY_MS - 1);
+    expect(booted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(booted).toBe(true);
   });
 });

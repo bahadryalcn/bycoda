@@ -107,7 +107,7 @@ export function useAssistantPresence(port: AssistantPresencePort = nativeAssista
   // The mark is the owner's choice; the trigger and badge show the effective state.
   const selected = selectedAssistantPresence(view.status);
   const label = t(
-    view.pending || busy ? "Updating availability..." : assistantPresencePresentation(state).label,
+    view.pending || busy ? "Updating availability…" : assistantPresencePresentation(state).label,
   );
   const items: DropdownMenuItem[] = [
     {
@@ -129,7 +129,7 @@ export function useAssistantPresence(port: AssistantPresencePort = nativeAssista
     items.push({
       kind: "item",
       id: "failure",
-      label: t("Availability change was not confirmed."),
+      label: t("Availability change could not be confirmed."),
       disabled: true,
     });
   if (view.writeError && view.retry)

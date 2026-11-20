@@ -74,6 +74,7 @@ export function useSessionDraftActions({
         return !!remoteSessionActions(sessionId)?.saveDraft(text, attachments);
       if (
         !current ||
+        current.historyLoading ||
         current.busy ||
         sessionDraftBlock(current) ||
         current.inboxAsk ||
@@ -100,6 +101,7 @@ export function useSessionDraftActions({
       if (!current) return false;
       if (hostSessionBinding(current))
         return remoteSessionActions(sessionId)?.removeDraft?.(draftBlockId) ?? false;
+      if (current.historyLoading) return false;
       const withoutDraft = removeSessionDraft(current, draftBlockId);
       if (!withoutDraft) return false;
 

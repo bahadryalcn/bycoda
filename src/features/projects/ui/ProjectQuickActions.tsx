@@ -1,5 +1,4 @@
 import { Button } from "../../../shared/ui/Button";
-import { Alert } from "../../../shared/ui/Alert";
 import {
   type ExpandingButtonGroupItem,
   type ExpandingButtonGroupTriggerProps,
@@ -24,6 +23,8 @@ import { ProjectActionDialog } from "./ProjectActionDialog";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import type { DevServerStart, DevServerStartResult } from "../../host-tools/devServerTypes";
 import { hostFeatureRequest } from "../../connections/public/hostFeatureClient";
+import { RemoteActionError } from "../../connections/public/RemoteActionError";
+import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { shortcutMatches } from "../../settings/public/settings";
@@ -103,7 +104,8 @@ function ProjectQuickActionsFor({
   const [loading, setLoading] = useState(false);
   const [actions, setActions] = useState(() => loadProjectActions(actionsCwd));
   const [draft, setDraft] = useState<ProjectAction | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<RemoteErrorView | null>(null);
+  const fail = (reason: unknown) => setError(describeRemoteError(reason));
   const [editing, setEditing] = useState(false);
   const [launch, setLaunch] = useState<{
     input: DevServerStart;
@@ -138,7 +140,7 @@ function ProjectQuickActionsFor({
       .catch((reason: unknown) => {
         if (active) {
           setEditors([]);
-          setError(String(reason));
+          setError(describeRemoteError(reason));
         }
       })
       .finally(() => {
@@ -156,7 +158,7 @@ function ProjectQuickActionsFor({
   const canRun = !!onRun;
   const run = useStableCallback((action: ProjectAction) => {
     setMenu(null);
-    setError("");
+    setError(null);
     if (action.devServer && action.command.trim()) {
       if (pendingLaunch.current) return;
       pendingLaunch.current = true;
@@ -177,7 +179,7 @@ function ProjectQuickActionsFor({
         .catch((reason: unknown) => {
           if (revision === launchGeneration.current) {
             setLaunch((current) => (current ? { input } : current));
-            setError(String(reason));
+            setError(describeRemoteError(reason));
           }
         })
         .finally(() => {
@@ -187,7 +189,7 @@ function ProjectQuickActionsFor({
     }
     if (action.command.trim()) onRunLatest?.(action);
     if (action.url.trim() && action.openUrlOnRun !== false)
-      void openUrl(action.url.trim()).catch((reason: unknown) => setError(String(reason)));
+      void openUrl(action.url.trim()).catch(fail);
   });
 
   useEffect(() => {
@@ -213,12 +215,13 @@ function ProjectQuickActionsFor({
     try {
       saveProjectActions(actionsCwd, values);
     } catch (reason) {
-      setError(t("Could not save actions: {p0}", { p0: String(reason) }));
+      // A browser storage failure, not a remote one: no Host text to disclose.
+      setError({ message: t("Could not save actions: {p0}", { p0: String(reason) }), details: "" });
       return false;
     }
     setActions(values);
     if (!keepAdding) setDraft(null);
-    setError("");
+    setError(null);
     return true;
   };
   const openItems: ExplorerMenuItem[] = [
@@ -309,7 +312,7 @@ function ProjectQuickActionsFor({
           "aria-haspopup": "menu",
           "aria-expanded": menu != null,
           onSelect: () => {
-            setError("");
+            setError(null);
             if (moreTrigger.current)
               setMenu(menu ? null : { kind: "more", anchor: moreTrigger.current });
           },
@@ -355,7 +358,7 @@ function ProjectQuickActionsFor({
     const item = overflowItems.find((value) => `item:${value.id}` === id);
     void Promise.resolve()
       .then(() => item?.onSelect?.())
-      .catch((reason: unknown) => setError(String(reason)));
+      .catch(fail);
   };
   return (
     <div
@@ -365,7 +368,7 @@ function ProjectQuickActionsFor({
       // Portal menus still bubble through this React owner into the draggable header.
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <ProjectQuickActionButtons items={items} onError={setError} />
+      <ProjectQuickActionButtons items={items} onError={fail} />
       {trailing ? <div className="ms-1 flex items-center">{trailing}</div> : null}
       {menu ? (
         <ExplorerMenu
@@ -385,9 +388,7 @@ function ProjectQuickActionsFor({
               pickMore(id);
             } else if (menu.kind === "open") {
               setMenu(null);
-              void (id === "folder" ? revealPath(cwd) : openInExternalEditor(id, cwd)).catch(
-                (reason: unknown) => setError(String(reason)),
-              );
+              void (id === "folder" ? revealPath(cwd) : openInExternalEditor(id, cwd)).catch(fail);
             } else if (id === "add") {
               setMenu(null);
               setEditing(false);
@@ -405,8 +406,8 @@ function ProjectQuickActionsFor({
         />
       ) : null}
       {error && !draft && !launch ? (
-        <Modal title={t("Project action failed")} onClose={() => setError("")} size="sm">
-          <Alert tone="danger">{error}</Alert>
+        <Modal title={t("Project action failed")} onClose={() => setError(null)} size="sm">
+          <RemoteActionError error={error} />
         </Modal>
       ) : null}
       {launch ? (
@@ -416,11 +417,11 @@ function ProjectQuickActionsFor({
           size="lg"
           onClose={() => {
             setLaunch(undefined);
-            setError("");
+            setError(null);
           }}
         >
           <div className="host-tools host-tools-content">
-            {error ? <Alert tone="danger">{error}</Alert> : null}
+            {error ? <RemoteActionError error={error} /> : null}
             <DevServersPanel cwd={cwd} launch={launch} />
           </div>
         </Modal>
@@ -435,7 +436,7 @@ function ProjectQuickActionsFor({
           error={error}
           onClose={() => {
             setDraft(null);
-            setError("");
+            setError(null);
           }}
           onDelete={() => persist(actions.filter((action) => action.id !== draft.id))}
           onSave={(saved) =>
@@ -457,7 +458,7 @@ function ProjectQuickActionButtons({
   onError,
 }: {
   items: readonly ExpandingButtonGroupItem[];
-  onError: (message: string) => void;
+  onError: (reason: unknown) => void;
 }) {
   return items.map((item) => {
     const renderTrigger = (trigger: ExpandingButtonGroupTriggerProps = {}) => (
@@ -477,7 +478,7 @@ function ProjectQuickActionTrigger({
   ...props
 }: ExpandingButtonGroupTriggerProps & {
   item: ExpandingButtonGroupItem;
-  onError: (message: string) => void;
+  onError: (reason: unknown) => void;
 }) {
   return (
     <Button
@@ -501,7 +502,7 @@ function ProjectQuickActionTrigger({
         try {
           await select();
         } catch (reason) {
-          onError(String(reason));
+          onError(reason);
         }
       }}
       onContextMenu={

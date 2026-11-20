@@ -157,6 +157,18 @@ function restoreFocusFor(entry: Entry) {
 export function hasActiveOverlay() {
   return entries.some((entry) => !entry.passive);
 }
+/**
+ * Whether a window-level Escape listener may act on this key. Escape that cancels an IME
+ * candidate, was already consumed by a control, or belongs to an open overlay is not theirs.
+ */
+export function shouldHandleGlobalEscape(event: KeyboardEvent) {
+  return (
+    event.key === "Escape" &&
+    !isImeComposition(event) &&
+    !event.defaultPrevented &&
+    !hasActiveOverlay()
+  );
+}
 /** A modal owns workspace keyboard scope, including its portalled children. */
 export function hasActiveModalOverlay() {
   return entries.some((entry) => entry.modal);
@@ -233,8 +245,113 @@ function modalRoots() {
     : [];
 }
 /** Toasts sit above dialogs, so their stack stays reachable while a modal is open. */
-const toastRegion = (node: Node) =>
+const toastRegion = (node: Node | null) =>
   node instanceof Element && node.closest("[data-toast-region]") !== null;
+
+/* ---------------------------------------------------------------------------------------------
+ * Keyboard access to toasts
+ *
+ * A modal isolates the page and wraps Tab inside itself, so a toast above it cannot be reached
+ * with the keyboard. `focusToastCard` is the way in: it remembers where focus was, Tab then walks
+ * the toast controls, and Escape, or the toast leaving, puts focus back without closing the
+ * dialog. Moving anywhere else, or Tab past either end, hands focus back to the modal's own trap.
+ * ------------------------------------------------------------------------------------------- */
+type ToastTracking = {
+  origin: HTMLElement | null;
+  /** The toast control that holds focus; its removal is what returns focus to `origin`. */
+  held: HTMLElement | null;
+  stop: () => void;
+};
+let toastTracking: ToastTracking | null = null;
+const toastControls = () =>
+  [...document.querySelectorAll<HTMLElement>("[data-toast-region]")].flatMap((region) =>
+    focusable(region),
+  );
+function endToastTracking() {
+  toastTracking?.stop();
+  toastTracking = null;
+}
+/** Back to where focus came from; a vanished origin leaves focus unplaced rather than in a toast. */
+function returnFromToast() {
+  const origin = toastTracking?.origin;
+  endToastTracking();
+  if (origin?.isConnected && !origin.closest("[inert]") && !toastRegion(origin)) {
+    origin.focus({ preventScroll: true });
+  } else if (document.activeElement instanceof HTMLElement && toastRegion(document.activeElement)) {
+    document.activeElement.blur();
+  }
+}
+function onToastKey(event: KeyboardEvent): boolean {
+  if (!toastTracking || !toastRegion(event.target as Node | null)) return false;
+  if (event.key === "Escape") {
+    returnFromToast();
+  } else if (event.key === "Tab" && hasActiveModalOverlay()) {
+    const controls = toastControls();
+    const index = controls.indexOf(document.activeElement as HTMLElement);
+    const next = controls[index + (event.shiftKey ? -1 : 1)];
+    // Past either end the modal's own Tab wrap takes over, so focus never escapes it.
+    if (index < 0 || !next) return false;
+    next.focus({ preventScroll: true });
+  } else {
+    return false;
+  }
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  return true;
+}
+function beginToastTracking(origin: HTMLElement | null) {
+  const onWindowKey = (event: KeyboardEvent) => {
+    if (!isImeComposition(event)) onToastKey(event);
+  };
+  // Focus that moved on its own (the user clicked elsewhere, the modal wrapped) ends the hold.
+  const onFocusIn = (event: FocusEvent) => {
+    if (!toastRegion(event.target as Node | null)) endToastTracking();
+    else if (toastTracking) toastTracking.held = event.target as HTMLElement;
+  };
+  // A removed focused toast fires no blur, so look at where focus went once the DOM settled.
+  const watcher = new MutationObserver(() => {
+    if (toastTracking?.held && !toastTracking.held.isConnected && focusIsLost()) returnFromToast();
+  });
+  window.addEventListener("keydown", onWindowKey, true);
+  document.addEventListener("focusin", onFocusIn, true);
+  watcher.observe(document.body, { childList: true, subtree: true });
+  toastTracking = {
+    origin,
+    held: null,
+    stop: () => {
+      window.removeEventListener("keydown", onWindowKey, true);
+      document.removeEventListener("focusin", onFocusIn, true);
+      watcher.disconnect();
+    },
+  };
+}
+/**
+ * Moves keyboard focus into the next toast card matching `card` (a selector), starting with the
+ * first, and again to the following card on repeat. Works above an open modal without loosening
+ * it. Returns false when no such card is showing.
+ */
+export function focusToastCard(card: string): boolean {
+  if (typeof document === "undefined") return false;
+  const cards = [...document.querySelectorAll<HTMLElement>(`[data-toast-region] ${card}`)].filter(
+    (item) => focusable(item).length > 0,
+  );
+  if (!cards.length) return false;
+  const active = document.activeElement;
+  const current = cards.findIndex((item) => item.contains(active));
+  const target = focusable(cards[(current + 1) % cards.length])[0];
+  // A hold that outlived its toast (focus was clicked away) must not return to a stale origin.
+  if (toastTracking && !toastRegion(active)) endToastTracking();
+  if (!toastTracking) {
+    const origin =
+      active instanceof HTMLElement && !toastRegion(active) && active !== document.body
+        ? active
+        : null;
+    beginToastTracking(origin);
+  }
+  target.focus({ preventScroll: true });
+  if (toastTracking) toastTracking.held = target;
+  return true;
+}
 function syncInert() {
   const roots = modalRoots();
   const next = new Set<HTMLElement>();
@@ -278,12 +395,17 @@ function onMutation(records: MutationRecord[]) {
   )
     syncInert();
 }
+const RECORDING_SELECTOR = '[data-shortcut-recorder-active="true"]';
 function onKey(event: KeyboardEvent) {
   if (event.defaultPrevented || isImeComposition(event)) return;
+  // Escape and Tab inside a toast the owner reached by shortcut belong to that toast, not the dialog.
+  if (onToastKey(event)) return;
   if (event.key === "Escape") {
     const top = [...entries].reverse().find((entry) => !entry.passive);
     if (!top?.escape) return;
     if (top.keepEscape?.(event)) return;
+    // A shortcut recorder that is capturing owns Escape (it cancels the capture); outside capture the dialog gets it.
+    if (event.target instanceof Element && event.target.closest(RECORDING_SELECTOR)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     top.escape();
@@ -367,7 +489,8 @@ export function useOverlay(
       initialFocus(entry).focus({ preventScroll: true });
     return () => {
       registered.current = null;
-      const wasTop = entries[entries.length - 1] === entry;
+      // Passive entries (tooltips) above this one do not own focus, so they must not block restoring it.
+      const wasTop = !entries.slice(entries.indexOf(entry) + 1).some((item) => !item.passive);
       entries.splice(entries.indexOf(entry), 1);
       syncInert();
       if (!entries.length) {

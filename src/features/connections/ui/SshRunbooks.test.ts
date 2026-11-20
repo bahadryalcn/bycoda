@@ -140,6 +140,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 const button = (name: string) =>
@@ -235,6 +236,19 @@ it("preserves revision-conflicted drafts and refuses expired approval", async ()
   await act(async () => button("Approve and run").click());
   expect(native.start).not.toHaveBeenCalled();
 });
+it("schedules only expiry for a hidden execution review and clears it at expiry", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  await render();
+  await selectSaved();
+  const interval = vi.spyOn(globalThis, "setInterval");
+  await act(async () => button("Review execution").click());
+  expect(button("Approve and run")).toBeDefined();
+  expect(interval).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  expect(button("Approve and run")).toBeUndefined();
+  expect(document.body.textContent).toContain("Execution review expired or changed.");
+});
 it("retains ambiguous dispatch identity and recovers/cancels by status without retry", async () => {
   await render();
   await selectSaved();
@@ -254,6 +268,32 @@ it("retains ambiguous dispatch identity and recovers/cancels by status without r
   expect(native.cancel).toHaveBeenCalledWith(lastRun, server.id);
   expect(native.start).toHaveBeenCalledOnce();
   expect(document.body.textContent).toContain("Cancelled");
+});
+it("backs off failing active-run status polls instead of retrying every second", async () => {
+  vi.useFakeTimers();
+  try {
+    native.status.mockImplementation(async (id: string) => outcome(id, "running"));
+    await render("known-run");
+    native.status.mockClear();
+    native.status.mockRejectedValue(new Error("machine offline"));
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(native.status).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(5_999));
+    expect(native.status).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(native.status).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(11_999));
+    expect(native.status).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(native.status).toHaveBeenCalledTimes(3);
+    native.status.mockImplementation(async (id: string) => outcome(id, "running"));
+    await act(async () => vi.advanceTimersByTimeAsync(24_000));
+    expect(native.status).toHaveBeenCalledTimes(4);
+    expect(document.body.textContent).toContain("machine offline");
+    expect(button("Refresh status").disabled).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 it("discards late reviews after unmount instead of preserving executable approval", async () => {
   let answer: (value: any) => void = () => {};

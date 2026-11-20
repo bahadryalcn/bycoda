@@ -61,3 +61,28 @@ it("marks a live peer without replacing its file or changing its UTF-8 metadata"
   expect(JSON.parse(await readFile(native, "utf8"))).toEqual({ ...lease, shared: true });
   expect(await leases.active(cwd)).toBe(true);
 });
+
+it("skips a broken lease in candidate discovery but keeps ownership checks fail-closed", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-lease-broken-")));
+  roots.push(root);
+  const cwd = join(root, "project");
+  await mkdir(cwd);
+  const leases = new CheckpointLeases(root);
+  await leases.publish("host-good", "turn", cwd);
+  await writeFile(join(root, "host-bad-turn.json"), "{ truncated");
+  expect(await leases.sessions("host", cwd)).toEqual(["host-good"]);
+  await expect(leases.active(cwd)).rejects.toThrow("Invalid checkpoint lease");
+  await expect(leases.hasSession("host-good")).rejects.toThrow("Invalid checkpoint lease");
+  await expect(leases.shared("host-good", "turn")).rejects.toThrow("Invalid checkpoint lease");
+});
+
+it("treats a lease that is valid JSON but not an object as broken, not as a crash", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-lease-null-")));
+  roots.push(root);
+  const cwd = join(root, "project");
+  await mkdir(cwd);
+  await writeFile(join(root, "host-null-turn.json"), "null");
+  const leases = new CheckpointLeases(root);
+  expect(await leases.sessions("host", cwd)).toEqual([]);
+  await expect(leases.active(cwd)).rejects.toThrow("Invalid checkpoint lease");
+});

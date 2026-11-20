@@ -154,9 +154,10 @@ for (const theme of ["light", "dark"])
       await expect(saved).toBeVisible();
       await expect(saved).toBeDisabled();
       await expect(page.getByText("Skill saved.", { exact: true })).toHaveCount(0);
+      // The preview footer reports the document state: the button and the footer both say Saved.
       await expect(
         page.getByRole("complementary", { name: "Skill preview" }).locator("footer"),
-      ).not.toContainText("Saved");
+      ).toContainText("Saved");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -192,7 +193,7 @@ for (const theme of ["dark", "light"]) {
       await expect(
         page.getByRole("button", { name: "Copy arc to tailm", exact: true }),
       ).toHaveCount(0);
-      await page.getByRole("button", { name: "skill-2", exact: true }).click();
+      await page.getByRole("button", { name: "skill-2, Off", exact: true }).click();
       await page.getByRole("tab", { name: "Machines", exact: true }).click();
       const machines = page.getByRole("list", { name: "Machines", exact: true });
       await expect(machines).toContainText("Not installed");

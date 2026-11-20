@@ -11,6 +11,8 @@ import type { HostProvider } from "./providers/providers";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 
 const cleanups: Array<() => Promise<void>> = [];
+// These handoffs go through a real SQLite worker and asynchronous provider preparation.
+const dispatchWait = { timeout: 10_000 };
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
@@ -74,7 +76,7 @@ async function setup(multi = false) {
     sessionId: id,
     text: "Retain the original task and its existing files.",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await vi.waitFor(() => expect(turns).toHaveLength(1), dispatchWait);
   turns[0].finish();
   await engine.waitForRun(id, first.runId);
   const current = await store.session(id);
@@ -264,7 +266,7 @@ it("supervises a secondary project's actual canonical worker and refuses array-o
     { ...s.command, requestId: "secondary-worker" },
     { kind: "chief", id: "chief" },
   );
-  await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+  await vi.waitFor(() => expect(f.turns).toHaveLength(2), dispatchWait);
   f.turns[1].input.onAccepted?.();
   expect((await sending).operation?.delivery).toBe("delivered");
   expect(f.turns[1].input.cwd).toBe(f.workerProject.cwd);
@@ -375,7 +377,13 @@ it("rebinds a managed task and budget ledger at compaction acceptance before sch
       .get(compact),
   ).toBeTruthy();
   release.resolve();
-  await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+  // Compaction must settle and rebind through the real store before the next provider entry.
+  await Promise.race([
+    vi.waitFor(() => expect(f.turns).toHaveLength(2), dispatchWait),
+    pending.then(({ operation }) => {
+      throw new Error(`Compaction settled before follow-up dispatch: ${JSON.stringify(operation)}`);
+    }),
+  ]);
   f.turns[1].input.onAccepted?.();
   expect((await pending).operation).toMatchObject({ action: "compact", delivery: "delivered" });
   expect((await f.tasks.get("worker"))?.runId).toBe((await f.store.session(f.id)).runId);
@@ -461,7 +469,7 @@ it("rolls back worker run rebinding and only caches budget registration after th
     ...command,
     commandId: "atomic-managed-retry",
   });
-  await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+  await vi.waitFor(() => expect(f.turns).toHaveLength(2), dispatchWait);
   expect(
     await f.store.db
       .prepare("SELECT run_id FROM task_run_budget_ledger WHERE task_id='worker' AND run_id=?")
@@ -508,7 +516,7 @@ it("continues the real task in fresh provider history while retaining its transc
   const f = await setup();
   const before = await f.tasks.get("worker");
   const receipt = await f.tasks.continueManagedSession(f.input);
-  await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+  await vi.waitFor(() => expect(f.turns).toHaveLength(2), dispatchWait);
   expect(receipt.sessionId).toBe(f.id);
   expect(receipt.runId).not.toBe(f.first.runId);
   const task = await f.tasks.get("worker");
@@ -629,7 +637,7 @@ it("rolls back prepared history if the task cannot rebind and deduplicates an ac
   expect(f.turns).toHaveLength(1);
   onAccepted.mockImplementation(async () => {});
   const receipt = await f.engine.continueSessionHistory(input);
-  await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+  await vi.waitFor(() => expect(f.turns).toHaveLength(2), dispatchWait);
   expect(await f.engine.continueSessionHistory(input)).toEqual(receipt);
   expect(f.turns).toHaveLength(2);
   await expect(
@@ -722,7 +730,7 @@ it("routes the high-context assistant nudge through the real task and engine onc
   // Actual dispatch occurs, but an observer cannot certify provider acceptance.
   const delivery = vi.spyOn(f.engine, "commandDelivery").mockResolvedValue("unknown");
   const first = await managed.request(command, { kind: "chief", id: "chief" });
-  await vi.waitFor(() => expect(f.turns).toHaveLength(2));
+  await vi.waitFor(() => expect(f.turns).toHaveLength(2), dispatchWait);
   expect(first.operation).toMatchObject({ action: "handoff", delivery: "unknown" });
   expect(await managed.request(command, { kind: "chief", id: "chief" })).toEqual(first);
   expect(delivery).toHaveBeenCalledTimes(1);

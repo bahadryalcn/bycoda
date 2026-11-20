@@ -11,8 +11,6 @@ import { FailureState } from "../../../../shared/ui/FailureState";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { Text } from "../../../../shared/ui/Text";
 import { Group } from "../../../../shared/ui/settings";
-import { isRemoteProvider } from "../../../connections/public/protocol";
-import { defaultModelSettings } from "../../../sessions/public/models";
 import { LOCAL_MODEL_SOURCE, useModelSource } from "../../../sessions/public/modelSource";
 import {
   entrySettings,
@@ -29,7 +27,13 @@ import { ModelOrderRow } from "./ModelOrderRow";
 import { OrderSelectionBar } from "./OrderSelectionBar";
 import { OrderSortMenu } from "./OrderSortMenu";
 import { SmartSetupAction } from "./SmartSetupAction";
-import { addAccountModels, addEntriesToPool, removeEntries, setEntriesEffort } from "./orderBulk";
+import {
+  addAccountModels,
+  addChoiceFor,
+  addEntriesToPool,
+  removeEntries,
+  setEntriesEffort,
+} from "./orderBulk";
 import { groupByAccount, jobsUsingOrder, kindOf, type AccountGroup } from "./orderGrouping";
 import { useQuotaLabel } from "./useQuotaLabel";
 
@@ -107,6 +111,17 @@ export function ModelOrderList({
   };
   const sectioned = byKind.work.length > 0 || byKind.personal.length > 0;
   const selected = entries.filter((entry) => chosen.has(entry.id));
+  // The edited Host's available remote choices; the list's last provider wins when it still has one.
+  const addChoices = setupCandidates(source, catalog);
+  const addChoice = addChoiceFor(addChoices, entries[entries.length - 1]?.harness);
+  const listFull = entries.length >= MODEL_ROUTING_MAX_ENTRIES;
+  const noProviderReason = t("No remote provider is available on this Host for unattended work.");
+  // Nothing is blocked before the Host reports its providers; then an empty choice list is explained.
+  const addBlockedReason = listFull
+    ? t("The model list is full.")
+    : addChoice || !source.probed()
+      ? undefined
+      : noProviderReason;
   const statusOf = (id: string) => status.entries.find((candidate) => candidate.entryId === id);
   const statusFailed = Boolean(status.error && status.entries.length === 0);
   // The first saved model of each list the Host would not skip is where new work starts.
@@ -143,8 +158,7 @@ export function ModelOrderList({
     });
   const clear = () => setChosen(new Set());
   function addEntry() {
-    const model = source.resolve(entries[entries.length - 1]?.harness ?? "codex", "");
-    if (!isRemoteProvider(model.harness)) return;
+    if (!addChoice) return;
     const id = crypto.randomUUID();
     change({
       ...draft,
@@ -154,11 +168,10 @@ export function ModelOrderList({
         entries: [
           ...entries,
           {
+            ...addChoice.target,
             id,
-            harness: model.harness,
-            model: model.id,
-            modelSettings: entrySettings(defaultModelSettings(model)),
-            unknownLimit: "use",
+            modelSettings: entrySettings(addChoice.target.modelSettings),
+            unknownLimit: "use" as const,
           },
         ],
       },
@@ -241,10 +254,8 @@ export function ModelOrderList({
       <SmartSetupAction onEdit={edit} />
       <Button
         size="sm"
-        disabled={entries.length >= MODEL_ROUTING_MAX_ENTRIES}
-        disabledReason={
-          entries.length >= MODEL_ROUTING_MAX_ENTRIES ? t("The model list is full.") : undefined
-        }
+        disabled={listFull || !addChoice}
+        disabledReason={addBlockedReason}
         onClick={addEntry}
       >
         {t("Add model")}
@@ -256,8 +267,9 @@ export function ModelOrderList({
       <EmptyState
         context="panel"
         title={t("Choose the models for unattended work")}
-        description=""
-        action={{ label: t("Add model"), onClick: addEntry }}
+        description={addChoice || !source.probed() ? "" : noProviderReason}
+        showDescription={!addChoice}
+        action={addChoice ? { label: t("Add model"), onClick: addEntry } : undefined}
         extra={<SmartSetupAction variant="primary" onEdit={edit} />}
       />
     );

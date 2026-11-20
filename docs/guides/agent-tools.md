@@ -114,6 +114,9 @@ available while the original result is checked.
 
 ## Conversation tools
 
+The tool machine picker lists **This computer** once for local projects. For
+remote projects, it lists the project Host and **This computer** separately.
+
 Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed. A provider reads its tools only when it starts, so one that started while the Host did not answer, or that outlived a Host restart, starts again before the next message once the Host answers; the conversation and its context continue. If that start does not restore the tools, bycoda waits ten minutes before trying again.
 
 For Codex, bycoda sets `agents.enabled=false` in thread start/resume config to
@@ -296,7 +299,8 @@ When Work concurrency is one, an active Work turn cannot start a delegated child
 
 **Settings > Models > Subagents** sets advisor and subagent defaults for new
 conversations. **Chats** holds provider, model, effort, permissions and
-Fast / Service Tier choices. Main-model effort uses a stepped scale; Subagent max
+Fast / Service Tier choices. Codex shows Ultrafast when the provider catalog offers it for the model.
+Main-model effort uses a stepped scale; Subagent max
 effort uses a select.
 The apply bar separates provider scope from save destinations. **Apply to** chooses
 the current provider or **All providers**. All providers copies only supported,
@@ -362,8 +366,13 @@ not sent anything yet to another account applies that account's defaults.
 The model panel opens from the model button (click, Enter or Space), **Switch Model**
 in the app menu, or **Ctrl+Shift+.** on Windows / **Command+Shift+.** on macOS.
 Change or disable this binding in Settings > Keybindings. The shortcut toggles the
-panel; right-click the model button for recent models. Search receives focus on
-open: type to filter, use Up/Down and Enter to select. Escape closes and returns
+panel; right-click the model button, or focus it and press **Alt+Down**
+(**Option+Down** on macOS), the context-menu key or **Shift+F10**, for recent
+models; the button's tooltip says so. Search receives focus on
+open: type to filter, use Up/Down and Enter to select. Pointing at a provider on
+the rail previews it only while the search is empty; once you type, click the
+provider (or use the arrow keys on the rail) to switch, so a drifting pointer
+never clears your search. Escape closes and returns
 focus to the composer or model button. Tab / Shift+Tab move through the provider
 rail, search, model actions and settings; arrow keys move within provider tabs,
 Settings/Agents tabs, effort bars and Automatic/Custom/Off. Custom opens a searchable
@@ -414,11 +423,31 @@ that message instead of failing silently.
 
 A delegated child starts only bycoda's own tools (Claude with strict MCP config, Codex with
 the owner's other MCP servers disabled for that thread; no config file is changed) and gets
-a short bycoda hint without the owner's persona. The main model may pass `files: false` for
-discussion, research or writing: the child (Claude or Codex) then runs in an empty scratch
-folder under the Host's state directory, read-only and supervised, without project
-instructions, skills listing, provider memory or git context. The folder is removed with the
-run's record.
+a short bycoda hint without the owner's persona. Normal subagents use the parent project's
+folder or worktree and its runtime permissions. Omit `files` or set `files: true` for a
+normal session. When tools are unnecessary or unavailable, give the child enough context
+to answer from the brief. Use `files: false` only when the owner asks for scratch mode and the selected
+model's `filesFalse.available` in `agents.options` is true. Claude and Codex run read-only in
+an empty scratch folder under
+the Host's state directory, with reduced context. Stock Pi uses a tool-free scratch session
+when its installed CLI supports the required isolation flags; older versions are rejected.
+OpenCode 2 uses tool-free generation with the selected OpenCode model and prior messages
+from the Host conversation. A reply keeps the conversation history. Active generation can
+be stopped, and another message can be sent after it ends.
+
+Grok and Gemini use tool-free requests to their respective APIs. Enable them in the Host
+environment with `BYCODA_GROK_CHAT_ONLY_API=1` and `XAI_API_KEY` or
+`BYCODA_GEMINI_CHAT_ONLY_API=1` and `GEMINI_API_KEY`. Select the default account and a
+supported model in the provider catalog. Gemini 3.8 Flash selections in the Antigravity
+catalog keep their Low, Medium or High thinking level. Named accounts are unavailable on
+these API paths. Requests use
+the supplied API key's quota, and replies keep the Host conversation history.
+File attachments are unavailable on these three generation paths.
+
+These modes do not provide OS file-read isolation. Claude and Codex tools may still read
+paths outside scratch. `repositoryReadIsolation` reports that limit.
+The folder is removed with the run's record. Unsupported models are rejected; they never
+fall back to a normal project run.
 
 Each run uses the quota of its own provider account. A subagent on a Codex model
 consumes Codex usage, not the main model's allowance.
@@ -495,6 +524,12 @@ all `agents.*` tools. Execution also rejects Host delegation. A child may use it
 provider's built-in subagents. Its panel lists running and past native runs with
 their names, models and status; expand a run to read its steps during execution or
 after it finishes. These runs stay under the child, outside the parent's composer menu.
+
+Claude Workflow subagents appear under their Workflow phase in the activity dock
+and session subagent menu. On mobile, phases appear in the Agents sheet. Open an
+agent to read the captured transcript steps. The Workflow owns its child tasks,
+so stop the Workflow to interrupt them together. Workflow is available when the
+session permits Claude's automatic native model selection and has write access.
 
 ## Terminal log capture
 

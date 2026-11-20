@@ -218,7 +218,9 @@ export function TimeTriggerSentence<T extends AutomationSchedule>({
         {executionTimeZone === undefined
           ? nextRunPreview(nextAt)
           : executionTimeZone && nextAt
-            ? `${t("Next run")} ${formatDate(nextAt, { timeZone: executionTimeZone, timeZoneName: "short" })}`
+            ? t("Next run {p0}", {
+                p0: formatDate(nextAt, { timeZone: executionTimeZone, timeZoneName: "short" }),
+              })
             : t("Host schedule preview unavailable")}
       </Text>
     </>

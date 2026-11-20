@@ -303,7 +303,10 @@ describe("saved session reminders", () => {
     await act(async () => api.schedule([reminder.sessionId], Date.now() + 60_000));
     expect(invoke.mock.calls.some(([command]) => command === "reminder_set")).toBe(false);
     expect(message).toHaveBeenCalledWith(
-      expect.objectContaining({ tone: "danger", message: "Error: Save failed" }),
+      expect.objectContaining({
+        tone: "danger",
+        message: "Could not update this reminder.\n\nSave failed",
+      }),
     );
     expect(api.reminders).toEqual([reminder]);
     await act(async () => api.schedule([reminder.sessionId], Date.now() + 60_000));

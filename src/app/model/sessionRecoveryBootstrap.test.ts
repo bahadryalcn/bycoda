@@ -11,7 +11,7 @@ import * as store from "../../features/sessions/data/sessionStore";
 import { invoke } from "@tauri-apps/api/core";
 import { loadResumedWorkspace } from "./appLifecycle";
 vi.mock("./sessionWindowOwnership", () => ({
-  claimRestoredSession: vi.fn().mockResolvedValue(true),
+  claimRestoredSessions: vi.fn().mockResolvedValue(new Set()),
   abortRestoredSession: vi.fn().mockResolvedValue(undefined),
   remoteSessionOwnershipKey: (cwd: string, id: string) => `remote:${cwd}:${id}`,
 }));

@@ -104,6 +104,33 @@ describe("paced streaming", () => {
     expect(shown().length).toBeLessThan(reply.length);
   });
 
+  it("shows incoming streaming text immediately while hidden and resumes pacing on return", () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const setVisibility = (state: DocumentVisibilityState) => {
+      visibility.mockReturnValue(state);
+      act(() => document.dispatchEvent(new Event("visibilitychange")));
+    };
+    try {
+      render(reply, true);
+      expect(shown()).toBe("");
+
+      setVisibility("hidden");
+      expect(shown()).toBe(reply);
+      const hiddenReply = `${reply} Hidden update.`;
+      render(hiddenReply, true);
+      expect(shown()).toBe(hiddenReply);
+
+      setVisibility("visible");
+      const visibleReply = `${hiddenReply} Visible update.`;
+      render(visibleReply, true);
+      expect(shown()).toBe(hiddenReply);
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(shown()).toBe(visibleReply);
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
   it("continues revealing while chunks arrive faster than one animation frame", () => {
     render("", true);
     let incoming = "";

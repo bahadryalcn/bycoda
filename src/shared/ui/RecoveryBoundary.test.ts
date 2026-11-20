@@ -125,10 +125,10 @@ it("settles synchronous retry failures without an unhandled rejected click", asy
     throw new Error("Request already reported its failure");
   });
   await act(async () => root.render(createElement(FailureState, { title: "Failed", onRetry })));
-  await act(async () => button("Retry").click());
-  await act(async () => button("Retry").click());
+  await act(async () => button("Try again").click());
+  await act(async () => button("Try again").click());
   expect(onRetry).toHaveBeenCalledTimes(2);
-  expect(button("Retry").getAttribute("aria-busy")).not.toBe("true");
+  expect(button("Try again").getAttribute("aria-busy")).not.toBe("true");
 });
 
 it.each([

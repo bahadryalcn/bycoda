@@ -178,7 +178,6 @@ export function TaskBulkToolbar({
           >
             <Button
               key={action}
-              aria-label={t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
               variant="secondary"
               loading={activeAction === action}
               disabled={busy || disabled || !eligibility(action).length}
@@ -186,7 +185,7 @@ export function TaskBulkToolbar({
               onClick={() => run(action).catch(report)}
             >
               {t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
-              <Badge size="xs" variant="count" aria-hidden>
+              <Badge size="xs" variant="count">
                 {eligibility(action).length}
               </Badge>
             </Button>
@@ -206,11 +205,10 @@ export function TaskBulkToolbar({
                 })
               : undefined
           }
-          aria-label={t("Delete")}
           onClick={() => run("delete").catch(report)}
         >
           {t("Delete")}
-          <Badge size="xs" aria-hidden>
+          <Badge size="xs" variant="count">
             {eligibility("delete").length}
           </Badge>
         </Button>
@@ -273,13 +271,19 @@ export function TaskBulkToolbar({
         </Disclosure>
       ) : null}
       {failures.length || activeAction === "retry-failed" ? (
+        // Scope is the last run's failed tasks, not the selection; the count names them.
         <Button
           variant="secondary"
           loading={activeAction === "retry-failed"}
           disabled={busy || disabled}
           onClick={() => run(lastAction, true).catch(report)}
         >
-          {t("Retry failed tasks")}
+          {t("Repeat on failed tasks")}
+          {failures.length ? (
+            <Badge size="xs" variant="count">
+              {failures.length}
+            </Badge>
+          ) : null}
         </Button>
       ) : null}
       {dialog}

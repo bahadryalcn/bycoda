@@ -358,16 +358,24 @@ fn read(
     runtime: uuid::Uuid,
     connection: usize,
 ) -> Result<Option<Original>, String> {
-    let record = conn
-        .query_row(&format!("{SELECT} WHERE original_id=?1"), [id], |r| {
-            checked_record(r, runtime, connection)
-        })
-        .optional()
-        .map_err(|_| invalid())?;
+    let record = read_record(conn, id, runtime, connection)?;
     if let Some(record) = &record {
         epochs::validate_original(conn, record)?;
     }
     Ok(record)
+}
+
+fn read_record(
+    conn: &Connection,
+    id: &str,
+    runtime: uuid::Uuid,
+    connection: usize,
+) -> Result<Option<Original>, String> {
+    conn.query_row(&format!("{SELECT} WHERE original_id=?1"), [id], |r| {
+        checked_record(r, runtime, connection)
+    })
+    .optional()
+    .map_err(|_| invalid())
 }
 fn same(a: &Original, b: &Original) -> bool {
     a.id == b.id

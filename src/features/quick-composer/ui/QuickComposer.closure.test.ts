@@ -517,7 +517,9 @@ it("over-capacity clipboard selection is retained as failure without inspection 
     });
     container.querySelector("textarea")!.dispatchEvent(paste);
   });
-  await vi.waitFor(() => expect(container.textContent).toContain("retained attachment capacity"));
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain("The selected file list is too large to attach."),
+  );
   await expect(close().captureAndFlush()).rejects.toThrow("retained attachment capacity");
   await expect(closed!.retryFailed(key)).rejects.toThrow("retained attachment capacity");
   expect(calls("clipboard_file_paths")).toHaveLength(1);

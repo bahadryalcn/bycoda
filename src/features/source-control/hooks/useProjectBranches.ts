@@ -8,6 +8,7 @@ import {
   type GitBranches,
 } from "../../../platform/tauri/fs";
 import { reportRemoteLoad } from "../../connections/public/remoteHealth";
+import { useMachineAvailability } from "../../connections/public/machineAvailability";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 
 export type ProjectBranchesState = {
@@ -152,9 +153,11 @@ function stop(entry: Entry) {
  *  confuse "still looking" with "not a repo". */
 export function useProjectBranchesState(cwd: string, enabled: boolean): ProjectBranchesState {
   const active = enabled && Boolean(cwd) && cwd !== "~";
+  // The last branches stay shown, but a machine that cannot be asked is not read.
+  const readable = useMachineAvailability(cwd).available;
   const subscribe = useCallback(
     (listener: () => void) => {
-      if (!active) return () => undefined;
+      if (!active || !readable) return () => undefined;
       const entry = entryFor(cwd);
       const unsubscribe = entry.listeners.subscribe(listener);
       if (entry.listeners.size === 1) start(entry);
@@ -164,7 +167,7 @@ export function useProjectBranchesState(cwd: string, enabled: boolean): ProjectB
         entries.prune();
       };
     },
-    [active, cwd],
+    [active, readable, cwd],
   );
   const getSnapshot = useCallback(() => {
     return active ? entryFor(cwd).state : PENDING;

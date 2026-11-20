@@ -160,7 +160,7 @@ function Fixture() {
                     {
                       id: "long-text",
                       role: "user",
-                      text: "Selectable excerpt\n" + "Long content ".repeat(200),
+                      text: "# Selectable excerpt\n\n" + "Long content ".repeat(200),
                     },
                   ]
                 : blocks
@@ -386,6 +386,12 @@ function TechnicalErrorsFixture() {
         blocks={[
           { id: "technical-prompt", role: "user", text: "Continue the project review" },
           { id: "technical-error", role: "system", notice: "error", text: rawTechnicalError },
+          {
+            id: "provider-error",
+            role: "system",
+            notice: "error",
+            text: 'API Error: HTTP 503 {"error":{"message":"The provider is temporarily unavailable."},"request_id":"req_503"}',
+          },
           { id: "plain-prompt", role: "user", text: "Continue in the selected working copy" },
           {
             id: "plain-error",

@@ -7,6 +7,15 @@ or Settings > Workspace for Autosave. Inbox opens with Ctrl+Shift+I (⌘⇧I on
 Mac) and Notes with Ctrl+Shift+L (⌘⇧L on Mac). The menu shows the active
 shortcuts from Settings > Keybindings.
 
+After an app update, open What's new from the expanded sidebar footer. Hover or
+focus the icon to see the installed version, or use the adjacent close button to
+dismiss the notice.
+
+## Conversation history
+
+Long conversations open at their recent messages. Scroll toward the top of the
+conversation to load earlier messages. The message you were reading stays in place.
+
 ## Transient notifications
 
 Information, success and progress notices appear at the top right. Warnings and
@@ -85,6 +94,13 @@ A toast waiting behind the visible three keeps its countdown and returns as the 
 front close. Reminder and
 approval cards stay fully visible beside the stack.
 
+Press Ctrl+Shift+J (⌘⇧J on macOS) to move keyboard focus to a pending request popup,
+also while a dialog is open; press it again to reach the next popup. Focus lands on the
+card's conversation button, so nothing is allowed or denied until you press **Allow** or
+**Deny** yourself. Tab moves through the popup controls, Escape returns focus to where you
+were without closing the dialog, and Tab past the last control returns to the dialog. The
+shortcut can be changed in **Settings > Keybindings** (App: Focus Approval Requests).
+
 Dragging the project rail much narrower than its minimum width switches to the compact rail when the compact rail is enabled; reopening the full rail restores its previous width.
 The compact rail keeps its width and uses standard-sized navigation targets and icons.
 The footer places the voice companion first, followed by GitHub and available updates,
@@ -103,7 +119,7 @@ Collapsed project navigation uses a 56px icon rail with a centered divider and a
 small-size vector mark. Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
 the current location. Back, Forward, Expand projects and conversation tools align
-to the right. **New Session** sits at the far right, with a label when the workspace
+to the right. **New session** sits at the far right, with a label when the workspace
 pane is wide and a conversation icon when space is limited. In narrow panes, **More
 actions** contains conversation search, selection and filters. Crews, Servers, Notes,
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
@@ -199,14 +215,15 @@ tasks or a pull request watch show **Waiting**, keep their own group and do not 
 as running. The panel header counts all conversations;
 when collapsed, it retains an attention count. Last Sessions keeps the complete list.
 
-Above the composer, expanded background work shows the reported model and provider
-icon above each subagent's title. Hover or focus the information icon to see status
-counts in a card; click or tap to keep it open. The separate arrow toggles the list.
-Steps, failed steps and elapsed time sit beside
-the opening chevron. Animated bars mark running work; a green check marks completed
-work, a red cross marks failure, and warning icons distinguish stopped and interrupted
-runs. Hover or focus a row for its full identity and status. Missing child-model
-metadata stays unspecified rather than borrowing the parent conversation's model.
+Above the composer, **Background work** shows a labeled count for each status.
+Open it to see subagents and commands. Subagent rows show the title first, the
+reported model and provider below it, and step counts and elapsed time beside the
+opening chevron. Animated bars mark running work, a green check marks completed
+work, a red cross marks failure, and warning icons distinguish stopped and
+interrupted runs. Select a row to inspect the run. When available, the action
+to stop all work appears above the expanded list. Its tooltip explains whether it stops
+background work only or interrupts the whole turn. Missing child-model metadata
+stays unspecified.
 
 Tooltip content is chosen by each control: readable labels stay quiet on hover,
 while hints explain icons, missing shortcuts and additional context. Overflow
@@ -430,7 +447,9 @@ indented under the header on a guide line.
 A single conversation shows one compact title row with its tabs and actions; a
 pane gets its own header only when the workspace is split. On Windows and Linux
 the menu button at the start of the title row opens the application menus, and
-Alt or F10 still opens them from the keyboard. The Changes tab always shows how
+Alt or F10 still opens them from the keyboard: the menu bar takes focus, Left and
+Right move between menus, Down opens one, and Escape hides the bar and returns
+focus to where you were. The Changes tab always shows how
 many files changed; the added and removed line totals appear when the tab has
 room, and its tooltip names both counts. Keyboard focus on a session row opens
 a small detail card with the title, model, branch or worktree, path, status and
@@ -571,9 +590,10 @@ If session ownership cannot be loaded, the saved source remains available with R
 
 ## Notes
 
-The note header keeps title, project and tags together. Session Notes saves automatically
-and shows Saved, Saving or Unsaved changes beside its Save button. Use Save or Ctrl/Cmd+S
-to save immediately. Closing the panel flushes pending changes; reopening resumes the
+In Session Notes, click the title in the top bar to rename the note. A new note opens
+with focus in its writing area, and tags are visible under the title. Session Notes
+saves automatically. Use Save in the bottom bar or Ctrl/Cmd+S to save immediately.
+Closing the panel flushes pending changes; reopening resumes the
 last note and preserves a failed draft. Private edits that still need review appear in
 a compact Review changes notice with Open note, Copy exact text and expandable recovery text.
 The library keeps its keyboard Save command and shows failures and recovery messages.

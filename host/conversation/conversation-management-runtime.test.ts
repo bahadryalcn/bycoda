@@ -17,7 +17,12 @@ it("reads only finite Host metadata from a real projectless Room principal", asy
     return { environmentId: "host", secret: "not disclosed" };
   });
   const snapshot = vi.fn(async () => []);
-  const runtime = new ConversationManagementRuntime({ read, snapshot, subscribe: () => () => {} });
+  const runtime = new ConversationManagementRuntime({
+    read,
+    revision: async () => "rev-0",
+    snapshot,
+    subscribe: () => () => {},
+  });
   const room = { kind: "assistant-thread" as const, threadId: "global", environmentId: "host" };
   expect(await runtime.call("environment.describe", {}, room, async () => true)).toEqual({
     environmentId: "host",
@@ -39,8 +44,13 @@ it("reads only finite Host metadata from a real projectless Room principal", asy
 });
 function fixture() {
   let rows: unknown[] = [{ kind: "task", id: "one", status: "running" }];
+  let revision = "rev-0";
   const listeners = new Set<() => void>();
   const read = vi.fn(async () => ({}));
+  const revisionPort = vi.fn(async (projectId: string) => {
+    expect(projectId).toBe("p");
+    return revision;
+  });
   const snapshot = vi.fn(async (projectId: string) => {
     expect(projectId).toBe("p");
     return rows;
@@ -48,6 +58,7 @@ function fixture() {
   const authorized = vi.fn(async () => true);
   const service = new ConversationManagementRuntime({
     read,
+    revision: revisionPort,
     snapshot,
     subscribe: (listener) => {
       listeners.add(listener);
@@ -61,13 +72,25 @@ function fixture() {
       cursor: string;
       heartbeat: boolean;
       items: unknown[];
+      total: number;
+      truncated: boolean;
     }>;
   return {
     call,
     authorized,
     listeners,
     snapshot,
+    revisionPort,
     set rows(value: unknown[]) {
+      rows = value;
+    },
+    /** Rows changed and the project revision moved, as a committed store write does. */
+    commit(value: unknown[]) {
+      rows = value;
+      revision = `rev-${Number(revision.slice(4)) + 1}`;
+    },
+    /** Rows changed without the project revision moving: no list-visible change. */
+    setRowsWithoutRevision(value: unknown[]) {
       rows = value;
     },
     changed: () => listeners.forEach((listener) => listener()),
@@ -79,12 +102,60 @@ it("subscribes to committed changes, returns project metadata and releases its o
   expect(f.listeners.size).toBe(0);
   const pending = f.call({ cursor: initial.cursor });
   await vi.waitFor(() => expect(f.listeners.size).toBe(1));
-  f.rows = [{ kind: "task", id: "one", status: "done" }];
+  f.commit([{ kind: "task", id: "one", status: "done" }]);
   f.changed();
   const result = await pending;
   expect(result.cursor).not.toBe(initial.cursor);
   expect(result.items).toEqual([{ kind: "task", id: "one", status: "done" }]);
   expect(f.listeners.size).toBe(0);
+});
+
+it("keeps waiting on a store change that leaves the project revision unchanged, without building rows", async () => {
+  const f = fixture();
+  const initial = await f.call();
+  const snapshotsBefore = f.snapshot.mock.calls.length;
+  const pending = f.call({ cursor: initial.cursor, waitMs: 20_000 });
+  await vi.waitFor(() => expect(f.listeners.size).toBe(1));
+  f.changed();
+  f.changed();
+  await vi.waitFor(() => expect(f.revisionPort.mock.calls.length).toBeGreaterThan(2));
+  expect(f.snapshot.mock.calls.length).toBe(snapshotsBefore);
+  f.commit([{ kind: "task", id: "one", status: "done" }]);
+  f.changed();
+  expect((await pending).cursor).not.toBe(initial.cursor);
+  expect(f.snapshot.mock.calls.length).toBe(snapshotsBefore + 1);
+});
+
+it("derives the cursor from the project revision, so rows beyond the visible window cannot change it silently", async () => {
+  const f = fixture();
+  const rows = Array.from({ length: 150 }, (_, index) => ({ kind: "session", id: `s${index}` }));
+  f.rows = rows;
+  const initial = await f.call();
+  expect(initial.items).toHaveLength(100);
+  // Row 120 changes but the project revision does not move: not a list-visible change.
+  f.setRowsWithoutRevision(
+    rows.map((row, index) => (index === 120 ? { ...row, status: "x" } : row)),
+  );
+  const pending = f.call({ cursor: initial.cursor, waitMs: 100 });
+  await vi.waitFor(() => expect(f.listeners.size).toBe(1));
+  f.changed();
+  expect(await pending).toMatchObject({ heartbeat: true, cursor: initial.cursor });
+});
+
+it("wakes on a revision change even when the change lies beyond the first 100 rows", async () => {
+  const f = fixture();
+  const rows = Array.from({ length: 150 }, (_, index) => ({ kind: "session", id: `s${index}` }));
+  f.rows = rows;
+  const initial = await f.call();
+  const pending = f.call({ cursor: initial.cursor });
+  await vi.waitFor(() => expect(f.listeners.size).toBe(1));
+  f.commit(rows.map((row, index) => (index === 120 ? { ...row, status: "x" } : row)));
+  f.changed();
+  const result = await pending;
+  expect(result.cursor).not.toBe(initial.cursor);
+  expect(result.items).toHaveLength(100);
+  expect(result.total).toBe(150);
+  expect(result.truncated).toBe(true);
 });
 it("returns a bounded heartbeat without fabricating a new event", async () => {
   vi.useFakeTimers();

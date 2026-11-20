@@ -12,10 +12,14 @@ export type UpdateMachineImpact = {
   affected: boolean;
   running: number | null;
   desktopRunning: number | null;
+  desktopSessionIds?: string[];
 };
 
 /** Fresh metadata only: never fetch transcripts or mistake failed reads for idle. */
-export async function readUpdateImpact(target: UpdateTarget): Promise<UpdateMachineImpact[]> {
+export async function readUpdateImpact(
+  target: UpdateTarget,
+  onMachine?: (row: UpdateMachineImpact) => void,
+): Promise<UpdateMachineImpact[]> {
   const machines = await withTimeout(
     invoke<RemoteMachine[]>("remote_machines"),
     8_000,
@@ -49,7 +53,7 @@ export async function readUpdateImpact(target: UpdateTarget): Promise<UpdateMach
               machine.id,
               "projects.list",
               {},
-              true,
+              false,
               false,
               machine.environmentId,
             );
@@ -59,7 +63,7 @@ export async function readUpdateImpact(target: UpdateTarget): Promise<UpdateMach
                   machine.id,
                   "sessions.list",
                   { projectId: project.id },
-                  true,
+                  false,
                   false,
                   machine.environmentId,
                 ),
@@ -82,10 +86,14 @@ export async function readUpdateImpact(target: UpdateTarget): Promise<UpdateMach
         );
         row.running = sessions.length;
         // Legacy ownership is uncertain; warn conservatively rather than promise continuation.
-        row.desktopRunning = sessions.filter((session) => session.executionOwner !== "host").length;
+        row.desktopSessionIds = sessions
+          .filter((session) => session.executionOwner !== "host")
+          .map((session) => session.id);
+        row.desktopRunning = row.desktopSessionIds.length;
       } catch {
         // Offline, old and incomplete Hosts remain explicitly unknown.
       }
+      onMachine?.(row);
       return row;
     }),
   );

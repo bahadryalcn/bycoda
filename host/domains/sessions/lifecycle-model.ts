@@ -116,6 +116,18 @@ export interface SessionLifecycleStore {
     sessionId: string,
     change: (current: SessionLifecycleRecord) => { next?: SessionLifecycleRecord; result: T },
   ): Promise<T>;
+  /**
+   * One serialized read-modify-write over several sessions with a single file write. The change
+   * sees each fresh record in turn; returning the record it was given leaves that row unchanged.
+   * A throw writes nothing. Results follow `sessionIds` order.
+   */
+  updateMany<T>(
+    sessionIds: readonly string[],
+    change: (current: SessionLifecycleRecord) => { next?: SessionLifecycleRecord; result: T },
+  ): Promise<T[]>;
   autoSettleSettings(): Promise<AutoSettleSettings>;
-  saveAutoSettleSettings(settings: AutoSettleSettings): Promise<AutoSettleSettings>;
+  /** Serialized read-modify-write of the settings; the change sees the saved value it merges into. */
+  updateAutoSettleSettings(
+    change: (current: AutoSettleSettings) => AutoSettleSettings,
+  ): Promise<AutoSettleSettings>;
 }

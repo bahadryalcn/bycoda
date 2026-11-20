@@ -87,6 +87,21 @@ describe("account platform wiring", () => {
     expect((await runtime.lifecycle.get("s1")).state).toBe("settled");
   });
 
+  it("links only sessions the Host or desktop knows", async () => {
+    const { dependencies } = fakes();
+    vi.mocked(dependencies.tasks.list).mockResolvedValue([{ id: "t1" }] as never);
+    vi.mocked(dependencies.queueSessionKnown).mockImplementation(async (id: string) => {
+      if (id !== "s1") throw new Error("Unknown session");
+      return "idle" as never;
+    });
+    const runtime = await createAccountPlatformRuntime(dependencies);
+    runtime.stop();
+    await expect(runtime.links.link("ghost", "t1")).rejects.toMatchObject({
+      code: "session-not-found",
+    });
+    expect(await runtime.links.link("s1", "t1")).toMatchObject({ sessionId: "s1", taskId: "t1" });
+  });
+
   it("drops the lifecycle row and task link of a deleted session", async () => {
     const { dependencies } = fakes();
     const runtime = await createAccountPlatformRuntime(dependencies);

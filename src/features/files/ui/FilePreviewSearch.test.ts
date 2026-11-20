@@ -1,12 +1,23 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, type ComponentType, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleEditorFindKey } from "../editor/editorSearch";
-import { FilePreviewSearch, findPreviewTextMatches } from "./FilePreviewSearch";
+import {
+  FilePreviewSearch as FilePreviewSearchComponent,
+  findPreviewTextMatches,
+  openFindInActiveFilePreview,
+} from "./FilePreviewSearch";
 import { saveKeybindingOverride } from "../../settings/model/settings";
 import { evaluatePreviewSearch } from "./previewSearchEvaluation";
 import { Worker as NodeWorker } from "node:worker_threads";
+
+// createElement passes the preview as its third argument, which the required `children` prop rejects.
+const FilePreviewSearch = FilePreviewSearchComponent as ComponentType<{
+  active: boolean;
+  contentVersion: string;
+  children?: ReactNode;
+}>;
 
 // These tests mount real React trees and worker threads. Under the parallel suite the default
 // 5s budget is not enough, so give the whole file the same 20s the Notes view uses.
@@ -303,5 +314,47 @@ describe("FilePreviewSearch", () => {
     });
     expect(container.querySelector('[role="search"]')).toBeNull();
     expect(container.querySelector("[data-file-preview-search-open]")).toBeNull();
+  });
+
+  it("returns find focus to a data-preview-scroll region rather than the wrapper", async () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (frame: number) => frames.delete(frame));
+    const flushFocus = () =>
+      act(() => {
+        const pending = [...frames.values()];
+        frames.clear();
+        pending.forEach((callback) => callback(performance.now()));
+      });
+
+    await act(async () =>
+      root.render(
+        createElement(
+          FilePreviewSearch,
+          { active: true, contentVersion: "Alpha" },
+          createElement(
+            "div",
+            { "data-preview-scroll": "", tabIndex: 0, "aria-label": "Document preview" },
+            "Alpha",
+          ),
+        ),
+      ),
+    );
+    act(() => {
+      expect(openFindInActiveFilePreview()).toBe(true);
+    });
+    await flushFocus();
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Find"]')!;
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await flushFocus();
+
+    expect(container.querySelector('[role="search"]')).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector("[data-preview-scroll]"));
   });
 });

@@ -44,6 +44,12 @@ it("is one labelled image with decorative members", async () => {
   expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
 });
 
+it("uses the singular noun for one member", async () => {
+  await render({ members: crew(1), state: "idle", stateLabel: "Idle" });
+  const image = container.querySelector('[role="img"]')!;
+  expect(image.getAttribute("aria-label")).toBe("Crew A, 1 member, Idle");
+});
+
 it("shows a +N sign beyond six members and none otherwise", async () => {
   await render({ members: crew(9), theme: "classic" });
   expect(container.textContent).toContain("+3");

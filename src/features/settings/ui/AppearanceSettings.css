@@ -15,14 +15,46 @@
    form their own stacking context so a slider thumb or preview can never paint over it. */
 .appearance-generator {
   position: sticky;
-  inset-block-start: calc(var(--ui-control-height-compact) + 20px);
+  inset-block-start: var(--settings-page-bar-height);
   z-index: 1;
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 8px;
   padding-block: 0 8px;
   /* Pulls the panels up over the grid gap, leaving one even space below the divider. */
   margin-block-end: calc(-1 * var(--settings-group-gap, 28px) + 8px);
   min-inline-size: 0;
+}
+.appearance-tabs {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.appearance-generation-launcher,
+.appearance-generation-dock {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.appearance-generation-launcher {
+  flex: none;
+}
+.appearance-generation-short-label {
+  display: none;
+}
+@container settings (max-width: 640px) {
+  .appearance-generation-launcher[data-has-status] .appearance-generation-label {
+    display: none;
+  }
+  .appearance-generation-short-label {
+    display: inline;
+  }
+}
+.appearance-generation-dock {
+  position: sticky;
+  inset-block-end: 8px;
+  justify-self: end;
+  max-inline-size: 100%;
+  padding: 4px;
 }
 .appearance-generator-sentinel {
   position: absolute;

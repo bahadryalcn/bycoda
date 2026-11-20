@@ -224,7 +224,9 @@ it("lets keyboard users expand and collapse a truncated prompt", async () => {
   await act(async () => button!.click());
   expect(button!.getAttribute("aria-expanded")).toBe("true");
   expect(button!.textContent).toBe("Show less");
-  expect(container.querySelector("pre")?.classList).not.toContain("line-clamp-4");
+  expect(
+    container.querySelector('[data-selectable-agent-response="prompt"]')?.classList,
+  ).not.toContain("line-clamp-4");
 });
 
 it("keeps one prompt corner radius whatever the pane width", () => {

@@ -1,4 +1,6 @@
+/* The policy editor adapts to the room the settings page gives it, not to the window. */
 .root {
+  container: workspace-policy / inline-size;
   display: flex;
   flex-direction: column;
   min-inline-size: 0;
@@ -88,13 +90,13 @@
   min-inline-size: 0;
 }
 
-@media (max-width: 640px) {
+@container workspace-policy (max-width: 640px) {
   .grid4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 560px) {
+@container workspace-policy (max-width: 560px) {
   .grid3 {
     grid-template-columns: minmax(0, 1fr);
   }

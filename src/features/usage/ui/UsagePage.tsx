@@ -6,6 +6,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { formatDate, t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import "./UsagePage.css";
 import { RefreshCw, MoreHorizontal } from "../../../shared/ui/icons";
 import { WORKSPACE_REFRESH_EVENT } from "../../../app/shell/WorkspaceControls";
@@ -121,6 +122,17 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
   );
 }
 
+/**
+ * Reset countdown on the shared minute clock. Only this text re-renders each
+ * minute, and the clock stops while the window is hidden, so the account
+ * section itself never re-renders for time alone.
+ */
+function ResetCountdown({ resetsAt }: { resetsAt: number }) {
+  const tick = useMinuteNow();
+  const [mountedAt] = useState(Date.now);
+  return <>{formatResetCountdown(resetsAt - (tick || mountedAt))}</>;
+}
+
 function AccountLimits({
   provider,
   account,
@@ -140,14 +152,9 @@ function AccountLimits({
   const showRemaining = useShowRemainingUsage();
   const color = providerAccountColorValue(account);
   const limits = useCachedRateLimits(provider, accountId);
-  const [now, setNow] = useState(Date.now);
   useEffect(() => {
     void loadRateLimits(provider, accountId, refresh > 0);
   }, [provider, accountId, refresh]);
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
   const windows = (["session", "weekly", "monthly"] as const).flatMap((kind) =>
     limits[kind] ? [{ kind, window: limits[kind]! }] : [],
   );
@@ -284,7 +291,7 @@ function AccountLimits({
                       t("Reset time unavailable")
                     ) : (
                       <>
-                        {formatResetCountdown(window.resetsAt - now)}
+                        <ResetCountdown resetsAt={window.resetsAt} />
                         <br />
                         <Timestamp
                           value={window.resetsAt}

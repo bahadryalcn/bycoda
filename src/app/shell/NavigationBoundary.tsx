@@ -22,20 +22,23 @@ export function NavigationBoundary({
 }) {
   useLocale();
   const t = useT();
+  const label = t(name);
   // The one h1 of a routed screen: the route's name. Visible titles inside are h2 and below.
   return (
     <>
       <Heading as="h1" size="heading" className="sr-only">
-        {t(name)}
+        {label}
       </Heading>
       <RecoveryBoundary key={name} onBack={onBack}>
-        <Suspense fallback={<NavigationLoading name={name} onBack={onBack} />}>{children}</Suspense>
+        <Suspense fallback={<NavigationLoading label={label} onBack={onBack} />}>
+          {children}
+        </Suspense>
       </RecoveryBoundary>
     </>
   );
 }
 
-function NavigationLoading({ name, onBack }: { name: string; onBack: () => void }) {
+function NavigationLoading({ label, onBack }: { label: string; onBack: () => void }) {
   const t = useT();
   return (
     <Text as="div" size="inherit" tone="primary" className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -47,14 +50,14 @@ function NavigationLoading({ name, onBack }: { name: string; onBack: () => void 
             {t("Back to workspace")}
           </Button>
         }
-        title={name}
+        title={label}
         titleAs="div"
         trailing={IS_MAC ? null : <WindowControls />}
       />
       <SurfaceLoading
-        title={t("Loading {p0}…", { p0: name })}
+        title={t("Loading {p0}…", { p0: label })}
         slowDescription={t("{p0} is taking longer to load. You can return to the workspace.", {
-          p0: name,
+          p0: label,
         })}
         slowAction={
           <Button size="sm" variant="secondary" type="button" onClick={onBack}>

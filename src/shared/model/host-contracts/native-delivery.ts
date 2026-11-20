@@ -20,8 +20,19 @@ export const NativeBufferDeliveryApplyParamsSchema = NativeDeliveryIdentitySchem
 const serviceIdentity = NativeDeliveryIdentitySchema.extend({
   target: NativeServiceUploadTargetSchema,
 });
+/**
+ * Opt-in fast acknowledgement (capability `native.services.delivery.admission.v1`). A caller
+ * that sends it gets `state: "accepted"` as soon as the original is durably admitted, and
+ * reads the typed outcome later with `native.services.delivery.status` for the same original
+ * (sending the same field). Without it, apply answers synchronously as before.
+ */
+export const NativeServiceDeliveryAcknowledgeSchema = z.literal("admission");
 export const NativeServiceDeliveryApplyParamsSchema = serviceIdentity.extend({
   paramsJson: z.string(),
+  acknowledge: NativeServiceDeliveryAcknowledgeSchema.optional(),
+});
+const serviceStatusParams = serviceIdentity.extend({
+  acknowledge: NativeServiceDeliveryAcknowledgeSchema.optional(),
 });
 const absent = z.strictObject({ state: z.literal("absent") });
 const unknown = NativeDeliveryIdentitySchema.extend({ state: z.literal("unknown") });
@@ -71,6 +82,9 @@ export const NativeServiceDeliveryStatusSchema = z.union([
     resultUnavailable: z.literal(true),
   }),
   serviceIdentity.extend({ state: z.literal("unknown") }),
+  // Durably admitted and still executing in this Host process. Only an `acknowledge`
+  // caller sees it, and it proves nothing about the outcome: poll status for that.
+  serviceIdentity.extend({ state: z.literal("accepted") }),
   serviceIdentity.extend({
     state: z.literal("recorded"),
     resultSource: NativeDeliveryResultSourceSchema,
@@ -109,7 +123,7 @@ export const NATIVE_DELIVERY_RPC_SCHEMAS = {
     result: NativeServiceDeliveryStatusSchema,
   },
   "native.services.delivery.status": {
-    params: serviceIdentity,
+    params: serviceStatusParams,
     result: NativeServiceDeliveryStatusSchema,
   },
   "native.services.delivery.result.read": {

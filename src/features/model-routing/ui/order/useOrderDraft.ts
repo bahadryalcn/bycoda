@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import { useState } from "react";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { retainedTransactionValue, useRetainedTransaction } from "../../model/retainedTransaction";
@@ -22,6 +23,7 @@ import {
   unavailableOrderEntryId,
   type OrderDraft,
 } from "../../model/modelRoutingDraft";
+import { isRoutingSaveConflict, routingSaveMessage } from "../../model/routingSaveConflict";
 import { setupCatalogQuery } from "../../model/smartSetupCatalog";
 
 export function useOrderSettings(machineId: string) {
@@ -127,7 +129,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
         p1: unavailable.id,
       });
   } catch (cause) {
-    validation = cause instanceof Error ? cause.message : String(cause);
+    validation = errorText(cause);
   }
   // A typed limit the draft could not take is not in the draft, so Save would drop it silently.
   if (invalidFields.size) validation = t("Fix the highlighted limit before saving.");
@@ -156,7 +158,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
       change(operation(draft));
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
       return false;
     }
   }
@@ -198,8 +200,9 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     }
   }
 
-  async function save() {
-    if (submitting.current || !dirty || conflict || validation) return;
+  /** True only once the Host acknowledged the whole draft; any refusal keeps it and says why. */
+  async function save(): Promise<boolean> {
+    if (submitting.current || !dirty || conflict || validation) return false;
     const input = prepareOrderSave(draft);
     const before = prepareOrderSave(orderDraft(baseline.routing, baseline.limits));
     submitting.current = true;
@@ -207,12 +210,16 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     setError("");
     let acknowledged = baseline;
     let routingSaved = false;
+    // Only a refused routing save can mean a stale document; the limits save has no version.
+    let savingRouting = false;
     try {
       if (JSON.stringify(input.routing) !== JSON.stringify(before.routing)) {
+        savingRouting = true;
         const state = await settings.routing.save.mutateAsync({
           expectedVersion: baseline.routing.version,
           draft: input.routing,
         });
+        savingRouting = false;
         acknowledged = { ...acknowledged, routing: state };
         routingSaved = true;
         setBaseline(acknowledged);
@@ -230,12 +237,12 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
       setBaseline(acknowledged);
       setDraft(orderDraft(acknowledged.routing, acknowledged.limits));
       setSaved(true);
+      return true;
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      setSaveConflict(
-        !unavailableOrderEntryId(message) && /conflict|version|changed/i.test(message),
-      );
+      const message = routingSaveMessage(errorText(cause));
+      setSaveConflict(savingRouting && isRoutingSaveConflict(cause));
       setError(routingSaved ? `Models saved; work limits were not saved. ${message}` : message);
+      return false;
     } finally {
       submitting.current = false;
       setPending(false);

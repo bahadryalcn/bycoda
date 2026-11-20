@@ -5,6 +5,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Play, X } from "../../../shared/ui/icons";
 import { startLocalHost, useLocalHostState } from "../model/localHostService";
+import { errorText } from "../../../shared/lib/errors";
 
 /** Starts this computer's stopped host; reports the reason when it cannot. */
 export function LocalHostStartButton({
@@ -25,7 +26,7 @@ export function LocalHostStartButton({
       await startLocalHost();
       onStarted?.();
     } catch (reason) {
-      onError?.(t(reason instanceof Error ? reason.message : String(reason)));
+      onError?.(t(errorText(reason)));
     } finally {
       setStarting(false);
     }
@@ -67,10 +68,11 @@ export function useLocalHostDownNotice() {
     setStarting(true);
     setError(undefined);
     try {
+      // The service publishes the real state, which hides the notice; a host that stops again
+      // is shown again because nothing here keeps it dismissed.
       await startLocalHost();
-      setHidden(true);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorText(reason));
     } finally {
       setStarting(false);
     }

@@ -34,6 +34,9 @@ it("links shared Assistant settings without duplicating identity editing and pre
         (node) => node.textContent?.trim() === label,
       )!;
     expect(change).not.toHaveBeenCalled();
+    expect(host.textContent).toContain(
+      "Keeps short notes about you between conversations on this computer.",
+    );
     expect(host.querySelectorAll('[data-setting-id="voice-persona"] input')).toHaveLength(0);
     await act(async () => button("Assistant settings").click());
     expect((open.mock.calls[0]![0] as CustomEvent).detail).toEqual({ tab: "settings" });

@@ -9,13 +9,15 @@ import { Globe, MessageMultiple, Square } from "../../../../shared/ui/icons";
 import { t } from "../../../../shared/i18n";
 import { formatDuration } from "../../../../shared/i18n/format";
 import { elapsedSince, monotonicNow } from "../../../../shared/lib/time/timestamps";
+import { subscribeVoiceSecond } from "../../model/voicePresentationTimers";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
+import { VoiceCallScene } from "./VoiceCallScene";
 import { VoiceCore } from "./VoiceCore";
 import { voiceStatusTone } from "./VoiceLauncher";
 import styles from "./VoiceCompanionParts.module.css";
 
 /**
- * The stage of the expanded panel, tinted by who has the floor. With the transcript hidden it
+ * With the transcript hidden, the expanded panel
  * is a call screen: a large voice core, the status, the engine and session clock, and the words
  * in flight. With the transcript shown it shrinks to a strip: the small core beside the status.
  * The scope choice sits under both, so no state moves another control.
@@ -64,19 +66,23 @@ export function VoiceCompanionStatus({
   const tone = voiceStatusTone(visualState);
   const work = working ? sessionStatusText : "";
   return (
-    <div className={styles.stage} data-layout={stage ? "stage" : "strip"} data-state={visualState}>
+    <div className={styles.stage} data-layout={stage ? "stage" : "strip"}>
       <div className={styles.status}>
-        <VoiceCore
-          state={visualState}
-          level={audioLevel}
-          name={name}
-          avatar={avatar}
-          size={stage ? "stage" : undefined}
-        />
+        {stage ? (
+          <VoiceCallScene part="orb" state={visualState} level={audioLevel} />
+        ) : (
+          <VoiceCore state={visualState} level={audioLevel} name={name} avatar={avatar} />
+        )}
         <div className={styles.statusText}>
           <div className={styles.statusLine}>
             {tone && <StatusDot tone={tone} size="fixed" appearance="solid" />}
-            <LiveText size="secondary" weight="medium" leading="snug" truncate text={statusText} />
+            <LiveText
+              size={stage ? "body" : "secondary"}
+              weight="medium"
+              leading="snug"
+              truncate
+              text={statusText}
+            />
             {working && (
               <Button
                 iconOnly
@@ -101,7 +107,14 @@ export function VoiceCompanionStatus({
         </div>
       </div>
       {stage && caption ? (
-        <Text as="p" size="secondary" tone="secondary" leading="normal" className={styles.spoken}>
+        <Text
+          as="p"
+          size="secondary"
+          tone="secondary"
+          leading="normal"
+          lines={4}
+          className={styles.spoken}
+        >
           {caption}
         </Text>
       ) : null}
@@ -128,8 +141,8 @@ export function VoiceCompanionStatus({
 
 /**
  * One quiet line under the status: the engine (its tooltip says where audio goes) and, while
- * connected, how long this voice session has run. The clock is painted from a timer, so it does
- * not re-render the panel; the voice core already shows the input level.
+ * connected, how long this voice session has run. The clock is painted from the shared second
+ * timer, so it does not re-render the panel; the voice core already shows the input level.
  */
 function VoiceMeta({ live, engine, privacy }: { live: boolean; engine: string; privacy: string }) {
   const clock = useRef<HTMLSpanElement>(null);
@@ -142,8 +155,8 @@ function VoiceMeta({ live, engine, privacy }: { live: boolean; engine: string; p
         clock.current.textContent = formatDuration(elapsedSince(start), { style: "clock" });
     };
     tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
+    // Shared one-second timer: asleep while the window is hidden, caught up when it returns.
+    return subscribeVoiceSecond(tick);
   }, [live]);
   return (
     <div className={styles.meta}>

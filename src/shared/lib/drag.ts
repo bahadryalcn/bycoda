@@ -272,16 +272,14 @@ export function createDragPreview(
   const rect = source.getBoundingClientRect();
   const element = source.cloneNode(true) as HTMLElement;
   sanitizePreview(element);
+  element.removeAttribute("style");
   element.classList.add("pointer-drag-preview");
   element.dataset.dragPreview = "";
+  element.style.setProperty("--drag-preview-width", `${rect.width}px`);
+  element.style.setProperty("--drag-preview-height", `${rect.height}px`);
   Object.assign(element.style, {
-    position: "fixed",
     left: `${rect.left}px`,
     top: `${rect.top}px`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
-    margin: "0",
-    opacity: "1",
     transformOrigin: `${pointer.clientX - rect.left}px ${pointer.clientY - rect.top}px`,
     transform: "translate3d(0, 0, 0)",
   });
@@ -323,13 +321,13 @@ export function createDragPreview(
         }
       }
       const bounds = state?.bounds;
-      if (label) label.style.translate = bounds ? "0" : "";
       const width = bounds ? Math.min(rect.width, Math.max(0, bounds.width)) : rect.width;
       const height = bounds ? Math.min(rect.height, Math.max(0, bounds.height)) : rect.height;
-      element.style.width = `${width}px`;
-      element.style.height = `${height}px`;
-      element.style.scale = bounds ? "1" : "";
-      element.style.overflow = bounds ? "hidden" : "";
+      if (bounds || element.dataset.bounded !== undefined) {
+        element.style.setProperty("--drag-preview-width", `${width}px`);
+        element.style.setProperty("--drag-preview-height", `${height}px`);
+        element.toggleAttribute("data-bounded", Boolean(bounds));
+      }
       const left = rect.left + point.clientX - pointer.clientX;
       const top = rect.top + point.clientY - pointer.clientY;
       const x = bounds ? Math.max(bounds.left, Math.min(left, bounds.right - width)) : left;
@@ -347,10 +345,9 @@ export function createDragPreview(
       }
       label?.remove();
       label = null;
-      element.style.removeProperty("overflow");
-      element.style.removeProperty("scale");
-      element.style.width = `${rect.width}px`;
-      element.style.height = `${rect.height}px`;
+      element.style.setProperty("--drag-preview-width", `${rect.width}px`);
+      element.style.setProperty("--drag-preview-height", `${rect.height}px`);
+      delete element.dataset.bounded;
       delete element.dataset.lifted;
       delete element.dataset.action;
       element.style.transition = `transform ${ms}ms ${easing}, scale ${ms}ms ${easing}, box-shadow ${ms}ms ${easing}`;

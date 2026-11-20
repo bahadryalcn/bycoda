@@ -28,7 +28,7 @@ test("reviews exact revisions, opens commit diff, merges and retains a readable 
   const dialog = page.getByRole("dialog", { name: "Review changes", exact: true });
   await expect(dialog).toContainText("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
   await expect(dialog).toContainText("target-status-fingerprint");
-  await dialog.getByRole("button", { name: "bbbbbbbbbbbb", exact: true }).click();
+  await dialog.getByRole("button", { name: "bbbbbbb", exact: true }).click();
   await expect(dialog).toContainText("export const mode");
   await dialog.getByRole("button", { name: "Merge into main", exact: true }).click();
   await expect(dialog).toContainText("Merged into main.");

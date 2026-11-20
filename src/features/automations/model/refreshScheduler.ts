@@ -11,6 +11,10 @@ export type RefreshSchedulerOptions = {
   /** Slower cadence while the page is hidden. */
   hiddenIntervalMs: number;
   isHidden?: () => boolean;
+  /** When set, a refresh whose `run` rejects doubles the wait before the next
+   * one (up to this many ms) until a refresh succeeds. Unset keeps the fixed
+   * cadence. */
+  maxBackoffMs?: number;
 };
 
 export type RefreshScheduler = {
@@ -21,6 +25,9 @@ export type RefreshScheduler = {
   refresh(): Promise<void>;
   /** The page was shown or hidden. */
   visibilityChanged(): void;
+  /** Forgets earlier failures (a refresh the user asked for succeeded) and
+   * replans at the normal cadence. */
+  resetBackoff(): void;
 };
 
 export const HIDDEN_REFRESH_MS = 60_000;
@@ -32,6 +39,7 @@ export function createRefreshScheduler(options: RefreshSchedulerOptions): Refres
   let running: Promise<void> | null = null;
   let trailing: Promise<void> | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let failures = 0;
 
   const clearTimer = () => {
     if (timer !== undefined) clearTimeout(timer);
@@ -40,10 +48,12 @@ export function createRefreshScheduler(options: RefreshSchedulerOptions): Refres
   const plan = () => {
     clearTimer();
     if (stopped) return;
-    timer = setTimeout(
-      () => void scheduler.refresh(),
-      isHidden() ? options.hiddenIntervalMs : options.intervalMs,
-    );
+    const base = isHidden() ? options.hiddenIntervalMs : options.intervalMs;
+    const delay =
+      options.maxBackoffMs && failures
+        ? Math.min(base * 2 ** Math.min(failures, 16), Math.max(options.maxBackoffMs, base))
+        : base;
+    timer = setTimeout(() => void scheduler.refresh(), delay);
   };
   const runOnce = (): Promise<void> => {
     clearTimer();
@@ -56,8 +66,10 @@ export function createRefreshScheduler(options: RefreshSchedulerOptions): Refres
         // Lets `pending` be assigned even if `run` throws at once.
         await Promise.resolve();
         await options.run(current);
+        if (current()) failures = 0;
       } catch {
         // A refresh that fails is tried again on the next turn.
+        if (current()) failures++;
       } finally {
         if (running === pending) running = null;
         if (!trailing) plan();
@@ -70,12 +82,17 @@ export function createRefreshScheduler(options: RefreshSchedulerOptions): Refres
   const scheduler: RefreshScheduler = {
     start() {
       stopped = false;
+      failures = 0;
       void runOnce();
     },
     stop() {
       stopped = true;
       generation++;
       clearTimer();
+    },
+    resetBackoff() {
+      failures = 0;
+      if (!stopped && !running) plan();
     },
     refresh() {
       if (stopped) return Promise.resolve();

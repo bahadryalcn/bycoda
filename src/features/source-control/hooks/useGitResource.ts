@@ -1,4 +1,6 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useMachineAvailability } from "../../connections/public/machineAvailability";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 
@@ -7,6 +9,13 @@ type Snapshot<T> = {
   data: T | null;
   loading: boolean;
   error: string | null;
+  /** What the last read rejected with; unset after a success. `error` is only the
+   * message a screen shows, and a transient failure has none. */
+  cause?: unknown;
+  /** `data`, `error` and `cause` are the outcome of a read this hook finished since its
+   * key, availability or refresh last changed, not only what the cache kept. Remote health
+   * may learn only from such an outcome: a paused read is no answer from the machine. */
+  settled: boolean;
 };
 // Results stay cached so a revisited panel opens with its last data, but the
 // cache is a least-recently-used one: commit diffs, blame and history pages
@@ -16,7 +25,7 @@ const MAX_CACHED_BYTES = 16 * 1024 * 1024;
 const cache = new Map<string, unknown>();
 const cacheSizes = new Map<string, number>();
 let cachedBytes = 0;
-const completed = new Map<string, { at: number; error: string | null }>();
+const completed = new Map<string, { at: number; error: string | null; cause?: unknown }>();
 type FlightGroup = { latest?: Promise<unknown>; pending: number; latestPending: boolean };
 const flights = new Map<string, FlightGroup>();
 let generation = 0;
@@ -35,6 +44,7 @@ function estimateBytes(value: unknown): number {
       for (const child of Array.isArray(item) ? item : Object.values(item)) pending.push(child);
     } else bytes += 8;
   }
+  if (pending.length) return Number.POSITIVE_INFINITY;
   return bytes;
 }
 
@@ -47,10 +57,15 @@ function readCached<T>(key: string): T | undefined {
   return value as T;
 }
 
-function writeCached(key: string, data: unknown) {
+function writeCached(key: string, data: unknown): boolean {
   cachedBytes -= cacheSizes.get(key) ?? 0;
   cache.delete(key);
+  cacheSizes.delete(key);
   const size = estimateBytes(data);
+  if (!Number.isFinite(size)) {
+    completed.delete(key);
+    return false;
+  }
   cache.set(key, data);
   cacheSizes.set(key, size);
   cachedBytes += size;
@@ -64,18 +79,22 @@ function writeCached(key: string, data: unknown) {
     // Without its data a "completed" mark would make a refresh interval skip the read.
     completed.delete(oldest);
   }
+  return true;
 }
 
 /** Retain good data on refresh failure; ignore replies from a previous resource. */
 export function useGitResource<T>(
   cwd: string,
   key: string,
-  enabled: boolean,
+  wanted: boolean,
   read: () => Promise<T>,
   watch = true,
   minRefreshMs = 0,
   quiet = false,
 ) {
+  // A machine that cannot be asked gets no reads; they start once it is available again.
+  const available = useMachineAvailability(cwd).available;
+  const enabled = wanted && available;
   const [nonce, setNonce] = useState(0);
   const refreshKey = useRef<string | null>(null);
   const refresh = useCallback(() => {
@@ -87,6 +106,8 @@ export function useGitResource<T>(
     data: readCached<T>(key) ?? null,
     loading: enabled && (!quiet || !completed.has(key)),
     error: completed.get(key)?.error ?? null,
+    cause: completed.get(key)?.cause,
+    settled: false,
   }));
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep this resource's admitted reads synchronized with checkout notifications and resume events until unmount.
   useEffect(() => {
@@ -95,11 +116,17 @@ export function useGitResource<T>(
     let cancelled = false;
     let inFlight = false;
     let pending = false;
+    // Progress is for a read someone waits on: the first one, or an explicit
+    // refresh. A watcher or focus reload of shown data stays silent, or busy
+    // checkouts (many agents committing) would keep the refresh control spinning.
+    const shows = (force: boolean) => (!quiet || !completed.has(key)) && (force || !cache.has(key));
     setSnapshot((previous) => ({
       key,
       data: previous.key === key ? previous.data : (readCached<T>(key) ?? null),
-      loading: enabled && (!quiet || !completed.has(key)),
+      loading: enabled && shows(forced),
       error: completed.get(key)?.error ?? null,
+      cause: completed.get(key)?.cause,
+      settled: false,
     }));
     if (!enabled) return;
     const load = async (force = false) => {
@@ -114,8 +141,7 @@ export function useGitResource<T>(
       }
       inFlight = true;
       const readGeneration = generation;
-      if (!quiet || !completed.has(key))
-        setSnapshot((previous) => ({ ...previous, loading: true }));
+      if (shows(force)) setSnapshot((previous) => ({ ...previous, loading: true }));
       try {
         // An explicit refresh follows a change: a read already running may
         // predate it, so it is replaced, and its late answer is not kept.
@@ -129,8 +155,7 @@ export function useGitResource<T>(
             group.latest === flight;
           flight = read()
             .then((data) => {
-              if (current()) {
-                writeCached(key, data);
+              if (current() && writeCached(key, data)) {
                 completed.set(key, { at: Date.now(), error: null });
               }
               return data;
@@ -139,7 +164,8 @@ export function useGitResource<T>(
               if (current())
                 completed.set(key, {
                   at: Date.now(),
-                  error: error instanceof Error ? error.message : String(error),
+                  error: errorText(error),
+                  cause: error,
                 });
               throw error;
             })
@@ -171,7 +197,7 @@ export function useGitResource<T>(
             continue;
           }
           if (!outcome.success) throw outcome.error;
-          setSnapshot({ key, data: outcome.data, loading: false, error: null });
+          setSnapshot({ key, data: outcome.data, loading: false, error: null, settled: true });
           break;
         }
       } catch (error) {
@@ -180,6 +206,8 @@ export function useGitResource<T>(
             ...previous,
             loading: false,
             error: presentRemoteError(error) ?? null,
+            cause: error,
+            settled: true,
           }));
       } finally {
         inFlight = false;
@@ -229,6 +257,7 @@ export function useGitResource<T>(
           data: readCached<T>(key) ?? null,
           loading: enabled,
           error: null,
+          settled: false,
         };
   return { ...current, refresh };
 }

@@ -65,4 +65,19 @@ describe("ModelSwitchRow", () => {
     expect(rows[3]).toContain("Now");
     expect(container.querySelectorAll("li time")).toHaveLength(3);
   });
+
+  it("sizes the history time column to a 12-hour clock instead of a fixed 44px cell", () => {
+    render({
+      steps: [
+        { harness: "claude", account: "Personal", model: "Opus 5.5", at: 1 },
+        { harness: "claude", account: "work", model: "Opus 5.5", at: 2 },
+        { harness: "claude", account: "work", model: "Sonnet 5.5", at: 3 },
+      ],
+    });
+    act(() => container.querySelector("summary")!.click());
+    const cell = container.querySelector("li time")!.parentElement!;
+    expect(cell.className).not.toMatch(/(^|\s)w-11(\s|$)/);
+    expect(cell.className).toContain("min-w-[8ch]");
+    expect(cell.className).toContain("text-end");
+  });
 });

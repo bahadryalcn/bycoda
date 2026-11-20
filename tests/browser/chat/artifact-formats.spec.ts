@@ -244,6 +244,9 @@ test("chat file changes and long content fit a narrow column", async ({ page }, 
   await page.setViewportSize({ width: 320, height: 800 });
   await trigger.focus();
   const preview = page.getByRole("dialog");
+  // Focus alone never opens the preview; ArrowDown opens it explicitly.
+  await expect(preview).toHaveCount(0);
+  await page.keyboard.press("ArrowDown");
   await expect(preview).toBeVisible();
   const previewBox = (await preview.boundingBox())!;
   expect(previewBox.x).toBeGreaterThanOrEqual(0);
@@ -253,7 +256,7 @@ test("chat file changes and long content fit a narrow column", async ({ page }, 
   await expect(preview).toHaveCount(0);
   await expect(trigger).toBeFocused();
   await page.getByRole("button", { name: "Show full long text", exact: true }).click();
-  await expect(preview.locator("pre")).toHaveText("unbroken".repeat(200));
+  await expect(preview.locator(".agent-markdown")).toHaveText("unbroken".repeat(200));
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   await page.keyboard.press("Escape");
   await trigger.focus();
@@ -280,7 +283,10 @@ test("a Markdown local image fits its preview frame without clipping or stretchi
         await page.setViewportSize({ width, height: 800 });
         const outer = (await frame.boundingBox())!;
         const inner = (await image.boundingBox())!;
-        expect(outer.height).toBeLessThanOrEqual(181);
+        // The frame follows the image's own ratio (1440 x 900) within the 40rem x 32rem bounds.
+        expect(outer.height).toBeLessThanOrEqual(32 * 16 + 1);
+        expect(outer.width).toBeLessThanOrEqual(40 * 16 + 1);
+        expect(Math.abs(outer.width / outer.height - 1440 / 900)).toBeLessThan(0.02);
         expect(inner.x).toBeGreaterThanOrEqual(outer.x);
         expect(inner.y).toBeGreaterThanOrEqual(outer.y);
         expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width + 1);
@@ -575,7 +581,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Show full long text", exact: true }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog).toBeVisible();
-      await expect(dialog.locator("pre")).toContainText("unbroken");
+      await expect(dialog.locator(".agent-markdown")).toContainText("unbroken");
       await page.screenshot({
         animations: "disabled",
         path: `temp/verification/feature-controls/user-text-${theme}-${width}.png`,

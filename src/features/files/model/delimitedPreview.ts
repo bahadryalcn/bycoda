@@ -1,5 +1,6 @@
 import {
   columnLabel,
+  DocumentProblemError,
   MAX_DOCUMENT_BYTES,
   MAX_SHEET_COLUMNS,
   MAX_SHEET_ROWS,
@@ -8,8 +9,7 @@ import type { Spreadsheet } from "./spreadsheet";
 
 /** Parse as text, never formulas, dates, HTML or executable spreadsheet content. */
 export function parseDelimitedPreview(bytes: Uint8Array, format: "csv" | "tsv"): Spreadsheet {
-  if (bytes.byteLength > MAX_DOCUMENT_BYTES)
-    throw new Error("File is too large to preview (maximum 25 MB).");
+  if (bytes.byteLength > MAX_DOCUMENT_BYTES) throw new DocumentProblemError({ reason: "tooLarge" });
   const encoding =
     bytes[0] === 0xff && bytes[1] === 0xfe
       ? "utf-16le"
@@ -17,8 +17,7 @@ export function parseDelimitedPreview(bytes: Uint8Array, format: "csv" | "tsv"):
         ? "utf-16be"
         : "utf-8";
   const text = new TextDecoder(encoding).decode(bytes).replace(/^\uFEFF/, "");
-  if (text.includes("\0"))
-    throw new Error("This file contains binary data and cannot be shown as a table.");
+  if (text.includes("\0")) throw new DocumentProblemError({ reason: "binaryData" });
   const delimiter = format === "tsv" ? "\t" : detectDelimiter(text);
   const cells: Record<string, string> = {};
   let row = 0,
@@ -77,8 +76,7 @@ export function parseDelimitedPreview(bytes: Uint8Array, format: "csv" | "tsv"):
     } else if (value.length < 16_001) value += char;
     else limited = true;
   }
-  if (quoted && !stopped)
-    throw new Error("A quoted table cell is not closed. Check the source file.");
+  if (quoted && !stopped) throw new DocumentProblemError({ reason: "unclosedQuote" });
   if (rowHasData && !stopped) {
     field();
     row++;

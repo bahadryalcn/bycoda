@@ -8,6 +8,9 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::Duration;
 use zeroize::Zeroizing;
 
+use super::owned_opencode_diagnostics::{
+    await_start, describe_exit, spawn_failure_detail, StartEvent, StderrTail,
+};
 use super::process_lifecycle::{OwnedChild, ProcessOwner, ProcessPin};
 use crate::session_store::canonical_store::{
     admit_session_effect, NativeSessionCapability, PageAdmission,
@@ -483,7 +486,7 @@ impl ServiceAccess {
 
 // Read fixed chunks and bound each line. Stdout can include the generated
 // password, so neither lines nor raw errors are emitted or retained.
-fn observe_stdout<R: Read>(reader: R, ready: mpsc::SyncSender<String>) {
+fn observe_stdout<R: Read>(reader: R, ready: mpsc::SyncSender<StartEvent>) {
     let mut input = BufReader::new(reader);
     let mut line = Vec::with_capacity(1024);
     let mut sent = false;
@@ -518,7 +521,9 @@ fn observe_stdout<R: Read>(reader: R, ready: mpsc::SyncSender<String>) {
                         && url.fragment().is_none()
                         && url.path() == "/"
                     {
-                        sent = ready.send(url.origin().ascii_serialization()).is_ok();
+                        sent = ready
+                            .send(StartEvent::Endpoint(url.origin().ascii_serialization()))
+                            .is_ok();
                     }
                 }
             }
@@ -551,8 +556,15 @@ fn start_service(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     super::prepare_child(&mut command_line, command);
-    let mut child =
-        OwnedChild::spawn(&mut command_line).map_err(|_| "OWNED_OPENCODE_SPAWN_FAILED")?;
+    let mut child = OwnedChild::spawn(&mut command_line).map_err(|error| {
+        // Kind and OS/job code only: spawn errors must not carry paths or secrets.
+        let message = format!(
+            "OWNED_OPENCODE_SPAWN_FAILED: {}",
+            spawn_failure_detail(&error)
+        );
+        log::warn!("{message}");
+        message
+    })?;
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
@@ -568,21 +580,37 @@ fn start_service(
         }
     };
     let process = Arc::new(ProcessOwner::new(child));
-    let (send, receive) = mpsc::sync_channel(1);
+    // Capacity covers the one endpoint and the one exit event, so neither sender
+    // ever blocks, even after this function has stopped listening.
+    let (send, receive) = mpsc::sync_channel(2);
+    let exited = send.clone();
     std::thread::spawn(move || observe_stdout(stdout, send));
-    std::thread::spawn(move || {
-        let _ = std::io::copy(&mut BufReader::new(stderr), &mut std::io::sink());
-    });
+    let stderr_tail = Arc::new(StderrTail::default());
+    let stderr_reader = stderr_tail.clone();
+    std::thread::spawn(move || stderr_reader.collect(stderr));
     process.activate();
     let waiter = process.clone();
     std::thread::spawn(move || {
-        let _ = waiter.wait();
+        // Wakes the start wait when the child dies early instead of leaving the
+        // caller to run out the full deadline.
+        let status = waiter.wait();
+        let _ = exited.send(StartEvent::Exited(describe_exit(&status)));
     });
-    let endpoint = match receive.recv_timeout(Duration::from_secs(30)) {
+    let endpoint = match await_start(
+        &receive,
+        Duration::from_secs(30),
+        &stderr_tail,
+        &[password.as_str()],
+    ) {
         Ok(endpoint) => endpoint,
-        Err(_) => {
-            hold_retiring(process)?;
-            return Err("OWNED_OPENCODE_START_UNCONFIRMED".into());
+        Err(message) => {
+            // The detail is already bounded and redacted; a failed retirement is
+            // reported first because it blocks the next start.
+            log::warn!("{message}");
+            return Err(match hold_retiring(process) {
+                Ok(()) => message,
+                Err(retirement) => format!("{retirement}; {message}"),
+            });
         }
     };
     let _pin = match process.pin() {

@@ -144,6 +144,15 @@ pub(super) fn sessions(root: &Path, owner: &str, cwd: &str) -> Result<Vec<String
         .map(|(_, lease)| lease.session_id)
         .collect())
 }
+/// Native leases as (session, turn, checkout). Startup recovery retires the
+/// leases of settled turns from this short list instead of walking every session.
+pub(super) fn native_turns(root: &Path) -> Result<Vec<(String, String, String)>, String> {
+    Ok(read(root)?
+        .into_iter()
+        .filter(|(_, lease)| lease.owner == "native")
+        .map(|(_, lease)| (lease.session_id, lease.turn_id, lease.cwd))
+        .collect())
+}
 pub(in crate::checkpoint) fn release(root: &Path, session: &str, turn: &str) -> Result<(), String> {
     match std::fs::remove_file(root.join(name(session, turn))) {
         Ok(()) => Ok(()),

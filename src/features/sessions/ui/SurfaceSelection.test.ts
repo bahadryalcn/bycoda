@@ -103,6 +103,27 @@ it("drops stale selections when content changes or the parent is hidden", async 
   });
   expect(toolbar()).toBeNull();
 });
+it("keeps the selection actions through scrolling and drops them when the selected text goes away", async () => {
+  await act(async () =>
+    root.render(
+      createElement(SurfaceSelection, null, createElement("p", null, "Selected paragraph")),
+    ),
+  );
+  await selectText();
+  expect(toolbar()).not.toBeNull();
+  await act(async () => {
+    window.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  expect(toolbar()).not.toBeNull();
+  await act(async () => {
+    container.querySelector("p")!.remove();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    window.dispatchEvent(new Event("scroll"));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  expect(toolbar()).toBeNull();
+});
 it("supports textarea keyboard selection and omits disabled note actions", async () => {
   settings.enabled = false;
   await act(async () =>

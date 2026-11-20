@@ -255,9 +255,11 @@ it("keeps routine notices at top-end, warnings and errors centered, and explicit
     });
     const center = document.querySelector<HTMLElement>('[data-toast-region="top-center"]')!;
     expect(DEFAULT_TOAST_PLACEMENT).toBe("top-end");
-    expect(center.className).toContain("inset-x-0");
     expect(center.className).toContain("items-center");
-    expect(center.className).toContain("top-0");
+    // The column reaches past the window edge by the shadow bleed on every side it is pinned to.
+    expect(center.style.top).toBe("-32px");
+    expect(center.style.insetInlineStart).toBe("-32px");
+    expect(center.style.insetInlineEnd).toBe("-32px");
     expect(center.textContent).toContain("Warning");
     expect(center.textContent).toContain("Error");
     expect(center.textContent).not.toContain("Default");
@@ -266,9 +268,28 @@ it("keeps routine notices at top-end, warnings and errors centered, and explicit
     expect(routine.textContent).toContain("Saved");
     expect(center.textContent).not.toContain("Corner");
     const corner = document.querySelector<HTMLElement>('[data-toast-region="bottom-end"]')!;
-    expect(corner.className).toContain("end-0");
-    expect(corner.className).not.toContain("inset-x-0");
+    expect(corner.style.bottom).toBe("-32px");
+    expect(corner.style.insetInlineEnd).toBe("-32px");
+    expect(corner.style.insetInlineStart).toBe("");
     expect(corner.textContent).toContain("Corner");
+  } finally {
+    unmount();
+  }
+});
+
+it("announces each toast once through its own role, never through a live corner", () => {
+  const unmount = mount();
+  try {
+    act(() => {
+      toast.show({ message: "Saved", tone: "success", durationMs: null });
+      toast.show({ message: "Could not save", tone: "danger", durationMs: null });
+    });
+    for (const region of document.querySelectorAll<HTMLElement>("[data-toast-region]"))
+      expect(region.hasAttribute("aria-live")).toBe(false);
+    const roles = [...document.querySelectorAll("[data-toast-tone]")].map((node) =>
+      node.getAttribute("role"),
+    );
+    expect(roles.toSorted()).toEqual(["alert", "status"]);
   } finally {
     unmount();
   }

@@ -180,9 +180,10 @@ function InboxAvatarImage({
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own the native avatar's blob URL while mounted; revoke it on source change or unmount.
   useEffect(() => {
     if (!avatarUrl || !authenticated) return;
+    const controller = new AbortController();
     let cancelled = false;
     let objectUrl: string | undefined;
-    void fetchInboxMedia(avatarUrl)
+    void fetchInboxMedia(avatarUrl, controller.signal)
       .then((bytes) => {
         const type = sniffInboxMedia(bytes);
         if (type?.kind !== "image") throw new Error("Unsupported avatar image");
@@ -195,6 +196,7 @@ function InboxAvatarImage({
       });
     return () => {
       cancelled = true;
+      controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [avatarUrl, authenticated]);

@@ -2,10 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { build } from "esbuild";
 import type { ManagedWorkspace } from "../workspaces/workspace-contracts";
-import { GitTurnHistory, gitText, rewindRef, turnGit, turnRef } from "./turn-git-history";
+import {
+  GitTurnHistory,
+  gitText,
+  rewindRef,
+  turnGit,
+  turnGitDigest,
+  turnRef,
+} from "./turn-git-history";
 
 describe("managed turn Git history", () => {
   let root: string, repo: string, workspace: ManagedWorkspace, history: GitTurnHistory;
@@ -55,6 +63,19 @@ describe("managed turn Git history", () => {
       runId,
       conversationRevision: 1,
     });
+
+  it("digests streamed Git output exactly as buffered output and keeps failure semantics", async () => {
+    await write("streamed.txt", "streamed\n");
+    await turnGit(repo, ["add", "streamed.txt"]);
+    const args = ["diff", "--cached", "--raw", "--ita-visible-in-index"];
+    const buffered = await turnGit(repo, args);
+    expect(await turnGitDigest(repo, args)).toBe(
+      createHash("sha256").update(buffered).digest("hex"),
+    );
+    await expect(turnGitDigest(repo, ["no-such-subcommand"])).rejects.toThrow(
+      "Git no-such-subcommand failed",
+    );
+  });
 
   it("captures opaque compound Host turn IDs without aliasing legacy or encoded-looking IDs and restores/undoes them", async () => {
     const raw = "goal-final:cb654c50-a6df-43d4-a8e9-460395d43cd7:send";

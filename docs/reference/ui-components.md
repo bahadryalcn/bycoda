@@ -204,6 +204,8 @@ Parts: DescriptionItem, TreeRowIcon, TreeRowLabel, TreeRowToggle, TreeRowTrailin
 
 | Component | Use for | Not for | Replaces |
 | --- | --- | --- | --- |
+| [BrandMark](../../src/shared/ui/BrandMark.tsx) | Show the bycoda mark or wordmark with artwork for the active color scheme. | Use GithubMark for GitHub identity. |  |
+| [GithubMark](../../src/shared/ui/GithubMark.tsx) | Show the GitHub brand in a labeled control or alongside identifying text. | Use BrandMark for bycoda identity. |  |
 | [ImageAnnotationCanvas](../../src/shared/ui/ImageAnnotationCanvas.tsx) | Marking up a captured frame or screenshot before sending it. | Viewing an image: ImageLightbox. Comparing two images: ImageLightbox compare mode. |  |
 | [ImageAnnotationToolbar](../../src/shared/ui/ImageAnnotationCanvas.tsx) | The tool, undo and clear controls beside an ImageAnnotationCanvas. | Other media controls: MediaToolbar. |  |
 | [ImageLightbox](../../src/shared/ui/ImageLightbox.tsx) | Enlarging an attachment or generated image, with zoom and pan, or comparing two local images. | Drawing on an image: ImageAnnotationCanvas. Non-image files or generic dialogs: Modal. |  |

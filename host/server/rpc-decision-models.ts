@@ -75,7 +75,7 @@ export async function handleDecisionModelsRpc(
       break;
 
     case "decisionModels.discovery.results":
-      request.result = service.discoveryResults();
+      request.result = await service.discoveryResults();
       break;
 
     case "decisionModels.discovery.settings.get":
@@ -121,6 +121,24 @@ export async function handleDecisionModelsRpc(
     case "decisionModels.local.install":
       request.result = await service.installLocal(
         DecisionLocalInstallParamsSchema.parse(request.params),
+      );
+      break;
+
+    case "decisionModels.local.installStart":
+      request.result = await service.startInstallLocal(
+        DecisionLocalInstallParamsSchema.parse(request.params),
+      );
+      break;
+
+    case "decisionModels.local.installProgress":
+      request.result = service.installState(
+        DecisionModelIdParamsSchema.parse(request.params).modelId,
+      );
+      break;
+
+    case "decisionModels.local.cancelInstall":
+      request.result = service.cancelInstall(
+        DecisionModelIdParamsSchema.parse(request.params).modelId,
       );
       break;
 

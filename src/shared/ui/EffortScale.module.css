@@ -79,3 +79,47 @@ button.bar[aria-checked="true"][data-button-selected] {
     background: var(--ui-surface-hover);
   }
 }
+
+/* Forced colors replace the gradient/track fills and the selected tile background, so
+   every bar would disappear. Redraw them with system colours: an outlined bar is an
+   unfilled level, a Highlight bar a filled one, an outlined Highlight bar an inherited
+   level, and the chosen tile (including the Automatic icon tile) gets a Highlight frame;
+   other tiles reserve the same frame width in Canvas, so nothing shifts. Disabled bars
+   and the chosen frame use GrayText. */
+@media (forced-colors: active) {
+  button.bar {
+    border: var(--ui-focus-width) solid Canvas;
+  }
+  button.bar[aria-checked="true"] {
+    border-color: Highlight;
+  }
+  .fill {
+    forced-color-adjust: none;
+    box-sizing: border-box;
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+  .bar[data-filled] > .fill,
+  .bar[data-filled][data-ultra] > .fill {
+    border-color: Highlight;
+    background: Highlight;
+  }
+  .bar[data-filled][data-inherited] > .fill {
+    opacity: 1;
+    background: Canvas;
+  }
+  .scale[data-disabled] .bar {
+    opacity: 1;
+  }
+  .scale[data-disabled] .bar[aria-checked="true"] {
+    border-color: GrayText;
+  }
+  .scale[data-disabled] .fill,
+  .scale[data-disabled] .bar[data-filled] > .fill {
+    border-color: GrayText;
+    background: Canvas;
+  }
+  .scale[data-disabled] .bar[data-filled] > .fill {
+    background: GrayText;
+  }
+}

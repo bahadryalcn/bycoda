@@ -65,6 +65,46 @@ it("uses native focus when DOM visibility is stale and handles offline/online ev
   expect(releaseResize).toHaveBeenCalledOnce();
 });
 
+it("restores focus on show when a resize burst supersedes the show read", async () => {
+  let resize!: () => void;
+  native.onFocusChanged.mockResolvedValue(() => undefined);
+  native.onResized.mockImplementation(async (listener) => {
+    resize = listener;
+    return () => undefined;
+  });
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  stop = installQueryLifecycle();
+  await settle();
+  visibility.mockReturnValue("hidden");
+  document.dispatchEvent(new Event("visibilitychange"));
+  expect(focusManager.isFocused()).toBe(false);
+  visibility.mockReturnValue("visible");
+  document.dispatchEvent(new Event("visibilitychange"));
+  // A newer read starts before the show read settles and sees the unchanged state.
+  resize();
+  await settle();
+  expect(focusManager.isFocused()).toBe(true);
+});
+
+it("falls back to DOM focus on show when every native read fails", async () => {
+  native.onFocusChanged.mockResolvedValue(() => undefined);
+  native.onResized.mockResolvedValue(() => undefined);
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  stop = installQueryLifecycle();
+  await settle();
+  visibility.mockReturnValue("hidden");
+  document.dispatchEvent(new Event("visibilitychange"));
+  expect(focusManager.isFocused()).toBe(false);
+  for (const query of [native.isVisible, native.isMinimized, native.isFocused])
+    query.mockRejectedValueOnce(new Error("unsupported"));
+  visibility.mockReturnValue("visible");
+  document.dispatchEvent(new Event("visibilitychange"));
+  await settle();
+  expect(focusManager.isFocused()).toBe(true);
+});
+
 it("releases subscriptions that finish registering after the provider is removed", async () => {
   let complete!: (release: () => void) => void;
   const release = vi.fn();

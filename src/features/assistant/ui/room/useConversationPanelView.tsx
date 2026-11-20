@@ -2,8 +2,9 @@ import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t, useLocale } from "../../../../shared/i18n";
+import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { visibleAssistantMessages } from "../../model/assistantPrivacy";
-import { conversationMessageItem } from "./ConversationMessage";
+import { createMessageProjection } from "./conversationMessageProjection";
 import type { ConversationPanelProps, ConversationPanelState } from "./useConversationPanelState";
 import type { ConversationPanelMessagesState } from "./useConversationPanelMessages";
 import type { ConversationPanelSendState } from "./useConversationPanelSend";
@@ -69,7 +70,7 @@ export function useConversationPanelView(
         "Move all messages in this conversation to Recently deleted for seven days. The saved summary and your unsent draft stay available.",
       ),
       confirmLabel: t("Clear all messages"),
-      pendingLabel: t("Clearing..."),
+      pendingLabel: t("Clearing…"),
       onConfirm: async () => {
         if (!threadVisible(target.id)) return;
         if (clearingRef.current) return;
@@ -84,7 +85,9 @@ export function useConversationPanelView(
             expectedVersion: target.version,
           });
           if (result.thread?.id !== target.id)
-            throw new Error(t("The conversation clear was not confirmed. Check before retrying."));
+            throw new Error(
+              t("The conversation clear could not be confirmed. Check before retrying."),
+            );
           mergeThread(result.thread, target.id, environmentId);
           setMessages((current) => ({ ...current, [target.id]: [] }));
           setHasMore((current) => ({ ...current, [target.id]: false }));
@@ -177,32 +180,28 @@ export function useConversationPanelView(
         dropSearchResults((item) => item.id !== message.id);
       },
     });
-  const messageElements = useMemo(
-    () =>
-      visible.map((message) =>
-        conversationMessageItem({
-          message,
-          authorName: snapshot.profile.name,
-          jobs: snapshot.jobs,
-          clearing,
-          onOpenSession,
-          onJob,
-          onDelete: deleteMessage,
-        }),
-      ),
-    [
-      visible,
-      locale,
-      clearing,
-      snapshot.profile.name,
-      snapshot.jobs,
-      onOpenSession,
-      onJob,
-      privacy.key,
-      environmentId,
-      assistantRequest,
-    ],
+  // Handlers keep one identity so a changed closure never rebuilds every message item.
+  const openSession = useStableCallback(onOpenSession);
+  const openJob = useStableCallback(onJob);
+  const removeMessage = useStableCallback(deleteMessage);
+  const jobsById = useMemo(
+    () => new Map(snapshot.jobs.map((job) => [job.id, { id: job.id, title: job.title }])),
+    [snapshot.jobs],
   );
+  const [project] = useState(createMessageProjection);
+  const messageElements = project(visible, jobsById, {
+    authorName: snapshot.profile.name,
+    locale,
+    clearing,
+    onOpenSession: openSession,
+    onJob: openJob,
+    onDelete: removeMessage,
+  });
+  // Keeps the reader at the end while measured rows replace estimates in the windowed list.
+  const keepEnd = () => {
+    if (!query && followMessages.current && history.current)
+      history.current.scrollTop = history.current.scrollHeight;
+  };
   const threadLabel = currentThread?.projectId
     ? (projects.find((project) => (project.id ?? project.path) === currentThread.projectId)?.name ??
       currentThread.projectId)
@@ -225,6 +224,7 @@ export function useConversationPanelView(
     lastMessageId,
     time,
     messageElements,
+    keepEnd,
     threadLabel,
   };
 }

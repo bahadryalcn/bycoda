@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { boundedSet } from "../../../shared/lib/store";
+import { boundedGet, boundedSet } from "../../../shared/lib/store";
 import { recordInboxSelfActivity } from "./inboxSelfActivity";
 import { normalizeProjectPath } from "../../projects/model/recents";
 
@@ -76,15 +76,8 @@ const threadInflight = new Map<string, Promise<AzureDevOpsWorkItemThread>>();
 const diffByKey = new Map<string, AzureDevOpsMrDiff>();
 const diffInflight = new Map<string, Promise<AzureDevOpsMrDiff>>();
 
-/** Detail and diff payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
+/** Detail, thread and diff payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
 const DETAILS_CACHE_LIMIT = 128;
-function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
-  if (!cache.has(key)) return null;
-  const value = cache.get(key)!;
-  cache.delete(key);
-  cache.set(key, value);
-  return value;
-}
 
 /** Patches can be megabytes, so the diff cache is also bounded by their total size. */
 const DIFF_CACHE_MAX_CHARS = 8_000_000;
@@ -217,7 +210,7 @@ export function peekAzureDevOpsWorkItemThread(
   kind: AzureDevOpsKind,
   number: number,
 ): AzureDevOpsWorkItemThread | null {
-  return threadByKey.get(itemKey(repo, kind, number)) ?? null;
+  return boundedGet(threadByKey, itemKey(repo, kind, number));
 }
 
 export async function azureDevOpsWorkItemThread(
@@ -241,7 +234,8 @@ export async function azureDevOpsWorkItemThread(
     .then((thread) => {
       // A forced refresh or cache clear supersedes this request: skip the
       // write so a stale completion cannot repopulate the cache.
-      if (threadInflight.get(key) === pending) threadByKey.set(key, thread);
+      if (threadInflight.get(key) === pending)
+        boundedSet(threadByKey, key, thread, DETAILS_CACHE_LIMIT);
       return thread;
     })
     .finally(() => {

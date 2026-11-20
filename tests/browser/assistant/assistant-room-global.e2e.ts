@@ -27,8 +27,10 @@ for (const theme of ["light", "dark"])
       await draft.fill("Global unsent management draft");
       await capture(page, `room-global-${theme}-${width}`);
       await room.getByText("Recorded actions", { exact: false }).click();
-      await expect(room.getByText("List servers", { exact: true })).toBeVisible();
-      await room.getByText("List servers", { exact: true }).hover();
+      // Unknown action ids show the generic label; the raw id stays in the tooltip.
+      const recorded = room.getByText("Recorded action", { exact: true });
+      await expect(recorded).toHaveCount(2);
+      await recorded.first().hover();
       await expect(page.getByRole("tooltip")).toContainText("conversation.servers.list");
       await page.mouse.move(0, 0);
       await expect(room.getByText("Outcome unknown", { exact: false })).toBeVisible();

@@ -43,6 +43,7 @@ import {
 import { callConversationAppRead } from "./conversation-app-read";
 import { APP_UI_NAVIGATION_VIEWS, APP_UI_SETTINGS } from "../../src/app/model/appUiControl";
 import { createInterface } from "node:readline";
+import { McpStdioCallTracker } from "../mcp/stdio-call-tracker";
 import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
 import { REMOTE_PROVIDERS } from "../../src/features/connections/model/protocol";
 import {
@@ -1092,6 +1093,7 @@ export async function callConversationTool(
   input: Record<string, unknown>,
   env: NodeJS.ProcessEnv = process.env,
   fetcher: typeof fetch = fetch,
+  cancel?: AbortSignal,
 ): Promise<unknown> {
   validateSessionConversationTool(action, input);
   const token = env.BYCODA_CONVERSATION_TOKEN;
@@ -1146,7 +1148,9 @@ export async function callConversationTool(
         params: { action, input },
       }),
       redirect: "error",
-      signal: AbortSignal.timeout(250000),
+      signal: cancel
+        ? AbortSignal.any([AbortSignal.timeout(250000), cancel])
+        : AbortSignal.timeout(250000),
     });
     if (!response.body) throw new Error("Empty tool response.");
     const reader = response.body.getReader();
@@ -1185,6 +1189,9 @@ export async function runConversationMcp(
   output: NodeJS.WritableStream = process.stdout,
   call = callConversationTool,
 ) {
+  // Tool calls run beside the read loop so ping, tools/list and parallel calls never wait
+  // behind one slow call (the Host deadline is 250 s).
+  const calls = new McpStdioCallTracker();
   for await (const line of createInterface({ input, crlfDelay: Infinity })) {
     let request: any;
     try {
@@ -1201,6 +1208,7 @@ export async function runConversationMcp(
       );
       continue;
     }
+    if (request.method === "notifications/cancelled") calls.cancel(request.params?.requestId);
     if (request.id === undefined) continue;
     const respond = (result: unknown) =>
       output.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }) + "\n");
@@ -1214,57 +1222,71 @@ export async function runConversationMcp(
     else if (request.method === "ping") respond({});
     else if (request.method === "tools/list") respond({ tools: sessionConversationToolCatalog() });
     else if (request.method === "tools/call") {
-      try {
-        const tool = sessionConversationToolCatalog().find(
-          (tool) => tool.name === request.params?.name,
-        );
-        if (!tool) throw new Error("Unsupported conversation tool.");
-        const args = request.params.arguments ?? {};
-        validateConversationTool(tool.action, args);
-        const result: any = await call(tool.action, args);
-        const annotationImage = result?.selection?.screenshot;
-        const previewFrame = result?.evidence?.frame;
-        const desktopImage = tool.action === "desktop.screenshot" ? result?.screenshot : undefined;
-        const frame = annotationImage ?? previewFrame ?? desktopImage ?? result?.frame ?? result;
-        const data = frame?.base64 ?? frame?.data;
-        const mime = frame?.mime ?? frame?.mimeType;
-        const { base64: _base64, data: _data, ...imageMetadata } = frame ?? {};
-        const metadata = annotationImage
-          ? { ...result, selection: { ...result.selection, screenshot: imageMetadata } }
-          : previewFrame
-            ? { ...result, evidence: { ...result.evidence, frame: imageMetadata } }
-            : desktopImage
-              ? { ...result, screenshot: imageMetadata }
-              : result?.frame
-                ? { ...result, frame: imageMetadata }
-                : undefined;
-        respond({
-          content:
-            data && ["image/png", "image/jpeg"].includes(mime)
-              ? [
-                  ...(metadata
-                    ? [
-                        {
-                          type: "text",
-                          text: JSON.stringify(metadata),
-                        },
-                      ]
-                    : []),
-                  { type: "image", data, mimeType: mime },
-                ]
-              : [{ type: "text", text: JSON.stringify(result) }],
-        });
-      } catch (error) {
+      if (calls.full)
         respond({
           isError: true,
-          content: [
-            {
-              type: "text",
-              text: error instanceof Error ? error.message : "Conversation tool failed.",
-            },
-          ],
+          content: [{ type: "text", text: "Too many Conversation tool calls are in flight." }],
         });
-      }
+      else
+        calls.start(request.id, async (signal) => {
+          // A cancelled call gets no response (MCP cancellation), even if the Host finished it.
+          const reply = (result: unknown) => {
+            if (!signal.aborted) respond(result);
+          };
+          try {
+            const tool = sessionConversationToolCatalog().find(
+              (tool) => tool.name === request.params?.name,
+            );
+            if (!tool) throw new Error("Unsupported conversation tool.");
+            const args = request.params.arguments ?? {};
+            validateConversationTool(tool.action, args);
+            const result: any = await call(tool.action, args, undefined, undefined, signal);
+            const annotationImage = result?.selection?.screenshot;
+            const previewFrame = result?.evidence?.frame;
+            const desktopImage =
+              tool.action === "desktop.screenshot" ? result?.screenshot : undefined;
+            const frame =
+              annotationImage ?? previewFrame ?? desktopImage ?? result?.frame ?? result;
+            const data = frame?.base64 ?? frame?.data;
+            const mime = frame?.mime ?? frame?.mimeType;
+            const { base64: _base64, data: _data, ...imageMetadata } = frame ?? {};
+            const metadata = annotationImage
+              ? { ...result, selection: { ...result.selection, screenshot: imageMetadata } }
+              : previewFrame
+                ? { ...result, evidence: { ...result.evidence, frame: imageMetadata } }
+                : desktopImage
+                  ? { ...result, screenshot: imageMetadata }
+                  : result?.frame
+                    ? { ...result, frame: imageMetadata }
+                    : undefined;
+            reply({
+              content:
+                data && ["image/png", "image/jpeg"].includes(mime)
+                  ? [
+                      ...(metadata
+                        ? [
+                            {
+                              type: "text",
+                              text: JSON.stringify(metadata),
+                            },
+                          ]
+                        : []),
+                      { type: "image", data, mimeType: mime },
+                    ]
+                  : [{ type: "text", text: JSON.stringify(result) }],
+            });
+          } catch (error) {
+            reply({
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: error instanceof Error ? error.message : "Conversation tool failed.",
+                },
+              ],
+            });
+          }
+        });
     } else
       output.write(
         JSON.stringify({
@@ -1274,6 +1296,7 @@ export async function runConversationMcp(
         }) + "\n",
       );
   }
+  await calls.drain();
 }
 
 /** ACP SDKs may filter ambient env. Insert grants only after the process boundary. */

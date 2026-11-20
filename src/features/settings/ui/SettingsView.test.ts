@@ -7,6 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as clipboard from "../../../platform/tauri/clipboard";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { SettingsView } from "./SettingsView";
+import { settingDomId } from "../../../shared/ui/settings/settingsContexts";
 import { DEFAULT_AGENT_DEFAULTS } from "../../tasks/public/agentDefaults";
 import { acceptAgentDefaults } from "../model/agentDefaultsStore";
 import { loadKeepAwakeEnabled, loadKeepAwakeHoldAfter } from "../model/settings";
@@ -179,6 +180,12 @@ async function render(
       ),
     ),
   );
+}
+
+/** The providers page mounts one provider's panels; pick it from the rail first (#1021). */
+async function selectProvider(title: string) {
+  const item = container.querySelector<HTMLButtonElement>(`[aria-label^="${title},"]`);
+  if (item) await act(async () => item.click());
 }
 
 /** Selects an Appearance tab; hidden tabs keep their DOM but defer updates. */
@@ -782,6 +789,21 @@ describe("settings pages", () => {
     expect(onToggleMaximize).toHaveBeenCalledOnce();
   });
 
+  // Issue #1248: Escape that cancels an IME candidate must not close Settings.
+  it("closes on a plain Escape but not on an IME-composing one", async () => {
+    const onClose = vi.fn();
+    await render("general", { onClose });
+    const press = (init: KeyboardEventInit) =>
+      act(async () => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", ...init }));
+      });
+    await press({ isComposing: true });
+    await press({ keyCode: 229 });
+    expect(onClose).not.toHaveBeenCalled();
+    await press({});
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("restyles instead of remounting when the overlay is maximized", async () => {
     await render("general", { embedded: true, onToggleMaximize: vi.fn() });
     const search = container.querySelector<HTMLElement>(".settings-page-title")!;
@@ -1250,6 +1272,8 @@ describe("settings pages", () => {
       resetCredits: null,
       updatedAt: Date.now(),
       error: "Claude not signed in",
+      // Signed-out detection reads the structured reason, never the error text (#1217).
+      reason: "signedOut",
       status: "unavailable",
     });
     await render("providers");
@@ -1335,6 +1359,7 @@ describe("settings pages", () => {
       return undefined;
     });
     await render("providers");
+    await selectProvider("Codex");
 
     const details = container.querySelector<HTMLButtonElement>(
       '[aria-label="Show Codex CLI details"]',
@@ -1351,6 +1376,7 @@ describe("settings pages", () => {
       const id = `${provider.toLowerCase()}-binary-path`;
       if (!document.querySelector(`#${id}`)) {
         if (!document.querySelector(`[aria-label="Edit ${provider} CLI path"]`)) {
+          await selectProvider(provider);
           await act(async () =>
             container
               .querySelector<HTMLButtonElement>(`[aria-label^="Show ${provider} CLI details"]`)!
@@ -1394,7 +1420,7 @@ describe("settings pages", () => {
     await act(async () => openCodeDetails.click());
 
     await save("Codex", "/bad/codex");
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
       "Codex failed to start",
     );
     expect(container.textContent).not.toContain("/opt/codex/bin/codex");
@@ -1410,7 +1436,7 @@ describe("settings pages", () => {
 
     failAutoCodex = true;
     await save("Codex", "");
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
       "Codex auto-detection failed",
     );
     expect(JSON.parse(localStorage.getItem("bycoda.providerBinaryPaths.v1") ?? "{}").codex).toBe(
@@ -1435,6 +1461,7 @@ describe("settings pages", () => {
       return undefined;
     });
     await render("providers");
+    await selectProvider("Codex");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Show Codex CLI details"]')!.click(),
     );
@@ -1525,6 +1552,37 @@ describe("settings pages", () => {
     expect(section.querySelector("[data-highlighted]")).toBeNull();
     expect(project.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(project.closest("fieldset"));
+  });
+
+  it("stops watching the panel for a reveal target that never renders", async () => {
+    vi.useFakeTimers();
+    const lookup = vi.spyOn(document, "getElementById");
+    await render("general", { anchor: "never-rendered-setting" });
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    lookup.mockClear();
+
+    const title = container.querySelector<HTMLElement>(".settings-page-title")!;
+    await act(async () => title.parentElement!.append(document.createElement("span")));
+
+    expect(lookup).not.toHaveBeenCalledWith(settingDomId("never-rendered-setting"));
+  });
+
+  it("still reveals and focuses a setting that renders shortly after the page opens", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
+      {},
+    ] as unknown as DOMRectList);
+    await render("general", { anchor: "late-rendered-setting" });
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+
+    const late = document.createElement("button");
+    late.id = settingDomId("late-rendered-setting");
+    await act(async () => {
+      container.querySelector<HTMLElement>(".settings-page-title")!.parentElement!.append(late);
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    expect(document.activeElement).toBe(late);
   });
 
   it("gives every section a rail group", () => {
@@ -1677,6 +1735,26 @@ describe("settings pages", () => {
     if (section === "skills") {
       vi.mocked(invoke).mockResolvedValue([]);
     }
+    if (section === "providers") {
+      vi.mocked(invoke).mockImplementation(async (command, args) => {
+        if (command === "local_host_connect") return { id: "settings-fixture" };
+        if (
+          command === "remote_request" &&
+          args &&
+          "method" in args &&
+          args.method === "ollama.status"
+        )
+          return {
+            port: 11434,
+            portCustom: false,
+            runtime: "missing",
+            models: [],
+            pull: null,
+            opencode: { config: "ready", models: [] },
+          };
+        return undefined;
+      });
+    }
     await render(section);
     if (section === "skills") {
       await act(async () =>
@@ -1695,7 +1773,7 @@ describe("settings pages", () => {
       if (!renderedSettingIds().includes(id)) await render(section, { anchor: id });
       if (
         section === "providers" &&
-        ["models-chat", "default-provider", "agent-clis"].includes(id)
+        ["models-chat", "default-provider", "agent-clis", "ollama-port"].includes(id)
       ) {
         await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
       }
@@ -1709,6 +1787,8 @@ describe("settings pages", () => {
       false,
     );
     for (const harness of HARNESSES) {
+      // One provider's panels mount at a time (#1021); each trigger appears once selected.
+      await selectProvider(HARNESS_TITLE[harness]);
       expect(
         container.querySelector(`[aria-label="Show ${HARNESS_TITLE[harness]} CLI details"]`),
       ).not.toBeNull();
@@ -1795,6 +1875,7 @@ describe("settings pages", () => {
 
   it("returns focus to the CLI trigger when the details popover closes", async () => {
     await render("providers");
+    await selectProvider("Codex");
     const trigger = container.querySelector<HTMLButtonElement>(
       '[aria-label="Show Codex CLI details"]',
     )!;
@@ -1817,6 +1898,7 @@ describe("settings pages", () => {
       return undefined;
     });
     await render("providers");
+    await selectProvider("Codex");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Show Codex CLI details"]')!.click(),
     );

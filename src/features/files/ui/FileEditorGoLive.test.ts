@@ -146,7 +146,7 @@ describe("HTML Go Live", () => {
       token: "preview-token",
     });
     const folder = [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')].find(
-      (item) => /Reveal in|Open Containing Folder/.test(item.getAttribute("aria-label") ?? ""),
+      (item) => /Reveal in|Open containing folder/.test(item.getAttribute("aria-label") ?? ""),
     );
     expect(folder).toBeDefined();
     await act(async () => folder!.click());
@@ -258,7 +258,7 @@ describe("HTML Go Live", () => {
       const labels = [...container.querySelectorAll("button")].map((action) =>
         action.getAttribute("aria-label"),
       );
-      expect(labels).not.toContain("Open Containing Folder");
+      expect(labels).not.toContain("Open containing folder");
       expect(labels).not.toContain("Reveal in File Explorer");
       expect(labels).not.toContain("Reveal in Finder");
       expect(

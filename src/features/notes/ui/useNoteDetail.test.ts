@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { setLanguagePreference } from "../../../shared/i18n";
 import { useNoteDetail } from "../useNoteDetail";
 import * as noteOwners from "../notesInputOwners";
 import {
@@ -43,6 +44,18 @@ afterEach(async () => {
   await act(async () => root.unmount());
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("localizes the stale-note error after the fresh read is still older", async () => {
+  await setLanguagePreference("tr");
+  try {
+    summary = { ...summary, updatedAt: 2 };
+    invoke.mockResolvedValue(original);
+    await render();
+    expect(result.error).toBe("Bu not bilgisayarda değişti. Kaydetmeden önce yenileyin.");
+  } finally {
+    await setLanguagePreference("en");
+  }
 });
 
 it("refetches an older deduplicated read when the selected summary advances", async () => {

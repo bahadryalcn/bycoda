@@ -24,8 +24,12 @@ import {
 import { WorkspaceDirectoryRemoval } from "./WorkspaceDirectoryRemoval";
 import { WorkspaceReview } from "./WorkspaceReview";
 
-/** Delay before reloading a workspace read that failed only because the Host was busy. */
+/** First delay before reloading a workspace read that failed only because the Host was busy. */
 export const TEMPORARY_RELOAD_MS = 3_000;
+/** Each further temporary failure doubles the delay, up to this cap. */
+export const TEMPORARY_RELOAD_MAX_MS = 30_000;
+/** Temporary failures retried in a row before the error is shown with a manual retry. */
+export const TEMPORARY_RELOAD_ATTEMPTS = 5;
 
 /** Kept local until S1 adds the optional managed identity fields to Session. */
 type ManagedIdentity = { workspaceId?: string; workspaceRevision?: number };
@@ -57,22 +61,52 @@ export function SessionWorkspaceActions({
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const lock = useRef(false);
   const menuTrigger = useRef<HTMLButtonElement>(null);
+  // The authority (location + session) the shown workspace was loaded for, and how many
+  // temporary failures in a row it has had; a reload keeps the workspace only for the same one.
+  const authority = useRef<string | null>(null);
+  const shown = useRef<ManagedWorkspace | null>(null);
+  const attempts = useRef(0);
   const managedCandidate = enabled && !!cwd && (!!workspaceId || !!session?.worktreeCwd);
+  function show(next: ManagedWorkspace | null) {
+    shown.current = next;
+    setWorkspace(next);
+  }
+  function reload() {
+    attempts.current = 0;
+    setRetry((value) => value + 1);
+  }
   useEffect(
+    // Reload when the Host link comes back for this machine.
     () =>
       subscribeRemoteRecovered((recovered) => {
         if (managedCandidate && environmentId && (!recovered || recovered === environmentId))
-          setRetry((value) => value + 1);
+          reload();
       }),
     [environmentId, managedCandidate],
   );
   useEffect(() => {
-    setWorkspace(null);
+    // Load the managed workspace for this session; re-runs on authority change or reload.
+    const key = `${cwd}\n${sessionId}`;
+    const sameAuthority = authority.current === key;
+    const keep =
+      managedCandidate &&
+      sameAuthority &&
+      !!shown.current &&
+      (!workspaceId || shown.current.id === workspaceId);
+    if (!sameAuthority) {
+      authority.current = key;
+      attempts.current = 0;
+    }
+    if (!keep) {
+      show(null);
+      setCapabilities([]);
+    }
     setError(null);
     if (!managedCandidate) return;
     let live = true;
     let again: ReturnType<typeof setTimeout> | undefined;
-    setPending("load");
+    // A retained workspace keeps its actions while it reloads; only a first load shows a spinner.
+    if (!keep) setPending("load");
     void (async () => {
       const advertised = await getWorkspaceCapabilities({ cwd });
       if (live) setCapabilities(advertised);
@@ -88,7 +122,8 @@ export function SessionWorkspaceActions({
           ).find((entry) => entry.owner.kind === "session" && entry.owner.id === sessionId) ??
           null);
       if (live) {
-        setWorkspace(result);
+        attempts.current = 0;
+        show(result);
         // Reconcile retained sessions after reload as well as after a button action.
         // Otherwise a removed directory could still look writable to the composer.
         if (result) changed(result);
@@ -98,13 +133,23 @@ export function SessionWorkspaceActions({
         if (!live) return;
         const message = presentRemoteError(reason);
         if (message) setError(message);
-        // A busy Host or a read cancelled before sending is safe to ask again; a lost
-        // link is reloaded by the recovery subscription above instead.
-        else if (classifyRemoteError(reason).kind === "temporary")
-          again = setTimeout(() => setRetry((value) => value + 1), TEMPORARY_RELOAD_MS);
+        // A busy Host or a read cancelled before sending is safe to ask again, with a
+        // growing delay and a bounded count; a lost link is reloaded by the recovery
+        // subscription above instead.
+        else if (classifyRemoteError(reason).kind === "temporary") {
+          if (attempts.current < TEMPORARY_RELOAD_ATTEMPTS) {
+            const delay = Math.min(
+              TEMPORARY_RELOAD_MS * 2 ** attempts.current,
+              TEMPORARY_RELOAD_MAX_MS,
+            );
+            attempts.current += 1;
+            again = setTimeout(() => setRetry((value) => value + 1), delay);
+          } else setError(presentRemoteError(reason, { explicit: true }));
+        }
       })
       .finally(() => {
-        if (live) setPending(null);
+        // Only the load's own spinner; a lifecycle action in flight keeps its state.
+        if (live) setPending((current) => (current === "load" ? null : current));
       });
     return () => {
       live = false;
@@ -113,7 +158,7 @@ export function SessionWorkspaceActions({
   }, [cwd, sessionId, workspaceId, managedCandidate, retry]);
 
   function changed(next: ManagedWorkspace) {
-    setWorkspace(next);
+    show(next);
     setSessions((sessions) =>
       sessions.map((current) => {
         if (current.id !== sessionId) return current;
@@ -129,6 +174,16 @@ export function SessionWorkspaceActions({
           branch: next.branchRef.replace(/^refs\/heads\//, ""),
           worktreeRemoved: removed,
         };
+        // A reload that found nothing new must not rewrite or re-save the session.
+        const before = current as typeof current & ManagedIdentity;
+        if (
+          before.workspaceId === updated.workspaceId &&
+          before.workspaceRevision === updated.workspaceRevision &&
+          current.worktreeCwd === updated.worktreeCwd &&
+          current.branch === updated.branch &&
+          !!current.worktreeRemoved === updated.worktreeRemoved
+        )
+          return current;
         if (shouldPersistSession(updated))
           void upsertSession(updated).catch((reason: unknown) => {
             const message = presentRemoteError(reason);
@@ -273,7 +328,7 @@ export function SessionWorkspaceActions({
       {error && !connectionIssueHandled && (
         <InlineError
           retry={{
-            onRetry: () => setRetry((value) => value + 1),
+            onRetry: reload,
             label: t("Retry workspace"),
             disabled: !!pending,
           }}

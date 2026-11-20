@@ -4,7 +4,6 @@ import { Text } from "../../../shared/ui/Text";
 import { NoteSaveStatus } from "./NoteSaveStatus";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { SessionNoteDocument, type SessionNoteSelection } from "./SessionNoteDocument";
 import { NoteTagsEditor, sameTags } from "./NoteTagsEditor";
 import { NoteWordCount } from "./NoteWordCount";
@@ -19,7 +18,7 @@ import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { Button } from "../../../shared/ui/Button";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Popover } from "../../../shared/ui/Popover";
-import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { requestOpenNoteLibrary } from "../noteNavigation";
 import "./notes.css";
@@ -27,7 +26,17 @@ import "./sessionNotes.css";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
-import { File, Link, Plus, Save, Trash2, X } from "../../../shared/ui/icons";
+import {
+  BookOpen,
+  File,
+  Link,
+  ListBullet,
+  MessageSquarePlus,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "../../../shared/ui/icons";
 import {
   memo,
   useCallback,
@@ -37,6 +46,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
@@ -323,30 +333,43 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
 
   const shortcut = keybindingShortcutLabel(NOTES_PANEL_COMMAND, `${MOD}${ALT}N`);
   const hasNotes = offered.session.length + offered.project.length > 0;
-
-  return (
-    <Text
-      as="aside"
-      size="inherit"
-      tone="primary"
-      ref={setPaneRef}
-      role="complementary"
-      aria-label={t("Session notes")}
-      data-notes-panel
-      onKeyDown={onKeyDown}
-      {...surfaceAttributes(
-        { frame: "pane", edge: "responsive-left", variant: "page" },
-        "relative flex h-full min-h-0 min-w-0 shrink-0 flex-col",
-      )}
+  const libraryAction = (
+    <Button
+      variant="ghost"
+      size="sm"
+      iconOnly
+      label={t("Open note library")}
+      motion="none"
+      onClick={() =>
+        requestOpenNoteLibrary({ id: selected?.id, cwd: selected?.sourceCwd ?? project })
+      }
     >
-      <Sash
-        {...sashProps}
-        label={t("Resize notes panel")}
-        appearance="hidden"
-        className="absolute inset-y-0 -left-px"
-      />
+      <BookOpen className="icon-sm" strokeWidth={1.75} />
+    </Button>
+  );
+
+  const renderHeader = (title?: ReactNode) => (
+    <>
       <PaneHeader
         data-notes-header
+        leading={
+          <Button
+            ref={listButton}
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("Switch note")}
+            motion="none"
+            aria-expanded={listOpen}
+            aria-haspopup="dialog"
+            onClick={(event) => {
+              event.currentTarget.focus();
+              setListOpen((open) => !open);
+            }}
+          >
+            <ListBullet className="icon-sm" strokeWidth={1.75} />
+          </Button>
+        }
         actions={
           <>
             <Button
@@ -375,26 +398,11 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           </>
         }
       >
-        <Button
-          ref={listButton}
-          variant="ghost"
-          motion="none"
-          expanded={listOpen}
-          aria-label={t("Switch note")}
-          aria-haspopup="dialog"
-          tooltip={selected?.title ?? t("Switch note")}
-          tooltipWhen={selected ? "overflow" : "always"}
-          onClick={(event) => {
-            event.currentTarget.focus();
-            setListOpen((open) => !open);
-          }}
-          className="min-w-0 flex-1"
-        >
-          <File className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
-          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+        {title ?? (
+          <Text size="caption" weight="medium" truncate>
             {selected?.title ?? t("Notes")}
           </Text>
-        </Button>
+        )}
       </PaneHeader>
       {listOpen ? (
         <Popover
@@ -484,13 +492,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
               description={query.trim() ? t("No matching notes") : t("No notes yet.")}
             />
           ) : null}
-          <Button
-            variant="ghost"
-            fullWidth
-            onClick={() => requestOpenNoteLibrary({ cwd: project })}
-          >
-            {t("Open note library")}
-          </Button>
         </Popover>
       ) : null}
       {error ? (
@@ -515,10 +516,37 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           </Button>
         </Alert>
       ) : null}
+    </>
+  );
+
+  return (
+    <Text
+      as="aside"
+      size="inherit"
+      tone="primary"
+      ref={setPaneRef}
+      role="complementary"
+      aria-label={t("Session notes")}
+      data-notes-panel
+      onKeyDown={onKeyDown}
+      {...surfaceAttributes(
+        { frame: "pane", edge: "responsive-left", variant: "page" },
+        "relative flex h-full min-h-0 min-w-0 shrink-0 flex-col",
+      )}
+    >
+      <Sash
+        {...sashProps}
+        label={t("Resize notes panel")}
+        appearance="hidden"
+        className="absolute inset-y-0 -left-px"
+      />
+      {!selectedDetail && renderHeader()}
       {selectedDetail ? (
         <PanelNoteEditor
           key={selectedDetail.id}
           note={selectedDetail}
+          renderHeader={renderHeader}
+          libraryAction={libraryAction}
           autoFocus={wantFocus}
           onFocused={focused}
           onSaved={onSaved}
@@ -551,25 +579,19 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       ) : (
         <SurfaceLoading className="min-h-0 flex-1" title={t("Loading notes…")} />
       )}
-      <div
-        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "session-notes-library-link")}
-      >
-        <Button
-          variant="ghost"
-          fullWidth
-          onClick={() =>
-            requestOpenNoteLibrary({ id: selected?.id, cwd: selected?.sourceCwd ?? project })
-          }
-        >
-          {t("Open note library")}
-        </Button>
-      </div>
+      {!selectedDetail && (
+        <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "session-note-actions")}>
+          {libraryAction}
+        </div>
+      )}
     </Text>
   );
 }
 
 const PanelNoteEditor = memo(function PanelNoteEditor({
   note,
+  renderHeader,
+  libraryAction,
   autoFocus,
   onFocused,
   onSaved,
@@ -581,6 +603,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   onLink,
 }: {
   note: Note;
+  renderHeader: (title: ReactNode) => ReactNode;
+  libraryAction: ReactNode;
   autoFocus: boolean;
   onFocused: () => void;
   onSaved: (note: Note) => void;
@@ -643,6 +667,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   const [recovering, setRecovering] = useState(false);
   const [linking, setLinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { confirm: confirmDelete, dialog: deleteDialog } = useConfirm();
   const [selection] = useState<SessionNoteSelection>(() => ({ current: null }));
   const titleRef = useRef(title);
   const bodyRef = useRef(body);
@@ -907,51 +932,49 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
       sessionId={sessionId}
       contentVersion={body}
     >
-      <InlineEdit
-        inputObserver={inputOwner.observer("title")}
-        inputPublication={titleState.publication}
-        value={title}
-        label={t("Note title")}
-        placeholder={t("Untitled")}
-        className="bycoda-note-inline-title"
-        onSave={async (next) => {
-          const work = inputOwner.operation("session-title-submit");
-          if (!work) throw noteInputWorkError(inputOwner);
-          try {
-            const previous = titleRef.current;
-            titleTouched.current = true;
-            titleRef.current = next;
-            setTitle(next, work);
-            retainDraft();
-            await saveNow(true, work);
-            if (savedRef.current.title !== (next.trim() || noteTitle(bodyRef.current))) {
-              titleRef.current = previous;
-              setTitle(previous, work);
-              throw new Error(t("Could not save note"));
-            }
-          } finally {
-            work();
-          }
-        }}
-      />
-      <div className="session-note-meta">
-        <Disclosure summary={t("Tags")} size="sm" className="min-w-0 flex-1">
-          <NoteTagsEditor
-            availableTags={availableTags}
-            inputObserver={inputOwner.observer("tags")}
-            tags={tags}
-            onChange={(next) => {
-              if (!inputOwner.allowed()) return;
-              tagsRef.current = next;
-              setTags(next);
+      {renderHeader(
+        <InlineEdit
+          variant="compact-title"
+          inputObserver={inputOwner.observer("title")}
+          inputPublication={titleState.publication}
+          value={title}
+          label={t("Note title")}
+          placeholder={t("Untitled")}
+          className="min-w-0 flex-1"
+          onSave={async (next) => {
+            const work = inputOwner.operation("session-title-submit");
+            if (!work) throw noteInputWorkError(inputOwner);
+            try {
+              const previous = titleRef.current;
+              titleTouched.current = true;
+              titleRef.current = next;
+              setTitle(next, work);
               retainDraft();
-              scheduleSave();
-            }}
-          />
-        </Disclosure>
-        <Text size="caption" tone="muted" leading="inherit" className="tabular-nums">
-          <NoteWordCount body={body} />
-        </Text>
+              await saveNow(true, work);
+              if (savedRef.current.title !== (next.trim() || noteTitle(bodyRef.current))) {
+                titleRef.current = previous;
+                setTitle(previous, work);
+                throw new Error(t("Could not save note"));
+              }
+            } finally {
+              work();
+            }
+          }}
+        />,
+      )}
+      <div className="session-note-meta">
+        <NoteTagsEditor
+          availableTags={availableTags}
+          inputObserver={inputOwner.observer("tags")}
+          tags={tags}
+          onChange={(next) => {
+            if (!inputOwner.allowed()) return;
+            tagsRef.current = next;
+            setTags(next);
+            retainDraft();
+            scheduleSave();
+          }}
+        />
       </div>
       <SessionNoteDocument
         noteId={note.id}
@@ -962,7 +985,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         autoFocus={autoFocus}
         onFocused={onFocused}
         selectionRef={selection}
-        onSave={() => void saveNow()}
+        onSave={() => void saveNow(true)}
         onBlur={() => void saveNow()}
         onRejectedInput={retainUnadmittedBody}
         onChange={(value) => {
@@ -1079,45 +1102,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           {saveError}
         </Alert>
       ) : null}
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "session-note-save-bar")}>
-        {preparing ? (
-          <LoadingText>{t("Preparing checkpoint…")}</LoadingText>
-        ) : (
-          <NoteSaveStatus
-            showProgress
-            className="session-note-status"
-            state={
-              deleting
-                ? "deleting"
-                : saveError
-                  ? "failed"
-                  : conflict
-                    ? "conflict"
-                    : recovering
-                      ? "recovering"
-                      : saving
-                        ? "saving"
-                        : body !== savedRef.current.body ||
-                            (title.trim() || noteTitle(body)) !== savedRef.current.title ||
-                            !sameTags(tags, savedRef.current.tags)
-                          ? "unsaved"
-                          : "saved"
-            }
-          />
-        )}
-        <Button
-          variant="primary"
-          size="sm"
-          loading={saving}
-          disabled={preparing || deleting || recovering || conflict}
-          shortcut={`${MOD}S`}
-          onClick={() => saveNow(true)}
-        >
-          <Save className="icon-sm" />
-          {t("Save")}
-        </Button>
-      </div>
-      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 px-2 py-1">
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "session-note-actions")}>
         <CopyButton
           size="sm"
           iconOnly
@@ -1126,9 +1111,15 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           disabled={!hasBody}
           onCopy={() => navigator.clipboard.writeText(bodyRef.current)}
         />
-        <Button variant="secondary" size="sm" disabled={!hasBody} onClick={sendToChat}>
-          <Plus className="icon-sm" />
-          {t("Add to chat")}
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Add to chat")}
+          disabled={!hasBody}
+          onClick={sendToChat}
+        >
+          <MessageSquarePlus className="icon-sm" />
         </Button>
         {note.sourceSessionId !== sessionId ? (
           <Button
@@ -1153,44 +1144,78 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
             <Link className="icon-sm" />
           </Button>
         ) : null}
+        {libraryAction}
         <span className="min-w-0 flex-1" />
-        <ConfirmMorph
+        {preparing ? (
+          <LoadingText>{t("Preparing checkpoint…")}</LoadingText>
+        ) : recovering ? (
+          <NoteSaveStatus state="recovering" />
+        ) : (
+          <Text size="caption" tone="secondary" leading="inherit" className="tabular-nums">
+            <NoteWordCount body={body} />
+          </Text>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Save")}
+          loading={saving}
+          loadingLabel={t("Saving…")}
+          disabled={preparing || deleting || recovering || conflict}
+          shortcut={`${MOD}S`}
+          onClick={() => saveNow(true)}
+        >
+          <Save className="icon-sm" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
           label={t("Delete note")}
-          icon={<Trash2 className="icon-sm" />}
-          prompt={t("Delete note permanently?")}
-          confirmTimeout={0}
-          disabled={deleting}
-          onConfirm={async () => {
-            if (skipSave.current) return;
-            const work = inputOwner.operation("session-delete");
-            if (!work) return;
-            skipSave.current = true;
-            setDeleting(true);
-            if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
-            saveTimer.current = null;
-            saveTimerWork.current?.();
-            saveTimerWork.current = null;
-            try {
-              await enqueueSave(
-                note.id,
-                async (queued) => {
-                  const deleted = await onDelete(note.id, savedRef.current.updatedAt, queued);
-                  if (deleted) editorDrafts.delete(draftKey);
-                  if (!deleted) {
-                    skipSave.current = false;
-                    setDeleting(false);
-                    scheduleSave();
-                    throw new Error(t("Could not delete note"));
-                  }
-                },
-                work,
-              );
-            } finally {
-              work();
-            }
-          }}
-        />
+          disabled={preparing || deleting}
+          onClick={() =>
+            confirmDelete({
+              title: t("Delete note permanently?"),
+              message: title || t("Untitled"),
+              confirmLabel: t("Confirm delete"),
+              pendingLabel: t("Deleting…"),
+              onConfirm: async () => {
+                if (skipSave.current) return;
+                const work = inputOwner.operation("session-delete");
+                if (!work) throw noteInputWorkError(inputOwner);
+                skipSave.current = true;
+                setDeleting(true);
+                if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
+                saveTimer.current = null;
+                saveTimerWork.current?.();
+                saveTimerWork.current = null;
+                try {
+                  await enqueueSave(
+                    note.id,
+                    async (queued) => {
+                      const deleted = await onDelete(note.id, savedRef.current.updatedAt, queued);
+                      if (deleted) editorDrafts.delete(draftKey);
+                      if (!deleted) {
+                        skipSave.current = false;
+                        setDeleting(false);
+                        scheduleSave();
+                        throw new Error(t("Could not delete note"));
+                      }
+                    },
+                    work,
+                  );
+                } finally {
+                  work();
+                }
+              },
+            })
+          }
+        >
+          <Trash2 className="icon-sm" />
+        </Button>
       </div>
+      {deleteDialog}
     </SurfaceSelection>
   );
 });

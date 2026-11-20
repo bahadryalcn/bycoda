@@ -1,5 +1,4 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
@@ -30,8 +29,8 @@ import {
   Group,
   Row,
   Segmented,
-  SettingsFeedback,
   Toggle,
+  useConfirmedPreferences,
 } from "../../../shared/ui/settings";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import {
@@ -78,105 +77,58 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
     loadAutoContinueInterrupted,
     subscribeAutoContinueInterrupted,
   );
-  const [failures, setFailures] = useState<Record<string, () => void>>({});
-  const [pending, setPending] = useState<Record<string, boolean>>({});
-  const commitConfirmed = async (
-    id: string,
-    write: () => boolean | void | Promise<boolean | void>,
-    read: () => unknown,
-    next: unknown,
-    update: () => void,
-  ) => {
-    setPending((current) => ({ ...current, [id]: true }));
-    try {
-      if ((await write()) === false || read() !== next) throw new Error("Preference not persisted");
-      update();
-      setFailures((current) => {
-        const updated = { ...current };
-        delete updated[id];
-        return updated;
-      });
-    } catch {
-      setFailures((current) => ({
-        ...current,
-        [id]: () => {
-          void commitConfirmed(id, write, read, next, update).catch(console.error);
-        },
-      }));
-    } finally {
-      setPending((current) => ({ ...current, [id]: false }));
-    }
-  };
-  const commit = (...args: Parameters<typeof commitConfirmed>) => {
-    void commitConfirmed(...args).catch(console.error);
-  };
-  const feedback = (id: string) =>
-    pending[id] ? (
-      <SettingsFeedback state="loading" immediate>
-        {t("Saving…")}
-      </SettingsFeedback>
-    ) : failures[id] ? (
-      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: failures[id] }}>
-        {t("Could not save changes")}
-      </SettingsFeedback>
-    ) : undefined;
+  const { commit, pending, feedback } = useConfirmedPreferences();
   const [modelControls, setModelControls] = useStoredPreferenceState(
     loadModelControls,
     subscribeModelControls,
   );
   const onTranscriptLayout = (next: TranscriptLayout) => {
-    commit(
-      "transcript-layout",
-      () => saveTranscriptLayout(next),
-      loadTranscriptLayout,
-      next,
-      () => setTranscriptLayout(next),
-    );
+    commit("transcript-layout", {
+      write: () => saveTranscriptLayout(next),
+      verify: () => loadTranscriptLayout() === next,
+      onConfirmed: () => setTranscriptLayout(next),
+    });
   };
   const onTranscriptAnchor = (next: boolean) => {
-    commit(
-      "anchor-prompts",
-      () => saveTranscriptAnchor(next),
-      loadTranscriptAnchor,
-      next,
-      () => setTranscriptAnchor(next),
-    );
+    commit("anchor-prompts", {
+      write: () => saveTranscriptAnchor(next),
+      verify: () => loadTranscriptAnchor() === next,
+      onConfirmed: () => setTranscriptAnchor(next),
+    });
+  };
+  const onComposerSpelling = (next: boolean) => {
+    commit("composer-spelling", {
+      write: () => saveComposerSpelling(next),
+      verify: () => loadComposerSpelling() === next,
+    });
   };
   const onResumeAtReset = (next: boolean) => {
-    commit(
-      "resume-at-reset",
-      () => saveAgentDefaultConfirmed("resumeAtReset", next),
-      loadResumeAtReset,
-      next,
-      () => setResumeAtReset(next),
-    );
+    commit("resume-at-reset", {
+      write: () => saveAgentDefaultConfirmed("resumeAtReset", next),
+      verify: () => loadResumeAtReset() === next,
+      onConfirmed: () => setResumeAtReset(next),
+    });
   };
   const onUsageLimitFailover = (next: UsageLimitFailover) => {
-    commit(
-      "usage-limit-failover",
-      () => saveAgentDefaultConfirmed("usageLimitFailover", next),
-      loadUsageLimitFailover,
-      next,
-      () => setUsageLimitFailover(next),
-    );
+    commit("usage-limit-failover", {
+      write: () => saveAgentDefaultConfirmed("usageLimitFailover", next),
+      verify: () => loadUsageLimitFailover() === next,
+      onConfirmed: () => setUsageLimitFailover(next),
+    });
   };
   const onAutoContinue = (next: boolean) => {
-    commit(
-      "auto-continue-interrupted",
-      () => saveAgentDefaultConfirmed("autoContinueInterrupted", next),
-      loadAutoContinueInterrupted,
-      next,
-      () => setAutoContinue(next),
-    );
+    commit("auto-continue-interrupted", {
+      write: () => saveAgentDefaultConfirmed("autoContinueInterrupted", next),
+      verify: () => loadAutoContinueInterrupted() === next,
+      onConfirmed: () => setAutoContinue(next),
+    });
   };
   const onModelControls = (next: ModelControls) => {
-    commit(
-      "model-controls",
-      () => saveModelControls(next),
-      loadModelControls,
-      next,
-      () => setModelControls(next),
-    );
+    commit("model-controls", {
+      write: () => saveModelControls(next),
+      verify: () => loadModelControls() === next,
+      onConfirmed: () => setModelControls(next),
+    });
   };
   return (
     <div className="chat-settings settings-topics">
@@ -219,6 +171,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
               },
             ]}
             onChange={onTranscriptLayout}
+            disabled={pending("transcript-layout")}
           />
         </Row>
         <Row
@@ -231,6 +184,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
             label={t("Anchor prompts to top")}
             on={transcriptAnchor}
             onChange={onTranscriptAnchor}
+            disabled={pending("anchor-prompts")}
           />
         </Row>
         <Row
@@ -244,15 +198,8 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
           <Toggle
             label={t("Spelling and autocorrect")}
             on={spelling}
-            onChange={(next) =>
-              commit(
-                "composer-spelling",
-                () => saveComposerSpelling(next),
-                loadComposerSpelling,
-                next,
-                () => {},
-              )
-            }
+            onChange={onComposerSpelling}
+            disabled={pending("composer-spelling")}
           />
         </Row>
         <AdvancedSettings
@@ -269,7 +216,6 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
             id="resume-at-reset"
             feedback={feedback("resume-at-reset")}
             label={t("Resume at reset")}
-            description={t("Continue automatically after a provider's usage limit resets.")}
             info={
               <InfoPopover className="shrink-0">
                 <p>
@@ -289,7 +235,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
               label={t("Resume at reset")}
               on={resumeAtReset}
               onChange={onResumeAtReset}
-              disabled={pending["resume-at-reset"]}
+              disabled={pending("resume-at-reset")}
             />
           </Row>
           <Row
@@ -305,7 +251,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
                 </p>
                 <p>
                   {t(
-                    "Another account keeps the model and moves to the next signed-in account of the same provider that still has quota. Model order uses the first eligible model in Settings > Models, skipping the limited account.",
+                    "Another account keeps the model and moves to the next signed-in account of the same provider that still has quota. Model order uses the first eligible model in Settings → Models, skipping the limited account.",
                   )}
                 </p>
                 <p>
@@ -340,13 +286,13 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
                 },
               ]}
               onChange={onUsageLimitFailover}
+              disabled={pending("usage-limit-failover")}
             />
           </Row>
           <Row
             id="auto-continue-interrupted"
             feedback={feedback("auto-continue-interrupted")}
             label={t("Automatically continue interrupted turns")}
-            description={t("Send Continue at launch when a turn was cut off.")}
             info={
               <InfoPopover className="shrink-0">
                 <p>
@@ -362,7 +308,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
               label={t("Automatically continue interrupted turns")}
               on={autoContinue}
               onChange={onAutoContinue}
-              disabled={pending["auto-continue-interrupted"]}
+              disabled={pending("auto-continue-interrupted")}
             />
           </Row>
           <Row
@@ -389,6 +335,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
                 },
               ]}
               onChange={onModelControls}
+              disabled={pending("model-controls")}
             />
           </Row>
         </AdvancedSettings>

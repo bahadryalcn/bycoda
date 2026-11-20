@@ -128,6 +128,32 @@ describe("support tab", () => {
     expect(message().value).toBe("New unsent message");
     expect(container.textContent).toContain("Reference: earlier-ticket");
   });
+
+  it("drops a stale field error once the user fixes that field", async () => {
+    await act(async () => root.render(createElement(AccountSupport)));
+    await click(button("Send to support"));
+    expect(container.textContent).toContain("Add a subject.");
+    type(subject(), "Sync stuck");
+    // The field is valid at once; its message leaves through an exit animation.
+    expect(subject().getAttribute("aria-invalid")).toBeNull();
+    expect(message().getAttribute("aria-invalid")).toBe("true");
+    await vi.waitFor(() => expect(container.textContent).not.toContain("Add a subject."));
+    expect(container.textContent).toContain("Add a message.");
+  });
+
+  it("clears a stale failure banner when the user edits the draft", async () => {
+    mocks.createSupportTicket.mockRejectedValueOnce(
+      new AccountApiError(429, "rate_limited", "slow", "req_2"),
+    );
+    await act(async () => root.render(createElement(AccountSupport)));
+    type(subject(), "Sync stuck");
+    type(message(), "It never finishes.");
+    await click(button("Send to support"));
+    expect(container.textContent).toContain("Too many requests");
+    type(message(), "It never finishes, again.");
+    expect(container.textContent).not.toContain("Too many requests");
+    expect(message().value).toBe("It never finishes, again.");
+  });
 });
 
 describe("guest support", () => {

@@ -18,7 +18,7 @@ export function Timeline({
 }: Omit<TimelineProps, "now" | "messages" | "formatRelativeTime"> & { now?: number }) {
   const t = useT();
   const currentLocale = useLocale();
-  const [clock, setClock] = useState<number | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
     if (providedNow !== undefined) return;
     setClock(Date.now());
@@ -26,7 +26,6 @@ export function Timeline({
     return () => window.clearInterval(timer);
   }, [providedNow]);
   const now = providedNow ?? clock;
-  if (now === null) return null;
   const locale = props.locale ?? currentLocale;
   const timeZone = props.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const clockFormat = dateTimeFormat(locale, {

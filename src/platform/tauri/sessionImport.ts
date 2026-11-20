@@ -28,6 +28,11 @@ export type DiscoveryReport = {
   candidates: ImportCandidate[];
   filesScanned: number;
   filesSkipped: number;
+  /**
+   * Distinct folders whose existence could not be checked in time (a disconnected drive);
+   * their candidates report `cwdExists: false`, which is a guess for them.
+   */
+  cwdUnverified?: number;
   elapsedMs: number;
 };
 
@@ -58,7 +63,11 @@ export type CodexTranscript = {
   oversizeSkipped: number;
 };
 
-/** Scans `~/.claude` and `~/.codex` read-only; reads no more than a head and tail of each file. */
+/**
+ * Scans `~/.claude` and `~/.codex` read-only; reads no more than a head and tail of each file.
+ * The list is complete, newest first. A transcript is only re-read when its size or modification
+ * time changed, so reopening the dialog costs one stat per file.
+ */
 export function discoverImportableSessions(): Promise<DiscoveryReport> {
   return invoke<DiscoveryReport>("import_discover");
 }

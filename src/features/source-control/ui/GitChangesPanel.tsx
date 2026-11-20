@@ -25,8 +25,6 @@ import {
   PanelRight,
   RefreshCw,
   Undo2,
-  WandSparkles,
-  X,
 } from "../../../shared/ui/icons";
 import {
   Suspense,
@@ -37,6 +35,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -50,10 +49,16 @@ import { GitConflictRows } from "./GitConflictRows";
 import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
+import { AheadBehindCount } from "./AheadBehindCount";
 import { BranchPicker, type CheckoutChoice } from "./BranchPicker";
 import { applyCommit, applyIndexAction, applySync } from "../model/optimisticIndex";
 import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
-import { AUTO_FETCH_MS, loadAutoFetch, saveAutoFetch } from "../model/autoFetch";
+import {
+  AUTO_FETCH_MS,
+  loadAutoFetch,
+  saveAutoFetch,
+  subscribeAutoFetch,
+} from "../model/autoFetch";
 import {
   basename,
   gitCommit,
@@ -85,10 +90,12 @@ import type { HarnessId } from "../../sessions";
 import { recordInboxSelfActivity } from "../../inbox/model/inboxSelfActivity";
 import { loadChangesView, saveChangesView } from "../../settings/public/appearance";
 import type { ChangesView } from "../../settings";
-import { generatePrContent } from "../model/gitTextGeneration";
+import { generatePrContent, prContentFromCommits } from "../model/gitTextGeneration";
+import { PrGenerationError } from "../model/prGenerationError";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { MOD } from "../../../platform/tauri/platform";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { shortSha } from "../../../shared/lib/shortSha";
 import {
   GIT_ACTIONS,
   GIT_CONFLICTS,
@@ -127,11 +134,10 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
-import { CheckoutIdentity } from "./CheckoutIdentity";
+import { CheckoutIdentity, checkoutBranch } from "./CheckoutIdentity";
 import { UpstreamLabel } from "./UpstreamLabel";
-import { InlineAction } from "../../../shared/ui/ActionHost";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { GitCommitGenerationActions } from "./GitGenerationSettings";
 import { ChangeList } from "./GitChangesList";
 import { useDiffIndex, announceGitChange } from "../hooks/useDiffIndex";
 import { useCommitDraft } from "../hooks/useCommitDraft";
@@ -258,10 +264,10 @@ export function GitChangesPanel({
   }, [cwd, feedback]);
 
   const canFetch = gitActions && Boolean(index?.remote);
-  const [autoFetch, setAutoFetch] = useState(loadAutoFetch);
+  // Shared preference: every repository panel and window follows the saved value.
+  const autoFetch = useSyncExternalStore(subscribeAutoFetch, loadAutoFetch);
   const toggleAutoFetch = () => {
     saveAutoFetch(!autoFetch);
-    setAutoFetch(!autoFetch);
   };
   const preferences = usePanelPreferencesMenu({
     autoFetch,
@@ -362,11 +368,34 @@ export function GitChangesPanel({
                         },
                         detail: presentRemoteError(error, { explicit: true }),
                         retry: feedback.retry,
+                        alternate: feedback.alternate,
                       }),
                     )
                 : undefined
             }
           />
+          {feedback.alternate && !busy ? (
+            <Button
+              variant="link"
+              size="sm"
+              className="mx-3 mb-2 self-start"
+              onClick={() =>
+                void feedback.alternate?.run().catch((error) =>
+                  setGitFeedback(cwd, {
+                    kind: "error",
+                    get title() {
+                      return t("Couldn’t create pull request");
+                    },
+                    detail: presentRemoteError(error, { explicit: true }),
+                    retry: feedback.retry,
+                    alternate: feedback.alternate,
+                  }),
+                )
+              }
+            >
+              {feedback.alternate.label}
+            </Button>
+          ) : null}
           {feedback.url ? (
             <Button
               variant="link"
@@ -374,7 +403,10 @@ export function GitChangesPanel({
               className="mx-3 mb-2 self-start"
               onClick={() =>
                 void openUrl(feedback.url!).catch((error) =>
-                  setGitFeedback(cwd, { ...feedback, detail: String(error) }),
+                  setGitFeedback(cwd, {
+                    ...feedback,
+                    detail: presentRemoteError(error, { explicit: true }),
+                  }),
                 )
               }
             >
@@ -393,6 +425,9 @@ export function GitChangesPanel({
       ) : null}
     </>
   );
+  // The checkout button owns its hint, so a clipped branch shows its full name as a detail line there.
+  const identityBranch =
+    repository && !branchControl ? checkoutBranch({ index, checkout: repository.checkout }) : null;
   return (
     <div
       ref={paneRef}
@@ -417,6 +452,7 @@ export function GitChangesPanel({
             chevron="start"
             onClick={() => repository.onToggle(!detailsOpen)}
             tooltip={`${repository.name} · ${cwd}`}
+            tooltipDetails={identityBranch ? [identityBranch] : undefined}
             className={styles.disclosure}
           >
             <CheckoutIdentity
@@ -437,7 +473,7 @@ export function GitChangesPanel({
               <Text as="span" size="secondary" tone="primary" weight="medium" className="shrink-0">
                 {index?.repository === false || !index
                   ? t("Changes")
-                  : `${t("Detached")} · ${(index.head ?? "").slice(0, 7)}`}
+                  : `${t("Detached HEAD")} · ${shortSha(index.head ?? "")}`}
               </Text>
             )}
             {index?.upstream && detailsOpen ? <UpstreamLabel upstream={index.upstream} /> : null}
@@ -465,16 +501,17 @@ export function GitChangesPanel({
           {repository && index ? (
             <Text size="caption" leading="inherit" tone="secondary" className={styles.summary}>
               <FileDiff aria-hidden className="icon-xs" />
-              <span aria-label={`${t("Changes")}: ${files.length + conflicts.length}`}>
+              <span role="img" aria-label={`${t("Changes")}: ${files.length + conflicts.length}`}>
                 {files.length + conflicts.length}
               </span>
               {conflicts.length > 0 ? (
                 <Text size="inherit" tone="warning" className={styles.conflicts}>
-                  {t("Merge Conflicts")}: {conflicts.length}
+                  {t("Merge conflicts")}: {conflicts.length}
                 </Text>
               ) : null}
-              {!detailsOpen && (index.ahead ?? 0) > 0 ? <span>↑{index.ahead}</span> : null}
-              {!detailsOpen && (index.behind ?? 0) > 0 ? <span>↓{index.behind}</span> : null}
+              {!detailsOpen ? (
+                <AheadBehindCount ahead={index.ahead ?? 0} behind={index.behind ?? 0} hideZero />
+              ) : null}
             </Text>
           ) : null}
           {repository ? branchControl : null}
@@ -803,11 +840,17 @@ function ChangedFiles({
     generating,
     amend,
     generationChoice,
+    commitGenerationChoice,
+    setCommitGenerationChoice,
     generate,
     cancelGenerate,
     toggleAmend: toggleAmendDraft,
     clearDraft,
   } = useCommitDraft({ cwd, index, textHarness, canGenerate, fail });
+  // Cancels a running PR description (provider call) when the list unmounts or moves to another repository (#1369).
+  const prGeneration = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Abort the active pull request description request when its repository changes or unmounts.
+  useEffect(() => () => prGeneration.current?.abort(), [cwd]);
   // Nothing staged: Commit takes every change, as the header menu's Commit does.
   const canCommit =
     (staged.length > 0 || amend || unstaged.length > 0) &&
@@ -1099,14 +1142,15 @@ function ChangedFiles({
         committed = true;
         // The commit is made: its files leave the list now, not after the push
         // and the reload that follow.
-        if (index) showOptimistic(applyCommit(index, stageAll));
+        const committedIndex = index && applyCommit(index, stageAll, amending);
+        if (committedIndex) showOptimistic(committedIndex);
         clearDraft();
         if (push || createPr) {
           setPending("Pushing…");
           await gitPush(cwd);
           pushed = true;
           recordPrActivity();
-          if (index) showOptimistic(applySync(applyCommit(index, stageAll)));
+          if (committedIndex) showOptimistic(applySync(committedIndex));
         }
         onMutated();
         if (createPr) {
@@ -1165,12 +1209,23 @@ function ChangedFiles({
     });
   };
 
-  async function openCreatedPr() {
+  // `commitSummary` is the owner's explicit choice after generation failed; it is never a silent fallback.
+  async function openCreatedPr(commitSummary = false) {
     return withGitPanelRuntime(cwd, async () => {
-      const content = generationChoice
-        ? await generatePrContent(cwd, textHarness, generationChoice)
-        : await generatePrContent(cwd, textHarness);
-      if (!content) throw new Error("Could not prepare pull request content");
+      let content;
+      if (commitSummary) content = await prContentFromCommits(cwd);
+      else {
+        const controller = new AbortController();
+        prGeneration.current = controller;
+        content = await generatePrContent(
+          cwd,
+          textHarness,
+          generationChoice,
+          undefined,
+          controller.signal,
+        );
+      }
+      if (!content) throw new PrGenerationError(new Error("No text provider returned content"));
       const url = await gitPrCreate(cwd, content.title, content.body, content.base, content.head);
       const number = Number(/\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1]);
       if (Number.isInteger(number) && number > 0) recordPrActivity(number);
@@ -1190,21 +1245,38 @@ function ChangedFiles({
           get title() {
             return t("Pull request created; couldn’t open the link");
           },
-          detail: String(error),
+          detail: presentRemoteError(error, { explicit: true }),
           url: url.trim(),
         });
       }
     });
   }
 
-  async function retryPublication(push: boolean, createPr: boolean, branch: string | null) {
+  /** A failed description is explained without provider text and offers the commit summary as an explicit choice. */
+  function publicationFailure(error: unknown, again: (commitSummary: boolean) => Promise<void>) {
+    if (!(error instanceof PrGenerationError))
+      return { detail: presentRemoteError(error, { explicit: true }) };
+    return {
+      detail: t(
+        "The pull request description couldn’t be generated. Retry, choose another model, or create it from the commit summary.",
+      ),
+      alternate: { label: t("Create with commit summary"), run: () => again(true) },
+    };
+  }
+
+  async function retryPublication(
+    push: boolean,
+    createPr: boolean,
+    branch: string | null,
+    commitSummary = false,
+  ) {
     return withGitPanelRuntime(cwd, async () => {
       let remainingPush = push;
       try {
         await withGitOperation(cwd, push ? "Pushing…" : "Creating pull request…", async () => {
           const current = await gitDiffIndex(cwd);
           if (current.branch !== branch)
-            throw new Error("The branch changed. Review the current branch before publishing.");
+            throw new Error(t("The branch changed. Review the current branch before publishing."));
           if (remainingPush) {
             await gitPush(cwd);
             remainingPush = false;
@@ -1219,14 +1291,16 @@ function ChangedFiles({
                 },
                 url: existing.url,
               });
-            else await openCreatedPr();
+            else await openCreatedPr(commitSummary);
           }
         });
       } catch (error) {
         setGitFeedback(cwd, {
           kind: "warning",
           title: remainingPush ? t("Commit created; push failed") : t("Publication incomplete"),
-          detail: presentRemoteError(error, { explicit: true }),
+          ...publicationFailure(error, (summary) =>
+            retryPublication(remainingPush, createPr, branch, summary),
+          ),
           retry: () => retryPublication(remainingPush, createPr, branch),
         });
       } finally {
@@ -1260,7 +1334,14 @@ function ChangedFiles({
           title: pushed
             ? t("Branch pushed; pull request creation failed")
             : t("Couldn’t create pull request"),
-          detail: presentRemoteError(error, { explicit: true }),
+          ...publicationFailure(error, (summary) =>
+            retryPublication(
+              !pushed && (index?.ahead ?? 0) > 0,
+              true,
+              index?.branch ?? null,
+              summary,
+            ),
+          ),
           retry: () =>
             retryPublication(!pushed && (index?.ahead ?? 0) > 0, true, index?.branch ?? null),
         });
@@ -1303,25 +1384,17 @@ function ChangedFiles({
               }}
               className={styles.message}
               endAdornment={
-                <>
-                  {generating ? <WorkingIndicator label={t("Generating message…")} /> : null}
-                  <InlineAction
-                    reveal="always"
-                    label={
-                      generating
-                        ? t("Stop commit message generation")
-                        : t("Generate commit message")
-                    }
-                    disabled={!generating && !canGenerate}
-                    onClick={() => (generating ? cancelGenerate() : void generate())}
-                  >
-                    {generating ? (
-                      <X className="icon-sm" strokeWidth={1.75} />
-                    ) : (
-                      <WandSparkles className="icon-sm" strokeWidth={1.75} />
-                    )}
-                  </InlineAction>
-                </>
+                <GitCommitGenerationActions
+                  key={cwd}
+                  cwd={cwd}
+                  preferred={textHarness}
+                  choice={commitGenerationChoice}
+                  onChange={setCommitGenerationChoice}
+                  canGenerate={canGenerate}
+                  generating={generating}
+                  generate={() => void generate()}
+                  cancel={cancelGenerate}
+                />
               }
             />
           </div>
@@ -1359,7 +1432,7 @@ function ChangedFiles({
                       get title() {
                         return t("Could not open the link");
                       },
-                      detail: String(error),
+                      detail: presentRemoteError(error, { explicit: true }),
                     }),
                   );
               }}
@@ -1397,7 +1470,7 @@ function ChangedFiles({
           side="bottom"
           align="end"
           width={280}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Filter changed files")}
           onDismiss={(reason) => {
             if (reason === "escape") filterAnchor.focus({ preventScroll: true });
@@ -1463,7 +1536,7 @@ function ChangedFiles({
           <>
             {conflicts.length > 0 ? (
               <FileSection
-                title={t("Merge Conflicts")}
+                title={t("Merge conflicts")}
                 count={conflicts.length}
                 open={conflictsExpanded}
                 onToggle={() => {
@@ -1588,7 +1661,7 @@ function ChangedFiles({
                   },
                   {
                     get title() {
-                      return t("Stage All Changes");
+                      return t("Stage all changes");
                     },
                     icon: <Plus className="icon-sm" strokeWidth={1.75} />,
                     onClick: () => void runAll("stage"),

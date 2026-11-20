@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { RefreshCw, X } from "../../../shared/ui/icons";
 import { useRemoteMachineOnline } from "../model/connections";
-import { useMachineFocus } from "../model/machineFocus";
+import { useMachineFocus } from "../hooks/useMachineFocus";
 import type { RemoteMachine } from "../model/protocol";
 import { connectionIndicator, needsSignIn } from "../model/remoteConnection";
 import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
@@ -56,7 +56,7 @@ export function MachineStatus({
         : state.status === "outdated-host"
           ? t("Update Host")
           : indicator.tone === "down"
-            ? t("Not connected")
+            ? t(lifecycle.paused ? "Automatic reconnect paused" : "Not connected")
             : indicator.tone === "connecting"
               ? t("Connecting")
               : t(degraded ? "Refresh pending" : "Connected");

@@ -108,3 +108,77 @@ it("refuses to replace corrupt stored templates with an empty library", async ()
   expect(button("Save templates").disabled).toBe(true);
   expect(localStorage.getItem("bycoda.promptTemplates")).toBe("{broken");
 });
+
+it("names the failing field and its rule on each failed save, and keeps the draft", async () => {
+  await act(async () => savePromptTemplates([{ ...original, trigger: "review" }]));
+  act(() => button("Add template").click());
+  const field = (label: string) =>
+    container.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[aria-label="${label}"]`)!;
+  // The error is wired through aria-describedby, the same path assistive technology reads.
+  const fieldError = (label: string) =>
+    (field(label).getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      // The message node carries a rolling visual copy after the first child (see TextField.test).
+      .map((id) => {
+        const node = document.getElementById(id);
+        return node?.firstElementChild?.textContent ?? node?.textContent ?? "";
+      })
+      .join(" ")
+      .trim();
+  const type = async (label: string, value: string) => {
+    await act(async () => {
+      const node = field(label);
+      const proto =
+        node instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(node, value);
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const save = async () => act(async () => button("Save templates").click());
+
+  await save();
+  expect(fieldError("Template name")).toBe("Enter a name.");
+  expect(field("Template name").getAttribute("aria-invalid")).toBe("true");
+  expect(fieldError("Template text")).toBe("");
+
+  await type("Template name", "Second");
+  expect(fieldError("Template name")).toBe("");
+  await save();
+  expect(fieldError("Template text")).toBe("Enter template text.");
+
+  await type("Template text", "Second body");
+  await type("Template trigger", "Bad Trigger!");
+  await save();
+  expect(fieldError("Template trigger")).toBe(
+    "Use 1 to 24 letters, numbers or dashes for the trigger.",
+  );
+
+  await type("Template trigger", "review");
+  await save();
+  expect(fieldError("Template trigger")).toBe("This trigger is already used by another template.");
+  // Every failed save leaves the draft in place and writes nothing.
+  expect(field("Template name").value).toBe("Second");
+  expect(field("Template text").value).toBe("Second body");
+  expect(loadPromptTemplates()).toHaveLength(1);
+
+  await type("Template trigger", "second");
+  await save();
+  expect(loadPromptTemplates().map((row) => row.trigger)).toEqual(["review", "second"]);
+});
+
+// Regression for #1034: typing in the editor must not re-parse the stored templates JSON per keystroke.
+it("does not re-parse the stored templates while the draft is typed", async () => {
+  const stored = localStorage.getItem("bycoda.promptTemplates");
+  const input = container.querySelector<HTMLInputElement>('[aria-label="Template name"]')!;
+  const parse = vi.spyOn(JSON, "parse");
+  for (const value of ["R", "Re", "Rev", "Revi"]) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+  expect(input.value).toBe("Revi");
+  expect(parse.mock.calls.filter(([text]) => text === stored)).toHaveLength(0);
+});

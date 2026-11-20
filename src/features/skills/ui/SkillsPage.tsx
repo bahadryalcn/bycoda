@@ -1,4 +1,9 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import {
+  describeRemoteError,
+  presentRemoteError,
+  type RemoteErrorView,
+} from "../../connections/public/remoteFailure";
+import { errorText } from "../../../shared/lib/errors";
 import { SkillAdvancedDialog } from "./SkillAdvancedDialog";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -32,7 +37,16 @@ import type { EditorView } from "@codemirror/view";
 import styles from "./SkillsPage.module.css";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { RefreshCw, X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -65,8 +79,13 @@ import { remoteProjectFor } from "../../connections/model/remoteProjects";
 import { knownRemoteMachine, useRemoteMachines } from "../../connections/model/connections";
 import { remoteProjectMachines } from "../../connections/model/localSync";
 import { machineFailure } from "../model/skillMachineFailure";
-import { cachedMachineSkills, listMachineSkills } from "../model/machineSkills";
+import {
+  cachedMachineSkills,
+  listMachineSkills,
+  machineSkillsTruncated,
+} from "../model/machineSkills";
 import { canDeleteSkill } from "../model/deleteSkill";
+import { skillPreviewStatus, type SkillPreviewStatus } from "../model/skillPreviewStatus";
 import { RevealedSetting, Segmented, Toggle } from "../../../shared/ui/settings";
 import { cacheSkillPolicy, cachedSkillPolicy } from "../model/skillPreferences";
 import {
@@ -127,6 +146,7 @@ export function SkillsPage({
   const remoteProject = remoteProjectFor(cwd);
   const projectMachine = remoteProject?.environmentId;
   const { machines: connected } = useRemoteMachines();
+  const otherMachineName = t("Other machine");
   const machines = useMemo<Machine[]>(() => {
     const list = remoteProjectMachines(connected).map((machine) => ({
       environmentId: machine.environmentId,
@@ -136,16 +156,17 @@ export function SkillsPage({
     if (projectMachine && !list.some((entry) => entry.environmentId === projectMachine))
       list.push({
         environmentId: projectMachine,
-        name: knownRemoteMachine(projectMachine)?.name ?? "Other machine",
+        name: knownRemoteMachine(projectMachine)?.name ?? otherMachineName,
         cwd,
       });
     return list;
-  }, [connected, projectMachine, cwd]);
+  }, [connected, projectMachine, cwd, otherMachineName]);
   const [machineLists, setMachineLists] = useState<
     Record<
       string,
       {
         skills: DiscoveredSkill[] | null;
+        truncated?: boolean;
         error: string | null;
         loading?: boolean;
       }
@@ -195,7 +216,7 @@ export function SkillsPage({
   // The machine a previewed skill is read from; null for this computer.
   const [previewMachine, setPreviewMachine] = useState<Machine | null>(null);
   const [previewText, setPreviewText] = useState<string | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<RemoteErrorView | null>(null);
   const [previewRead, setPreviewRead] = useState(0);
   const [previewMode, setPreviewMode] = useMarkdownMode(`skill:${previewSkill?.path ?? ""}`);
   const previewOpen = previewSkill !== null;
@@ -220,6 +241,26 @@ export function SkillsPage({
   const editingSource = editable && (editing || previewMode === "source");
   const draft = previewSkill ? (drafts[previewSkill.path] ?? previewText) : null;
   const dirty = draft !== null && previewText !== null && draft !== previewText;
+  const previewStatus = skillPreviewStatus({
+    readError: previewError !== null,
+    loaded: previewText !== null,
+    saving,
+    dirty,
+    editable,
+    savedDraft:
+      previewSkill !== null &&
+      savedDocument?.path === previewSkill.path &&
+      savedDocument.content === draft,
+  });
+  const previewStatusText: Record<SkillPreviewStatus, string> = {
+    failed: t("Could not read skill"),
+    loading: t("Loading skill…"),
+    saving: t("Saving…"),
+    dirty: t("Unsaved changes"),
+    "read-only": t("Read-only"),
+    saved: t("Saved"),
+    clean: t("All changes saved"),
+  };
 
   const onSave = async (): Promise<void> => {
     if (!previewSkill || !editable || draft === null || !dirty || savePending.current) return;
@@ -249,7 +290,7 @@ export function SkillsPage({
       setSavedDocument({ path, content });
       requestRefresh("local");
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(errorText(err));
     } finally {
       savePending.current = false;
       setSaving(false);
@@ -277,6 +318,13 @@ export function SkillsPage({
       else previewButtons.current.delete(key);
     };
 
+  const restorePreviewFocus = useEffectEvent(() => {
+    // A rescan replaces row elements, so restore by skill and trigger identity.
+    const opener = previewButtons.current.get(previewOpener.current ?? "");
+    const target = opener ?? filterInput.current;
+    if (target?.isConnected) target.focus();
+  });
+  // Move focus into the preview and restore it when the preview closes.
   useEffect(() => {
     if (!previewOpen) return;
     closePreview.current?.focus();
@@ -291,10 +339,7 @@ export function SkillsPage({
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      // A rescan replaces row elements, so restore by skill and trigger identity.
-      const opener = previewButtons.current.get(previewOpener.current ?? "");
-      const target = opener ?? filterInput.current;
-      if (target?.isConnected) target.focus();
+      restorePreviewFocus();
     };
   }, [previewOpen]);
 
@@ -310,7 +355,7 @@ export function SkillsPage({
     const load = isRemoteProjectPath(path)
       ? exportSkill(path, previewMachine?.cwd ?? "").then((bundle) => {
           const file = bundle.files.find((entry) => entry.path.toLowerCase() === "skill.md");
-          if (!file) throw new Error("SKILL.md is missing.");
+          if (!file) throw new Error(t("SKILL.md is missing."));
           const bytes = Uint8Array.from(atob(file.data), (char) => char.charCodeAt(0));
           return new TextDecoder().decode(bytes);
         })
@@ -321,9 +366,8 @@ export function SkillsPage({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setPreviewError(
-            `Could not read SKILL.md. ${err instanceof Error ? err.message : String(err)}`,
-          );
+          // The headline is translated; the raw cause sits behind Details, sanitized by describeRemoteError.
+          setPreviewError(describeRemoteError(err));
         }
       });
     return () => {
@@ -331,18 +375,19 @@ export function SkillsPage({
     };
   }, [previewSkill, previewMachine, previewRead]);
 
+  const skipLocalRefresh = useEffectEvent(
+    () =>
+      skills !== null &&
+      !localLoading &&
+      refreshScope.current !== "all" &&
+      refreshScope.current !== "local",
+  );
+  // Only scope changes and explicit refreshes can start a load.
   useEffect(() => {
     let cancelled = false;
     const changedScope = localScope.current !== cwd;
     localScope.current = cwd;
-    if (
-      !changedScope &&
-      skills !== null &&
-      !localLoading &&
-      refreshScope.current !== "all" &&
-      refreshScope.current !== "local"
-    )
-      return;
+    if (!changedScope && skipLocalRefresh()) return;
     if (changedScope) setSkills(cachedLocalSkills(cwd));
     setLocalLoading(true);
     setError(null);
@@ -356,7 +401,7 @@ export function SkillsPage({
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errorText(err));
       })
       .finally(() => {
         if (!cancelled) setLocalLoading(false);
@@ -390,11 +435,16 @@ export function SkillsPage({
             ? cachedMachineSkills(machine.environmentId, machine.cwd)
             : (current[machine.environmentId]?.skills ??
               cachedMachineSkills(machine.environmentId, machine.cwd)),
+          truncated: machineSkillsTruncated(machine.environmentId, machine.cwd),
           error: null,
           loading: true,
         },
       }));
-      const settle = (value: { skills: DiscoveredSkill[] | null; error: string | null }) => {
+      const settle = (value: {
+        skills: DiscoveredSkill[] | null;
+        truncated: boolean;
+        error: string | null;
+      }) => {
         if (!cancelled)
           setMachineLists((current) => ({
             ...current,
@@ -406,13 +456,20 @@ export function SkillsPage({
         reload > 0 &&
         (refreshScope.current === "all" || refreshScope.current === machine.environmentId);
       listMachineSkills(machine.environmentId, machine.cwd, { refresh })
-        .then((skills) => settle({ skills, error: null }))
+        .then((skills) =>
+          settle({
+            skills,
+            truncated: machineSkillsTruncated(machine.environmentId, machine.cwd),
+            error: null,
+          }),
+        )
         .catch((err: unknown) => {
           if (!cancelled)
             setMachineLists((current) => ({
               ...current,
               [machine.environmentId]: {
                 skills: current[machine.environmentId]?.skills ?? null,
+                truncated: current[machine.environmentId]?.truncated,
                 error: machineFailure(machine, err),
                 loading: false,
               },
@@ -478,7 +535,7 @@ export function SkillsPage({
           if (!cancelled)
             setPolicyErrors((current) => ({
               ...current,
-              local: String(error),
+              local: presentRemoteError(error, { explicit: true }),
             }));
         });
     for (const machine of machines) {
@@ -523,6 +580,7 @@ export function SkillsPage({
         return {
           machine,
           skills: machineLists[id]?.skills ?? null,
+          truncated: machineLists[id]?.truncated ?? false,
           error: machineLists[id]?.error ?? null,
           policyKnown: !!policies[id],
         };
@@ -583,8 +641,9 @@ export function SkillsPage({
     } catch (error) {
       setPolicyErrors((current) => ({
         ...current,
-        [machine?.environmentId ?? "local"]:
-          `Could not save the skill preference. ${String(error)}`,
+        [machine?.environmentId ?? "local"]: t("Could not save the skill preference. {p0}", {
+          p0: presentRemoteError(error, { explicit: true }),
+        }),
       }));
     } finally {
       policyPending.current = false;
@@ -596,9 +655,7 @@ export function SkillsPage({
     setActionResult("");
     setActionError(null);
     void revealItemInDir(path).catch((err: unknown) => {
-      setActionError(
-        `Could not open the folder: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      setActionError(t("Could not open the folder: {p0}", { p0: errorText(err) }));
     });
   };
 
@@ -627,7 +684,7 @@ export function SkillsPage({
         requestRefresh("local");
       })
       .catch((err: unknown) => {
-        setCreateError(err instanceof Error ? err.message : String(err));
+        setCreateError(errorText(err));
       })
       .finally(() => setBusy(false));
   };
@@ -731,7 +788,10 @@ export function SkillsPage({
       requestRefresh(machine?.environmentId ?? "local");
     } catch (err) {
       setActionError(
-        `Could not delete ${skill.name}. ${presentRemoteError(err, { explicit: true })}`,
+        t("Could not delete {p0}. {p1}", {
+          p0: skill.name,
+          p1: presentRemoteError(err, { explicit: true }),
+        }),
       );
     } finally {
       deletePending.current = false;
@@ -787,6 +847,14 @@ export function SkillsPage({
   const machineAlerts = lists.flatMap((list) => {
     const id = list.machine?.environmentId ?? "local";
     const failure = (list.machine ? list.error : null) ?? policyErrors[id];
+    if (!failure && list.machine && list.truncated && list.skills)
+      return [
+        <InlineMessage key={`${id}:truncated`} tone="warning">
+          {t("{p0} has more skills than can be listed. Some are not shown.", {
+            p0: list.machine.name,
+          })}
+        </InlineMessage>,
+      ];
     if (!failure) return [];
     return [
       <InlineError key={id} action={{ label: t("Retry"), onClick: () => requestRefresh(id) }}>
@@ -1167,8 +1235,9 @@ export function SkillsPage({
                         label: t("Retry"),
                         onClick: () => setPreviewRead((value) => value + 1),
                       }}
+                      details={previewError.details || undefined}
                     >
-                      {previewError}
+                      {t("Could not read SKILL.md.")}
                     </InlineError>
                   ) : draft === null ? (
                     <LoadingText>{t("Loading skill…")}</LoadingText>
@@ -1235,19 +1304,8 @@ export function SkillsPage({
                   leading="inherit"
                   className={styles.detailFooter}
                 >
-                  <span>
-                    {previewError
-                      ? t("Could not read skill")
-                      : previewText === null
-                        ? t("Loading skill…")
-                        : saving
-                          ? t("Saving…")
-                          : dirty
-                            ? t("Unsaved changes")
-                            : editable
-                              ? ""
-                              : t("Saved")}
-                  </span>
+                  {/* A read failure is announced once, in the pane above, not again here. */}
+                  <span>{previewError ? null : previewStatusText[previewStatus]}</span>
                   <span>
                     {editingSource || (split && editable) ? t("Ctrl/Cmd+S to save") : t("Markdown")}
                   </span>

@@ -73,6 +73,8 @@ export interface HostDomainContext {
   /** Name of the requesting paired device, when known; never the credential. */
   requesterName?(): Promise<string | undefined>;
   readonly signal?: AbortSignal;
+  /** `monotonicNow()` instant the transport received this request. Deadlines count from it. */
+  readonly ingressAt?: number;
   closing?(): boolean;
   /** Request-scoped grant; credentials remain in transport composition. */
   exposeQueueAttachments?(ids: string[], params: Record<string, unknown>): Promise<void>;

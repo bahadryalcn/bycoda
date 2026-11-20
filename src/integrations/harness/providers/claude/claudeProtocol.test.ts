@@ -162,6 +162,17 @@ describe("buildClaudeSpawnArgs", () => {
     expect(JSON.parse(normal[normal.indexOf("--settings") + 1]).env).toBeUndefined();
   });
 
+  it("restricts workflows when subagents are disabled, pinned, or read-only", () => {
+    for (const input of [
+      { subagentModel: "off" },
+      { subagentModel: "haiku" },
+      { nativeReadOnly: true },
+    ]) {
+      expect(buildClaudeSpawnArgs(input)).toContain("Workflow");
+    }
+    expect(buildClaudeSpawnArgs({ subagentModel: "default" })).not.toContain("Workflow");
+  });
+
   it("only disables hooks for interactive sessions when asked", () => {
     const args = buildClaudeSpawnArgs({ settings: { disableAllHooks: true } });
     const settings = args[args.indexOf("--settings") + 1];

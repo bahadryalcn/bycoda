@@ -4,6 +4,11 @@ Open **Settings > Decision models**. These models answer small, typed
 questions, such as choosing a visible button or classifying a message. They do not
 replace your conversation model or grant permission to send, publish or delete.
 
+The page opens on this computer's Host. While it is loading or offline the page
+says so and offers no setup; it never uses another machine in its place. When
+other machines are saved, **Applying settings to** lets you choose one
+explicitly, and only a connected machine can be set up.
+
 Summary chips and the personal-data privacy switch sit at the top. Connected
 models appear in compact rows with one status badge, an indication of which
 source is tried first, and duplicate markers when sources share a model or
@@ -27,6 +32,11 @@ time or file limit; an incomplete scan does not mean that no model exists.
 Missing runtime files or an unsupported model may still require manual setup.
 The same **Add model** menu lets you choose a model file directly, install a
 model, or connect a local service, API provider or custom endpoint.
+
+A local install shows the bytes downloaded so far and can be cancelled while it
+runs; cancelling removes the partial download. Starting the same install again,
+even from another window, joins the one already running. A Host that has not
+been updated still installs, but shows no progress and cannot cancel.
 
 ## Choose which model answers
 
@@ -59,6 +69,11 @@ registers and tests it. Discovery labels are never used as filesystem paths.
 
 An incomplete scan keeps the results already found and explains that more files
 may remain. Retry with a narrower folder when needed.
+
+Opening the page scans only when the Host has no scan on record. When a scan found
+nothing, the Host remembers that for 24 hours, or until the scan ports or folders
+change, and opening the page does not scan again. Use **Scan again** to look
+sooner. A scan that fails shows its error and is not remembered.
 
 ## Privacy
 

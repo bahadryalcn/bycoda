@@ -29,6 +29,7 @@ Owns the local-only Today and This week view in `src/features/today/`, shown on 
 - The estimate is shown before Send and is a rough character-based figure, labelled as an estimate.
 - Project breakdown never goes to bycoda servers; this feature has no account or network code.
 - Projects in a locked group stay hidden, as on the Usage page.
+- Reads are bounded (`model/todayRefresh.ts`): automatic refresh only while visible, one in flight, never within the minimum gap, except when the local day changed. A failed source keeps its last good rows (`fetchTodaySources`), and figures beside the data follow `loadedPeriod`, not the selected period.
 - The daily note is one per local day; saving is a separate click and appends rather than overwrites.
 
 ## Focused checks

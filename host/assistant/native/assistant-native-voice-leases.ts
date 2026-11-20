@@ -20,31 +20,50 @@ const id = (environment: string, thread: string, generation: string) =>
 const validId = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= 200 && !value.includes("\0");
 
-/** Persistent, per-runtime disclosure leases. The writer fence drains actual readers before retirement. */
+/** Closed rows stay as tombstones: deleting one would let its generation key register again. */
+const leaseState =
+  "CASE WHEN json_valid(value) THEN json_extract(value,'$.state') ELSE 'corrupt' END";
+const DEFAULT_RETIREMENT_WAIT_MS = 30_000;
+
+/**
+ * Persistent, per-runtime disclosure leases. The writer fence drains actual readers before retirement.
+ * Readers are never forgotten on a deadline: a retirement that cannot drain them fails closed and the
+ * fence stays raised until the last old reader really settles.
+ */
 export class AssistantNativeVoiceLeases {
   readonly ready: Promise<void>;
   private readers = 0;
   private writers = 0;
   private epoch = 0;
   private waiters: Array<() => void> = [];
+  private readonly aborts = new Set<AbortController>();
   private writerTail: Promise<void> = Promise.resolve();
-  constructor(private readonly store: HostStore) {
-    this.ready = store.ready.then(() =>
-      store.db.exec(
+  constructor(
+    private readonly store: HostStore,
+    private readonly retirementWaitMs = DEFAULT_RETIREMENT_WAIT_MS,
+  ) {
+    this.ready = store.ready.then(async () => {
+      await store.db.exec(
         "CREATE TABLE IF NOT EXISTS assistant_native_voice_leases (id TEXT PRIMARY KEY, value TEXT NOT NULL)",
-      ),
-    );
+      );
+      // Corrupt rows are indexed with the active ones so retirement still fails closed on them.
+      await store.db.exec(
+        `CREATE INDEX IF NOT EXISTS assistant_native_voice_leases_state ON assistant_native_voice_leases((${leaseState}))`,
+      );
+    });
   }
   async withRegistration<T>(
     input: NativeVoiceLeaseInput,
     authorized: () => boolean,
-    effect: (valid: () => boolean) => Promise<T>,
+    effect: (valid: () => boolean, signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     if (this.writers || !authorized())
       throw new Error("Native voice disclosure is unavailable during retirement.");
     const epoch = this.epoch;
     this.readers++;
     let live = true;
+    const abort = new AbortController();
+    this.aborts.add(abort);
     const valid = () => live && !this.writers && epoch === this.epoch && authorized();
     try {
       await this.ready;
@@ -94,11 +113,12 @@ export class AssistantNativeVoiceLeases {
         if (!valid()) throw new Error("Native voice disclosure authority changed.");
       }, "critical");
       if (!valid()) throw new Error("Native voice disclosure authority changed.");
-      const result = await effect(valid);
+      const result = await effect(valid, abort.signal);
       if (!valid()) throw new Error("Native voice disclosure outcome is uncertain.");
       return result;
     } finally {
       live = false;
+      this.aborts.delete(abort);
       if (--this.readers === 0) for (const waiter of this.waiters.splice(0)) waiter();
     }
   }
@@ -111,17 +131,41 @@ export class AssistantNativeVoiceLeases {
   ): Promise<T> {
     this.epoch++;
     this.writers++;
+    // Readers were already invalidated by the epoch; the signal lets them stop their provider work.
+    for (const abort of this.aborts) abort.abort(new Error("Native voice retirement started."));
     const previous = this.writerTail;
     let release!: () => void;
     this.writerTail = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let fenceHandedOff = false;
     try {
       await previous;
       await this.ready;
-      if (this.readers) await new Promise<void>((resolve) => this.waiters.push(resolve));
+      if (this.readers) {
+        const drained = new Promise<void>((resolve) => this.waiters.push(resolve));
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = new Promise<true>((resolve) => {
+          timer = setTimeout(() => resolve(true), this.retirementWaitMs);
+        });
+        const expired = await Promise.race([drained.then(() => false), timedOut]).finally(() =>
+          clearTimeout(timer),
+        );
+        if (expired) {
+          // The old reader is still running: its fence is released only when it settles, never on a timer.
+          fenceHandedOff = true;
+          this.waiters.push(() => {
+            this.writers--;
+          });
+          throw new Error(
+            "Native voice retirement is waiting for an in-flight disclosure to settle; leases stay active.",
+          );
+        }
+      }
       const rows = await this.store.db
-        .prepare("SELECT id,value FROM assistant_native_voice_leases")
+        .prepare(
+          `SELECT id,value FROM assistant_native_voice_leases WHERE (${leaseState}) IN ('active','corrupt')`,
+        )
         .all();
       const active = rows
         .map((row) => ({ id: String(row.id), value: JSON.parse(row.value) as Stored }))
@@ -177,7 +221,7 @@ export class AssistantNativeVoiceLeases {
         activeWriter = false;
       }
     } finally {
-      this.writers--;
+      if (!fenceHandedOff) this.writers--;
       release();
     }
   }

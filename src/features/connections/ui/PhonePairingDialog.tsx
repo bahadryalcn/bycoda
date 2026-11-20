@@ -3,7 +3,7 @@ import { Modal } from "../../../shared/ui/Modal";
 import type { PhonePairingDialogProps } from "../model/phonePairingTypes";
 import { PhonePairingFlow } from "./PhonePairingFlow";
 
-/** The pairing flow in a modal, for callers that supply their own endpoint (external tunnels). */
+/** Phone pairing from Devices or from a fixed endpoint such as a shared Host link. */
 export function PhonePairingDialog(props: PhonePairingDialogProps) {
   useLocale();
   return (

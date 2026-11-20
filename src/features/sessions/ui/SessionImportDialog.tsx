@@ -1,5 +1,6 @@
+import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ActionHost } from "../../../shared/ui/ActionHost";
@@ -210,7 +211,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
         if (!cancelled) {
           setLoad({
             status: "error",
-            message: error instanceof Error ? error.message : String(error),
+            message: errorText(error),
           });
         }
       });
@@ -470,11 +471,10 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               {filtersOpen ? (
                 <Popover
                   anchor={filterAnchor}
-                  role="dialog"
+                  kind="dialog"
                   aria-label={t("Conversation filters")}
                   align="end"
                   width={320}
-                  autoFocus
                   onDismiss={() => setFiltersOpen(false)}
                   className="flex flex-col gap-1 p-2"
                 >
@@ -809,7 +809,11 @@ function FolderSection({
               </Text>
             </Tooltip>
           ) : null}
-          <Text size="micro" tone="muted" className="w-16 shrink-0 text-right tabular-nums">
+          <Text
+            size="micro"
+            tone="muted"
+            className="shrink-0 whitespace-nowrap text-right tabular-nums"
+          >
             {chosen > 0 && chosen < keys.length
               ? `${chosen.toLocaleString(locale)} / ${folder.items.length.toLocaleString(locale)}`
               : folder.items.length.toLocaleString(locale)}
@@ -817,7 +821,7 @@ function FolderSection({
         </Button>
       </div>
       {open ? (
-        <ul className="pb-1">
+        <ul className="@container/import-rows pb-1">
           {folder.items.slice(0, limit).map((item) => {
             const key = candidateKey(item);
             const imported = isAlreadyImported(item, stored);
@@ -838,9 +842,11 @@ function FolderSection({
                           <HarnessIcon harness={item.provider} className="size-3.5" />
                         </span>
                       </Tooltip>
-                      <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1">
-                        {item.firstPrompt}
-                      </Text>
+                      <OverflowTooltip label={item.firstPrompt}>
+                        <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1">
+                          {item.firstPrompt}
+                        </Text>
+                      </OverflowTooltip>
                       {imported ? (
                         <Text size="micro" tone="muted" className="shrink-0">
                           {t("imported")}
@@ -866,10 +872,18 @@ function FolderSection({
                           {item.kind === "exec" ? t("automation") : t("subagent")}
                         </Text>
                       ) : null}
-                      <Text size="micro" tone="secondary" className="w-24 shrink-0 text-right">
+                      <Text
+                        size="micro"
+                        tone="secondary"
+                        className="shrink-0 whitespace-nowrap text-right"
+                      >
                         {formatImportDate(item.lastAt)}
                       </Text>
-                      <Text size="micro" tone="secondary" className="w-14 shrink-0 text-right">
+                      <Text
+                        size="micro"
+                        tone="secondary"
+                        className="shrink-0 whitespace-nowrap text-right @max-[480px]/import-rows:hidden"
+                      >
                         {formatBytes(item.sizeBytes)}
                       </Text>
                     </>

@@ -52,8 +52,16 @@ process.on("message", ({ id, request, comparison }) => {
           request.projectId,
           request.expectedProjectCwd,
         );
-      else if (request.method === "stamp") value = desktop.readStampRows(request.sessionId);
-      else if (request.method === "metadata")
+      // One child for both reads: each read starts a process, and that start blocks the
+      // Host event loop. Both reads share this helper's read transaction.
+      else if (request.method === "snapshotStamp") {
+        const record = desktop.readSnapshotRecord(
+          request.sessionId,
+          request.projectId,
+          request.expectedProjectCwd,
+        );
+        value = { record, rows: record ? desktop.readStampRows(request.sessionId) : [] };
+      } else if (request.method === "metadata")
         value = desktop.readMetadataRecord(request.sessionId, true);
       else throw new Error("Unknown readonly desktop operation.");
       desktop.releaseReadHandles();

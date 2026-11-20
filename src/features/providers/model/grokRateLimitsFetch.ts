@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { DEFAULT_PROVIDER_ACCOUNT_ID } from "./providerAccounts";
 import { homeDir } from "../../../platform/tauri/fs";
 import {
@@ -8,7 +9,7 @@ import {
   unwatchChild,
   watchChild,
 } from "../../../integrations/harness/core/child";
-import { JsonRpcClient } from "../../../integrations/harness/core/jsonRpc";
+import { JsonRpcClient, JsonRpcResponseError } from "../../../integrations/harness/core/jsonRpc";
 import { createProviderRetirementLedger } from "../../../integrations/harness/core/providerRetirement";
 import { grokSpawnArgs } from "../../../integrations/harness/providers/grok/grokProtocol";
 import {
@@ -79,7 +80,12 @@ export function fetchGrokRateLimits(
 async function readGrokRateLimits(accountId: string): Promise<ProviderRateLimits> {
   try {
     await retirements.drain();
-    const { path } = await resolveGrokBinary();
+    let path: string;
+    try {
+      path = (await resolveGrokBinary()).path;
+    } catch {
+      return unavailableRateLimits("grok", "Grok CLI not found", "cliMissing");
+    }
     const cwd = await homeDir();
     const handle = retirements.admit(
       createChildProcessHandle(`bycoda-grok-usage-${crypto.randomUUID()}`, undefined, "management"),
@@ -121,12 +127,24 @@ async function readGrokRateLimits(accountId: string): Promise<ProviderRateLimits
       const methods = Array.isArray(init?.authMethods) ? init.authMethods : [];
       // API-key accounts have no subscription allowance; never trigger browser login.
       if (!methods.some((method) => record(method)?.id === "cached_token"))
-        return unavailableRateLimits("grok", "Grok usage requires a Grok account sign-in");
-      await rpc.request(
-        "authenticate",
-        { methodId: "cached_token", _meta: { headless: true } },
-        REQUEST_TIMEOUT_MS,
-      );
+        return unavailableRateLimits(
+          "grok",
+          "Grok usage requires a Grok account sign-in",
+          "signedOut",
+        );
+      try {
+        await rpc.request(
+          "authenticate",
+          { methodId: "cached_token", _meta: { headless: true } },
+          REQUEST_TIMEOUT_MS,
+        );
+      } catch (error) {
+        // The CLI answered and refused the cached token. A timeout or a dead process
+        // is a plain Error and stays a probe failure, never proof of sign-out.
+        if (error instanceof JsonRpcResponseError)
+          return unavailableRateLimits("grok", error.message, "signedOut");
+        throw error;
+      }
       return parseGrokBilling(await rpc.request("_x.ai/billing", {}, REQUEST_TIMEOUT_MS));
     } finally {
       rpc.close();
@@ -134,13 +152,6 @@ async function readGrokRateLimits(accountId: string): Promise<ProviderRateLimits
       await retirements.retire([handle]);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (
-      /not authenticated|authentication required|not signed in|no cached|ENOENT|not found/i.test(
-        message,
-      )
-    )
-      return unavailableRateLimits("grok", message);
-    return errorRateLimits("grok", message);
+    return errorRateLimits("grok", errorText(error));
   }
 }

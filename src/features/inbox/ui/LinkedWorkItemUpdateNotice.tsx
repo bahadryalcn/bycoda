@@ -14,7 +14,7 @@ import {
   type LinkedWorkItemActivityEntry,
   type LinkedWorkItemUpdateCard,
 } from "../model/linkedWorkItemActivity";
-import { formatRelativeTime } from "../model/githubTasks";
+import { InboxRelativeTime } from "./InboxRelativeTime";
 import { announceLinkedActivity } from "../../settings/model/sounds";
 import { TransientNotice } from "../../../shared/ui/TransientNotice";
 import {
@@ -199,7 +199,7 @@ export function LinkedWorkItemUpdateNotice({
                       </Text>
                     ) : null}
                     <Text size="inherit" tone="secondary" className="ml-auto shrink-0">
-                      {formatRelativeTime(entry.createdAt)}
+                      <InboxRelativeTime at={entry.createdAt} />
                     </Text>
                   </Text>
                   <ClampText

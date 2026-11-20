@@ -93,7 +93,7 @@ it("keeps voice style dialog open after failed save", async () => {
   await click("Save");
   expect(closed).not.toHaveBeenCalled();
   expect(localStorage.getItem("bycoda.voice.persona")).toBeNull();
-  expect(document.body.textContent).toContain("could not be saved");
+  expect(document.body.textContent).toContain("Couldn’t save the voice style");
 });
 it("shows unknown credential status with retry after read failure", async () => {
   backend.cloudStatus.mockRejectedValue(new Error("Audit host unavailable"));
@@ -125,6 +125,10 @@ it("keeps persona custom text after failed Save and Reset, then retries successf
   const field = [...document.querySelectorAll("input")].find(
     (field) => field.placeholder === "Other tasks, in your own words",
   )!;
+  const tasks = field.closest("details")!;
+  expect(tasks.open).toBe(false);
+  await act(async () => tasks.querySelector("summary")!.click());
+  expect(tasks.open).toBe(true);
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       field,

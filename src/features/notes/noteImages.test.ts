@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguagePreference } from "../../shared/i18n";
 import {
   createRecoveredNote,
   insertNoteImagesMarkdown,
@@ -24,6 +25,17 @@ import { resetNoteInputWindowForTest } from "./testing/noteInputWindow.test-supp
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 beforeEach(() => resetNoteInputWindowForTest());
+
+it("localizes the supported-image error for an empty image selection", async () => {
+  await setLanguagePreference("tr");
+  try {
+    await expect(saveNoteImagesFromPaths("note-1", [])).rejects.toThrow(
+      "PNG, JPG, GIF, WebP veya SVG görseli bırakın.",
+    );
+  } finally {
+    await setLanguagePreference("en");
+  }
+});
 
 it("copies recovery note assets once, rewrites references and leaves generated and remote links intact", async () => {
   invoke.mockReset();

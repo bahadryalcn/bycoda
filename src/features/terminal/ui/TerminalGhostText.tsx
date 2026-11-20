@@ -1,7 +1,14 @@
 import { useLayoutEffect, useState, type CSSProperties } from "react";
 import type { Terminal } from "@xterm/xterm";
+import { observeResize } from "../../../shared/lib/observeResize";
 import { Portal } from "../../../shared/ui/Portal";
+import { coalescedFrame } from "../runtime/coalescedFrame";
 import styles from "./TerminalTools.module.css";
+
+function sameStyle(a: CSSProperties, b: CSSProperties) {
+  const keys = Object.keys(b) as (keyof CSSProperties)[];
+  return keys.every((key) => a[key] === b[key]);
+}
 
 /** Presentation only: never writes to the terminal buffer, selection or clipboard. */
 export function TerminalGhostText({ terminal, suffix }: { terminal: Terminal; suffix: string }) {
@@ -18,33 +25,38 @@ export function TerminalGhostText({ terminal, suffix }: { terminal: Terminal; su
       }
       const cellWidth = screen.clientWidth / terminal.cols;
       const cellHeight = screen.clientHeight / terminal.rows;
-      setLayout({
-        screen,
-        style: {
-          insetInlineStart: buffer.cursorX * cellWidth,
-          insetBlockStart: row * cellHeight,
-          inlineSize: Math.max(0, (terminal.cols - buffer.cursorX) * cellWidth),
-          blockSize: cellHeight,
-          lineHeight: `${cellHeight}px`,
-          fontFamily: terminal.options.fontFamily,
-          fontSize: terminal.options.fontSize,
-          fontWeight: terminal.options.fontWeight,
-          letterSpacing: terminal.options.letterSpacing,
-        },
-      });
+      const style: CSSProperties = {
+        insetInlineStart: buffer.cursorX * cellWidth,
+        insetBlockStart: row * cellHeight,
+        inlineSize: Math.max(0, (terminal.cols - buffer.cursorX) * cellWidth),
+        blockSize: cellHeight,
+        lineHeight: `${cellHeight}px`,
+        fontFamily: terminal.options.fontFamily,
+        fontSize: terminal.options.fontSize,
+        fontWeight: terminal.options.fontWeight,
+        letterSpacing: terminal.options.letterSpacing,
+      };
+      // Keep the previous object when nothing moved, so streaming output does not re-render.
+      setLayout((previous) =>
+        previous && previous.screen === screen && sameStyle(previous.style, style)
+          ? previous
+          : { screen, style },
+      );
     };
     update();
+    // Event bursts are measured once per frame, from the buffer as it is when the frame fires.
+    const frame = coalescedFrame(update);
     const subscriptions = [
-      terminal.onRender(update),
-      terminal.onResize(update),
-      terminal.onScroll(update),
-      terminal.onSelectionChange(update),
+      terminal.onRender(frame.schedule),
+      terminal.onResize(frame.schedule),
+      terminal.onScroll(frame.schedule),
+      terminal.onSelectionChange(frame.schedule),
     ];
-    const observer = new ResizeObserver(update);
-    observer.observe(screen);
+    const stopObserving = observeResize(screen, frame.schedule);
     return () => {
+      frame.cancel();
       subscriptions.forEach((s) => s.dispose());
-      observer.disconnect();
+      stopObserving();
     };
   }, [terminal]);
   if (!layout) return null;

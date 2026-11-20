@@ -17,6 +17,8 @@ import {
   pickImageFiles,
   pickFolders as pickProjectFolders,
   resolveProjectLocation,
+  readProjectImage,
+  setRemoteCommandRunner,
 } from "./fs";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -30,6 +32,27 @@ vi.mock("../../shared/i18n/core", () => ({ t: (text: string) => `translated:${te
 
 const picker = vi.hoisted(() => ({ openFolderPicker: vi.fn() }));
 vi.mock("../../features/projects/ui/openFolderPicker", () => picker);
+
+it("checks remote image metadata before a read and rejects growth in a base64 reply", async () => {
+  const cap = 20 * 1024 * 1024;
+  const root = "remote://machine/project";
+  const path = `${root}/image.png`;
+  const read = vi.fn().mockResolvedValueOnce({ size: cap + 1 });
+  setRemoteCommandRunner(read);
+
+  await expect(readProjectImage(root, "image.png")).rejects.toThrow("Document image exceeds 20 MB");
+  expect(read.mock.calls).toEqual([["read_file_info", { path }]]);
+
+  read.mockClear();
+  read
+    .mockResolvedValueOnce({ size: cap })
+    .mockResolvedValueOnce(Buffer.alloc(cap + 1).toString("base64"));
+  await expect(readProjectImage(root, "image.png")).rejects.toThrow("Document image exceeds 20 MB");
+  expect(read.mock.calls).toEqual([
+    ["read_file_info", { path }],
+    ["read_binary_file", { path }],
+  ]);
+});
 
 it("routes project and session folder requests through the in-app browser", async () => {
   picker.openFolderPicker.mockResolvedValueOnce(["/work/project"]);

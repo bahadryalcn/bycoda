@@ -132,7 +132,7 @@ export function GitGraphBranches({
       disabled: branch.current || !!data?.detached,
     },
     ...(!branch.remote
-      ? [{ kind: "item" as const, id: "rename", label: t("Rename Branch…") }]
+      ? [{ kind: "item" as const, id: "rename", label: t("Rename branch…") }]
       : []),
     { kind: "sep" },
     {
@@ -276,7 +276,7 @@ export function GitGraphBranches({
       ) : null}
       {naming ? (
         <RefNameDialog
-          title={t(naming.rename ? "Rename Branch…" : "New branch")}
+          title={t(naming.rename ? "Rename branch…" : "Create branch…")}
           description={t("Reference: {p0}", { p0: naming.reference })}
           label={t("Branch name")}
           placeholder="feature/my-branch"

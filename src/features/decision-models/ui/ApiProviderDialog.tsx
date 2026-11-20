@@ -76,8 +76,6 @@ export function ApiProviderDialog({
       return;
     }
     setErrors({});
-    // The key leaves component state before the request, so a failed attempt does not keep it.
-    setApiKey("");
     const input: DecisionSourceInput = {
       name: entry.name,
       kind: entry.kind,
@@ -85,7 +83,13 @@ export function ApiProviderDialog({
       ...(entry.endpoint ? { endpoint: entry.endpoint } : {}),
       ...(model.trim() ? { model: model.trim() } : {}),
     };
-    void flow.submit(input, contractLabel(entry.adapter), key).catch(() => undefined);
+    // The key stays in state while the add is in flight or after it fails, so a retry needs no retyping.
+    void flow
+      .submit(input, contractLabel(entry.adapter), key)
+      .then((added) => {
+        if (added) setApiKey("");
+      })
+      .catch(() => undefined);
   };
 
   const openDocs = (url: string) => {

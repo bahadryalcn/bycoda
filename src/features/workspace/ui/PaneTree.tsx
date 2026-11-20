@@ -22,6 +22,7 @@ import {
 } from "../../../shared/lib/drag";
 import { Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import { Sash as ResizeSash } from "../../../shared/ui/Sash";
+import { observeResize } from "../../../shared/lib/observeResize";
 import {
   isPointerOutsideWindow,
   pointerWindowMovePosition,
@@ -45,7 +46,10 @@ import {
   layoutLeaves,
   layoutSashes,
   isFilesystemTab,
-  MIN_PANE_RATIO,
+  MIN_PANE_HEIGHT_PX,
+  MIN_PANE_WIDTH_PX,
+  minPaneRatio,
+  sashBoundaryRange,
   setSplitRatio,
   type EditorPane,
   type LayoutLeaf,
@@ -73,7 +77,13 @@ import { FilePane } from "../../files/ui/FilePane";
 import { MediaVisibilityContext } from "../../files/model/mediaVisibility";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
 import { paneBackgroundPlacement, syncPaneBackgrounds } from "../../../shared/lib/paneBackground";
-import { paneRectStyle, sashKey, sashStyle, writeLayoutPreview } from "./paneTreePreview";
+import {
+  paneRectStyle,
+  paneSashLabel,
+  sashKey,
+  sashStyle,
+  writeLayoutPreview,
+} from "./paneTreePreview";
 import { useShellSessionsSelector } from "../../sessions/model/sessionsStore";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { TranscriptPool } from "../../sessions/ui/TranscriptPool";
@@ -103,6 +113,9 @@ type Shared = {
   onClose: (sessionId: string) => void;
   onRemoteSnapshot?: SessionPaneProps["onRemoteSnapshot"];
   onRefreshAdoptedSession?: SessionPaneProps["onRefreshAdoptedSession"];
+  onRetrySessionHistory?: SessionPaneProps["onRetrySessionHistory"];
+  onLoadSessionHistory?: SessionPaneProps["onLoadSessionHistory"];
+  onPrepareSessionHistory?: SessionPaneProps["onPrepareSessionHistory"];
   onSelectFile: (paneId: string, fileId: string) => void;
   onCloseFile: (paneId: string, fileId: string) => void;
   onCloseOtherFiles: (paneId: string, fileId: string, direction?: "left" | "right") => void;
@@ -137,7 +150,7 @@ type Shared = {
   onSaveDraft: (sessionId: string, text: string, attachments: Attachment[]) => boolean | void;
   onRemoveDraft: (sessionId: string, draftBlockId: string) => boolean | void;
   onStop: (sessionId: string) => void;
-  onCompactContext: (sessionId: string) => boolean;
+  onCompactContext: SessionPaneProps["onCompactContext"];
   onRewindMessage?: SessionPaneProps["onRewindMessage"];
   onNewSession?: SessionPaneProps["onNewSession"];
   onPlaceSessionInFolder: (
@@ -246,6 +259,9 @@ function PaneTreeComponent({
   onClose,
   onRemoteSnapshot,
   onRefreshAdoptedSession,
+  onRetrySessionHistory,
+  onLoadSessionHistory,
+  onPrepareSessionHistory,
   onSelectFile,
   onCloseFile,
   onCloseOtherFiles,
@@ -845,6 +861,9 @@ function PaneTreeComponent({
                         onClose={onClose}
                         onRemoteSnapshot={onRemoteSnapshot}
                         onRefreshAdoptedSession={onRefreshAdoptedSession}
+                        onRetrySessionHistory={onRetrySessionHistory}
+                        onLoadSessionHistory={onLoadSessionHistory}
+                        onPrepareSessionHistory={onPrepareSessionHistory}
                         onCwdChange={onCwdChange}
                         onBranchChange={onBranchChange}
                         onWorktreeChange={onWorktreeChange}
@@ -1058,36 +1077,61 @@ function PaneSash({
   const boundary = sash.sizes.slice(0, sash.index + 1).reduce((sum, size) => sum + size, 0);
   const before = sash.sizes.slice(0, sash.index).reduce((sum, size) => sum + size, 0);
   const pairSize = sash.sizes[sash.index] + sash.sizes[sash.index + 1];
-  const minimum = Math.min(MIN_PANE_RATIO, pairSize / 2);
   const group = sash.group;
+  const minPx = row ? MIN_PANE_WIDTH_PX : MIN_PANE_HEIGHT_PX;
+  const groupSpan = (rect: DOMRect | undefined) =>
+    rect ? (row ? group.w * rect.width : group.h * rect.height) : 0;
+  // The split's measured length, only to show an honest range to assistive technology; drags and
+  // keys measure fresh when they run.
+  const [measuredSpan, setMeasuredSpan] = useState(0);
+  // Measures the tree while mounted, so the announced range follows window and sidebar resizes.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- observes the pane tree's size while mounted
+  useLayoutEffect(() => {
+    const tree = containerRef.current;
+    if (!tree) return;
+    return observeResize(tree, (entry) =>
+      setMeasuredSpan(row ? group.w * entry.contentRect.width : group.h * entry.contentRect.height),
+    );
+  }, [containerRef, row, group.w, group.h]);
+  const range = sashBoundaryRange(sash.sizes, sash.index, minPaneRatio(measuredSpan, minPx));
   const ratioAt = (delta: number) =>
     gesture.current.start + (gesture.current.span > 0 ? delta / gesture.current.span : 0);
+  // Keeps both neighbours above the pixel minimum, so a drag, a key or a double click never
+  // leaves a sliver. Saved ratios are untouched until the owner moves a sash.
+  const clampBoundary = (next: number) => {
+    const bounds = sashBoundaryRange(
+      sash.sizes,
+      sash.index,
+      minPaneRatio(groupSpan(containerRef.current?.getBoundingClientRect()), minPx),
+    );
+    return Math.min(bounds.max, Math.max(bounds.min, next));
+  };
 
   return (
     <ResizeSash
       orientation={row ? "vertical" : "horizontal"}
-      label={t(row ? "Resize columns" : "Resize rows")}
-      value={Math.round(boundary * 100)}
-      min={Math.round((before + minimum) * 100)}
-      max={Math.round((before + pairSize - minimum) * 100)}
+      label={paneSashLabel(sash, t)}
+      value={Math.round(Math.min(range.max, Math.max(range.min, boundary)) * 100)}
+      min={Math.round(range.min * 100)}
+      max={Math.round(range.max * 100)}
       className="absolute"
       data-pane-sash={sashKey(sash)}
       onResizeStart={() => {
-        const rect = containerRef.current?.getBoundingClientRect();
         gesture.current = {
           start: boundary,
-          span: rect ? (row ? group.w * rect.width : group.h * rect.height) : 0,
+          span: groupSpan(containerRef.current?.getBoundingClientRect()),
         };
       }}
       onResize={(delta) => {
-        if (gesture.current.span > 0) onPreview(ratioAt(delta));
+        if (gesture.current.span > 0) onPreview(clampBoundary(ratioAt(delta)));
       }}
       onResizeEnd={(delta, { cancelled, moved }) => {
         if (cancelled || !moved || gesture.current.span <= 0) onCancel();
         else {
           // The last frame may not have run; commit the box the pointer ended on.
-          onPreview(ratioAt(delta));
-          onCommit(ratioAt(delta));
+          const final = clampBoundary(ratioAt(delta));
+          onPreview(final);
+          onCommit(final);
         }
       }}
       onKeyDown={(event) => {
@@ -1102,7 +1146,7 @@ function PaneSash({
         else return;
         event.preventDefault();
         event.stopPropagation();
-        onCommit(next);
+        onCommit(clampBoundary(next));
       }}
       onDoubleClick={(event) => {
         event.preventDefault();

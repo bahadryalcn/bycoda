@@ -63,6 +63,17 @@ it("fetches, caches to disk and serves the fresh cache without another request",
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
+it("serves the fresh cache from memory without re-reading the file", async () => {
+  const fetchMock = respond(PAYLOAD);
+  const facts = createCatalogFacts({ directory, fetch: fetchMock, now: () => 1000 });
+  await facts.read();
+  await writeFile(join(directory, "catalog-facts.json"), "{broken");
+  const result = await facts.read();
+  expect(result.models).toHaveLength(4);
+  expect(result.fetchedAt).toBe(1000);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 it("reports bad JSON with an empty list when nothing is cached", async () => {
   const facts = createCatalogFacts({ directory, fetch: respond("not json"), now: () => 1 });
   const result = await facts.read();

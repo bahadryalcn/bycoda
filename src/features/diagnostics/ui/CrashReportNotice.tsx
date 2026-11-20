@@ -18,14 +18,19 @@ export function CrashReportNotice() {
   useLocale();
   const pending = useSyncExternalStore(subscribeDiagnostics, getPendingCrash);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<DiagnosticSendStatus | null>(null);
+  // -- The outcome belongs to the crash it was produced for; a later crash starts with the question again.
+  const [outcome, setOutcome] = useState<{
+    crash: NonNullable<typeof pending>;
+    status: DiagnosticSendStatus;
+  } | null>(null);
   if (!pending) return null; // -- Sending clears the crash toast; no second success toast.
+  const result = outcome?.crash === pending ? outcome.status : null;
   const send = async (always: boolean) => {
     setBusy(true);
     try {
-      setResult(await sendPendingCrash(always));
+      setOutcome({ crash: pending, status: await sendPendingCrash(always) });
     } catch {
-      setResult("failed"); // -- the marker stays, so Send can be tried again.
+      setOutcome({ crash: pending, status: "failed" }); // -- the marker stays, so Send can be tried again.
     } finally {
       setBusy(false);
     }

@@ -7,6 +7,7 @@ import type {
   ToolPreview,
   TurnIntent,
   TurnMetrics,
+  WorkflowAgentParent,
 } from "../../../features/sessions/model/session";
 import type { TurnUsage } from "../../../features/sessions/model/sessionUsage";
 import type { SessionGoal } from "../../../shared/model/providerGoal";
@@ -83,6 +84,7 @@ export type HarnessEvent =
       agentModel?: string;
       /** The brief a subagent was given, on the Agent call that spawns it. */
       agentPrompt?: string;
+      workflow?: WorkflowAgentParent;
       callId: string;
       title: string;
       kind?: string;
@@ -99,6 +101,7 @@ export type HarnessEvent =
       type: "tool.updated";
       agentModel?: string;
       agentPrompt?: string;
+      workflow?: WorkflowAgentParent;
       callId: string;
       title?: string;
       kind?: string;
@@ -270,6 +273,8 @@ export type HarnessSessionInput = {
 
 export type SendTurnInput = HarnessSessionInput & {
   text: string;
+  /** Bounded prior replies captured by the Host for a tool-free delegated turn. */
+  chatOnlyHistory?: string;
   /** Trusted runtime guidance kept separate from native command text until a model turn starts. */
   runtimeInstructions?: string;
   attachments?: Attachment[];

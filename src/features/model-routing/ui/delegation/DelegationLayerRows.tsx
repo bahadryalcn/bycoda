@@ -83,7 +83,7 @@ export function DelegationLayerRows({
             stacked={key === CROSS_SUBAGENTS_KEY}
             modified={override}
             onReset={() => onSet(key, undefined)}
-            resetLabel={t("Remove override")}
+            resetLabel={t("Remove {p0} override", { p0: label })}
             disabled={disabled}
           >
             <DelegationControl

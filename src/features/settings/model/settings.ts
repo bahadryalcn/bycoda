@@ -915,6 +915,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       "voice speech microphone whisper voxcpm python models ses konuşma mikrofon sesli model kurulum",
   },
   {
+    id: "voice-wake",
+    section: "voice",
+    get label() {
+      return t("Wake and sleep phrases");
+    },
+    keywords: "wake up wake word wake phrase voice activation uyandırma komutu uyandırma sözcüğü",
+  },
+  {
     id: "anchor-prompts",
     section: "chat",
     get label() {
@@ -1182,6 +1190,18 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       keywords: "registry install discover acp katalog keşfet kur",
     },
     {
+      id: "ollama-models",
+      section: "providers",
+      label: "Local models (Ollama)",
+      keywords: "ollama local model opencode offline download pull yerel model indir",
+    },
+    {
+      id: "ollama-port",
+      section: "providers",
+      label: "Ollama port",
+      keywords: "ollama port address host OLLAMA_HOST 11434 adres",
+    },
+    {
       id: "account-limits",
       section: "usage",
       label: "Provider account limit",
@@ -1422,8 +1442,17 @@ function matchScore(needle: string, label: string, keywords?: string): number | 
   return null;
 }
 
+/**
+ * Upper bound on search results. The search panel scrolls, so every match up to this cap stays
+ * reachable; a short query such as "e" can match hundreds of rows, which keeps work bounded.
+ */
+export const SETTINGS_SEARCH_LIMIT = 50;
+
 /** Individual settings first, then whole sections, so a row wins its own name. */
-export function searchSettings(query: string, limit = 8): SettingsSearchResult[] {
+export function searchSettings(
+  query: string,
+  limit = SETTINGS_SEARCH_LIMIT,
+): SettingsSearchResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
   const scored: { score: number; result: SettingsSearchResult }[] = [];
@@ -2154,25 +2183,12 @@ export function subscribeAutosave(onStoreChange: () => void) {
   };
 }
 
-const CLAUDE_HOOKS_KEY = "bycoda.claudeHooks";
-
-export const CLAUDE_HOOKS_DEFAULT = true;
-
-const claudeHooksSetting = storedFlag(
-  CLAUDE_HOOKS_KEY,
+export {
   CLAUDE_HOOKS_DEFAULT,
-  "bycoda:claude-hooks-change",
-  true,
-);
-export const subscribeClaudeHooks = claudeHooksSetting.subscribe;
-
-export function loadClaudeHooks(): boolean {
-  return claudeHooksSetting.load() ?? CLAUDE_HOOKS_DEFAULT;
-}
-
-export function saveClaudeHooks(value: boolean) {
-  claudeHooksSetting.save(value);
-}
+  loadClaudeHooks,
+  saveClaudeHooks,
+  subscribeClaudeHooks,
+} from "./claudeHooksSetting";
 
 const CTRL = IS_MAC ? "⌃" : "Ctrl+";
 
@@ -2204,6 +2220,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "App: Open Tasks", keys: `${MOD}${SHIFT}Y`, when: "Always" },
   { command: "App: Open Automations", keys: `${MOD}${SHIFT}U`, when: "Always" },
   { command: "App: Open Crews", keys: `${MOD}${SHIFT}E`, when: "Always" },
+  { command: "App: Focus Approval Requests", keys: `${MOD}${SHIFT}J`, when: "Always" },
   ...(IS_MAC || IS_WIN
     ? [
         {
@@ -2314,6 +2331,10 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "Pane: Focus Right", keys: `${MOD}${ALT}→`, when: "Always" },
   { command: "Pane: Focus Up", keys: `${MOD}${ALT}↑`, when: "Always" },
   { command: "Pane: Focus Down", keys: `${MOD}${ALT}↓`, when: "Always" },
+  { command: "Pane: Move Left", keys: `${MOD}${ALT}${SHIFT}←`, when: "workspaceFocus" },
+  { command: "Pane: Move Right", keys: `${MOD}${ALT}${SHIFT}→`, when: "workspaceFocus" },
+  { command: "Pane: Move Up", keys: `${MOD}${ALT}${SHIFT}↑`, when: "workspaceFocus" },
+  { command: "Pane: Move Down", keys: `${MOD}${ALT}${SHIFT}↓`, when: "workspaceFocus" },
   { command: "Terminal: New", keys: `${MOD}\``, when: "Always" },
   { command: "Terminal: New Tab", keys: `${MOD}${SHIFT}\``, when: "Always" },
   { command: "Terminal: Toggle Dock", keys: `${MOD}J`, when: "Always" },

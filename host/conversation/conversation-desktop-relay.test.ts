@@ -29,6 +29,49 @@ it("pins Room SSH control to the original Native device across queued relay wait
   relay.close();
 });
 
+it("holds an idle take until a queued request wakes it", async () => {
+  const relay = new ConversationDesktopRelay("host");
+  await relay.take("native");
+  const held = relay.take("native", { waitMs: 5_000 });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  void relay.call(action, {}, "/project", principal, () => true).catch(() => undefined);
+  const requests = await held;
+  expect(requests).toHaveLength(1);
+  relay.close();
+});
+
+it("ends an idle held take after its wait with no requests", async () => {
+  const relay = new ConversationDesktopRelay("host");
+  await relay.take("native");
+  const started = Date.now();
+  expect(await relay.take("native", { waitMs: 50 })).toEqual([]);
+  expect(Date.now() - started).toBeGreaterThanOrEqual(40);
+  relay.close();
+});
+
+it("ends a held take when its caller aborts or its authority is revoked", async () => {
+  const relay = new ConversationDesktopRelay("host");
+  await relay.take("native");
+  const controller = new AbortController();
+  const aborted = relay.take("native", { waitMs: 5_000, signal: controller.signal });
+  controller.abort();
+  expect(await aborted).toEqual([]);
+  let authorized = true;
+  const revoked = relay.take("native", { waitMs: 5_000, authorized: () => authorized });
+  setTimeout(() => {
+    authorized = false;
+  }, 20);
+  expect(await revoked).toEqual([]);
+  relay.close();
+});
+
+it("bounds the held-take key to the relay wait and rejects other keys", () => {
+  const schema = NATIVE_SERVICES_RPC_SCHEMAS["native.services.conversation.desktop.take"].params;
+  expect(schema.parse({ waitMs: 25_000 })).toEqual({ waitMs: 25_000 });
+  expect(() => schema.parse({ waitMs: 25_001 })).toThrow();
+  expect(() => schema.parse({ owner: "forged-principal" })).toThrow();
+});
+
 it("Host critical exclusions can only narrow a Room native grant and revoke queued approval", async () => {
   let requiresOwner = false;
   const relay = new ConversationDesktopRelay("host", async () => requiresOwner);
@@ -210,6 +253,60 @@ it("stays online through the desktop's slowest idle poll and goes offline once s
   }
 });
 
+it("judges a request aimed at one device by that device's own polls, not by another desktop's", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-07T10:00:00Z"));
+  try {
+    const relay = new ConversationDesktopRelay("host");
+    const phone = "b".repeat(64);
+    const capture = () =>
+      relay.callAssistantThread(
+        "privacy.account.capture",
+        { requestId: "request", operationHash: "a".repeat(64) },
+        { threadId: "thread", environmentId: "host", targetDeviceHash: phone },
+        () => true,
+      );
+    await relay.take(phone);
+    vi.advanceTimersByTime(DESKTOP_RELAY_STALE_MS + 1_000);
+    // The main desktop keeps polling while the targeted device has gone silent.
+    await relay.take("desktop");
+    expect(() => capture()).toThrow("Desktop relay is offline");
+    await relay.take(phone);
+    const accepted = capture();
+    accepted.catch(() => {});
+    relay.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does not count the time the Host machine slept as desktop silence, and still goes offline afterwards", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-07T10:00:00Z"));
+  try {
+    const relay = new ConversationDesktopRelay("host");
+    const capture = () =>
+      relay.callAssistantThread(
+        "privacy.account.capture",
+        { requestId: "request", operationHash: "a".repeat(64) },
+        { threadId: "thread", environmentId: "host" },
+        () => true,
+      );
+    await relay.take("desktop");
+    // The whole machine sleeps for half an hour: the desktop could not poll either.
+    vi.setSystemTime(Date.now() + 30 * 60_000);
+    const accepted = capture();
+    accepted.catch(() => {});
+    // A desktop that stays silent after waking is offline one window later.
+    for (let elapsed = 0; elapsed <= DESKTOP_RELAY_STALE_MS + 5_000; elapsed += 5_000)
+      vi.advanceTimersByTime(5_000);
+    expect(() => capture()).toThrow("Desktop relay is offline");
+    relay.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("hands the desktop session and assistant Room requests that match the take contract", async () => {
   const relay = new ConversationDesktopRelay("host");
   await relay.take("native");
@@ -266,4 +363,31 @@ it("sends a Global thread's desktop approval with no project folder and refuses 
     ),
   ).toThrow("Invalid global desktop approval source.");
   relay.close();
+});
+
+it("fails a claimed request once the desktop that claimed it goes silent, and frees its slot", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-07T10:00:00Z"));
+  try {
+    const relay = new ConversationDesktopRelay("host");
+    await relay.take("desktop");
+    const pending = relay.call(action, {}, "/project", principal);
+    const settled = pending.then(
+      () => "resolved",
+      (error: Error) => error.message,
+    );
+    expect(await relay.take("desktop")).toHaveLength(1);
+    // The desktop keeps polling: the claim survives past the stale window.
+    for (let elapsed = 0; elapsed < DESKTOP_RELAY_STALE_MS + 10_000; elapsed += 10_000) {
+      await vi.advanceTimersByTimeAsync(10_000);
+      await relay.take("desktop");
+    }
+    // Silence from the claiming desktop fails the claim,
+    // even when nothing else touches the relay.
+    await vi.advanceTimersByTimeAsync(DESKTOP_RELAY_STALE_MS + 10_000);
+    await expect(settled).resolves.toContain("Desktop disconnected");
+    relay.close();
+  } finally {
+    vi.useRealTimers();
+  }
 });

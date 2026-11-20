@@ -259,6 +259,12 @@ export const lint = {
                 message:
                   "State files written in place are truncated to zero bytes by a crash mid-write. Use writeFileAtomic() / readStateFile() from host/storage/atomic-write.ts for anything the Host reads back at startup.",
               },
+              {
+                name: "node:os",
+                importNames: ["networkInterfaces"],
+                message:
+                  "os.networkInterfaces() is a synchronous adapter query that blocks the Host event loop (~20 ms on Windows, more under load); per-request or per-poll calls froze the Host. Use currentNetworkInterfaces() / networkFingerprint() from host/mobile/mobile-network.ts.",
+              },
             ],
           },
         ],

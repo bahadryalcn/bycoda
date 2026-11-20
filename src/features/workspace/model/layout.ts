@@ -112,7 +112,38 @@ export type WorkspaceTab = {
   groupId?: string;
 };
 
+/** Floor for a pane's share of its split when the split's pixel size is unknown. */
 export const MIN_PANE_RATIO = 0.04;
+/** Narrowest a pane may be dragged to: wide enough for its tab strip, composer controls and Close. */
+export const MIN_PANE_WIDTH_PX = 240;
+/** Shortest a pane may be dragged to when panes stack. */
+export const MIN_PANE_HEIGHT_PX = 120;
+
+/**
+ * A pane's smallest share of a split group `spanPx` long, from a pixel minimum. Where two minimum
+ * panes do not fit, each keeps up to a third of the span so the sash still moves. Without a
+ * measured span it is the plain ratio floor.
+ */
+export function minPaneRatio(spanPx: number, minPx: number): number {
+  if (!(spanPx > 0)) return MIN_PANE_RATIO;
+  const ratio = minPx / spanPx;
+  return Math.max(MIN_PANE_RATIO, ratio > 0.5 ? 1 / 3 : ratio);
+}
+
+/**
+ * The boundaries (0–1 of the group) the sash between `index` and `index + 1` may take so neither
+ * neighbour drops under `minRatio`. A pair too small for two minimums keeps only its midpoint.
+ */
+export function sashBoundaryRange(
+  sizes: readonly number[],
+  index: number,
+  minRatio: number,
+): { min: number; max: number } {
+  const before = sizes.slice(0, index).reduce((sum, n) => sum + n, 0);
+  const pair = sizes[index] + sizes[index + 1];
+  const min = Math.min(minRatio, pair / 2);
+  return { min: before + min, max: before + pair - min };
+}
 
 export function leaf(sessionId: string): LayoutNode {
   return { type: "leaf", id: sessionId };

@@ -4,7 +4,11 @@ use tauri::Emitter;
 
 static REVISION: AtomicU64 = AtomicU64::new(1);
 
-fn matches_generation(live: &LiveForward, owner: &ForwardOwner, generation: uuid::Uuid) -> bool {
+pub(super) fn matches_generation(
+    live: &LiveForward,
+    owner: &ForwardOwner,
+    generation: uuid::Uuid,
+) -> bool {
     live.generation == generation && live.owner_lease.same_generation(owner) && owner.is_alive()
 }
 
@@ -39,7 +43,9 @@ pub(super) fn publish(
     });
 }
 
-/// Watch the original process generation, never a later forward with the same rule ID.
+/// Watch one forward. An unexpected exit of a `reconnectable` forward is handed
+/// to the reconnect ladder, which continues under the replacement generation;
+/// anything else, or a ladder that gives up, leaves the forward `failed`.
 pub(super) fn watch(
     app: AppHandle,
     window: String,
@@ -47,52 +53,89 @@ pub(super) fn watch(
     id: String,
     generation: uuid::Uuid,
     owner: ForwardOwner,
+    reconnectable: bool,
 ) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(500));
+    if reconnectable {
         let state = app.state::<SshForwards>();
-        let resources = {
-            let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
-            let Some(live) = sessions
-                .get_mut(&id)
-                .filter(|live| matches_generation(live, &owner, generation))
-            else {
-                break;
-            };
-            if live.stopping || live.status.state != "running" {
-                break;
-            }
-            match live.child.as_mut().map(|child| child.try_wait()) {
-                Some(Ok(None)) => continue,
-                Some(Ok(Some(_))) => {
-                    live.child = None;
-                    live.stopping = true;
-                    live.status.state = "stopping".into();
-                    (live._http_proxy.take(), live._jump_config.take())
-                }
-                Some(Err(_)) => {
-                    live.status.state = "unknown".into();
-                    live.status.error = Some("Unable to inspect forwarding process".into());
-                    drop(sessions);
-                    publish(&app, &window, &connection_id, &id, generation, &owner);
-                    break;
-                }
-                None => break,
-            }
-        };
-        drop(resources);
         let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(live) = sessions
             .get_mut(&id)
-            .filter(|live| matches_generation(live, &owner, generation) && live.stopping)
+            .filter(|live| matches_generation(live, &owner, generation))
         {
+            live.auto_reconnect = true;
+        }
+    }
+    std::thread::spawn(move || {
+        let mut generation = generation;
+        let mut running_since = Instant::now();
+        let mut attempts = 0u32;
+        loop {
+            std::thread::sleep(Duration::from_millis(500));
+            let state = app.state::<SshForwards>();
+            let resources = {
+                let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+                let Some(live) = sessions
+                    .get_mut(&id)
+                    .filter(|live| matches_generation(live, &owner, generation))
+                else {
+                    break;
+                };
+                if live.stopping || live.status.state != "running" {
+                    break;
+                }
+                match live.child.as_mut().map(|child| child.try_wait()) {
+                    Some(Ok(None)) => continue,
+                    Some(Ok(Some(_))) => {
+                        live.child = None;
+                        live.stopping = true;
+                        live.status.state = "stopping".into();
+                        (live._http_proxy.take(), live._jump_config.take())
+                    }
+                    Some(Err(_)) => {
+                        live.status.state = "unknown".into();
+                        live.status.error = Some("Unable to inspect forwarding process".into());
+                        drop(sessions);
+                        publish(&app, &window, &connection_id, &id, generation, &owner);
+                        break;
+                    }
+                    None => break,
+                }
+            };
+            drop(resources);
+            let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(live) = sessions
+                .get_mut(&id)
+                .filter(|live| matches_generation(live, &owner, generation) && live.stopping)
+            else {
+                break;
+            };
+            let detail = stderr_detail(&live.stderr);
             live.stopping = false;
-            live.status.state = "failed".into();
-            live.status.error = Some("SSH forwarding process exited".into());
+            let retry = live.auto_reconnect && !reconnect::is_terminal(&detail);
+            live.status.state = if retry { "reconnecting" } else { "failed" }.into();
+            live.status.error = Some(format!("SSH forwarding process exited{detail}"));
             drop(sessions);
             publish(&app, &window, &connection_id, &id, generation, &owner);
+            if !retry {
+                break;
+            }
+            if running_since.elapsed() >= reconnect::STABLE {
+                attempts = 0;
+            }
+            let Some(next) = reconnect::recover(
+                &app,
+                &window,
+                &connection_id,
+                &id,
+                generation,
+                &owner,
+                &mut attempts,
+            ) else {
+                break;
+            };
+            generation = next;
+            running_since = Instant::now();
         }
-        break;
     });
 }
 
@@ -115,6 +158,7 @@ mod tests {
             child: None,
             stderr: Default::default(),
             stopping: false,
+            auto_reconnect: false,
             status: ForwardStatus {
                 id: "rule".into(),
                 connection_id: "profile".into(),

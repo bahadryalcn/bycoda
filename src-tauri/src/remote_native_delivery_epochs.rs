@@ -7,6 +7,69 @@ pub(super) const OPEN: &str = "native.delivery.epochs.open";
 pub(super) const STATUS: &str = "native.delivery.epochs.status";
 pub(super) const COMPACT: &str = "native.delivery.epochs.compact";
 pub(super) const CLOSE: &str = "native.delivery.epochs.close";
+pub(super) const GAP_RESOLVE: &str = "native.delivery.epochs.gap.resolve";
+const GAP_CAPABILITY: &str = "native.delivery.epochs.gaps.v1";
+
+/// Separately negotiated; a Host without it keeps gaps held (never guessed).
+pub(super) fn supports_gaps(descriptor: &Value) -> bool {
+    supports(descriptor)
+        && descriptor["capabilities"]
+            .as_array()
+            .is_some_and(|caps| caps.iter().any(|cap| cap.as_str() == Some(GAP_CAPABILITY)))
+        && descriptor["methods"]
+            .as_array()
+            .is_some_and(|methods| methods.iter().any(|m| m.as_str() == Some(GAP_RESOLVE)))
+}
+
+fn gap_kind(method: &str) -> Result<&'static str, String> {
+    match method {
+        "native.buffers.update" => Ok("buffer"),
+        "native.services.conversation.desktop.finish" => {
+            Ok("native.services.conversation.desktop.finish")
+        }
+        "native.services.workspace.format" => Ok("native.services.workspace.format"),
+        _ => Err("NATIVE_DELIVERY_METHOD: unsupported original request method".into()),
+    }
+}
+
+/// Exact allocated identity of one missing v2 original. Never sent for an
+/// original that may still be in flight on this connection.
+pub(super) fn gap_params(original: &journal::Original) -> Result<Value, String> {
+    let id = journal::epochs::parse_original_id(original.id()).ok_or_else(|| {
+        "NATIVE_DELIVERY_EPOCH_INVALID: original is not an epoch original".to_string()
+    })?;
+    Ok(json!({"ownerId":id.0,"generation":id.1,"sequence":id.2,
+        "kind":gap_kind(original.method())?,"sha256":original.payload_sha256(),
+        "byteLength":original.payload_bytes()}))
+}
+
+/// Host's answer for that exact identity. `true`: durable no-effect fence
+/// (never admitted, never admittable; not success). `false`: Host holds a
+/// receipt; resolve through ordinary delivery. Any mismatch is an error.
+pub(super) fn gap_outcome(params: &Value, response: &Value) -> Result<bool, String> {
+    let invalid = || "NATIVE_DELIVERY_EPOCH_INVALID: Host gap resolution is invalid".to_string();
+    let fields = response.as_object().ok_or_else(invalid)?;
+    if fields.len() != 7 {
+        return Err(invalid());
+    }
+    for key in [
+        "ownerId",
+        "generation",
+        "sequence",
+        "kind",
+        "sha256",
+        "byteLength",
+    ] {
+        if response[key] != params[key] {
+            return Err(invalid());
+        }
+    }
+    match response["outcome"].as_str() {
+        Some("not_admitted") => Ok(true),
+        Some("admitted") => Ok(false),
+        _ => Err(invalid()),
+    }
+}
 
 pub(super) fn supports(descriptor: &Value) -> bool {
     descriptor["capabilities"].as_array().is_some_and(|caps| {
@@ -42,16 +105,58 @@ pub(super) fn compact_params(
     store: &SessionStore,
     epoch: &journal::epochs::EpochHandle,
 ) -> Result<Option<Value>, String> {
-    let current = journal::epochs::current(store, epoch)?;
-    let eligible = journal::epochs::eligible_through(store, &current)?;
-    if eligible <= current.through() {
-        return Ok(None);
+    let plan = journal::epochs::maintenance_plan(store, epoch, false)?;
+    Ok(compact_request(epoch, &plan))
+}
+
+fn compact_request(
+    epoch: &journal::epochs::EpochHandle,
+    plan: &journal::epochs::MaintenancePlan,
+) -> Option<Value> {
+    (plan.eligible_through > plan.expected_through).then(|| {
+        let target = plan
+            .eligible_through
+            .min(plan.expected_through.saturating_add(32));
+        json!({"ownerId":epoch.owner_id(),"generation":epoch.generation(),
+            "expectedThrough":plan.expected_through,"through":target})
+    })
+}
+
+/// Give the existing retired prefix priority. Try one abandoned gap when the
+/// prefix stalls and only compact across it after its local proof is durable.
+pub(super) fn maintenance_params(
+    store: &SessionStore,
+    epoch: &journal::epochs::EpochHandle,
+    gap_supported: bool,
+    recover: impl FnOnce(&journal::Original) -> Result<bool, String>,
+) -> Result<Option<Value>, String> {
+    let plan = journal::epochs::maintenance_plan(store, epoch, gap_supported)?;
+    if let Some(original) = plan.gap.as_ref() {
+        // Log only the sequence and a bounded diagnostic, never request or reply data.
+        let sequence = plan.eligible_through + 1;
+        match recover(original) {
+            Ok(true) => {
+                log::info!("Native delivery gap {sequence}: Host fence saved");
+                return compact_params(store, epoch);
+            }
+            Ok(false) => log::debug!("Native delivery gap {sequence}: already admitted by Host"),
+            Err(error) => log::warn!("Native delivery gap {sequence}: {error}"),
+        }
     }
-    let target = eligible.min(current.through().saturating_add(32));
-    Ok(Some(
-        json!({"ownerId":current.owner_id(),"generation":current.generation(),
-        "expectedThrough":current.through(),"through":target}),
-    ))
+    Ok(compact_request(epoch, &plan))
+}
+
+pub(super) fn gap_error(stage: &str, error: &str) -> String {
+    let code = error.split([':', ' ']).next().unwrap_or_default();
+    if code.starts_with("NATIVE_DELIVERY_")
+        && code.len() <= 64
+        && code
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte == b'_')
+    {
+        return format!("{stage} ({code})");
+    }
+    stage.into()
 }
 
 #[cfg(test)]
@@ -73,6 +178,49 @@ mod tests {
     }
 
     #[test]
+    fn gap_resolution_is_separately_negotiated_and_binds_the_exact_identity() {
+        let base = json!({"capabilities":["native.delivery.epochs.v2"],
+            "methods":[OPEN,STATUS,COMPACT,CLOSE]});
+        assert!(!supports_gaps(&base));
+        let mut full = base.clone();
+        full["capabilities"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(GAP_CAPABILITY));
+        assert!(!supports_gaps(&full), "capability without method");
+        full["methods"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(GAP_RESOLVE));
+        assert!(supports_gaps(&full));
+        let mut old = full.clone();
+        old["methods"].as_array_mut().unwrap().remove(0);
+        assert!(!supports_gaps(&old), "requires the base epoch protocol");
+
+        assert_eq!(gap_kind("native.buffers.update").unwrap(), "buffer");
+        assert!(gap_kind("native.services.desktop.stop").is_err());
+        let params = json!({"ownerId":"11111111-1111-4111-8111-111111111111","generation":2,
+            "sequence":7180,"kind":"native.services.workspace.format","sha256":"a".repeat(64),"byteLength":9});
+        let mut response = params.clone();
+        response["outcome"] = json!("not_admitted");
+        assert_eq!(gap_outcome(&params, &response), Ok(true));
+        response["outcome"] = json!("admitted");
+        assert_eq!(gap_outcome(&params, &response), Ok(false));
+        for (key, value) in [
+            ("outcome", json!("succeeded")),
+            ("sequence", json!(7181)),
+            ("kind", json!("buffer")),
+            ("sha256", json!("b".repeat(64))),
+            ("byteLength", json!(10)),
+            ("extra", json!(true)),
+        ] {
+            let mut changed = response.clone();
+            changed[key] = value;
+            assert!(gap_outcome(&params, &changed).is_err(), "{key}");
+        }
+    }
+
+    #[test]
     fn epoch_methods_are_finite_private_producer_scope_operations() {
         use crate::host_ws::{native_profile::NativeProfileBroker, HostWsBroker};
         let reference = json!({"ownerId":"11111111-1111-4111-8111-111111111111","generation":1});
@@ -87,6 +235,11 @@ mod tests {
             (STATUS, reference),
             (COMPACT, compact.clone()),
             (CLOSE, compact),
+            (
+                GAP_RESOLVE,
+                json!({"ownerId":"11111111-1111-4111-8111-111111111111","generation":1,
+                    "sequence":2,"kind":"buffer","sha256":"a".repeat(64),"byteLength":2}),
+            ),
         ] {
             assert!(
                 NativeProfileBroker::supports_workspace_params(method, &params),

@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import {
   assertProviderOperation,
   observeProviderProcess,
@@ -17,6 +18,7 @@ import {
   PROVIDER_STARTUP_TIMEOUT_MS,
   withSlowStartupNotice,
 } from "../../core/providerStartupStatus";
+import { t } from "../../../../shared/i18n/core";
 import {
   createProviderRetirementLedger,
   settleProviderRetirements,
@@ -48,6 +50,12 @@ import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
+import { ACP_PROMPT_TIMEOUT_MS } from "../../core/acpPromptDeadline";
+import {
+  providerExitError,
+  pushExitStderrTail,
+  redactExitStderrLine,
+} from "../../core/exitDiagnostics";
 import { resolveAntigravityBinary, spawnChild, unwatchChild, watchChild } from "../../core/child";
 import {
   autoPermissionOption,
@@ -113,21 +121,22 @@ type Resume = {
 const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
 const SESSION_TIMEOUT_MS = 45_000;
 const CONTROL_TIMEOUT_MS = 15_000;
-const PROMPT_TIMEOUT_MS = 30 * 60_000;
 // Antigravity answers session/prompt only after its post-turn work (trajectory
 // idle + external hooks) finishes, so a wedged server never resolves it. Silence
 // is ambiguous — a long quiet tool call is legitimate — so past this point we
 // surface a status note instead of killing the turn.
 const STALL_NOTIFY_MS = 120_000;
 
-const AUTH_HELP = "Run `agy` once in Terminal to sign in.";
+function authHelp(): string {
+  return t("Run `agy` once in Terminal to sign in.");
+}
 
 function antigravityError(error: unknown): Error {
-  const detail = error instanceof Error ? error.message : String(error);
-  if (detail.includes(AUTH_HELP)) return new Error(detail);
+  const detail = errorText(error);
+  if (detail.includes(authHelp())) return new Error(detail);
   return new Error(
     /auth|login|sign.in|credential|api.key/i.test(detail)
-      ? `${detail.trim()}\n\n${AUTH_HELP}`
+      ? `${detail.trim()}\n\n${authHelp()}`
       : detail,
   );
 }
@@ -457,7 +466,9 @@ function noteActivity(live: Live): void {
     live.stallNotified = true;
     live.onEvent({
       type: "status",
-      text: "Antigravity has been silent for two minutes. Its post-turn work may be stuck. Stop and resend to recover.",
+      text: t(
+        "Antigravity has been silent for two minutes. Its post-turn work may be stuck. Stop and resend to recover.",
+      ),
     });
   }, STALL_NOTIFY_MS);
 }
@@ -563,6 +574,7 @@ async function startLive(
       (liveRef.current?.onEvent ?? input.onEvent)(event);
     };
 
+    const stderrTail: string[] = [];
     watchChild(
       handle,
       (line) => acp.pushLine(line),
@@ -575,13 +587,14 @@ async function startLive(
         // Settle before closing so in-flight requests unwind as cancelled rather
         // than surfacing a transport error for a dead process.
         if (live) settleLive(live);
-        acp.close(new Error("Antigravity exited"));
+        acp.close(providerExitError("Antigravity", code, stderrTail));
         // A generation retired by user intent settles quietly — no session.ended
         // for a setup the user already cancelled or stopped.
         if (live || !retired()) emit({ type: "session.ended", code });
       },
       (line) => {
-        console.debug("[bycoda] antigravity stderr", line);
+        pushExitStderrTail(stderrTail, line);
+        console.debug("[bycoda] antigravity stderr", redactExitStderrLine(line));
       },
     );
 
@@ -676,7 +689,9 @@ async function startLive(
       if (acpSessionId && droppedBinding) {
         emit({
           type: "status",
-          text: "Antigravity could not restore the previous conversation. Starting a new session.",
+          text: t(
+            "Antigravity could not restore the previous conversation. Starting a new session.",
+          ),
         });
       }
     }
@@ -830,7 +845,7 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
           sessionId: live.acpSessionId,
           prompt: blocks,
         },
-        PROMPT_TIMEOUT_MS,
+        ACP_PROMPT_TIMEOUT_MS,
         (value, work) => {
           responseScope.work?.finish();
           responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
@@ -846,7 +861,7 @@ async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Pro
       if (stopReason != null && stopReason !== "end_turn") {
         emitNative({
           type: "session.error",
-          message: `Antigravity ended the turn (${String(stopReason)}).`,
+          message: t("Antigravity ended the turn ({p0}).", { p0: String(stopReason) }),
         });
         return;
       }

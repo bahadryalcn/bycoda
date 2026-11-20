@@ -3,6 +3,7 @@ import type {
   AssistantRequest,
   AssistantResponse,
 } from "../../../shared/model/host-contracts/assistant";
+import { unconfirmedError } from "./unconfirmedOutcome";
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 const id = z.string().min(1).max(200);
 const intentSchema = z.strictObject({
@@ -50,7 +51,7 @@ export async function refreshAssistantSummary(
     environmentId,
   );
   if (!current() || result.thread?.id !== threadId || !result.thread.summaryState)
-    throw new Error("Summary refresh was not confirmed.");
+    throw unconfirmedError("Summary refresh");
   if (storage.getItem(recordKey) === encoded) storage.removeItem(recordKey);
   return result.thread;
 }

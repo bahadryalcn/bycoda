@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { t } from "../../shared/i18n/technical";
 import { pathKey } from "../../shared/lib/paths";
 import {
@@ -151,5 +152,5 @@ export class ToolsTransferLedger<Ack> {
 }
 
 export function toolsTransferError(cause: unknown) {
-  return t(cause instanceof Error ? cause.message : String(cause));
+  return t(errorText(cause));
 }

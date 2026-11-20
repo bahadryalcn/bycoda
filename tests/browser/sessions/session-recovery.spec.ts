@@ -60,10 +60,10 @@ for (const theme of ["dark", "light"]) {
         path: `temp/verification/2026-10-20-rail-header/${theme}-${width}.png`,
       });
     }
-    // Hidden groups moved from the footer to Settings (Group privacy); the footer keeps one menu.
-    await footer.getByRole("button", { name: "Workspace controls", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "Refresh current view" })).toBeVisible();
-    await page.keyboard.press("Escape");
+    // A wide footer keeps its controls inline; only a footer under 640px folds them into "More".
+    await expect(footer.getByRole("button", { name: "Refresh current view" })).toBeVisible();
+    await expect(footer.getByRole("button", { name: "Sounds" })).toBeVisible();
+    await expect(footer.getByRole("button", { name: "More", exact: true })).toBeHidden();
     await recovery.click();
     await expect(page.getByRole("dialog", { name: "Recovered sessions" })).toBeVisible();
   });
@@ -235,20 +235,18 @@ test("compact navigation keeps tabs reachable and recovery count above its icon"
   await pane.getByRole("tab", { name: "Explorer", exact: true }).click();
   await expect(page.getByTestId("active-sidebar-tab")).toHaveText("files");
   await page.setViewportSize({ width: 900, height: 760 });
-  await page.getByRole("button", { name: "Expand projects", exact: true }).click();
-  const row = page.locator(".recovery-rail-row");
-  const search = page.locator('[data-rail-brand="column"]');
-  await expect(row.getByRole("button", { name: "Clear list", exact: true })).toBeVisible();
-  const searchBounds = await search.boundingBox();
-  const rowBounds = await row.boundingBox();
-  expect(rowBounds!.y).toBeGreaterThanOrEqual(searchBounds!.y + searchBounds!.height);
+  // The compact rail's project button opens the Projects and groups flyout (the project ledger
+  // only); the inline "Clear list" row is gone, recovery keeps its own rail control.
+  await page.getByRole("button", { name: "Projects and groups", exact: true }).click();
+  const flyout = page.getByRole("dialog", { name: "Projects and groups", exact: true });
+  await expect(flyout.getByRole("button", { name: "fixture", exact: true })).toBeVisible();
   await page.screenshot({
-    path: "temp/verification/2026-10-13-session-recovery/expanded-clear.png",
+    path: "temp/verification/2026-10-13-session-recovery/projects-flyout.png",
   });
-  await row.getByRole("button", { name: "Clear list", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Recovered sessions (40)", exact: true }),
-  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(flyout).toHaveCount(0);
+  await expect(recovery).toHaveAccessibleName("Recovered sessions (40)");
+  await expect(flyout.getByRole("button", { name: "Clear list", exact: true })).toHaveCount(0);
 });
 for (const [theme, width] of [
   ["light", 390],

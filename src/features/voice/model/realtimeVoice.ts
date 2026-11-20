@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { boundToolOutput } from "./voiceToolOutput";
 import captureUrl from "./voiceCapture.js?url&no-inline";
 import type { RealtimeProvider, RealtimeSecret } from "./realtimeVoiceClient";
@@ -14,7 +15,14 @@ import {
 } from "./voiceReconnect";
 import { refusedVoiceCancel } from "./realtimeVoiceErrors";
 import { voiceSeedItems } from "./voiceOpenWork";
-import { openMicrophone } from "./microphoneAccess";
+import { openMicrophone, stopMicrophone } from "./microphoneAccess";
+import {
+  VOICE_AUDIO_STEP_MS,
+  VOICE_HOST_STEP_MS,
+  VOICE_MICROPHONE_STEP_MS,
+  VOICE_SOCKET_STEP_MS,
+  voiceConnectionStep,
+} from "./voiceConnectionStep";
 import { t } from "../../../shared/i18n";
 import { voiceTranscriptionHint } from "./voiceFeatureLexicon";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
@@ -102,6 +110,9 @@ export function realtimeSession(
 export const REALTIME_END_SILENCE = 1.2;
 /** ASR wait for one committed candidate, including its upload. */
 const TRANSCRIPT_TIMEOUT = 15_000;
+/** Renew the socket credential when less than this is left: socket open plus session
+ * confirmation may take the whole socket budget. */
+const SECRET_RENEW_MARGIN_MS = VOICE_SOCKET_STEP_MS;
 /** Queued upload that never drains for this long means the link is stalled. */
 const CONGESTION_LIMIT = 15_000;
 
@@ -380,6 +391,8 @@ export class RealtimeVoice {
       openWork?: string;
       deviceId?: string;
       disclosureCurrent?: () => boolean;
+      /** Mints a fresh credential when `secret` would expire before the socket finishes. */
+      renewSecret?: () => Promise<RealtimeSecret>;
     } = {},
   ) {
     if (
@@ -407,17 +420,33 @@ export class RealtimeVoice {
           throw new Error(
             t("Microphone access requires the desktop app or a secure browser context."),
           );
-        this.stream = await openMicrophone({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
+        const opening = openMicrophone(
+          {
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
+            },
+            video: false,
           },
-          video: false,
-        });
+          { signal: this.lifetime.signal },
+        );
+        try {
+          this.stream = await voiceConnectionStep(
+            "microphone",
+            this.provider,
+            opening,
+            VOICE_MICROPHONE_STEP_MS,
+            t("Voice could not start: microphone did not respond."),
+          );
+        } catch (cause) {
+          // A stream granted after the deadline must not keep the microphone open.
+          void opening.then(stopMicrophone, () => undefined);
+          throw cause;
+        }
         if (this.closed) {
-          this.stream.getTracks().forEach((track) => track.stop());
+          stopMicrophone(this.stream);
           return;
         }
         requireDisclosure();
@@ -431,9 +460,22 @@ export class RealtimeVoice {
         // Capture at the provider's PCM rate; play at the device rate.
         this.input = new AudioContext({ sampleRate: 24000 });
         this.output = new AudioContext();
-        await this.input.resume();
+        const audioStalled = t("Voice could not start: audio did not initialize.");
+        await voiceConnectionStep(
+          "audio-resume",
+          this.provider,
+          this.input.resume(),
+          VOICE_AUDIO_STEP_MS,
+          audioStalled,
+        );
         requireDisclosure();
-        await this.input.audioWorklet.addModule(captureUrl);
+        await voiceConnectionStep(
+          "audio-worklet",
+          this.provider,
+          this.input.audioWorklet.addModule(captureUrl),
+          VOICE_AUDIO_STEP_MS,
+          audioStalled,
+        );
         requireDisclosure();
         this.source = this.input.createMediaStreamSource(this.stream);
         this.vad = new VoiceVad(
@@ -514,7 +556,7 @@ export class RealtimeVoice {
               this.congestedSince = now;
             this.congestedBytes = buffered;
             if (elapsedSince(this.congestedSince, now) > CONGESTION_LIMIT) {
-              this.fail("Voice connection is too slow. Start voice again.");
+              this.fail("Voice connection is too slow. Start voice again.", "audio-send-backlog");
               return;
             }
           } else this.congestedSince = undefined;
@@ -530,8 +572,24 @@ export class RealtimeVoice {
       this.outputGain = this.output.createGain();
       this.outputGain.gain.value = this.outputMuted ? 0 : 1;
       this.outputGain.connect(this.output.destination);
-      await voiceRuntimeDeadline(() => this.output!.resume(), this.lifetime.signal, 12_000);
+      await voiceRuntimeDeadline(
+        () => this.output!.resume(),
+        this.lifetime.signal,
+        VOICE_AUDIO_STEP_MS,
+      );
       requireDisclosure();
+      // The provider credential lives 60 s, and the steps above may have waited on a slow
+      // Host or a microphone prompt: renew it rather than open a socket it cannot finish.
+      if (options.renewSecret && secret.expires_at * 1000 - Date.now() < SECRET_RENEW_MARGIN_MS) {
+        secret = await voiceConnectionStep(
+          "secret-renew",
+          this.provider,
+          options.renewSecret(),
+          VOICE_HOST_STEP_MS,
+          t("Voice could not start: the voice key was not issued."),
+        );
+        requireDisclosure();
+      }
       const socket = (this.socket = new WebSocket(
         secret.url,
         this.provider === "openai"
@@ -542,7 +600,7 @@ export class RealtimeVoice {
         const timer = setTimeout(() => {
           reject(new Error("Voice connection timed out."));
           this.close();
-        }, 12000);
+        }, VOICE_SOCKET_STEP_MS);
         this.abortConnect = (error) => {
           clearTimeout(timer);
           reject(error);
@@ -952,7 +1010,7 @@ export class RealtimeVoice {
         return;
       }
       // Without even a commit acknowledgement the connection is unresponsive.
-      this.fail("Voice connection is too slow. Start voice again.");
+      this.fail("Voice connection is too slow. Start voice again.", "audio-commit-unacknowledged");
     };
     return setTimeout(expire, TRANSCRIPT_TIMEOUT);
   }
@@ -1118,11 +1176,13 @@ export class RealtimeVoice {
           ? this.callbacks.tool(name, args, wait)
           : this.callbacks.tool(name, args),
       this.lifetime.signal,
+      undefined,
+      name === "app_tool_call" && typeof args.requestId === "string" ? args.requestId : undefined,
     )
       .catch((error: unknown) => ({
         status: "uncertain",
         requestId: args.requestId,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
         retry: "Read the operation state before retrying. No automatic resend was made.",
       }))
       .then((output) => {
@@ -1610,8 +1670,8 @@ export class RealtimeVoice {
     this.silence();
     this.stream?.getTracks().forEach((track) => {
       track.onended = null;
-      track.stop();
     });
+    stopMicrophone(this.stream);
     navigator.mediaDevices?.removeEventListener?.("devicechange", this.deviceChanged);
     this.source?.disconnect();
     this.capture?.disconnect();

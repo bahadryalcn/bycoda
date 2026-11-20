@@ -23,6 +23,7 @@ import {
 import { t as gitText, useLocale as useGitLocale, useT as useGitT } from "./git";
 import englishSource from "./locales/en.json";
 import englishOverrides from "./en-overrides.json";
+import turkishOverrides from "./tr-overrides.json";
 import { t as technicalText } from "./technical";
 import { searchSettings, settingsSectionLabel } from "../../features/settings/model/settings";
 import { LanguageSettings } from "../../features/settings/ui/LanguageSettings";
@@ -46,6 +47,24 @@ describe("application language", () => {
     await setLanguagePreference("tr");
     expect(sourceMessages("İptal")).toContain("Cancel");
   });
+
+  it("applies only Turkish editorial corrections whose source key still exists", () => {
+    const orphanKeys = Object.keys(turkishOverrides).filter((key) => !(key in englishSource));
+    expect(orphanKeys).toEqual([]);
+  });
+
+  it.each(LANGUAGES.filter(({ value }) => value !== "en"))(
+    "translates the Inbox prompt, device empty state and session fallback in $value",
+    async ({ value }) => {
+      await setLanguagePreference(value);
+      // #276, #567 and #616 ship these messages without falling back to English.
+      expect(t("Explore this item with your agent.")).not.toBe(
+        "Explore this item with your agent.",
+      );
+      expect(t("No devices found")).not.toBe("No devices found");
+      expect(t("This session could not be loaded.")).not.toBe("This session could not be loaded.");
+    },
+  );
 
   it("invalidates memoized labels when app and Git languages change independently", async () => {
     await setLanguagePreference("en");
@@ -222,10 +241,26 @@ describe("application language", () => {
 
 it("shows the new CI parity copy in Turkish", async () => {
   await setLanguagePreference("tr");
-  expect(t("Pipeline commit")).toBe("Pipeline commit'i");
+  expect(t("Pipeline commit {p0}, source commit {p1}", { p0: "abc", p1: "def" })).toBe(
+    "Pipeline commit abc, kaynak commit def",
+  );
   expect(t("Failure allowed")).toBe("Hata kabul edilebilir");
   expect(t("Open {p0} check", { p0: "build" })).toBe("build kontrolünü aç");
   expect(t("Account changed; reload checks before repairing.")).toBe(
     "Hesap değişti; düzeltmeden önce kontrolleri yeniden yükleyin.",
+  );
+});
+
+it("keeps the duplicate sign-in warning as one sentence with the account name as a placeholder", async () => {
+  // Regression for #1019: the label must not be spliced between two fragments,
+  // so translators can move it.
+  const key = "Same sign-in as {p0}. Remove this account if you do not need it separately.";
+  await setLanguagePreference("tr");
+  expect(t(key, { p0: "Max A" })).toBe(
+    "Max A ile aynı oturum açma. Ayrı olarak ihtiyacınız yoksa bu hesabı kaldırın.",
+  );
+  await setLanguagePreference("en");
+  expect(t(key, { p0: "Max A" })).toBe(
+    "Same sign-in as Max A. Remove this account if you do not need it separately.",
   );
 });

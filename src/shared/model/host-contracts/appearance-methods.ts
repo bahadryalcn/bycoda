@@ -5,6 +5,8 @@ import {
   AppearanceBackgroundImageResultSchema,
   AppearanceBackgroundSuggestionsParamsSchema,
   AppearanceBackgroundSuggestionsResultSchema,
+  AppearanceCancelGenerationParamsSchema,
+  AppearanceCancelGenerationResultSchema,
   AppearanceThemeSuggestionsParamsSchema,
   AppearanceThemeSuggestionsResultSchema,
 } from "./appearance";
@@ -17,6 +19,10 @@ export function appearanceMethods(
   control: (paramsSchema: z.ZodType, resultSchema: z.ZodType) => HostRpcMethodDefinition,
 ) {
   return {
+    "appearance.cancelGeneration": control(
+      AppearanceCancelGenerationParamsSchema,
+      AppearanceCancelGenerationResultSchema,
+    ),
     "appearance.themeSuggestions": {
       ...control(AppearanceThemeSuggestionsParamsSchema, AppearanceThemeSuggestionsResultSchema),
       responseTimeoutMs: 100_000,

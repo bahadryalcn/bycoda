@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { Code } from "../../shared/ui/Code";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Surface } from "../../shared/ui/Surface";
@@ -12,6 +13,7 @@ import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErro
 import { NumberField } from "../../shared/ui/NumberField";
 import { TextField } from "../../shared/ui/TextField";
 import { Text } from "../../shared/ui/Text";
+import { LiveText } from "../../shared/ui/LiveText";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { SearchInput } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
@@ -65,12 +67,10 @@ import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionLis
 import "./dev-servers.css";
 import { toolPreferences } from "./model/toolPreferences";
 import { OutputBlock } from "../../shared/ui/OutputBlock";
+import { MAX_POLL_FAILURES, pollDelay } from "./model/pollBackoff";
 
 type Intent = "details" | "stop" | "kill" | "restart";
 type Launch = { input: DevServerStart; result?: DevServerStartResult; pending?: boolean };
-const MAX_FAILURES = 3;
-/** Each scan starts PowerShell on Windows, so a list that stopped changing is read less often. */
-const QUIET_SCANS = 3;
 const stateLabels = {
   starting: "Starting",
   running: "Running",
@@ -105,16 +105,6 @@ const canControl = (server: DevServer) => (server.process ? hasIdentity(server) 
 const endpointKey = (endpoint: DevServerEndpoint) => `${endpoint.address}:${endpoint.port}`;
 
 /** Mounted only for the visible tool; a changed host owns a fresh request scope. */
-function pollDelay(interval: number, failures: number, quietScans: number): number {
-  const base =
-    quietScans >= QUIET_SCANS * 2
-      ? interval * 4
-      : quietScans >= QUIET_SCANS
-        ? interval * 2
-        : interval;
-  return base * Math.min(4, 2 ** failures);
-}
-
 export function DevServersPanel({
   cwd,
   launch,
@@ -282,7 +272,8 @@ function ProjectDevServersPanel({
     hostFeatureRequest<T>(cwd, "dev.servers", `devServers.${method}`, params);
   const refresh = (force = false): Promise<boolean> => {
     if (scanFlight.current) return scanFlight.current;
-    setScanning(true);
+    const showScanning = force || quiet.current.key === "";
+    if (showScanning) setScanning(true);
     const flight: Promise<boolean> = Promise.resolve().then(async () => {
       try {
         const result = await request<DevServerScan>("list", { refresh: force });
@@ -290,20 +281,20 @@ function ProjectDevServersPanel({
         if (result.status === "error") throw new Error(result.error || t("Scan failed"));
         failures.current = 0;
         const key = JSON.stringify(result.servers);
-        quiet.current =
-          quiet.current.key === key ? { key, scans: quiet.current.scans + 1 } : { key, scans: 0 };
+        const unchanged = quiet.current.key === key;
+        quiet.current = unchanged ? { key, scans: quiet.current.scans + 1 } : { key, scans: 0 };
         setScanError("");
-        setScan(result);
+        if (!unchanged) setScan(result);
         return true;
       } catch (cause) {
         if (!alive.current) return false;
         failures.current++;
-        setScanError(cause instanceof Error ? cause.message : String(cause));
-        if (failures.current >= MAX_FAILURES) setAutoRefresh(false);
+        setScanError(errorText(cause));
+        if (failures.current >= MAX_POLL_FAILURES) setAutoRefresh(false);
         return false;
       } finally {
         if (scanFlight.current === flight) scanFlight.current = undefined;
-        if (alive.current) setScanning(false);
+        if (alive.current && showScanning) setScanning(false);
       }
     });
     scanFlight.current = flight;
@@ -324,7 +315,7 @@ function ProjectDevServersPanel({
       if (!alive.current) return;
       await work();
     } catch (cause) {
-      if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (alive.current) setError(errorText(cause));
     } finally {
       releaseTransfer?.();
       pending.current = false;
@@ -358,7 +349,7 @@ function ProjectDevServersPanel({
       } finally {
         polling = false;
       }
-      if (!stopped && !isHidden() && failures.current < MAX_FAILURES)
+      if (!stopped && !isHidden() && failures.current < MAX_POLL_FAILURES)
         timer = setTimeout(
           () => void poll(),
           pollDelay(pollInterval, failures.current, quiet.current.scans),
@@ -514,7 +505,7 @@ function ProjectDevServersPanel({
         if (!alive.current) return;
         const copied = await copyAsync(() =>
           navigator.clipboard.writeText(url).catch((cause) => {
-            if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+            if (alive.current) setError(errorText(cause));
             throw cause;
           }),
         );
@@ -945,7 +936,6 @@ function ProjectDevServersPanel({
           leading="inherit"
           as="div"
           className="dev-servers-status"
-          role="status"
           data-paused={autoRefresh ? undefined : ""}
         >
           <span className="dev-servers-count">
@@ -955,7 +945,9 @@ function ProjectDevServersPanel({
                 ? t("Scan failed")
                 : !scan
                   ? t("Refresh to discover servers.")
-                  : t("{p0} servers", { p0: visibleServers.length })}
+                  : t(visibleServers.length === 1 ? "{p0} server" : "{p0} servers", {
+                      p0: visibleServers.length,
+                    })}
           </span>
           {autoRefresh ? null : (
             <Text size="inherit" tone="primary" weight="medium" className="dev-servers-paused">
@@ -964,6 +956,11 @@ function ProjectDevServersPanel({
             </Text>
           )}
         </Text>
+        {/* Counts change on every poll, so only the scan's start and failure are announced. */}
+        <LiveText
+          className="sr-only"
+          text={scanning && !scan ? t("Scanning servers…") : scanError ? t("Scan failed") : ""}
+        />
         <div className="dev-server-actions">
           {scanError ? (
             <Button
@@ -972,7 +969,7 @@ function ProjectDevServersPanel({
               disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
               onClick={() =>
                 void action("refresh", async () => {
-                  const recovering = failures.current >= MAX_FAILURES;
+                  const recovering = failures.current >= MAX_POLL_FAILURES;
                   if ((await refresh(true)) && recovering) setAutoRefresh(true);
                 })
               }

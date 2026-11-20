@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   modules: {} as Record<string, string[]>,
 }));
 vi.mock("../hooks/useGitSubmodules", () => ({
-  useGitSubmodules: () => ({ modules: state.modules, refresh: vi.fn() }),
+  useGitSubmodules: () => ({ modules: state.modules, limits: {}, refresh: vi.fn() }),
 }));
 vi.mock("../hooks/useProjectWorktrees", () => ({
   useProjectWorktrees: () => ({ ...state.snapshot, refresh: state.refresh }),
@@ -67,7 +67,7 @@ vi.mock("./GitChangesPanel", () => ({
         ? createElement(
             "select",
             {
-              "aria-label": "Working copy",
+              "aria-label": "Worktree",
               value: props.checkout.value,
               onChange: (event: { target: { value: string } }) =>
                 props.checkout!.onChange(event.target.value),

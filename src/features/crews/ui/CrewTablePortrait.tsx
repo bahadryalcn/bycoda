@@ -57,7 +57,11 @@ export function CrewTablePortrait({
   const { seats, hidden } = useMemo(() => seatCrewTable(members), [members]);
   const traits = useMemo(() => resolveTeamAvatars(members, DEFAULT_MEMBER_AVATARS), [members]);
   const rects = useMemo(() => crewTableRects(sceneTheme, state, seats), [sceneTheme, state, seats]);
-  const label = [name, t("{p0} members", { p0: members.length }), stateLabel]
+  const label = [
+    name,
+    t(members.length === 1 ? "{p0} member" : "{p0} members", { p0: members.length }),
+    stateLabel,
+  ]
     .filter(Boolean)
     .join(", ");
   return (

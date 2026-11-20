@@ -1,12 +1,11 @@
-import type { CSSProperties } from "react";
 import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Gauge, Zap } from "../../../shared/ui/icons";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { ModelAccountNumber } from "./ModelAccountIdentity";
 
 export type ModelTriggerBadgeData = {
-  /** Colour dot plus label of the account the model runs on. */
-  account?: { label: string; color?: string };
+  /** Number and label of the account the model runs on. */
+  account?: { label: string; color?: string; number?: number };
   /** Display label of the current effort level. */
   effort?: string;
   /** `on`/`off` for a model with Fast; absent when the model has no Fast, so no badge shows. */
@@ -34,11 +33,12 @@ export function ModelTriggerBadges({ account, effort, fast, extras = [] }: Model
           aria-label={t("Account: {p0}", { p0: account.label })}
           className="min-w-0 max-w-32"
           icon={
-            account.color ? (
-              <span
-                {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-1.5")}
-                style={{ "--surface-user-color": account.color } as CSSProperties}
-                aria-hidden
+            account.number ? (
+              <ModelAccountNumber
+                account={{
+                  accountNumber: account.number,
+                  accountColor: account.color,
+                }}
               />
             ) : undefined
           }

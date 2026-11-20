@@ -64,7 +64,9 @@ export function SkillMachinesPanel({
           list.skills === null
             ? (list.error ?? t("Loading skills…"))
             : !entry
-              ? t("Not installed")
+              ? list.truncated
+                ? t("Not in the listed skills")
+                : t("Not installed")
               : !list.policyKnown
                 ? t("Installed")
                 : isOff(entry)

@@ -273,36 +273,70 @@ test("a new review shows current activity and opens the current reviewer", async
   await expect(page.getByLabel("Opened session")).toHaveText("current-review-session");
 });
 
-test("partial library group updates retry only the remaining profiles", async ({ page }) => {
-  await page.goto("/tests/browser/crews/crews.html?groupRetry");
+type GroupSnapshot = {
+  agents: { id: string; groups?: string[] }[];
+  agentSaveCounts: Record<string, number>;
+  groupUpdateCalls: number;
+};
+const groupSnapshot = (page: Page) =>
+  page.evaluate(() =>
+    (window as unknown as { crewFixtureSnapshot: () => GroupSnapshot }).crewFixtureSnapshot(),
+  );
+async function openGroupDialog(page: Page, group: string, action: "Rename group" | "Delete group") {
   await openCrewsTab(page, "Members");
   await page.getByRole("button", { name: /^Member group:/ }).click();
-  await page.getByRole("option", { name: "UI", exact: true }).click();
+  await page.getByRole("option", { name: group, exact: true }).click();
   await page.getByRole("button", { name: "Group options", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Rename group", exact: true }).click();
-  const dialog = page.getByRole("dialog", {
-    name: "Rename group",
-    exact: true,
+  await page.getByRole("menuitem", { name: action, exact: true }).click();
+  return page.getByRole("dialog", {
+    name: action === "Rename group" ? action : new RegExp(`^Delete group ${group}`),
   });
+}
+
+test("a failed library group rename leaves every profile in the old group and retries as one call", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews/crews.html?groupRetry");
+  const dialog = await openGroupDialog(page, "UI", "Rename group");
   await dialog.getByRole("textbox", { name: "Group name", exact: true }).fill("Interface");
   await dialog.getByRole("button", { name: "Rename", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText("Second profile unavailable");
-  await expect(dialog.getByRole("textbox", { name: "Group name", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toContainText("Group update unavailable");
+  // Nothing moved: no profile carries the new name and the field stays editable.
+  const failed = await groupSnapshot(page);
+  expect(failed.agents.every((agent) => agent.groups?.join() === "UI")).toBe(true);
+  await expect(dialog.getByRole("textbox", { name: "Group name", exact: true })).toBeEnabled();
   await dialog.getByRole("button", { name: "Rename", exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  const snapshot = await page.evaluate(() =>
-    (
-      window as unknown as {
-        crewFixtureSnapshot: () => {
-          agents: { id: string; groups: string[] }[];
-          agentSaveCounts: Record<string, number>;
-        };
-      }
-    ).crewFixtureSnapshot(),
-  );
-  expect(snapshot.agents.every((agent) => agent.groups.includes("Interface"))).toBe(true);
-  expect(snapshot.agentSaveCounts["lib-ui"]).toBe(1);
-  expect(snapshot.agentSaveCounts["lib-api"]).toBe(2);
+  const snapshot = await groupSnapshot(page);
+  expect(snapshot.agents.every((agent) => agent.groups?.join() === "Interface")).toBe(true);
+  expect(snapshot.groupUpdateCalls).toBe(2);
+  expect(snapshot.agentSaveCounts).toEqual({});
+});
+
+test("library group delete removes the label from every member in one call and keeps the members", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews/crews.html");
+  const before = await groupSnapshot(page);
+  const dialog = await openGroupDialog(page, "UI", "Delete group");
+  await dialog.getByRole("button", { name: "Delete group", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const snapshot = await groupSnapshot(page);
+  expect(snapshot.agents.map((agent) => agent.id)).toEqual(before.agents.map((agent) => agent.id));
+  expect(snapshot.agents.some((agent) => agent.groups?.includes("UI"))).toBe(false);
+  expect(snapshot.groupUpdateCalls).toBe(1);
+  expect(snapshot.agentSaveCounts).toEqual({});
+});
+
+test("renaming a library group onto an existing group is refused instead of merging", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/crews/crews.html");
+  const dialog = await openGroupDialog(page, "UI", "Rename group");
+  await dialog.getByRole("textbox", { name: "Group name", exact: true }).fill("Backend");
+  await expect(dialog.getByRole("alert")).toContainText("A group with this name already exists");
+  await expect(dialog.getByRole("button", { name: "Rename", exact: true })).toBeDisabled();
+  expect((await groupSnapshot(page)).groupUpdateCalls).toBe(0);
 });
 
 test("library copy reconciles an uncertain saved profile without a second save", async ({
@@ -377,7 +411,7 @@ test("uncertain start keeps its receipt when closed and reopened", async ({ page
     .getByRole("textbox", { name: "Task title", exact: true })
     .fill("Review mobile navigation");
   await start
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Check the narrow layout.");
   await start.getByRole("button", { name: "Start with crew", exact: true }).click();
   await expect(start.getByText("Start response unavailable. Delivery unknown.")).toBeVisible();
@@ -402,9 +436,13 @@ test("work stays selected when a poll moves it to finished history", async ({ pa
   await page.evaluate(() =>
     (window as unknown as { simulateRunFinish: (id: string) => void }).simulateRunFinish("run"),
   );
-  await expect(management.getByRole("radio", { name: "Finished", exact: true })).toBeChecked({
-    timeout: 12000,
-  });
+  // The tab is the owner's choice: the finished work stays open, a notice says why, and the
+  // Ongoing tab is not switched.
+  await expect(
+    management.getByText("This work finished. It stays open here until you choose other work."),
+  ).toBeVisible({ timeout: 12000 });
+  await expect(management.getByRole("radio", { name: /^Ongoing/ })).toBeChecked();
+  await expect(management.getByRole("radio", { name: "Finished", exact: true })).not.toBeChecked();
   await expect(management.locator('[data-crew-run="run"]')).toBeVisible();
   await expect(management.locator('[data-crew-run="second-run"]')).toHaveCount(0);
 });
@@ -431,7 +469,7 @@ test("the start dialog starts the work with the access chosen for this task and 
     .getByRole("textbox", { name: "Task title", exact: true })
     .fill("Review mobile navigation");
   await start
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Check the narrow layout.");
   await start.getByRole("button", { name: "Start with crew", exact: true }).click();
   await expect(page.getByLabel("Started work")).toHaveText("1");
@@ -457,7 +495,7 @@ test("an externally deleted crew cannot start new work", async ({ page }) => {
   await page.goto("/tests/browser/crews/crews.html?taskStart");
   const start = await openStart(page);
   await start.getByRole("textbox", { name: "Task title", exact: true }).fill("Keep my request");
-  await start.getByRole("textbox", { name: "Description", exact: true }).fill("Keep my request");
+  await start.getByRole("combobox", { name: "Description", exact: true }).fill("Keep my request");
   await page.evaluate(() =>
     (window as unknown as { simulateCrewDelete: () => void }).simulateCrewDelete(),
   );
@@ -842,7 +880,7 @@ test("opens ongoing work from the rail and starts new work once from the same cr
   }
   await start.getByRole("textbox", { name: "Task title", exact: true }).fill("Mobile sign-in");
   await start
-    .getByRole("textbox", { name: "Description", exact: true })
+    .getByRole("combobox", { name: "Description", exact: true })
     .fill("Build mobile sign-in.");
   await start.getByRole("button", { name: "Start with crew", exact: true }).dblclick();
   await expect(start).toHaveCount(0);
@@ -1214,7 +1252,7 @@ test("narrow windows show the work list or one work at a time", async ({ page })
   await management.getByRole("button", { name: "Back to work list" }).click();
   await expect(list).toBeVisible();
   await expect(list.getByRole("button", { name: /^Work item 3/ })).toHaveAttribute(
-    "aria-pressed",
+    "aria-current",
     "true",
   );
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
@@ -1230,7 +1268,7 @@ test("wide windows keep the work list beside the selected work", async ({ page }
   await expect(management.getByRole("button", { name: "Back to work list" })).toBeHidden();
   // The work opened from the sidebar is the selected row even when it sits far down the list.
   await expect(management.locator('[data-crew-work-choice="run"]')).toHaveAttribute(
-    "aria-pressed",
+    "aria-current",
     "true",
   );
 });
@@ -1362,7 +1400,7 @@ test("a failed save stays visible, keeps the draft and starts nothing", async ({
   await expect(
     dialog.getByText("The Host rejected this crew: storage is read-only right now."),
   ).toBeInViewport();
-  await expect(dialog.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
   await expect(dialog.getByRole("textbox", { name: "Crew name", exact: true })).toHaveValue(
     "Website Crew v2",
   );
@@ -1654,11 +1692,15 @@ for (const theme of ["light", "dark"] as const) {
       await shot("member-form");
       const performance = dialog.locator("summary").filter({ hasText: /^Performance$/ });
       await performance.click();
-      await expect(dialog.getByText("Could not load performance", { exact: true })).toBeVisible();
-      const error = dialog.getByRole("alert").filter({ hasText: "Could not load performance" });
+      await expect(
+        dialog.getByText("Unsupported fixture operation remote_request", { exact: true }),
+      ).toBeVisible();
+      const error = dialog
+        .getByRole("alert")
+        .filter({ hasText: "Unsupported fixture operation remote_request" });
       await expect(error).toHaveCount(1);
       await expect(error.locator("svg")).toHaveCount(1);
-      await error.getByRole("button", { name: "Retry", exact: true }).click();
+      await error.getByRole("button", { name: "Try again", exact: true }).click();
       await expect(error).toBeVisible();
       await expect
         .poll(() =>
@@ -1737,7 +1779,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(
         dialog.getByText("The Host rejected this crew: storage is read-only right now."),
       ).toBeVisible();
-      await expect(dialog.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
       await shot("footer-error");
       await page.goto(`/tests/browser/crews/crews.html?library=empty&theme=${theme}`);
       await editCrew(page);
@@ -1814,10 +1856,12 @@ for (const theme of ["light", "dark"])
         .getByRole("button", { name: "Manage", exact: true })
         .click();
       const dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
-      const nav = dialog.getByRole("navigation", { name: "Crew work", exact: true });
-      const list = nav.getByRole("list", { name: "Work list", exact: true });
+      const list = dialog.getByRole("list", { name: "Work list", exact: true });
       await expect(list).toBeVisible();
-      await expect(nav).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(dialog.getByRole("navigation", { name: "Crew work", exact: true })).toHaveCount(
+        0,
+      );
+      await expect(list.locator("xpath=..")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       expect(await list.getByRole("listitem").count()).toBeGreaterThan(2);
       await page.screenshot({
         path: `temp/verification/crew-work-current/list-${theme}-${width}.png`,
@@ -1827,7 +1871,7 @@ for (const theme of ["light", "dark"])
       await expect(dialog.locator('[data-crew-run="many-2"]')).toBeVisible();
       if (!(await list.isVisible()))
         await dialog.getByRole("button", { name: "Back to work list", exact: true }).click();
-      await expect(item).toHaveAttribute("aria-pressed", "true");
+      await expect(item).toHaveAttribute("aria-current", "true");
       await page.screenshot({
         path: `temp/verification/crew-work-current/selected-${theme}-${width}.png`,
       });

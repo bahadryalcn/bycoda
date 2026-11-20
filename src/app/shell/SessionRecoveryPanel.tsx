@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { Text } from "../../shared/ui/Text";
 import { modelDisplayName, modelSearchText } from "../../features/sessions/public/modelDisplayName";
 import { Alert } from "../../shared/ui/Alert";
@@ -118,10 +119,7 @@ export function SessionRecoveryPanel({
           results.set(id, await getSession(id));
         } catch (cause) {
           results.set(id, "error");
-          if (!cancelled)
-            setReadErrors((previous) =>
-              new Map(previous).set(id, cause instanceof Error ? cause.message : String(cause)),
-            );
+          if (!cancelled) setReadErrors((previous) => new Map(previous).set(id, errorText(cause)));
         }
       }
     };
@@ -230,7 +228,7 @@ export function SessionRecoveryPanel({
         setOpenOutcome(cause);
         setError(
           cause.acknowledgmentFailed
-            ? t("Conversation tabs are open, but the recovery update could not be saved.")
+            ? t("Session tabs are open, but the recovery update could not be saved.")
             : t("Some recovery entries could not be opened."),
         );
       } else setError(t("Recovery could not finish. Check the open tabs before retrying."));
@@ -287,10 +285,10 @@ export function SessionRecoveryPanel({
             label: t("Remove {p0} selected from list", { p0: selectedIds.length }),
             description:
               hiddenSelectedCount > 0
-                ? t("Conversation history is kept. {p0} selected outside this view stay listed.", {
+                ? t("Session history is kept. {p0} selected outside this view stay listed.", {
                     p0: hiddenSelectedCount,
                   })
-                : t("Conversation history is kept."),
+                : t("Session history is kept."),
           },
         ] satisfies DropdownMenuItem[])
       : []),
@@ -300,7 +298,7 @@ export function SessionRecoveryPanel({
             kind: "item",
             id: "clear-completed",
             label: t("Remove {p0} completed from list", { p0: completedIds.length }),
-            description: t("Done and idle entries only. Conversation history is kept."),
+            description: t("Done and idle sessions only. Session history is kept."),
           },
         ] satisfies DropdownMenuItem[])
       : []),
@@ -309,9 +307,7 @@ export function SessionRecoveryPanel({
       kind: "item",
       id: "clear-all",
       label: t("Clear recovery list ({p0})", { p0: rows.length }),
-      description: t(
-        "Removes every entry, including those not shown. Conversation history is kept.",
-      ),
+      description: t("Removes every entry, including those not shown. Session history is kept."),
       danger: true,
       disabled: rows.length === 0,
     },
@@ -467,7 +463,7 @@ export function SessionRecoveryPanel({
                     <Text as="div" size="caption" tone="secondary">
                       <RecoveryStatusBadge key={status} status={status} /> ·{" "}
                       {activityAt
-                        ? t("Last activity {p0}", { p0: formatRelative(activityAt, Date.now()) })
+                        ? t("Last activity: {p0}", { p0: formatRelative(activityAt, Date.now()) })
                         : t("Recovered {p0}", {
                             p0: formatRelative(recovery.capturedAt, Date.now()),
                           })}
@@ -502,7 +498,7 @@ export function SessionRecoveryPanel({
                     disabled={pending}
                     loading={pendingAction === `remove:${stub.id}`}
                     aria-label={t("Remove {p0} from recovery list", { p0: title })}
-                    tooltip={t("Remove from recovery list. Conversation history is kept.")}
+                    tooltip={t("Remove from recovery list. Session history is kept.")}
                     onClick={() => void remove([stub.id], `remove:${stub.id}`)}
                   >
                     <X className="icon-md" aria-hidden="true" />
@@ -654,7 +650,7 @@ export function SessionRecoveryPanel({
       title={t("Recovered sessions")}
       onClose={pending ? () => {} : onClose}
       size="md"
-      className="session-recovery-dialog"
+      scroll="none"
       fitViewport
     >
       {content}

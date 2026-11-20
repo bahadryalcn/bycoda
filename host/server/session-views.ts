@@ -96,6 +96,14 @@ export function createSessionViewsRuntime(
       bytes: number;
     }
   >();
+  /** Sum of `bytes` over `views`, adjusted on every insert, replace and eviction. */
+  let viewBytes = 0;
+  const blockBytes = (blockId: string, text: string) => (blockId.length + text.length) * 2 + 64;
+  const evictOldestView = () => {
+    const key = views.keys().next().value!;
+    viewBytes -= views.get(key)!.bytes;
+    views.delete(key);
+  };
   /** Serialized form of each block object; unchanged blocks keep their object
    * identity across revisions, so a stream re-serializes only what it touched. */
   const blockJson = new WeakMap<object, string>();
@@ -103,9 +111,23 @@ export function createSessionViewsRuntime(
     const id = view.session.id;
     let entry = views.get(id);
     if (!entry || entry.revision !== view.revision) {
-      const revs = new Map<string, number>();
-      const json = new Map<string, string>();
+      const previous = entry;
+      if (previous) {
+        // Re-inserted below as the most recent view; its maps are updated in place.
+        views.delete(id);
+        viewBytes -= previous.bytes;
+      }
+      entry = previous ?? {
+        revision: view.revision,
+        first: view.revision,
+        revs: new Map(),
+        json: new Map(),
+        bytes: 0,
+      };
+      const { revs, json } = entry;
+      const seen = new Set<string>();
       for (const block of view.session.blocks) {
+        seen.add(block.id);
         const persisted = view.blockRevisions?.[block.id];
         let text: string;
         if (persisted !== undefined) text = `revision:${persisted}`;
@@ -114,31 +136,29 @@ export function createSessionViewsRuntime(
           text = cached ?? JSON.stringify(block);
           blockJson.set(block, text);
         }
-        json.set(block.id, text);
-        revs.set(
-          block.id,
-          entry && entry.json.get(block.id) === text ? entry.revs.get(block.id)! : view.revision,
-        );
+        const before = json.get(block.id);
+        // Only a changed text touches the stored form and the byte total.
+        if (before !== text) {
+          if (before !== undefined) entry.bytes -= blockBytes(block.id, before);
+          json.set(block.id, text);
+          entry.bytes += blockBytes(block.id, text);
+        }
+        revs.set(block.id, before === text ? revs.get(block.id)! : view.revision);
       }
-      entry = {
-        revision: view.revision,
-        first: entry?.first ?? view.revision,
-        revs,
-        json,
-        bytes: [...json].reduce(
-          (sum, [blockId, text]) => sum + (blockId.length + text.length) * 2 + 64,
-          0,
-        ),
-      };
-      views.delete(id);
+      // Blocks gone from the session leave the maps; only then is a sweep needed.
+      if (json.size > seen.size) {
+        for (const [blockId, text] of json) {
+          if (seen.has(blockId)) continue;
+          entry.bytes -= blockBytes(blockId, text);
+          json.delete(blockId);
+          revs.delete(blockId);
+        }
+      }
+      entry.revision = view.revision;
       views.set(id, entry);
-      if (views.size > MAX_DESKTOP_VIEWS) views.delete(views.keys().next().value!);
-      let bytes = [...views.values()].reduce((sum, view) => sum + view.bytes, 0);
-      while (bytes > 64 * 1024 * 1024 && views.size) {
-        const key = views.keys().next().value!;
-        bytes -= views.get(key)!.bytes;
-        views.delete(key);
-      }
+      viewBytes += entry.bytes;
+      if (views.size > MAX_DESKTOP_VIEWS) evictOldestView();
+      while (viewBytes > 64 * 1024 * 1024 && views.size) evictOldestView();
     }
     if (client === view.revision) return { kind: "unchanged", revision: client };
     if (client === undefined || client < entry.first || client > view.revision)

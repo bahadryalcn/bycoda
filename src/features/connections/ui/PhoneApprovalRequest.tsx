@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
+import { errorText } from "../../../shared/lib/errors";
 
 type Request = {
   title: string;
@@ -73,7 +74,7 @@ function PhoneApprovalDialog({
       if (current()) onSettle(true);
     } catch (cause) {
       if (current()) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(errorText(cause));
         setPending(false);
         inFlight.current = false;
       }

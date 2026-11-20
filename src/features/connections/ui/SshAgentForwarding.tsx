@@ -16,6 +16,8 @@ import {
 } from "../model/sshGroupDefaults";
 import type { ServerRecord } from "../model/serverInventory";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 
 type Review = {
   reviewId: string;
@@ -88,7 +90,6 @@ export function SshAgentForwarding({
   }>({ target, loading: true });
   if (state.target !== target) setState({ target, loading: false, changed: true });
   const [consumedReview, setConsumedReview] = useState<string | undefined>(undefined);
-  const [expired, setExpired] = useState<string | undefined>(undefined);
   const [clock, setClock] = useState(0);
   const request = useCallback(async () => {
     const selected = current.current;
@@ -132,7 +133,11 @@ export function SshAgentForwarding({
         generation === sequence.current &&
         current.current.target === selected.target
       )
-        setState({ target: selected.target, loading: false, error: String(reason) });
+        setState({
+          target: selected.target,
+          loading: false,
+          error: sanitizeConnectionError(errorText(reason)),
+        });
     } finally {
       if (inFlight.current?.generation === generation) inFlight.current = undefined;
     }
@@ -148,20 +153,38 @@ export function SshAgentForwarding({
   }, [request]);
   const active = state.target === target ? state : undefined;
   const review = active?.review;
+  // The review expires by wall clock. Only the visible countdown needs periodic updates.
   useEffect(() => {
     if (!review) return;
-    const delay = Math.max(0, Math.min(30_000, review.expiresAt - Date.now()));
-    const timeout = setTimeout(() => setExpired(review.reviewId), delay);
-    const interval = setInterval(() => setClock(Date.now()), 250);
+    const { expiresAt } = review;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const stopCountdown = () => clearInterval(interval);
+    const updateCountdown = () => {
+      stopCountdown();
+      if (document.hidden) return;
+      const now = Date.now();
+      setClock(now);
+      if (now < expiresAt) interval = setInterval(() => setClock(Date.now()), 1_000);
+    };
+    document.addEventListener("visibilitychange", updateCountdown);
+    updateCountdown();
+    const timeout = setTimeout(
+      () => {
+        stopCountdown();
+        document.removeEventListener("visibilitychange", updateCountdown);
+        setClock(expiresAt);
+      },
+      Math.max(0, expiresAt - Date.now()),
+    );
     return () => {
       clearTimeout(timeout);
-      clearInterval(interval);
+      stopCountdown();
+      document.removeEventListener("visibilitychange", updateCountdown);
     };
   }, [review]);
   const valid = Boolean(
     review?.agentAvailable &&
     review.expiresAt > clock &&
-    expired !== review.reviewId &&
     consumedReview !== review.reviewId &&
     !active?.loading,
   );
@@ -180,7 +203,7 @@ export function SshAgentForwarding({
       onApprove(current.current.server, review.reviewId);
       onClose();
     } catch (reason) {
-      setState({ target, loading: false, error: String(reason) });
+      setState({ target, loading: false, error: sanitizeConnectionError(errorText(reason)) });
     }
   };
   return (

@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   azureDevOpsMrDiff,
   azureDevOpsWorkItemDetails,
+  azureDevOpsWorkItemThread,
   clearAzureDevOpsCache,
   peekAzureDevOpsMrDiff,
   peekAzureDevOpsWorkItemDetails,
+  peekAzureDevOpsWorkItemThread,
 } from "./azureDevOps";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -36,5 +38,15 @@ describe("azure devops detail and diff caches", () => {
     expect(peekAzureDevOpsMrDiff("org/proj", 1)).not.toBeNull();
     expect(peekAzureDevOpsMrDiff("org/proj", 2)).toBeNull();
     expect(peekAzureDevOpsMrDiff("org/proj", 129)).not.toBeNull();
+  });
+
+  it("caps work item threads at 128 entries and refreshes on read", async () => {
+    for (let i = 0; i < 128; i++) await azureDevOpsWorkItemThread("org/proj", "issue", i);
+    expect(peekAzureDevOpsWorkItemThread("org/proj", "issue", 0)).not.toBeNull();
+    await azureDevOpsWorkItemThread("org/proj", "issue", 128);
+
+    expect(peekAzureDevOpsWorkItemThread("org/proj", "issue", 0)).not.toBeNull();
+    expect(peekAzureDevOpsWorkItemThread("org/proj", "issue", 1)).toBeNull();
+    expect(peekAzureDevOpsWorkItemThread("org/proj", "issue", 128)).not.toBeNull();
   });
 });

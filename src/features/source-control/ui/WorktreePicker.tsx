@@ -14,6 +14,7 @@ import { NO_BRANCH_LABEL, type Worktree } from "../model/worktrees";
 import { BranchPicker } from "./BranchPicker";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { GitPickerTrigger } from "./GitPickerTrigger";
+import { shortSha } from "../../../shared/lib/shortSha";
 import { Popover } from "../../../shared/ui/Popover";
 import { FolderTree, GitBranch, Plus, Settings } from "../../../shared/ui/icons";
 
@@ -96,7 +97,7 @@ export function WorktreePicker({
   const list = usePickerList({
     options: rows.map((tree) => ({
       value: pathKey(tree.path),
-      title: tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) }),
+      title: tree.branch ?? t("Detached {p0}", { p0: shortSha(tree.head) }),
       description: `${tree.isMain ? `${t("Project folder")} · ` : ""}${prettyCwd(tree.path)}${tree.missing ? t(" · Missing") : ""}`,
       icon: tree.isMain ? (
         <GitBranch className="icon-sm shrink-0" tone="secondary" />
@@ -137,9 +138,9 @@ export function WorktreePicker({
         title={
           worktreeRemoved
             ? t("Select a branch or worktree to continue this session")
-            : t("Working copy: {p0}", { p0: prettyCwd(executionCwd) })
+            : t("Worktree: {p0}", { p0: prettyCwd(executionCwd) })
         }
-        aria-label={t("Choose working copy")}
+        aria-label={t("Choose worktree")}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
@@ -173,15 +174,15 @@ export function WorktreePicker({
           onDismiss={() => {
             if (!busy) dismiss();
           }}
-          role="dialog"
-          aria-label={t("Working copies")}
+          kind="dialog"
+          aria-label={t("Worktrees")}
           data-branch-picker
           className="flex flex-col overflow-hidden"
         >
           <PopoverSearchHeader
             {...list.searchProps}
-            label={t("Search working copies")}
-            placeholder={t("Search working copies…")}
+            label={t("Search worktrees")}
+            placeholder={t("Search worktrees…")}
             value={query}
             onValueChange={(value) => {
               setQuery(value);
@@ -190,20 +191,20 @@ export function WorktreePicker({
           />
           {worktreeRemoved && (
             <Text as="p" size="micro" tone="secondary" className="shrink-0 px-3 pt-2 pb-1">
-              {t("This session’s worktree was deleted. Select a working copy to continue.")}
+              {t("This session’s worktree was deleted. Select a worktree to continue.")}
             </Text>
           )}
           {opensNewSession && !worktreeRemoved && (
             <Text as="p" size="micro" tone="secondary" className="shrink-0 px-3 pt-2 pb-1">
-              {t("Another working copy opens a new session.")}
+              {t("Another worktree opens a new session.")}
             </Text>
           )}
           <PickerList
-            label={t("Working copies")}
+            label={t("Worktrees")}
             controller={list}
             loading={!data && !loadError}
-            loadingLabel={t("Loading working copies…")}
-            emptyLabel={t("No matching working copies")}
+            loadingLabel={t("Loading worktrees…")}
+            emptyLabel={t("No matching worktrees")}
             className="min-h-0 overflow-y-auto"
           />
           {(error || loadError) && (
@@ -250,7 +251,7 @@ export function WorktreePicker({
               className="flex w-full items-center gap-2 text-left"
             >
               <GitBranch className="icon-sm" />
-              {t("Switch branch in this working copy…")}
+              {t("Switch branch in this worktree…")}
             </Button>
             {onManage && (
               <Button

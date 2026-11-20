@@ -20,6 +20,7 @@ export type PermissionEntry = {
   state: PermissionState;
   canRequest: boolean;
   canOpenSettings: boolean;
+  /** `restart-required`: switched on in the OS, applied after the app restarts. */
   detail?: string;
 };
 export type SystemPermissionsReport = {
@@ -42,6 +43,10 @@ export async function showPermissionHelper(id: PermissionId): Promise<void> {
 }
 export async function closePermissionHelper(): Promise<void> {
   return invoke<void>("system_permission_helper_close");
+}
+/** Same save-and-confirm run as a manual quit, then relaunch. macOS applies some grants only then. */
+export async function restartToApplyPermission(): Promise<void> {
+  return invoke<void>("request_app_restart");
 }
 export async function revealPermissionApp(): Promise<void> {
   return invoke<void>("system_permission_helper_reveal_app");

@@ -35,7 +35,7 @@ export interface WorkspaceTitleBarDeps {
   onCloseTitleTab: TitleBarProps["onClose"];
   onCloseTabs: TitleBarProps["onCloseMany"];
   onCloseIdleTabs: TitleBarProps["onCloseIdleTabs"];
-  idleTabCount: TitleBarProps["idleTabCount"];
+  countIdleTabs: TitleBarProps["countIdleTabs"];
   onArchiveTitleTab: TitleBarProps["onArchiveTab"];
   onDeleteTitleTab: TitleBarProps["onDeleteTab"];
   onReorderTabs: TitleBarProps["onReorder"];
@@ -77,7 +77,7 @@ export function useWorkspaceTitleBar({
   onCloseTitleTab,
   onCloseTabs,
   onCloseIdleTabs,
-  idleTabCount,
+  countIdleTabs,
   onArchiveTitleTab,
   onDeleteTitleTab,
   onReorderTabs,
@@ -129,7 +129,7 @@ export function useWorkspaceTitleBar({
       onClose={onCloseTitleTab}
       onCloseMany={onCloseTabs}
       onCloseIdleTabs={onCloseIdleTabs}
-      idleTabCount={idleTabCount}
+      countIdleTabs={countIdleTabs}
       onArchiveTab={onArchiveTitleTab}
       onDeleteTab={onDeleteTitleTab}
       onReorder={(ids) => {

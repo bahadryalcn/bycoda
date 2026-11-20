@@ -32,11 +32,6 @@
   }
 }
 
-.session-note-status {
-  flex: 1 1 auto;
-  padding-inline: 4px;
-}
-
 .session-note-picker {
   display: flex;
   flex-direction: column;
@@ -48,11 +43,6 @@
   min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-
-.session-notes-library-link {
-  flex: none;
-  padding: 4px 8px;
 }
 
 .note-bulk-actions {

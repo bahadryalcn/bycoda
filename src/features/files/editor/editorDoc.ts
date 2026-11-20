@@ -162,22 +162,27 @@ export function preserveEditorViewport(
 
   mutate();
 
-  const restore = () => {
+  // Layout is read in the measure phase and written after it: CodeMirror throws
+  // "Reading the editor layout isn't allowed during an update" for a read in `write`.
+  const measure = (): number | null => {
+    if (!view.dom.isConnected || offsetY == null) return null;
+    const after = view.coordsAtPos(view.state.selection.main.head);
+    return after ? after.top - scroller.getBoundingClientRect().top - offsetY : null;
+  };
+  const apply = (delta: number | null) => {
     if (!view.dom.isConnected) return;
     if (offsetY == null) {
       scroller.scrollTop = scrollTop;
       scroller.scrollLeft = scrollLeft;
       return;
     }
-    const after = view.coordsAtPos(view.state.selection.main.head);
-    if (!after) return;
-    scroller.scrollTop += after.top - scroller.getBoundingClientRect().top - offsetY;
+    if (delta != null) scroller.scrollTop += delta;
   };
-  restore();
+  apply(measure());
   view.requestMeasure({
     key: preserveEditorViewport,
-    read: () => true,
-    write: restore,
+    read: measure,
+    write: apply,
   });
 }
 

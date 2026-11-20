@@ -121,8 +121,12 @@ it("serializes competing optimistic saves; exactly one wins", async () => {
   const { service } = setup();
   const results = await Promise.allSettled([service.save(0, draft()), service.save(0, draft())]);
   expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-  expect(results.find((result) => result.status === "rejected")).toMatchObject({
-    reason: new Error("Model routing changed; reload before saving."),
+  const refused = results.find((result) => result.status === "rejected");
+  expect(refused).toMatchObject({
+    reason: {
+      code: "MODEL_ROUTING_CONFLICT",
+      message: "MODEL_ROUTING_CONFLICT: Model routing changed; reload before saving.",
+    },
   });
   expect((await service.get()).version).toBe(1);
 });

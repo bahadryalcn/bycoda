@@ -3,9 +3,13 @@ import { act, createElement as h } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ listen: vi.fn(), emitTo: vi.fn() }));
+const api = vi.hoisted(() => ({ listen: vi.fn(), emitTo: vi.fn(), emit: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/api/event", () => ({ emit: vi.fn(), listen: api.listen, emitTo: api.emitTo }));
+vi.mock("@tauri-apps/api/event", () => ({
+  emit: api.emit,
+  listen: api.listen,
+  emitTo: api.emitTo,
+}));
 vi.mock("@tauri-apps/api/window", () => ({
   getAllWindows: vi.fn(),
   getCurrentWindow: () => ({ label: "tools", listen: api.listen }),
@@ -44,6 +48,13 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+});
+
+it("announces readiness only after its navigation listeners are registered", async () => {
+  await act(async () => {});
+  expect(listeners.has("workspace_navigation_query")).toBe(true);
+  expect(listeners.has("workspace_navigation_open")).toBe(true);
+  expect(api.emit).toHaveBeenCalledWith("workspace_navigation_ready", { label: "tools" });
 });
 
 it("advertises current content after switching tools and unregisters when closed", async () => {

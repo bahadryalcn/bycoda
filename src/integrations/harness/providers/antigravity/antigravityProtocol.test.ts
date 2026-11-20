@@ -135,6 +135,51 @@ describe.each(providers)("$id ACP protocol", ({ id, protocol, mode, blocks, mode
     ]);
   });
 
+  it.each(["carbon", "argon", "neon", "hydrogen"])(
+    "preserves Gemini 4 %s identities and provider-advertised thinking levels over ACP",
+    (family) => {
+      const nativeId = `gemini-4-${family}`;
+      const levels = [
+        "low",
+        "medium",
+        "high",
+        ...(["neon", "hydrogen"].includes(family) ? ["xhigh"] : []),
+      ];
+      const models = protocol.modelsFromSessionNew({
+        configOptions: [
+          {
+            id: "model",
+            category: "model",
+            options: [{ value: nativeId, name: `Gemini 4 ${family}` }],
+          },
+          {
+            id: "thinking",
+            category: "thought_level",
+            currentValue: "high",
+            options: levels.map((value) => ({ value, name: value })),
+          },
+        ],
+      });
+      expect(models).toEqual([
+        {
+          id: `${id}:${nativeId}`,
+          harness: id,
+          nativeId,
+          name: `Gemini 4 ${family}`,
+          settings: [
+            {
+              id: "effort",
+              label: "Effort",
+              kind: "select",
+              value: "high",
+              options: levels.map((value) => ({ value, label: value })),
+            },
+          ],
+        },
+      ]);
+    },
+  );
+
   it("uses opaque permission IDs by semantic kind and never fabricates an ID", () => {
     const request = protocol.permissionRequestFromAcp({
       toolCall: { toolCallId: "t1", title: "Write file", kind: "edit" },

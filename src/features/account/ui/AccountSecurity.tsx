@@ -135,6 +135,7 @@ export function AccountSecurity({
       <Group title={t("Sessions")} description={t("Devices that can use your account right now.")}>
         <Row
           label={t("Signed-in devices")}
+          descriptionVisible
           description={
             query.data
               ? t("{p0} active", { p0: active.length })

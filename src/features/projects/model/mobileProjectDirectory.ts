@@ -28,6 +28,7 @@ import {
 } from "./recents";
 import { loadSessionFolders } from "../../sessions/public/sessionFolders";
 import { loadSessionOrder } from "../../sessions/public/sessionOrder";
+import { DIRECTORY_STORAGE_PREFIXES, directoryStorageGeneration } from "./directoryStorageSignal";
 
 /** Projects the desktop can already show; this does not unlock or change any group. */
 export function projectMobileDirectory(input: {
@@ -171,26 +172,19 @@ function concealedGroups(
   };
 }
 
-/** Stored state the directory is built from: rail, archive, groups, lock, tab-group
- * appearance and session layout. Matched by prefix so new keys are covered too. */
-const DIRECTORY_STORAGE_PREFIXES = [
-  "bycoda.recentProjects",
-  "bycoda.projectRail",
-  "bycoda.archivedProjects",
-  "bycoda.projectGroup",
-  "bycoda.groupLock",
-  "bycoda.sessionFolders",
-  "bycoda.sessionOrder",
-  "bycoda:tab-group",
-];
 const lockViewIds = new WeakMap<object, number>();
 let nextLockViewId = 0;
 let lastBuild: { inputs: string; directory: DesktopProjectDirectory } | undefined;
 
-/** A cheap fingerprint of everything the build reads: raw stored strings, no parsing. */
+/** A cheap fingerprint of everything the build reads. While storage writes can be
+ * observed it holds the write counter, not the stored strings, so an unchanged tick
+ * never touches storage; otherwise it falls back to the raw stored strings. */
 function directoryInputs(currentPaths: readonly string[], view: object): string {
   let viewId = lockViewIds.get(view);
   if (viewId === undefined) lockViewIds.set(view, (viewId = ++nextLockViewId));
+  const generation = directoryStorageGeneration();
+  if (generation !== undefined)
+    return `g${generation}\u0000${viewId}\u0000${currentPaths.join("\u0000")}`;
   const parts = [String(viewId), currentPaths.join("\u0000")];
   try {
     for (let index = 0; index < localStorage.length; index += 1) {

@@ -1,6 +1,6 @@
 import { TAB_GROUP_COLORS } from "./tabGroupColors";
 import type { Tab } from "../../../app/shell/TitleBar";
-import { projectKey, projectName } from "../../../shared/lib/paths";
+import { isRemoteProjectPath, projectKey, projectName } from "../../../shared/lib/paths";
 import {
   knownProjectPaths,
   notifyProjectPathsChanged,
@@ -308,8 +308,19 @@ export function saveTabGroupCustomColor(project: string, color: string | null): 
 
 /** What each project is shown as: the name the user gave it, else its automatic one. */
 export function loadTabGroupLabels(): Record<string, string> {
+  const automatic = loadAutoTabGroupLabels();
+  for (const [path, label] of Object.entries(automatic)) {
+    // Older remote labels appended a machine hint to the folder name.
+    if (
+      isRemoteProjectPath(path) &&
+      label.startsWith(`${projectName(path)} (`) &&
+      /\)(?: \d+)?$/.test(label)
+    ) {
+      delete automatic[path];
+    }
+  }
   return {
-    ...loadAutoTabGroupLabels(),
+    ...automatic,
     ...loadCustomTabGroupLabels(),
     ...loadWorkspaceProjectNames(),
   };
@@ -392,6 +403,9 @@ export function saveTabGroupLabel(project: string, label: string): void {
 export function loadTabGroupLogos(): Record<string, string> {
   return readRecord(LOGO_KEY);
 }
+
+/** Same record as `loadTabGroupLogos`, parsed once per stored change and shared by every reader. */
+export const getTabGroupLogosSnapshot = cachedRecordReader(LOGO_KEY, loadTabGroupLogos);
 
 export function saveTabGroupLogo(project: string, path: string | null): void {
   const next = loadTabGroupLogos();

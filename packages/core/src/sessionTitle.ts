@@ -1,4 +1,5 @@
-import { extractJsonObject, limitSection } from "./jsonText.ts";
+import { limitSection, parseJsonObject } from "./jsonText.ts";
+import { graphemeLength, truncateGraphemes } from "./text.ts";
 
 const MESSAGE_LIMIT = 8_000;
 const TITLE_LIMIT = 50;
@@ -59,8 +60,8 @@ export function sanitizeThreadTitle(raw: string): string {
     .replace(/\s+/g, " ");
 
   if (!normalized) return "";
-  if (normalized.length <= TITLE_LIMIT) return normalized;
-  return `${normalized.slice(0, TITLE_LIMIT - 3).trimEnd()}...`;
+  if (graphemeLength(normalized) <= TITLE_LIMIT) return normalized;
+  return `${truncateGraphemes(normalized, TITLE_LIMIT - 3, "").trimEnd()}...`;
 }
 
 function referencedNumber(message: string, number: number): boolean {
@@ -71,33 +72,27 @@ export function parseGeneratedSessionTitle(
   raw: string,
   message: string,
 ): GeneratedSessionTitle | null {
-  const json = extractJsonObject(raw);
-  if (json) {
-    try {
-      const parsed: unknown = JSON.parse(json);
-      if (parsed && typeof parsed === "object" && "title" in parsed) {
-        const title = sanitizeThreadTitle(String((parsed as { title: unknown }).title));
-        if (title) {
-          const candidate = (parsed as { workItem?: unknown }).workItem;
-          const workItem =
-            candidate && typeof candidate === "object"
-              ? (candidate as { kind?: unknown; number?: unknown })
-              : null;
-          const kind = workItem?.kind;
-          const number = workItem?.number;
-          const validWorkItem: GeneratedWorkItemHint | null =
-            (kind === "issue" || kind === "pr") &&
-            typeof number === "number" &&
-            Number.isSafeInteger(number) &&
-            number > 0 &&
-            referencedNumber(message, number)
-              ? { kind, number }
-              : null;
-          return { title, workItem: validWorkItem };
-        }
-      }
-    } catch {
-      // Fall through to a bare-title parse when the model skipped JSON.
+  // Keyed selection skips unrelated braces in prose (for example "{title, workItem}") before the reply's object.
+  const parsed = parseJsonObject(raw);
+  if (parsed && "title" in parsed) {
+    const title = sanitizeThreadTitle(String(parsed.title));
+    if (title) {
+      const candidate = parsed.workItem;
+      const workItem =
+        candidate && typeof candidate === "object"
+          ? (candidate as { kind?: unknown; number?: unknown })
+          : null;
+      const kind = workItem?.kind;
+      const number = workItem?.number;
+      const validWorkItem: GeneratedWorkItemHint | null =
+        (kind === "issue" || kind === "pr") &&
+        typeof number === "number" &&
+        Number.isSafeInteger(number) &&
+        number > 0 &&
+        referencedNumber(message, number)
+          ? { kind, number }
+          : null;
+      return { title, workItem: validWorkItem };
     }
   }
 

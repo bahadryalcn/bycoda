@@ -110,7 +110,7 @@ it("retains failed exact choice and source for Retry and prevents changing inten
   await render();
   await open();
   await act(async () => choice("Away").click());
-  expect(document.body.textContent).toContain("Availability change was not confirmed.");
+  expect(document.body.textContent).toContain("Availability change could not be confirmed.");
   expect(choice("Do not disturb").disabled).toBe(true);
   await act(async () => choice("Retry").click());
   expect(port.set).toHaveBeenNthCalledWith(2, "host-a", "away");
@@ -171,7 +171,7 @@ it("keeps the last confirmed state while a choice is in flight until actual ACK 
   expect(
     container.querySelector("[data-presence-state]")?.getAttribute("data-presence-state"),
   ).toBe("present");
-  expect(container.textContent).toContain("Updating availability...");
+  expect(container.textContent).toContain("Updating availability…");
   await act(async () => {
     resolve({ ...ready, revision: 2, status: { ...ready.status!, state: "away" } });
   });
@@ -207,4 +207,19 @@ it("keeps the last confirmed Here when a later read fails", async () => {
   expect(container.textContent).toContain("Here");
   expect(container.textContent).not.toContain("Unknown");
   expect(container.textContent).not.toContain("Offline");
+});
+it("announces a failed availability change once, without a duplicate tooltip", async () => {
+  vi.mocked(port.set).mockResolvedValueOnce({
+    ...ready,
+    revision: 3,
+    statusError: true,
+    writeError: true,
+    retry: "away",
+  });
+  await render();
+  await open();
+  await act(async () => choice("Away").click());
+  const message = "Availability change could not be confirmed.";
+  expect(document.body.textContent?.split(message)).toHaveLength(2);
+  expect(container.querySelector("button")?.getAttribute("title")).toBeNull();
 });

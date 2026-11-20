@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
@@ -99,8 +100,7 @@ function TranscriptVideoPreview({
         if (!cancelled) setSource({ path: resolved });
       },
       (reason: unknown) => {
-        if (!cancelled)
-          setSource({ error: reason instanceof Error ? reason.message : String(reason) });
+        if (!cancelled) setSource({ error: errorText(reason) });
       },
     );
     return () => {
@@ -184,7 +184,7 @@ async function loadTranscriptImage(
     setState({ status: "ready", url: load.created });
   } catch (reason) {
     if (load.cancelled) return;
-    const detail = reason instanceof Error ? reason.message : String(reason);
+    const detail = errorText(reason);
     setState({ status: "error", file, detail });
   }
 }

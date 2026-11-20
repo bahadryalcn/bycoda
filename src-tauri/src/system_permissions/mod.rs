@@ -19,6 +19,11 @@ mod windows;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const CHANGED_EVENT: &str = "system-permissions-changed";
 
+/// Entry `detail`: the owner switched access on in the OS, but this process
+/// only gets it after a restart.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub const RESTART_REQUIRED: &str = "restart-required";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionId {

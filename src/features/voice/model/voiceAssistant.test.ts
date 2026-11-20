@@ -286,6 +286,7 @@ it("falls back to a spoken limit notice when the summary call is unusable", asyn
   run.mockResolvedValue('{"type":"tool","name":"app_context","args":{}}');
   const result = await converseWithAssistant(input({ maxToolCalls: 1 }));
   expect(result.reply).toContain("devam et");
+  expect(result.reply).not.toMatch(/\d+ adım tamamlandı/);
 });
 
 it("emits one progress notice after a slow step, in the turn language", async () => {
@@ -324,7 +325,7 @@ it("speaks a bounded failure instead of throwing, and keeps cancellation silent"
   const onFailure = vi.fn();
   const result = await converseWithAssistant(input({ transcript: "create a note", onFailure }));
   expect(result.action).toBe("reply");
-  expect(result.reply).toMatch(/^I couldn't finish that: boom x+…. Nothing else was changed\.$/);
+  expect(result.reply).toMatch(/^I couldn't finish that: boom x+…\.$/);
   expect(result.reply).not.toContain("file.ts");
   expect(result.reply.length).toBeLessThan(300);
   expect(onFailure).toHaveBeenCalledWith(result.reply);

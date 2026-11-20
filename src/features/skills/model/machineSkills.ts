@@ -3,6 +3,8 @@ import { runMachineCommand } from "../../connections/model/remoteCommands";
 
 type MachineInventory = {
   skills: DiscoveredSkill[] | null;
+  /** The machine stopped listing at its cap or discovery budget; `skills` is incomplete. */
+  truncated: boolean;
   expires: number;
   retryAt: number;
   error: unknown;
@@ -25,6 +27,11 @@ export function cachedMachineSkills(
   return inventories.get(inventoryKey(environmentId, projectCwd))?.skills ?? null;
 }
 
+/** Whether the last successful inventory of this machine was cut short by its Host. */
+export function machineSkillsTruncated(environmentId: string, projectCwd = ""): boolean {
+  return inventories.get(inventoryKey(environmentId, projectCwd))?.truncated ?? false;
+}
+
 /** A connected machine's skills: its personal ones, plus those of `projectCwd`
  * (a `remote://` project path on that machine) when given. The paths come
  * back as `remote://` paths. Pass `refresh: false` for cached page opens; the default
@@ -43,7 +50,14 @@ export function listMachineSkills(
       if (entry.skills && Date.now() < entry.expires) return Promise.resolve(entry.skills);
     }
   }
-  entry = { skills: entry?.skills ?? null, expires: 0, retryAt: 0, error: null, pending: null };
+  entry = {
+    skills: entry?.skills ?? null,
+    truncated: entry?.truncated ?? false,
+    expires: 0,
+    retryAt: 0,
+    error: null,
+    pending: null,
+  };
   // Bound retained project inventories; an evicted request cannot restore itself.
   if (!inventories.has(key) && inventories.size >= 128)
     inventories.delete(inventories.keys().next().value!);
@@ -51,13 +65,19 @@ export function listMachineSkills(
   const current = entry;
   const request = runMachineCommand(environmentId, "list_skills", {
     cwd: projectCwd,
+    withStatus: true,
   })
     .then((value) => {
-      if (!Array.isArray(value))
+      // A Host that predates the truncation flag answers with a bare array.
+      const listing = Array.isArray(value)
+        ? { skills: value, truncated: false }
+        : (value as { skills?: unknown; truncated?: unknown } | null);
+      if (!listing || !Array.isArray(listing.skills))
         throw new Error("Could not load machine skills: invalid inventory.");
-      const skills = value as DiscoveredSkill[];
+      const skills = listing.skills as DiscoveredSkill[];
       if (inventories.get(key) === current) {
         current.skills = skills;
+        current.truncated = listing.truncated === true;
         current.expires = Date.now() + 30_000;
       }
       return inventories.get(key)?.skills ?? skills;

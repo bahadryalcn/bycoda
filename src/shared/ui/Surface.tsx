@@ -103,6 +103,7 @@ export type SurfaceAppearance = {
     | "focus"
     | "muted";
   /** Framed edge(s), default all. Logical edges follow writing direction; top/bottom/left/right preserve physical edges.
+   * For `start`, set `--surface-frame-inline-start-visible: 0` to keep only the block-start edge.
    * `responsive-start` keeps a 1px inline-start frame; the owning layout sets
    * `--surface-frame-stacked: 1` at its existing container breakpoint to move it to block-start (0 restores inline-start).
    * Set `--surface-frame-visible: 0` when the layout hides that boundary (default 1).

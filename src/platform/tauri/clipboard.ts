@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import {
   attachmentsFromFiles,
@@ -7,16 +8,48 @@ import {
   MAX_EMBED_BYTES,
 } from "../../features/sessions/model/attachments";
 import type { Attachment } from "../../features/sessions/model/session";
+import { decodeBase64 } from "../../shared/lib/base64";
 import { withTimeout } from "../../shared/lib/withTimeout";
 
 type CopiedFile = { name: string; mimeType: string; data: string };
 
-const FILES_ATTRIBUTE = 'data-bycoda-files="';
-const MAX_CLIPBOARD_METADATA_CHARS = 64 * 1024;
+/** Marks one embedded file; its value is the escaped file name. */
+const FILE_ATTRIBUTE = 'data-bycoda-file="';
+const LEGACY_FILES_ATTRIBUTE = 'data-bycoda-files="';
+const DATA_URI_PREFIX = "data:";
+const BASE64_MARKER = ";base64,";
+/** Room for the message text, markup and file names around the base64 payload. */
+const MAX_CLIPBOARD_METADATA_CHARS = 4 * 1024 * 1024;
 const MAX_CLIPBOARD_BASE64_CHARS = Math.ceil(MAX_EMBED_BYTES / 3) * 4;
-const MAX_CLIPBOARD_PAYLOAD_CHARS = MAX_CLIPBOARD_BASE64_CHARS * 3 + MAX_CLIPBOARD_METADATA_CHARS;
-const MAX_CLIPBOARD_HTML_CHARS =
-  MAX_CLIPBOARD_PAYLOAD_CHARS + MAX_CLIPBOARD_BASE64_CHARS + MAX_CLIPBOARD_METADATA_CHARS;
+const MAX_CLIPBOARD_HTML_CHARS = MAX_CLIPBOARD_BASE64_CHARS + MAX_CLIPBOARD_METADATA_CHARS;
+// Older builds URI-encoded the attachment JSON and duplicated the bytes as data URIs.
+const MAX_LEGACY_METADATA_CHARS = 64 * 1024;
+const MAX_LEGACY_PAYLOAD_CHARS = MAX_CLIPBOARD_BASE64_CHARS * 3 + MAX_LEGACY_METADATA_CHARS;
+const MAX_LEGACY_HTML_CHARS =
+  MAX_LEGACY_PAYLOAD_CHARS + MAX_CLIPBOARD_BASE64_CHARS + MAX_LEGACY_METADATA_CHARS;
+
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+const HTML_UNESCAPES: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+};
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]!);
+}
+
+function unescapeHtml(value: string): string {
+  return value.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => HTML_UNESCAPES[entity]!);
+}
 
 function embeddedByteLength(data: string): number {
   if (
@@ -85,7 +118,7 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
         data,
       });
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = errorText(error);
       throw new Error(`Could not copy ${attachment.name}: ${reason}`);
     }
   }
@@ -94,41 +127,31 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
     if (!payload) throw new Error("No copyable content is available.");
     return copyText(payload);
   }
-  const escape = (value: string) =>
-    value.replace(
-      /[&<>"']/g,
-      (char) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[char]!,
-    );
-  const encodedFiles = encodeURIComponent(JSON.stringify(files));
-  if (encodedFiles.length > MAX_CLIPBOARD_PAYLOAD_CHARS)
-    throw new Error("The copied attachment payload is too large. Copy fewer files.");
-  const html = `<div data-bycoda-files="${encodedFiles}"><pre>${escape(payload)}</pre>${files
-    .map((file) => {
-      const src = `data:${escape(file.mimeType)};base64,${escape(file.data)}`;
-      return file.mimeType.startsWith("image/")
-        ? `<img src="${src}" alt="${escape(file.name)}">`
-        : `<a href="${src}" download="${escape(file.name)}">${escape(file.name)}</a>`;
-    })
-    .join("")}</div>`;
-  if (html.length > MAX_CLIPBOARD_HTML_CHARS)
+  // Each file's bytes are embedded once, as the data URI of its <img>/<a>; the paste side reads
+  // them back from there. The base64 is already validated, so it needs no escaping, and the
+  // parts go to the Blob as they are instead of being joined into one more copy.
+  const parts: string[] = [`<div><pre>${escapeHtml(payload)}</pre>`];
+  let htmlLength = parts[0].length;
+  for (const file of files) {
+    const name = escapeHtml(file.name);
+    const uri = `${DATA_URI_PREFIX}${escapeHtml(file.mimeType)}${BASE64_MARKER}`;
+    const open = file.mimeType.startsWith("image/")
+      ? `<img ${FILE_ATTRIBUTE}${name}" src="${uri}`
+      : `<a ${FILE_ATTRIBUTE}${name}" href="${uri}`;
+    const close = file.mimeType.startsWith("image/") ? `">` : `" download="${name}">${name}</a>`;
+    parts.push(open, file.data, close);
+    htmlLength += open.length + file.data.length + close.length;
+  }
+  parts.push("</div>");
+  htmlLength += "</div>".length;
+  if (htmlLength > MAX_CLIPBOARD_HTML_CHARS)
     throw new Error("The copied message is too large. Copy less text or fewer files.");
   const formats: Record<string, Blob> = {
     "text/plain": new Blob([payload], { type: "text/plain" }),
-    "text/html": new Blob([html], { type: "text/html" }),
+    "text/html": new Blob(parts, { type: "text/html" }),
   };
   const png = files.find((file) => file.mimeType === "image/png");
-  if (png)
-    formats["image/png"] = new Blob(
-      [Uint8Array.from(atob(png.data), (char) => char.charCodeAt(0))],
-      { type: "image/png" },
-    );
+  if (png) formats["image/png"] = new Blob([decodeBase64(png.data)], { type: "image/png" });
   await navigator.clipboard.write([new ClipboardItem(formats)]);
 }
 
@@ -136,36 +159,68 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
 export function messageFilesFromClipboard(clipboard: Pick<DataTransfer, "getData">): File[] | null {
   try {
     const html = clipboard.getData("text/html");
-    if (!html || html.length > MAX_CLIPBOARD_HTML_CHARS) return null;
-    const payloadStart = html.indexOf(FILES_ATTRIBUTE);
-    if (payloadStart < 0) return null;
-    const valueStart = payloadStart + FILES_ATTRIBUTE.length;
-    const valueEnd = html.indexOf('"', valueStart);
-    if (valueEnd < 0) return null;
-    const payload = html.slice(valueStart, valueEnd);
-    if (!payload || payload.length > MAX_CLIPBOARD_PAYLOAD_CHARS) return null;
-    const files: unknown = JSON.parse(decodeURIComponent(payload));
-    if (!Array.isArray(files) || files.length > MAX_ATTACHMENTS) return null;
-
+    if (!html || html.length > MAX_LEGACY_HTML_CHARS) return null;
+    let cursor = html.indexOf(FILE_ATTRIBUTE);
+    if (cursor < 0) return legacyMessageFiles(html);
+    if (html.length > MAX_CLIPBOARD_HTML_CHARS) return null;
+    // Walk the markers with indexOf: no DOM parse and no copy of the base64 until it is decoded.
+    const files: CopiedFile[] = [];
     let decodedBytes = 0;
-    for (const file of files) {
-      if (
-        typeof file?.name !== "string" ||
-        typeof file?.mimeType !== "string" ||
-        typeof file?.data !== "string"
-      )
-        throw new Error("Invalid attachment");
-      decodedBytes += embeddedByteLength(file.data);
+    while (cursor >= 0) {
+      if (files.length >= MAX_ATTACHMENTS) return null;
+      const nameStart = cursor + FILE_ATTRIBUTE.length;
+      const nameEnd = html.indexOf('"', nameStart);
+      const uriStart = html.indexOf(DATA_URI_PREFIX, nameEnd);
+      if (nameEnd < 0 || uriStart < 0) return null;
+      const mimeStart = uriStart + DATA_URI_PREFIX.length;
+      const mimeEnd = html.indexOf(BASE64_MARKER, mimeStart);
+      if (mimeEnd < 0) return null;
+      const dataStart = mimeEnd + BASE64_MARKER.length;
+      const dataEnd = html.indexOf('"', dataStart);
+      if (dataEnd < 0) return null;
+      const data = html.slice(dataStart, dataEnd);
+      decodedBytes += embeddedByteLength(data);
       if (decodedBytes > MAX_EMBED_BYTES) return null;
+      files.push({
+        name: unescapeHtml(html.slice(nameStart, nameEnd)),
+        mimeType: unescapeHtml(html.slice(mimeStart, mimeEnd)),
+        data,
+      });
+      cursor = html.indexOf(FILE_ATTRIBUTE, dataEnd);
     }
 
-    return files.map((file) => {
-      const bytes = Uint8Array.from(atob(file.data), (char) => char.charCodeAt(0));
-      return new File([bytes], file.name, { type: file.mimeType });
-    });
+    return files.map(
+      (file) => new File([decodeBase64(file.data)], file.name, { type: file.mimeType }),
+    );
   } catch {
     return null;
   }
+}
+
+function legacyMessageFiles(html: string): File[] | null {
+  const marker = html.indexOf(LEGACY_FILES_ATTRIBUTE);
+  if (marker < 0) return null;
+  const start = marker + LEGACY_FILES_ATTRIBUTE.length;
+  const end = html.indexOf('"', start);
+  if (end <= start || end - start > MAX_LEGACY_PAYLOAD_CHARS) return null;
+  const files: unknown = JSON.parse(decodeURIComponent(html.slice(start, end)));
+  if (!Array.isArray(files) || files.length > MAX_ATTACHMENTS) return null;
+
+  let decodedBytes = 0;
+  for (const file of files) {
+    if (
+      typeof file?.name !== "string" ||
+      typeof file?.mimeType !== "string" ||
+      typeof file?.data !== "string"
+    ) {
+      return null;
+    }
+    decodedBytes += embeddedByteLength(file.data);
+    if (decodedBytes > MAX_EMBED_BYTES) return null;
+  }
+  return files.map(
+    (file) => new File([decodeBase64(file.data)], file.name, { type: file.mimeType }),
+  );
 }
 
 /** A WebView clipboard write that never settles must not leave a copy action pending forever. */
@@ -287,14 +342,9 @@ export async function nativeClipboardAttachments(text: string): Promise<NativeCl
     };
   }
   if (text) return { files: [] };
-  try {
-    return { files: await attachmentsFromFiles([await readClipboardImage()]) };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    // An empty clipboard is a no-op. A real read failure still surfaces.
-    if (reason === "The clipboard does not contain an image.") return { files: [] };
-    throw error;
-  }
+  // An empty clipboard is a no-op. A real read failure still surfaces.
+  const image = await readClipboardImage();
+  return { files: image ? await attachmentsFromFiles([image]) : [] };
 }
 
 /**
@@ -310,21 +360,26 @@ export async function readClipboardFilePaths(): Promise<string[]> {
   return Array.isArray(paths) ? paths.filter((path) => path.trim()) : [];
 }
 
+/** The Host's reply when the clipboard holds no image (`src-tauri/src/pasteboard.rs`). Matched only here. */
+const EMPTY_CLIPBOARD_IMAGE = "The clipboard does not contain an image.";
+
 /**
- * An image held by the native clipboard, as a `File`.
+ * An image held by the native clipboard, as a `File`, or `null` when the
+ * clipboard holds no image.
  *
  * A webview's paste event carries text only, so images copied by a screenshot
- * tool never reach `clipboardData.files`. Throws with a message worth showing
- * when the clipboard has no readable image.
+ * tool never reach `clipboardData.files`. Other read failures throw with a
+ * message worth showing.
  */
-export async function readClipboardImage(): Promise<File> {
+export async function readClipboardImage(): Promise<File | null> {
   let buffer: ArrayBuffer;
   try {
     buffer = await invoke<ArrayBuffer>("clipboard_image");
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorText(error);
+    if (reason === EMPTY_CLIPBOARD_IMAGE) return null;
     throw new Error(reason || "The clipboard could not be read.");
   }
-  if (!buffer?.byteLength) throw new Error("The clipboard does not contain an image.");
+  if (!buffer?.byteLength) return null;
   return new File([buffer], "clipboard-image.png", { type: "image/png" });
 }

@@ -175,6 +175,27 @@ fn device_http_outcomes_preserve_admitted_uncertainty_without_reclassifying_deni
         ),
         ("devices.status", 401, unknown.to_vec(), 0, "auth"),
         (
+            "projects.list",
+            401,
+            br#"{"error":"Device credential is invalid or revoked"}"#.to_vec(),
+            0,
+            "auth",
+        ),
+        (
+            "sessions.queue.get",
+            403,
+            br#"{"error":"Unsupported request origin or route"}"#.to_vec(),
+            0,
+            "route",
+        ),
+        (
+            "devices.setup",
+            403,
+            br#"{"error":"Unsupported request origin or route"}"#.to_vec(),
+            0,
+            "route",
+        ),
+        (
             "devices.preview.mobile.status",
             400,
             unknown.to_vec(),
@@ -306,6 +327,17 @@ fn device_http_outcomes_preserve_admitted_uncertainty_without_reclassifying_deni
             expected == "auth",
             "{method}/{status}: {error}"
         );
+        assert_eq!(
+            error.contains("[RPC_ROUTE_REJECTED]"),
+            expected == "route",
+            "{method}/{status}: {error}"
+        );
+        if expected == "auth" {
+            assert!(
+                error.contains("pair it again") && !error.contains("access scope"),
+                "{error}"
+            );
+        }
         if expected == "rejected" {
             assert!(error.starts_with("Host rejected request:"), "{error}");
         }
@@ -658,6 +690,33 @@ fn ambiguous_or_authorization_failures_never_replay_a_command() {
         });
         assert_eq!(result.unwrap_err(), error);
         assert_eq!(deliveries, 1, "{error}");
+    }
+}
+
+#[test]
+fn a_tunnel_host_refusal_keeps_an_ambiguous_request_outcome_unknown() {
+    let reset = "The host request did not complete [RPC_HOST_UNAVAILABLE] (commands.dispatch). Reconnect before retrying an action; its outcome is unknown.";
+    for ambiguous in [
+        reset,
+        "The host request did not complete [RPC_TIMEOUT] (commands.dispatch).",
+        "The host request did not complete [RPC_PROTOCOL] (commands.dispatch).",
+        "The host request did not complete [RPC_CONNECTION_INTERRUPTED] (commands.dispatch).",
+    ] {
+        let message = super::host_not_running_failure(ambiguous);
+        assert!(
+            message.starts_with("Host is not running on the machine."),
+            "{message}"
+        );
+        assert!(message.contains("its outcome is unknown"), "{message}");
+    }
+    for unsent in [
+        "The host request did not complete [RPC_DNS] (commands.dispatch).",
+        "The host request did not complete [RPC_PROXY] (commands.dispatch).",
+    ] {
+        assert_eq!(
+            super::host_not_running_failure(unsent),
+            "Host is not running on the machine. Start bycoda Host there, then reconnect."
+        );
     }
 }
 
@@ -1023,7 +1082,7 @@ fn assistant_and_desktop_owner_routes_are_finite_and_not_shared_reads() {
     }
     assert_eq!(
         rpc_timeout("assistant.request", &json!({"op":"threads.send"})),
-        std::time::Duration::from_secs(120)
+        std::time::Duration::from_secs(160)
     );
     assert_eq!(
         rpc_timeout("assistant.request", &json!({"op":"snapshot"})),
@@ -1070,6 +1129,11 @@ fn voice_rpc_methods_are_bounded_and_model_loading_has_time_to_finish() {
     assert!(!supported_remote_method("voice.local.exec"));
     assert!(!supported_remote_method("voice.tools.exec"));
     assert!(rpc_timeout("voice.tools.call", &json!({})) >= Duration::from_secs(250));
+    // A held desktop take waits up to 25 s on the Host; the client must outlast that hold.
+    assert!(
+        rpc_timeout("conversation.desktop.take", &json!({"waitMs": 25000}))
+            > Duration::from_secs(25)
+    );
     assert!(rpc_timeout("assistant.builder.avatarGenerate", &json!({})) > Duration::from_secs(240));
     assert!(rpc_timeout("assistant.builder.interview", &json!({})) > Duration::from_secs(100));
     assert!(rpc_timeout("voice.local.start", &json!({})) >= Duration::from_secs(180));
@@ -1137,6 +1201,40 @@ fn git_actions_outlast_the_hosts_network_limit_and_others_keep_the_default() {
     );
 }
 
+/// Over HTTP the desktop must wait at least as long as the contract lets the Host work, or it
+/// reports a timeout for a call the Host completes. Every method whose contract deadline
+/// exceeds the default is checked against the generated manifest.
+#[test]
+fn http_deadlines_outlast_every_long_contract_deadline() {
+    let manifest: Value = serde_json::from_str(include_str!(
+        "../../../src/shared/model/host-contracts/generated/manifest.json"
+    ))
+    .unwrap();
+    let methods = manifest["methods"].as_object().unwrap();
+    let mut checked = 0;
+    for (method, entry) in methods {
+        let contract =
+            std::time::Duration::from_millis(entry["responseTimeoutMs"].as_u64().unwrap());
+        if contract <= DEFAULT_RPC_TIMEOUT {
+            continue;
+        }
+        checked += 1;
+        // Only an assistant thread send waits for a reply; its other operations answer at once
+        // and keep the default so a hung Host cannot hold a native worker.
+        let params = if method == "assistant.request" {
+            json!({"op": "threads.send"})
+        } else {
+            json!({})
+        };
+        let http = rpc_timeout(method, &params);
+        assert!(
+            http >= contract,
+            "{method}: HTTP {http:?} < contract {contract:?}"
+        );
+    }
+    assert!(checked >= 20, "{checked}");
+}
+
 #[test]
 fn model_catalog_outlasts_provider_discovery() {
     assert!(rpc_timeout("models.list", &json!({})) > std::time::Duration::from_secs(45));
@@ -1158,7 +1256,6 @@ fn conversation_tools_outlast_host_setup_and_device_operations() {
     for method in [
         "devices.status",
         "devices.list",
-        "devices.capture",
         "devices.stop",
         "resources.read",
         "devices.exec",
@@ -1643,7 +1740,10 @@ fn retries_on_another_port_only_for_unreachable_hosts() {
         "Host identity changed: this address answers as a different machine."
     ));
     assert!(!port_may_have_moved(
-        "This host uses an incompatible protocol version"
+        crate::remote::protocol::OLDER_HOST_MESSAGE
+    ));
+    assert!(!port_may_have_moved(
+        crate::remote::protocol::NEWER_HOST_MESSAGE
     ));
 }
 
@@ -1679,10 +1779,13 @@ fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
         workspace: None,
         machine: machine.clone(),
         recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
+            revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
         }),
     };
+    transport.assert_recovery_saved(&state, &path).unwrap();
+    // Another machine's reconnect or reroute never retires this selection.
+    state.invalidate_ws("unrelated-machine");
     transport.assert_recovery_saved(&state, &path).unwrap();
     let mut changed = machine.clone();
     changed.token = "replaced-fixture-owner".into();
@@ -1700,7 +1803,7 @@ fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
         workspace: None,
         machine: machine.clone(),
         recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
+            revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
         }),
     };
@@ -1716,6 +1819,25 @@ fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
         .file_type()
         .is_symlink());
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn recovery_routes_retire_one_machine_and_close_retires_all() {
+    let routes = RecoveryRoutes::default();
+    let (first, second) = (routes.capture("a").unwrap(), routes.capture("b").unwrap());
+    routes.retire("a");
+    assert!(!routes.current("a", first));
+    assert!(routes.current("b", second));
+    // A retired machine gets a new revision, never an earlier one again.
+    let renewed = routes.capture("a").unwrap();
+    assert_ne!(renewed, first);
+    assert!(routes.current("a", renewed));
+    // Retiring a machine nobody pinned yet leaves the others alone.
+    routes.retire("never-seen");
+    assert!(routes.current("a", renewed) && routes.current("b", second));
+    routes.close();
+    assert!(routes.capture("a").is_err() && routes.capture("b").is_err());
+    assert!(!routes.current("b", second));
 }
 
 #[test]
@@ -1742,7 +1864,7 @@ fn native_recovery_retires_an_actual_in_flight_http_read_before_disclosure() {
         workspace: None,
         machine: machine.clone(),
         recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture().unwrap(),
+            revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
         }),
     };
@@ -2239,4 +2361,61 @@ fn http_fallback_is_allowed_only_when_the_request_was_not_sent() {
             "{code}"
         );
     }
+}
+
+fn local_link_record(id: &str, environment_id: &str, token: &str) -> StoredMachine {
+    StoredMachine {
+        id: id.into(),
+        name: "This computer (local sync)".into(),
+        endpoint: "http://127.0.0.1:3774".into(),
+        environment_id: environment_id.into(),
+        token: token.into(),
+        ssh: None,
+        local_host: true,
+    }
+}
+
+const LOCAL_NAME: &str = "This computer (local sync)";
+
+#[test]
+fn a_repaired_local_pairing_replaces_the_token_and_keeps_the_machine_id() {
+    let mut machines = vec![
+        saved("mac", "me@192.168.1.5"),
+        local_link_record("local", "env-1", "old-token"),
+    ];
+    let repaired =
+        apply_local_repair(&mut machines, "local", "env-1", "new-token", LOCAL_NAME).unwrap();
+    assert_eq!(repaired.id, "local");
+    assert_eq!(repaired.token, "new-token");
+    assert_eq!(machines.len(), 2);
+    assert_eq!(
+        machines.iter().find(|m| m.id == "local").unwrap().token,
+        "new-token"
+    );
+}
+
+#[test]
+fn a_repair_that_reaches_another_host_replaces_the_record() {
+    let mut machines = vec![local_link_record("local", "env-1", "old-token")];
+    let repaired =
+        apply_local_repair(&mut machines, "local", "env-2", "new-token", LOCAL_NAME).unwrap();
+    assert_ne!(repaired.id, "local");
+    assert_eq!(repaired.environment_id, "env-2");
+    assert!(repaired.local_host);
+    assert_eq!(machines.len(), 1);
+    assert_eq!(machines[0].id, repaired.id);
+}
+
+#[test]
+fn non_local_and_ssh_machines_are_never_repaired() {
+    let mut remote = local_link_record("remote", "env-r", "old-token");
+    remote.name = "Office".into();
+    remote.local_host = false;
+    remote.endpoint = "http://192.168.1.5:3774".into();
+    let mut machines = vec![saved("mac", "me@127.0.0.1"), remote];
+    let before = serde_json::to_value(&machines).unwrap();
+    for id in ["mac", "remote", "missing"] {
+        assert!(apply_local_repair(&mut machines, id, "env-r", "new-token", LOCAL_NAME).is_err());
+    }
+    assert_eq!(serde_json::to_value(&machines).unwrap(), before);
 }

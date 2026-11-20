@@ -8,7 +8,7 @@ import { Button } from "../../../shared/ui/Button";
 
 import { NativeSelect } from "../../../shared/ui/Select";
 import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { useLocale, useT } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { SlidersHorizontal } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import {
@@ -410,10 +410,9 @@ export function ModelExtras({
           align="start"
           width={340}
           maxHeight={460}
-          role="dialog"
+          kind="dialog"
           data-model-settings
           aria-label={t("Provider extras")}
-          autoFocus
           onDismiss={dismiss}
           className="overflow-y-auto"
         >
@@ -439,14 +438,16 @@ export function TogglePill({
   values: Record<string, string>;
   onSettingsChange: (settings: Record<string, string>) => void;
 }) {
-  useLocale();
+  const t = useT();
   const on = settingValue(setting, values) === "true";
+  const label = t(settingLabel(setting));
+  const name = `${label}: ${t(on ? "On" : "Off")}`;
   return (
     <Button
       variant="ghost"
       type="button"
-      tooltip={`${setting.label}: ${on ? "On" : "Off"}`}
-      aria-label={`${setting.label}: ${on ? "On" : "Off"}`}
+      tooltip={name}
+      aria-label={name}
       aria-pressed={on}
       data-model-control
       onMouseDown={(event) => event.preventDefault()}
@@ -454,7 +455,7 @@ export function TogglePill({
       className="max-w-28"
     >
       <Text size="micro" tone={on ? "inherit" : "secondary"} truncate className={`min-w-0   `}>
-        {setting.label}
+        {label}
       </Text>
     </Button>
   );

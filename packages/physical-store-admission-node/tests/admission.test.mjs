@@ -262,3 +262,92 @@ test("process cap is shared across owners and retains all existing kernel locks"
   for (const { store, writer } of held) store.releaseWriter(writer);
   assert.equal(kernel(f, "closed").status, 0);
 });
+
+// #1441: admission now runs outside the registry mutex on a capacity-counted
+// pending slot. Every non-committing outcome must give that slot back.
+test("busy admissions never leak the pending capacity slot", () => {
+  const f = fixture("busy-capacity"),
+    closing = f.store.tryBeginClose();
+  assert.ok(closing);
+  const { maxProcess } = f.owner.statistics();
+  for (let attempt = 0; attempt < maxProcess + 10; attempt++) {
+    assert.equal(f.store.tryWriter(), null);
+  }
+  assert.equal(f.owner.statistics().ownerActive, 1);
+  f.store.releaseClosing(closing);
+  const writer = f.store.tryWriter();
+  assert.ok(writer);
+  f.store.releaseWriter(writer);
+  assert.equal(f.owner.statistics().ownerActive, 0);
+});
+
+test("a failed upgrade keeps the closing record and its capacity slot", () => {
+  const f = fixture("upgrade-restore"),
+    writer = f.store.tryWriter(),
+    closing = f.store.tryBeginClose();
+  assert.ok(writer && closing);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    assert.equal(f.store.tryUpgrade(closing), null);
+    assert.equal(f.owner.statistics().ownerActive, 2);
+    assert.equal(kernel(f, "writer").status, 11);
+  }
+  f.store.releaseWriter(writer);
+  const closed = f.store.tryUpgrade(closing);
+  assert.ok(closed);
+  assert.equal(f.owner.statistics().ownerActive, 1);
+  f.store.releaseClosed(closed);
+  assert.equal(f.owner.statistics().ownerActive, 0);
+});
+
+// #1442: diagnostics only. It must expose no authority and release nothing.
+test("listReservations reports kind, identity and age without authority or release", () => {
+  const f = fixture("diagnostics");
+  assert.deepEqual(f.owner.listReservations(), []);
+  const writer = f.store.tryWriter(),
+    closing = f.store.tryBeginClose();
+  assert.ok(writer && closing);
+  const rows = f.owner.listReservations();
+  assert.deepEqual(
+    rows.map((row) => row.kind),
+    ["writer", "closing"],
+  );
+  for (const row of rows) {
+    assert.deepEqual(Object.keys(row).sort(), ["ageMs", "kind", "nativeFormat"]);
+    assert.equal(row.nativeFormat, f.store.identity().nativeFormat);
+    assert.equal(typeof row.ageMs, "number");
+    assert.ok(row.ageMs >= 0);
+  }
+  assert.deepEqual(native.openRegistry(f.registry).listReservations(), []);
+  assert.equal(kernel(f, "closed").status, 12);
+  f.store.releaseWriter(writer);
+  f.store.releaseClosing(closing);
+  assert.deepEqual(f.owner.listReservations(), []);
+  assert.equal(kernel(f, "closed").status, 0);
+});
+
+// #1442: the contract is that a live kernel lock is never released by JS object
+// lifetime, not for a handle and not for the owner/binding either.
+test("collecting the registry and store objects does not release a live writer", async () => {
+  let held = fixture("owner-gc");
+  const { registry, file } = held,
+    probeFixture = { registry, file };
+  const writer = held.store.tryWriter();
+  assert.ok(writer);
+  const weak = [new WeakRef(held.owner), new WeakRef(held.store)];
+  held = undefined;
+  let collected = false;
+  for (let attempt = 0; attempt < 80 && !collected; attempt++) {
+    await turn();
+    globalThis.gc();
+    collected = weak.every((ref) => !ref.deref());
+  }
+  assert.equal(collected, true, "JS registry/store wrappers were not collected");
+  assert.equal(kernel(probeFixture, "closed").status, 12);
+  const other = native.openRegistry(registry).bindFile(file);
+  const closing = other.tryBeginClose();
+  assert.ok(closing);
+  assert.equal(other.tryUpgrade(closing), null);
+  other.releaseClosing(closing);
+  assert.equal(kernel(probeFixture, "closed").status, 12);
+  void writer;
+});

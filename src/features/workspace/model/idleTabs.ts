@@ -59,6 +59,22 @@ export function sessionIsIdle(session: Session, input: SessionIdleInput): boolea
   return !input.hasComposerDraft(session.id);
 }
 
+const sessionIndexes = new WeakMap<readonly Session[], ReadonlyMap<string, Session>>();
+
+/**
+ * Session lookup by id for one sessions array. The shell store hands out the same
+ * array until it changes, so every idle check reading that array shares one index
+ * instead of rebuilding it per call.
+ */
+export function sessionsById(sessions: readonly Session[]): ReadonlyMap<string, Session> {
+  let index = sessionIndexes.get(sessions);
+  if (index === undefined) {
+    index = new Map(sessions.map((session) => [session.id, session]));
+    sessionIndexes.set(sessions, index);
+  }
+  return index;
+}
+
 /**
  * True when a tab holds only idle sessions and no terminal, dirty or moving
  * state. Shared by the silent close and by tab hibernation, so both agree on
@@ -89,7 +105,7 @@ export function tabIsIdle(
  * session idle, and no dirty files or terminal panes (which would prompt).
  */
 export function idleWorkspaceTabIds(input: IdleTabInput): string[] {
-  const sessions = new Map(input.sessions.map((session) => [session.id, session]));
+  const sessions = sessionsById(input.sessions);
   return input.tabs
     .filter((tab) => tab.id !== input.activeTabId && tabIsIdle(tab, input, sessions))
     .map((tab) => tab.id);
@@ -162,7 +178,7 @@ export function emptyForeignTabIds(
   currentProject: string,
   remoteUnsent?: (session: Session) => boolean,
 ): string[] {
-  const sessions = new Map(input.sessions.map((session) => [session.id, session]));
+  const sessions = sessionsById(input.sessions);
   return input.tabs
     .filter((tab) => {
       if (tab.id === input.activeTabId || input.movingTabIds?.has(tab.id)) return false;

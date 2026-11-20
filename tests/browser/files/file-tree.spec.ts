@@ -12,9 +12,7 @@ test("file tree preserves selection, inline rename, windowing and native externa
   await expect(row("b.ts")).toHaveAttribute("aria-selected", "true");
   await row("a.ts").click();
   await row("a.ts").press("F2");
-  const rename = page.getByRole("textbox", {
-    name: "Type file name. Press Enter to confirm or Escape to cancel.",
-  });
+  const rename = page.getByRole("textbox", { name: "File name", exact: true });
   await expect(rename).toBeFocused();
   expect(
     await rename.evaluate((node: HTMLInputElement) => [node.selectionStart, node.selectionEnd]),
@@ -226,29 +224,23 @@ for (const theme of ["dark", "light"] as const) {
     await page.mouse.up();
   });
 
-  test(`explorer disables creating with a visible reason while the machine is unreachable (${theme})`, async ({
+  // A machine that cannot be asked never shows the tree: the shared notice replaces it, so there
+  // is no create action to disable. The disabled-with-reason state of an offline machine that
+  // already has a listing is covered in FileTree.create.test.ts.
+  test(`explorer shows the machine notice instead of create actions while the machine is unreachable (${theme})`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`/tests/browser/files/file-tree.html?theme=${theme}&remote=down`);
-    const newFile = page.locator('[data-explorer-action="new-file"]');
-    const newFolder = page.locator('[data-explorer-action="new-folder"]');
-    await expect(newFile).toBeDisabled();
-    await expect(newFolder).toBeDisabled();
-    await expect(newFile).toHaveAttribute("aria-label", /This machine is unreachable/);
-    // The shared tooltip (not a native title bubble) shows the reason to pointer users.
-    await newFile.hover();
-    await expect(page.getByRole("tooltip")).toContainText("This machine is unreachable");
+    const notice = page.locator("[data-machine-unavailable]");
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText("This project’s machine isn’t available");
+    await expect(page.locator("[data-explorer-root]")).toHaveCount(0);
+    await expect(page.locator('[data-explorer-action="new-file"]')).toHaveCount(0);
+    await expect(page.locator('[data-explorer-action="new-folder"]')).toHaveCount(0);
     await page.screenshot({
-      path: `${shotDir}/explorer-create-disabled-header-${theme}-1280x800.png`,
-      clip: { x: 0, y: 0, width: 640, height: 200 },
-    });
-    await page.locator("[data-explorer-root]").click({ button: "right" });
-    const item = page.getByRole("menuitem", { name: /^New File/ });
-    await expect(item).toContainText("This machine is unreachable");
-    await expect(item).toBeDisabled();
-    await page.screenshot({
-      path: `${shotDir}/explorer-create-disabled-menu-${theme}-1280x800.png`,
+      path: `${shotDir}/explorer-machine-unavailable-${theme}-1280x800.png`,
+      clip: { x: 0, y: 0, width: 640, height: 400 },
     });
   });
 }
@@ -289,7 +281,7 @@ test("inline name editor keeps IME composition: Enter and Escape during composit
   const operations = () => page.evaluate(() => (window as unknown as ImeWindow).treeOperations);
   await expect(page.locator(`[role="treeitem"][title="/fixture/a.ts"]`)).toBeVisible();
   await page.locator('[data-explorer-action="new-file"]').click();
-  const input = page.getByRole("textbox", { name: /^Type file name/ });
+  const input = page.getByRole("textbox", { name: "File name", exact: true });
   await expect(input).toBeFocused();
   await page.evaluate(() => {
     const log: string[] = [];
@@ -333,7 +325,7 @@ test("inline name editor keeps IME composition: Enter and Escape during composit
 
   // WebKit ends composition before the confirming keydown (isComposing false, keyCode 229).
   await page.locator('[data-explorer-action="new-file"]').click();
-  const second = page.getByRole("textbox", { name: /^Type file name/ });
+  const second = page.getByRole("textbox", { name: "File name", exact: true });
   await second.fill("safari.ts");
   await second.evaluate((field) => {
     field.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true }));
@@ -448,7 +440,7 @@ for (const theme of ["dark", "light"] as const)
         density,
       );
       const row = (path: string) => page.locator(`[role="treeitem"][title="/fixture/${path}"]`);
-      const field = page.getByRole("textbox", { name: /^Type file name/ });
+      const field = page.getByRole("textbox", { name: /^(File|Folder) name$/ });
       const shot = (name: string) =>
         page.screenshot({
           path: `${imeShotDir}/density-${density}-${name}-${theme}-1280x800.png`,

@@ -4,7 +4,20 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { UsageFooter as QueryComponent } from "./UsageFooter";
 
+vi.mock("../../features/settings/public/useKeybindingShortcut", () => ({
+  useKeybindingShortcut: (command: string) => (command === "Terminal: New" ? "Alt+Shift+T" : null),
+}));
+
 describe("UsageFooter terminal control", () => {
+  it("keeps the overflowing provider strip scrollbar visible, not hidden", () => {
+    const markup = renderToStaticMarkup(
+      createElement(UsageFooter, { providers: [], onNewTerminal: vi.fn() }),
+    );
+    expect(markup).toContain("data-provider-usage");
+    // ScrollArea marks a hidden bar with data-scrollbar="hidden"; the shared default omits it.
+    expect(markup).not.toContain('data-scrollbar="hidden"');
+  });
+
   it("replaces the generic terminal button with the live process control", () => {
     const markup = renderToStaticMarkup(
       createElement(UsageFooter, {

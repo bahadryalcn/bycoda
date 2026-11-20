@@ -75,6 +75,13 @@ export type ThreadMessage = {
   attachments: MessageAttachment[];
 };
 
+/** One page of a conversation, oldest first; `earlier` pages to older messages when present. */
+export type ThreadMessagePage = {
+  messages: ThreadMessage[];
+  /** Provider cursor to pass as `before`; absent when nothing older is left. */
+  earlier?: string;
+};
+
 export type MicrosoftDevicePurpose = "teams" | "outlook";
 
 export type MicrosoftDeviceStart = {

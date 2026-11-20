@@ -1,3 +1,4 @@
+import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { ZodError } from "zod";
 import { truncateGraphemes } from "../../../src/shared/lib/text/truncate";
@@ -47,6 +48,42 @@ export function invalidRequestMessage(method: unknown, error: unknown): string {
   return truncateGraphemes(`${base}:${name} (${detail})`, 400);
 }
 
+/** Host header check shared by every loopback upgrade route (`/ws`, `/ws-tunnel`). */
+export function hostHeaderAllowed(
+  request: IncomingMessage,
+  server: Server,
+  allowedHosts?: readonly string[] | (() => readonly string[]),
+): boolean {
+  const address = server.address();
+  if (!address || typeof address === "string") return false;
+  const allowed = [
+    `127.0.0.1:${address.port}`,
+    `localhost:${address.port}`,
+    `[::1]:${address.port}`,
+    ...((typeof allowedHosts === "function" ? allowedHosts() : allowedHosts) ?? []),
+  ];
+  const host = request.headers.host;
+  if (typeof host !== "string") return false;
+  if (allowed.includes(host)) return true;
+  // SSH may map a different local port onto this listener. The hostname must
+  // still be literal loopback; credentials and hello bind the actual Host.
+  try {
+    const endpoint = new URL(`http://${host}`);
+    const port = Number(endpoint.port || 80);
+    return (
+      endpoint.host === host.toLowerCase() &&
+      !endpoint.username &&
+      !endpoint.password &&
+      ["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname) &&
+      Number.isInteger(port) &&
+      port >= 1 &&
+      port <= 65_535
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function rejectUpgrade(socket: Duplex, status: number): void {
   if (socket.destroyed) return;
   const phrase =
@@ -57,6 +94,9 @@ export function rejectUpgrade(socket: Duplex, status: number): void {
         : status === 503
           ? "Service Unavailable"
           : "Bad Request";
+  // After "upgrade" the HTTP server no longer listens for socket errors. A client
+  // that already dropped makes this write fail, and an unhandled "error" crashes the Host.
+  socket.on("error", () => socket.destroy());
   socket.end(`HTTP/1.1 ${status} ${phrase}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`, () =>
     socket.destroy(),
   );
@@ -101,4 +141,24 @@ export function authorizeWith(
   return mode === "shared"
     ? budget.runShared(principal.id, check)
     : budget.run(principal.id, check, "control");
+}
+
+/**
+ * The envelope of an outgoing JSON.parse wire with its JSON payload (RPC `result`, event `data`)
+ * replaced by null, so a schema check covers the envelope fields without walking the payload.
+ */
+export function withoutPayload(wire: unknown): unknown {
+  if (!wire || typeof wire !== "object" || Array.isArray(wire)) return wire;
+  const message = wire as Record<string, unknown>;
+  if (Object.hasOwn(message, "result")) return { ...message, result: null };
+  const params = message.params;
+  if (
+    message.method === "subscription.event" &&
+    params &&
+    typeof params === "object" &&
+    !Array.isArray(params) &&
+    Object.hasOwn(params, "data")
+  )
+    return { ...message, params: { ...params, data: null } };
+  return wire;
 }

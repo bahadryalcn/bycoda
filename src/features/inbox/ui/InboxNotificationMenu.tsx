@@ -111,7 +111,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
         anchor={{ x, y }}
         gap={0}
         width={280}
-        role="dialog"
+        kind="dialog"
         aria-label={t("Mute project notifications")}
         onDismiss={onClose}
         className="space-y-1 overflow-y-auto p-3"

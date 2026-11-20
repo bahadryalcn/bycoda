@@ -301,13 +301,14 @@ export function DeliveryProgressNotice({
   };
   const hasChildren = !!body || (unknownRow && !clientState.queue.claim) || !!resolveError;
   return (
-    // In-pane overlay at the top centre; only the card takes pointer events.
-    <div className="pointer-events-none absolute inset-x-0 top-2 z-(--layer-pane-sheet) flex justify-center px-2">
-      {/* The tone ground is translucent: an opaque floating surface keeps the transcript out of the text. */}
+    // In-flow banner at the top of the pane body: the transcript (and its Find bar) sits below it,
+    // so the notice never covers the conversation it asks the owner to check.
+    <div className="flex shrink-0 justify-center px-2 py-1" data-delivery-notice-slot>
+      {/* The tone ground is translucent: an opaque surface keeps the transcript out of the text. */}
       <div
         {...surfaceAttributes(
           { variant: "floating", radius: "control", elevation: "floating" },
-          "pointer-events-auto w-full max-w-md",
+          "w-full max-w-md max-h-[min(40dvh,18rem)] overflow-y-auto overscroll-contain",
         )}
       >
         <Alert

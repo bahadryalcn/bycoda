@@ -50,7 +50,7 @@ export function WorkspacePolicyEditor({
   policyConflict: boolean;
   diskErrors: PolicyDiskErrors;
   discardDraft: () => void;
-  save: (override?: WorkspacePolicyOverride) => Promise<void>;
+  save: (override?: WorkspacePolicyOverride) => Promise<boolean>;
   update: (next: WorkspacePolicy) => void;
   onKeepEdits: () => void;
 }) {

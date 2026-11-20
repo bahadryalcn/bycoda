@@ -191,6 +191,15 @@ describe("buildThreadStartParams / buildTurnStartParams", () => {
     expect(thread.serviceTier).toBeUndefined();
   });
 
+  it("sets Ultrafast and explicitly clears the thread tier when switching to Standard", () => {
+    const turn = { threadId: "thr_1", runtimeMode: "supervised" as const };
+    expect(buildTurnStartParams({ ...turn, serviceTier: "ultrafast" }).serviceTier).toBe(
+      "ultrafast",
+    );
+    expect(buildTurnStartParams({ ...turn, serviceTier: "default" }).serviceTier).toBeNull();
+    expect(buildTurnStartParams(turn)).not.toHaveProperty("serviceTier");
+  });
+
   it("builds turn input with text and image attachments", () => {
     const turn = buildTurnStartParams({
       threadId: "thr_1",

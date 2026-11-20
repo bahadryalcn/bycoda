@@ -107,6 +107,7 @@ export function AccountStatus({
           <>
             <Row
               label={t("Deactivate account")}
+              descriptionVisible
               description={t(
                 "Keeps your data, signs all your devices out and silences notifications. You can reactivate any time.",
               )}
@@ -145,6 +146,7 @@ export function AccountStatus({
         ) : (
           <Row
             label={t("Delete account")}
+            descriptionVisible
             description={t(
               "Removes everything bycoda stores about you. You have {p0} days to change your mind.",
               { p0: DELETION_GRACE_DAYS },

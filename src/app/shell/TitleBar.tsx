@@ -10,10 +10,10 @@ import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { t, useLocale, useT } from "../../shared/i18n";
 import {
-  AppWindow,
   CheckCircle,
   ChevronLeft,
   ChevronRight,
+  Clock,
   PanelRight,
   Inbox,
   Menu,
@@ -24,6 +24,7 @@ import {
   SplitSquare,
   StickyNote,
   Terminal,
+  Undo2,
   X,
 } from "../../shared/ui/icons";
 import {
@@ -174,9 +175,10 @@ type Props = {
   onOpenNotes?: () => void;
   onClose: (id: string) => void;
   onCloseMany: (ids: string[], fallbackId: string) => void;
-  /** Closes every tab whose sessions are all idle; `idleTabCount` drives the disabled state. */
+  /** Closes every tab whose sessions are all idle; `countIdleTabs` drives the disabled state. */
   onCloseIdleTabs?: () => void;
-  idleTabCount?: number;
+  /** Read only while the tab context menu is open, so the title bar never counts while idle. */
+  countIdleTabs?: () => number;
   onArchiveTab?: (id: string) => void;
   onDeleteTab?: (id: string) => void;
   onReorder: (ids: string[], movedId?: string) => void;
@@ -329,7 +331,7 @@ function withTabMoveItems(
       kind: "item",
       id: TAB_MOVE_LEFT_ID,
       get label() {
-        return t("Move Left");
+        return t("Move left");
       },
       disabled: index === 0,
     },
@@ -337,7 +339,7 @@ function withTabMoveItems(
       kind: "item",
       id: TAB_MOVE_RIGHT_ID,
       get label() {
-        return t("Move Right");
+        return t("Move right");
       },
       disabled: index === count - 1,
     },
@@ -494,7 +496,7 @@ function TitleTabItem({
                       : t("Moves to a new window when the response finishes")
                   }
                 >
-                  <AppWindow className="icon-xs" strokeWidth={1.75} />
+                  <Clock className="icon-xs" strokeWidth={1.75} />
                 </Text>
               </Tooltip>
             ) : null}
@@ -547,7 +549,8 @@ function TitleTabItem({
 
 function TabStripChevron({ side, onClick }: { side: "left" | "right"; onClick: () => void }) {
   useLocale();
-  const label = side === "left" ? "Scroll tabs left" : "Scroll tabs right";
+  const t = useT();
+  const label = side === "left" ? t("Scroll tabs left") : t("Scroll tabs right");
   const Icon = side === "left" ? ChevronLeft : ChevronRight;
   return (
     <Button
@@ -559,7 +562,7 @@ function TabStripChevron({ side, onClick }: { side: "left" | "right"; onClick: (
       data-tauri-drag-region="false"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className={`absolute top-1/2 z-1 -translate-y-1/2 ${side === "left" ? "left-1" : "right-1"}`}
+      className="shrink-0"
     >
       <Icon className="icon-sm" strokeWidth={1.75} />
     </Button>
@@ -595,7 +598,7 @@ export function IconButton({
       variant="ghost"
       motion="none"
       type="button"
-      aria-pressed={active || accent}
+      pressed={active ?? accent}
       aria-disabled={disabled}
       data-tauri-drag-region="false"
       onClick={() => {
@@ -674,7 +677,6 @@ export function TabVisitNav({
   onGoForward,
   onTogglePanel,
   panelActive = false,
-  panelLabel = "Toggle Projects",
 }: {
   canGoBack?: boolean;
   canGoForward?: boolean;
@@ -682,7 +684,6 @@ export function TabVisitNav({
   onGoForward?: () => void;
   onTogglePanel?: () => void;
   panelActive?: boolean;
-  panelLabel?: string;
 }) {
   const t = useT();
   return (
@@ -700,7 +701,7 @@ export function TabVisitNav({
       </IconButton>
       {onTogglePanel ? (
         <IconButton
-          label={t(panelLabel)}
+          label={t("Toggle sidebar")}
           command="App: Toggle Sidebar"
           active={panelActive}
           onClick={onTogglePanel}
@@ -742,8 +743,9 @@ export function OverlayNav({
       ) : null}
       {onToggleSidebar ? (
         <IconButton
-          label={t("Toggle Sidebar")}
+          label={t("Toggle sidebar")}
           command="App: Toggle Sidebar"
+          active={false}
           onClick={onToggleSidebar}
         >
           <PanelLeft className="icon-sm" strokeWidth={1.75} />
@@ -794,7 +796,7 @@ function TitleBarComponent({
   onClose,
   onCloseMany,
   onCloseIdleTabs,
-  idleTabCount,
+  countIdleTabs,
   onArchiveTab,
   onDeleteTab,
   onReorder,
@@ -1054,7 +1056,7 @@ function TitleBarComponent({
           t,
           detached,
           closeShortcut,
-          idleTabCount,
+          countIdleTabs,
           hasReturnTabToMain: Boolean(onReturnTabToMain),
           hasMoveToNewWindow: Boolean(onMoveToNewWindow),
           hasCloseIdleTabs: Boolean(onCloseIdleTabs),
@@ -1231,8 +1233,9 @@ function TitleBarComponent({
           <WindowChromeInset />
           <div className="flex shrink-0 items-center px-1.5">
             <IconButton
-              label={t("Toggle Sidebar")}
+              label={t("Toggle sidebar")}
               command="App: Toggle Sidebar"
+              active={projectRailOpen}
               onClick={onToggleSidebar}
             >
               <PanelLeft className="icon-sm" strokeWidth={1.75} />
@@ -1247,6 +1250,7 @@ function TitleBarComponent({
             <IconButton
               label={t("Toggle Session Sidebar")}
               command="App: Toggle Session Sidebar"
+              active={sessionSidebarOpen}
               onClick={onToggleSessionSidebar}
             >
               <PanelRight className="icon-sm" strokeWidth={1.75} />
@@ -1286,7 +1290,9 @@ function TitleBarComponent({
         )}
       >
         <div
-          className="relative h-full min-w-0 flex-1 overflow-hidden"
+          // The chevrons are flex siblings of the strip, never an overlay: a tab or its
+          // close button can not sit underneath one.
+          className="flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-hidden px-0.5"
           onWheel={(event) => {
             const el = tabStripRef.current;
             if (!el || el.scrollWidth <= el.clientWidth) return;
@@ -1306,7 +1312,7 @@ function TitleBarComponent({
             scrollbar="hidden"
             ref={setTabStripRef}
             data-title-tab-strip
-            className="flex h-full min-w-0 cursor-default items-center gap-0.5 overscroll-none pl-1.5 pr-2.5"
+            className="flex h-full min-w-0 flex-1 cursor-default items-center gap-0.5 overscroll-none pl-1 pr-2"
           >
             {displayed.map((entry) => {
               const tab = entry.item;
@@ -1393,7 +1399,7 @@ function TitleBarComponent({
               "Return all sessions to the main window; running responses finish before moving",
             )}
           >
-            <AppWindow className="icon-md" aria-hidden />
+            <Undo2 className="icon-md" aria-hidden />
           </Button>
         ) : null}
         <TitleBarActionsSlot />
@@ -1415,7 +1421,9 @@ function TitleBarComponent({
           y={tabMenu.y}
           width={244}
           items={contextMenuItems}
-          ariaLabel={`Tab actions for ${buildTabCopy(contextTab, t("New session"), t).headline}`}
+          ariaLabel={t("Tab actions for {p0}", {
+            p0: buildTabCopy(contextTab, t("New session"), t).headline,
+          })}
           onPick={onPickTabMenu}
           onClose={() => setTabMenu(null)}
         />

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import type { FilePaneTab } from "../../workspace/model/layout";
 import { getPtyStatus } from "../../../platform/tauri/pty";
 import { t } from "../../../shared/i18n";
@@ -26,7 +27,7 @@ async function runningTerminals(files: FilePaneTab[]): Promise<RunningTerminal[]
       else if (supported === false) running.push({ file, process: null });
     } catch (caught: unknown) {
       // The native side drops a session when its shell exits, so this means idle.
-      if (/not running/i.test(caught instanceof Error ? caught.message : String(caught))) continue;
+      if (/not running/i.test(errorText(caught))) continue;
       // Any other failure cannot establish that killing the PTY is safe.
       running.push({ file, process: null });
     }

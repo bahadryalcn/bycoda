@@ -139,7 +139,8 @@ it("retains the visible native intent and error message when dismiss fails", asy
   native.dismiss.mockRejectedValueOnce(new Error("not dismissed"));
   await open();
   await act(async () => button("Dismiss").click());
-  expect(document.body.textContent).toContain("Error: not dismissed");
+  expect(document.body.textContent).toContain("not dismissed");
+  expect(document.body.textContent).not.toContain("Error: not dismissed");
   expect(document.body.textContent).toContain("book · r4");
   expect(native.refresh).not.toHaveBeenCalled();
 });

@@ -29,3 +29,8 @@ All source paths are repository-relative. Canonical policy semantics live in `do
 Start with SkillsPage/SkillDocumentPreview/SkillPicker/SkillPromptField tests, transferSkill/skills/skillPreferences/skillCatalog/cliCommands/sessionSkills tests, Host skills/policy/harness/prompt tests and Rust skill tests according to the affected layer.
 
 Browser: `tests/browser/settings/settings-skills.e2e.ts` and current Settings config. Cover disabled/manual/provider policy, remote refresh and stale-reader races, dirty-transfer refusal, Save/read/conflict failure, leave/return retention, frontmatter/support assets, raw access, split sizing and per-machine recovery. Real replacement dialogs, filesystem rollback, installed-provider enforcement and mobile access require their actual boundary, not mocked commands.
+
+## Installation recipe and execution
+
+- `skillInstallRecipe.ts` owns the visible command, pinned public Skills CLI version and installer reference. This standardized installer is distinct from a publisher's own preferred installer. Execute argv without a shell, in an isolated temporary project/home/cache with a deadline; package lifecycle scripts stay disabled.
+- Installation uses `skillInstallation.ts` and Host `skill-install.ts` through authenticated owner workspace commands. Validate the registered project, machine, scope, provider, allowlisted source, bounded CLI-produced subtree and matching skill name. Resolve one upstream commit and preserve supporting files and executable modes.

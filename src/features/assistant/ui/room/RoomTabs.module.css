@@ -38,7 +38,7 @@
   min-inline-size: 0;
   font-variant-numeric: tabular-nums;
 }
-@media (max-width: 540px) {
+@container assistant-room (max-width: 540px) {
   .recoveryRow {
     grid-template-columns: minmax(0, 1fr) auto;
   }

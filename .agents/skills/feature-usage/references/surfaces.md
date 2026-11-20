@@ -2,7 +2,7 @@
 
 Paths are repository-relative. Read the affected subsection only; reports and rule gates are not interchangeable.
 
-`src/features/providers/model/rateLimitHistory.ts` shares one storage listener and caches bounded per-account observations. Preserve 90-day/16,000-sample retention, explicit cross-window clears, and in-memory samples after failed storage writes.
+`src/features/providers/model/rateLimitHistory.ts` shares one storage listener and caches bounded per-account observations. Preserve 90-day/16,000-sample retention, explicit cross-window clears, and in-memory samples after failed storage writes. A reading appends to this window's small `bycoda.quotaHistory.v1.segment.<id>` key; the legacy `bycoda.quotaHistory.v1` array is rewritten only when a segment folds in. Another window's segment event merges without reparsing the base.
 
 ## Analytics and visualization
 

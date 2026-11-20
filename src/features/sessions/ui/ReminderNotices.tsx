@@ -3,7 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
 import { useState, useSyncExternalStore } from "react";
 import { ToastSlot } from "../../../shared/ui/ToastRegion";
 import {
@@ -12,7 +12,11 @@ import {
 } from "../../notifications/model/notifications";
 
 import { sessionDisplayTitle } from "../model/session";
-import { formatReminderTime, reminderTime, type SessionReminder } from "../model/sessionReminders";
+import {
+  formatReminderTimeWith,
+  reminderTime,
+  type SessionReminder,
+} from "../model/sessionReminders";
 import { ExplorerMenu } from "../../files/public/ExplorerMenu";
 import { Clock } from "../../../shared/ui/icons";
 import { sessionReminderPresets } from "./sessionReminderPresets";
@@ -44,6 +48,7 @@ export function ReminderNotices({
   onOpenSettings: () => void;
 }) {
   const t = useT();
+  const format = useFormat();
   const projectLabels = useProjectLabels();
   const [snooze, setSnooze] = useState<{
     reminder: SessionReminder;
@@ -104,7 +109,7 @@ export function ReminderNotices({
                 </Text>
                 <Text as="span" size="caption" tone="secondary" truncate className="block">
                   {projectDisplayNameFrom(reminder.cwd, projectLabels)} ·{" "}
-                  {formatReminderTime(reminder.dueAt)}
+                  {formatReminderTimeWith(reminder.dueAt, format.formatDate)}
                 </Text>
               </Button>
               <div className="mt-1 flex items-center gap-1">
@@ -122,7 +127,7 @@ export function ReminderNotices({
                       reminder,
                       x: rect.left,
                       y: rect.bottom + 4,
-                      presets: sessionReminderPresets(),
+                      presets: sessionReminderPresets(t, format.formatDate),
                     });
                   }}
                 >
@@ -162,7 +167,7 @@ export function ReminderNotices({
           x={snooze.x}
           y={snooze.y}
           items={snooze.presets}
-          ariaLabel="Snooze reminder"
+          ariaLabel={t("Snooze reminder")}
           onClose={() => setSnooze(null)}
           onPick={(id) => {
             const dueAt = reminderTime(id);

@@ -12,7 +12,19 @@ const POLL_MS = 15_000;
  * Rejects with the host's reason when it could not be started. */
 export async function startLocalHost(): Promise<void> {
   const machine = await invoke<RemoteMachine | null>("local_host_start");
+  publishLocalHostStarted();
   notifyRemoteRecovered(machine?.environmentId);
+}
+
+/** The owner's "Reconnect" after this computer's Host revoked its link: pairs again through the
+ * local launcher, then lets every view reload. Never called on its own; rejects with the reason
+ * when this is not the local link or the Host did not issue a pairing. */
+export async function reconnectLocalHost(machine: RemoteMachine): Promise<RemoteMachine> {
+  const repaired = await invoke<RemoteMachine>("local_host_reconnect", { machineId: machine.id });
+  // The environment can change when the new pairing reaches another Host.
+  for (const environmentId of new Set([machine.environmentId, repaired.environmentId]))
+    notifyRemoteRecovered(environmentId);
+  return repaired;
 }
 
 type LocalHostListener = (state: LocalHostState | undefined) => void;
@@ -50,6 +62,18 @@ function loadLocalHost(): Promise<void> {
       publishLocalHost(undefined);
     },
   );
+}
+
+/** A successful start is the freshest evidence: every consumer leaves `stopped` at once instead of
+ * at the next tick, then the real status is read. A host that dies again afterwards is reported
+ * like any outage (`previous` is `running`, so two agreeing polls show it again). */
+function publishLocalHostStarted() {
+  if (!localHostListeners.size) return;
+  // A poll already in flight predates the start and must not republish `stopped`.
+  localHostSession++;
+  localHostPrevious = "running";
+  publishLocalHost("running");
+  void loadLocalHost().catch((error: unknown) => console.warn("Local host refresh failed", error));
 }
 
 function syncLocalHostPolling() {

@@ -315,7 +315,10 @@ it("selects an existing worktree from the draft workspace menu", async () => {
   );
 
   expect(document.querySelector('[aria-label="Existing worktrees"]')).not.toBeNull();
-  expect(existingWorktree.getAttribute("aria-expanded")).toBe("true");
+  // The row is a role="option", so only aria-controls links it to the open flyout.
+  expect(existingWorktree.getAttribute("aria-controls")).toBe(
+    document.querySelector('[aria-label="Existing worktrees"][role="listbox"]')?.id,
+  );
   expect(listWorktrees).toHaveBeenCalledWith("/existing-worktree-picker");
   const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((item) =>
     item.textContent?.includes(tree.path),
@@ -421,11 +424,11 @@ it("reopens the picker with cached rows while revalidating", async () => {
   vi.mocked(listWorktrees).mockReturnValue(request.promise);
   await act(async () => trigger.click());
   expect(document.querySelectorAll('[role="option"]')).toHaveLength(2);
-  expect(document.body.textContent).not.toContain("Loading working copies");
+  expect(document.body.textContent).not.toContain("Loading worktrees");
   await act(async () => trigger.click());
   await act(async () => trigger.click());
   expect(document.querySelectorAll('[role="option"]')).toHaveLength(2);
-  expect(document.body.textContent).not.toContain("Loading working copies");
+  expect(document.body.textContent).not.toContain("Loading worktrees");
   await act(async () => request.resolve(result("updated")));
   expect(document.querySelector('[role="option"]')?.textContent).toContain("updated");
 });
@@ -444,16 +447,18 @@ it.each(["/repo", tree.path])(
     expect(selected.textContent).toContain(executionCwd);
     expect(selected.hasAttribute("data-active")).toBe(true);
     expect(other.hasAttribute("data-active")).toBe(false);
-    await act(async () => other.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    await act(async () =>
+      other.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, clientX: 12, clientY: 34 }),
+      ),
+    );
     expect(other.hasAttribute("data-active")).toBe(true);
     await act(async () => trigger.click());
     await act(async () => trigger.click());
     expect(
       document.querySelector('[role="option"][aria-selected="true"]')?.hasAttribute("data-active"),
     ).toBe(true);
-    const search = document.querySelector<HTMLInputElement>(
-      '[aria-label="Search working copies"]',
-    )!;
+    const search = document.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
     await act(async () =>
       search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
     );
@@ -485,7 +490,7 @@ it("highlights the current worktree after a cold load and keeps navigation throu
   expect(
     document.querySelector('[role="option"][aria-selected="true"]')?.hasAttribute("data-active"),
   ).toBe(true);
-  const search = document.querySelector<HTMLInputElement>('[aria-label="Search working copies"]')!;
+  const search = document.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
   await act(async () =>
     search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })),
   );
@@ -509,7 +514,7 @@ it("highlights search results and restores the current worktree when search is c
     ),
   );
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
-  const search = document.querySelector<HTMLInputElement>('[aria-label="Search working copies"]')!;
+  const search = document.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
   await act(async () => type(search, "main"));
   expect(highlightedPath()).toContain("/repo");
   await act(async () => type(search, "no matches"));
@@ -572,10 +577,10 @@ it.each([
         ),
       );
     }
-    expect(button("Switch branch in this working copy…").querySelector("svg")?.outerHTML).toBe(
+    expect(button("Switch branch in this worktree…").querySelector("svg")?.outerHTML).toBe(
       renderToStaticMarkup(createElement(GitBranch, { className: "icon-sm" })),
     );
-    await act(async () => button("Switch branch in this working copy…").click());
+    await act(async () => button("Switch branch in this worktree…").click());
     const branchTrigger = container.querySelector<HTMLButtonElement>("button")!;
     expect(document.querySelector('[aria-label="Branch picker"]')).not.toBeNull();
     expect(branchTrigger.className).toBe(trigger.className);
@@ -585,7 +590,7 @@ it.each([
 
     await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     const restored = container.querySelector<HTMLButtonElement>("button")!;
-    expect(restored.getAttribute("aria-label")).toBe("Choose working copy");
+    expect(restored.getAttribute("aria-label")).toBe("Choose worktree");
     expect(restored.innerHTML).toBe(trigger.innerHTML);
     expect(restored.className).toBe(trigger.className);
   },
@@ -610,7 +615,7 @@ it("caps the picker height without forcing short lists to fill it", async () => 
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 50));
   });
-  expect(menu.textContent).toContain("Loading working copies");
+  expect(menu.textContent).toContain("Loading worktrees");
   expect(listWorktrees).toHaveBeenCalledTimes(1);
   await act(async () => request.resolve(result()));
   expect(menu.style.height).toBe("");
@@ -618,7 +623,7 @@ it("caps the picker height without forcing short lists to fill it", async () => 
   expect(menu.querySelector('[role="listbox"]')?.parentElement?.className).toContain(
     "overflow-y-auto",
   );
-  expect(menu.textContent).not.toContain("Loading working copies");
+  expect(menu.textContent).not.toContain("Loading worktrees");
 });
 
 it("uses the shared project picker without leaking late worktree responses", async () => {
@@ -650,7 +655,7 @@ it("uses the shared project picker without leaking late worktree responses", asy
   expect(refresh.getAttribute("data-button-variant")).toBe("ghost");
   expect(create.getAttribute("data-button-variant")).toBe("secondary");
   await act(async () => picker.click());
-  expect(document.querySelector('input[placeholder="Search projects..."]')).not.toBeNull();
+  expect(document.querySelector('input[placeholder="Search projects…"]')).not.toBeNull();
   const secondProject = [
     ...document.querySelectorAll<HTMLButtonElement>('[aria-label="Project picker"] button'),
   ].find((item) => item.textContent?.includes("second-project"))!;
@@ -751,12 +756,12 @@ it("selects an existing working copy without checking out a branch", async () =>
     ),
   );
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
-  expect(document.body.textContent).not.toContain("Another working copy opens a new session.");
+  expect(document.body.textContent).not.toContain("Another worktree opens a new session.");
   const option = document.querySelectorAll<HTMLButtonElement>('[role="option"]')[1];
   await act(async () => option.click());
   expect(onSelect).toHaveBeenCalledWith(tree);
   expect(gitCheckout).not.toHaveBeenCalled();
-  expect(document.querySelector('[aria-label="Search working copies"]')).toBeNull();
+  expect(document.querySelector('[aria-label="Search worktrees"]')).toBeNull();
 });
 
 it("explains that a started session opens another working copy in a new session", async () => {
@@ -772,7 +777,7 @@ it("explains that a started session opens another working copy in a new session"
     ),
   );
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
-  expect(document.body.textContent).toContain("Another working copy opens a new session.");
+  expect(document.body.textContent).toContain("Another worktree opens a new session.");
   await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
   expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ path: "/repo", isMain: true }));
   expect(gitCheckout).not.toHaveBeenCalled();
@@ -936,9 +941,10 @@ it("reports partial completion if worktree removal fails after successful prefli
   await act(async () => document.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   await act(async () => button("Delete worktree and session").click());
   expect(onDeleteSessions).toHaveBeenCalledOnce();
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-    "The sessions were deleted, but the worktree was kept.",
-  );
+  const alert = document.querySelector('[role="alert"]')?.textContent ?? "";
+  expect(alert).toContain("The sessions were deleted, but the worktree was kept.");
+  // Regression for #757: the cause is appended without the raw `Error:` prefix.
+  expect(alert).not.toContain("Error:");
 });
 
 it.each(["partial", "rejected", "worktree", "refresh"] as const)(
@@ -1156,8 +1162,8 @@ it("shows no selected branch after removal even when the old path has a branch a
   expect(trigger.disabled).toBe(false);
   await act(async () => trigger.click());
   expect(document.querySelector('[aria-selected="true"]')).toBeNull();
-  expect(document.body.textContent).not.toContain("Another working copy opens a new session.");
-  expect(button("Switch branch in this working copy…").disabled).toBe(true);
+  expect(document.body.textContent).not.toContain("Another worktree opens a new session.");
+  expect(button("Switch branch in this worktree…").disabled).toBe(true);
   await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
   expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ path: "/repo" }));
 });
@@ -1178,7 +1184,9 @@ it("keeps a Reveal failure on its worktree row with a local retry", async () => 
   // The failure is not hoisted into a page-level error above the collection.
   expect([...container.querySelectorAll('[role="alert"]')]).toHaveLength(1);
   await act(async () =>
-    [...failure.querySelectorAll("button")].find((node) => node.textContent === "Retry")!.click(),
+    [...failure.querySelectorAll("button")]
+      .find((node) => node.textContent === "Try again")!
+      .click(),
   );
   expect(revealPath).toHaveBeenCalledTimes(2);
   expect(row.querySelector('[role="alert"]')).toBeNull();

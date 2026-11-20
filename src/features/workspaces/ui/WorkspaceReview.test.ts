@@ -43,6 +43,7 @@ const workspace: ManagedWorkspace = {
 const plan: BranchDeliveryPlan = {
   token: "sha-bound-plan",
   expiresAt: Date.now() + 60000,
+  expiresInMs: 60000,
   workspaceId: "owned",
   expectedRevision: 7,
   sourceBranchRef: workspace.branchRef,
@@ -125,7 +126,7 @@ it("blocks overlapping target paths and expired approval plans", async () => {
     async (method) =>
       (method === "workspaces.get"
         ? workspace
-        : { ...plan, overlappingPaths: ["src/changed.ts"], expiresAt: 1 }) as never,
+        : { ...plan, overlappingPaths: ["src/changed.ts"], expiresInMs: 0 }) as never,
   );
   await renderReview();
   expect(button("Merge into main").disabled).toBe(true);

@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
 import {
   MODEL_ROUTING_DELEGATION_KEYS,
@@ -174,7 +175,7 @@ export function saveDefaultsTargets(
       if (outcome.state === "saved") saved.push(target);
       else failed.push({ target, message: outcome.message });
     } catch (error) {
-      failed.push({ target, message: error instanceof Error ? error.message : String(error) });
+      failed.push({ target, message: errorText(error) });
     }
   }
   return { saved, failed };
@@ -207,7 +208,7 @@ export async function saveDefaultsTargetsWithDelegation(
       if (outcome.state === "saved") saved.push(target);
       else failed.push({ target, message: outcome.message });
     } catch (error) {
-      failed.push({ target, message: error instanceof Error ? error.message : String(error) });
+      failed.push({ target, message: errorText(error) });
     }
   }
   return { saved, failed };

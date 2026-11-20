@@ -16,6 +16,7 @@ import { WorkspaceCommands } from "../workspaces/workspace-commands";
 import {
   BranchCache,
   GIT_ACTION_COMMANDS,
+  headBranchFromFiles,
   parseHistoryLog,
   runGitAction,
   type GitActionCommand,
@@ -104,6 +105,22 @@ describe("validation", () => {
       r.run("git_undo_last_commit", { expectedSnapshot: afterRemote.token }),
     ).rejects.toThrow("Repository state changed");
     expect(r.git("branch", "--show-current")).toBe("main");
+  });
+
+  it("snapshots a repository whose uncommitted diff exceeds 2 MiB and still sees edits", async () => {
+    const r = repo();
+    const line = "x".repeat(99) + "\n";
+    r.commit("big.txt", "base\n");
+    r.write("big.txt", line.repeat(30_000));
+    const snapshot = (await r.run("git_management_snapshot")) as { token: string };
+    expect(snapshot.token).toMatch(/^[a-f0-9]{64}$/);
+    expect(((await r.run("git_management_snapshot")) as { token: string }).token).toBe(
+      snapshot.token,
+    );
+    r.write("big.txt", line.repeat(30_000) + "tail\n");
+    await expect(
+      r.run("git_delete_tag", { name: "missing", expectedSnapshot: snapshot.token }),
+    ).rejects.toThrow("Repository state changed");
   });
 
   it("deletes an annotated tag only with its exact reviewed object identity", async () => {
@@ -687,6 +704,37 @@ describe("history and blame", () => {
     expect(detached[0].head).toBe(true);
     expect(detached[0].refs).not.toContainEqual({ name: "HEAD", kind: "local" });
   });
+
+  it("continues one topological history walk with skip instead of re-reading pages", async () => {
+    const r = repo();
+    r.commit("a.txt", "first\n", "first");
+    r.git("checkout", "-q", "-b", "side");
+    r.commit("b.txt", "side\n", "on side");
+    r.git("checkout", "-q", "main");
+    r.commit("c.txt", "main\n", "on main");
+    r.git("merge", "--no-ff", "-q", "-m", "merge side", "side");
+    r.commit("d.txt", "after\n", "after merge");
+    const commands = new WorkspaceCommands(
+      { projects: () => [{ cwd: r.cwd }], attachmentDir: join(r.cwd, "attachments") } as never,
+      (async (_id: string, action: () => Promise<unknown>) => action()) as never,
+    );
+    type Page = { head: string; commits: { sha: string }[] };
+    const history = (input: Record<string, unknown>) =>
+      commands.run("git_history", { cwd: r.cwd, ...input }) as Promise<Page>;
+    for (const all of [false, true]) {
+      const whole = await history({ all });
+      const first = await history({ all, limit: 2 });
+      const second = await history({ all, limit: 2, skip: 2 });
+      const rest = await history({ all, skip: 4 });
+      expect([...first.commits, ...second.commits, ...rest.commits]).toEqual(whole.commits);
+      expect(second.head).toBe(whole.head);
+    }
+    // A negative or non-integer skip is not an offset.
+    const ignored = await history({ limit: 2, skip: -3 });
+    expect(ignored.commits.map((c) => c.sha)).toEqual(
+      (await history({ limit: 2 })).commits.map((c) => c.sha),
+    );
+  });
 });
 
 describe("stopped operations", () => {
@@ -921,6 +969,23 @@ describe("BranchCache", () => {
     expect(await cache.get("/a")).toBe("");
     cache.clear();
     expect(await cache.get("/a")).toBe("feature");
+  });
+
+  // Regression: session lists poll every folder; a non-repo scratch folder or a
+  // subfolder fell through to spawning git each time, blocking the Host loop.
+  it("answers subfolders and non-repositories from files, without spawning git", async () => {
+    const { cwd, git } = repo();
+    git("commit", "-q", "--allow-empty", "-m", "init");
+    const nested = join(cwd, "src", "deep");
+    mkdirSync(nested, { recursive: true });
+    expect(await headBranchFromFiles(nested)).toBe("main");
+    expect(await headBranchFromFiles(temp("bycoda-not-a-repo-"))).toBe("");
+    const linked = join(temp("bycoda-linked-parent-"), "wt");
+    git("worktree", "add", "-q", "-b", "linked", linked);
+    mkdirSync(join(linked, "sub"));
+    expect(await headBranchFromFiles(join(linked, "sub"))).toBe("linked");
+    git("checkout", "-q", "--detach");
+    expect(await headBranchFromFiles(nested)).toBe("");
   });
 
   it("stays bounded, dropping expired entries first", async () => {

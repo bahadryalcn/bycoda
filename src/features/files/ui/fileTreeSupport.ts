@@ -17,6 +17,27 @@ export type RefreshFailure = {
   message: string;
 };
 
+/**
+ * The row that carries the tree's single Tab stop (roving tabindex): the active path, or its nearest
+ * rendered ancestor when a collapsed folder hides it. Null (root or no active path) leaves the stop to
+ * the first root row.
+ */
+export function treeTabStop(
+  cwd: string,
+  active: string | null,
+  expanded: ReadonlySet<string>,
+): string | null {
+  if (!active || active === cwd) return null;
+  const chain: string[] = [];
+  for (let current = active; current !== cwd;) {
+    const parent = parentPath(current);
+    if (!parent || parent === current) return null;
+    chain.unshift(current);
+    current = parent;
+  }
+  return chain.find((path, index) => index < chain.length - 1 && !expanded.has(path)) ?? active;
+}
+
 export function isDirAt(cwd: string, path: string): boolean {
   if (path === cwd) return true;
   return (

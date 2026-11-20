@@ -3,6 +3,7 @@ import { act, createElement, StrictMode, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
+import { focusToastCard } from "../../../shared/ui/overlay";
 import { ApprovalToasts } from "./ApprovalToasts";
 import { NOTIFICATION_SEEN_KEY } from "../../notifications/model/notificationSeen";
 import {
@@ -172,6 +173,23 @@ it("opens the session from the request body or the Answer action", () => {
   act(() => button("Answer").click());
   expect(onFocusSession).toHaveBeenCalledTimes(2);
   expect(onApproval).not.toHaveBeenCalled();
+});
+
+it("offers every approval popup to the keyboard shortcut and never decides one by focusing it", () => {
+  act(() => render([notice("one"), notice("two")]));
+  expect(focusToastCard(".notification-request")).toBe(true);
+  const focused = document.activeElement as HTMLElement;
+  expect(focused.closest("[data-toast-region]")).not.toBeNull();
+  expect(focused.closest(".notification-request")?.textContent).toContain("Request");
+  expect(focused.textContent).not.toBe("Allow");
+  expect(focused.textContent).not.toBe("Deny");
+  expect(focusToastCard(".notification-request")).toBe(true);
+  expect(document.activeElement?.closest(".notification-request")).not.toBe(
+    focused.closest(".notification-request"),
+  );
+  expect(onApproval).not.toHaveBeenCalled();
+  act(() => render([]));
+  expect(focusToastCard(".notification-request")).toBe(false);
 });
 
 it("dismisses a popup without resolving it and retrieves it from the center", () => {

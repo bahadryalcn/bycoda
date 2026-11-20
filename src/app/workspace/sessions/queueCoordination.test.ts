@@ -59,6 +59,9 @@ import {
 } from "../../../features/connections/model/useSharedLocalQueues";
 import { useQueuedMessageActions } from "./useQueuedMessageActions";
 
+// Each case mounts real hooks over a real Host store; the slowest take 3-4 s on a busy machine.
+vi.setConfig({ testTimeout: 30_000 });
+
 const hoisted = vi.hoisted(() => ({
   request: (..._args: unknown[]): Promise<unknown> => Promise.reject(new Error("unset")),
   writeAttachment: vi.fn(),

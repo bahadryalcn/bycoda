@@ -7,8 +7,8 @@ export type AddPhase = "editing" | "saving" | "testing" | "done";
 export type AddOutcome = { tone: "success" | "warning"; text: string };
 
 /**
- * Shared "add, then test" flow for the add dialogs. The key is passed through to `onAdd` and not kept:
- * callers clear their own key field before calling `submit`.
+ * Shared "add, then test" flow for the add dialogs. The key is passed through to `onAdd`; the caller keeps
+ * its key field until `submit` resolves `true` (the source was added), so a failed add keeps the typed key.
  */
 export function useAddAndTest(deps: {
   onAdd: (input: DecisionSourceInput, apiKey?: string) => Promise<DecisionSource>;
@@ -18,7 +18,12 @@ export function useAddAndTest(deps: {
   const [failure, setFailure] = useState<unknown>(null);
   const [outcome, setOutcome] = useState<AddOutcome | null>(null);
 
-  const submit = async (input: DecisionSourceInput, contract: string, apiKey?: string) => {
+  /** Resolves `true` once the source is added (the key was saved), `false` if adding failed. */
+  const submit = async (
+    input: DecisionSourceInput,
+    contract: string,
+    apiKey?: string,
+  ): Promise<boolean> => {
     setFailure(null);
     setOutcome(null);
     setPhase("saving");
@@ -28,7 +33,7 @@ export function useAddAndTest(deps: {
     } catch (error: unknown) {
       setFailure(error);
       setPhase("editing");
-      return;
+      return false;
     }
     setPhase("testing");
     try {
@@ -51,6 +56,7 @@ export function useAddAndTest(deps: {
       setOutcome({ tone: "warning", text: t("Added, but the test did not finish.") });
     }
     setPhase("done");
+    return true;
   };
 
   return {

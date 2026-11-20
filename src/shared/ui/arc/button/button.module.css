@@ -179,6 +179,12 @@
   border-radius: 50%;
   animation: spin var(--motion-spin-duration) linear infinite;
 }
+/* Holds its frame (still visible, still pending) while the window is behind another app or
+   decorative motion is off. */
+:global(html[data-decorative-motion="off"]) .spinner,
+:global(html[data-window-focus="off"]) .spinner {
+  animation-play-state: paused;
+}
 .loadingLabel {
   opacity: 0;
 }

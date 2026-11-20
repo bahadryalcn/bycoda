@@ -1,11 +1,16 @@
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
+import {
+  PICKER_WINDOW_THRESHOLD,
+  usePickerWindow,
+  type PickerWindowEntry,
+} from "../../../shared/ui/picker/usePickerWindow";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 /** Different job: Folder navigation opens directories; its separate membership checkbox selects folders without navigating. */
 import { Text } from "../../../shared/ui/Text";
-import { Alert } from "../../../shared/ui/Alert";
+import { RemoteActionError } from "../../connections/public/RemoteActionError";
+import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
@@ -13,20 +18,20 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useT } from "../../../shared/i18n";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type CSSProperties } from "react";
 import {
   createPath,
   homeDir,
   listDir,
-  statFiles,
   openPathWithDefaultApp,
   pickNativeFolders,
   type FsEntry,
 } from "../../../platform/tauri/fs";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { probeWindowsDriveRoots } from "../model/windowsDriveRoots";
 import { parentPath, pathKey, prettyCwd, slash } from "../../../shared/lib/paths";
 import { Modal } from "../../../shared/ui/Modal";
-import { ArrowLeft, Folder, FolderOpen, FolderPlus } from "../../../shared/ui/icons";
+import { ArrowLeft, Check, Folder, FolderOpen, FolderPlus } from "../../../shared/ui/icons";
 
 type Props = {
   title: string;
@@ -38,13 +43,13 @@ type Props = {
 async function settleAction(
   action: () => Promise<void>,
   mounted: { current: boolean },
-  setError: (message: string) => void,
+  setError: (error: RemoteErrorView) => void,
   setBusy: (busy: boolean) => void,
 ) {
   try {
     await action();
   } catch (reason) {
-    if (mounted.current) setError(String(reason));
+    if (mounted.current) setError(describeRemoteError(reason));
   } finally {
     if (mounted.current) setBusy(false);
   }
@@ -59,14 +64,17 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   const [pathInput, setPathInput] = useState("");
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [query, setQuery] = useState("");
-  const visibleEntries = entries.filter((entry) =>
-    entry.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
-  );
+  // The query is lower-cased once, outside the filter, instead of once per entry.
+  const needle = query.trim().toLocaleLowerCase();
+  const visibleEntries = entries.filter((entry) => entry.name.toLocaleLowerCase().includes(needle));
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<RemoteErrorView>();
   const [loadFailed, setLoadFailed] = useState(false);
-  // A machine connection failure while listing is explained once by the central notice.
-  const loadShownCentrally = useConnectionErrorShownCentrally(loadFailed ? error : undefined);
+  // A machine connection failure while listing is explained once by the central notice; the gate
+  // classifies the raw text, not the presented sentence.
+  const loadShownCentrally = useConnectionErrorShownCentrally(
+    loadFailed ? error?.details : undefined,
+  );
   const [active, setActive] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [newName, setNewName] = useState<string | null>(null);
@@ -76,6 +84,14 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const request = useRef(0);
   const mounted = useRef(true);
+  // Long listings mount only the rows near the viewport (shared picker windowing).
+  const windowed = visibleEntries.length > PICKER_WINDOW_THRESHOLD;
+  const rowEntries: PickerWindowEntry[] = visibleEntries.map((entry, index) => ({
+    kind: "option",
+    key: entry.path,
+    index,
+  }));
+  const win = usePickerWindow(rowEntries, () => listRef.current, windowed);
   const managerLabel = IS_MAC
     ? t("Open in Finder")
     : IS_WIN
@@ -86,14 +102,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Initializes the mounted picker's OS home/drive snapshot and cancels late native replies on unmount.
   useEffect(() => {
     mounted.current = true;
-    if (IS_WIN)
-      void statFiles(Array.from({ length: 26 }, (_, i) => `${String.fromCharCode(65 + i)}:/`)).then(
-        (items) => {
-          if (mounted.current)
-            setRoots(items.filter((item) => item.isDir).map((item) => item.path));
-        },
-        () => {},
-      );
+    if (IS_WIN) void probeWindowsDriveRoots(() => mounted.current, setRoots).catch(() => {});
     setLoading(true);
     setError(undefined);
     void homeDir().then(
@@ -105,7 +114,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
       },
       (reason) => {
         if (mounted.current) {
-          setError(String(reason));
+          setError(describeRemoteError(reason));
           setLoadFailed(true);
           setLoading(false);
         }
@@ -124,7 +133,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
     setLoading(true);
     setError(undefined);
     setLoadFailed(false);
-    setEntries([]);
+    // The previous listing stays mounted (dimmed) until the next one resolves, so the list keeps its place.
     setActive(0);
     void listDir(directory).then(
       (items) => {
@@ -135,16 +144,24 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
       },
       (reason) => {
         if (id !== request.current || !mounted.current) return;
-        setError(String(reason));
+        // A failed listing must not leave the previous folder's rows choosable.
+        setEntries([]);
+        setError(describeRemoteError(reason));
         setLoadFailed(true);
         setLoading(false);
       },
     );
   }, [directory, revision]);
 
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the active keyboard option visible in the scrolling DOM list.
+  const scrollActiveIntoView = useEffectEvent((index: number) => {
+    if (windowed) win.scrollToEntry(index);
+    else
+      listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
+  });
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the keyboard option visible when the active index changes.
   useEffect(() => {
-    listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
+    scrollActiveIntoView(active);
   }, [active]);
 
   function navigate(path: string) {
@@ -154,6 +171,14 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
     setPathInput(path);
     setNewName(null);
     setError(undefined);
+  }
+
+  function toggleSelected(path: string) {
+    setSelected((paths) =>
+      paths.some((item) => pathKey(item) === pathKey(path))
+        ? paths.filter((item) => pathKey(item) !== pathKey(path))
+        : [...paths, path],
+    );
   }
 
   function pick() {
@@ -171,7 +196,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   async function createFolder() {
     const name = newName?.trim();
     if (!name || /[/\\]/.test(name) || name === "." || name === "..") {
-      setError(t("Enter a folder name without path separators."));
+      setError({ message: t("Enter a folder name without path separators."), details: "" });
       return;
     }
     await run(async () => {
@@ -182,6 +207,61 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
       setPathInput(created);
     });
   }
+
+  // A folder is a plain option with no nested controls. In a multi-select list a click toggles the
+  // folder and a double click opens it; Enter opens it from the keyboard.
+  function renderEntry(entry: FsEntry, index: number, measured: boolean) {
+    const chosen = multiple && selected.some((path) => pathKey(path) === pathKey(entry.path));
+    const measure = measured ? { ref: win.measureElement, "data-index": index } : {};
+    return (
+      <ActionHost
+        key={entry.path}
+        {...measure}
+        id={`folder-picker-${index}`}
+        role="option"
+        selected={index === active}
+        data-active={index === active}
+        aria-selected={multiple ? chosen : index === active}
+        aria-setsize={measured ? visibleEntries.length : undefined}
+        aria-posinset={measured ? index + 1 : undefined}
+        tabIndex={-1}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => {
+          if (busy || loading) return;
+          if (multiple) toggleSelected(entry.path);
+          else navigate(entry.path);
+        }}
+        onDoubleClick={() => {
+          if (multiple && !busy && !loading) navigate(entry.path);
+        }}
+        className="flex min-w-0 items-center gap-2 text-start"
+      >
+        {multiple ? (
+          <span
+            aria-hidden
+            data-checked={chosen || undefined}
+            className="flex icon-md shrink-0 items-center justify-center"
+          >
+            {chosen ? <Check className="icon-sm" /> : null}
+          </span>
+        ) : null}
+        <Folder tone="muted" className="icon-md shrink-0" />
+        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+          {entry.name}
+        </Text>
+      </ActionHost>
+    );
+  }
+
+  const rows = windowed
+    ? win.items.map((item) => {
+        const entry = visibleEntries[item.index];
+        return entry ? renderEntry(entry, item.index, true) : null;
+      })
+    : visibleEntries.map((entry, index) => renderEntry(entry, index, false));
+  const lead = windowed ? (win.items[0]?.start ?? 0) : 0;
+  const tail =
+    windowed && win.items.length ? win.totalSize - win.items[win.items.length - 1]!.end : 0;
 
   return (
     <Modal padding="none" scroll="none" title={title} onClose={onClose} minimalHeader size="md">
@@ -296,97 +376,71 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           <Text id={keyboardHelpId} className="sr-only">
             {t("↑ ↓ Navigate · Enter Open folder · Backspace Parent folder · Esc Close")}
           </Text>
-          <PickerListRoot
-            ref={listRef}
-
-            label={t("Folders")}
-            aria-describedby={keyboardHelpId}
-            multiple={multiple}
-            tabIndex={0}
-            aria-activedescendant={visibleEntries[active] ? `folder-picker-${active}` : undefined}
-
-            className="h-[min(340px,50dvh)] min-h-0 shrink overflow-y-auto overscroll-none px-3 py-2"
-            onKeyDown={(event) => {
-              if (busy || loading) return;
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                event.preventDefault();
-                setActive((index) =>
-                  Math.max(
-                    0,
-                    Math.min(
-                      visibleEntries.length - 1,
-                      index + (event.key === "ArrowDown" ? 1 : -1),
-                    ),
-                  ),
-                );
-              } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
-                event.preventDefault();
-                if (visibleEntries[active]) navigate(visibleEntries[active].path);
-              } else if (event.key === "Backspace") {
-                event.preventDefault();
-                navigate(parent);
-              } else if (event.key === " " && multiple && visibleEntries[active]) {
-                event.preventDefault();
-                const path = visibleEntries[active].path;
-                setSelected((paths) =>
-                  paths.some((item) => pathKey(item) === pathKey(path))
-                    ? paths.filter((item) => pathKey(item) !== pathKey(path))
-                    : [...paths, path],
-                );
-              }
-            }}
-          >
+          <div className="flex h-[min(340px,50dvh)] min-h-0 shrink flex-col px-3 py-2">
             {loading ? (
-              <LoadingText className="p-3">{t("Loading folders…")}</LoadingText>
+              <LoadingText className="shrink-0 py-2">{t("Loading folders…")}</LoadingText>
             ) : visibleEntries.length === 0 && !error ? (
-              <EmptyState size="inline" className="p-3" description={t("No subfolders")} />
+              <EmptyState
+                size="inline"
+                className="shrink-0 py-2"
+                description={t("No subfolders")}
+              />
             ) : null}
-            {visibleEntries.map((entry, index) => (
-              <ActionHost
-                key={entry.path}
-                id={`folder-picker-${index}`}
-                role="option"
-                selected={index === active}
-                data-active={index === active}
-                aria-selected={
-                  multiple
-                    ? selected.some((path) => pathKey(path) === pathKey(entry.path))
-                    : index === active
+            <PickerListRoot
+              ref={listRef}
+              label={t("Folders")}
+              aria-describedby={keyboardHelpId}
+              aria-busy={loading || undefined}
+              multiple={multiple}
+              tabIndex={0}
+              aria-activedescendant={visibleEntries[active] ? `folder-picker-${active}` : undefined}
+              className={
+                loading
+                  ? "min-h-0 flex-1 overflow-y-auto overscroll-none opacity-60"
+                  : "min-h-0 flex-1 overflow-y-auto overscroll-none"
+              }
+              onKeyDown={(event) => {
+                if (busy || loading) return;
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setActive((index) =>
+                    Math.max(
+                      0,
+                      Math.min(
+                        visibleEntries.length - 1,
+                        index + (event.key === "ArrowDown" ? 1 : -1),
+                      ),
+                    ),
+                  );
+                } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+                  event.preventDefault();
+                  if (visibleEntries[active]) navigate(visibleEntries[active].path);
+                } else if (event.key === "Backspace") {
+                  event.preventDefault();
+                  navigate(parent);
+                } else if (event.key === " " && multiple && visibleEntries[active]) {
+                  event.preventDefault();
+                  toggleSelected(visibleEntries[active].path);
                 }
-                className="flex items-center gap-1"
-              >
-                {multiple ? (
-                  <Checkbox
-                    aria-label={t("Select {p0}", { p0: entry.name })}
-                    checked={selected.some((path) => pathKey(path) === pathKey(entry.path))}
-                    onChange={(event) =>
-                      setSelected((paths) =>
-                        event.target.checked
-                          ? [...paths, entry.path]
-                          : paths.filter((path) => pathKey(path) !== pathKey(entry.path)),
-                      )
-                    }
-                    className="shrink-0"
-                    disabled={busy}
-                  />
-                ) : null}
-                <Button
-                  variant="item"
-                  motion="none"
-                  type="button"
-                  tabIndex={-1}
-                  disabled={busy}
-                  onClick={() => navigate(entry.path)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-start"
-                >
-                  <Folder tone="muted" className="icon-md shrink-0" />
-                  <Text size="inherit" tone="inherit" truncate>
-                    {entry.name}
-                  </Text>
-                </Button>
-              </ActionHost>
-            ))}
-          </PickerListRoot>
+              }}
+            >
+              {lead > 0 ? (
+                <div
+                  aria-hidden
+                  className="[block-size:var(--folder-spacer-size)]"
+                  style={{ "--folder-spacer-size": `${lead}px` } as CSSProperties}
+                />
+              ) : null}
+              {rows}
+              {tail > 0 ? (
+                <div
+                  aria-hidden
+                  className="[block-size:var(--folder-spacer-size)]"
+                  style={{ "--folder-spacer-size": `${tail}px` } as CSSProperties}
+                />
+              ) : null}
+            </PickerListRoot>
+          </div>
           {newName !== null ? (
             <form
               {...surfaceAttributes(
@@ -432,9 +486,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           ) : null}
           {error && !loadShownCentrally ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
-              <Alert tone="danger" className="min-w-0 flex-[1_1_12rem]">
-                {error}
-              </Alert>
+              <RemoteActionError error={error} className="min-w-0 flex-[1_1_12rem]" />
               {loadFailed ? (
                 <Button
                   variant="secondary"

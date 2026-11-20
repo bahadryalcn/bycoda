@@ -53,6 +53,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     jobBatch,
     jobReviewFrozen,
     setJobReviewFrozen,
+    jobReviewWriter,
     jobReviewEnvironment,
     jobIntents,
     defaultProjectId,
@@ -69,7 +70,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
   function control(job: AssistantJob, action: "pause" | "resume" | "stop" | "delete" | "keep") {
     if (!assistantJobVisible(job, canSeeProject)) return;
     if (action === "keep") {
-      run(job.id, t("Keeping job and tasks..."), async () => {
+      run(job.id, t("Keeping job and tasks…"), async () => {
         const result = await assistantRequest({
           op: "jobs.deleteAbort",
           id: job.id,
@@ -90,7 +91,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       return;
     }
     if (action === "delete") {
-      run(`deleteReview:${job.id}`, t("Loading..."), async () => {
+      run(`deleteReview:${job.id}`, t("Loading…"), async () => {
         const sourcePrivacy = privacy.key;
         let review: ReturnType<typeof verifiedAssistantJobDeleteReview>,
           reviewError = "";
@@ -219,7 +220,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     } else
       mutate(
         job.id,
-        t(action === "stop" ? "Stopping..." : action === "pause" ? "Pausing..." : "Resuming..."),
+        t(action === "stop" ? "Stopping…" : action === "pause" ? "Pausing…" : "Resuming…"),
         {
           op: "jobs.control",
           id: job.id,
@@ -229,7 +230,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       );
   }
   function reviewJobTasks(job: AssistantJob) {
-    run(`tasks:${job.id}`, t("Loading..."), async () => {
+    run(`tasks:${job.id}`, t("Loading…"), async () => {
       if (
         job.kind === "quick" ||
         !job.goalId ||
@@ -337,11 +338,13 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
         }
         if (!sourceEnvironment)
           throw new Error(
-            "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+            "The original computer could not be verified. Keep this draft and reconnect that computer.",
           );
         return ownerRequest(request, sourceEnvironment);
       });
-    const result = await run("jobs.create", t("Starting jobs..."), async () => {
+    const result = await run("jobs.create", t("Starting jobs…"), async () => {
+      // The frozen record below is the durable intent; a pending unfrozen write must not overwrite it.
+      jobReviewWriter.cancel();
       localStorage.setItem(
         "bycoda.assistant.job-review",
         JSON.stringify({
@@ -353,14 +356,14 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       );
       if (!sourceEnvironment)
         throw new Error(
-          "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+          "The original computer could not be verified. Keep this draft and reconnect that computer.",
         );
       if (!rows.every(visibleDraft)) throw new Error("The selected project is no longer visible.");
       await jobBatch.current!.start(rows.map(reviewedDraft));
       await refresh();
     });
     if (result) {
-      localStorage.removeItem("bycoda.assistant.job-review");
+      jobReviewWriter.clear();
       commitJobIntents(jobIntents, (intents) => {
         for (const draft of rows) delete intents[reviewIntent(draft)];
       });
@@ -392,7 +395,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
         confirmLabel: t("Delete"),
         onConfirm: execute,
       });
-    else run("bulk", t("Stopping..."), execute);
+    else run("bulk", t("Stopping…"), execute);
   }
   const openJob = snapshot?.jobs.find((job) => job.id === detail);
   const visibleSelectedCount = snapshot?.jobs.filter((job) => selected.has(job.id)).length ?? 0;

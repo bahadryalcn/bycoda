@@ -633,7 +633,7 @@ it("shows pending and unreachable task board states", async () => {
   // No machine can answer: that is unavailable, not an empty board waiting for a first task.
   const unavailable = container.querySelector('[data-kind="unavailable"]');
   expect(unavailable?.textContent).toContain("Tasks unavailable");
-  expect(unavailable && button(unavailable, "Retry")).toBeTruthy();
+  expect(unavailable && button(unavailable, "Try again")).toBeTruthy();
   expect(container.textContent).not.toContain("No tasks yet");
   expect(button(container, "Select tasks")).toBeUndefined();
 });
@@ -2160,7 +2160,7 @@ it("lists stewards in a panel with their schedule and last run", async () => {
       steward({
         lastRunAt: Date.now() - 5 * 60_000,
         lastRunStatus: "failed",
-        lastRunError: "The stewardâ€™s reply has no json block.",
+        lastRunError: "The steward’s reply has no json block.",
       }),
     ],
   );
@@ -2172,7 +2172,7 @@ it("lists stewards in a panel with their schedule and last run", async () => {
   expect(card.textContent).toContain("on this computer");
   expect(card.textContent).toContain("Daily at");
   expect(card.textContent).toContain("Last run: Failed 5m ago");
-  expect(card.textContent).toContain("The stewardâ€™s reply has no json block.");
+  expect(card.textContent).toContain("The steward’s reply has no json block.");
   expect(card.textContent).toContain("Next run");
   expect(Array.from(card.querySelectorAll("button"), buttonName)).toEqual([
     "Enabled",

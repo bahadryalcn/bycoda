@@ -131,6 +131,17 @@ export function createManagementRuntime(
   );
   const conversationManagementRuntime = new ConversationManagementRuntime({
     subscribe: (listener) => dependencies.engine.store.subscribeChanges(listener),
+    // Same session revision the list cache keys on, so no row is serialized to detect change.
+    revision: async (projectId) => {
+      const goals = (await dependencies.goals.list())
+        .filter((row) => row.projectIds.length === 1 && row.projectIds[0] === projectId)
+        .map((row) => [row.id, row.status, row.updatedAt]);
+      return JSON.stringify([
+        (await dependencies.projectSessionList(projectId)).etag,
+        await dependencies.tasks.changeEtag(),
+        goals,
+      ]);
+    },
     snapshot: async (projectId) => {
       const sessions = (await dependencies.projectSessionList(projectId)).list
         .slice(0, 100)
@@ -173,7 +184,7 @@ export function createManagementRuntime(
       if (action === "mobile.access.status")
         return args.mode === "lan"
           ? dependencies.mobileLan.status()
-          : dependencies.mobileAccess.status();
+          : dependencies.mobileAccess.status({ fresh: true });
       if (action === "history.import.status") {
         if (principal.kind !== "session")
           throw new Error("Choose a real focused session for history import status.");

@@ -368,7 +368,7 @@ export function SessionSubagentSheet({
   });
 
   if (native.block) {
-    const callId = native.block.tool?.callId;
+    const callId = native.block.agentRun?.workflow ? undefined : native.block.tool?.callId;
     return (
       <>
         {owners}
@@ -390,7 +390,11 @@ export function SessionSubagentSheet({
           onLoadRemoteBlock={onLoadRemoteBlock}
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
-          relay={{ ...native.relay, blockedReason: native.blockedReason }}
+          relay={
+            native.block.agentRun?.workflow
+              ? undefined
+              : { ...native.relay, blockedReason: native.blockedReason }
+          }
         />
       </>
     );

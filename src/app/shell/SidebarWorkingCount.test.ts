@@ -148,6 +148,11 @@ function badge() {
   return container.querySelector("[data-workspace-working-count]");
 }
 
+// The badge is only the visible number; the shared live region next to it carries the localized total.
+function liveCount() {
+  return badge()?.nextElementSibling ?? null;
+}
+
 it("caps the displayed working count without losing the real accessible total or live mark", async () => {
   props.sessions = Array.from({ length: 128 }, (_, index) => ({
     id: `working-${index}`,
@@ -162,7 +167,10 @@ it("caps the displayed working count without losing the real accessible total or
   props.busySessionIds = new Set(props.sessions.map((session) => session.id));
   await render();
   expect(badge()?.textContent).toBe("99+");
-  expect(badge()?.getAttribute("aria-label")).toBe("128 working sessions");
+  expect(badge()?.hasAttribute("aria-live")).toBe(false);
+  expect(badge()?.getAttribute("aria-hidden")).toBe("true");
+  expect(liveCount()?.getAttribute("role")).toBe("status");
+  expect(liveCount()?.textContent).toBe("128 working sessions");
   expect(badge()?.querySelector('[data-size="xs"][aria-hidden="true"]')).not.toBeNull();
 });
 
@@ -218,7 +226,7 @@ it("counts each working conversation once in this workspace and clears on comple
   props.busySessionIds = new Set(["first", "second", "waiting", "other", "new"]);
   props.approvalSessionIds = new Set(["waiting"]);
   await render();
-  expect(badge()?.getAttribute("aria-label")).toMatch(/^3 working session/);
+  expect(liveCount()?.textContent).toMatch(/^3 working session/);
   expect(badge()?.closest('[role="tab"]')?.textContent).toContain("Sessions");
   expect(container.querySelectorAll("[data-workspace-working-count]")).toHaveLength(1);
   expect(badge()?.getAttribute("data-variant")).toBe("count");
@@ -227,7 +235,7 @@ it("counts each working conversation once in this workspace and clears on comple
 
   props.busySessionIds = new Set(["first"]);
   await render();
-  expect(badge()?.getAttribute("aria-label")).toMatch(/^1 working session/);
+  expect(liveCount()?.textContent).toMatch(/^1 working session/);
   props.busySessionIds = new Set();
   await render();
   expect(badge()).toBeNull();
@@ -254,7 +262,7 @@ it.each([true, false])(
     await render();
     const tab = badge()?.closest('[role="tab"]');
     expect(compact ? tab?.getAttribute("aria-label") : tab?.textContent).toContain("Sessions");
-    expect(badge()?.getAttribute("aria-label")).toMatch(/^1 working session/);
+    expect(liveCount()?.textContent).toMatch(/^1 working session/);
   },
 );
 
@@ -323,7 +331,7 @@ it("counts host work without opening its sessions and updates when it finishes",
     },
   ];
   await render();
-  expect(badge()?.getAttribute("aria-label")).toMatch(/^2 working session/);
+  expect(liveCount()?.textContent).toMatch(/^2 working session/);
   hostSessions = hostSessions.map((session) => ({
     ...session,
     status: "idle",

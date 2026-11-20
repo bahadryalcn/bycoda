@@ -24,12 +24,16 @@ vi.mock("../../../features/assistant/model/assistantClient", async (original) =>
   ...(await original<typeof import("../../../features/assistant/model/assistantClient")>()),
   useAssistantIdentity: () => ({ title: "Assistant Arif", room: "Room · Arif" }),
 }));
+const assistantFailure = vi.hoisted(() => ({ failing: false }));
 vi.mock("../surfaces/lazySurfaces", () => {
   const view = () => createElement(ToolHeader, null, "Tool header");
   return {
     preloadToolSurface: vi.fn(),
     AutomationsView: view,
-    AssistantView: view,
+    AssistantView: () => {
+      if (assistantFailure.failing) throw new Error("Assistant chunk failed");
+      return view();
+    },
     InboxView: view,
     LiveStreamView: view,
     NotesView: view,
@@ -130,3 +134,93 @@ it.each([false, true])(
     }
   },
 );
+
+it("contains an Assistant panel failure and recovers without touching neighbouring panels", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const rootNode = document.createElement("div");
+  document.body.append(rootNode);
+  const root = createRoot(rootNode);
+  const onLeave = vi.fn();
+  function Workspace() {
+    const [state, setState] = useState({
+      inboxViewOpen: true,
+      auxiliaryTool: null as "assistant" | null,
+      automationsViewOpen: false,
+    });
+    const noop = () => {};
+    return createElement(WorkspaceToolPanels, {
+      ...state,
+      notesViewOpen: false,
+      serversViewOpen: false,
+      socialBoardShown: false,
+      taskBoardShown: false,
+      pullRequestsOnly: false,
+      setInboxViewOpen: (value: boolean) => setState((p) => ({ ...p, inboxViewOpen: value })),
+      setAutomationsViewOpen: (value: boolean) =>
+        setState((p) => ({ ...p, automationsViewOpen: value })),
+      setAuxiliaryTool: (value: "assistant" | null) =>
+        setState((p) => ({ ...p, auxiliaryTool: value })),
+      setFilePickerOpen: noop,
+      setSettingsOpen: noop,
+      setSearchViewOpen: noop,
+      setPullRequestsOnly: noop,
+      setNotesViewOpen: noop,
+      setServersViewOpen: noop,
+      setSocialBoardShown: noop,
+      setTaskBoardShown: noop,
+      onLeaveAutomations: () => {
+        onLeave();
+        setState((p) => ({ ...p, automationsViewOpen: false, auxiliaryTool: null }));
+      },
+      projectCwd: "/repo",
+      socialPanelCwd: "",
+      sidebarCwd: "/repo",
+      visibleRecents: [],
+      notesEnabled: true,
+      toolWindow: null,
+      detachedSessionWindow: false,
+      projectRailOpen: false,
+      compactProjectRail: false,
+      compactRailActive: false,
+    } as unknown as WorkspaceToolPanelsProps);
+  }
+  const click = (label: string) =>
+    act(async () =>
+      [...rootNode.querySelectorAll<HTMLButtonElement>('[role="tab"], button')]
+        .find((node) => node.textContent === label)!
+        .click(),
+    );
+  try {
+    assistantFailure.failing = true;
+    await act(async () => root.render(createElement(Workspace)));
+    await click("Room · Arif");
+    // The failure stays inside the Assistant panel: its own recovery view and h1, no workspace-level crash.
+    expect(rootNode.textContent).toContain("This view could not be displayed");
+    expect(
+      [...rootNode.querySelectorAll("h1")].some((node) => node.textContent === "Assistant"),
+    ).toBe(true);
+    expect(rootNode.querySelector("[role=tab]")).not.toBeNull();
+    // Retry remounts the panel once the cause is gone.
+    assistantFailure.failing = false;
+    await click("Try again");
+    expect(rootNode.textContent).not.toContain("This view could not be displayed");
+    // The recovered view mounts again; its ToolHeader renders the tool tabs, not the fixture text.
+    expect(rootNode.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "Room · Arif",
+    );
+    // A second failure leaves through Back to workspace.
+    assistantFailure.failing = true;
+    await act(async () => root.render(createElement(Workspace)));
+    await click("Inbox");
+    await click("Room · Arif");
+    await click("Back to workspace");
+    expect(onLeave).toHaveBeenCalled();
+  } finally {
+    assistantFailure.failing = false;
+    consoleError.mockRestore();
+    await act(async () => root.unmount());
+    rootNode.remove();
+    vi.unstubAllGlobals();
+  }
+});

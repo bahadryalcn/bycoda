@@ -5,6 +5,40 @@ import path from "node:path";
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
 for (const theme of ["dark", "light"]) {
+  test(`remote project and session markers in ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-row-layout.html?remote-header&legacy-remote-label&global&wide&${theme}`,
+    );
+    const project = page.locator(
+      '[data-project-path="remote://fixture-office/fixture/bycoda"] [data-project-primary]',
+    );
+    await expect(project.locator("[data-truncate]").first()).toHaveText("bycoda");
+    const session = page.locator('[data-session-card="row-multi"]');
+    await expect(session.locator("[data-session-row-project] [data-truncate]")).toHaveText(
+      "bycoda",
+    );
+    const marker = session.getByRole("img", { name: "On another machine" });
+    await expect(marker).toBeVisible();
+    await expect(
+      marker.locator("+ [data-tooltip-wrap] [data-session-provider=codex]"),
+    ).toBeVisible();
+    const directory = path.resolve("temp/verification/remote-project-marker");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, "README.md"),
+      "# Remote project and session markers\n\nIsolated desktop browser fixture at 1280 px.\n",
+    );
+    await page.screenshot({ path: path.join(directory, `${theme}-rows.png`) });
+    await project.hover();
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toContainText("/fixture/bycoda on Office Mac");
+    await expect(tooltip.locator("svg")).toBeVisible();
+    await page.screenshot({ path: path.join(directory, `${theme}-tooltip.png`) });
+  });
+}
+
+for (const theme of ["dark", "light"]) {
   test(`managed session mark in ${theme}`, async ({ page }) => {
     const directory = path.resolve("temp/verification/managed-session-mark");
     await mkdir(directory, { recursive: true });
@@ -57,7 +91,7 @@ for (const light of [false, true])
         page.getByRole("menuitem", { name: "Search sessions", exact: true }),
       ).toBeVisible();
       await expect(
-        page.getByRole("menuitemcheckbox", { name: "Select conversations", exact: true }),
+        page.getByRole("menuitemcheckbox", { name: "Select sessions", exact: true }),
       ).toBeVisible();
       await expect(
         page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }),
@@ -71,15 +105,13 @@ for (const light of [false, true])
       ).toBeFocused();
       await page.keyboard.press("Escape");
       await header.getByRole("button", { name: "More actions", exact: true }).click();
-      await page
-        .getByRole("menuitemcheckbox", { name: "Select conversations", exact: true })
-        .click();
-      await expect(pane.getByRole("toolbar", { name: "Selected conversations" })).toBeVisible();
+      await page.getByRole("menuitemcheckbox", { name: "Select sessions", exact: true }).click();
+      await expect(pane.getByRole("toolbar", { name: "Selected sessions" })).toBeVisible();
       await header.getByRole("button", { name: "More actions", exact: true }).click();
       await page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }).click();
       await expect(page.getByRole("menu", { name: "Filter sessions", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
-      await header.getByRole("button", { name: "New Session", exact: true }).click();
+      await header.getByRole("button", { name: "New session", exact: true }).click();
       await expect(page.getByLabel("Created sessions", { exact: true })).toHaveText("1");
       await pane.evaluate((element) => element.style.setProperty("width", "400px", "important"));
       await expect(header.getByRole("button", { name: "More actions", exact: true })).toBeHidden();
@@ -564,7 +596,7 @@ for (const light of [false, true]) {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(
-        `/tests/browser/sessions/session-row-layout.html?wide&${light ? "light" : "dark"}`,
+        `/tests/browser/sessions/session-row-layout.html?wide&rail-header&${light ? "light" : "dark"}`,
         {
           waitUntil: "domcontentloaded",
         },
@@ -574,9 +606,34 @@ for (const light of [false, true]) {
         .filter({ hasText: /^Last sessions$/ });
       await lastSessions.click();
       await expect(lastSessions).toHaveAttribute("aria-current", "page");
-      await expect(
-        page.getByRole("button", { name: "Last sessions", exact: true, expanded: true }),
-      ).toBeVisible();
+      const header = page.locator("[data-rail-section-header]").filter({ has: lastSessions });
+      const toggle = header.getByRole("button", { name: "Last sessions", expanded: true });
+      const count = header.getByRole("button", { name: /^Sessions shown:/ });
+      const options = header.getByRole("button", { name: "Last sessions section options" });
+      await expect(toggle).toBeVisible();
+      await expect(count).toBeVisible();
+      const headerEvidence = path.resolve("temp/verification/last-sessions-header");
+      const capture = (state: string) =>
+        header.screenshot({
+          path: path.join(headerEvidence, `${light ? "light" : "dark"}-${width}-${state}.png`),
+        });
+      await count.hover();
+      await capture("selected-hover");
+      await expect(header).not.toHaveCSS("background-image", "none");
+      for (const control of [lastSessions, toggle, count, options]) {
+        await control.hover();
+        await expect(control).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      }
+      await lastSessions.focus();
+      await page.keyboard.press("Tab");
+      await expect(count).toBeFocused();
+      await expect(count).toHaveCSS("outline-style", "solid");
+      await expect(count).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await capture("keyboard-focus");
+      await page.keyboard.press("Enter");
+      await expect(count).toHaveAttribute("aria-expanded", "true");
+      await expect(count).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await page.keyboard.press("Escape");
       await expect(page.locator('[data-session-card="row-demo"]')).toBeVisible();
       await expect(page.getByRole("status", { name: "Last Sessions mode" })).toHaveText("true");
       await page.screenshot({
@@ -637,7 +694,7 @@ for (const light of [false, true]) {
         `/tests/browser/sessions/session-row-layout.html?global&${width === 1280 ? "wide" : "compact"}&${light ? "light" : "dark"}`,
         { waitUntil: "domcontentloaded" },
       );
-      const create = page.getByRole("button", { name: "New Session", exact: true });
+      const create = page.getByRole("button", { name: "New session", exact: true });
       await create.click();
       const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
       const search = dialog.getByRole("combobox", { name: "Search projects" });
@@ -678,14 +735,14 @@ test("new session accepts explicit current project and preserves project-local d
   await page.goto("/tests/browser/sessions/session-row-layout.html?global", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New Session", exact: true }).click();
+  await page.getByRole("button", { name: "New session", exact: true }).click();
   await page.getByRole("option", { name: /^bycoda / }).click();
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
   await expect(page.getByRole("status", { name: "Created project" })).toHaveText("/fixture/bycoda");
   await page.goto("/tests/browser/sessions/session-row-layout.html", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New Session", exact: true }).click();
+  await page.getByRole("button", { name: "New session", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
 });
@@ -696,7 +753,7 @@ test("new session retains selector and error when selected project becomes unava
   await page.goto("/tests/browser/sessions/session-row-layout.html?global&create-error", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New Session", exact: true }).click();
+  await page.getByRole("button", { name: "New session", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
   await dialog.getByRole("option", { name: /demo-repo / }).click();
   await expect(

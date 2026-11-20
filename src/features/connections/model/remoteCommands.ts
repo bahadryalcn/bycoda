@@ -1,9 +1,10 @@
 import {
   notifyGitChanged,
+  notifyMachineGitChanged,
   setRemoteCommandRunner,
   type FolderListing,
 } from "../../../platform/tauri/fs";
-import { notifyDirsChanged } from "../../files/public/fileTree";
+import { notifyDirsChanged, notifyMachineDirsChanged } from "../../files/public/fileTree";
 import { remoteMachineFor, remoteRequest } from "./connections";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { parseRemotePath, remotePath } from "./remoteProjects";
@@ -25,6 +26,7 @@ export const HOST_COMMANDS = new Set([
   "read_folder_entry",
   "read_file_chunk",
   "read_file_preview",
+  "read_text_file_slice",
   "write_text_file",
   "stat_files",
   "create_path",
@@ -297,6 +299,18 @@ async function runOnMachine(
       ...entry,
       path: fromHost(entry.path),
     }));
+  // A status-aware listing: translate its entries and keep the truncation flag.
+  if (command === "list_skills" && result && typeof result === "object") {
+    const listing = result as { skills?: unknown; truncated?: unknown };
+    if (Array.isArray(listing.skills))
+      return {
+        skills: listing.skills.map((entry: { path: string }) => ({
+          ...entry,
+          path: fromHost(entry.path),
+        })),
+        truncated: listing.truncated === true,
+      };
+  }
   if (
     (command === "git_diff_index" || command === "git_diff_files") &&
     result &&
@@ -355,8 +369,15 @@ async function runOnMachine(
 }
 
 setRemoteCommandRunner(runRemoteCommand);
-// When a machine comes back, every view of it reloads at once.
-subscribeRemoteRecovered(() => {
+// When a machine comes back, every view of it reloads at once. Views of this
+// computer and of other machines are untouched; a recovery that names no
+// machine still reloads everything.
+subscribeRemoteRecovered((environmentId) => {
+  if (environmentId) {
+    notifyMachineGitChanged(environmentId);
+    notifyMachineDirsChanged(environmentId);
+    return;
+  }
   notifyGitChanged();
   notifyDirsChanged();
 });

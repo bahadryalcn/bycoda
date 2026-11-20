@@ -29,6 +29,38 @@ describe("ComposerAction", () => {
     expect(typed).not.toContain(" title=");
   });
 
+  it("keeps a blocked Send focusable and exposes its reason without renaming it", () => {
+    const blocked = renderToStaticMarkup(
+      createElement(ComposerAction, {
+        busy: false,
+        hasValue: true,
+        disabled: true,
+        blockedReason: "Host unavailable",
+        onSend: vi.fn(),
+        onStop: vi.fn(),
+      }),
+    );
+    expect(blocked).toContain('aria-label="Send"');
+    expect(blocked).toContain('aria-disabled="true"');
+    expect(blocked).toContain('aria-description="Host unavailable"');
+    expect(blocked).not.toMatch(/ disabled(=|>| )/);
+  });
+
+  it("explains an empty Send through the same focusable path", () => {
+    const empty = renderToStaticMarkup(
+      createElement(ComposerAction, {
+        busy: false,
+        hasValue: false,
+        blockedReason: "Choose a model",
+        onSend: vi.fn(),
+        onStop: vi.fn(),
+      }),
+    );
+    expect(empty).toContain('aria-label="Send"');
+    expect(empty).toContain('aria-disabled="true"');
+    expect(empty).toContain('aria-description="Choose a model"');
+  });
+
   it("keeps Stop while busy when submitting follow-up text is disabled", () => {
     const typed = renderAction(true, true, false);
     expect(typed).toContain('aria-label="Stop"');

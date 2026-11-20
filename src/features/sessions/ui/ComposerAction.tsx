@@ -47,11 +47,10 @@ export function ComposerAction({
         tone="accent"
         motion="none"
         iconOnly
-        label={blockedReason ? `${label}. ${blockedReason}` : label}
-        tooltip={blockedReason}
+        label={label}
         shortcut={blockedReason ? null : "Enter"}
-        aria-description={blockedReason}
         disabled
+        disabledReason={blockedReason}
       >
         <ArrowUp className="icon-sm" strokeWidth={2} />
       </Button>
@@ -118,6 +117,7 @@ export function ComposerAction({
     );
   }
 
+  const sendDisabled = (!hasValue && !submitting) || submitting === "queue";
   return (
     <>
       {/* After the turn, delegated subagents may still run: Queue waits for them. */}
@@ -142,14 +142,15 @@ export function ComposerAction({
         tone="accent"
         motion="none"
         iconOnly
-        label={blockedReason ? `${label}. ${blockedReason}` : label}
-        tooltip={blockedReason}
+        label={label}
+        tooltip={sendDisabled ? undefined : blockedReason}
         shortcut={blockedReason ? null : "Enter"}
-        disabled={(!hasValue && !submitting) || submitting === "queue"}
+        disabled={sendDisabled}
+        disabledReason={sendDisabled ? blockedReason : undefined}
         loading={submitting === "send"}
         loadingLabel={t("Sending…")}
         onClick={onSend}
-        aria-description={blockedReason}
+        aria-description={sendDisabled ? undefined : blockedReason}
       >
         <ArrowUp className="icon-sm" strokeWidth={2} />
       </Button>

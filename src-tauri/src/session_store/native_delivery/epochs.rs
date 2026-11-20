@@ -3,6 +3,10 @@
 use super::*;
 use serde::{Deserialize, Serialize};
 
+#[path = "epoch_gaps.rs"]
+mod gaps;
+pub(crate) use gaps::record_gap_tx;
+
 const MARKER_ROWS: i64 = 1_000_000;
 const MARKER_BYTES: i64 = 128 * 1024 * 1024;
 const COMPACT_ROWS: i64 = 32;
@@ -113,6 +117,7 @@ impl EpochHandle {
         self.state.generation as u64
     }
     /// Latest observed Host floor, not evidence that local rows can be deleted.
+    #[cfg(test)]
     pub(crate) fn through(&self) -> u64 {
         self.state.host_through as u64
     }
@@ -173,6 +178,10 @@ pub(super) fn parse_id(value: &str) -> Option<V2Id> {
         sequence,
     })
 }
+/// Neutral codec view of a canonical epoch original id: (owner, generation, sequence).
+pub(crate) fn parse_original_id(value: &str) -> Option<(String, i64, i64)> {
+    parse_id(value).map(|id| (id.owner, id.generation, id.sequence))
+}
 
 fn table(conn: &Connection, name: &str) -> Result<bool, String> {
     conn.query_row(
@@ -193,6 +202,11 @@ pub(super) fn check_structure(conn: &Connection) -> Result<(), String> {
         }
     }
     let anchored = anchor(conn)?;
+    // The gap table is either absent (pre-upgrade epoch Store) or fully guarded.
+    let gap = gaps::installed(conn)?;
+    if gap.0 != gap.1 || (gap.0 && count == 0) {
+        return Err(invalid());
+    }
     if count == 0 && !anchored {
         if exists(conn)? {
             let v2:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM native_delivery_originals WHERE original_id LIKE 'nd2:%')",[],|r|r.get(0)).map_err(|_|invalid())?;
@@ -245,7 +259,9 @@ fn initialize(conn: &Connection) -> Result<(), String> {
     check_structure(conn)?;
     if table(conn, TABLES[0])? {
         read_budget(conn)?;
-        return Ok(());
+        // Existing epoch Stores gain the gap-proof table in this FULL write.
+        gaps::migrate(conn)?;
+        return check_structure(conn);
     }
     schema(conn)?;
     remote_ack_schema(conn)?;
@@ -358,7 +374,9 @@ fn state_inner(
     }
     if value.local_through > 0 {
         let covered:i64=conn.query_row("SELECT COUNT(*) FROM native_delivery_semantic_retirements WHERE owner_id=?1 AND generation=?2 AND sequence BETWEEN 1 AND ?3 AND source_store_id=?4 AND source_profile_id=?5 AND route_fingerprint=?6",params![value.owner_id,value.generation,value.local_through,value.source_store_id,value.source_profile_id,value.route],|r|r.get(0)).map_err(|_|invalid())?;
-        if covered != value.local_through {
+        // Every compacted slot is a semantic marker or a permanent gap proof.
+        let fenced = gaps::covered(conn, &value)?;
+        if covered.checked_add(fenced) != Some(value.local_through) {
             return Err(invalid());
         }
     }
@@ -716,7 +734,18 @@ pub(super) fn validate_original(conn: &Connection, original: &Original) -> Resul
         return Ok(());
     };
     let value = state(conn, &id.owner, id.generation)?;
-    if id.sequence <= value.local_through
+    validate_original_in_state(conn, original, &id, &value)
+}
+
+fn validate_original_in_state(
+    conn: &Connection,
+    original: &Original,
+    id: &V2Id,
+    value: &State,
+) -> Result<(), String> {
+    if id.owner != value.owner_id
+        || id.generation != value.generation
+        || id.sequence <= value.local_through
         || id.sequence > value.high_water
         || original.source_store_id != value.source_store_id
         || original.source_profile_id != value.source_profile_id
@@ -848,7 +877,12 @@ pub(super) fn check_semantic(
         }
         return Err("NATIVE_DELIVERY_RETIRED: this semantic original was durably consumed and compacted; do not create another identity".into());
     }
-    Ok(())
+    gaps::check_semantic(conn, ids, semantic, route, method, hash, bytes)
+}
+
+struct Prefix {
+    slots: Vec<(Original, bool)>,
+    blocker: Option<Original>,
 }
 
 fn prefix(
@@ -857,29 +891,73 @@ fn prefix(
     end: i64,
     runtime: uuid::Uuid,
     connection: usize,
-    strict: bool,
-) -> Result<Vec<Original>, String> {
+) -> Result<Prefix, String> {
+    // `(original, gap)`: consumed and remote-ACKed, or exactly proven never admitted.
     let mut originals = Vec::new();
     for sequence in value.local_through + 1..=end {
         let id = format!("nd2:{}:{}:{}", value.owner_id, value.generation, sequence);
-        let original = read(conn, &id, runtime, connection)?.ok_or_else(invalid)?;
-        if original.phase() != Phase::Acknowledged || !remote_acked(conn, &original)? {
-            if strict {
-                return Err("NATIVE_DELIVERY_EPOCH_HOLE: Host floor cannot replace local consume and remote ACK evidence".into());
-            }
-            break;
+        let original = read_record(conn, &id, runtime, connection)?.ok_or_else(invalid)?;
+        let id = parse_id(original.id()).ok_or_else(invalid)?;
+        validate_original_in_state(conn, &original, &id, value)?;
+        let retired = original.phase() == Phase::Acknowledged && remote_acked(conn, &original)?;
+        if !retired && !gaps::proven(conn, &original)? {
+            return Ok(Prefix {
+                slots: originals,
+                blocker: Some(original),
+            });
         }
-        originals.push(original);
+        originals.push((original, !retired));
     }
-    Ok(originals)
+    Ok(Prefix {
+        slots: originals,
+        blocker: None,
+    })
 }
-pub(crate) fn eligible_through(store: &SessionStore, epoch: &EpochHandle) -> Result<u64, String> {
+
+pub(crate) struct MaintenancePlan {
+    pub(crate) expected_through: u64,
+    pub(crate) eligible_through: u64,
+    pub(crate) gap: Option<Original>,
+}
+
+pub(crate) fn maintenance_plan(
+    store: &SessionStore,
+    epoch: &EpochHandle,
+    gap_supported: bool,
+) -> Result<MaintenancePlan, String> {
     runtime(store, epoch)?;
     let conn = store.lock_conn()?;
-    let value = pinned(&conn, epoch)?;
+    // Keep the pinned state and its checked originals in one SQLite snapshot.
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let value = pinned(&tx, epoch)?;
     let end = value.high_water.min(value.local_through + COMPACT_ROWS);
-    let rows = prefix(&conn, &value, end, epoch.runtime, epoch.connection, false)?;
-    Ok((value.local_through + rows.len() as i64) as u64)
+    let prefix = prefix(&tx, &value, end, epoch.runtime, epoch.connection)?;
+    let eligible_through = value.local_through + prefix.slots.len() as i64;
+    let mut gap = None;
+    // A retired prefix takes priority. Only try the first unresolved slot.
+    if gap_supported && eligible_through <= value.host_through {
+        if let Some(original) = prefix.blocker {
+            if gaps::eligible(&original) && !remote_acked(&tx, &original)? {
+                gap = Some(original);
+            }
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(MaintenancePlan {
+        expected_through: value.host_through as u64,
+        eligible_through: eligible_through as u64,
+        gap,
+    })
+}
+
+#[cfg(test)]
+fn eligible_through(store: &SessionStore, epoch: &EpochHandle) -> Result<u64, String> {
+    Ok(maintenance_plan(store, epoch, false)?.eligible_through)
+}
+
+#[cfg(test)]
+fn gap_candidate(store: &SessionStore, epoch: &EpochHandle) -> Result<Option<Original>, String> {
+    Ok(maintenance_plan(store, epoch, true)?.gap)
 }
 #[cfg(test)]
 pub(crate) fn compact(
@@ -918,9 +996,16 @@ fn compact_limits(
         return Err(stale());
     }
     let end = (description.through as i64).min(value.local_through + COMPACT_ROWS);
-    let originals = prefix(conn, &value, end, epoch.runtime, epoch.connection, true)?;
+    let prefix = prefix(conn, &value, end, epoch.runtime, epoch.connection)?;
+    if prefix.blocker.is_some() {
+        return Err("NATIVE_DELIVERY_EPOCH_HOLE: Host floor cannot replace local consume and remote ACK evidence".into());
+    }
+    let (originals, fenced): (Vec<_>, Vec<_>) = prefix.slots.into_iter().partition(|slot| !slot.1);
     let (rows, bytes) = read_budget(conn)?;
-    let weights = originals.iter().map(marker_weight).collect::<Vec<_>>();
+    let weights = originals
+        .iter()
+        .map(|slot| marker_weight(&slot.0))
+        .collect::<Vec<_>>();
     let added = weights
         .iter()
         .try_fold(0i64, |sum, n| sum.checked_add(*n))
@@ -940,7 +1025,7 @@ fn compact_limits(
     let ids = namespace(conn)?;
     let mut used_rows = rows;
     let mut used_bytes = bytes;
-    for (original, weight) in originals.iter().zip(weights) {
+    for ((original, _), weight) in originals.iter().zip(weights) {
         let id = parse_id(original.id()).ok_or_else(invalid)?;
         let consumed = original.consumed_result()?;
         used_rows += 1;
@@ -963,10 +1048,14 @@ fn compact_limits(
         )
         .map_err(|e| e.to_string())?;
     }
+    // A gap slot gets no marker: its permanent proof is the covered evidence.
+    for (original, _) in &fenced {
+        gaps::compact_slot(conn, original)?;
+    }
     if read_budget(conn)? != (total_rows, total_bytes) {
         return Err(invalid());
     }
-    Ok(originals.len())
+    Ok(originals.len() + fenced.len())
 }
 fn marker_weight(o: &Original) -> i64 {
     (320 + o.source_store_id.len()
@@ -1030,13 +1119,13 @@ fn install_guards(conn: &Connection) -> Result<(), String> {
     ] {
         conn.execute_batch(&format!("CREATE TRIGGER {name}_monotonic BEFORE UPDATE ON {name} WHEN NEW.id!=OLD.id OR NEW.rows<OLD.rows OR NEW.rows>OLD.rows+32 OR NEW.rows>1000000 OR NEW.bytes<OLD.bytes OR NEW.bytes>134217728 BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_CAPACITY'); END; CREATE TRIGGER {name}_retained BEFORE DELETE ON {name} BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;")).map_err(|e|e.to_string())?;
     }
-    conn.execute_batch(GUARDS).map_err(|e| e.to_string())
+    conn.execute_batch(GUARDS).map_err(|e| e.to_string())?;
+    gaps::migrate(conn)
 }
 
+// The semantic guard, original/allocation/unavailable retention guards are
+// defined once in `gaps::migrate`, which also upgrades older epoch Stores.
 const GUARDS: &str = r#"
-CREATE TRIGGER native_delivery_epoch_semantic_guard BEFORE INSERT ON native_delivery_originals
-WHEN EXISTS(SELECT 1 FROM native_delivery_semantic_retirements m WHERE m.source_store_id=NEW.source_store_id AND m.source_profile_id=NEW.source_profile_id AND m.semantic_key=NEW.semantic_key) OR EXISTS(SELECT 1 FROM native_delivery_epoch_allocations a WHERE a.source_store_id=NEW.source_store_id AND a.source_profile_id=NEW.source_profile_id AND a.semantic_key=NEW.semantic_key AND a.original_id!=NEW.original_id)
-BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETIRED'); END;
 CREATE TRIGGER native_delivery_epoch_insert_guard BEFORE INSERT ON native_delivery_originals WHEN NEW.original_id LIKE 'nd2:%' AND NOT EXISTS(
  SELECT 1 FROM native_delivery_epoch_allocations a JOIN native_delivery_epochs e ON e.owner_id=a.owner_id AND e.generation=a.generation
  JOIN native_delivery_epoch_witnesses w ON w.owner_id=e.owner_id AND w.generation=e.generation AND w.digest=e.digest AND w.open_id=e.open_id AND w.source_store_id=e.source_store_id AND w.source_profile_id=e.source_profile_id AND w.route_fingerprint=e.route_fingerprint AND w.local_through=e.local_through AND w.high_water=e.high_water AND w.host_through=e.host_through AND w.host_high_water=e.host_high_water AND w.closed=e.closed
@@ -1076,11 +1165,6 @@ CREATE TRIGGER native_delivery_semantic_marker_account AFTER INSERT ON native_de
  UPDATE native_delivery_semantic_budget SET rows=rows+1,bytes=bytes+NEW.weight,digest=NEW.budget_digest WHERE id=1;
  UPDATE native_delivery_semantic_budget_witness SET rows=rows+1,bytes=bytes+NEW.weight,digest=NEW.budget_digest WHERE id=1;
 END;
-DROP TRIGGER native_delivery_no_delete;
-CREATE TRIGGER native_delivery_no_delete BEFORE DELETE ON native_delivery_originals WHEN OLD.phase!='acknowledged' OR NOT EXISTS(
- SELECT 1 FROM native_delivery_semantic_retirements m JOIN native_delivery_epochs e ON e.owner_id=m.owner_id AND e.generation=m.generation JOIN native_delivery_epoch_witnesses w ON w.owner_id=e.owner_id AND w.generation=e.generation AND w.digest=e.digest AND w.open_id=e.open_id AND w.source_store_id=e.source_store_id AND w.source_profile_id=e.source_profile_id AND w.route_fingerprint=e.route_fingerprint AND w.local_through=e.local_through AND w.high_water=e.high_water AND w.host_through=e.host_through AND w.host_high_water=e.host_high_water AND w.closed=e.closed AND w.local_through=e.local_through
- WHERE OLD.original_id='nd2:'||m.owner_id||':'||m.generation||':'||m.sequence AND m.original_id=OLD.original_id AND m.source_store_id=OLD.source_store_id AND m.source_profile_id=OLD.source_profile_id AND m.semantic_key=OLD.semantic_key AND m.route_fingerprint=OLD.route_fingerprint AND m.method=OLD.method AND m.payload_sha256=OLD.payload_sha256 AND m.payload_bytes=OLD.payload_bytes AND m.result_sha256=OLD.result_sha256 AND m.result_bytes=OLD.result_bytes AND m.sequence<=e.local_through AND e.local_through<=e.host_through)
-BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
 DROP TRIGGER native_delivery_remote_ack_retained;
 CREATE TRIGGER native_delivery_remote_ack_retained BEFORE DELETE ON native_delivery_remote_acks WHEN NOT EXISTS(
  SELECT 1 FROM native_delivery_semantic_retirements m JOIN native_delivery_epochs e ON e.owner_id=m.owner_id AND e.generation=m.generation JOIN native_delivery_epoch_witnesses w ON w.owner_id=e.owner_id AND w.generation=e.generation AND w.digest=e.digest AND w.open_id=e.open_id AND w.source_store_id=e.source_store_id AND w.source_profile_id=e.source_profile_id AND w.route_fingerprint=e.route_fingerprint AND w.local_through=e.local_through AND w.high_water=e.high_water AND w.host_through=e.host_through AND w.host_high_water=e.host_high_water AND w.closed=e.closed AND w.local_through=e.local_through
@@ -1088,13 +1172,6 @@ CREATE TRIGGER native_delivery_remote_ack_retained BEFORE DELETE ON native_deliv
  WHERE m.original_id=OLD.original_id AND m.original_id='nd2:'||m.owner_id||':'||m.generation||':'||m.sequence
  AND o.source_store_id=m.source_store_id AND o.source_profile_id=m.source_profile_id AND o.route_fingerprint=m.route_fingerprint AND o.semantic_key=m.semantic_key AND o.method=m.method AND o.payload_sha256=m.payload_sha256 AND o.payload_bytes=m.payload_bytes
  AND m.result_sha256=OLD.result_sha256 AND m.result_bytes=OLD.result_bytes AND m.sequence<=e.local_through AND e.local_through<=e.host_through)
-BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
-CREATE TRIGGER native_delivery_epoch_allocation_retained BEFORE DELETE ON native_delivery_epoch_allocations WHEN NOT EXISTS(
- SELECT 1 FROM native_delivery_semantic_retirements m JOIN native_delivery_epochs e ON e.owner_id=m.owner_id AND e.generation=m.generation JOIN native_delivery_epoch_witnesses w ON w.owner_id=e.owner_id AND w.generation=e.generation AND w.digest=e.digest AND w.open_id=e.open_id AND w.source_store_id=e.source_store_id AND w.source_profile_id=e.source_profile_id AND w.route_fingerprint=e.route_fingerprint AND w.local_through=e.local_through AND w.high_water=e.high_water AND w.host_through=e.host_through AND w.host_high_water=e.host_high_water AND w.closed=e.closed AND w.local_through=e.local_through
- WHERE m.original_id=OLD.original_id AND m.original_id='nd2:'||m.owner_id||':'||m.generation||':'||m.sequence
- AND m.source_store_id=OLD.source_store_id AND m.source_profile_id=OLD.source_profile_id AND m.route_fingerprint=OLD.route_fingerprint AND m.semantic_key=OLD.semantic_key AND m.method=OLD.method AND m.payload_sha256=OLD.payload_sha256 AND m.payload_bytes=OLD.payload_bytes
- AND m.owner_id=OLD.owner_id AND m.generation=OLD.generation AND m.sequence=OLD.sequence AND m.sequence<=e.local_through
- AND NOT EXISTS(SELECT 1 FROM native_delivery_originals o WHERE o.original_id=OLD.original_id))
 BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
 "#;
 

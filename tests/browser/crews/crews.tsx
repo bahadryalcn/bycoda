@@ -292,6 +292,7 @@ let savedTasks: Record<string, unknown>[] = [];
 const taskSaveIds: string[] = [];
 let starts = 0;
 let groupFailure = false;
+let groupUpdateCalls = 0;
 let copyFailure = false;
 const agentSaveCounts: Record<string, number> = {};
 if (params.has("groupRetry")) agents = agents.map((agent) => ({ ...agent, groups: ["UI"] }));
@@ -531,7 +532,9 @@ mockIPC(async (command, args) => {
             ...(params.has("noTools") ? [] : ["crews.tools.v1"]),
             ...(params.has("rich") ? ["crews.active.v1", "crews.model-pools.v1"] : []),
             ...(params.has("noIdentity") ? [] : ["crews.identity.v1"]),
-            ...(params.get("legacy") ? [] : ["crews.agent-groups.v1", "crews.run-delete.v1"]),
+            ...(params.get("legacy")
+              ? []
+              : ["crews.agent-groups.v1", "crews.agent-group-update.v1", "crews.run-delete.v1"]),
           ],
           environmentId: "fixture",
         };
@@ -708,10 +711,6 @@ mockIPC(async (command, args) => {
       case "crews.agent.save": {
         const input = p.agent as SavedCrewAgent;
         agentSaveCounts[input.id] = (agentSaveCounts[input.id] ?? 0) + 1;
-        if (params.has("groupRetry") && input.id === "lib-api" && !groupFailure) {
-          groupFailure = true;
-          throw new Error("Second profile unavailable. Retry group update.");
-        }
         const previous = agents.find((a) => a.id === input.id);
         if (previous && previous.updatedAt !== p.expectedUpdatedAt)
           throw new Error("Agent changed. Reload before saving");
@@ -726,6 +725,34 @@ mockIPC(async (command, args) => {
       case "crews.agent.delete":
         agents = agents.filter((a) => a.id !== p.agentId);
         return { deleted: true };
+      case "crews.agent.group.update": {
+        // Mirrors the Host: validate everything first, then move every member or none.
+        groupUpdateCalls += 1;
+        if (params.has("groupRetry") && !groupFailure) {
+          groupFailure = true;
+          throw new Error("Group update unavailable. Retry group update.");
+        }
+        const group = p.group as string;
+        const rename = p.rename as string | undefined;
+        const members = p.members as { agentId: string; expectedUpdatedAt: number }[];
+        const current = agents.filter((a) => a.groups?.includes(group));
+        if (
+          current.length !== members.length ||
+          current.some(
+            (a) => members.find((m) => m.agentId === a.id)?.expectedUpdatedAt !== a.updatedAt,
+          )
+        )
+          throw new Error("Group changed. Reload before saving");
+        if (rename && agents.some((a) => a.groups?.includes(rename)))
+          throw new Error(`A group named ${rename} already exists`);
+        agents = agents.map((a) => {
+          if (!a.groups?.includes(group)) return a;
+          const groups = a.groups.flatMap((g) => (g !== group ? [g] : rename ? [rename] : []));
+          const { groups: _previous, ...rest } = a;
+          return { ...rest, ...(groups.length ? { groups } : {}), updatedAt: a.updatedAt + 1 };
+        });
+        return { updated: current.length };
+      }
       case "crews.delete":
         definitions = definitions.filter((d) => d.id !== p.definitionId);
         return { deleted: true };
@@ -823,6 +850,7 @@ Object.assign(window, {
     runs: runs.map((run) => ({ id: run.id, status: run.status })),
     agents: agents.map((agent) => ({ id: agent.id, groups: agent.groups })),
     agentSaveCounts,
+    groupUpdateCalls,
   }),
   simulateRunUpdate: (id: string) => {
     const next = Math.max(...runs.map((run) => run.updatedAt)) + 1;

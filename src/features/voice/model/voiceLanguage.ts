@@ -1,11 +1,15 @@
+import { acceptedVoiceLanguage } from "./voiceSpokenLanguage";
+
 /** An assistant's spoken language is separate from the interface language. */
 export function voiceLanguageCode(language: string) {
   if (!language || language === "auto") return undefined;
   try {
-    return Intl.getCanonicalLocales(language)[0]?.split("-")[0];
+    const canonical = Intl.getCanonicalLocales(language)[0]?.split("-")[0];
+    if (canonical && canonical.length <= 3) return canonical;
   } catch {
-    return undefined;
+    // Older settings may contain a language name or underscore-separated locale.
   }
+  return acceptedVoiceLanguage("", language)?.split("-")[0];
 }
 
 export function voiceLanguageInstructions(language = "auto") {

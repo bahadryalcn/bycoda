@@ -1,5 +1,6 @@
 import {
   providerAccounts,
+  providerAccountsStorageRevision,
   subscribeProviderAccounts,
 } from "../../providers/public/providerAccounts";
 import { mergeProviderCliChecks } from "../model/providerCliChecks";
@@ -60,7 +61,7 @@ import {
   ProviderList,
   providerMetaLine,
   type ProviderListEntry,
-} from "../../providers/ui/ProviderList";
+} from "../../providers/public/ProviderList";
 import {
   ProviderDetailHeader,
   ProviderStatusGroup,
@@ -80,6 +81,7 @@ import {
 } from "../../providers/public/providerAccounts";
 import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
 import { GenericAcpSettings } from "../../providers/ui/GenericAcpSettings";
+import { OllamaSettings } from "../../providers/ui/OllamaSettings";
 import type { RecentProject } from "../../projects/public/recents";
 import { loadClaudeHooks, saveClaudeHooks, subscribeClaudeHooks } from "../model/settings";
 import { providersTabForSetting, type ProvidersTab } from "../model/providerSettingsTabs";
@@ -116,8 +118,10 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   );
   const rateLimits = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
   const now = useMinuteNow();
-  useSyncExternalStore(subscribeProviderAccounts, () =>
-    JSON.stringify(PROVIDER_ACCOUNT_PROVIDERS.map((provider) => providerAccounts(provider))),
+  useSyncExternalStore(
+    subscribeProviderAccounts,
+    providerAccountsStorageRevision,
+    providerAccountsStorageRevision,
   );
   const [claudeHooks, setClaudeHooks] = useStoredPreferenceState(
     loadClaudeHooks,
@@ -202,6 +206,15 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     selectedProvider && orderedHarnesses.includes(selectedProvider)
       ? selectedProvider
       : (orderedHarnesses[0] ?? null);
+  // A provider's detail mounts when first selected and then stays mounted (hidden) so its path
+  // draft and pending inspection survive switching; providers never opened are not mounted.
+  const [openedProviders, setOpenedProviders] = useState<HarnessId[]>([]);
+  if (activeProvider && !openedProviders.includes(activeProvider)) {
+    setOpenedProviders([...openedProviders, activeProvider]);
+  }
+  const detailProviders = orderedHarnesses.filter(
+    (harness) => harness === activeProvider || openedProviders.includes(harness),
+  );
 
   useEffect(() => {
     if (accountBusy) return;
@@ -236,6 +249,8 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
       setSelectedProvider("antigravity");
     } else if (revealedSetting.startsWith("acp-")) {
       setSelectedProvider("acp");
+    } else if (revealedSetting === "ollama-models" || revealedSetting === "ollama-port") {
+      setSelectedProvider("opencode");
     } else if (
       revealedSetting === "provider-accounts" ||
       revealedSetting === "terminal-account-profiles"
@@ -484,8 +499,8 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                         signInCompleted={standaloneSignIn === activeProvider}
                         available={isHarnessAvailable(activeProvider)}
                       />
-                      {/* Every provider's CLI state stays mounted so path drafts survive switching. */}
-                      {orderedHarnesses.map((harness) => (
+                      {/* Opened providers keep their CLI state mounted so path drafts survive switching. */}
+                      {detailProviders.map((harness) => (
                         <div key={harness} hidden={activeProvider !== harness}>
                           <ProviderStatusGroup
                             id={settingDomId(`cli-path-${harness}`)}
@@ -515,7 +530,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                     onBusyChange={setAccountBusy}
                     onStandaloneSignIn={setStandaloneSignIn}
                   />
-                  {orderedHarnesses.map((harness) => (
+                  {detailProviders.map((harness) => (
                     <div
                       key={harness}
                       className="provider-cli-panel"
@@ -529,6 +544,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                         onPickerVisible={(visible) => onPickerVisible(harness, visible)}
                       />
                       {harness === "acp" ? <GenericAcpSettings cwd={cwd} embedded /> : null}
+                      {harness === "opencode" ? (
+                        <OllamaSettings opencodeAvailable={isHarnessAvailable("opencode")} />
+                      ) : null}
                     </div>
                   ))}
                   {/* The provider's catalog sits under its own account and runtime. */}

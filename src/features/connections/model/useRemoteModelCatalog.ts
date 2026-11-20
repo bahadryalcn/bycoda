@@ -28,6 +28,15 @@ type CatalogRequest = <T>(method: string, params?: unknown) => Promise<T>;
 /** Capability under which a Host pushes `{ kind: "models" }` snapshots. */
 const STREAM_CAPABILITY = "models.catalog.stream.v1";
 
+/** Polling waits 1, 2, 4 ... s between reads, never more than 30 s. */
+const POLL_BASE_MS = 1_000;
+const POLL_MAX_MS = 30_000;
+/** Re-reads while providers stay pending (about three minutes), then polling stops. */
+const POLL_PENDING_LIMIT = 10;
+/** Re-reads after failed reads (about two minutes), then the error stays until `refresh`. */
+const POLL_RETRY_LIMIT = 8;
+const pollDelay = (count: number) => Math.min(POLL_BASE_MS * 2 ** count, POLL_MAX_MS);
+
 const cachedCatalogs = new Map<string, HostModelCatalog>();
 const CACHE_LIMIT = 64;
 
@@ -62,6 +71,8 @@ interface CatalogState {
   error: string;
   /** A response or snapshot arrived since mount (or since the last error). */
   fresh: boolean;
+  /** The refresh token whose read last answered, answer or failure. */
+  settled: number;
 }
 
 /**
@@ -73,7 +84,11 @@ interface CatalogState {
  * never shows the previous scope's catalog or error. The last good catalog is
  * persisted per scope and seeds the state; `stale` is true while that
  * remembered catalog is shown and nothing fresh has arrived (or after an
- * error). `refresh` restarts the read.
+ * error). Polling is bounded: a failed read retries with exponential backoff
+ * (up to 30 s, 8 times) while the last catalog and the error stay shown, a
+ * catalog with pending providers is re-read with growing delays (10 times), and
+ * a due read waits while the window is hidden. `refresh` restarts the read with
+ * fresh budgets.
  */
 export function useRemoteModelCatalog({
   scope,
@@ -95,6 +110,7 @@ export function useRemoteModelCatalog({
     catalog: knownCatalog(key),
     error: "",
     fresh: false,
+    settled: 0,
   }));
   const [refreshToken, setRefreshToken] = useState(0);
   // The read attempt whose stream closed or failed; that attempt polls instead.
@@ -114,12 +130,13 @@ export function useRemoteModelCatalog({
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let release: (() => void) | undefined;
+    let unwatchVisibility: (() => void) | undefined;
     let route: ReturnType<typeof acquireRemoteHostRuntime>;
     const attempt = `${key}\n${hostEnvironmentId ?? ""}\n${refreshToken}`;
 
     const apply = (value: HostModelCatalog) => {
       rememberCatalog(key, value);
-      setState({ key, catalog: value, error: "", fresh: true });
+      setState({ key, catalog: value, error: "", fresh: true, settled: refreshToken });
     };
     const fail = (reason: unknown) =>
       setState((current) => ({
@@ -127,19 +144,44 @@ export function useRemoteModelCatalog({
         catalog: current.key === key ? current.catalog : knownCatalog(key),
         error: String(reason),
         fresh: false,
+        settled: refreshToken,
       }));
     const poll = () => {
+      // Consecutive failed reads, and consecutive answers that still listed pending providers.
+      let failures = 0;
+      let waits = 0;
+      // A due read is held back while the window is hidden and runs when it shows again.
+      let held = false;
+      const schedule = (delay: number) => {
+        timer = setTimeout(() => {
+          if (disposed) return;
+          if (document.hidden) held = true;
+          else load();
+        }, delay);
+      };
       const load = () =>
         void requestRef
           .current<HostModelCatalog>("models.list", { projectId, progressive: true })
           .then((value) => {
             if (disposed) return;
             apply(value);
-            if (value.pending?.length) timer = setTimeout(load, 1000);
+            failures = 0;
+            if (!value.pending?.length) waits = 0;
+            else if (waits < POLL_PENDING_LIMIT) schedule(pollDelay(waits++));
           })
           .catch((reason) => {
-            if (!disposed) fail(reason);
+            if (disposed) return;
+            // The remembered catalog stays shown with the error until a read answers.
+            fail(reason);
+            if (failures < POLL_RETRY_LIMIT) schedule(pollDelay(failures++));
           });
+      const onVisible = () => {
+        if (disposed || document.hidden || !held) return;
+        held = false;
+        load();
+      };
+      document.addEventListener("visibilitychange", onVisible);
+      unwatchVisibility = () => document.removeEventListener("visibilitychange", onVisible);
       load();
     };
     const fallBack = () => {
@@ -177,6 +219,7 @@ export function useRemoteModelCatalog({
     return () => {
       disposed = true;
       clearTimeout(timer);
+      unwatchVisibility?.();
       release?.();
       route?.release();
     };
@@ -199,6 +242,8 @@ export function useRemoteModelCatalog({
     error: current?.error ?? "",
     /** True while the shown catalog is remembered data, not a fresh Host answer. */
     stale: catalog !== undefined && !current?.fresh,
+    /** True from a `refresh` until the Host answers or fails that read. */
+    loading: enabled && !!current && current.settled !== refreshToken,
     refresh,
   };
 }

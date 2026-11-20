@@ -285,12 +285,7 @@ export class SessionWorkAdapter {
           if (observed.state === "unknown") throw new Error("Work retirement is unknown.");
           await cancelSessionRun(this.engine, receipt);
         },
-        externalRunning: async () =>
-          (await store.sessions()).flatMap((run) =>
-            run.status === "running" && run.runId
-              ? [{ sessionId: run.session.id, runId: run.runId, projectId: run.projectId }]
-              : [],
-          ),
+        externalRunning: () => store.runningSessionRuns(),
       },
       limits,
       now,

@@ -16,6 +16,7 @@ import { installUiScaleWheel } from "../../../features/settings/model/uiScaleWhe
 import {
   LAYOUT_SHORTCUTS,
   SETTINGS_SHORTCUTS,
+  paneMoveDirection,
   resolveAppShortcut,
 } from "../../../features/settings/model/appShortcuts";
 import {
@@ -23,14 +24,19 @@ import {
   matchCustomKeybinding,
 } from "../../../features/settings/model/settings";
 import {
+  isRepeatableTabCommand,
   shouldHandleListNavigation,
   tabCommand,
   tabCommandForKeybinding,
   tabCommandKeybinding,
 } from "../../../features/workspace/model/tabKeys";
 import { handleEditorFindKey } from "../../../features/files/editor/editorFindBridge";
-import { terminalToolShortcut } from "../../../features/terminal/model/terminalKeys";
-import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
+import { COMPOSER_PICKER_SELECTOR } from "../../../features/sessions/model/composerPickerSelector";
+import {
+  isTerminalControlKey,
+  terminalToolShortcut,
+} from "../../../features/terminal/model/terminalKeys";
+import { focusToastCard, hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import type { WorkspaceActions, WorkspaceRun } from "./useWorkspaceActions";
 
@@ -81,8 +87,20 @@ export function useWorkspaceKeyboardShortcuts({
       if (terminalTarget?.closest("[data-terminal-tools]")) return;
       if (terminalTarget?.closest(".bycoda-terminal") && terminalToolShortcut(e)) return;
       const customCommand = matchCustomKeybinding(e);
+      // Plain Ctrl+letter is readline input in a focused terminal. Only a chord
+      // the owner explicitly recorded still reaches the app from there.
+      if (!customCommand && terminalTarget?.closest(".bycoda-terminal") && isTerminalControlKey(e))
+        return;
       const pressed = (command: string, defaultMatch: boolean) =>
         keybindingPressed(command, e, defaultMatch);
+      // Request popups float above dialogs, so the way into them must work while a dialog is
+      // open. It only moves focus; every decision still needs its own Allow or Deny press.
+      if (resolveAppShortcut(e) === "App: Focus Approval Requests") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.repeat) focusToastCard(".notification-request");
+        return;
+      }
       // Dialogs own editing/navigation chords. Window presentation shortcuts
       // remain available; native menu dispatch has its own independent route.
       if (
@@ -100,7 +118,8 @@ export function useWorkspaceKeyboardShortcuts({
         return;
       }
       const layout = customCommand ? LAYOUT_SHORTCUTS[customCommand] : undefined;
-      if (layout) {
+      const paneMove = paneMoveDirection(e);
+      if (layout || paneMove) {
         if (
           searchViewOpenRef.current ||
           settingsOpenRef.current ||
@@ -115,7 +134,10 @@ export function useWorkspaceKeyboardShortcuts({
           return;
         e.preventDefault();
         e.stopPropagation();
-        if (!e.repeat) run(`arrange-${layout}`, () => actions.current.onArrangeActiveTab(layout));
+        if (!e.repeat) {
+          if (layout) run(`arrange-${layout}`, () => actions.current.onArrangeActiveTab(layout));
+          else if (paneMove) run(`move-${paneMove}`, () => actions.current.onMovePaneDir(paneMove));
+        }
         return;
       }
       if (
@@ -208,7 +230,7 @@ export function useWorkspaceKeyboardShortcuts({
         if (listNavigation) {
           const blockedTarget = Boolean(
             target?.closest(
-              'input, textarea, select, [contenteditable="true"], .cm-editor, .bycoda-terminal, [role="dialog"], [data-model-picker], [data-file-picker], [data-branch-picker], [data-skill-picker], [data-mention-picker], [data-app-search]',
+              `input, textarea, select, [contenteditable="true"], .cm-editor, .bycoda-terminal, [role="dialog"], [data-model-picker], [data-file-picker], [data-branch-picker], [data-app-search], ${COMPOSER_PICKER_SELECTOR}`,
             ),
           );
           const emptyComposerTarget = Boolean(
@@ -247,13 +269,15 @@ export function useWorkspaceKeyboardShortcuts({
         const inPicker =
           target &&
           target.closest(
-            "[data-model-picker], [data-file-picker], [data-branch-picker], [data-skill-picker], [data-mention-picker], [data-app-search]",
+            `[data-model-picker], [data-file-picker], [data-branch-picker], [data-app-search], ${COMPOSER_PICKER_SELECTOR}`,
           );
         if (inPicker && typeof cmd === "object" && "activate" in cmd) {
           return;
         }
         e.preventDefault();
         e.stopPropagation();
+        // A held chord runs a one-shot command once; only stepping commands repeat.
+        if (e.repeat && !isRepeatableTabCommand(cmd)) return;
         const a = actions.current;
         if (cmd === "new" || cmd === "new-session") run("new", a.onNew);
         else if (cmd === "close-others") run("close-others", a.onCloseOtherTabs);
@@ -269,10 +293,8 @@ export function useWorkspaceKeyboardShortcuts({
         else if (cmd === "split-down") run("split-down", () => a.onSplit("down"));
         else if (cmd === "new-terminal") run("new-terminal", a.onNewTerminal);
         else if (cmd === "new-terminal-tab") run("new-terminal-tab", a.onNewTerminalTab);
-        // Holding the chord must not flip the dock on every key repeat.
-        else if (cmd === "toggle-terminal") {
-          if (!e.repeat) run("toggle-terminal", a.onToggleProjectTerminal);
-        } else if (cmd === "prev-session") run("prev-session", () => a.onNavigateSessionList(-1));
+        else if (cmd === "toggle-terminal") run("toggle-terminal", a.onToggleProjectTerminal);
+        else if (cmd === "prev-session") run("prev-session", () => a.onNavigateSessionList(-1));
         else if (cmd === "next-session") run("next-session", () => a.onNavigateSessionList(1));
         else if (cmd === "prev-session-in-tab")
           run("prev-session-in-tab", () => a.onNavigateSessionList(-1, true));
@@ -322,6 +344,8 @@ export function useWorkspaceKeyboardShortcuts({
         }
         e.preventDefault();
         e.stopPropagation();
+        // App shortcuts open windows, pickers and surfaces: once per press.
+        if (e.repeat) return;
         const a = actions.current;
         const settingsSection = SETTINGS_SHORTCUTS[shortcut];
         if (settingsSection) {

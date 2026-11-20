@@ -40,6 +40,20 @@ export function validateVoiceAudio(audio: unknown, language: unknown) {
  */
 export const DICTATION_WARM_MS = 5 * 60_000;
 
+/** One slow transcription fails alone after this long; the worker keeps running. */
+export const LOCAL_REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * A worker that owes replies and sends nothing at all for this long is treated as hung
+ * and restarted. Any reply (also a late one for a timed-out request) proves it is alive.
+ */
+export const LOCAL_WORKER_UNRESPONSIVE_MS = 120_000;
+/** Requests the worker may owe at once, including timed-out ones it has not answered yet. */
+const MAX_OUTSTANDING_REQUESTS = 2;
+
+function busyError() {
+  return new Error("Speech recognition is busy. Please speak again after transcription.");
+}
+
 /** One on-demand recognizer per host. Leases keep other desktop windows independent. */
 export class LocalVoiceService {
   private speech: VoiceSpeechService;
@@ -56,6 +70,13 @@ export class LocalVoiceService {
       timer: ReturnType<typeof setTimeout>;
     }
   >();
+  /**
+   * Requests that timed out for their caller while the single-threaded worker may still be
+   * computing them. They keep counting as queued work and their late replies are dropped.
+   */
+  private orphans = new Set<string>();
+  /** Restarts a worker that owes replies but has gone silent. */
+  private watchdog?: ReturnType<typeof setTimeout>;
   private idle?: ReturnType<typeof setInterval>;
   private starting = 0;
   /** Leases opened by dictation (recognition only). */
@@ -113,7 +134,7 @@ export class LocalVoiceService {
         });
         if (!found.ready)
           throw new Error(
-            `Voice setup is incomplete: ${found.missing.join(", ")}. Open Settings → Chat → Voice companion to choose installation paths.`,
+            `Voice setup is incomplete: ${found.missing.join(", ")}. Open Settings → Voice assistant. Choose Locate existing to find installed voice files, or Install to get missing files.`,
           );
         // A concurrent start may have finished probing while this one was waiting.
         if (this.loading && this.runtimeKey !== key)
@@ -213,23 +234,56 @@ export class LocalVoiceService {
       ...validateVoiceAudio(audio, language),
       ...(endpoint === true ? { endpoint } : {}),
     };
-    if (this.requests.size >= 2)
-      throw new Error("Speech recognition is busy. Please speak again after transcription.");
+    if (this.outstanding >= MAX_OUTSTANDING_REQUESTS) throw busyError();
     await this.ensureWorker();
-    if (this.requests.size >= 2)
-      throw new Error("Speech recognition is busy. Please speak again after transcription.");
+    // The lease may have been released, or the worker closed, while it was loading.
+    this.checkLease(lease);
+    const child = this.child;
+    if (!child) throw new Error("Local voice disconnected.");
+    if (this.outstanding >= MAX_OUTSTANDING_REQUESTS) throw busyError();
     const id = randomUUID();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.requests.delete(id);
+        // Only this caller fails. The worker may still finish; its late reply is dropped,
+        // and the watchdog restarts it only if it stops answering altogether.
+        if (!this.requests.delete(id)) return;
+        this.orphans.add(id);
         reject(new Error("Local speech recognition timed out."));
-        this.close();
-      }, 30_000);
+      }, LOCAL_REQUEST_TIMEOUT_MS);
       this.requests.set(id, { resolve, reject, timer });
-      this.child!.stdin.write(JSON.stringify({ id, ...data }) + "\n", (error) => {
-        if (error) this.close();
+      this.watchWorker(child, false);
+      child.stdin.write(JSON.stringify({ id, ...data }) + "\n", (error) => {
+        if (!error) return;
+        // A dead pipe also raises the stdin 'error' event, which restarts the worker.
+        const pending = this.requests.get(id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.requests.delete(id);
+        pending.reject(new Error("Local speech recognition failed."));
+        this.watchWorker(child, true);
       });
     });
+  }
+
+  private get outstanding() {
+    return this.requests.size + this.orphans.size;
+  }
+
+  /**
+   * Arms (or with `restart`, re-arms after proof of life) the hung-worker deadline while the
+   * worker owes replies. A stale worker never closes its replacement.
+   */
+  private watchWorker(child: ChildProcessWithoutNullStreams, restart: boolean) {
+    if (restart && this.watchdog) {
+      clearTimeout(this.watchdog);
+      this.watchdog = undefined;
+    }
+    if (this.watchdog || !this.outstanding) return;
+    this.watchdog = setTimeout(() => {
+      this.watchdog = undefined;
+      if (this.child === child) this.close();
+    }, LOCAL_WORKER_UNRESPONSIVE_MS);
+    this.watchdog.unref();
   }
 
   private checkLease(lease: unknown) {
@@ -255,51 +309,66 @@ export class LocalVoiceService {
             BYCODA_VOICE_CONFIG: JSON.stringify(this.runtime),
           },
         }));
+        let ready = false;
         const timer = setTimeout(() => {
           reject(new Error("Local voice startup timed out."));
-          this.close();
+          // A replaced worker's timer must not tear down its successor and the new leases.
+          if (this.child === child) this.close();
         }, 45_000);
         child.stderr.on("data", () => {}); // Never forward Python paths or diagnostics into transcripts.
         createInterface({ input: child.stdout }).on("line", (line) => {
-          if (line.length > 32000) {
-            this.close();
+          // Output of a closed or replaced worker is not this worker's protocol.
+          if (this.child !== child || line.length > 32000) return;
+          let message: Record<string, unknown>;
+          try {
+            const parsed: unknown = JSON.parse(line);
+            if (!parsed || typeof parsed !== "object") return;
+            message = parsed as Record<string, unknown>;
+          } catch {
+            return; // A library warning on stdout is not a worker failure.
+          }
+          if (
+            message.ready &&
+            typeof message.model === "string" &&
+            typeof message.device === "string"
+          ) {
+            if (ready) return;
+            ready = true;
+            clearTimeout(timer);
+            resolve({
+              model: message.model,
+              device: message.device,
+              turn: message.turn === true,
+            });
             return;
           }
-          try {
-            const message = JSON.parse(line);
-            if (
-              message.ready &&
-              typeof message.model === "string" &&
-              typeof message.device === "string"
-            ) {
-              clearTimeout(timer);
-              resolve({
-                model: message.model,
-                device: message.device,
-                turn: message.turn === true,
-              });
-            } else if (!message.id && message.error) {
+          if (!ready) {
+            if (!message.id && message.error) {
               clearTimeout(timer);
               reject(new Error(String(message.error)));
               this.close();
-            } else {
-              const pending = this.requests.get(message.id);
-              if (!pending) return;
-              clearTimeout(pending.timer);
-              this.requests.delete(message.id);
-              if (message.complete === false) pending.resolve({ complete: false });
-              else if (typeof message.text === "string" && message.text.length <= 16000)
-                pending.resolve({
-                  text: message.text,
-                  language: String(message.language),
-                  inferenceMs: Number(message.inferenceMs),
-                  ...(message.complete === true ? { complete: true as const } : {}),
-                });
-              else pending.reject(new Error("Local speech recognition failed."));
             }
-          } catch {
-            this.close();
+            return;
           }
+          if (typeof message.id !== "string") return;
+          // Any reply, also a late one for a timed-out request, proves the worker is alive.
+          const late = this.orphans.delete(message.id);
+          const pending = late ? undefined : this.requests.get(message.id);
+          if (pending) {
+            clearTimeout(pending.timer);
+            this.requests.delete(message.id);
+          }
+          this.watchWorker(child, true);
+          if (!pending) return;
+          if (message.complete === false) pending.resolve({ complete: false });
+          else if (typeof message.text === "string" && message.text.length <= 16000)
+            pending.resolve({
+              text: message.text,
+              language: String(message.language),
+              inferenceMs: Number(message.inferenceMs),
+              ...(message.complete === true ? { complete: true as const } : {}),
+            });
+          else pending.reject(new Error("Local speech recognition failed."));
         });
         const failed = () => {
           clearTimeout(timer);
@@ -330,6 +399,9 @@ export class LocalVoiceService {
     this.idle = undefined;
     if (this.warm) clearTimeout(this.warm);
     this.warm = undefined;
+    if (this.watchdog) clearTimeout(this.watchdog);
+    this.watchdog = undefined;
+    this.orphans.clear();
     for (const pending of this.requests.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error("Local voice disconnected."));

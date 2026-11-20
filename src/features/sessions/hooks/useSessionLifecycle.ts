@@ -1,13 +1,15 @@
 import { useCallback, useEffect } from "react";
 import { useLocalLifecycleMachine } from "./useLocalLifecycleMachine";
 import {
+  applyLifecycleListRead,
+  applyLifecycleViewRead,
+  beginLifecycleRead,
   sessionLifecycleClient,
   setAutoSettleSettings,
-  setSessionLifecycle,
-  setSessionLifecycleList,
   useSessionLifecycleSnapshot,
   useSessionLifecycleView,
 } from "../model/sessionLifecycleClient";
+import { subscribeSharedRead } from "../model/sharedLifecycleRead";
 import type { AutoSettleSettings, SessionLifecycleView } from "../model/sessionLifecycle";
 
 const POLL_SETTLING_MS = 3000;
@@ -27,16 +29,20 @@ export function useSessionLifecycle(
   useEffect(() => {
     if (!local || !machineId) return;
     let cancelled = false;
-    const load = () =>
-      sessionLifecycleClient(machineId)
+    const load = () => {
+      const readAt = beginLifecycleRead();
+      return sessionLifecycleClient(machineId)
         .get(sessionId)
         .then((next) => {
-          if (!cancelled) setSessionLifecycle(next);
+          if (!cancelled) applyLifecycleViewRead(next, readAt);
         })
         .catch(() => undefined); // -- an older Host without settle support shows no control.
+    };
     load();
     if (state !== "settling") return () => void (cancelled = true);
-    const timer = window.setInterval(load, POLL_SETTLING_MS);
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void load();
+    }, POLL_SETTLING_MS);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -53,35 +59,32 @@ export function useSessionLifecycleList(enabled = true) {
   const machineId = useLocalLifecycleMachine();
   useEffect(() => {
     if (!enabled || !machineId) return;
-    let cancelled = false;
-    const load = () =>
-      sessionLifecycleClient(machineId)
-        .list()
-        .then((list) => {
-          if (!cancelled) setSessionLifecycleList(list);
-        })
-        .catch(() => undefined); // -- an older Host has no shelf; every session stays in the list.
-    load();
-    const timer = window.setInterval(load, REFRESH_LIST_MS);
-    window.addEventListener("focus", load);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      window.removeEventListener("focus", load);
-    };
+    return subscribeSharedRead(
+      `list:${machineId}`,
+      (isCurrent) => {
+        const readAt = beginLifecycleRead();
+        return sessionLifecycleClient(machineId)
+          .list()
+          .then((list) => {
+            if (isCurrent()) applyLifecycleListRead(list, readAt);
+          })
+          .catch(() => undefined); // -- an older Host has no shelf; every session stays in the list.
+      },
+      { intervalMs: REFRESH_LIST_MS, refreshOnFocus: true },
+    );
   }, [enabled, machineId]);
   return { machineId, ...useSessionLifecycleSnapshot() };
 }
 
 /**
  * The Host's automatic settling and archiving windows; undefined while unknown or on an older Host.
- * `archiveAfterDays` is undefined on a Host without automatic archiving; `change` without it keeps
- * the saved archive window.
+ * `archiveAfterDays` is undefined on a Host without automatic archiving; `change` sets only the
+ * windows it names and the Host keeps the saved value of any other.
  */
 export function useAutoSettleSetting() {
   const { machineId, autoSettle } = useSessionLifecycleList();
   const change = useCallback(
-    async (settings: AutoSettleSettings) => {
+    async (settings: Partial<AutoSettleSettings>) => {
       if (!machineId) return;
       setAutoSettleSettings(await sessionLifecycleClient(machineId).configure(settings));
     },

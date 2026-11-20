@@ -118,7 +118,7 @@ export function AssistantNotificationRecovery({
       : state === "unknown"
         ? t("Outcome unknown")
         : state === "accepted"
-          ? t("Native queue accepted; display not confirmed")
+          ? t("Native queue accepted; display could not be confirmed")
           : t("Notification suppressed");
   return (
     <Disclosure size="sm" summary={t("Task notification recovery")} onOpenChange={setExpanded}>

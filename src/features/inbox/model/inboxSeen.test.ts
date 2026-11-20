@@ -69,6 +69,36 @@ describe("inbox seen items", () => {
     parse.mockRestore();
   });
 
+  it("keeps readable records when one stored value is malformed", () => {
+    const at = (value: number) => new Date(value).toISOString();
+    const now = Date.now();
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ seeded: true, items: { good: now, bad: "oops", missing: null } }),
+    );
+    expect(inboxSeenIsSeeded()).toBe(true);
+    expect(isInboxEntryUnseen(entry("good", at(now)))).toBe(false);
+    expect(isInboxEntryUnseen(entry("good", at(now + 1000)))).toBe(true);
+    expect(markInboxItemSeen(entry("other", at(now)))).toBe(true);
+    const saved = JSON.parse(localStorage.getItem(KEY)!);
+    expect(saved).toEqual({ seeded: true, items: { good: now, other: now } });
+
+    // The older plain-map shape drops only the malformed value too.
+    localStorage.setItem(KEY, JSON.stringify({ good: now, bad: "oops" }));
+    expect(inboxSeenIsSeeded()).toBe(true);
+    expect(isInboxEntryUnseen(entry("good", at(now)))).toBe(false);
+
+    // An unreadable seeded flag keeps the items but asks for a fresh seed.
+    localStorage.setItem(KEY, JSON.stringify({ seeded: "yes", items: { good: now } }));
+    expect(inboxSeenIsSeeded()).toBe(false);
+    seedInboxSeenIfNeeded([entry("fresh", at(now))]);
+    expect(JSON.parse(localStorage.getItem(KEY)!).items).toEqual({ good: now, fresh: now });
+
+    // A wrapper whose items are not a map is still treated as unusable, not as a plain map.
+    localStorage.setItem(KEY, JSON.stringify({ seeded: true, items: [1] }));
+    expect(inboxSeenIsSeeded()).toBe(false);
+  });
+
   it("bounds new seen identities without evicting existing or blocking updates", () => {
     // Records must sit inside the 90-day window, or pruning would drop them first.
     const recent = Date.now();

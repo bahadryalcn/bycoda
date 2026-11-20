@@ -27,6 +27,8 @@ afterEach(async () => {
 const render = (active = true) => act(() => root.render(createElement(ComposerTips, { active })));
 const icon = () => container.querySelector<HTMLButtonElement>("button")!;
 const open = () => act(() => icon().click());
+const close = () =>
+  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
 const text = () => document.querySelector(".composer-tips-text")?.getAttribute("aria-label");
 const advance = () => act(() => vi.advanceTimersByTime(COMPOSER_TIP_INTERVAL));
 
@@ -40,14 +42,13 @@ it("only opens by activation, updates its label and stays closed after Escape", 
   act(() => icon().dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
   act(() => icon().focus());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
-  expect(vi.getTimerCount()).toBe(0);
   open();
   expect(text()).toBe(COMPOSER_TIPS[0]);
   expect(icon().textContent).toBe("Next tip");
   expect(icon().getAttribute("aria-label")).toBe("Next tip");
   expect(icon().getAttribute("aria-expanded")).toBe("true");
   expect(icon().getAttribute("aria-controls")).toBe(document.querySelector('[role="dialog"]')!.id);
-  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  close();
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(icon().textContent).toBe("Tip");
   expect(icon().getAttribute("aria-expanded")).toBe("false");
@@ -71,22 +72,33 @@ it("stays open when the pointer or focus leaves and dismisses on an outside clic
   act(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(icon().textContent).toBe("Tip");
+  expect(vi.getTimerCount()).toBe(1);
+});
+
+it("keeps the open tip still for as long as the popover stays open", () => {
+  render();
+  open();
+  const shown = text();
+  for (let i = 0; i < 3; i++) advance();
+  expect(text()).toBe(shown);
+  act(() => icon().focus());
+  advance();
+  expect(text()).toBe(shown);
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("cycles while visible, keeps inactive sessions still and clears timers", () => {
+it("rotates only while closed, keeps inactive sessions still and clears timers", () => {
   render();
-  open();
   const seen = new Set<string | null | undefined>();
   for (let i = 0; i < COMPOSER_TIPS.length; i++) {
-    seen.add(text());
     advance();
+    open();
+    seen.add(text());
+    close();
   }
   expect(seen.size).toBe(COMPOSER_TIPS.length);
-  expect(text()).toBe(COMPOSER_TIPS[0]);
   render(false);
-  advance();
-  expect(text()).toBe(COMPOSER_TIPS[0]);
+  expect(vi.getTimerCount()).toBe(0);
   act(() => root.render(null));
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -98,7 +110,7 @@ it("advances manually by click and animates the complete new tip", () => {
   act(() => icon().click());
   expect(text()).toBe(COMPOSER_TIPS[1]);
   expect(document.querySelector("[data-tip-fold-animate]")).not.toBeNull();
-  expect(document.querySelector("[data-tip-fold]")!.textContent!.replaceAll("\u00a0", " ")).toBe(
+  expect(document.querySelector("[data-tip-fold]")!.textContent!.replaceAll(" ", " ")).toBe(
     COMPOSER_TIPS[1],
   );
   act(() => icon().focus());
@@ -108,30 +120,30 @@ it("advances manually by click and animates the complete new tip", () => {
   expect(text()).toBe(COMPOSER_TIPS[2]);
 });
 
-it("pauses while the document is hidden and does no cycling after closing", () => {
+it("does not rotate while the document is hidden and resumes when visible again", () => {
   render();
-  open();
   const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
   act(() => document.dispatchEvent(new Event("visibilitychange")));
-  advance();
-  expect(text()).toBe(COMPOSER_TIPS[0]);
+  expect(vi.getTimerCount()).toBe(0);
   hidden.mockReturnValue(false);
   act(() => document.dispatchEvent(new Event("visibilitychange")));
+  expect(vi.getTimerCount()).toBe(1);
   advance();
+  open();
   expect(text()).toBe(COMPOSER_TIPS[1]);
-  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-  expect(text()).toBeUndefined();
-  expect(vi.getTimerCount()).toBe(0);
+  close();
+  expect(vi.getTimerCount()).toBe(1);
 });
 
 it("translates the help panel and manual action in every supported language", async () => {
   render();
-  open();
   for (const { value } of LANGUAGES) {
     await act(async () => setLanguagePreference(value));
     for (let index = 0; index < COMPOSER_TIPS.length; index++) {
+      open();
       expect(text()).toBeTruthy();
       if (value !== "en") expect(text()).not.toBe(COMPOSER_TIPS[index]);
+      close();
       advance();
     }
   }

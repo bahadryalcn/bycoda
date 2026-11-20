@@ -36,15 +36,17 @@ it("routes finite private owner delivery and epoch operations with separate capa
   for (const method of Object.keys(NATIVE_DELIVERY_RPC_SCHEMAS)) {
     const descriptor = getHostRpcMethod(method)!;
     expect(descriptor.requiredCapability).toBe(
-      method.startsWith("native.delivery.epochs.")
-        ? "native.delivery.epochs.v2"
-        : method.endsWith(".ack")
-          ? method.startsWith("native.buffers.")
-            ? "native.buffers.delivery.ack.v1"
-            : "native.services.delivery.ack.v1"
-          : method.startsWith("native.buffers.")
-            ? "native.buffers.delivery.v1"
-            : "native.services.delivery.v1",
+      method === "native.delivery.epochs.gap.resolve"
+        ? "native.delivery.epochs.gaps.v1"
+        : method.startsWith("native.delivery.epochs.")
+          ? "native.delivery.epochs.v2"
+          : method.endsWith(".ack")
+            ? method.startsWith("native.buffers.")
+              ? "native.buffers.delivery.ack.v1"
+              : "native.services.delivery.ack.v1"
+            : method.startsWith("native.buffers.")
+              ? "native.buffers.delivery.v1"
+              : "native.services.delivery.v1",
     );
     expect(descriptor.kind).toBe(
       method.endsWith(".status") || method.endsWith(".result.read") ? "query" : "control",

@@ -340,6 +340,12 @@ it.each([
         ),
       );
     await mount();
+    if (provider === "github" && kind === "pr") {
+      const pulls = container.querySelector<HTMLButtonElement>(
+        '[role="radio"][aria-label="Pull requests"]',
+      )!;
+      await act(async () => pulls.click());
+    }
     let card = inboxRow(container, "Notification indicator regression")!;
     expect(card).not.toBeNull();
     expect(card.getAttribute("aria-label")).toContain(", Unread");

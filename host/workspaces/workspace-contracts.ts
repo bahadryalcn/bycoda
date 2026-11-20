@@ -249,7 +249,10 @@ export interface WorkspaceRewindOperation extends WorkspaceOperationBase<
 /** S3. Opaque token is host-stored, short-lived and bound to every review field, including publication text. */
 export type BranchDeliveryPlan = {
   token: string;
+  /** Host wall clock end of the approval; clients use `expiresInMs` on their own clock. */
   expiresAt: number;
+  /** Lifetime of the approval from the Host's reading; never compared with a client clock. */
+  expiresInMs: number;
   workspaceId: string;
   expectedRevision: number;
   sourceBranchRef: string;

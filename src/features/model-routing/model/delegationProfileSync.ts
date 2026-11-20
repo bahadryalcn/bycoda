@@ -5,6 +5,7 @@ import {
   type ModelRoutingState,
 } from "../../../shared/model/host-contracts/model-routing";
 import { machineCapabilities } from "../../automations/public/hostMachines";
+import { retryOnLocalHostAvailable } from "../../connections/public/localHostRetry";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections/public/protocol";
 import { remoteRequest } from "../../connections/public/connections";
@@ -27,10 +28,16 @@ export function startDelegationProfileSync(): void {
   if (started) return;
   started = true;
   let timer: number | undefined;
+  // The renderer starts before a cold-booting local Host answers: retry on the short bounded
+  // backoff and when a machine reports recovery, instead of waiting out the steady poll.
+  const retry = retryOnLocalHostAvailable(() => {
+    void tick();
+  });
   const tick = async () => {
     if (running) return;
     running = true;
     window.clearTimeout(timer);
+    let answered = false;
     try {
       const machines = await invoke<RemoteMachine[]>("remote_machines");
       const machine = machines?.find(isLocalSyncMachine);
@@ -38,6 +45,7 @@ export function startDelegationProfileSync(): void {
       const state = ModelRoutingGetResultSchema.parse(
         await remoteRequest(machine.id, "modelRouting.get", {}),
       ).state;
+      answered = true;
       const identity = JSON.stringify([machine.id, state]);
       if (identity === lastState) return;
       refreshRendererDelegation(state.delegation);
@@ -46,6 +54,8 @@ export function startDelegationProfileSync(): void {
       // Keep renderer defaults and retry after transient Host/storage failures.
     } finally {
       running = false;
+      if (answered) retry.reset();
+      else retry.later();
       timer = window.setTimeout(() => {
         void tick();
       }, SYNC_INTERVAL_MS);

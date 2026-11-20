@@ -19,6 +19,7 @@ import {
   type TaskColumn,
   type TaskStatus,
 } from "../model/hostTasks";
+import { isConfigurationConflict } from "../model/configurationConflict";
 import type { SprintBoardController } from "../model/sprintClient";
 import { workspaceOperationKey, workspaceRequest } from "../../workspaces/public/workspaceClient";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
@@ -170,6 +171,8 @@ export function useTaskMutations({
       refresh().catch(report);
     } catch (reason: unknown) {
       setError(presentRemoteError(reason, { explicit: true }));
+      // The form keeps its draft; the board shows what the other client saved.
+      if (isConfigurationConflict(reason)) refresh().catch(report);
     } finally {
       setSaving(false);
     }
@@ -214,6 +217,7 @@ export function useTaskMutations({
       return true;
     } catch (reason: unknown) {
       setError(presentRemoteError(reason, { explicit: true }));
+      if (isConfigurationConflict(reason)) refresh().catch(report);
       return false;
     }
   };

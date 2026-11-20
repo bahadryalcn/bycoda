@@ -80,11 +80,19 @@ describe("voice tool discovery", () => {
       "dev sunucusunu başlat",
       "sunucuyu çalıştır",
       "ayağa kaldır",
+      "Pac-Man projesini yerelde ayağa kaldırma",
     ])
       expect(
         selectVoiceTools(catalog, { query }).tools.map((entry) => entry.action),
         query,
       ).toContain("devServers.start");
+  });
+
+  it("discovers the real Crew save tool when the owner asks to create a team", () => {
+    const catalog = readVoiceToolCatalog({ tools: voiceToolCatalog() });
+    const result = selectVoiceTools(catalog, { query: "ekip oluştur" });
+    expect(result.tools[0]?.action).toBe("crews.save");
+    expect(result.tools.some((entry) => entry.action === "crews.start")).toBe(false);
   });
 
   it("maps Turkish cancel, git and desktop speech to their features", () => {

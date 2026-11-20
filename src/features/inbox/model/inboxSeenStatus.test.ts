@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { readInboxSeenStorage } from "./inboxSeenStorage";
+import { mergeInboxSeenStorage, readInboxSeenStorage } from "./inboxSeenStorage";
 
 vi.mock("./inboxSeenStorage", () => ({
   readInboxSeenStorage: vi.fn(),
@@ -73,6 +73,25 @@ it("still exposes initialization, storage failure and explicit retry", async () 
   api.retryInboxSeenStorage();
   expect(api.inboxSeenStatus().state).toBe("loading");
   await vi.waitFor(() => expect(api.inboxSeenStatus().state).toBe("ready"));
+});
+
+it("migrates the readable legacy records and skips a malformed one instead of failing", async () => {
+  localStorage.setItem(
+    "bycoda.inboxSeen",
+    JSON.stringify({ seeded: true, items: { good: 5, bad: "oops" } }),
+  );
+  const api = await import("./inboxSeen");
+  await api.readInboxEntryUnseen(entry);
+  expect(api.inboxSeenStatus().state).toBe("ready");
+  expect(mergeInboxSeenStorage).toHaveBeenCalledWith({ seeded: false, items: { good: 5 } });
+});
+
+it("keeps surfacing a real storage failure when marking an item seen", async () => {
+  const api = await import("./inboxSeen");
+  vi.mocked(mergeInboxSeenStorage).mockRejectedValueOnce(new Error("disk full"));
+  const unrelated = api.markInboxItemSeen(entry);
+  await expect(unrelated).resolves.toBe(false);
+  expect(api.inboxSeenStatus()).toEqual({ state: "error", error: "disk full" });
 });
 
 it("keeps the initialized store ready while reconciling another window's history", async () => {

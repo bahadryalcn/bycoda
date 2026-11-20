@@ -51,6 +51,10 @@ export type EventRetentionResult = { totalBytes: number; deletedRows: number; se
 
 type Transaction = <T>(work: () => Promise<T>) => Promise<T>;
 
+/** Sessions summed per scope: one whole-table scan held the FIFO for minutes on a slow
+ * disk, so the size scan walks the primary key in slices other DB work interleaves with. */
+const SIZE_SCAN_SESSIONS = 8;
+
 /** Enforces `EVENT_BYTES_TOTAL` across sessions, one short transaction per trimmed
  * session. Kept revisions win over the cap: the result can stay slightly above it. */
 export async function capEventsGlobally(
@@ -58,13 +62,22 @@ export async function capEventsGlobally(
   transaction: Transaction,
   options: { cap?: number; keep?: number; stopped?: () => boolean } = {},
 ): Promise<EventRetentionResult> {
-  const rows = await db.storeScope(() =>
-    db
-      .prepare(
-        "SELECT session_id, SUM(octet_length(payload)) AS bytes FROM events GROUP BY session_id",
-      )
-      .all(),
-  );
+  // Sessions can gain events between slices; the pass is advisory and repeats hourly.
+  const rows: Array<Record<string, unknown>> = [];
+  for (let after = ""; ;) {
+    const slice = await db.storeScope(() =>
+      db
+        .prepare(
+          `SELECT session_id, SUM(octet_length(payload)) AS bytes FROM events
+           WHERE session_id>? GROUP BY session_id ORDER BY session_id LIMIT ?`,
+        )
+        .all(after, SIZE_SCAN_SESSIONS),
+    );
+    rows.push(...slice);
+    if (slice.length < SIZE_SCAN_SESSIONS) break;
+    if (options.stopped?.()) return { totalBytes: 0, deletedRows: 0, sessions: 0 };
+    after = String(slice[slice.length - 1].session_id);
+  }
   const sizes = rows.map((row) => Number(row.bytes));
   const totalBytes = sizes.reduce((sum, size) => sum + size, 0);
   const budget = eventBudget(sizes, options.cap ?? EVENT_BYTES_TOTAL);

@@ -326,7 +326,7 @@ export function useOpenSessionActions({
       if (wanted.length > SIDE_BY_SIDE_LIMIT) {
         toast.show({
           tone: "warning",
-          message: t("Select at most {p0} conversations to open side by side.", {
+          message: t("Select at most {p0} sessions to open side by side.", {
             p0: SIDE_BY_SIDE_LIMIT,
           }),
         });

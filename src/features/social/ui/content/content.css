@@ -31,6 +31,7 @@
 
 /* One outer frame; day columns and month cells are separated by hairlines, not boxes. */
 .content-calendar {
+  container: content-calendar / inline-size;
   overflow: hidden;
   min-width: 0;
 }
@@ -93,6 +94,36 @@
   block-size: 1.5rem;
 }
 
+.content-calendar[data-view="month"] .content-day-weekday {
+  display: none;
+}
+
+/* Each day needs room for its post chips. Stack both views before seven columns become too narrow. */
+@container content-calendar (max-width: 56rem) {
+  .content-calendar .content-calendar-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .content-calendar[data-view] .content-day {
+    min-block-size: 0;
+  }
+  .content-calendar .content-day {
+    --surface-frame-stacked: 1;
+    --surface-frame-inline-start-visible: 0;
+  }
+  .content-calendar .content-day-title {
+    flex-direction: row;
+    align-items: baseline;
+  }
+  .content-calendar .content-calendar-weekdays,
+  .content-calendar[data-view="month"] .content-day-number {
+    display: none;
+  }
+  .content-calendar[data-view="month"] .content-day-weekday {
+    display: inline;
+    padding-inline: var(--space-1);
+  }
+}
+
 /* Post chip: the surface is the ActionHost wrapper; the item Button inside only supplies the click
    target. Button adds wrapper spans around its children; they must fill the chip and may shrink, or
    long text pushes into the next day. The chip body and everything inside it keep their own layout. */
@@ -146,10 +177,6 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-}
-
-.content-entry-more {
-  padding-inline: 0.5rem;
 }
 
 .content-list {
@@ -411,11 +438,6 @@
 }
 .content-list {
   container-type: inline-size;
-}
-.content-draft-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 .content-editor-body {

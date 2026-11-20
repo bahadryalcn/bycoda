@@ -1,6 +1,7 @@
 use super::file_log::*;
 use super::logs::{collect_from, host_marker_path, Sources};
 use log::Level;
+use std::time::{Duration, Instant};
 use time::macros::datetime;
 
 #[test]
@@ -60,6 +61,54 @@ fn rotation_keeps_two_older_files() {
     let newest = std::fs::read_to_string(&base).unwrap();
     assert!(newest.contains("line number 7"));
     assert!(std::fs::metadata(&base).unwrap().len() <= 80);
+}
+
+#[test]
+fn locked_rotation_keeps_every_line_and_waits_out_the_backoff() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("bycoda.log");
+    // A directory where the second rotated file belongs makes the rotation fail on every platform.
+    let blocker = rotated_path(&base, 2);
+    std::fs::create_dir(&blocker).unwrap();
+    let start = Instant::now();
+    let mut file = RotatingFile::new(base.clone(), 40);
+    for index in 0..8 {
+        file.write_line_at(&format!("line number {index} padding"), start)
+            .unwrap();
+    }
+    let kept = std::fs::read_to_string(&base).unwrap();
+    for index in 0..8 {
+        assert!(kept.contains(&format!("line number {index} padding")));
+    }
+    assert!(!rotated_path(&base, 1).exists());
+
+    // Inside the backoff window no rotation is attempted, even though the blocker is gone.
+    std::fs::remove_dir(&blocker).unwrap();
+    file.write_line_at("inside the backoff", start + Duration::from_secs(30))
+        .unwrap();
+    assert!(!rotated_path(&base, 1).exists());
+
+    file.write_line_at("after the backoff", start + ROTATE_RETRY)
+        .unwrap();
+    assert!(rotated_path(&base, 1).exists());
+    let newest = std::fs::read_to_string(&base).unwrap();
+    assert_eq!(newest, "after the backoff\n");
+    let older = std::fs::read_to_string(rotated_path(&base, 1)).unwrap();
+    assert!(older.contains("line number 0 padding"));
+    assert!(older.contains("inside the backoff"));
+}
+
+#[test]
+fn each_line_is_written_whole_with_its_newline() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("bycoda.log");
+    let mut file = RotatingFile::new(base.clone(), MAX_BYTES);
+    file.write_line("first\n  continued").unwrap();
+    file.write_line("second").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&base).unwrap(),
+        "first\n  continued\nsecond\n"
+    );
 }
 
 #[test]

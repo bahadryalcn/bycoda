@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import {
@@ -8,6 +9,7 @@ import {
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
+import { useMachineAvailability } from "../../connections/public/machineAvailability";
 import { sameConflicts } from "../model/conflictSection";
 import { gitPanelRuntime } from "../model/gitPanelState";
 import {
@@ -39,7 +41,7 @@ export function announceGitChange(cwd: string, scope: GitChangeScope, hint: GitC
 
 export function useDiffIndex(
   cwd: string,
-  enabled: boolean,
+  wanted: boolean,
   polling: boolean,
   panel: RefObject<HTMLDivElement | null>,
 ): {
@@ -54,7 +56,10 @@ export function useDiffIndex(
   // A remote project keeps its last good index when a load fails; the failure
   // is shown by `ChangedFiles`.
   const remote = isRemoteProjectPath(cwd);
-  const [index, setIndex] = useState<GitDiffIndex | null>(() => cachedIndex(cwd));
+  // A machine that cannot be asked gets no reads; they start once it is available again.
+  const available = useMachineAvailability(cwd).available;
+  const enabled = wanted && available;
+  const [index, setIndex] = useState<GitDiffIndex | null>(() => peekDiffIndex(cwd));
   const [nonce, setNonce] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,10 +96,12 @@ export function useDiffIndex(
 
   useEffect(() => {
     if (!enabled || !cwd || cwd === "~") {
+      // The read that met the outage failed; its retry backoff must not delay the recovery read.
+      if (!available) failedRead.current = null;
       return;
     }
     const releaseCache = indexByCwd.retain(cwd);
-    const cached = cachedIndex(cwd);
+    const cached = peekDiffIndex(cwd);
     if (cached && !sameIndex(indexRef.current, cached)) {
       indexRef.current = cached;
       setIndex(cached);
@@ -165,7 +172,7 @@ export function useDiffIndex(
         if (remote) {
           reportRemoteLoad(cwd, "changes", error);
         } else {
-          setError(error instanceof Error ? error.message : String(error));
+          setError(errorText(error));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -230,7 +237,7 @@ export function useDiffIndex(
       unsubGit();
       releaseCache();
     };
-  }, [cwd, enabled, nonce, remote, polling, panel]);
+  }, [cwd, enabled, available, nonce, remote, polling, panel]);
 
   return { index, reload, showOptimistic, error, loading, checking: enabled && checking };
 }
@@ -249,7 +256,7 @@ function sameRefs(prev: GitDiffIndex, next: GitDiffIndex): boolean {
   );
 }
 
-function cachedIndex(cwd: string | undefined): GitDiffIndex | null {
+export function peekDiffIndex(cwd: string | undefined): GitDiffIndex | null {
   if (!cwd || cwd === "~") return null;
   return indexByCwd.get(cwd) ?? null;
 }

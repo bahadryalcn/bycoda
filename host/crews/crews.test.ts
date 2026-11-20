@@ -38,6 +38,11 @@ async function setup() {
   const sourceRows: HostTask[] = [];
   const tasks = {
     list: () => [...rows, ...sourceRows],
+    get: async (id: string) => [...rows, ...sourceRows].find((task) => task.id === id),
+    listCrewRun: async (runId: string, projectId: string) =>
+      [...rows, ...sourceRows].filter(
+        (task) => task.crewRunId === runId && task.projectId === projectId,
+      ),
     reserveCrewExecution: vi.fn(async (id: string, runId: string) => {
       sourceRows.find((task) => task.id === id)!.crewExecutionId = runId;
     }),
@@ -582,6 +587,12 @@ describe("host crews", () => {
     task.sessionId = "member";
     task.status = "review";
     task.verification = { review: { verdict: "pass", note: "Pass", sessionId: "reviewer" } };
+    await f.store.db.exec(
+      "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    );
+    await f.store.db
+      .prepare("INSERT INTO tasks (id, value) VALUES (?, ?)")
+      .run(task.id, JSON.stringify(task));
     await f.service.ownerDirective({
       type: "send",
       commandId: "owner-change",

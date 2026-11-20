@@ -17,6 +17,8 @@ let started = 0;
 let applied = 0;
 /** The read that was current when the last native focus payload arrived. */
 let focusPayloadAt = -1;
+/** The newest read; a superseded read settles with it. */
+let latestRead: Promise<NativeWindowState | null> = Promise.resolve(null);
 let inFlight = false;
 let pending = false;
 let releaseNative: (() => void) | undefined;
@@ -47,10 +49,17 @@ function settle<T>(result: PromiseSettledResult<T>, fallback: T): T {
 /**
  * Reads every field once and publishes a change. The latest read wins; a field
  * whose read fails keeps its last value. A native focus payload that arrived after
- * this read started is newer than the focus it read, so it is kept.
+ * this read started is newer than the focus it read, so it is kept. A read that a
+ * newer one superseded settles with that newer read, so a caller that awaits it
+ * always sees the state the latest read applied.
  */
-export async function refreshWindowState(): Promise<NativeWindowState | null> {
-  const sequence = ++started;
+export function refreshWindowState(): Promise<NativeWindowState | null> {
+  const read = readWindowState(++started);
+  latestRead = read;
+  return read;
+}
+
+async function readWindowState(sequence: number): Promise<NativeWindowState | null> {
   const win = getCurrentWindow();
   // Start each read now; one that throws (an unsupported query) only loses its field.
   const read = (query: () => Promise<boolean>) => {
@@ -67,7 +76,7 @@ export async function refreshWindowState(): Promise<NativeWindowState | null> {
     read(() => win.isMinimized()),
     read(() => win.isFocused()),
   ]);
-  if (sequence !== started) return state;
+  if (sequence !== started) return latestRead;
   if (results.every((result) => result.status === "rejected"))
     throw (results[0] as PromiseRejectedResult).reason;
   const previous = state;

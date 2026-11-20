@@ -15,6 +15,8 @@ export class SocialJobArchive {
       CREATE INDEX IF NOT EXISTS social_jobs_cold_campaign ON social_jobs_cold(json_extract(value,'$.campaignId'),status,scheduled_at,id);
       CREATE INDEX IF NOT EXISTS social_jobs_cold_platform ON social_jobs_cold(account_id,json_extract(value,'$.platformId'));
       CREATE INDEX IF NOT EXISTS social_jobs_cold_program ON social_jobs_cold(account_id,json_extract(value,'$.programId'),json_extract(value,'$.dispatchedAt'));
+      CREATE INDEX IF NOT EXISTS social_jobs_cold_rule_created ON social_jobs_cold(json_extract(value,'$.ruleId'),json_extract(value,'$.createdAt'),status);
+      CREATE INDEX IF NOT EXISTS social_jobs_cold_rule_dispatched ON social_jobs_cold(json_extract(value,'$.ruleId'),json_extract(value,'$.dispatchedAt'),id);
       CREATE VIEW IF NOT EXISTS social_jobs_all AS SELECT * FROM social_jobs UNION ALL SELECT * FROM social_jobs_cold;
     `);
   }

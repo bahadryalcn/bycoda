@@ -10,6 +10,7 @@ mod commit;
 mod connection;
 mod demand;
 pub(crate) mod diagnostics;
+pub(crate) mod event_batch;
 pub(crate) mod local_endpoints;
 pub(crate) mod native_profile;
 mod native_status;
@@ -25,7 +26,6 @@ use std::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc, Arc, Mutex,
     },
-    thread,
     time::{Duration, Instant},
 };
 use tokio::sync::{mpsc as channel, Notify};
@@ -83,6 +83,7 @@ fn native_delivery_epoch_method(method: &str) -> bool {
             | "native.delivery.epochs.status"
             | "native.delivery.epochs.compact"
             | "native.delivery.epochs.close"
+            | "native.delivery.epochs.gap.resolve"
     )
 }
 
@@ -922,6 +923,23 @@ impl PendingBulk {
     }
 }
 
+/// Blocks for a native reply. Enqueueing from a runtime worker puts the woken route worker in
+/// that thread's LIFO slot, which other workers cannot steal; a plain blocking wait there
+/// strands the socket loop (no reply read, no Host ping answered) until the wait times out.
+/// `block_in_place` hands this worker's queue to another thread for the duration.
+fn wait_for_reply<T>(
+    rx: &mpsc::Receiver<T>,
+    budget: Duration,
+) -> Result<T, mpsc::RecvTimeoutError> {
+    let on_multi_thread_runtime = tokio::runtime::Handle::try_current()
+        .is_ok_and(|handle| handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+    if on_multi_thread_runtime {
+        tokio::task::block_in_place(|| rx.recv_timeout(budget))
+    } else {
+        rx.recv_timeout(budget)
+    }
+}
+
 impl PendingRequest {
     fn wait_budget_at(&self, now: Instant) -> Duration {
         self.absolute_deadline.map_or(self.wait, |deadline| {
@@ -930,7 +948,7 @@ impl PendingRequest {
     }
 
     pub fn wait(self) -> Result<WsReply, WsFailure> {
-        match self.rx.recv_timeout(self.wait_budget_at(Instant::now())) {
+        match wait_for_reply(&self.rx, self.wait_budget_at(Instant::now())) {
             Ok(result) => result.and_then(WsReply::disclose),
             Err(_) => {
                 let ids = self
@@ -1031,35 +1049,19 @@ impl HostWsBroker {
             shared: shared.clone(),
             tx,
         });
-        thread::Builder::new()
-            .name("host-ws".into())
-            .spawn(move || {
-                // Retire the handle even if the runtime or worker panics.
-                struct RetireWorker(Arc<Shared>);
-                impl Drop for RetireWorker {
-                    fn drop(&mut self) {
-                        self.0.stop.store(true, Ordering::Release);
-                    }
+        // The route worker is a task on Tauri's shared async runtime. Per-route state
+        // (stop flag, permits, consumers, pending requests) stays in `shared`, so the
+        // route still retires alone, and its guard still runs if the worker panics.
+        tauri::async_runtime::spawn(async move {
+            struct RetireWorker(Arc<Shared>);
+            impl Drop for RetireWorker {
+                fn drop(&mut self) {
+                    self.0.stop.store(true, Ordering::Release);
                 }
-                let _retire = RetireWorker(shared.clone());
-                match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(runtime) => {
-                        runtime.block_on(connection::worker(shared.clone(), contracts, rx))
-                    }
-                    Err(_) => {
-                        shared.state(0, "blocked", Some("internal"));
-                    }
-                }
-            })
-            .map_err(|_| {
-                WsFailure::local(
-                    "RPC_WS_UNAVAILABLE",
-                    "Native Host connection could not start",
-                )
-            })?;
+            }
+            let _retire = RetireWorker(shared.clone());
+            connection::worker(shared, contracts, rx).await;
+        });
         connections.insert(route.key.clone(), handle.clone());
         Ok(handle)
     }

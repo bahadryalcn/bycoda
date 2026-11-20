@@ -17,6 +17,7 @@ import { createManagedWorkspaceRuntime } from "./managed-workspace-runtime";
 import { createManagedNativeRewind } from "./managed-native-rewind";
 import * as workspaceRetention from "../workspaces/workspace-retention";
 import { DEFAULT_WORKSPACE_POLICY } from "../workspaces/workspace-contracts";
+import { withHostGitMutation } from "../git/git-mutations";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -118,6 +119,26 @@ it.each([
     await expect(f.runtime.registry.prepare(f.request)).rejects.toThrow(reason);
   },
 );
+
+it("names each startup recovery step so a stalled boot shows which one holds it", async () => {
+  // Boot once blocked 93 s inside recovery-managed without saying which step ran.
+  const f = await fixture();
+  const steps: string[] = [];
+  const step = <T>(name: string, work: () => Promise<T>) => {
+    steps.push(name);
+    return work();
+  };
+  await f.runtime.recover(undefined, step);
+  expect(steps).toEqual([
+    "buffer-retention",
+    "startup-turns",
+    "activities",
+    "rewind",
+    "operations",
+    "orphan-reservations",
+    "startup-turns-final",
+  ]);
+});
 
 it("prepares another worktree when an existing workspace contains a source junction", async () => {
   const f = await fixture();
@@ -697,6 +718,82 @@ it("recovers an interrupted materialization before enabling managed writes witho
   expect((await f.runtime.registry.listOperations(planned.id))[0].phase).toBe("complete");
   expect(await f.runtime.registry.prepare(f.request)).toMatchObject({ workspace: recovered });
 });
+
+it("leaves a creation blocked before Git ran to its owner instead of retrying it during startup", async () => {
+  // Boot retried such a creation every time under the repository Git lock and held the
+  // Host's listen 20-90 s, only to fail again.
+  const f = await fixture();
+  await f.runtime.recover();
+  vi.spyOn(workspaceRetention, "measureWorkspaceStorage").mockResolvedValueOnce(
+    workspaceRetention.evaluateWorkspaceStorage(join(f.root, "worktrees"), {
+      materializedBytes: 1,
+      freeBytes: 0,
+      sharedCacheBytes: null,
+      recoveryBytes: null,
+    }),
+  );
+  await expect(f.runtime.registry.prepare(f.request)).rejects.toThrow(
+    "minimum free disk space not met",
+  );
+  const [operation] = await f.runtime.registry.listOperations();
+  expect(operation).toMatchObject({ kind: "create", phase: "blocked", resumePhase: "registered" });
+  // The next Host process: same data, fresh service graph.
+  const store = new HostStore(join(f.root, "private", "host.db"));
+  const engine = new HostEngine(store, {
+    codex: {
+      send: vi.fn(async () => {}),
+      bind: () => {},
+      stop: async () => {},
+      cancel: async () => {},
+      approve: () => {},
+      answer: () => {},
+    },
+  });
+  const boot = createManagedWorkspaceRuntime(store, engine);
+  cleanups.push(async () => {
+    boot.retention.stop();
+    await engine.close();
+    await store.close();
+  });
+  const retry = vi.spyOn(boot.registry, "recoverCreate");
+  let release!: () => void;
+  let held!: Promise<void>;
+  await new Promise<void>((acquired) => {
+    held = withHostGitMutation(
+      f.root,
+      () =>
+        new Promise<void>((done) => {
+          release = done;
+          acquired();
+        }),
+    );
+  });
+  try {
+    const results = await Promise.race([
+      boot.recover(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("startup waited on the repository Git lock")), 10_000),
+      ),
+    ]);
+    expect(retry).not.toHaveBeenCalled();
+    expect(results).toEqual([
+      {
+        operationId: operation.id,
+        error: expect.stringContaining("minimum free disk space not met"),
+      },
+    ]);
+  } finally {
+    release();
+    await held;
+  }
+  // Still recorded, fenced and offered to the owner's cleanup.
+  expect(await boot.registry.getOperation(operation.id)).toEqual(operation);
+  await expect(boot.assertWritable(operation.workspaceId)).rejects.toThrow(/recovery/i);
+  expect(await boot.abandonUnmaterializedCreate(operation.workspaceId, false)).toMatchObject({
+    id: operation.workspaceId,
+    directoryState: "blocked",
+  });
+}, 60_000);
 
 it("accepts only transport-issued owner proof and fences every start while a workspace is reserved", async () => {
   const f = await fixture();

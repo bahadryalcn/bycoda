@@ -1,6 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useState } from "react";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useT } from "../../../shared/i18n";
@@ -130,10 +131,13 @@ function SwitchState({ state, previous = false }: { state: ModelSwitchState; pre
 function StepNote({ step }: { step: ModelSwitchStep }) {
   const t = useT();
   if (step.note === "summary") {
+    const label = t("Summary goes with next message");
     return (
-      <Text size="caption" tone="warning" truncate className="shrink-0">
-        {t("Summary goes with next message")}
-      </Text>
+      <OverflowTooltip label={label}>
+        <Text size="caption" tone="warning" truncate className="min-w-0 max-w-[40%] shrink">
+          {label}
+        </Text>
+      </OverflowTooltip>
     );
   }
   if (step.note === "deferred") {
@@ -174,7 +178,7 @@ function SwitchHistory({ steps }: { steps: ModelSwitchStep[] }) {
             tone="secondary"
             className="flex min-w-0 items-center gap-1.5 py-0.5"
           >
-            <Text size="caption" tone="muted" className="w-11 shrink-0 font-mono">
+            <Text size="caption" tone="muted" className="min-w-[8ch] shrink-0 text-end font-mono">
               {index === 0 ? "" : <Timestamp value={step.at} format="time" tooltip={false} />}
             </Text>
             <HarnessIcon harness={step.harness} className="size-3.5 shrink-0" />

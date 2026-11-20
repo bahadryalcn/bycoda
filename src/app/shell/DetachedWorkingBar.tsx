@@ -1,3 +1,5 @@
+import { errorText } from "../../shared/lib/errors";
+import { truncateGraphemes } from "../../shared/lib/text/truncate";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
@@ -20,14 +22,49 @@ export function detachedAgentStatus(agent: LiveAgent, t: (text: string) => strin
   return agent.waiting ? t("Waiting") : t("Working");
 }
 
+export type DetachedBarStatus = "needsInput" | "working" | "failed" | "waiting" | "done";
+
+/** One aggregate state for the bar caption and dot. Attention and live work rank first;
+ * a finished set (or none) reads as done. */
+export function detachedBarStatus(agents: readonly LiveAgent[]): DetachedBarStatus {
+  if (agents.some((agent) => agent.needsApproval)) return "needsInput";
+  if (agents.some((agent) => !agent.done && !agent.waiting)) return "working";
+  if (agents.some((agent) => agent.issue === "failed")) return "failed";
+  if (agents.some((agent) => agent.waiting)) return "waiting";
+  return "done";
+}
+
+function detachedBarStatusLabel(status: DetachedBarStatus, t: (text: string) => string): string {
+  switch (status) {
+    case "needsInput":
+      return t("Needs input");
+    case "working":
+      return t("Working");
+    case "failed":
+      return t("Failed");
+    case "waiting":
+      return t("Waiting");
+    case "done":
+      return t("Done");
+  }
+}
+
 /** The working picker is navigation, not a terminal preview. Never put tool
  * command text in its rows or tooltips. */
 export function detachedAgentTitle(title: string, fallback: string): string {
   const normalized = title.replace(/\s+/g, " ").trim() || fallback;
-  return normalized.length > 72 ? `${normalized.slice(0, 71)}…` : normalized;
+  return truncateGraphemes(normalized, 72);
 }
 
 const interactive = "button, a, input, select, textarea, [role=menu], [data-no-window-drag]";
+
+const barTone = {
+  needsInput: "warning",
+  working: "accent",
+  failed: "danger",
+  waiting: "secondary",
+  done: "muted",
+} as const satisfies Record<DetachedBarStatus, string>;
 
 export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   const t = useT();
@@ -38,6 +75,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   const trigger = useRef<HTMLButtonElement>(null);
   const dragCleanup = useRef<(() => void) | undefined>(undefined);
   const count = agents.length;
+  const status = detachedBarStatus(agents);
   const summary =
     count === 1
       ? t("{p0} session", { p0: formatNumber(count) })
@@ -92,9 +130,9 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
     kind: "item",
     id: agent.id,
     label: detachedAgentTitle(agent.title, t("Untitled session")),
-    description: `${detachedAgentStatus(agent, t)}${
-      agent.ownerWindowLabel ? t(" · Other window") : t(" · This window")
-    }`,
+    description: t(agent.ownerWindowLabel ? "{p0} · Other window" : "{p0} · This window", {
+      p0: detachedAgentStatus(agent, t),
+    }),
     icon: (
       <StatusDot
         tone={
@@ -123,9 +161,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         if (event.target instanceof Element && event.target.closest(interactive)) return;
         dragCleanup.current?.();
         setWindowError(null);
-        void toggleWindowMaximize().catch((error) =>
-          setWindowError(error instanceof Error ? error.message : String(error)),
-        );
+        void toggleWindowMaximize().catch((error) => setWindowError(errorText(error)));
       }}
       {...surfaceAttributes(
         { frame: "pane", edge: "bottom" },
@@ -133,7 +169,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
       )}
     >
       <Text size="micro" tone="secondary">
-        {t("Working")}
+        {detachedBarStatusLabel(status, t)}
       </Text>
       <Button
         variant="ghost"
@@ -154,15 +190,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         }}
         className="flex max-w-56 items-center gap-2"
       >
-        <StatusDot
-          tone={
-            agents.some((agent) => agent.needsApproval)
-              ? "warning"
-              : agents.some((agent) => !agent.done)
-                ? "accent"
-                : "muted"
-          }
-        />
+        <StatusDot tone={barTone[status]} />
         <Text size="inherit" tone="inherit" truncate>
           {summary}
         </Text>

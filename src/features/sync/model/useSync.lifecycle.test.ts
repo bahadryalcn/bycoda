@@ -19,6 +19,7 @@ vi.mock("./syncClient", async (original) => ({
   startSyncLoop: () => ({ nudge: mocks.nudge, recover: mocks.recover, stop: mocks.stop }),
 }));
 
+import { CYCLE_INTERVAL_MS } from "./syncClient";
 import { startAppSync } from "./useSync";
 import { notifyRemoteRecovered, resetRemoteHealth } from "../../connections/model/remoteHealth";
 
@@ -80,6 +81,34 @@ it("coalesces overlapping wake discoveries and nudges newly discovered machines"
   finish(machines);
   await flush();
   expect(mocks.nudge).toHaveBeenCalled();
+});
+
+it("pauses the 30 s machine refresh while hidden and catches up when the window returns", async () => {
+  let hidden = true;
+  const hiddenSpy = vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  try {
+    stop = startAppSync();
+    await flush();
+    mocks.invoke.mockClear();
+    mocks.nudge.mockClear();
+
+    await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS * 3);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+
+    // Visible again: the wake refreshes machines and nudges the loop right away.
+    hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flush();
+    expect(mocks.invoke).toHaveBeenCalledWith("remote_machines");
+    expect(mocks.nudge).toHaveBeenCalled();
+
+    // The periodic refresh resumes once visible.
+    mocks.invoke.mockClear();
+    await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
+    expect(mocks.invoke).toHaveBeenCalled();
+  } finally {
+    hiddenSpy.mockRestore();
+  }
 });
 
 it("ignores an in-flight recovery refresh after shutdown", async () => {

@@ -220,7 +220,8 @@ it.each([
   act(() => root.render(createElement(DateTimePicker, { value: "2028-02-20T18:30", onChange })));
   const leapDay = day("2028-02-29");
   expect(leapDay.getAttribute("aria-label")).toBe(label);
-  expect(leapDay.title).toBe(label);
+  // #1043 keeps the accessible date while removing the duplicate native tooltip.
+  expect(leapDay.hasAttribute("title")).toBe(false);
   act(() => leapDay.click());
   expect(onChange).toHaveBeenCalledWith("2028-02-29T18:30");
 });

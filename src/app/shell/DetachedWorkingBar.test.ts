@@ -42,7 +42,13 @@ vi.mock("../../shared/ui/Popover", async () => ({
       children,
     ),
 }));
-import { DetachedWorkingBar, detachedAgentStatus } from "./DetachedWorkingBar";
+import { graphemeLength } from "../../shared/lib/text/truncate";
+import {
+  DetachedWorkingBar,
+  detachedAgentStatus,
+  detachedAgentTitle,
+  detachedBarStatus,
+} from "./DetachedWorkingBar";
 
 const agent = (id: string, overrides: Partial<LiveAgent> = {}): LiveAgent => ({
   id,
@@ -206,6 +212,26 @@ describe("detached working header", () => {
     expect(native.startDragging).not.toHaveBeenCalled();
     expect(container.querySelector("[role=menu]")).toBeNull();
   });
+
+  it("captions the bar with the aggregate state of finished and failed sessions", () => {
+    render([agent("one", { done: true }), agent("two", { done: true, issue: "failed" })]);
+    expect(container.querySelector("[data-detached-working-bar] > span")!.textContent).toBe(
+      "Failed",
+    );
+    render([agent("one", { done: true })]);
+    expect(container.querySelector("[data-detached-working-bar] > span")!.textContent).toBe("Done");
+  });
+
+  it("composes each row description from one translated status template", () => {
+    render([
+      agent("one", { needsApproval: true }),
+      agent("two", { done: true, ownerWindowLabel: "window-2" }),
+    ]);
+    act(() => container.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!.click());
+    const items = container.querySelectorAll<HTMLButtonElement>("[role=menuitem]");
+    expect(items[0].textContent).toContain("Needs input · This window");
+    expect(items[1].textContent).toContain("Done · Other window");
+  });
 });
 
 describe("detachedAgentStatus", () => {
@@ -219,5 +245,51 @@ describe("detachedAgentStatus", () => {
     );
     expect(detachedAgentStatus(agent("a", { waiting, done: true }), t)).toBe("Done");
     expect(detachedAgentStatus(agent("a", { waiting, issue: "failed" }), t)).toBe("Failed");
+  });
+});
+
+describe("detachedAgentTitle", () => {
+  it("truncates by grapheme so a multi-code-unit emoji is never split", () => {
+    // Each family emoji is one grapheme but five UTF-16 code units.
+    const emoji = "🧑‍💻";
+    const title = detachedAgentTitle(emoji.repeat(80), "Untitled session");
+    expect(graphemeLength(title)).toBe(72);
+    expect(title).toBe(`${emoji.repeat(71)}…`);
+  });
+
+  it("keeps short titles and falls back when the title is blank", () => {
+    expect(detachedAgentTitle("  Fix   bug \n now ", "Untitled session")).toBe("Fix bug now");
+    expect(detachedAgentTitle("   ", "Untitled session")).toBe("Untitled session");
+  });
+});
+
+describe("detachedBarStatus", () => {
+  const waiting = { kind: "tasks", count: 1 } as const;
+  it("reports the aggregate state instead of always reading Working", () => {
+    expect(detachedBarStatus([])).toBe("done");
+    expect(detachedBarStatus([agent("a", { done: true })])).toBe("done");
+    expect(detachedBarStatus([agent("a", { done: true }), agent("b", { done: true })])).toBe(
+      "done",
+    );
+    expect(detachedBarStatus([agent("a", { waiting })])).toBe("waiting");
+    expect(detachedBarStatus([agent("a", { done: true, issue: "failed" })])).toBe("failed");
+    expect(
+      detachedBarStatus([agent("a", { done: true }), agent("b", { issue: "failed", done: true })]),
+    ).toBe("failed");
+    expect(detachedBarStatus([agent("a")])).toBe("working");
+    expect(detachedBarStatus([agent("a", { issue: "retrying" })])).toBe("working");
+  });
+
+  it("ranks needs input above working, working above failed, failed above waiting and done", () => {
+    expect(detachedBarStatus([agent("a"), agent("b", { needsApproval: true })])).toBe("needsInput");
+    expect(detachedBarStatus([agent("a", { done: true, issue: "failed" }), agent("b")])).toBe(
+      "working",
+    );
+    expect(
+      detachedBarStatus([agent("a", { waiting }), agent("b", { done: true, issue: "failed" })]),
+    ).toBe("failed");
+    expect(detachedBarStatus([agent("a", { waiting }), agent("b", { done: true })])).toBe(
+      "waiting",
+    );
   });
 });

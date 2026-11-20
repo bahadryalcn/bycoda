@@ -24,6 +24,7 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
+        "installerHooks": "installer-hooks.nsh",
         "sidebarImage": "icons/installer-sidebar.bmp",
         "installerIcon": "icons/icon.ico"
       }

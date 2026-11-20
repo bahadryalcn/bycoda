@@ -134,6 +134,7 @@ import { assertShellOwnershipAvailable, reserveShellOwnership } from "./executio
 import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
 import { prepareHostSkillPrompt } from "./skills/prompt-skills";
 import { DELEGATION_PARENT_KEY } from "../src/shared/model/host-contracts/delegation";
+import { delegatedChatOnlyHistory } from "./delegation/child-native";
 import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
 import { bykitHint } from "./bykit/bykit-hint";
 import {
@@ -2692,7 +2693,7 @@ export class HostEngine {
             } else if (command.type === "draft") {
               if (value.status === "running" || value.session.blocks.some((block) => block.draft))
                 throw new Error("This session cannot save another draft right now");
-              const attachments = resolveAttachments(this.store, command.attachments ?? []);
+              const attachments = await resolveAttachments(this.store, command.attachments ?? []);
               value = {
                 ...value,
                 session: {
@@ -2824,7 +2825,7 @@ export class HostEngine {
               const attachments =
                 command.type === "send"
                   ? (draft?.attachments ??
-                    resolveAttachments(this.store, command.attachments ?? []))
+                    (await resolveAttachments(this.store, command.attachments ?? [])))
                   : [];
               if (
                 attachments.some(
@@ -2893,9 +2894,9 @@ export class HostEngine {
                 handoffText = handoff?.text;
                 handoffFrom = handoff?.from as RemoteProvider | undefined;
                 if (handoffText) {
-                  const archive = new HandoffHistoryStore(
+                  const archive = await new HandoffHistoryStore(
                     dirname(this.store.attachmentDir),
-                  ).saveSync(handoffHistory(value.session));
+                  ).save(handoffHistory(value.session));
                   // Budget the actual outgoing request once. Skill bodies and runtime
                   // hints are model input too, but must not be added to the request twice.
                   const request = codexGoal ? command.text : withShellContext(shellRuns, turnText);
@@ -3224,7 +3225,7 @@ export class HostEngine {
                 if (!provider.steer) throw new Error("This provider cannot steer an active turn");
                 if (!active || active.cancelled || active.ending)
                   throw new Error("This turn was stopped");
-                const attachments = resolveAttachments(this.store, command.attachments ?? []);
+                const attachments = await resolveAttachments(this.store, command.attachments ?? []);
                 const owner = value.session.blocks[executionUserIndex(value.session.blocks)];
                 value = {
                   ...value,
@@ -4436,7 +4437,11 @@ export class HostEngine {
               contextEvents.complete();
               forgetRuntimeHint(session.id);
             } else {
+              const chatOnlyHistory = delegatedChatOnlyHistory(session, userBlockId);
+              if (chatOnlyHistory !== undefined && attachments?.length)
+                throw new Error("This chat-only provider accepts text without attachments.");
               const preparedPrompt =
+                chatOnlyHistory === undefined &&
                 !promptPrepared &&
                 (prompt.includes("bycoda-citation:") ||
                   /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt)) &&
@@ -4454,7 +4459,10 @@ export class HostEngine {
                 harness: session.harness,
                 providerAccountId: session.providerAccountId,
               };
-              const hint = pendingRuntimeHint(session.id, thread, await this.turnHint(session));
+              const hint =
+                chatOnlyHistory === undefined
+                  ? pendingRuntimeHint(session.id, thread, await this.turnHint(session))
+                  : "";
               const codex = session.harness === "codex";
               // Codex parses /goal only as the first token; carry replayed
               // context as runtime instructions instead of prefixing it.
@@ -4476,6 +4484,7 @@ export class HostEngine {
               };
               const providerInput: SendTurnInput = {
                 ...input,
+                ...(chatOnlyHistory === undefined ? {} : { chatOnlyHistory }),
                 onAccepted: () => {
                   markHint();
                   this.queueEvent(session.id, acceptReplay, active);

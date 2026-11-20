@@ -22,8 +22,9 @@ import { useMachineRouteSummary } from "./useMachineRouteSummary";
 import { isLocalSyncMachine } from "../model/localSync";
 import {
   isMachineEnabled,
+  isMachineTurningOff,
   setMachineEnabled,
-  subscribeDisabledMachines,
+  subscribeMachineSwitch,
 } from "../model/machineEnabled";
 import {
   MACHINE_STATUS_TONE,
@@ -49,9 +50,14 @@ function useMachineConnection(machine: RemoteMachine, probed?: MachineProbe) {
     () => readRemoteConnection(environmentId),
   );
   const enabled = useSyncExternalStore(
-    subscribeDisabledMachines,
+    subscribeMachineSwitch,
     () => isMachineEnabled(environmentId),
     () => true,
+  );
+  const turningOff = useSyncExternalStore(
+    subscribeMachineSwitch,
+    () => isMachineTurningOff(environmentId),
+    () => false,
   );
   const reconnecting = useSyncExternalStore(
     subscribeReconnecting,
@@ -81,7 +87,7 @@ function useMachineConnection(machine: RemoteMachine, probed?: MachineProbe) {
     probed,
     now,
   });
-  return { status, enabled, error: shared.error };
+  return { status, enabled, turningOff, error: shared.error };
 }
 
 /** Why a status deserves a word more than its label gives; shown behind an info icon. */
@@ -268,12 +274,19 @@ export function MachineRow({
           </Button>
         ) : null}
         {!local ? (
-          <Switch
-            aria-label={t("Use {p0}", { p0: machineLabel(machines, machine) })}
-            checked={connection.enabled}
-            disabled={busy || revoking}
-            onCheckedChange={(on) => setMachineEnabled(machine.environmentId, on)}
-          />
+          <>
+            {connection.turningOff ? (
+              <Text tone="muted" size="secondary" as="span">
+                {t("Turning off…")}
+              </Text>
+            ) : null}
+            <Switch
+              aria-label={t("Use {p0}", { p0: machineLabel(machines, machine) })}
+              checked={connection.enabled}
+              disabled={busy || revoking}
+              onCheckedChange={(on) => setMachineEnabled(machine.environmentId, on)}
+            />
+          </>
         ) : null}
         <Button
           stableWidth

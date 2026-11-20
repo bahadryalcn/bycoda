@@ -169,6 +169,14 @@ const rustFixture = [
   "fn read<R: std::io::Read>(r: R) { for _ in std::io::BufReader::new(r).lines() {} }",
   "fn run(mut cmd: std::process::Command) { let _ = cmd.output(); }",
   'fn notify(app: &tauri::AppHandle) { let _ = app.emit("x", ()); }',
+  "#[tauri::command(async)]",
+  "pub fn notes_list(store: State<'_, Store>) -> Result<(), String> { store.lock_conn().map(|_| ()) }",
+  "#[tauri::command(async)]",
+  "pub fn trivial(value: String) -> String { value }",
+  "#[tauri::command]",
+  "pub async fn notes_get(app: AppHandle) -> Result<(), String> {",
+  '    run_blocking("notes_get", move || app.state::<Store>().lock_conn().map(|_| ())).await',
+  "}",
   "",
 ].join("\n");
 
@@ -196,6 +204,7 @@ test("the rule set flags each defect class once and names its rule", (t) => {
     "rust-command-output-without-timeout",
     "rust-emit-broadcast",
     "rust-rename-without-fsync",
+    "rust-sync-command-blocking-work",
   ]);
   for (const finding of findings) {
     assert.ok(finding.message.length > 20, `${finding.rule} explains the alternative`);

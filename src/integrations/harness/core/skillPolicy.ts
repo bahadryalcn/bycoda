@@ -52,15 +52,19 @@ export function parseSkillPolicy(value: unknown): SkillPolicy {
   return { disabledNames, disabledPaths: strings("disabledPaths") };
 }
 
+// Policies are immutable values: their normalized path keys are computed once, not per skill
+// (opening a session filtered every skill against every disabled path, ~9 ms a click).
+const disabledPathKeys = new WeakMap<SkillPolicy, Set<string>>();
+
 export function skillDisabled(
   policy: SkillPolicy,
   skill: { name: string; path?: string },
 ): boolean {
-  return (
-    policy.disabledNames.includes(skill.name) ||
-    (!!skill.path &&
-      policy.disabledPaths.some((path) => skillPathKey(path) === skillPathKey(skill.path!)))
-  );
+  if (policy.disabledNames.includes(skill.name)) return true;
+  if (!skill.path || !policy.disabledPaths.length) return false;
+  let keys = disabledPathKeys.get(policy);
+  if (!keys) disabledPathKeys.set(policy, (keys = new Set(policy.disabledPaths.map(skillPathKey))));
+  return keys.has(skillPathKey(skill.path));
 }
 
 export function assertSkillInvocationsEnabled(text: string, policy: SkillPolicy): void {

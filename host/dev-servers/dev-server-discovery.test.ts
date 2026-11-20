@@ -153,7 +153,9 @@ describe("bounded discovery and birth-safe signals", () => {
   });
 
   it("uses the native port table and keeps PID-reused owners unknown", async () => {
-    const command = vi.fn<DiscoveryCommand>().mockResolvedValue(JSON.stringify([processRow]));
+    const command = vi
+      .fn<DiscoveryCommand>()
+      .mockResolvedValue(JSON.stringify([{ ...processRow, created: birth }]));
     const windowsBirths = vi.fn((pids: number[]) =>
       pids.map((pid) => ({ pid, state: "alive" as const, startedAt: "638999999999999999" })),
     );
@@ -170,6 +172,44 @@ describe("bounded discovery and birth-safe signals", () => {
     expect(result[0].process.name).toBe("Unknown process");
     expect(command).toHaveBeenCalledTimes(1);
     expect(script(command.mock.calls[0][1])).not.toContain("Get-NetTCPConnection");
+  });
+
+  it("scans Windows processes with one CIM pass and batched native births, never per-process handles", async () => {
+    const rows = [
+      { ...processRow, created: birth },
+      { ...processRow, pid: 1235, created: birth },
+      { ...processRow, pid: 1236, created: birth },
+      { ...processRow, pid: 1237 },
+    ];
+    const command = vi.fn<DiscoveryCommand>().mockResolvedValue(JSON.stringify(rows));
+    const windowsBirths = vi.fn((pids: number[]) =>
+      pids.map((pid) =>
+        pid === 1235
+          ? { pid, state: "alive" as const, startedAt: "638958615012345999" }
+          : pid === 1236
+            ? { pid, state: "unknown" as const }
+            : { pid, state: "alive" as const, startedAt: birth },
+      ),
+    );
+    const discovery = new DevServerDiscovery({ platform: "win32", command, windowsBirths });
+    const result = await discovery.processes();
+    expect(command).toHaveBeenCalledOnce();
+    expect(script(command.mock.calls[0][1])).not.toContain("GetProcessById");
+    expect(windowsBirths).toHaveBeenCalledOnce();
+    expect(windowsBirths).toHaveBeenCalledWith([1234, 1235, 1236, 1237]);
+    // Only a birth that matches the CIM creation time authorizes ownership.
+    expect(result.map((item) => item.startedAt)).toEqual([birth, "", "", ""]);
+  });
+  it("shares one PowerShell snapshot between listener and process scans without the native helper", async () => {
+    const command = vi.fn<DiscoveryCommand>().mockResolvedValue(windowsSnapshot());
+    const discovery = new DevServerDiscovery({ platform: "win32", command });
+    const [listeners, processes] = await Promise.all([
+      discovery.listeners(),
+      discovery.processes(),
+    ]);
+    expect(command).toHaveBeenCalledOnce();
+    expect(listeners[0].process.startedAt).toBe(birth);
+    expect(processes.map((item) => item.pid)).toEqual([1234]);
   });
 
   it("checks a fresh birth on the pinned Windows handle before signalling", async () => {

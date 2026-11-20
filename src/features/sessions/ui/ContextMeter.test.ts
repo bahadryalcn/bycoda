@@ -218,7 +218,7 @@ it("keeps the signal icon uncluttered and exposes completed TPS, context and com
   expect(dialog()!.textContent).not.toContain("output tokens");
   expect(dialog()!.textContent).not.toContain("Speed scale");
   expect(dialog()!.textContent).not.toContain("Zero or unavailable");
-  expect(dialog()!.textContent).toContain("including tools and waiting");
+  expect(dialog()!.textContent).toContain("Average speed includes tools and waiting.");
   expect(dialog()!.querySelector("button[aria-controls]")).toBeNull();
   await act(async () =>
     [...dialog()!.querySelectorAll("button")]

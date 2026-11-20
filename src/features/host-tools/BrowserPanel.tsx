@@ -1,9 +1,11 @@
+import { errorText } from "../../shared/lib/errors";
 import { resolveBrowserAddress } from "./model/browserAddress";
 import { browserDefaultViewport, toolPreferences } from "./model/toolPreferences";
 import type { BrowserViewState as BrowserState } from "./model/browserViewState";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
+import { LiveText } from "../../shared/ui/LiveText";
 import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
 import { Heading } from "../../shared/ui/Heading";
@@ -24,6 +26,8 @@ import {
   attachBrowserSelectionAcrossWindows,
   BrowserDraftDeliveryUncertainError,
 } from "./browserComposer";
+import { hostLifetimeDeadline, remainingUntil } from "../../shared/lib/time/hostLifetime";
+import { monotonicNow } from "../../shared/lib/time/timestamps";
 import { BrowserAnnotationDetails } from "./BrowserAnnotationDetails";
 import { BrowserInspectorNavigation } from "./BrowserInspectorNavigation";
 import { Button } from "../../shared/ui/Button";
@@ -54,9 +58,17 @@ import { BrowserViewportMenu } from "./ui/BrowserViewportMenu";
 import { rememberBrowserUrl } from "./model/browserRecents";
 import { browserInputDisabledReason, browserStatusPresentation } from "./model/browserStatus";
 import { browserKeyInput } from "./model/browserKeys";
-import { useBrowserLeaseKeepAlive, useBrowserLiveFrames } from "./hooks/useBrowserLiveFrames";
+import {
+  readFrameWithRetry,
+  useBrowserLeaseKeepAlive,
+  useBrowserLiveFrames,
+} from "./hooks/useBrowserLiveFrames";
+import { useBrowserSelectionProbe } from "./hooks/useBrowserSelectionProbe";
 import { Disclosure } from "../../shared/ui/Disclosure";
 import "./BrowserPanel.css";
+
+const selectionConnectionNotice = () =>
+  t("Connection to the Host is unstable. Your selection is kept while it reconnects.");
 
 type Frame = {
   src: string;
@@ -171,6 +183,8 @@ function ProjectBrowserPanel({
   const [limitation, setLimitation] = useState("");
   const [notice, setNotice] = useState("");
   const alive = useRef(false);
+  /** Whether the last lease renewal failed, so an ended lease reports why. */
+  const leaseRenewalFailed = useRef(false);
   const pending = useRef(false);
   const latest = useRef<BrowserState | undefined>(undefined);
   const generation = useRef(0);
@@ -263,11 +277,29 @@ function ProjectBrowserPanel({
     hoverTimer.current = undefined;
   };
 
+  /**
+   * Local deadline for the lease in a Host response. The Host reports how long the lease lasts
+   * from its own reading (`leaseTtlMs`), so this client's clock never decides when control ends.
+   * A previous deadline is kept while the Host reports the same lease end, so repeated reads do
+   * not restart the renewal window. Hosts without `leaseTtlMs` fall back to their wall-clock end.
+   */
+  const leaseDeadlineOf = (
+    next: BrowserState,
+    previous: BrowserState | undefined,
+    sentAt: number,
+  ) => {
+    if (next.leaseExpiresAt == null) return undefined;
+    if (previous?.leaseExpiresAt === next.leaseExpiresAt && previous.leaseDeadline != null)
+      return previous.leaseDeadline;
+    return hostLifetimeDeadline(next.leaseTtlMs ?? next.leaseExpiresAt - Date.now(), sentAt);
+  };
   const request = (
     method: string,
     params: Record<string, unknown> = {},
     beside = false,
   ): Promise<BrowserState | undefined> => {
+    // Taken before the request queues, so the lease window can only end earlier than the Host's.
+    const sentAt = monotonicNow();
     const version = generation.current;
     const annotation = mode.current;
     // A live read runs beside the serialized requests instead of holding input behind it.
@@ -368,10 +400,11 @@ function ProjectBrowserPanel({
           }).catch(() => {});
         return;
       }
+      result.leaseDeadline = leaseDeadlineOf(result, latest.current, sentAt);
       if (
         result.controlling &&
-        result.leaseExpiresAt != null &&
-        result.leaseExpiresAt <= Date.now()
+        result.leaseDeadline != null &&
+        result.leaseDeadline <= monotonicNow()
       ) {
         result.controlling = false;
         result.leaseId = undefined;
@@ -470,8 +503,7 @@ function ProjectBrowserPanel({
           }
         })
         .catch((cause) => {
-          if (alive.current && mode.current)
-            setLimitation(cause instanceof Error ? cause.message : String(cause));
+          if (alive.current && mode.current) setLimitation(errorText(cause));
         })
         .finally(() => {
           hoverReading.current = false;
@@ -556,43 +588,48 @@ function ProjectBrowserPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
   useEffect(() => {
-    const expiresAt = state?.leaseExpiresAt;
+    const expiresAt = state?.leaseDeadline;
     if (!state?.controlling || expiresAt == null) return;
-    const timer = window.setTimeout(
-      () => {
-        if (latest.current?.leaseExpiresAt !== expiresAt) return;
-        const expired = { ...latest.current, controlling: false, leaseId: undefined };
-        const wasSelecting = !!mode.current;
-        latest.current = expired;
-        setState(expired);
-        generation.current++;
-        resetPick();
-        pending.current = false;
-        setBusy(false);
-        setNotice(
-          wasSelecting
-            ? t("Selection expired. Refresh the frame and select the element again.")
+    const timer = window.setTimeout(() => {
+      if (latest.current?.leaseDeadline !== expiresAt) return;
+      const expired = { ...latest.current, controlling: false, leaseId: undefined };
+      const wasSelecting = !!mode.current;
+      latest.current = expired;
+      setState(expired);
+      generation.current++;
+      resetPick();
+      pending.current = false;
+      setBusy(false);
+      setNotice(
+        wasSelecting
+          ? t("Selection expired. Refresh the frame and select the element again.")
+          : leaseRenewalFailed.current
+            ? t("Browser control could not be renewed. Claim control again.")
             : t("Browser control ended. Open a website or claim control to interact again."),
-        );
-      },
-      Math.max(0, expiresAt - Date.now()),
-    );
+      );
+      leaseRenewalFailed.current = false;
+    }, remainingUntil(expiresAt));
     return () => window.clearTimeout(timer);
-  }, [state?.controlling, state?.leaseExpiresAt]);
-  useEffect(() => {
-    if (!active || !selecting) return;
-    const timer = window.setInterval(() => {
-      if (!pending.current && !hoverReading.current)
-        void request("browser.status").catch(() => {
-          if (!alive.current) return;
-          cancelSelection();
-          setNotice(t("Selection expired. Refresh the frame and select the element again."));
-        });
-    }, 1000);
-    return () => window.clearInterval(timer);
-    // This scope is keyed by project and both conversation identities.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, selecting]);
+  }, [state?.controlling, state?.leaseDeadline]);
+  // A status that no longer holds the selection ends it inside `request`; a failed read only
+  // reports the connection, and a run of failures is the one case that gives the pick up.
+  useBrowserSelectionProbe({
+    enabled: active && selecting,
+    probe: () => request("browser.status"),
+    idle: () => !pending.current && !hoverReading.current,
+    onUnstable: () => {
+      if (alive.current && mode.current) setNotice(selectionConnectionNotice());
+    },
+    onRecovered: () => {
+      if (alive.current)
+        setNotice((current) => (current === selectionConnectionNotice() ? "" : current));
+    },
+    onLost: () => {
+      if (!alive.current || !mode.current) return;
+      cancelSelection();
+      setNotice(t("Connection to the Host was lost. Select the element again."));
+    },
+  });
   const streaming = useBrowserLiveFrames({
     enabled: active && live && !!state?.open && !selecting,
     read: (after, beside) => request("browser.frame", { after, waitMs: 1000 }, beside),
@@ -602,13 +639,35 @@ function ProjectBrowserPanel({
       if (!alive.current) return;
       inputBlockedRef.current = true;
       setInputBlocked(true);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
       setLive(false);
     },
   });
-  useBrowserLeaseKeepAlive(active && !!state?.controlling, state?.leaseExpiresAt, () => {
-    void request("browser.claim").catch(() => {});
-  });
+  useBrowserLeaseKeepAlive(
+    active && !!state?.controlling,
+    state?.leaseDeadline,
+    async () => {
+      const current = latest.current;
+      // Only the lease this panel already holds is renewed; after it ended a claim would
+      // create a new one.
+      if (
+        !current?.controlling ||
+        !current.leaseId ||
+        (current.leaseDeadline ?? 0) <= monotonicNow()
+      )
+        return;
+      try {
+        await request("browser.claim");
+      } catch (cause) {
+        // A revoked lease shows up in the status and stops further renewals.
+        await request("browser.status").catch(() => {});
+        throw cause;
+      }
+    },
+    (failure) => {
+      leaseRenewalFailed.current = failure !== undefined;
+    },
+  );
 
   const input = async (params: Record<string, unknown>, onSuccess?: () => void) => {
     if (!latest.current?.open || !latest.current.controlling) return;
@@ -621,12 +680,16 @@ function ProjectBrowserPanel({
     }
     onSuccess?.();
     try {
-      await request("browser.frame");
+      // The action already ran; only a read that keeps failing blocks further input.
+      await readFrameWithRetry(
+        () => request("browser.frame"),
+        () => !alive.current,
+      );
     } catch (cause) {
       inputBlockedRef.current = true;
       setInputBlocked(true);
       throw new Error(
-        `${t("Action completed. Refresh the frame to see the result.")} ${cause instanceof Error ? cause.message : String(cause)}`,
+        `${t("Action completed. Refresh the frame to see the result.")} ${errorText(cause)}`,
       );
     }
   };
@@ -645,13 +708,16 @@ function ProjectBrowserPanel({
       }
       liveReading.current = true;
       lastInputFrameAt.current = performance.now();
-      void request("browser.frame")
+      void readFrameWithRetry(
+        () => request("browser.frame"),
+        () => !alive.current,
+      )
         .catch((cause) => {
           inputBlockedRef.current = true;
           setInputBlocked(true);
           if (alive.current)
             setError(
-              `${t("Action completed. Refresh the frame to see the result.")} ${cause instanceof Error ? cause.message : String(cause)}`,
+              `${t("Action completed. Refresh the frame to see the result.")} ${errorText(cause)}`,
             );
         })
         .finally(() => {
@@ -732,7 +798,7 @@ function ProjectBrowserPanel({
           inputEpoch.current++;
           inputBlockedRef.current = true;
           if (alive.current) setInputBlocked(true);
-          if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+          if (alive.current) setError(errorText(cause));
         }
       })
       .finally(() => {
@@ -789,7 +855,7 @@ function ProjectBrowserPanel({
       throw new Error(t("Set up the browser on this computer, then open your website."));
     if (
       !current.controlling ||
-      (current.leaseExpiresAt != null && current.leaseExpiresAt <= Date.now())
+      (current.leaseDeadline != null && current.leaseDeadline <= monotonicNow())
     ) {
       const claimed = await request("browser.claim");
       if (!claimed?.controlling)
@@ -1033,10 +1099,7 @@ function ProjectBrowserPanel({
       </div>
       {/* State, failures and notices are shown by the status dot's tooltip and
           the controls popover; screen readers still hear them here. */}
-      <span className="sr-only" role="status">
-        {statusLabel}
-        {notice ? ` · ${notice}` : ""}
-      </span>
+      <LiveText className="sr-only" text={`${statusLabel}${notice ? ` · ${notice}` : ""}`} />
       {error && !selectionOpen && !controlsOpen ? (
         <InlineError details={error}>{errorSummary}</InlineError>
       ) : null}

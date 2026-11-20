@@ -73,6 +73,36 @@ it("retains rejected edits and makes Enter save without submitting the task", as
   expect(event.defaultPrevented).toBe(true);
   expect(onSave).toHaveBeenCalledExactlyOnceWith(19);
   expect(input().value).toBe("19");
+  expect(document.activeElement).toBe(input());
+});
+
+it("keeps focus on the field after Enter saves a valid number", async () => {
+  const onSave = vi.fn(async () => true);
+  await act(async () =>
+    root.render(createElement(TaskConcurrencyField, { label: "Concurrency", value: 2, onSave })),
+  );
+  await type("7");
+  await act(async () => input().focus());
+  await act(async () =>
+    input().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onSave).toHaveBeenCalledExactlyOnceWith(7);
+  expect(document.activeElement).toBe(input());
+});
+
+it("does not save an invalid draft on Enter and keeps focus on the field", async () => {
+  const onSave = vi.fn(async () => true);
+  await act(async () =>
+    root.render(createElement(TaskConcurrencyField, { label: "Concurrency", value: 2, onSave })),
+  );
+  await type("0");
+  await act(async () => input().focus());
+  await act(async () =>
+    input().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onSave).not.toHaveBeenCalled();
+  expect(input().getAttribute("aria-invalid")).toBe("true");
+  expect(document.activeElement).toBe(input());
 });
 
 it("preserves an unfinished edit across a machine refresh", async () => {

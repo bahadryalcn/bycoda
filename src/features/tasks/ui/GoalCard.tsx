@@ -131,10 +131,7 @@ export function GoalCard({
                         : "neutral"
                   }
                 />
-                <span>
-                  {progress.done}/{progress.total}
-                  {t(" done")}
-                </span>
+                <span>{t("{p0}/{p1} done", { p0: progress.done, p1: progress.total })}</span>
               </span>
             ) : null}
             <span className="goal-card-projects">

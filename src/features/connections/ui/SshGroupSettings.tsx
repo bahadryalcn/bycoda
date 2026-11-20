@@ -20,6 +20,8 @@ import { Alert } from "../../../shared/ui/Alert";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
 import type { ServerRecord } from "../model/serverInventory";
+import { errorText } from "../../../shared/lib/errors";
+import { sanitizeConnectionError } from "../model/remoteConnection";
 import {
   SSH_INHERITED_FIELDS,
   sshGroupDraft,
@@ -109,7 +111,7 @@ export function SshGroupSettings({
     try {
       await work();
     } catch (reason) {
-      if (mounted.current) setError(String(reason));
+      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
     } finally {
       locked.current = false;
       if (mounted.current) setBusy(false);
@@ -142,7 +144,7 @@ export function SshGroupSettings({
       }
     }
     const failed = results.find((result) => result.status === "rejected");
-    if (failed?.status === "rejected") setError(String(failed.reason));
+    if (failed?.status === "rejected") setError(sanitizeConnectionError(errorText(failed.reason)));
     setPreview(undefined);
     setLoading(false);
   }, [server.id]);

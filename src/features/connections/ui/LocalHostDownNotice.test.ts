@@ -6,10 +6,12 @@ import { afterEach, expect, it, vi } from "vitest";
 const host = vi.hoisted(() => ({
   state: "stopped",
   failStatus: false,
+  statusReads: 0,
   start: vi.fn(async () => null as unknown),
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: async (command: string) => {
+    if (command === "local_host_status") host.statusReads++;
     if (command === "local_host_status" && host.failStatus) {
       host.failStatus = false;
       throw new Error("Status unavailable");
@@ -82,6 +84,26 @@ it("offers to start a host that stays stopped, and starts it on request", async 
   await act(async () => start.click());
   expect(host.start).toHaveBeenCalledTimes(1);
   expect(notice()).toBeNull();
+});
+
+it("refreshes the status at once after a start and warns again when the host dies right after", async () => {
+  host.state = "stopped";
+  await render();
+  await poll();
+  await openNotifications();
+  const statusReads = host.statusReads;
+
+  const start = [...notice()!.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Start host"),
+  )!;
+  await act(async () => start.click());
+  // The start itself re-reads the status; it does not wait for the next tick.
+  expect(host.statusReads).toBe(statusReads + 1);
+  expect(notice()).toBeNull();
+
+  // The host is still (or again) stopped: the start must not keep the warning dismissed.
+  await poll();
+  expect(notice()).not.toBeNull();
 });
 
 it("shows the reason when the host cannot be started", async () => {

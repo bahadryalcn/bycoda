@@ -129,7 +129,11 @@ export async function createSessionListRuntime(
         .update(JSON.stringify([sessionListEpoch, "desktop", overlay?.sourceEpoch ?? null]))
         .digest("hex");
     }
-    const session = await dependencies.engine.store.session(id);
+    const { store } = dependencies.engine;
+    const session = await store.sessionStateMetadata(id);
+    if (!session) throw new Error("Session not found on this machine");
+    if (session.authorityGeneration !== undefined)
+      await store.assertAuthority(id, session.authorityGeneration);
     return createHash("sha256")
       .update(
         JSON.stringify([
@@ -145,47 +149,85 @@ export async function createSessionListRuntime(
     while (sourceInvalidations.has(id))
       await settleSourceInvalidation(id, sourceInvalidations.get(id)!);
     const source = await sessionSourceKey(id);
-    const epoch = await dependencies.engine.store.transaction(async () => {
-      const known = await dependencies.engine.store.db
+    const readKnown = () =>
+      dependencies.engine.store.db
         .prepare("SELECT source_key, epoch FROM session_read_sources WHERE session_id=?")
         .get(id);
-      if (known && known.source_key === source) return String(known.epoch);
-      await dependencies.engine.store.db
-        .prepare(`INSERT INTO session_read_sources (session_id, source_key, epoch)
+    // The steady state is a match; only a changed source takes the write lock.
+    const stored = await readKnown();
+    const epoch =
+      stored && stored.source_key === source
+        ? String(stored.epoch)
+        : await dependencies.engine.store.transaction(async () => {
+            const known = await readKnown();
+            if (known && known.source_key === source) return String(known.epoch);
+            await dependencies.engine.store.db
+              .prepare(`INSERT INTO session_read_sources (session_id, source_key, epoch)
         VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET
         source_key=excluded.source_key, epoch=excluded.epoch
         WHERE session_read_sources.source_key <> excluded.source_key`)
-        .run(id, source, randomUUID());
-      const row = await dependencies.engine.store.db
-        .prepare("SELECT epoch FROM session_read_sources WHERE session_id=?")
-        .get(id);
-      if (!row) throw new Error("Session read source is unavailable");
-      return String(row.epoch);
-    });
+              .run(id, source, randomUUID());
+            const row = await dependencies.engine.store.db
+              .prepare("SELECT epoch FROM session_read_sources WHERE session_id=?")
+              .get(id);
+            if (!row) throw new Error("Session read source is unavailable");
+            return String(row.epoch);
+          });
     if (source !== (await sessionSourceKey(id)))
       throw new Error("Session read owner changed; retry");
     return epoch;
   };
+  // Compared field by field: the decoration inputs are primitives, so an identity check
+  // is exact and avoids serializing the same project fields for every row.
   const decoratedSummaries = new WeakMap<
     HostSessionSummary,
-    { key: string; value: HostSessionSummary }
+    {
+      name: string;
+      cwd: string;
+      branch: string | undefined;
+      crewRunId: string | undefined;
+      value: HostSessionSummary;
+    }
   >();
   /** Other registered ids of the same folder (legacy path spellings), in a stable order. */
-  const siblingProjectIds = async (project: { id: string; cwd: string }) =>
-    (await dependencies.engine.store.projects())
-      .filter(
-        (other) => other.id !== project.id && dependencies.desktop.samePath(other.cwd, project.cwd),
-      )
-      .map((other) => other.id)
+  // The registry changes only in addProject, which moves projectRegistryVersion; reuse the
+  // loaded rows until then instead of scanning every registered project on each poll.
+  let registeredProjects: { version: number; rows: { id: string; cwd: string }[] } | undefined;
+  // Registered ids by folder key. Every project poll asked for its siblings, which compared
+  // its path with every registered path (100+ projects: ~10,000 normalizations a round).
+  // Rebuilt with the registry, and after the path normalizer's realpath TTL so a retargeted
+  // junction still regroups.
+  let folders: { rows: unknown; at: number; ids: Map<string, string[]> } | undefined;
+  const FOLDER_KEYS_TTL_MS = 5_000;
+  const siblingProjectIds = async (project: { id: string; cwd: string }) => {
+    const { store } = dependencies.engine;
+    const version = store.projectRegistryVersion;
+    let registry = registeredProjects;
+    if (registry?.version !== version) {
+      registry = { version, rows: await store.projects() };
+      registeredProjects = registry;
+    }
+    const now = Date.now();
+    if (folders?.rows !== registry.rows || now - folders.at >= FOLDER_KEYS_TTL_MS) {
+      const ids = new Map<string, string[]>();
+      for (const row of registry.rows) {
+        const key = dependencies.desktop.pathKey(row.cwd);
+        ids.set(key, [...(ids.get(key) ?? []), row.id]);
+      }
+      folders = { rows: registry.rows, at: now, ids };
+    }
+    return (folders.ids.get(dependencies.desktop.pathKey(project.cwd)) ?? [])
+      .filter((id) => id !== project.id)
       .sort();
+  };
   const buildProjectSessionList = async (
-    projectId: string,
+    project: { id: string; name: string; cwd: string },
     local: HostSessionSummary[],
     etagPrefix: string,
     wakeSources: ReturnType<ServerBindings["pullRequestWatch"]["wakeSources"]>,
     siblingIds?: string[],
   ) => {
-    const project = await dependencies.engine.store.project(projectId);
+    const projectId = project.id;
     const stamps = new Map(local.map((session) => [session.id, session]));
     for (const adopted of await dependencies.engine.store.adopted(projectId)) {
       const stamp = stamps.get(adopted.id);
@@ -229,18 +271,20 @@ export async function createSessionListRuntime(
     const crews = await crewSessionRuns(dependencies.engine.store, projectId);
     const decorated = summaries.map((session) => {
       const crewRunId = crews.get(session.id);
-      const decorationKey = JSON.stringify([
-        project.name,
-        project.cwd,
-        branches.get(session.cwd ?? project.cwd),
-        crewRunId,
-      ]);
+      const branch = branches.get(session.cwd ?? project.cwd);
       const cached = decoratedSummaries.get(session);
-      if (cached?.key === decorationKey) return cached.value;
+      if (
+        cached &&
+        cached.name === project.name &&
+        cached.cwd === project.cwd &&
+        cached.branch === branch &&
+        cached.crewRunId === crewRunId
+      )
+        return cached.value;
       const value = {
         ...session,
         repo: project.name,
-        branch: branches.get(session.cwd ?? project.cwd) || undefined,
+        branch: branch || undefined,
         // Desktop rows keep the desktop's path spelling; compare normalized paths.
         worktreeCwd:
           session.cwd && !dependencies.desktop.samePath(session.cwd, project.cwd)
@@ -248,7 +292,13 @@ export async function createSessionListRuntime(
             : undefined,
         ...(crewRunId ? { crewRunId } : {}),
       };
-      decoratedSummaries.set(session, { key: decorationKey, value });
+      decoratedSummaries.set(session, {
+        name: project.name,
+        cwd: project.cwd,
+        branch,
+        crewRunId,
+        value,
+      });
       return value;
     });
     const list = withSessionWaits(decorated, wakeSources);
@@ -304,8 +354,8 @@ export async function createSessionListRuntime(
     const branches = await Promise.all(paths.map(async (cwd) => await branchCache.get(cwd)));
     // Watches live outside the store: their wake sources key the cached list too.
     const wakeSources = dependencies.pullRequestWatch.wakeSources(projectId);
-    // One project-table read per list, shared with the build. Every store call is a
-    // turn in the single database queue that approvals and authorization also wait in.
+    // Reuse the registered folder list until its version changes. Every store call
+    // shares the database queue with approvals and authorization.
     const siblingIds = await siblingProjectIds(project);
     const prefix = [
       dependencies.engine.store.projectVersion(projectId),
@@ -320,18 +370,25 @@ export async function createSessionListRuntime(
     const key = `${prefix}\0${JSON.stringify(paths.map((cwd, index) => [cwd, branches[index]]))}`;
     const current = projectChangeCache.get(projectId);
     if (current && current.key === key && now - current.refreshed < PROJECT_LIST_SAFETY_MS) {
+      // A hit makes the entry the newest, so the byte budget and count cap evict
+      // the least recently used project, not the one polled on every request.
+      projectChangeCache.delete(projectId);
+      projectChangeCache.set(projectId, current);
       const result = await current.promise;
       await currentProject();
       return result;
     }
     const promise = buildProjectSessionList(
-      projectId,
+      project,
       local.sessions,
       prefix,
       wakeSources,
       siblingIds,
     );
     const entry = { key, refreshed: now, paths, bytes: 0, promise };
+    // Map.set on an existing key keeps its old position; delete first so a rebuilt
+    // project is also the newest entry.
+    projectChangeCache.delete(projectId);
     projectChangeCache.set(projectId, entry);
     void promise.then(
       ({ bytes, paths, branchKey }) => {

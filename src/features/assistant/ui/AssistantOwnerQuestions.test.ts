@@ -223,10 +223,10 @@ it("keeps an unknown acknowledgement through unmount and verifies it without res
   f.dropAck = true;
   await f.select();
   await f.submit();
-  expect(f.container.textContent).toContain("unconfirmed");
+  expect(f.container.textContent).toContain("Your answer could not be confirmed.");
   expect(f.button("Retry")).toBeTruthy();
   await f.remount();
-  expect(f.container.textContent).toContain("unconfirmed");
+  expect(f.container.textContent).toContain("Your answer could not be confirmed.");
   await act(async () => f.button("Retry").click());
   expect(f.calls.filter((call) => call.input.op === "questions.answer")).toHaveLength(1);
   expect(pendingOwnerQuestions(localStorage, "host-original")).toEqual([]);

@@ -1,5 +1,34 @@
 import { createSocket } from "node:dgram";
 import { execFile } from "node:child_process";
+// oxlint-disable-next-line no-restricted-imports -- the one shared, cached adapter reader
+import { networkInterfaces } from "node:os";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+
+export type NetworkInterfaces = ReturnType<typeof networkInterfaces>;
+
+/** `os.networkInterfaces()` is a synchronous adapter query (~20 ms on Windows, more
+ * under load) and status reads call it per address on every poll, so it blocked the
+ * Host event loop for seconds at a time. Share one snapshot for one LAN poll period. */
+const INTERFACES_CACHE_MS = 5_000;
+let interfaces: { value: ReturnType<typeof networkInterfaces>; at: number } | undefined;
+export function currentNetworkInterfaces(): ReturnType<typeof networkInterfaces> {
+  if (!interfaces || elapsedSince(interfaces.at) >= INTERFACES_CACHE_MS)
+    interfaces = { value: networkInterfaces(), at: monotonicNow() };
+  return interfaces.value;
+}
+
+/** Changes when an adapter gains, loses or changes an external IPv4 address: a Wi-Fi
+ * switch, a VPN or Tailscale coming up or going down. Cached probes key on it. */
+export function networkFingerprint(value = currentNetworkInterfaces()): string {
+  return Object.entries(value)
+    .flatMap(([name, entries]) =>
+      (entries ?? [])
+        .filter((entry) => !entry.internal && entry.family === "IPv4")
+        .map((entry) => `${name}=${entry.address}`),
+    )
+    .sort()
+    .join("|");
+}
 
 let routeAddress: string | undefined;
 let routeProbe: Promise<string | undefined> | undefined;
@@ -42,15 +71,30 @@ export function knownDefaultRouteAddress(): string | undefined {
 const PUBLIC_NETWORK_HINT =
   "Windows treats this network as Public, which can block your phone. Set it to Private in Windows network settings.";
 
-/** Cached briefly so a switch to Private clears the hint without a Host restart.
- * Missing cmdlets, timeouts and policy failures mean unknown. */
-export function createWindowsNetworkHint(platform = process.platform) {
+/** Starting PowerShell blocks the Host event loop, so the answer is reused until the
+ * adapters change. A switch to Private does not change the adapters, so while the
+ * answer still shows a Public network it is refreshed every 30 s (the hint clears
+ * soon after the owner fixes it), otherwise every few minutes. Missing cmdlets,
+ * timeouts and policy failures mean unknown. */
+const PROFILE_CACHE_MS = 5 * 60_000;
+export function createWindowsNetworkHint(
+  platform = process.platform,
+  network: () => string = networkFingerprint,
+) {
   let profiles: Promise<Record<string, string>> | undefined;
   let queriedAt = 0;
+  let queriedNetwork = "";
+  let sawPublic = false;
   return async (interfaceName?: string): Promise<string | undefined> => {
     if (platform !== "win32" || !interfaceName) return undefined;
-    if (profiles && Date.now() - queriedAt > NETWORK_CACHE_MS) profiles = undefined;
-    if (!profiles) queriedAt = Date.now();
+    const current = network();
+    const ttl = sawPublic ? NETWORK_CACHE_MS : PROFILE_CACHE_MS;
+    if (profiles && (elapsedSince(queriedAt) > ttl || current !== queriedNetwork))
+      profiles = undefined;
+    if (!profiles) {
+      queriedAt = monotonicNow();
+      queriedNetwork = current;
+    }
     profiles ??= new Promise((resolve) => {
       execFile(
         "powershell.exe",
@@ -85,7 +129,9 @@ export function createWindowsNetworkHint(platform = process.platform) {
         },
       );
     });
-    return (await profiles)[interfaceName] === "Public" ? PUBLIC_NETWORK_HINT : undefined;
+    const answer = await profiles;
+    sawPublic = Object.values(answer).includes("Public");
+    return answer[interfaceName] === "Public" ? PUBLIC_NETWORK_HINT : undefined;
   };
 }
 

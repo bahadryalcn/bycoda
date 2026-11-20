@@ -54,7 +54,7 @@ it("reveals a topic's surface through the shared action request and closes", asy
 it("explains project-only topics instead of offering a silent no-op", async () => {
   await render("~");
   await act(async () => button("Changes & Git").click());
-  expect(button("Open Changes").disabled).toBe(true);
+  expect(button("Open changes").disabled).toBe(true);
   expect(document.body.textContent).toContain("Open a project first.");
   await act(async () => button("Terminal").click());
   expect(button("Open the terminal").disabled).toBe(false);
@@ -64,6 +64,18 @@ it("records viewed topics across openings", async () => {
   await render("~");
   await act(async () => button("Notes").click());
   expect(loadSeenGuideTopics()).toEqual(["projects", "notes"]);
+});
+
+it("names the full tour, the topic tour and the topic's article differently", async () => {
+  await render("/Users/me/code/app");
+  expect(button("Take the tour").disabled).toBe(false);
+  expect(button("Tour this topic").disabled).toBe(false);
+  expect(button("Read the Projects article").disabled).toBe(false);
+  expect(
+    Array.from(document.body.querySelectorAll("button")).filter(
+      (element) => element.textContent?.trim() === "Tour",
+    ),
+  ).toHaveLength(0);
 });
 
 it("mirrors the openers' gates", () => {

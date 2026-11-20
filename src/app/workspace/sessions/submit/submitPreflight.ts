@@ -1,3 +1,4 @@
+import { errorText } from "../../../../shared/lib/errors";
 import type { PreflightResult, SubmitDeps, SubmitInput } from "./submitTypes";
 
 import { composeNoteMessage } from "../../../../features/notes";
@@ -204,7 +205,7 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
       if (run && ["active", "paused"].includes(run.status))
         throw new Error("Stop the current orchestration run before preparing another proposal.");
     } catch (error) {
-      return refuse(error instanceof Error ? error.message : String(error));
+      return refuse(errorText(error));
     }
   }
   const approvedPlan = options?.planBlockId

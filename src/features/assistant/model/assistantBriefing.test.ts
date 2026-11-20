@@ -17,7 +17,9 @@ vi.mock("./assistantHostRead", () => ({
 }));
 vi.mock("./assistantSessions", () => ({ readAssistantSession: source.session }));
 import {
+  assistantPresenceRecheckDelay,
   assistantPresenceState,
+  msUntilClockTime,
   findAssistantApprovals,
   verifyAssistantApproval,
 } from "./assistantBriefing";
@@ -198,4 +200,20 @@ it("reports stale, future, missing and unsupported activity as away, never unkno
     assistantPresenceState({ presence: { ...presence, state: "dnd" }, automaticPresence }, 1001)
       .effective,
   ).toBe("dnd");
+});
+// #315: the presence chip and the notification bridge sleep until their next boundary.
+it("computes the next presence freshness boundary, or none for an idle chip", () => {
+  const reading = { state: "present" as const, since: 0, updatedAt: 1000, supported: true };
+  expect(assistantPresenceRecheckDelay(reading, 1001)).toBe(300000);
+  expect(assistantPresenceRecheckDelay(reading, 301000)).toBe(1);
+  expect(assistantPresenceRecheckDelay(reading, 301001)).toBeUndefined();
+  expect(assistantPresenceRecheckDelay({ ...reading, updatedAt: 5000 }, 1000)).toBe(4000);
+  expect(assistantPresenceRecheckDelay({ ...reading, supported: false }, 1001)).toBeUndefined();
+  expect(assistantPresenceRecheckDelay(undefined, 1001)).toBeUndefined();
+});
+it("computes the delay to the next local clock time, rolling to tomorrow once it has passed", () => {
+  const now = new Date(2026, 5, 10, 8, 30, 0, 0);
+  expect(msUntilClockTime("09:00", now)).toBe(30 * 60 * 1000);
+  expect(msUntilClockTime("08:30", now)).toBe(24 * 60 * 60 * 1000);
+  expect(msUntilClockTime("07:00", now)).toBe(22.5 * 60 * 60 * 1000);
 });

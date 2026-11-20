@@ -8,6 +8,7 @@ import {
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { Group } from "../../../../shared/ui/settings";
 import { machineCapabilities } from "../../../automations/public/hostMachines";
+import { isLocalSyncMachine } from "../../../connections/public/localSync";
 import type { RemoteMachine } from "../../../connections/public/protocol";
 import {
   PROVIDER_ACCOUNT_PROVIDERS,
@@ -16,6 +17,7 @@ import {
 } from "../../../providers/public/providerAccounts";
 import type { MachineLimits } from "../../../tasks/public/hostSettings";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
+import type { HostProviders } from "../../model/hostProviders";
 import { ModelOrderLimits } from "./ModelOrderLimits";
 import { PlanShareList } from "../limits/PlanShareList";
 
@@ -35,6 +37,7 @@ export function ModelOrderLimitsTab({
   draft,
   usage,
   onChange,
+  hostProviders,
   onFieldInvalid,
 }: {
   machineId: string;
@@ -42,6 +45,8 @@ export function ModelOrderLimitsTab({
   machine?: RemoteMachine;
   draft: OrderDraft;
   usage: MachineLimits;
+  /** The edited Host's providers; the limits table rows follow it. */
+  hostProviders?: HostProviders;
   onChange: (draft: OrderDraft) => void;
   /** A limit field reports by key whether it shows a value the draft could not take. */
   onFieldInvalid: (key: string, invalid: boolean) => void;
@@ -63,10 +68,11 @@ export function ModelOrderLimitsTab({
       <ModelOrderLimits
         draft={draft}
         usage={usage}
+        hostProviders={hostProviders}
         onChange={onChange}
         onFieldInvalid={onFieldInvalid}
       />
-      {supported ? (
+      {supported && machine ? (
         <Group
           title={t("Plan share by job")}
           layout="full"
@@ -88,6 +94,7 @@ export function ModelOrderLimitsTab({
           <div className="px-4 py-3">
             <PlanShareList
               machineId={machineId}
+              host={{ name: machine.name, local: isLocalSyncMachine(machine) }}
               supported={supported}
               window={quotaWindow}
               accountLabels={labels}

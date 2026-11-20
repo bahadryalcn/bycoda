@@ -68,6 +68,19 @@ it("requires control for Duo fold presets and sends each under the current lease
     );
   }
 });
+it("explains a running host with no devices and offers refresh and setup", async () => {
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({ devices: [], errors: [] });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  // The bar also reports "No devices" as a status, so name the stage's own message.
+  const statuses = [...container.querySelectorAll('[role="status"]')].map(
+    (node) => node.textContent,
+  );
+  expect(statuses).toContain("No devices found");
+  expect(container.querySelector('[role="status"] button')).toBeNull();
+  expect(button("Refresh devices")).toBeTruthy();
+  expect(button("Setup and access")).toBeTruthy();
+});
 it("restores device draft without claiming control", async () => {
   const scope = { cwd: "/repo", sessionId: "device-transfer", targetValue: "project" };
   restoreToolsDraftTransfer(scope.cwd, scope.sessionId, scope.targetValue, {
@@ -1463,4 +1476,27 @@ it("labels a competing controller visibly and disables the switch until ownershi
   expect(control.disabled).toBe(true);
   expect(container.querySelector(".device-panel-bar")?.textContent).toContain("Control in use");
   expect(api.claimControl).not.toHaveBeenCalled();
+});
+
+it("keeps device control through transient control-status failures and drops it after consecutive ones", async () => {
+  vi.useFakeTimers();
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Allow device control");
+  const controlEnabled = () => !button("Home").matches(':disabled, [aria-disabled="true"]');
+  const poll = () => act(async () => vi.advanceTimersByTimeAsync(10000));
+  expect(controlEnabled()).toBe(true);
+  vi.mocked(api.controlStatus!).mockRejectedValue(new Error("transient"));
+  await poll();
+  await poll();
+  expect(controlEnabled()).toBe(true);
+  // A successful read resets the failure run.
+  vi.mocked(api.controlStatus!).mockResolvedValue({ deviceId: device.id, busy: true });
+  await poll();
+  vi.mocked(api.controlStatus!).mockRejectedValue(new Error("transient"));
+  await poll();
+  await poll();
+  expect(controlEnabled()).toBe(true);
+  await poll();
+  expect(controlEnabled()).toBe(false);
 });

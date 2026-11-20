@@ -7,6 +7,10 @@ import type { SocialPlatform } from "../../model/social";
 export const INBOX_STATUSES = ["unread", "replied", "assigned", "done"] as const;
 export type InboxStatus = (typeof INBOX_STATUSES)[number];
 
+/** Mirrors the Host's inbox tag limits (host/social/inbox/inbox-status.ts): tags per conversation and characters per tag. */
+export const INBOX_TAGS_MAX = 10;
+export const INBOX_TAG_MAX_LENGTH = 40;
+
 export type InboxItem = {
   threadId: string;
   accountId: string;
@@ -55,8 +59,11 @@ export type InboxTimelineEvent = {
 
 export type PersonTimeline = {
   personId: string;
+  /** One page, oldest first. */
   events: InboxTimelineEvent[];
   truncated: boolean;
+  /** Cursor for the older page; absent once the start of the conversation is reached. */
+  next?: string;
 };
 
 export type InboxSettings = {

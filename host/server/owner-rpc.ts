@@ -1,3 +1,4 @@
+import { DESKTOP_TAKE_WAIT_MS } from "../../src/shared/model/host-contracts/native-services";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { handleApprovalsRpc } from "./rpc-approvals";
@@ -36,6 +37,7 @@ import { handleVoiceRpc } from "./rpc-voice";
 import { handlePushRpc } from "./rpc-push";
 import { handleWorkspacesRpc } from "./rpc-workspaces";
 import { handleDiagnosticsLogsRpc } from "./rpc-diagnostics";
+import { handleOllamaRpc } from "./rpc-ollama";
 import { createHash } from "node:crypto";
 import type { DiagnosticLogFields } from "@bycoda/account-contracts";
 import { createLogger } from "../diagnostics/logger";
@@ -60,14 +62,117 @@ const heldPollMs = (params: Record<string, unknown>): number => {
  * assistant turn lasts as long as that work, which has its own deadline, so it is never
  * reported. Every other method, including the `sessions.desktopLive` heartbeat, gets none.
  */
+/** An idle desktop take is held for the wait it asked for, up to the relay's bound. */
+const heldTakeMs = (params: Record<string, unknown>): number =>
+  Math.min(DESKTOP_TAKE_WAIT_MS, Math.max(0, Number(params.waitMs) || 0));
 const RPC_HOLD_MS: Record<string, (params: Record<string, unknown>) => number> = {
   "machine.changes": heldPollMs,
   "sessions.sync": heldPollMs,
+  "conversation.desktop.take": heldTakeMs,
+  "native.services.conversation.desktop.take": heldTakeMs,
   "workspace.run": () => Infinity,
   "assistant.request": () => Infinity,
 };
 export function slowRpcThresholdMs(method: string, params: Record<string, unknown>): number {
   return SLOW_RPC_MS + (Object.hasOwn(RPC_HOLD_MS, method) ? RPC_HOLD_MS[method]!(params) : 0);
+}
+
+/**
+ * Server-side backstop for an owner call that never settles. Each value outlasts the desktop
+ * client's own deadline for the method (`rpc_timeout` in `src-tauri/src/remote.rs`) by 30 s,
+ * so a healthy call is never cut before its caller gives up. Held polls end at their 10 s cap.
+ */
+const RPC_DEADLINE_MS = 120_000;
+const GIT_MUTATION_DEADLINE_MS = 480_000;
+const LONG_RPC_DEADLINE_MS: Record<string, number> = {
+  "git.action": 640_000,
+  "git.switch": GIT_MUTATION_DEADLINE_MS,
+  "git.createBranch": GIT_MUTATION_DEADLINE_MS,
+  "git.worktreeCreate": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.close": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.finish": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.cleanup.plan": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.cleanup.status": GIT_MUTATION_DEADLINE_MS,
+  "workspaces.cleanup.apply": GIT_MUTATION_DEADLINE_MS,
+  "git.generateText": 160_000,
+  "sessions.sideQuestion": 190_000,
+  "voice.local.start": 210_000,
+  "devices.action": 210_000,
+  "devices.capture": 220_000,
+  "devices.boot": 270_000,
+  "appearance.backgroundImage": 280_000,
+  "appearance.backgroundSuggestions": 140_000,
+  "appearance.themeSuggestions": 140_000,
+  "decisionModels.local.start": 135_000,
+  "decisionModels.sources.test": 135_000,
+  "assistant.builder.avatarGenerate": 280_000,
+  "projects.clone": 660_000,
+  "browser.setup": 1_260_000,
+  "devices.setup": 1_260_000,
+};
+/** Owner commands and assistant turns carry their own deadline, so the dispatcher adds none. */
+export function ownerRpcDeadlineMs(method: string, params: Record<string, unknown>): number {
+  if (slowRpcThresholdMs(method, params) === Infinity) return Infinity;
+  return Object.hasOwn(LONG_RPC_DEADLINE_MS, method)
+    ? LONG_RPC_DEADLINE_MS[method]!
+    : RPC_DEADLINE_MS;
+}
+
+/** The dispatcher stopped waiting; the handler may still finish, so the outcome is unknown. */
+export class OwnerRpcDeadlineError extends HostDomainOutcomeError {
+  readonly code = "HOST_RPC_DEADLINE";
+  constructor(method: string, ms: number) {
+    super(`Host did not answer ${method} within ${Math.round(ms / 1000)} s.`, "unknown");
+    this.name = "OwnerRpcDeadlineError";
+  }
+}
+
+/**
+ * The Host began shutting down while the call was in flight. The HTTP layer aborts every
+ * live request signal with this reason; the dispatcher gives the handler
+ * `HOST_STOP_GRACE_MS` to settle and then answers 503 so the shutdown drain is not held.
+ */
+export class HostStoppingError extends HostDomainOutcomeError {
+  readonly code = "HOST_STOPPING";
+  constructor() {
+    super("Host is stopping.", "unknown");
+    this.name = "HostStoppingError";
+  }
+}
+export const HOST_STOP_GRACE_MS = 2_000;
+
+/**
+ * Settles with the handler, or rejects when the request signal aborts: on the deadline with
+ * `OwnerRpcDeadlineError`, on a client disconnect with a cancellation, on Host shutdown with
+ * `HostStoppingError` once the stop grace has passed. Either way the HTTP request leaves the
+ * drain set instead of waiting on a handler that never settles.
+ */
+function untilAborted(
+  work: Promise<void>,
+  signal: AbortSignal,
+  method: string,
+  deadlineMs: number,
+): Promise<void> {
+  const reason = () =>
+    signal.reason instanceof HostStoppingError
+      ? signal.reason
+      : signal.reason instanceof DOMException && signal.reason.name === "TimeoutError"
+        ? new OwnerRpcDeadlineError(method, deadlineMs)
+        : new Error("Request cancelled");
+  work.catch(() => undefined);
+  return new Promise<void>((resolve, reject) => {
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const abort = () => {
+      if (!(signal.reason instanceof HostStoppingError)) reject(reason());
+      else grace = setTimeout(() => reject(reason()), HOST_STOP_GRACE_MS);
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => {
+      clearTimeout(grace);
+      signal.removeEventListener("abort", abort);
+    });
+  });
 }
 
 /** Client-supplied identifiers reach the log only when they look like identifiers. */
@@ -108,6 +213,17 @@ export function rpcFailureFields(
         ? undefined
         : createHash("sha256").update(text).digest("hex").slice(0, 12),
   };
+}
+
+/**
+ * A runtime or system fault (a programming error, or a failed fs/socket call that carries
+ * `syscall`) describes the Host, not the request. Its message can hold paths or SQL text, so the
+ * HTTP layer answers 500 with a generic message instead of 400 with the raw text.
+ */
+export function isInternalFailure(error: unknown): boolean {
+  if (error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError)
+    return true;
+  return error instanceof Error && typeof (error as { syscall?: unknown }).syscall === "string";
 }
 import { handleWorktreesRpc } from "./rpc-worktrees";
 type Dependencies = Pick<
@@ -272,6 +388,7 @@ const handlers: Record<
   "native.delivery.epochs.status": handleNativeRpc,
   "native.delivery.epochs.compact": handleNativeRpc,
   "native.delivery.epochs.close": handleNativeRpc,
+  "native.delivery.epochs.gap.resolve": handleNativeRpc,
   "native.buffers.delivery.status": handleNativeRpc,
   "native.buffers.delivery.ack": handleNativeRpc,
   "native.services.delivery.apply": handleNativeRpc,
@@ -536,6 +653,9 @@ const handlers: Record<
   "decisionModels.local.recommend": handleDecisionModelsRpc,
   "decisionModels.local.plan": handleDecisionModelsRpc,
   "decisionModels.local.install": handleDecisionModelsRpc,
+  "decisionModels.local.installStart": handleDecisionModelsRpc,
+  "decisionModels.local.installProgress": handleDecisionModelsRpc,
+  "decisionModels.local.cancelInstall": handleDecisionModelsRpc,
   "decisionModels.local.start": handleDecisionModelsRpc,
   "decisionModels.local.stop": handleDecisionModelsRpc,
   "decisionModels.local.uninstall": handleDecisionModelsRpc,
@@ -548,6 +668,12 @@ const handlers: Record<
   "voice.local.release": handleVoiceRpc,
   "providers.center.read": handleProvidersRpc,
   "providers.acp.patchMetadata": handleProvidersRpc,
+  "ollama.status": handleOllamaRpc,
+  "ollama.start": handleOllamaRpc,
+  "ollama.pull.start": handleOllamaRpc,
+  "ollama.pull.cancel": handleOllamaRpc,
+  "ollama.port.set": handleOllamaRpc,
+  "ollama.opencode.save": handleOllamaRpc,
   "models.list": handleProvidersRpc,
   "modelRouting.get": handleModelRoutingRpc,
   "modelRouting.save": handleModelRoutingRpc,
@@ -557,6 +683,7 @@ const handlers: Record<
   "appearance.themeSuggestions": handleAppearanceRpc,
   "appearance.backgroundSuggestions": handleAppearanceRpc,
   "appearance.backgroundImage": handleAppearanceRpc,
+  "appearance.cancelGeneration": handleAppearanceRpc,
   "assistant.builder.interview": handleAssistantBuilderRpc,
   "assistant.builder.avatarGenerate": handleAssistantBuilderRpc,
   "assistant.builder.avatarRead": handleAssistantBuilderRpc,
@@ -693,6 +820,7 @@ const handlers: Record<
   "crews.deleteRun": handleCrewsRpc,
   "crews.agent.save": handleCrewsRpc,
   "crews.agent.delete": handleCrewsRpc,
+  "crews.agent.group.update": handleCrewsRpc,
   "crews.start": handleCrewsRpc,
   "crews.get": handleCrewsRpc,
   "crews.assign": handleCrewsRpc,
@@ -735,8 +863,17 @@ export async function dispatchOwnerRpc(
   // Only the desktop app sends this heartbeat; it is how the Host recognizes the desktop principal.
   if (method === "sessions.desktopLive") dependencies.approvals.noteDesktop(request.tokenHash);
   const startedAt = performance.now();
+  const signal = request.domainContext?.signal;
   try {
-    await handler(dependencies, request);
+    const work = handler(dependencies, request);
+    await (signal
+      ? untilAborted(
+          work,
+          signal,
+          String(method),
+          ownerRpcDeadlineMs(String(method), request.params),
+        )
+      : work);
   } catch (error) {
     const fields = {
       ...rpcFailureFields(error, request),

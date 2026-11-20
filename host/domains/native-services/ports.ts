@@ -68,7 +68,7 @@ export interface NativeServiceOwnerPorts {
   appendTerminal(params: Record<string, unknown>): Promise<unknown>;
   terminalDemand?(params: Record<string, unknown>): Promise<unknown>;
   desktop: {
-    take(): Promise<unknown>;
+    take(options?: { waitMs?: number; signal?: AbortSignal }): Promise<unknown>;
     finish(id: string, result: unknown, error?: string): Promise<unknown>;
     authorize(id: string, action: string): Promise<unknown>;
   };

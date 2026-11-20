@@ -63,6 +63,47 @@ async function setup(enabled = true) {
   root = createRoot(container);
   await act(async () => root!.render(createElement(VoiceSettings)));
 }
+
+it.each(["voice-wake-phrase", "voice-sleep-phrase"])(
+  "lands on %s and points to the required opt-ins without changing them",
+  async (target) => {
+    await setup(false);
+    const row = (id: string) => container.querySelector(`[data-setting-id="${id}"]`)!;
+    const wake = row("voice-wake").querySelector<HTMLButtonElement>('[role="switch"]')!;
+    const companion = row("voice-companion").querySelector<HTMLButtonElement>('[role="switch"]')!;
+    expect(wake.disabled || wake.getAttribute("aria-disabled") === "true").toBe(true);
+    expect(row("voice-companion").parentElement).toBe(row("voice-wake").parentElement);
+
+    await act(async () =>
+      root!.render(
+        createElement(RevealedSetting.Provider, { value: target }, createElement(VoiceSettings)),
+      ),
+    );
+    const followPrerequisite = async () =>
+      act(async () => row(target).querySelector<HTMLButtonElement>("button")!.click());
+    await followPrerequisite();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      companion.getAttribute("aria-label"),
+    );
+    expect(loadVoiceSettings().enabled).toBe(false);
+
+    await act(async () =>
+      row("voice-companion").querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+    );
+    await followPrerequisite();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe(
+      wake.getAttribute("aria-label"),
+    );
+    expect(loadVoiceSettings().wakeEnabled).not.toBe(true);
+
+    await act(async () =>
+      row("voice-wake").querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+    );
+    expect(row(target).querySelector("input")).not.toBeNull();
+    expect(loadVoiceSettings().wakeEnabled).toBe(true);
+    expect(backend.setup).not.toHaveBeenCalled();
+  },
+);
 it("enables dictation independently without microphone capture or companion settings", async () => {
   await setup(false);
   const capture = vi.fn();
@@ -226,11 +267,6 @@ async function click(text: string) {
   await act(async () => button!.click());
 }
 async function openLocate() {
-  const more = document.querySelector<HTMLButtonElement>(
-    'button[aria-label="More voice setup actions"]',
-  );
-  expect(more).not.toBeNull();
-  await act(async () => more!.click());
   await click("Locate existing");
 }
 it("does not check or install until enabled; shows only the next actions for missing setup", async () => {
@@ -270,6 +306,63 @@ it("keeps locations behind a dialog, saves a picked folder and discards stale de
     ttsPath: "G:\\Models\\VoxCPM2",
   });
   expect(backend.setup).not.toHaveBeenCalled();
+});
+
+it("finds an existing installation without using or clearing saved paths until it is ready", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), python: "old-python", whisperPath: "old-model" });
+  await setup();
+  await advance();
+  await click("Locate existing");
+
+  backend.inspect.mockResolvedValueOnce({ ready: false, missing: ["Whisper model"] });
+  await click("Automatic detection");
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true });
+  expect(loadVoiceSettings()).toMatchObject({ python: "old-python", whisperPath: "old-model" });
+  expect(backend.setup).not.toHaveBeenCalled();
+
+  backend.inspect.mockResolvedValue({
+    ready: true,
+    missing: [],
+    python: "existing-python",
+    whisperPath: "existing-model",
+  });
+  await click("Automatic detection");
+  expect(loadVoiceSettings()).toMatchObject({
+    python: "existing-python",
+    whisperPath: "existing-model",
+  });
+  await advance();
+  expect(container.textContent).toContain("Voice is ready");
+});
+
+it("offers automatic processing when the selected GPU is unavailable", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), device: "gpu" });
+  backend.inspect.mockResolvedValueOnce({ ready: false, missing: ["NVIDIA GPU"] });
+  await setup();
+  await advance();
+  await click("Use automatic selection");
+  expect(loadVoiceSettings().device).toBe("auto");
+  await advance();
+  expect(backend.inspect).toHaveBeenLastCalledWith({ natural: true });
+});
+
+it("ignores an automatic search result after the location dialog closes", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), python: "saved-python" });
+  await setup();
+  await advance();
+  await openLocate();
+  let found!: (result: { ready: boolean; missing: string[]; python: string }) => void;
+  backend.inspect.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        found = resolve;
+      }),
+  );
+  await click("Automatic detection");
+  await click("Done");
+  await act(async () => found({ ready: true, missing: [], python: "late-python" }));
+  expect(loadVoiceSettings().python).toBe("saved-python");
+  expect(container.textContent).toContain("Voice setup is needed");
 });
 
 it("keeps installation reachable while detection is stalled and ignores the stale check", async () => {

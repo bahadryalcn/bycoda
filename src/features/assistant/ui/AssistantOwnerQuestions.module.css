@@ -39,7 +39,7 @@
   flex: 1 1 240px;
 }
 
-@media (max-width: 720px) {
+@container assistant-room (max-width: 720px) {
   .card {
     padding: 12px;
   }

@@ -5,6 +5,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { observeResize } from "../lib/observeResize";
 import type { SashEndInfo } from "../ui/Sash";
 
 type Options = {
@@ -42,7 +43,7 @@ function clampTo(value: number, min: number, max: number) {
  *
  * @example
  * const resize = useDragResize({ min: 180, max: () => 480, defaultWidth: 244, initial: width, onCommit: setWidth });
- * <aside ref={resize.setPaneRef}>�</aside>
+ * <aside ref={resize.setPaneRef}>{children}</aside>
  * <Sash {...resize.sashProps} label={t("Resize sidebar")} />
  */
 export function useDragResize({
@@ -82,17 +83,14 @@ export function useDragResize({
   }));
   const paneRef = useRef<HTMLElement | null>(null);
   const widthRef = useRef(width);
+  // Releases the parent-size subscription held while a pane is mounted.
+  const parentWatch = useRef<(() => void) | null>(null);
 
-  const apply = (next: number) => {
-    widthRef.current = next;
-    const pane = paneRef.current;
-    if (pane) pane.style[axis === "vertical" ? "height" : "width"] = `${next}px`;
-  };
-
-  const setPaneRef = useCallback(
-    (el: HTMLElement | null) => {
-      paneRef.current = el;
-      if (el) el.style[axis === "vertical" ? "height" : "width"] = `${widthRef.current}px`;
+  const apply = useCallback(
+    (next: number) => {
+      widthRef.current = next;
+      const pane = paneRef.current;
+      if (pane) pane.style[axis === "vertical" ? "height" : "width"] = `${next}px`;
     },
     [axis],
   );
@@ -133,6 +131,38 @@ export function useDragResize({
     commit(widthRef.current);
   };
 
+  const reconcile = useCallback(() => {
+    // The pane's parent resizes with every drag frame. While a drag is live, keep its
+    // width; snapping back to the saved width here made the pane flicker between the
+    // old and new size until release.
+    const dragging = sashStart.current !== null;
+    const next = clamp(dragging ? widthRef.current : preferredWidthRef.current);
+    if (next !== widthRef.current) {
+      apply(next);
+      setWidth(next);
+    }
+    const upper = Math.max(0, maxRef.current());
+    setBounds((previous) =>
+      previous.min === Math.min(minRef.current, upper) && previous.max === upper
+        ? previous
+        : { min: Math.min(minRef.current, upper), max: upper },
+    );
+  }, [apply, clamp]);
+
+  // The pane can mount after the first effect (conditional panel, Suspense), so its parent is
+  // observed from the ref, not once at effect time. Swapping or unmounting the pane releases it.
+  const setPaneRef = useCallback(
+    (el: HTMLElement | null) => {
+      parentWatch.current?.();
+      parentWatch.current = null;
+      paneRef.current = el;
+      if (!el) return;
+      el.style[axis === "vertical" ? "height" : "width"] = `${widthRef.current}px`;
+      if (el.parentElement) parentWatch.current = observeResize(el.parentElement, reconcile);
+    },
+    [axis, reconcile],
+  );
+
   const previousAxis = useRef(axis);
   useEffect(() => {
     if (previousAxis.current === axis) return;
@@ -142,33 +172,12 @@ export function useDragResize({
     commit(defaultRef.current);
   }, [axis]);
 
+  // Window resizes and `min` changes re-clamp; parent resizes come through `setPaneRef`.
   useEffect(() => {
-    const resize = () => {
-      // The pane's parent resizes with every drag frame. While a drag is live, keep its
-      // width; snapping back to the saved width here made the pane flicker between the
-      // old and new size until release.
-      const dragging = sashStart.current !== null;
-      const next = clamp(dragging ? widthRef.current : preferredWidthRef.current);
-      if (next !== widthRef.current) {
-        apply(next);
-        setWidth(next);
-      }
-      const upper = Math.max(0, maxRef.current());
-      setBounds((previous) =>
-        previous.min === Math.min(minRef.current, upper) && previous.max === upper
-          ? previous
-          : { min: Math.min(minRef.current, upper), max: upper },
-      );
-    };
-    const observer = new ResizeObserver(resize);
-    if (paneRef.current?.parentElement) observer.observe(paneRef.current.parentElement);
-    window.addEventListener("resize", resize);
-    resize();
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", resize);
-    };
-  }, [clamp, min, axis]);
+    reconcile();
+    window.addEventListener("resize", reconcile);
+    return () => window.removeEventListener("resize", reconcile);
+  }, [reconcile, min]);
 
   const reset = () => commit(defaultRef.current);
   const getWidth = () => widthRef.current;

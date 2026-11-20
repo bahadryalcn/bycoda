@@ -296,13 +296,22 @@ export class HostRunHttpTargets {
       read = method === "GET" || method === "HEAD";
     const create = method === "POST" && (!id || action === "fork");
     let original = id ? origin.sessions.get(id) : undefined;
+    const [resume, ...extraResumeValues] = url.searchParams.getAll("resume");
+    const interrupt =
+      action === "interrupt" &&
+      url.pathname.startsWith("/api/") &&
+      resume === "false" &&
+      extraResumeValues.length === 0;
     if (
       scope.control &&
       (!id ||
         !hint.providerSessionId ||
         !original?.directory ||
         original.owner !== scope.identity ||
-        !((method === "POST" && action === "abort") || (method === "DELETE" && action === "")))
+        !(
+          (method === "POST" && (action === "abort" || interrupt)) ||
+          (method === "DELETE" && action === "")
+        ))
     )
       throw new Error("Cleanup may only abort/delete its known original OpenCode session.");
     if (id && (!original?.directory || original.state !== "observed") && !(read && action === "")) {

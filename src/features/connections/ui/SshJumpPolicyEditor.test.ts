@@ -115,9 +115,9 @@ it("honors controlled changes and eight-hop/disabled limits without callbacks on
     await act(async () =>
       root.render(createElement(SshJumpPolicyEditor, { value: next, onChange: change })),
     );
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Jump host 1: Host"]')!.value).toBe(
-      "external-change",
-    );
+    expect(
+      host.querySelector<HTMLInputElement>('[aria-label="Jump host 1: Hostname"]')!.value,
+    ).toBe("external-change");
     expect(
       host.querySelector<HTMLInputElement>('[aria-label="Jump host 1: Certificate file"]')!.value,
     ).toBe("~/preserved cert");

@@ -49,22 +49,18 @@ export function useGeneratorState<T>(key: string, initial: T | (() => T)) {
 }
 
 type SessionState = {
-  epoch: number;
   batch: number;
   selected: number | null;
   appearance: unknown;
   intent: number;
 };
-const state: SessionState = { epoch: 0, batch: 0, selected: null, appearance: null, intent: 0 };
+const state: SessionState = { batch: 0, selected: null, appearance: null, intent: 0 };
 
 /**
  * Session counters and handles (the old `useRef`s) that background work reads after the generator
  * closes. Functions, not fields: components may not mutate module state directly.
  */
 export const generatorSession = {
-  /** Theme request generation; a stale request is dropped when a newer one started. */
-  nextEpoch: () => ++state.epoch,
-  epoch: () => state.epoch,
   /** Suggestion-list generation; drawings for an older list never reach the new chips. */
   bumpBatch: () => {
     state.batch += 1;
@@ -98,6 +94,6 @@ export const generatorSession = {
 export function resetGeneratorSession() {
   values.clear();
   gradientCallback = undefined;
-  Object.assign(state, { epoch: 0, batch: 0, selected: null, appearance: null, intent: 0 });
+  Object.assign(state, { batch: 0, selected: null, appearance: null, intent: 0 });
   changes.notify();
 }

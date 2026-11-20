@@ -11,6 +11,7 @@ pub(super) struct NativeWorkspaceChannel {
     pub(super) delivery: bool,
     pub(super) delivery_ack: bool,
     pub(super) delivery_epochs: bool,
+    pub(super) delivery_epoch_gaps: bool,
     pub(super) delivery_cursors: Arc<super::native_buffer_delivery::RecoveryCursors>,
     pub(super) delivery_ack_cursors: Arc<super::native_buffer_delivery::RecoveryCursors>,
 }
@@ -41,7 +42,7 @@ impl NativeWorkspaceChannel {
                 routes: state.recovery_routes.clone(),
                 path,
                 pin: RecoveryRoute {
-                    revision: state.recovery_routes.capture()?,
+                    revision: state.recovery_routes.capture(&machine.id)?,
                     selected_endpoint: machine.endpoint.clone(),
                 },
                 machine,
@@ -51,13 +52,11 @@ impl NativeWorkspaceChannel {
         selection.with_current(|| Ok(()))?;
         let descriptor = cached_describe(&state, &machine, selection.pin.revision)?;
         selection.with_current(|| Ok(()))?;
-        if descriptor["environmentId"] != machine.environment_id
-            || descriptor["protocolVersion"] != 1
-        {
-            return Err(
-                "Local Host identity or protocol changed; reconnect before managed execution"
-                    .into(),
-            );
+        if let Some(message) = crate::remote::protocol::protocol_mismatch(&descriptor) {
+            return Err(message.into());
+        }
+        if descriptor["environmentId"] != machine.environment_id {
+            return Err("Local Host identity changed; reconnect before managed execution".into());
         }
         if !has_capability(&descriptor, capability) {
             return Err("Update bycoda Host to use managed native execution safely. The project checkout will not be used as a fallback.".into());
@@ -119,6 +118,7 @@ impl NativeWorkspaceChannel {
                     }),
                 delivery_ack_cursors: state.native_buffer_delivery_ack_cursors.clone(),
                 delivery_epochs: super::native_delivery_epochs::supports(&descriptor),
+                delivery_epoch_gaps: super::native_delivery_epochs::supports_gaps(&descriptor),
             })),
         })
     }
@@ -229,7 +229,7 @@ fn cached_describe(
     let ttl = match &result {
         Ok(descriptor)
             if descriptor["environmentId"] == machine.environment_id
-                && descriptor["protocolVersion"] == 1 =>
+                && crate::remote::protocol::protocol_mismatch(descriptor).is_none() =>
         {
             Some(DESCRIPTOR_TTL)
         }
@@ -243,7 +243,7 @@ fn cached_describe(
     match ttl {
         // Only the route revision captured before the call may store it; a
         // reconnect during the describe retires that revision.
-        Some(ttl) if state.recovery_routes.current(revision) => {
+        Some(ttl) if state.recovery_routes.current(&machine.id, revision) => {
             cache.insert(
                 machine.id.clone(),
                 CachedDescriptor {
@@ -398,7 +398,7 @@ mod tests {
             path,
             machine: machine.clone(),
             pin: RecoveryRoute {
-                revision: state.recovery_routes.capture().unwrap(),
+                revision: state.recovery_routes.capture(&machine.id).unwrap(),
                 selected_endpoint: machine.endpoint.clone(),
             },
         };
@@ -426,6 +426,7 @@ mod tests {
                 delivery: false,
                 delivery_ack: false,
                 delivery_epochs: false,
+                delivery_epoch_gaps: false,
                 delivery_cursors: state.native_buffer_delivery_cursors.clone(),
                 delivery_ack_cursors: state.native_buffer_delivery_ack_cursors.clone(),
             })),

@@ -1,6 +1,5 @@
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 import {
-  normalizeAutoSettleSettings,
   type AutoSettleSettings,
   type SessionLifecycleRecord,
   type SessionLifecycleStore,
@@ -9,6 +8,8 @@ import {
 const DAY_MS = 86_400_000;
 /** Saves that land just after a settle are not new activity (the sidebar uses the same grace). */
 const SETTLE_ACTIVITY_GRACE_MS = 5000;
+/** Automatic settling persists this many sessions per lifecycle file write. */
+const AUTO_SETTLE_BATCH = 100;
 
 export interface SessionRunState {
   exists: boolean;
@@ -37,9 +38,8 @@ export interface SessionLifecyclePorts {
   now(): number;
 }
 
-/** A settings change; an omitted archive window keeps the saved one (older clients send none). */
-export type AutoSettleChange = Pick<AutoSettleSettings, "afterDays"> &
-  Partial<Pick<AutoSettleSettings, "archiveAfterDays">>;
+/** A settings change; an omitted window keeps the saved one. */
+export type AutoSettleChange = Partial<AutoSettleSettings>;
 
 export interface TurnOutcome {
   cancelled?: boolean;
@@ -155,16 +155,13 @@ export function createSessionLifecycleService(
       context: HostDomainContext,
     ): Promise<AutoSettleSettings> {
       await assertDomainAuthority(context);
-      const current = await store.autoSettleSettings();
-      return store.saveAutoSettleSettings(
-        normalizeAutoSettleSettings({
-          afterDays: settings.afterDays,
-          archiveAfterDays:
-            settings.archiveAfterDays === undefined
-              ? current.archiveAfterDays
-              : settings.archiveAfterDays,
-        }),
-      );
+      return store.updateAutoSettleSettings((current) => ({
+        afterDays: settings.afterDays === undefined ? current.afterDays : settings.afterDays,
+        archiveAfterDays:
+          settings.archiveAfterDays === undefined
+            ? current.archiveAfterDays
+            : settings.archiveAfterDays,
+      }));
     },
 
     /** Settles every idle candidate; returns how many sessions it settled. */
@@ -174,6 +171,20 @@ export function createSessionLifecycleService(
       const cutoff = ports.now() - afterDays * DAY_MS;
       const records = new Map((await store.list()).map((record) => [record.sessionId, record]));
       let count = 0;
+      let batch: string[] = [];
+      // One file write per batch; each row is re-read inside it, so a wake or un-settle that
+      // landed since the checks keeps its session active. A failed batch leaves earlier ones saved.
+      const flush = async () => {
+        const ids = batch;
+        batch = [];
+        if (!ids.length) return;
+        const results = await store.updateMany(ids, (current) =>
+          current.state === "active" && !current.keepActive
+            ? { next: settled(current, "auto"), result: true }
+            : { next: current, result: false },
+        );
+        count += results.filter(Boolean).length;
+      };
       for (const row of await ports.activity()) {
         if (row.pinned || row.archived || row.running || row.needsInput) continue;
         if (row.lastActivityAt >= cutoff) continue;
@@ -182,11 +193,10 @@ export function createSessionLifecycleService(
         // The queue is read last, only for sessions that pass every cheaper test.
         const state = await ports.runState(row.sessionId);
         if (!state.exists || state.running || state.queued > 0) continue;
-        const next = await write(row.sessionId, (current) =>
-          current.state === "active" && !current.keepActive ? settled(current, "auto") : current,
-        );
-        if (next.state === "settled" && next.settledBy === "auto") count += 1;
+        batch.push(row.sessionId);
+        if (batch.length >= AUTO_SETTLE_BATCH) await flush();
       }
+      await flush();
       return count;
     },
 

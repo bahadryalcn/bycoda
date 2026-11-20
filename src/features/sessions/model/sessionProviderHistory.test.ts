@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Block, HarnessId } from "./session";
-import { sessionProviderHistory } from "./sessionProviderHistory";
+import { sameSessionProviderHistory, sessionProviderHistory } from "./sessionProviderHistory";
 
 const turn = (id: string, harness?: HarnessId): Block => ({
   id,
@@ -105,5 +105,58 @@ describe("sessionProviderHistory", () => {
     expect(
       sessionProviderHistory({ harness: "claude", providerHistory, blocks: [turn("1", "claude")] }),
     ).toEqual({ providers: ["claude"], activeHarness: "claude", activeModel: "Model" });
+  });
+
+  it("applies a running target to a transcript walk that is cached by block identity", () => {
+    const blocks = [turn("1", "claude")];
+    const idle = sessionProviderHistory({ harness: "claude", blocks });
+    const running = sessionProviderHistory({
+      harness: "claude",
+      blocks,
+      runningModelTarget: { harness: "codex", model: "gpt", modelSettings: {} },
+    });
+    expect(idle).toEqual({ providers: ["claude"], activeHarness: "claude", activeModel: "Model" });
+    expect(running).toEqual({
+      providers: ["claude", "codex"],
+      activeHarness: "codex",
+      activeModel: "gpt",
+      handedOffFrom: "claude",
+    });
+    // The cached walk must not be mutated by the running-target tail.
+    expect(sessionProviderHistory({ harness: "claude", blocks })).toEqual(idle);
+  });
+
+  it("re-walks the same blocks when the starting provider changes", () => {
+    const blocks = [turn("1")];
+    expect(sessionProviderHistory({ harness: "codex", blocks }).activeHarness).toBe("codex");
+    expect(
+      sessionProviderHistory({
+        harness: "codex",
+        pendingSwitch: { from: "claude", fromModel: "old", fromSettings: {} },
+        blocks,
+      }).activeHarness,
+    ).toBe("claude");
+  });
+});
+
+describe("sameSessionProviderHistory", () => {
+  const base = {
+    providers: ["claude", "codex"] as HarnessId[],
+    activeHarness: "codex" as HarnessId,
+    activeModel: "GPT",
+    handedOffFrom: "claude" as HarnessId,
+  };
+
+  it("compares provider summaries by value", () => {
+    expect(sameSessionProviderHistory(base, { ...base, providers: [...base.providers] })).toBe(
+      true,
+    );
+    expect(sameSessionProviderHistory(undefined, undefined)).toBe(true);
+    expect(sameSessionProviderHistory(undefined, base)).toBe(false);
+    expect(sameSessionProviderHistory(base, { ...base, providers: ["codex", "claude"] })).toBe(
+      false,
+    );
+    expect(sameSessionProviderHistory(base, { ...base, activeModel: undefined })).toBe(false);
+    expect(sameSessionProviderHistory(base, { ...base, handedOffFrom: undefined })).toBe(false);
   });
 });

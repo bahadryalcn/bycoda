@@ -52,7 +52,8 @@ it.each([
           ),
         ),
       );
-      const node = container.querySelector("pre")!.firstChild!;
+      const message = () => container.querySelector('[data-selectable-agent-response="prompt"]');
+      const node = message()!.querySelector("p")!.firstChild!;
       const range = document.createRange();
       range.setStart(node, 7);
       range.setEnd(node, 14);
@@ -69,13 +70,28 @@ it.each([
         ...document.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button'),
       ].find((button) => button.textContent?.includes(action))!;
       await act(async () => translate.click());
-      expect(container.querySelector("pre")?.textContent).toBe(block.text);
+      expect(message()?.textContent).toBe(block.text);
       const apply = [
         ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
       ].find((button) => button.textContent === applyLabel)!;
       await act(async () => apply.click());
-      expect(container.querySelector("pre")?.textContent).toBe("Before Hello after");
+      expect(message()?.textContent).toBe("Before Hello after");
       const scroller = container.querySelector<HTMLElement>(".agent-transcript")!;
+      // Regression: the toolbar floats over the transcript instead of taking flow height,
+      // and uses the shared floating surface rather than an opaque background band.
+      const toolbar = scroller
+        .querySelector('button[aria-label="Close translation"]')!
+        .closest<HTMLElement>('[data-surface-variant="floating"]')!;
+      const stickyRow = toolbar.parentElement!;
+      expect(stickyRow.parentElement).toBe(scroller);
+      expect(stickyRow.className).toContain("sticky");
+      expect(stickyRow.className).toContain("h-0");
+      expect(toolbar.className).not.toContain("bg-(--ui-surface)");
+      expect(toolbar.className).toContain("absolute");
+      expect(toolbar.querySelector('[role="radiogroup"]')?.getAttribute("aria-label")).toBe(
+        "Translation view",
+      );
+      expect(toolbar.textContent).toContain("After applying: ↑ original, ↓ translation.");
       for (const [key, expected] of [
         ["ArrowUp", block.text],
         ["ArrowDown", "Before Hello after"],
@@ -85,7 +101,7 @@ it.each([
             new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
           ),
         );
-        expect(container.querySelector("pre")?.textContent).toBe(expected);
+        expect(message()?.textContent).toBe(expected);
       }
       expect(block.text).toBe("Before Merhaba after");
       const copy = [...scroller.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -97,7 +113,7 @@ it.each([
         (button) => button.getAttribute("aria-label") === "Close translation",
       )!;
       act(() => close.click());
-      expect(container.querySelector("pre")?.textContent).toBe("Before Hello after");
+      expect(message()?.textContent).toBe("Before Hello after");
       expect(scroller.textContent).not.toContain("After applying:");
       expect(scroller.querySelector('button[aria-label="Close translation"]')).toBeNull();
       expect(run).toHaveBeenCalledWith(expect.objectContaining({ providerAccountId: "default" }));

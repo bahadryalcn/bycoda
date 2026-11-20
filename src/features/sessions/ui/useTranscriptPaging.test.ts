@@ -34,7 +34,7 @@ function Harness({
   const prepend = useRef<number | null>(null);
   api = useTranscriptPaging({
     turns,
-    blockCount: turns.length,
+    blockCount: turns.reduce((count, turn) => count + turn.length, 0),
     openWork: {},
     scroller: scroll,
     stickToBottom: stick,
@@ -47,7 +47,17 @@ function Harness({
     "div",
     { ref: scroll, "data-scroll": true },
     api.visibleTurns.map((turn) =>
-      createElement("div", { key: turn[0].id, "data-transcript-turn": turn[0].id }, turn[0].text),
+      createElement(
+        "div",
+        { key: turn[0].id, "data-transcript-turn": turn[0].id },
+        turn.map((block) =>
+          createElement(
+            "div",
+            { key: block.id, "data-transcript-virtual-block-id": block.id },
+            block.text,
+          ),
+        ),
+      ),
     ),
   );
 }
@@ -63,6 +73,11 @@ beforeEach(() => {
     this: HTMLElement,
   ) {
     const parent = this.parentElement;
+    if (this.hasAttribute("data-transcript-virtual-block-id")) {
+      const top =
+        parent!.getBoundingClientRect().top + Array.from(parent!.children).indexOf(this) * 20;
+      return new DOMRect(0, top, 500, 20);
+    }
     const top = this.hasAttribute("data-transcript-turn")
       ? Array.from(parent!.children).indexOf(this) * 100 - parent!.scrollTop
       : 0;
@@ -71,6 +86,28 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+});
+
+it("keeps a message in place when earlier history changes the first turn key", async () => {
+  let finish!: (added: number) => void;
+  const load = () =>
+    new Promise<number>((resolve) => {
+      finish = resolve;
+    });
+  const current = history(10, 20);
+  render(current, load, true, false);
+  scroller.scrollTop = 0;
+  const rowTop = () =>
+    scroller.querySelector('[data-transcript-virtual-block-id="u-20"]')!.getBoundingClientRect()
+      .top;
+  const before = rowTop();
+  act(() => api.onHistoryScroll(0, true));
+  await act(async () => {
+    const expanded = [[history(1, 19)[0][0], ...current[0]], ...current.slice(1)];
+    root.render(createElement(Harness, { turns: expanded, more: false, follow: false }));
+    finish(1);
+  });
+  expect(rowTop()).toBe(before);
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -87,6 +124,31 @@ function render(
   act(() => root.render(createElement(Harness, { turns, load, more, follow })));
   scroller = host.firstElementChild as HTMLDivElement;
 }
+
+it("loads one earlier page on upward reader input and keeps the reading position", async () => {
+  let finish!: (added: number) => void;
+  const load = vi.fn(
+    () =>
+      new Promise<number>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  render(history(10, 20), load, true, false);
+  scroller.scrollTop = 120;
+  act(() => api.onHistoryScroll(400, false, false));
+  act(() => api.onHistoryScroll(120, false, false));
+  expect(load).not.toHaveBeenCalled();
+  act(() => api.onHistoryScroll(120, true));
+  act(() => api.onHistoryScroll(120, true));
+  expect(load).toHaveBeenCalledOnce();
+  const visible = () => scroller.querySelector<HTMLElement>('[data-transcript-turn="u-21"]');
+  const offset = visible()!.getBoundingClientRect().top;
+  await act(async () => {
+    root.render(createElement(Harness, { turns: history(30), load, more: false, follow: false }));
+    finish(20);
+  });
+  expect(visible()!.getBoundingClientRect().top).toBe(offset);
+});
 
 it("bounds repeated earlier/newer paging and preserves an overlapping turn's viewport offset", async () => {
   render(history(1000));
@@ -202,4 +264,21 @@ it.each([
   });
   expect(setPagingError).toHaveBeenCalledWith(shown);
   expect(loadingRef.current).toBe(false);
+});
+
+it.each([
+  ["adds nothing (it failed and said so itself)", 0, false],
+  ["adds blocks", 20, true],
+  ["reports no count", undefined, true],
+])("moves the window only when the remote load %s", async (_name, added, moved) => {
+  const apply = vi.fn();
+  await runRemoteLoad({
+    load: () => Promise.resolve(added),
+    stale: () => false,
+    apply,
+    loadingRef: { current: true },
+    setPagingLoading: () => {},
+    setPagingError: () => {},
+  });
+  expect(apply).toHaveBeenCalledTimes(moved ? 1 : 0);
 });

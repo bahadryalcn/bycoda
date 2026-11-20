@@ -11,7 +11,7 @@ import { runUpdateFlow } from "../../model/updater";
 import { HiddenDictationIndicator } from "../../../features/voice/ui/HiddenDictationIndicator";
 import { UsageFooter } from "../../shell/UsageFooter";
 import { WorkspaceControls } from "../../shell/WorkspaceControls";
-import { t } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { requestBackgroundTarget } from "../input/backgroundTargets";
 import type { WorkspaceNoticesProps } from "./WorkspaceNotices";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -80,12 +80,14 @@ function WorkspaceFooterComponent({
   onOpenApprovalSession,
   onApproval,
 }: WorkspaceFooterProps) {
+  // Subscribes to locale changes so the memoized footer re-renders with the new strings.
+  const t = useT();
   return (
     <div
       data-workspace-footer
       {...surfaceAttributes(
         { frame: "pane", edge: "top" },
-        "flex h-8 min-w-0 shrink-0 items-center gap-1 px-1.5",
+        "@container/footer flex h-8 min-w-0 shrink-0 items-center gap-1 px-1.5",
       )}
     >
       {searchViewOpen ||

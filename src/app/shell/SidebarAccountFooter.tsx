@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { AccountMenu, useAccount } from "../../features/account";
 import { useAssistantPresence } from "../../features/assistant/hooks/useAssistantPresence";
@@ -18,10 +19,12 @@ import styles from "./SidebarAccountFooter.module.css";
  */
 export function SidebarAccountFooter({
   compact = false,
+  updateNotice,
   onOpenSettings,
   onOpenAccountSettings,
 }: {
   compact?: boolean;
+  updateNotice?: ReactNode;
   onOpenSettings?: () => void;
   onOpenAccountSettings?: () => void;
 }) {
@@ -64,6 +67,7 @@ export function SidebarAccountFooter({
     <div data-sidebar-account-footer={compact ? "compact" : ""} className={styles.footer}>
       <VoiceLauncherSlot compact={compact} />
       <div className={styles.actions}>
+        {updateNotice}
         {import.meta.env.DEV ? (
           <Tooltip label={t("Development build")} side={compact ? "right" : "top"}>
             <Badge

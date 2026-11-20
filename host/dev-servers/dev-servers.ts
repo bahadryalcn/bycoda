@@ -1249,9 +1249,12 @@ export class DevServersService {
       let pending = "";
       let timestamp = 0;
       let truncated = false;
+      // A `\r` ends the line only when `\n` follows; otherwise the next output redraws it.
+      let carriageReturn = false;
+      // oxlint-disable-next-line no-control-regex -- Strip ANSI controls from process output.
+      const plain = () => pending.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
       const emit = () => {
-        // oxlint-disable-next-line no-control-regex -- Strip ANSI controls from process output.
-        const line = redactor.redact(pending.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""));
+        const line = redactor.redact(plain());
         if (line.trim()) {
           const stack = /^\s+at\s/.test(line) ? line : undefined;
           const frame =
@@ -1273,13 +1276,33 @@ export class DevServersService {
         timestamp = 0;
         truncated = false;
       };
+      const redraw = () => {
+        const text = plain();
+        const level = serverLogLevel(text);
+        if (level === "error" || level === "warn") {
+          emit();
+          return;
+        }
+        // Still feed the redactor, so a PEM marker in the replaced text keeps its state.
+        redactor.redact(text);
+        pending = "";
+        timestamp = 0;
+        truncated = false;
+      };
       return (text: string, flush = false) => {
         // A huge unterminated line is retained once, then discarded until a line
         // boundary. In particular, fragments of a long credential are never emitted.
         for (const part of text.split(/(\r\n|\n|\r)/)) {
-          if (/^(?:\r\n|\n|\r)$/.test(part)) {
+          if (part === "\n" || part === "\r\n") {
             emit();
+            carriageReturn = false;
+          } else if (part === "\r") {
+            carriageReturn = true;
           } else if (part) {
+            if (carriageReturn) {
+              redraw();
+              carriageReturn = false;
+            }
             if (!timestamp) timestamp = Date.now();
             const remaining = MAX_LINE - pending.length;
             pending += part.slice(0, remaining);

@@ -29,9 +29,36 @@ type DelegateCall = {
 /** `agents.delegate` / `wait` / `reply` however the provider names the Host tool. */
 const DELEGATE_TOOL = /(?:^|[:_.])agents[_.](delegate|wait|reply)$/i;
 
-/** The child sessions a Host delegate, wait or reply call names; undefined for any other block. */
+const delegateCalls = new WeakMap<Block, DelegateCall | null>();
+const failedCards = new WeakMap<Block, Block | null>();
+
+/**
+ * The child sessions a Host delegate, wait or reply call names; undefined for any other block.
+ * A block is a snapshot, so its parse is kept: a later projection of the same block, and
+ * every block a frame did not touch, reads it instead of parsing the result again.
+ */
 function delegateCall(block: Block): DelegateCall | undefined {
   if (block.role !== "tool") return undefined;
+  let call = delegateCalls.get(block);
+  if (call === undefined) {
+    call = parseDelegateCall(block) ?? null;
+    delegateCalls.set(block, call);
+  }
+  return call ?? undefined;
+}
+
+/** `failedAskCard`, one card object per block so a failed call keeps its identity. */
+function failedCardOf(block: Block): Block | undefined {
+  if (block.role !== "tool") return undefined;
+  let card = failedCards.get(block);
+  if (card === undefined) {
+    card = failedAskCard(block) ?? null;
+    failedCards.set(block, card);
+  }
+  return card ?? undefined;
+}
+
+function parseDelegateCall(block: Block): DelegateCall | undefined {
   // A path-shaped argument (a model ref like `grok:grok-4.6`) can turn the title into
   // "Read …"; the preview keeps the tool's own name.
   const name = [block.tool?.title, block.tool?.preview?.title, block.text].find(
@@ -107,10 +134,7 @@ function buildCardBlock(child: Session): Block {
 }
 
 /** The user message that started this ask: its note names the task, else by when it was sent. */
-function askingTurn(blocks: readonly Block[], child: Session): number {
-  const users = blocks.flatMap((block, index) =>
-    block.role === "user" && !block.internal ? [index] : [],
-  );
+function askingTurn(blocks: readonly Block[], users: readonly number[], child: Session): number {
   const taskId = crewMemberOf(child)?.taskId;
   const noted = taskId ? users.find((index) => blocks[index].text.includes(`task ${taskId}`)) : -1;
   if (noted !== undefined && noted >= 0) return noted;
@@ -130,7 +154,10 @@ function askingTurn(blocks: readonly Block[], child: Session): number {
  * turn cannot be found is left out, and the dock still lists it.
  */
 export function placeDelegatedCards(blocks: Block[], children: readonly Session[]): Block[] {
-  const { inPlace, hidden, after } = planCards(blocks, children);
+  return placeFromPlan(blocks, planFor(blocks, children));
+}
+
+function placeFromPlan(blocks: Block[], { inPlace, hidden, after }: CardPlan): Block[] {
   if (!after.size && !inPlace.size && !hidden.size) return blocks;
   return blocks.flatMap((block, index) =>
     hidden.has(index) ? [] : [inPlace.get(index) ?? block, ...(after.get(index) ?? [])],
@@ -139,27 +166,55 @@ export function placeDelegatedCards(blocks: Block[], children: readonly Session[
 
 /** The children `placeDelegatedCards` gives an inline card; the dock need not list them again. */
 export function cardedChildren(blocks: Block[], children: readonly Session[]): Set<string> {
-  const ids = new Set<string>();
-  if (!children.length) return ids;
-  const { placed, after } = planCards(blocks, children);
-  for (const child of placed) ids.add(child.id);
-  for (const cards of after.values()) {
-    for (const card of cards) {
-      const id = delegatedChildIdOf(card.id);
-      if (id) ids.add(id);
-    }
-  }
-  return ids;
+  if (!children.length) return new Set();
+  // A copy: the plan's own set is shared by every reader of this projection.
+  return new Set(planFor(blocks, children).carded);
 }
 
-function planCards(blocks: Block[], children: readonly Session[]) {
+/** Where every card of one projection goes: `blocks` and `children` read once. */
+type CardPlan = {
+  placed: Set<Session>;
+  /** Blocks swapped for a card, by index. */
+  inPlace: Map<number, Block>;
+  /** Wait and reply calls whose runs all have a card, by index. */
+  hidden: Set<number>;
+  /** Cards that follow the user message at that index, in child order. */
+  after: Map<number, Block[]>;
+  /** Ids of the children that get an inline card. */
+  carded: Set<string>;
+};
+
+const plans = new WeakMap<readonly Block[], WeakMap<readonly Session[], CardPlan>>();
+
+/**
+ * The plan for one projection, built once. The transcript's card placement and the dock's
+ * list of carded children read the same `blocks` and `children`, so the second reader
+ * takes the first one's plan rather than walking every block and ask again.
+ */
+function planFor(blocks: Block[], children: readonly Session[]): CardPlan {
+  let byChildren = plans.get(blocks);
+  if (!byChildren) {
+    byChildren = new WeakMap();
+    plans.set(blocks, byChildren);
+  }
+  let plan = byChildren.get(children);
+  if (!plan) {
+    plan = planCards(blocks, children);
+    byChildren.set(children, plan);
+  }
+  return plan;
+}
+
+function planCards(blocks: Block[], children: readonly Session[]): CardPlan {
   const byId = childIndex(children);
   const placed = new Set<Session>();
   const inPlace = new Map<number, Block>();
   const hidden = new Set<number>();
+  const users: number[] = [];
   blocks.forEach((block, index) => {
+    if (block.role === "user" && !block.internal) users.push(index);
     // A call that failed before any child existed becomes a failed card of its own.
-    const failed = failedAskCard(block);
+    const failed = failedCardOf(block);
     if (failed) inPlace.set(index, failed);
     const call = delegateCall(block);
     if (!call) return;
@@ -174,13 +229,43 @@ function planCards(blocks: Block[], children: readonly Session[]) {
     }
   });
   const after = new Map<number, Block[]>();
+  const carded = new Set<string>();
+  for (const child of placed) carded.add(child.id);
   for (const child of children) {
     if (placed.has(child)) continue;
-    const turn = askingTurn(blocks, child);
+    const turn = askingTurn(blocks, users, child);
     if (turn < 0) continue;
-    after.set(turn, [...(after.get(turn) ?? []), delegatedCardBlock(child)]);
+    const card = delegatedCardBlock(child);
+    // Children arrive oldest ask first; pushing keeps that order within a turn.
+    const row = after.get(turn);
+    if (row) row.push(card);
+    else after.set(turn, [card]);
+    const id = delegatedChildIdOf(card.id);
+    if (id) carded.add(id);
   }
-  return { placed, inPlace, hidden, after };
+  return { placed, inPlace, hidden, after, carded };
+}
+
+/**
+ * Hands a text-only frame the plan of the frame before it: every index, call and ask
+ * is unchanged, so the dock's read of the new `blocks` is a lookup. A tool block's text
+ * is part of what names its child, so a frame on one re-plans.
+ */
+function carryPlan(
+  previous: Block[],
+  next: Block[],
+  children: readonly Session[],
+  changed: Block,
+): void {
+  if (changed.role === "tool") return;
+  const plan = plans.get(previous)?.get(children);
+  if (!plan) return;
+  let byChildren = plans.get(next);
+  if (!byChildren) {
+    byChildren = new WeakMap();
+    plans.set(next, byChildren);
+  }
+  byChildren.set(children, plan);
 }
 
 /**
@@ -200,6 +285,7 @@ export function createCardPlacer(): (blocks: Block[], children: readonly Session
       // A user block's text can change which turn a card belongs to, so it re-places.
       if (from && to && from.role !== "user" && to.role !== "user") {
         if (last.output === last.blocks) {
+          carryPlan(last.blocks, blocks, children, to);
           last = { blocks, children, output: blocks };
           return blocks;
         }
@@ -208,12 +294,14 @@ export function createCardPlacer(): (blocks: Block[], children: readonly Session
           const output = last.output.slice();
           output[at] = to;
           registerStreamingTextUpdate(last.output, output, at);
+          carryPlan(last.blocks, blocks, children, to);
           last = { blocks, children, output };
           return output;
         }
       }
     }
-    const output = placeDelegatedCards(blocks, children);
+    // The plan is kept for this projection: the dock reads the same one.
+    const output = placeFromPlan(blocks, planFor(blocks, children));
     last = { blocks, children, output };
     return output;
   };

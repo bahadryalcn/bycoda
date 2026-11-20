@@ -91,10 +91,9 @@ it("reveals a remote page whose callback resolves before its blocks reach React"
       }),
     ),
   );
-  const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "Load earlier messages",
-  )!;
-  act(() => button.click());
+  const scroller = host.querySelector<HTMLElement>(".agent-transcript")!;
+  act(() => scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40, bubbles: true })));
+  expect(load).toHaveBeenCalledOnce();
   await act(async () => resolve(20));
   const older: Block[] = Array.from({ length: 20 }, (_, index) => ({
     id: `older-${index}`,
@@ -170,7 +169,7 @@ it("holds pending follow-ups and prevents send or removal while delivery is acti
   expect(send.disabled).toBe(true);
   expect(remove.disabled).toBe(true);
   expect(await tooltipText(send)).toContain("still being delivered");
-  expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending...");
+  expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending…");
   await act(async () => {
     send.click();
     remove.click();

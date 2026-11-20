@@ -66,10 +66,7 @@ export function CrewWorkList({
   const selectedHidden =
     !!selectedId && !!query.trim() && !runs.some((run) => run.id === selectedId);
   return (
-    <nav
-      aria-label={t("Crew work")}
-      {...surfaceAttributes({ variant: "page" }, "flex min-w-0 flex-col")}
-    >
+    <div {...surfaceAttributes({ variant: "page" }, "flex min-w-0 flex-col")}>
       <div className="flex flex-col gap-2 px-3 pb-2 pt-3">
         <SegmentedControl
           label={t("Crew work view")}
@@ -102,46 +99,48 @@ export function CrewWorkList({
       <div
         ref={listRef}
         className="overflow-y-auto px-2 pb-2 @min-[640px]/crew-management:max-h-[55vh]"
-        role="list"
-        aria-label={t("Work list")}
       >
-        {runs.map((run) => (
-          <div key={run.id} role="listitem">
-            <Button
-              variant="item"
-              data-crew-work-choice={run.id}
-              selected={selectedId === run.id}
-              motion="none"
-              className="w-full min-w-0"
-              aria-pressed={selectedId === run.id}
-              disabled={disabled}
-              onClick={() => onSelect(run.id)}
-              tooltip={crewRunTitle(run)}
-              tooltipWhen="overflow"
-            >
-              <span className="min-w-0 flex-1 text-start">
-                <ClampText
-                  as="span"
-                  lines={2}
-                  expandable={false}
-                  size="inherit"
-                  tone="inherit"
-                  weight="medium"
-                  className="block break-words"
-                >
-                  {crewRunTitle(run)}
-                </ClampText>
-                <Text className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                  <CrewWorkStatusText run={run} />
-                  {crewQuietProgress(run) ? (
-                    <span className="tabular-nums">{crewQuietProgress(run)}</span>
-                  ) : null}
-                  <CrewWorkUpdated value={run.updatedAt} />
-                </Text>
-              </span>
-            </Button>
-          </div>
-        ))}
+        <ul aria-label={t("Work list")}>
+          {runs.map((run) => (
+            <li key={run.id}>
+              {/* Runs are a master-detail selection, not toggles: `aria-current` marks the open
+                run, and a pending action only blocks selection, so rows stay in the tab order. */}
+              <Button
+                variant="item"
+                data-crew-work-choice={run.id}
+                selected={selectedId === run.id}
+                motion="none"
+                className="w-full min-w-0"
+                aria-current={selectedId === run.id ? "true" : undefined}
+                aria-disabled={disabled || undefined}
+                onClick={() => onSelect(run.id)}
+                tooltip={crewRunTitle(run)}
+                tooltipWhen="overflow"
+              >
+                <span className="min-w-0 flex-1 text-start">
+                  <ClampText
+                    as="span"
+                    lines={2}
+                    expandable={false}
+                    size="inherit"
+                    tone="inherit"
+                    weight="medium"
+                    className="block break-words"
+                  >
+                    {crewRunTitle(run)}
+                  </ClampText>
+                  <Text className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                    <CrewWorkStatusText run={run} />
+                    {crewQuietProgress(run) ? (
+                      <span className="tabular-nums">{crewQuietProgress(run)}</span>
+                    ) : null}
+                    <CrewWorkUpdated value={run.updatedAt} />
+                  </Text>
+                </span>
+              </Button>
+            </li>
+          ))}
+        </ul>
         {!runs.length ? (
           <Text as="p" className="px-2 py-3">
             {query.trim() && listedCount
@@ -167,6 +166,6 @@ export function CrewWorkList({
           />
         ) : null}
       </div>
-    </nav>
+    </div>
   );
 }

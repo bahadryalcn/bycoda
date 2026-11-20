@@ -1,3 +1,5 @@
+import { TranscriptHistoryNotice } from "./TranscriptHistoryNotice";
+import { innerScrollerTakes } from "../../../shared/hooks/useLockOverscroll";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { JumpRelay } from "./transcriptJumpRelay";
@@ -19,7 +21,6 @@ import {
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { DelegationNoticeRow, SessionMessageAuthor } from "./SessionMessageAuthor";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { Alert } from "../../../shared/ui/Alert";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
 import { InlineVisual } from "./InlineVisual";
 import { Badge } from "../../../shared/ui/Badge";
@@ -36,7 +37,7 @@ import {
 } from "../model/translationHistory";
 import { TranslationResultDialog } from "./TranslationResultDialog";
 import { useTranscriptImageOpen } from "./TranscriptImagePreview";
-import type { TranscriptSelection } from "../model/transcriptSelection";
+import { resolveTranscriptSelection, type TranscriptSelection } from "../model/transcriptSelection";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
@@ -75,13 +76,12 @@ import {
 } from "react";
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
-import { AttachmentTokenText } from "./AttachmentTokenText";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { ChatCitationList } from "./ChatCitationText";
 import { extractChatCitations } from "../model/chatCitation";
 import { TranscriptSkills } from "./SkillTokenText";
 import { RunHarness } from "./SubagentAnatomy";
-import { UserTextPreview } from "./UserTextPreview";
+import { UserMessageMarkdown, UserTextPreview } from "./UserTextPreview";
 import { userTextParts } from "../model/userTextPreview";
 import { findTokens } from "../model/attachmentTokens";
 import { GeneratedImage } from "./GeneratedImage";
@@ -96,12 +96,11 @@ import { SecondOpinionCard } from "./SecondOpinionCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Popover } from "../../../shared/ui/Popover";
-import { Surface } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { UserDraftFooter } from "./UserDraftFooter";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import type {
   FloatingButtonGroupAction,
@@ -164,7 +163,7 @@ import {
   isProseBlock,
   hasTurnCopyText,
   turnCopyText,
-  workSummaryLine,
+  settledWorkSummaryLine,
   type TurnItem,
 } from "../model/transcriptActivity";
 import { lastUserTurnBlock } from "../model/editLastTurn";
@@ -202,6 +201,8 @@ type Props = {
   busy?: boolean;
   historyLoading?: boolean;
   historyLoadError?: string;
+  /** Reads the stored conversation again after `historyLoadError`; without it the failure has no Retry. */
+  onRetryHistory?: () => void;
   remoteHistoryHasMore?: boolean;
   remoteHistoryLoading?: boolean;
   remoteHistoryError?: string;
@@ -268,6 +269,7 @@ function AgentTranscriptComponent({
   busy,
   historyLoading = false,
   historyLoadError,
+  onRetryHistory,
   remoteHistoryHasMore = false,
   remoteHistoryLoading = false,
   remoteHistoryError,
@@ -339,7 +341,10 @@ function AgentTranscriptComponent({
   }, [persistedBlocks, translations, sourceBlocks, translationProjection]);
   const translateSelection = useStableCallback(
     canOfferTranslation(translationContext)
-      ? (selection: TranscriptSelection, target: TextActionTarget) => {
+      ? (liveSelection: TranscriptSelection, target: TextActionTarget) => {
+          // Read occurrence and text now, so the apply step checks the same snapshot it translated.
+          const selection = resolveTranscriptSelection(liveSelection);
+          if (!selection) return;
           const sourceBlock = persistedBlocks.find((block) => block.id === selection.responseId);
           if (target === "reprompt" && sourceBlock?.role !== "user") return;
           const source = sourceBlock?.text;
@@ -450,6 +455,7 @@ function AgentTranscriptComponent({
     lastVisibleTurn,
     visibleTurns,
     loadEarlier,
+    onHistoryScroll,
     loadNewer,
     jumpLatest,
     revealBlock: pagingRevealBlock,
@@ -619,6 +625,24 @@ function AgentTranscriptComponent({
         ref={setScroller}
         data-chat-citation-session={sessionId}
         tabIndex={-1}
+        onScroll={(event) => {
+          onHistoryScroll(
+            event.currentTarget.scrollTop,
+            false,
+            visible && !remoteHistoryError && follow.hasReaderInput(),
+          );
+        }}
+        onWheel={(event) => {
+          if (
+            visible &&
+            !remoteHistoryError &&
+            event.deltaY < 0 &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !innerScrollerTakes(event.currentTarget, event.nativeEvent)
+          )
+            onHistoryScroll(event.currentTarget.scrollTop, true);
+        }}
         onClickCapture={(event) => {
           imageOpen.noteClick(event);
           captureCodeDisclosure(event.target, retention);
@@ -631,6 +655,14 @@ function AgentTranscriptComponent({
         }}
         onKeyDown={(event) => {
           const target = event.target as HTMLElement;
+          if (
+            target === event.currentTarget &&
+            visible &&
+            !remoteHistoryError &&
+            !activeVersionValid &&
+            ["ArrowUp", "PageUp", "Home"].includes(event.key)
+          )
+            onHistoryScroll(event.currentTarget.scrollTop, true);
           if (
             !activeVersionValid ||
             event.shiftKey ||
@@ -648,79 +680,84 @@ function AgentTranscriptComponent({
         className="agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-mono text-ui-secondary leading-5"
       >
         {activeVersionValid ? (
-          <div className="sticky inset-bs-0 z-(--layer-pane-sheet) flex flex-wrap items-center justify-end gap-1 bg-(--ui-surface) px-3 py-1 font-sans text-ui-caption text-(--ui-text-secondary)">
-            <SegmentedControl
-              size="sm"
-              label={t("Translation")}
-              value={activeVersion.translatedVisible ? "translation" : "original"}
-              onValueChange={(next) => showTranslation(next === "translation")}
-              options={[
-                {
-                  value: "original",
-                  label: t("Original text"),
-                  tooltip: t("After applying: ↑ original, ↓ translation."),
-                },
-                { value: "translation", label: t("Translation") },
-              ]}
-            />
-            <CopyButton
-              motion="none"
-              size="sm"
-              variant="ghost"
-              iconOnly
-              label={t("Copy")}
-              resetKeys={[activeTranslation, activeVersion.translatedVisible]}
-              errorDetail
-              onCopy={() =>
-                copyMessage(
-                  activeVersion.translatedVisible
-                    ? activeVersion.translated
-                    : activeVersion.original,
-                )
-              }
-            />
-            <Button
-              motion="none"
-              size="sm"
-              variant="ghost"
-              iconOnly
-              label={t("Close translation")}
-              onClick={() => setActiveTranslation(null)}
+          <div className="pointer-events-none sticky inset-bs-0 z-(--layer-pane-sheet) h-0">
+            <div
+              {...surfaceAttributes(
+                { variant: "floating", frame: "card", radius: "card", elevation: "floating" },
+                "pointer-events-auto absolute inset-bs-2 inset-ie-3 flex flex-wrap items-center justify-end gap-1 p-1 font-sans text-ui-caption text-(--ui-text-secondary)",
+              )}
             >
-              <X />
-            </Button>
+              <span className="px-1">{t("After applying: ↑ original, ↓ translation.")}</span>
+              <SegmentedControl
+                size="sm"
+                label={t("Translation view")}
+                value={activeVersion.translatedVisible ? "translation" : "original"}
+                onValueChange={(next) => showTranslation(next === "translation")}
+                options={[
+                  { value: "original", label: t("Original text") },
+                  { value: "translation", label: t("Translation") },
+                ]}
+              />
+              <CopyButton
+                motion="none"
+                size="sm"
+                variant="ghost"
+                iconOnly
+                label={t("Copy")}
+                resetKeys={[activeTranslation, activeVersion.translatedVisible]}
+                errorDetail
+                onCopy={() =>
+                  copyMessage(
+                    activeVersion.translatedVisible
+                      ? activeVersion.translated
+                      : activeVersion.original,
+                  )
+                }
+              />
+              <Button
+                motion="none"
+                size="sm"
+                variant="ghost"
+                iconOnly
+                label={t("Close translation")}
+                onClick={() => setActiveTranslation(null)}
+              >
+                <X />
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        {(remoteHistoryLoading || pagingLoading) &&
+        !remoteHistoryError &&
+        !pagingError &&
+        blocks.length > 0 ? (
+          <div className="pointer-events-none sticky inset-bs-0 z-(--layer-pane-sheet) h-0">
+            <LoadingText className="mx-auto w-fit px-4 py-2">
+              {t("Loading earlier messages…")}
+            </LoadingText>
           </div>
         ) : null}
         <div
           data-transcript-content
           className="transcript-content mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-1 pb-8"
         >
-          {historyLoading ? (
-            <LoadingText delay={false} className="px-4 py-3">
-              {t("Loading earlier messages…")}
-            </LoadingText>
-          ) : null}
-          {historyLoadError ? <Alert tone="danger">{historyLoadError}</Alert> : null}
-          {remoteHistoryError ? <Alert tone="danger">{remoteHistoryError}</Alert> : null}
-          {pagingError ? <Alert tone="danger">{pagingError}</Alert> : null}
-          {firstVisibleTurn > 0 || remoteHistoryHasMore ? (
-            <div className="flex justify-center px-4 py-3">
-              <CollectionFooter
-                standalone
-                hasMore
-                onLoadMore={() => void loadEarlier()}
-                loadMoreLabel={
-                  remoteHistoryLoading ? t("Loading earlier messages…") : t("Load earlier messages")
-                }
-                loadMoreButtonProps={{
-                  motion: "none",
-                  variant: "ghost",
-                  type: "button",
-                  disabled: remoteHistoryLoading || pagingLoading,
-                }}
-              />
-            </div>
-          ) : null}
+          <TranscriptHistoryNotice
+            initial={blocks.length === 0}
+            loading={
+              historyLoading || (blocks.length === 0 && (remoteHistoryLoading || pagingLoading))
+            }
+            loadFailed={!!historyLoadError}
+            pageError={
+              remoteHistoryError ||
+              (pagingError
+                ? t("Couldn’t load earlier messages: {p0}", { p0: pagingError })
+                : undefined)
+            }
+            onRetryLoad={onRetryHistory}
+            onRetryPage={
+              remoteHistoryHasMore && onLoadRemoteHistory ? () => void loadEarlier() : undefined
+            }
+          />
           {renderedTurns.map(({ turn, index }, turnIndex) => {
             const turnNumber = index + 1;
             const isLastTurn = turnNumber === turns.length;
@@ -1103,7 +1140,7 @@ const Turn = memo(function Turn({
   // that did it trails as a quiet tag rather than standing in for a title.
   const foldInDock = live && liveStatusInDock && !waitingForApproval;
   const foldTitle: ReactNode = foldInDock ? (
-    workSummaryLine(folded)
+    settledWorkSummaryLine(folded)
   ) : live ? (
     <LiveFoldTitle
       startedAt={clockStart}
@@ -1118,7 +1155,7 @@ const Turn = memo(function Turn({
   ) : durationMs != null ? (
     formatWorkingDuration(t, format, durationMs, turnModelName, true)
   ) : (
-    workSummaryLine(folded)
+    settledWorkSummaryLine(folded)
   );
   const showFoldLine =
     (live && (!liveStatusInDock || waitingForApproval)) || durationMs != null || !!fold;
@@ -2050,6 +2087,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
                   layout={layout}
                   visible={visible ?? true}
                   cwd={cwd}
+                  onOpenFile={onOpenFile}
                   onSaveNote={onSaveNote}
                   canRewind={canRewindMessage?.(block.id) ?? false}
                   onRewind={
@@ -2069,6 +2107,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
         busy={planBusy}
         visible={visible ?? true}
         cwd={cwd}
+        onOpenFile={onOpenFile}
         onEdit={onEditLastTurn}
         canRewind={canRewindMessage?.(block.id) ?? false}
         onRewind={onRewindMessage ? (action) => onRewindMessage(block, action) : undefined}
@@ -2271,6 +2310,7 @@ function UserMessageBlock({
   onRewind,
   editing = false,
   cwd,
+  onOpenFile,
   onSaveNote,
   onSendDraft,
   onEditDraft,
@@ -2286,6 +2326,7 @@ function UserMessageBlock({
   onRewind?: (action: "edit" | "return") => void;
   editing?: boolean;
   cwd?: string;
+  onOpenFile?: (path: string) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
   onSendDraft?: (block: Block) => boolean | void;
   onEditDraft?: (block: Block) => boolean | void;
@@ -2313,7 +2354,7 @@ function UserMessageBlock({
           : undefined;
   const deliveryLabel =
     delivery === "pending"
-      ? t("Sending...")
+      ? t("Sending…")
       : delivery === "undelivered"
         ? t("Not delivered")
         : delivery === "uncertain"
@@ -2329,8 +2370,13 @@ function UserMessageBlock({
       ? ""
       : visibleUserPrompt(bycoda ? operatorUserPrompt(block) : block.text);
   const { text, citations } = extractChatCitations(rawText);
-  const messageLink = text ? parseUserMessageLink(text) : null;
-  const displayText = messageLink ? `${messageLink.beforeText}${messageLink.afterText}` : text;
+  const firstLink = text ? parseUserMessageLink(text) : null;
+  // Keep the compact URL card for plain prose. Splitting a formatted message
+  // at a URL would break its links, code spans, or enclosing Markdown blocks.
+  const messageLink =
+    firstLink && !/[\n\r[`*_<~#]/.test(firstLink.beforeText + firstLink.afterText)
+      ? firstLink
+      : null;
   const chat = layout === "chat";
   const previewParts = userTextParts(text);
   const compactText = previewParts.some((part) => part.compact);
@@ -2460,8 +2506,11 @@ function UserMessageBlock({
           ) : null}
           {compactText ? (
             <UserTextPreview
+              markdown
               parts={previewParts}
               messageId={block.id}
+              cwd={cwd}
+              onOpenFile={onOpenFile}
               attachments={block.attachments}
               citations={citations}
               renderActions={renderMessageActions}
@@ -2474,32 +2523,38 @@ function UserMessageBlock({
               className="user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body"
               data-selectable-agent-response={block.id}
             >
-              <AttachmentTokenText
+              <UserMessageMarkdown
                 text={messageLink.beforeText}
+                cwd={cwd}
+                onOpenFile={onOpenFile}
                 attachments={block.attachments}
                 citations={citations}
               />
               <UserLinkPreview link={messageLink.link} cwd={cwd} compact />
-              <AttachmentTokenText
+              <UserMessageMarkdown
                 text={messageLink.afterText}
+                cwd={cwd}
+                onOpenFile={onOpenFile}
                 attachments={block.attachments}
                 citations={citations}
               />
             </div>
-          ) : displayText ? (
-            <pre
+          ) : text ? (
+            <div
               data-selectable-agent-response={block.id}
               ref={(element) => {
                 textRef.current = element;
               }}
-              className={`min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
+              className={`min-w-0 ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
             >
-              <AttachmentTokenText
-                text={displayText}
+              <UserMessageMarkdown
+                text={text}
+                cwd={cwd}
+                onOpenFile={onOpenFile}
                 attachments={block.attachments}
                 citations={citations}
               />
-            </pre>
+            </div>
           ) : null}
           {overflows && !compactText ? (
             <Button

@@ -1,9 +1,9 @@
-import type { HostSessionSummary } from "../../src/features/connections/model/protocol";
 import { ApprovalRegistry } from "../approvals/approval-registry";
 import { ApprovalStore } from "../approvals/approval-store";
 import { AssistantPushLedger } from "../push/push-assistant";
 import { createSocialPushSource, SocialPushLedger } from "../push/push-social";
 import { PushNotifications } from "../push/push-service";
+import { createPushSessionInventory } from "../push/push-session-inventory";
 import { PushDeviceStore } from "../push/push-store";
 import { tickAssistantTelegram } from "../push/push-telegram";
 import type { SocialAccount } from "../../src/features/social/model/social";
@@ -14,6 +14,7 @@ export function createPushRuntime(
     ServerBindings,
     | "assistant"
     | "engine"
+    | "desktop"
     | "projectSessionList"
     | "social"
     | "assistantPorts"
@@ -33,6 +34,29 @@ export function createPushRuntime(
     .prepare()
     .catch((error) => console.error("Social push ledger is unavailable:", error));
   const approvals = new ApprovalRegistry(Date.now, new ApprovalStore(dependencies.engine.store.db));
+  // Project lists are re-read only after a store/desktop change or the safety interval.
+  const sessionInventory = createPushSessionInventory({
+    projectIds: async () =>
+      (await dependencies.engine.store.projects()).map((project) => project.id),
+    list: async (projectId) => (await dependencies.projectSessionList(projectId)).list,
+    watch: (changed) => {
+      const unsubscribe = dependencies.engine.store.subscribeChanges(changed);
+      // Chained like the subscription hub's own hook, so desktop live changes also reach both.
+      const live = dependencies.desktop.live;
+      const previous = live.onChange;
+      let active = true;
+      const handler = (sessionIds: string[]) => {
+        previous?.(sessionIds);
+        if (active) changed();
+      };
+      live.onChange = handler;
+      return () => {
+        active = false;
+        unsubscribe();
+        if (live.onChange === handler) live.onChange = previous;
+      };
+    },
+  });
   const pushNotifications = new PushNotifications({
     store,
     assistantLedger,
@@ -76,22 +100,8 @@ export function createPushRuntime(
       return assistant.notifications(await assistant.profile());
     },
     environmentId: dependencies.engine.store.environmentId,
-    sessions: async () => {
-      const projects = await dependencies.engine.store.projects();
-      // Bounded fan-out, as in `inbox.list`: each list may read desktop state.
-      const lists: HostSessionSummary[][] = [];
-      let next = 0;
-      await Promise.all(
-        Array.from({ length: Math.min(4, projects.length) }, async () => {
-          for (;;) {
-            const index = next++;
-            if (index >= projects.length) return;
-            lists[index] = (await dependencies.projectSessionList(projects[index].id)).list;
-          }
-        }),
-      );
-      return lists.flat();
-    },
+    sessions: () => sessionInventory.read(),
+    onStop: () => sessionInventory.close(),
   });
   pushNotifications.start();
   return { pushDevices: store, pushNotifications, approvals };

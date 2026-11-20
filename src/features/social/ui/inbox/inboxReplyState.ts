@@ -13,6 +13,8 @@ type ReplyState = {
   operation?: InboxReplyOperation;
   busy: "" | "suggest" | "send";
   error: string;
+  /** Raw Host text behind `error`, shown under Details rather than inside the sentence. */
+  errorDetail: string;
   queued: boolean;
 };
 
@@ -23,6 +25,7 @@ function createState() {
     draft: { text: "", factIds: [] },
     busy: "",
     error: "",
+    errorDetail: "",
     queued: false,
   };
   const listeners = new Set<() => void>();

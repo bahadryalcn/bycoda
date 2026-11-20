@@ -478,10 +478,11 @@ fn collect_sources(rx: mpsc::Receiver<Source>, timeout: Duration) -> Vec<Machine
     result
 }
 #[tauri::command]
-pub async fn discover_machine_candidates(app: AppHandle) -> Vec<MachineCandidate> {
+pub async fn discover_machine_candidates(app: AppHandle) -> Result<Vec<MachineCandidate>, String> {
+    // A failed blocking task is an error, not "no machines": the UI keeps its last list.
     tauri::async_runtime::spawn_blocking(move || discover(app))
         .await
-        .unwrap_or_default()
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

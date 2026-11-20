@@ -11,9 +11,13 @@ export const PRODUCT_IDENTITY = Object.freeze({
   websiteUrl: "https://bycoda.codes",
   contactEmail: "info@bycoda.codes",
   developerContactEmail: "info@bahadrhllyalcn.com",
+  /** Fixed-colour marks: black artwork on light grounds, white artwork on dark (see BrandMark). */
   logoSrc: "/brand/bycoda/mark-black.svg",
+  logoOnDarkSrc: "/brand/bycoda/mark-white.svg",
   smallLogoSrc: "/brand/bycoda/mark-small-black.svg",
+  smallLogoOnDarkSrc: "/brand/bycoda/mark-small-white.svg",
   wordmarkSrc: "/brand/bycoda/wordmark-full-dark.svg",
+  wordmarkOnDarkSrc: "/brand/bycoda/wordmark-white.svg",
   horizontalLogoSrc: "/brand/bycoda/logo-horizontal-black.svg",
   repositoryUrl: "https://github.com/bahadryalcn/bycoda" as string | null,
   /** Optional GitHub release page; bundled notes remain available offline. */

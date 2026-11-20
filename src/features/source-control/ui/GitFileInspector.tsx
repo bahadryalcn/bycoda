@@ -5,6 +5,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, getLocale } from "../../../shared/i18n/git";
 import { useEffect, useState } from "react";
 import { GitFeedback } from "./GitFeedback";
@@ -160,9 +161,11 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
                 <Text as="span" size="inherit" tone="primary" truncate className="min-w-0 flex-1">
                   {commit.subject}
                 </Text>
-                <Text size="inherit" tone="muted" truncate className="shrink-0">
-                  {commit.author}
-                </Text>
+                <OverflowTooltip label={commit.author}>
+                  <Text size="inherit" tone="muted" truncate className="min-w-0 max-w-32">
+                    {commit.author}
+                  </Text>
+                </OverflowTooltip>
                 <Text size="inherit" tone="muted" className="shrink-0 tabular-nums">
                   {shortDate(commit.timestamp)}
                 </Text>

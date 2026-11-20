@@ -5,7 +5,11 @@ import {
 } from "../../../features/sessions/model/sessionsStore";
 import { hasUnsentComposerDraft } from "../../../features/sessions/model/draftCache";
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
-import { idleWorkspaceTabIds, tabIsIdle } from "../../../features/workspace/model/idleTabs";
+import {
+  idleWorkspaceTabIds,
+  sessionsById,
+  tabIsIdle,
+} from "../../../features/workspace/model/idleTabs";
 import {
   expiredUnseenSessionIds,
   HIBERNATION_CHECK_MS,
@@ -91,7 +95,7 @@ export function useTabHibernation(input: TabHibernationInput): (tab: WorkspaceTa
   // tab wakes (turns busy, waits for input) or another one goes to sleep.
   const asleep = useShellSessionsSelector((sessions) => {
     if (hibernated.size === 0) return "";
-    const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+    const byId = sessionsById(sessions);
     return input.tabs
       .filter(
         (tab) =>
@@ -107,7 +111,7 @@ export function useTabHibernation(input: TabHibernationInput): (tab: WorkspaceTa
               movingTabIds: input.movingTabIds,
               hasComposerDraft: hasUnsentComposerDraft,
             },
-            sessionsById,
+            byId,
           ),
       )
       .map((tab) => tab.id)

@@ -19,6 +19,9 @@ export type ScreencastFrame = {
 
 const MAX_WAIT_MS = 2000;
 const IDLE_STOP_MS = 5000;
+// Chromium sends the next picture only after the current one is acked, so pacing acks caps
+// the capture rate at roughly the readers' poll rate instead of the display rate.
+const ACK_INTERVAL_MS = 100;
 
 /** Frame cursor of a live read; bounded before it reaches the wait. */
 export function browserFrameCursor(after: unknown, waitMs: unknown) {
@@ -44,6 +47,8 @@ export class BrowserScreencast {
   private sequence = Date.now();
   private readonly waiters = new Set<() => void>();
   private idle?: ReturnType<typeof setTimeout>;
+  private ackTimer?: ReturnType<typeof setTimeout>;
+  private pendingAck?: { session: ScreencastSession; sessionId: unknown };
 
   constructor(
     private readonly describe: () => { stamp: string; width: number; height: number },
@@ -98,9 +103,9 @@ export class BrowserScreencast {
       return void session.detach().catch(() => {});
     this.session = session;
     session.on?.("Page.screencastFrame", (frame: { data?: unknown; sessionId?: unknown }) => {
-      // Chromium holds the next picture until this one is acknowledged.
-      session.send("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => {});
-      if (this.session !== session || typeof frame.data !== "string") return;
+      if (this.session !== session) return;
+      this.scheduleAck(session, frame.sessionId);
+      if (typeof frame.data !== "string") return;
       if (frame.data.length * 0.75 > this.maxBytes) return;
       this.latest = { sequence: ++this.sequence, data: frame.data, ...this.describe() };
       for (const wake of this.waiters) wake();
@@ -108,10 +113,29 @@ export class BrowserScreencast {
     await session.send("Page.startScreencast", { format: "jpeg", quality: 65, everyNthFrame: 1 });
   }
 
+  /** Acks the newest picture once per interval; later frames inside the interval only replace it. */
+  private scheduleAck(session: ScreencastSession, sessionId: unknown) {
+    this.pendingAck = { session, sessionId };
+    if (this.ackTimer) return;
+    this.ackTimer = setTimeout(() => {
+      this.ackTimer = undefined;
+      const pending = this.pendingAck;
+      this.pendingAck = undefined;
+      if (pending)
+        pending.session
+          .send("Page.screencastFrameAck", { sessionId: pending.sessionId })
+          .catch(() => {});
+    }, ACK_INTERVAL_MS);
+    this.ackTimer.unref?.();
+  }
+
   async stop() {
     this.generation++;
     if (this.idle) clearTimeout(this.idle);
     this.idle = undefined;
+    if (this.ackTimer) clearTimeout(this.ackTimer);
+    this.ackTimer = undefined;
+    this.pendingAck = undefined;
     const session = this.session;
     this.session = undefined;
     this.page = undefined;

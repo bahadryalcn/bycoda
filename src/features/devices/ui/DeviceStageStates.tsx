@@ -131,6 +131,63 @@ function DeviceRow({
   );
 }
 
+/** Device host is running but lists no device: how to connect one, then refresh or set up. */
+function DeviceNoDevicesState({
+  refreshing,
+  refreshDisabled,
+  onRefresh,
+  onSetup,
+}: {
+  refreshing: boolean;
+  refreshDisabled: boolean;
+  onRefresh: () => void;
+  onSetup: (anchor: HTMLElement) => void;
+}) {
+  return (
+    <Text
+      as="div"
+      size="caption"
+      tone="inherit"
+      leading="inherit"
+      className="device-panel-state device-panel-connect"
+    >
+      <Smartphone className="device-panel-state-icon" tone="secondary" aria-hidden />
+      <div className="flex items-center gap-1">
+        <Text
+          as="p"
+          size="body"
+          tone="primary"
+          weight="medium"
+          leading="inherit"
+          className="device-panel-state-title"
+          role="status"
+        >
+          {t("No devices found")}
+        </Text>
+        <InfoPopover label={t("How to connect")}>
+          <Text as="p" size="caption" tone="secondary" leading="relaxed">
+            {t(
+              "Connect an Android phone with USB debugging, or use an emulator. iOS simulators require a Mac with Xcode.",
+            )}
+          </Text>
+        </InfoPopover>
+      </div>
+      <div className="device-panel-state-actions">
+        <Button loading={refreshing} disabled={refreshDisabled} onClick={onRefresh}>
+          {t("Refresh devices")}
+        </Button>
+        <Button
+          variant="ghost"
+          aria-haspopup="dialog"
+          onClick={(event) => onSetup(event.currentTarget)}
+        >
+          {t("Setup and access")}
+        </Button>
+      </div>
+    </Text>
+  );
+}
+
 /**
  * Stage content while no screen is shown: loading, a stopped or unavailable device with
  * its start action, a booted device waiting for its first frame, or the device list.
@@ -189,7 +246,6 @@ export function DeviceWaitingState({
         tone="secondary"
         leading="inherit"
         className="device-panel-waiting"
-        role="status"
       >
         <DeviceRow
           framed
@@ -207,7 +263,7 @@ export function DeviceWaitingState({
             )
           }
         />
-        <p className="device-panel-waiting-text">
+        <p className="device-panel-waiting-text" role="status">
           {device.physical
             ? t(
                 "This phone is not available. Connect it with USB debugging enabled and unlocked, then refresh devices.",
@@ -245,6 +301,16 @@ export function DeviceWaitingState({
         </p>
       </Text>
     );
+  // An error means discovery failed, so the alert above explains it instead of "no devices".
+  if (!devices.length && !error)
+    return (
+      <DeviceNoDevicesState
+        refreshing={refreshing}
+        refreshDisabled={refreshDisabled}
+        onRefresh={onRefresh}
+        onSetup={onSetup}
+      />
+    );
   if (!devices.length || selected)
     return (
       <Text
@@ -263,9 +329,10 @@ export function DeviceWaitingState({
       tone="secondary"
       leading="inherit"
       className="device-panel-waiting"
-      role="status"
     >
-      <p className="device-panel-waiting-text">{t("Select a device to view its screen.")}</p>
+      <p className="device-panel-waiting-text" role="status">
+        {t("Select a device to view its screen.")}
+      </p>
       <div
         {...surfaceAttributes(
           { frame: "card", edge: "all", radius: "card" },

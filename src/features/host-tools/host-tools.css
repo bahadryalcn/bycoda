@@ -199,7 +199,7 @@
   cursor: pointer;
   color: var(--host-tool-muted);
   padding-block: 3px;
-  min-block-size: 32px;
+  min-block-size: max(32px, var(--ui-control-height-compact));
   align-content: center;
 }
 .host-tool-help summary:active {

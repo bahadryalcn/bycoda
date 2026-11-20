@@ -14,6 +14,7 @@ import {
   isModelPoolConversationTool,
 } from "../conversation/conversation-model-pool-source";
 import { isManagementAction } from "../conversation/conversation-management-tools";
+import { THREAD_CREW_WRITES } from "../conversation/conversation-thread-crew-tools";
 import { isDesktopControlConversationTool } from "../conversation/conversation-desktop-control-tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { serializedResponse } from "../sync/sync-transfer";
@@ -556,7 +557,12 @@ export async function handleVoiceTools(
       projectId: call.projectId,
       family: call.family,
       action: call.action,
-      input: call.input,
+      input:
+        call.family === "conversation" &&
+        THREAD_CREW_WRITES.has(call.action) &&
+        call.input.operationId === undefined
+          ? { ...call.input, operationId: requestId }
+          : call.input,
       requestId,
     };
     request.voiceDisclosure?.bind({
@@ -565,11 +571,13 @@ export async function handleVoiceTools(
       family: call.family,
       action: call.action,
     });
+    request.voiceToolLog.stage = "room-operation";
     const output = await dependencies.assistantPorts.roomManagement!(qualifiedCall, {
       environmentId: dependencies.engine.store.environmentId,
       deviceHash: request.tokenHash,
       authorized,
     });
+    request.voiceToolLog.stage = "project-result-disclosure";
     request.voiceDisclosure?.bindProjectProofs(output.contributorProjects ?? []);
     await dependencies.withRoomProjectScope(qualifiedCall, authorized, async () => {
       if (
@@ -577,6 +585,7 @@ export async function handleVoiceTools(
         (await dependencies.engine.store.project(call.projectId!)).cwd !== output.source.projectCwd
       )
         throw new Error("Voice project identity changed before disclosure.");
+      request.voiceToolLog!.stage = "writing-result";
       await request.endResult(output.value, async () => {
         if (!(await authorized())) throw new Error("Native owner authority revoked.");
       });

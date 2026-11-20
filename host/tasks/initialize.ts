@@ -68,11 +68,41 @@ export function initialize(context: TaskContext, store: HostStore): Promise<void
       CREATE TRIGGER IF NOT EXISTS task_cache_update AFTER UPDATE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
       CREATE TRIGGER IF NOT EXISTS task_cache_delete AFTER DELETE ON tasks BEGIN UPDATE task_cache_revision SET version=version+1 WHERE id=1; END;
       CREATE INDEX IF NOT EXISTS tasks_scheduler_status ON tasks(json_extract(value, '$.status'));
+      CREATE INDEX IF NOT EXISTS tasks_crew_run
+        ON tasks(CASE WHEN json_valid(value) THEN json_extract(value,'$.crewRunId') END);
+      -- budgetParent resolves a crew task's owner every scheduler tick; queries must repeat this exact expression.
+      CREATE INDEX IF NOT EXISTS tasks_crew_execution
+        ON tasks(CASE WHEN json_valid(value) THEN json_extract(value,'$.crewExecutionId') END);
+      -- General goal lookup; the partial tasks_assistant_goal index below cannot serve goalId=? predicates.
+      CREATE INDEX IF NOT EXISTS tasks_goal ON tasks(json_extract(value,'$.goalId'));
       CREATE INDEX IF NOT EXISTS tasks_scheduler_status_merged ON tasks(json_extract(value, '$.status'), json_extract(value, '$.merged'));
       CREATE INDEX IF NOT EXISTS tasks_scheduler_cleanup ON tasks(id)
         WHERE json_extract(value, '$.status')='done' AND json_extract(value, '$.merged')=1
           AND (json_extract(value, '$.worktreeCwd') IS NOT NULL OR json_array_length(value, '$.historyRecovery')>0);
     `);
+      // Polling has its own stamp so a measurement timestamp alone does not
+      // invalidate the board. A random stamp also distinguishes revision reuse
+      // after rollback. The triggers cover scheduler, recovery and direct writes.
+      await store.db.exec(`
+        CREATE TABLE IF NOT EXISTS task_change_stamp (
+          id INTEGER PRIMARY KEY CHECK(id=1), stamp TEXT NOT NULL, assistant_stamp TEXT NOT NULL
+        );
+        INSERT OR IGNORE INTO task_change_stamp VALUES (1, hex(randomblob(16)), '');
+        CREATE TRIGGER IF NOT EXISTS task_change_insert AFTER INSERT ON tasks BEGIN
+          UPDATE task_change_stamp SET stamp=hex(randomblob(16)) WHERE id=1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS task_change_update AFTER UPDATE ON tasks
+        WHEN json_remove(OLD.value, '$.budgetUsage.measuredAt')
+          IS NOT json_remove(NEW.value, '$.budgetUsage.measuredAt') BEGIN
+          UPDATE task_change_stamp SET stamp=hex(randomblob(16)) WHERE id=1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS task_change_delete AFTER DELETE ON tasks BEGIN
+          UPDATE task_change_stamp SET stamp=hex(randomblob(16)) WHERE id=1;
+        END;
+        CREATE INDEX IF NOT EXISTS tasks_assistant_goal ON tasks(json_extract(value, '$.goalId'))
+          WHERE json_extract(value, '$.goalId') GLOB 'assistant-*'
+            AND json_extract(value, '$.sessionId') <> '';
+      `);
       // SQLite owns the journal so every writer (including recovery and DELETE)
       // commits the task change and its history together. Do not journal prompts,
       // credentials or session output: planning only needs this compact projection.

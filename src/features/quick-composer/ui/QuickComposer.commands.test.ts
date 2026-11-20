@@ -12,7 +12,24 @@ import { PersistenceDrainRegistry } from "../../sessions/data/persistenceDrain";
 const native = vi.hoisted(() => ({
   shown: () => {},
   mac: true,
+  turkish: false,
 }));
+vi.mock("../../../shared/i18n", async (original) => ({
+  ...(await original<typeof import("../../../shared/i18n")>()),
+  useLocale: () => (native.turkish ? "tr" : "en"),
+}));
+vi.mock("../../sessions/model/plan", async (original) => {
+  const actual = await original<typeof import("../../sessions/model/plan")>();
+  return {
+    ...actual,
+    PLAN_COMMAND: {
+      ...actual.PLAN_COMMAND,
+      get name() {
+        return native.turkish ? "inspect" : actual.PLAN_COMMAND.name;
+      },
+    },
+  };
+});
 vi.mock("../../../platform/tauri/platform", async (original) => ({
   ...(await original<typeof import("../../../platform/tauri/platform")>()),
   get IS_MAC() {
@@ -137,6 +154,16 @@ it("highlights a link after a mode without changing the draft", () => {
   input("/plan Review https://example.com/path");
   expect(prompt.value).toBe("/plan Review https://example.com/path");
   expect(container.querySelector("[data-composer-link-token]")).not.toBeNull();
+});
+
+it("capitalizes a command label using the active locale", () => {
+  native.turkish = true;
+  try {
+    input("/ins");
+    expect(container.querySelector("#quick-command-plan")?.textContent).toContain("İnspect");
+  } finally {
+    native.turkish = false;
+  }
 });
 
 it("uses Control+Enter to start and open a Windows session", async () => {
@@ -279,7 +306,7 @@ it("does not suggest Operator inside normal text or paths and filters unknown co
     expect(commands()).toBeNull();
   }
   input("/unknown");
-  expect(commands()?.textContent).toContain("No matching commands");
+  expect(commands()?.textContent).toContain("No matches");
   expect(commands()?.querySelector('[role="option"]')).toBeNull();
 });
 

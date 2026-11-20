@@ -47,6 +47,7 @@ import {
   type Components,
 } from "streamdown";
 import type { Pluggable, PluggableList, Plugin } from "unified";
+import type { Element as HastElement, Root } from "hast";
 import { useRenderTrace } from "./useRenderTrace";
 import { ExplorerMenu } from "../../files/public/ExplorerMenu";
 import { fileLinkMenuItems } from "./fileLinkMenuItems";
@@ -797,6 +798,39 @@ function MarkdownInput({
 
 function noopChange() {}
 
+const MarkdownProseContext = createContext<((text: string) => ReactNode) | undefined>(undefined);
+const literalOrInteractiveTags = new Set(["a", "button", "code", "kbd", "pre", "samp", "summary"]);
+
+function rehypeMarkdownProse() {
+  return function markProse(node: Root | HastElement) {
+    node.children = node.children.map((child) => {
+      if (child.type === "element" && !literalOrInteractiveTags.has(child.tagName)) {
+        markProse(child);
+      }
+      if (child.type !== "text" || !/[[@/$]/.test(child.value)) return child;
+      return {
+        type: "element",
+        tagName: "span",
+        properties: { dataMarkdownProse: true },
+        children: [child],
+      };
+    });
+  };
+}
+
+function MarkdownProseSpan({
+  node,
+  children,
+  ...props
+}: ComponentProps<"span"> & { node?: HastElement }) {
+  const renderProse = useContext(MarkdownProseContext);
+  const source = node?.children[0];
+  if (node?.properties.dataMarkdownProse && source?.type === "text" && renderProse) {
+    return <>{renderProse(source.value)}</>;
+  }
+  return <span {...props}>{children}</span>;
+}
+
 const MARKDOWN_COMPONENTS = {
   input: MarkdownInput,
   a: MarkdownLink,
@@ -804,6 +838,7 @@ const MARKDOWN_COMPONENTS = {
   img: MarkdownImage,
   table: MarkdownTable,
 } satisfies Components;
+const MARKDOWN_PROSE_COMPONENTS = { ...MARKDOWN_COMPONENTS, span: MarkdownProseSpan };
 
 /**
  * With dir="auto" Streamdown wraps each block in
@@ -824,21 +859,22 @@ const DirectionalBlock = memo(function DirectionalBlock({ dir, ...props }: Block
   // without spans, so a long reply does not keep a span per word.
   const fade = !!ctx?.fading && props.index === ctx.lastBlock;
   const hardBreaks = !!ctx?.hardBreaks;
+  const hasProseRenderer = !!useContext(MarkdownProseContext);
   const fadeOptions = ctx?.fadeOptions;
   const base = props.rehypePlugins;
-  // Hard breaks go last, so nothing after them undoes them, and after the word
-  // fade, whose word spans would otherwise hide the newlines from them.
+  // Read newlines after word fading and before handing prose to the token renderer.
   const fadePlugin = useMemo<Pluggable>(() => [rehypeWordFade, fadeOptions], [fadeOptions]);
   const rehypePlugins = useMemo<PluggableList | undefined>(
     () =>
-      fade || hardBreaks
+      fade || hardBreaks || hasProseRenderer
         ? [
             ...(base ?? []),
             ...(fade ? [fadePlugin] : []),
             ...(hardBreaks ? [rehypeHardBreaks] : []),
+            ...(hasProseRenderer ? [rehypeMarkdownProse] : []),
           ]
         : base,
-    [base, fade, fadePlugin, hardBreaks],
+    [base, fade, fadePlugin, hardBreaks, hasProseRenderer],
   );
   const block = <Block {...props} rehypePlugins={rehypePlugins} />;
   return direction ? (
@@ -862,6 +898,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   localMedia,
   documentPath,
   hardBreaks,
+  renderProse,
 }: {
   text: string;
   streaming?: boolean;
@@ -878,6 +915,8 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   documentPath?: string;
   /** Show a newline inside a block as a line break, as a document does. */
   hardBreaks?: boolean;
+  /** Render application tokens in prose after Markdown parsing and sanitization. */
+  renderProse?: (text: string) => ReactNode;
 }) {
   const t = useT();
   const codePlugin = useCodeHighlightPlugin();
@@ -971,7 +1010,6 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     loadStreamingTextMode,
   );
   const adaptive = textMode === "adaptive";
-  const visible = usePresentationVisible();
   const reducedMotion = usePrefersReducedMotion();
   // Keep one hook order when preferences change during an active reply.
   const paced = usePacedText(text, !!streaming, revealOnMount, !adaptive);
@@ -979,6 +1017,11 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   useEffect(() => {
     setMountEntrance(false);
   }, []);
+  const fading = useWordFading(
+    !!streaming || paced.revealing || (adaptive && mountEntrance),
+    adaptive ? ADAPTIVE_FADE_MAX_MS : undefined,
+  );
+  const visible = usePresentationVisible(fading);
   const fadeRoot = useRef<HTMLDivElement>(null);
   const previousPresentation = useRef({ visible, textMode, reducedMotion });
   useLayoutEffect(() => {
@@ -995,10 +1038,6 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     previousPresentation.current = { visible, textMode, reducedMotion };
   }, [visible, textMode, reducedMotion]);
   useRenderTrace(text, paced.text, paced.revealing, streaming);
-  const fading = useWordFading(
-    !!streaming || paced.revealing || (adaptive && mountEntrance),
-    adaptive ? ADAPTIVE_FADE_MAX_MS : undefined,
-  );
   // Only the words still fading in, in the last block, carry a span (see
   // DirectionalBlock and useWordFadeWindow), and a word keeps its element until
   // its fade is over, since dropping one mid-fade would remount it and fade it
@@ -1099,23 +1138,27 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                   <InlineMessage tone="warning">
                     {t("Formatted preview unavailable. Showing source.")}
                   </InlineMessage>
-                  <div className="whitespace-pre-wrap">{paced.text}</div>
+                  <div className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                    {paced.text}
+                  </div>
                 </>
               ) : (
-                <Streamdown
-                  BlockComponent={DirectionalBlock}
-                  className={`agent-markdown min-w-0 font-sans text-ui-body leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
-                  components={MARKDOWN_COMPONENTS}
-                  controls={false}
-                  isAnimating={!!streaming || paced.revealing}
-                  parseIncompleteMarkdown={false}
-                  parseMarkdownIntoBlocksFn={parseBlocks}
-                  plugins={markdownPlugins}
-                  remarkPlugins={remarkPlugins}
-                  rehypePlugins={rehypePlugins}
-                >
-                  {parsedSource}
-                </Streamdown>
+                <MarkdownProseContext.Provider value={renderProse}>
+                  <Streamdown
+                    BlockComponent={DirectionalBlock}
+                    className={`agent-markdown min-w-0 font-sans text-ui-body leading-6 ${fading ? "word-fading" : ""} ${className ?? ""}`}
+                    components={renderProse ? MARKDOWN_PROSE_COMPONENTS : MARKDOWN_COMPONENTS}
+                    controls={false}
+                    isAnimating={!!streaming || paced.revealing}
+                    parseIncompleteMarkdown={false}
+                    parseMarkdownIntoBlocksFn={parseBlocks}
+                    plugins={markdownPlugins}
+                    remarkPlugins={remarkPlugins}
+                    rehypePlugins={rehypePlugins}
+                  >
+                    {parsedSource}
+                  </Streamdown>
+                </MarkdownProseContext.Provider>
               )}
               {markdownPending ? (
                 <LoadingText delay={false}>{t("Rendering Markdown…")}</LoadingText>

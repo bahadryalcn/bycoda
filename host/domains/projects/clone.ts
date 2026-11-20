@@ -65,6 +65,16 @@ export function validateCloneName(name: string): string {
 /** Whether a path exists; the Host injects the file system so domains stay platform-free. */
 export type PathExists = (path: string) => Promise<boolean>;
 
+/**
+ * Folder operations the Host injects. `claim` creates the folder only when nothing exists at
+ * that path and reports false otherwise, so a folder this attempt claimed is provably its own.
+ */
+export interface CloneFolderPorts {
+  exists: PathExists;
+  claim(path: string): Promise<boolean>;
+  remove(path: string): Promise<void>;
+}
+
 /** Destination under an already-validated absolute parent; it must not exist yet. */
 export async function resolveCloneDestination(
   parentPath: string,
@@ -93,6 +103,7 @@ const PROGRESS_LINE = /([A-Za-z][A-Za-z ]+?):\s+(\d{1,3})%/;
 
 /** The process launch a clone needs; the Host injects `node:child_process` spawn. */
 export interface CloneChild {
+  readonly pid?: number;
   stderr: {
     setEncoding(encoding: "utf8"): void;
     on(event: "data", listener: (chunk: string) => void): void;
@@ -113,6 +124,8 @@ export function runGitClone(
   dest: string,
   options: {
     spawn: SpawnProcess;
+    /** Kills the child's whole process tree; git's transport helpers outlive a plain kill. */
+    killTree?: (pid: number) => void;
     operationId?: string;
     deadlineMs?: number;
     gitBinary?: string;
@@ -139,6 +152,7 @@ export function runGitClone(
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
+      if (child.pid !== undefined) options.killTree?.(child.pid);
       child.kill();
     }, options.deadlineMs ?? CLONE_DEADLINE_MS);
     child.stderr.setEncoding("utf8"); // lossy by default: invalid bytes become U+FFFD
@@ -176,24 +190,31 @@ export function runGitClone(
   });
 }
 
-/** Validates every input, then clones. `parentPath` must already be vetted by the caller. */
+/**
+ * Validates every input, claims the destination, then clones. `parentPath` must already be
+ * vetted by the caller. A failed clone removes only the folder this call claimed; a folder that
+ * existed before the call, or one created concurrently, is never touched.
+ */
 export async function cloneRepository(
   params: z.infer<typeof ProjectsCloneParamsSchema>,
   parentPath: string,
   run: (url: string, dest: string, options: { operationId?: string }) => Promise<void>,
-  exists: PathExists,
+  folders: CloneFolderPorts,
 ): Promise<{ path: string }> {
   const url = validateCloneUrl(params.url);
   const dest = await resolveCloneDestination(
     parentPath,
     params.name ?? inferCloneName(url),
-    exists,
+    folders.exists,
   );
+  if (!(await folders.claim(dest))) throw new Error(`${dest} already exists`);
   remember(params.operationId, { state: "running", phase: "Starting", percent: null });
   try {
     await run(url, dest, { operationId: params.operationId });
   } catch (error) {
     remember(params.operationId, { state: "failed", phase: "Failed", percent: null });
+    // Cleanup is best effort: the clone error is the one the caller needs to see.
+    await folders.remove(dest).catch(() => {});
     throw error;
   }
   remember(params.operationId, { state: "done", phase: "Done", percent: 100 });

@@ -222,7 +222,11 @@ export function shortcutTokensWith(
 
 /** "⌘⇧K" on a Mac, "Ctrl+Shift+K" elsewhere, plus a spoken form for assistive technology. */
 export function formatShortcut(shortcut: string, platform: Platform) {
-  const tokens = shortcutTokens(shortcut, platform);
+  return formatShortcutWith(shortcut, platform, translate);
+}
+
+export function formatShortcutWith(shortcut: string, platform: Platform, t: Translate) {
+  const tokens = shortcutTokensWith(shortcut, platform, t);
   return {
     text: tokens.map((token) => token.label).join(platform === "mac" ? "" : "+"),
     spoken: tokens.map((token) => token.spoken).join(" "),

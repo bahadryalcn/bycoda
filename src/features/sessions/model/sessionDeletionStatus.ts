@@ -24,9 +24,11 @@ export const subscribeSessionDeletionStatus = store.subscribe;
 
 export function setSessionDeletionStatus(status: SessionDeletionStatus) {
   // Successful removal is already visible in the list. Keep only progress and
-  // outcomes that need attention, without requiring a second dismissal.
+  // outcomes that need attention, without requiring a second dismissal. Other
+  // conversations' entries, including their failures, stay until their own retry
+  // replaces them or the owner dismisses them.
   snapshot = [
-    ...snapshot.filter((entry) => !entry.outcome && entry.sessionId !== status.sessionId),
+    ...snapshot.filter((entry) => entry.sessionId !== status.sessionId),
     ...(status.outcome === "deleted" && !status.error ? [] : [status]),
   ];
   store.notify();

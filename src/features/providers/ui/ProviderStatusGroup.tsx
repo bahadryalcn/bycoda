@@ -6,6 +6,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { Code } from "../../../shared/ui/Code";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Heading } from "../../../shared/ui/Heading";
 import {
   ArrowDownCircle,
@@ -30,11 +31,13 @@ import { ProviderBinaryControl } from "../../settings/ui/ProviderBinarySettings"
 import { useGrokSignInState } from "./providerStatus";
 
 import {
+  cancelHarnessUpdateRun,
   getHarnessUpdateSnapshot,
   runHarnessUpdate,
   subscribeHarnessUpdates,
   type HarnessUpdateRun,
 } from "../model/harnessUpdateActions";
+import { describeHarnessUpdateFailure } from "../model/harnessUpdateFailure";
 /** Account detail identity; CLI facts follow in ProviderStatusGroup. */
 export function ProviderDetailHeader({
   harness,
@@ -67,10 +70,14 @@ export function ProviderDetailHeader({
 }
 /** Detail below the line: why an update failed, or what a finished one left unverified. */
 function updateNotice(
+  harness: HarnessId,
   state: HarnessUpdateRun,
   check: HarnessVersionCheck | undefined,
-): { state: "error" | "warning"; text: string } | null {
-  if (state.status === "failed") return { state: "error", text: state.error };
+): { state: "error" | "warning"; text: string; detail?: string } | null {
+  if (state.status === "failed") {
+    const { headline, detail } = describeHarnessUpdateFailure(harness, state.failure);
+    return { state: "error", text: headline, detail };
+  }
   if (state.status !== "updated" || check?.status === "behind") return null;
   if (state.catalogRefresh === "failed") {
     return {
@@ -130,7 +137,7 @@ export function ProviderStatusGroup({
       installedVersion: async (id) => {
         const inspection = await inspectHarnessBinary(id);
         if (!inspection.version)
-          throw new Error(inspection.error ?? "The CLI reported no version.");
+          throw new Error(inspection.error ?? t("The CLI reported no version."));
         return inspection.version;
       },
       latestVersion: fetchLatestHarnessVersion,
@@ -146,7 +153,7 @@ export function ProviderStatusGroup({
   };
   const run: HarnessUpdateRun = runs[harness] ?? { status: "idle" };
   const title = HARNESS_TITLE[harness];
-  const notice = updateNotice(run, check);
+  const notice = updateNotice(harness, run, check);
   const notFound = hasProbedHarnessAvailability() && !available;
   const canCheck = UPDATABLE_HARNESSES.has(harness);
   const busy = canCheck && (checking || rowChecking);
@@ -229,6 +236,15 @@ export function ProviderStatusGroup({
               {t("Update")}
             </Button>
           ) : null}
+          {run.status === "updating" ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void cancelHarnessUpdateRun(harness).catch(() => undefined)}
+            >
+              {t("Cancel")}
+            </Button>
+          ) : null}
           {!notFound && canCheck ? (
             <Button
               size="sm"
@@ -251,7 +267,16 @@ export function ProviderStatusGroup({
           />
         </div>
       </div>
-      {notice ? <SettingsFeedback state={notice.state}>{notice.text}</SettingsFeedback> : null}
+      {notice ? (
+        <SettingsFeedback
+          state={notice.state}
+          extra={
+            notice.detail ? <ErrorDetails title={notice.text} detail={notice.detail} /> : undefined
+          }
+        >
+          {notice.text}
+        </SettingsFeedback>
+      ) : null}
       {check?.status === "unknown" && !notFound && canCheck ? (
         <SettingsFeedback state="warning">
           {t("Could not check: {p0}", { p0: check.error })}

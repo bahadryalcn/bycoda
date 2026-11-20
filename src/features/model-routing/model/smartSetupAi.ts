@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { z } from "zod";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import {
@@ -357,7 +358,7 @@ export async function planSmartSetup(
   } catch (cause) {
     if (!choice || options.signal?.aborted) return fallback;
     if (timedOut) return failed("timeout");
-    return failed("error", cause instanceof Error ? cause.message : String(cause));
+    return failed("error", errorText(cause));
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abort);

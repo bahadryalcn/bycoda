@@ -373,7 +373,7 @@ it("selects canonical machines and delegates add, edit and reconnect to existing
   await click("Add");
   await act(async () =>
     document
-      .querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Add machine"]')!
+      .querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Add a computer"]')!
       .click(),
   );
   expect(requestMachineAdd).toHaveBeenCalledOnce();

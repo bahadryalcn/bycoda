@@ -10,6 +10,7 @@ import {
   subscribeAnonymousStats,
 } from "../model/accountPrivacy";
 import { useAccountState } from "../hooks/useAccount";
+import { statsDisclosure } from "../model/statsDisclosure";
 
 const FIRST_DELAY_MS = 6000;
 const RETRY_MS = 3000;
@@ -45,9 +46,7 @@ export function StatsConsentNotice() {
     <Toast
       tone="info"
       title={t("Share anonymous statistics?")}
-      message={t(
-        "Once a day: a random install id, app version, operating system, release channel and date. Never your sessions, prompts, code or files. Change it any time in Settings → Privacy.",
-      )}
+      message={statsDisclosure()}
       durationMs={null}
       width="lg"
       actionsPlacement="footer"

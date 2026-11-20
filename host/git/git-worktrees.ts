@@ -1,6 +1,6 @@
 import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { lstat, mkdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -103,15 +103,21 @@ export async function materializeManagedWorkspace(
       // update-ref transactions atomically reserve the branch and its complete owner ID.
       const input = `start\ncreate ${workspace.branchRef} ${workspace.baseCommit}\ncreate ${marker} ${workspace.baseCommit}\nprepare\ncommit\n`;
       await new Promise<void>((done, reject) => {
+        // spawn ignores `timeout`; the abort signal enforces the same mutation deadline.
+        const deadline = options(cwd, true);
+        const signal = AbortSignal.timeout(deadline.timeout);
         const child = spawn("git", ["update-ref", "--stdin"], {
-          ...options(cwd, true),
+          ...deadline,
+          signal,
           stdio: ["pipe", "ignore", "pipe"],
         });
         let error = "";
         child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
           if (error.length < 2000) error += chunk.slice(0, 2000 - error.length);
         });
-        child.on("error", reject);
+        child.on("error", (cause) =>
+          reject(signal.aborted ? new Error("Workspace branch reservation timed out") : cause),
+        );
         child.on("close", (code) =>
           code === 0
             ? done()
@@ -288,29 +294,6 @@ function listCached(cwd: string, force = false): Promise<HostWorktrees> {
   return entry.promise;
 }
 
-/** Last resort for synchronous callers; async callers use `resolveHostWorktreeAsync`.
- * `ran` reports whether git actually ran (a cache hit did not), so a caller does not
- * run the same blocking command twice. A short timeout bounds the event-loop freeze. */
-const SYNC_LIST_TIMEOUT_MS = 4_000;
-function listSync(cwd: string, force = false): { value: HostWorktrees; ran: boolean } {
-  const hit = force ? undefined : fresh(cwd);
-  if (hit?.value) return { value: hit.value, ran: false };
-  const value = build(
-    execFileSync("git", LIST_ARGS, {
-      ...options(cwd),
-      timeout: SYNC_LIST_TIMEOUT_MS,
-      encoding: "utf8",
-    }),
-  );
-  remember(cwd, {
-    at: Date.now(),
-    generation: listGeneration,
-    promise: Promise.resolve(value),
-    value,
-  });
-  return { value, ran: true };
-}
-
 /** The real path of a requested working copy, or null for the project itself. */
 function requestedPath(projectCwd: string, requested: unknown): string | null {
   if (requested == null || requested === "" || requested === projectCwd) return null;
@@ -320,21 +303,7 @@ function requestedPath(projectCwd: string, requested: unknown): string | null {
   return actual === projectCwd ? null : actual;
 }
 
-export function resolveHostWorktree(projectCwd: string, requested: unknown): string {
-  const actual = requestedPath(projectCwd, requested);
-  if (actual === null) return projectCwd;
-  const find = (listed: HostWorktrees) => listed.worktrees.find((tree) => tree.path === actual);
-  // A cached list may predate a worktree made outside this host: look again
-  // before refusing.
-  // Only a cached list needs a second look; a list git just produced is already current.
-  const first = listSync(projectCwd);
-  const target =
-    find(first.value) ?? (first.ran ? undefined : find(listSync(projectCwd, true).value));
-  if (!target || !available(target.path))
-    throw new Error("Choose an available worktree of this project");
-  return canonicalWorkspacePathSync(target.path);
-}
-
+/** A cached list may predate a worktree made outside this host: look again before refusing. */
 export async function resolveHostWorktreeAsync(
   projectCwd: string,
   requested: unknown,

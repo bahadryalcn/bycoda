@@ -158,7 +158,25 @@ type CatalogEntry = {
   inFlight: CatalogRequest | null;
 };
 
+/** Idle entries kept at most; matches the machine inventory cache in `machineSkills.ts`. */
+const CATALOG_ENTRY_LIMIT = 128;
 const catalogEntries = new Map<string, CatalogEntry>();
+/** Keys with a live command subscription; their entries must survive eviction so updates still publish. */
+const subscribedCatalogKeys = new Map<string, number>();
+
+/** Stores the entry as most recently used, then evicts past the limit. */
+function storeCatalogEntry(key: string, entry: CatalogEntry): void {
+  catalogEntries.delete(key);
+  catalogEntries.set(key, entry);
+  if (catalogEntries.size <= CATALOG_ENTRY_LIMIT) return;
+  for (const [candidate, candidateEntry] of catalogEntries) {
+    if (catalogEntries.size <= CATALOG_ENTRY_LIMIT) return;
+    if (candidate === key || candidateEntry.inFlight || subscribedCatalogKeys.has(candidate)) {
+      continue;
+    }
+    catalogEntries.delete(candidate);
+  }
+}
 
 export function skillCatalogKey(context: SkillCatalogContext): string {
   const sessionScoped =
@@ -186,8 +204,9 @@ export function subscribeSkills(
 ): () => void {
   if (context.cwd.startsWith(REMOTE_PATH_PREFIX)) return () => undefined;
   let active = true;
+  const key = skillCatalogKey(context);
+  subscribedCatalogKeys.set(key, (subscribedCatalogKeys.get(key) ?? 0) + 1);
   const unsubscribe = getHarness(context.harness)?.commands?.subscribe?.(context, (commands) => {
-    const key = skillCatalogKey(context);
     const previous = catalogEntries.get(key);
     // Reserve the generation before reading scope so an older native probe
     // cannot publish while this authoritative live inventory is checked.
@@ -199,7 +218,7 @@ export function subscribeSkills(
       generation: (previous?.generation ?? 0) + 1,
       inFlight: null,
     };
-    catalogEntries.set(key, entry);
+    storeCatalogEntry(key, entry);
     void Promise.all([listSkills(context.cwd), listSkills(context.cwd, null, context.harness)])
       .then(([inventory, eligible]) => {
         if (!active || catalogEntries.get(key) !== entry) return;
@@ -225,6 +244,9 @@ export function subscribeSkills(
   return () => {
     active = false;
     unsubscribe?.();
+    const remaining = (subscribedCatalogKeys.get(key) ?? 1) - 1;
+    if (remaining > 0) subscribedCatalogKeys.set(key, remaining);
+    else subscribedCatalogKeys.delete(key);
   };
 }
 
@@ -257,18 +279,15 @@ export function loadSkills(
     ...(context.sessionId ? { sessionId: context.sessionId } : {}),
   } satisfies SkillCatalogContext;
   const key = skillCatalogKey(normalized);
-  let entry = catalogEntries.get(key);
-  if (!entry) {
-    entry = {
-      cwd: normalized.cwd,
-      skills: null,
-      loadedAt: 0,
-      retryAt: 0,
-      generation: 0,
-      inFlight: null,
-    };
-    catalogEntries.set(key, entry);
-  }
+  const entry: CatalogEntry = catalogEntries.get(key) ?? {
+    cwd: normalized.cwd,
+    skills: null,
+    loadedAt: 0,
+    retryAt: 0,
+    generation: 0,
+    inFlight: null,
+  };
+  storeCatalogEntry(key, entry);
 
   const now = Date.now();
   if (options?.refresh) {

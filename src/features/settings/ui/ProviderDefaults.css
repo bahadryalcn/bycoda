@@ -1,33 +1,37 @@
 /* Layout only; controls and typography retain their shared owners. */
-.provider-cli-container:has(#setting-agent-clis) .settings-row-control {
+.provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control {
   inline-size: min(28rem, 55%);
   min-inline-size: 0;
 }
-.provider-cli-container:has(#setting-agent-clis) .settings-row-control > * {
+.provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control > * {
   max-inline-size: 100%;
 }
 /* Pages scroll in the shared settings scroller only. Never size or clip
    [data-settings-scroller] from a page with :has(): the Providers page stays mounted
    (hidden) beside Usage, so such a rule also locks whichever page is showing. */
 @container provider-page (max-width: 640px) {
-  .provider-cli-container:has(#setting-agent-clis) .settings-row-control {
+  .provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control {
     inline-size: min(24rem, 60%);
   }
 }
 
-.provider-cli-container:has(#setting-agent-clis) .settings-row-control {
+.provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control {
   max-inline-size: min(28rem, 60%);
 }
-.provider-cli-container:has(#setting-agent-clis) .settings-row-control > .bycoda-arc-select {
+.provider-cli-container:has([data-setting-id="agent-clis"])
+  .settings-row-control
+  > .bycoda-arc-select {
   inline-size: 100%;
 }
 
-#setting-enabled-models > .settings-group-content {
+/* Outranks the shared group frame (settings.css, align-self: start), which an id selector used to beat. */
+.settings-group[data-settings-variant][data-settings-layout][data-setting-id="enabled-models"]
+  > .settings-group-content {
   align-self: stretch;
   inline-size: 100%;
 }
 
-.provider-cli-container:has(#setting-agent-clis) .settings-row-control > div {
+.provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control > div {
   inline-size: 100%;
 }
 .provider-defaults-notes {
@@ -50,7 +54,7 @@
   align-items: stretch;
   gap: var(--space-2);
 }
-#setting-enabled-models .provider-models-list .settings-row {
+[data-setting-id="enabled-models"] .provider-models-list .settings-row {
   padding-block: var(--space-1);
   min-block-size: var(--ui-control-height);
 }
@@ -61,6 +65,6 @@
   gap: var(--space-2);
 }
 /* Save in sits beside the buttons on the end edge; Apply to (pending only) stays on the start. */
-.provider-defaults-field:has([aria-label="Save in"]) {
+.provider-defaults-field-end {
   margin-inline-start: auto;
 }

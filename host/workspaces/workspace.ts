@@ -198,7 +198,13 @@ export async function listHostFiles(root: string, input: unknown): Promise<HostF
   let ignored = new Set<string>();
   if (paths.length) {
     try {
-      const output = await git(root, ["check-ignore", "-z", "--", ...paths]);
+      // Paths go on stdin, NUL-terminated (-z): a large folder must not overflow the argv limit.
+      await hostGitStarts.enter();
+      const output = await gitWithInput(
+        root,
+        ["check-ignore", "-z", "--stdin"],
+        paths.map((path) => `${path}\0`).join(""),
+      );
       ignored = new Set(output.split("\0").filter(Boolean));
     } catch {
       /* no ignored entries or a non-Git folder */

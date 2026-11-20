@@ -58,6 +58,7 @@ import {
   type HarnessAuthStatus,
 } from "../../../integrations/harness/core/authStatus";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { LiveText } from "../../../shared/ui/LiveText";
 const GenericAcpSettings = lazy(() =>
   import("../../providers/ui/GenericAcpSettings").then((module) => ({
     default: module.GenericAcpSettings,
@@ -107,6 +108,10 @@ export function OnboardingAgents({
   const [setup, setSetup] = useState<HarnessId | null>(null);
   const [auth, setAuth] = useState<Partial<Record<HarnessId, HarnessAuthStatus>>>({});
   const [checking, setChecking] = useState(true);
+  // False until the first scan settles; after that, refreshes keep buttons in place.
+  const [probed, setProbed] = useState(false);
+  // Providers whose status is being re-read. Their last known status stays visible meanwhile.
+  const [reading, setReading] = useState<ReadonlySet<HarnessId>>(() => new Set());
   const [error, setError] = useState("");
   const alive = useRef(true);
   const scan = useRef(0);
@@ -115,7 +120,7 @@ export function OnboardingAgents({
     const current = () => alive.current && scan.current === revision;
     setChecking(true);
     setError("");
-    setAuth({});
+    setReading(new Set(HARNESSES.filter(isHarnessAvailable)));
     void probeHarnessAvailability({ force: true })
       .then(() => {
         if (!current()) return;
@@ -124,16 +129,32 @@ export function OnboardingAgents({
           const accountId = supportsProviderAccounts(provider)
             ? defaultProviderAccountId(provider)
             : undefined;
-          void readHarnessAuthStatus(provider, accountId).then((status) => {
-            if (current()) setAuth((previous) => ({ ...previous, [provider]: status }));
-          });
+          void readHarnessAuthStatus(provider, accountId)
+            .then((status) => {
+              if (current()) setAuth((previous) => ({ ...previous, [provider]: status }));
+            })
+            .catch((reason) => {
+              if (current()) setError(String(reason));
+            })
+            .finally(() => {
+              if (!current()) return;
+              setReading((previous) => {
+                const next = new Set(previous);
+                next.delete(provider);
+                return next;
+              });
+            });
         }
       })
       .catch((reason) => {
-        if (current()) setError(String(reason));
+        if (!current()) return;
+        setReading(new Set());
+        setError(String(reason));
       })
       .finally(() => {
-        if (current()) setChecking(false);
+        if (!current()) return;
+        setChecking(false);
+        setProbed(true);
       });
   }, []);
   useEffect(() => {
@@ -197,7 +218,7 @@ export function OnboardingAgents({
             </div>
           </>
         ) : null}
-        {!checking && listed.length === 0 ? (
+        {probed && listed.length === 0 ? (
           <div className="onboarding-provider-empty" role="status">
             <EmptyState size="inline" kind="empty" description={t("No providers found")} />
             <Text as="p" size="caption" tone="secondary" leading="normal">
@@ -222,9 +243,9 @@ export function OnboardingAgents({
             const restartRequired = providerBinaryPathChangePending(provider);
             const title = HARNESS_TITLE[provider];
             const guide = INSTALL_GUIDES[provider];
-            let busy = false;
+            let busy = reading.has(provider);
             let status: string;
-            if (checking) {
+            if (!probed) {
               busy = true;
               status = t("Checking…");
             } else if (restartRequired) {
@@ -252,7 +273,7 @@ export function OnboardingAgents({
                   {t("Configure")}
                 </Button>
               );
-            } else if (!checking && !available && guide) {
+            } else if (probed && !available && guide) {
               primary = (
                 <Button
                   onClick={() =>
@@ -266,7 +287,7 @@ export function OnboardingAgents({
                   {t("Install guide ↗")}
                 </Button>
               );
-            } else if (!checking && !available) {
+            } else if (probed && !available) {
               cliSetupIsPrimary = true;
               primary = (
                 <ProviderBinaryControl
@@ -276,7 +297,7 @@ export function OnboardingAgents({
                   onPathSaved={refresh}
                 />
               );
-            } else if (!checking && available && supportsHarnessLogin(provider) && !connected) {
+            } else if (probed && available && supportsHarnessLogin(provider) && !connected) {
               primary = (
                 <Button
                   aria-label={t("Sign in to {p0}", { p0: title })}
@@ -315,7 +336,6 @@ export function OnboardingAgents({
                     </Text>
                     <Text
                       as="small"
-                      role="status"
                       size="caption"
                       tone="secondary"
                       leading="normal"
@@ -376,6 +396,12 @@ export function OnboardingAgents({
             );
           })}
         </div>
+        {/* One live region for the whole list; rows only show their own visual status. */}
+        <LiveText
+          size="caption"
+          tone="secondary"
+          text={checking ? t("Scanning this computer…") : ""}
+        />
         {missing.length > 0 ? (
           <div className="onboarding-provider-footer">
             <Button
@@ -514,11 +540,10 @@ function AgentMore({ label, children }: { label: string; children: ReactNode }) 
       {open ? (
         <Popover
           anchor={anchor}
-          role="dialog"
+          kind="dialog"
           aria-label={label}
           align="end"
           minWidth={220}
-          autoFocus
           onDismiss={() => setOpen(false)}
           className="onboarding-agent-menu"
         >

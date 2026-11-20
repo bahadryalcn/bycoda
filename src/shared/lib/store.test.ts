@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { boundedSet, createStore, createWindowStore } from "./store";
+import { boundedGet, boundedSet, createStore, createWindowStore } from "./store";
 
 describe("createStore", () => {
   it("can retain an explicit server-rendering subscription guard", () => {
@@ -89,5 +89,17 @@ describe("boundedSet", () => {
     expect(cache.has(0)).toBe(false);
     boundedSet(cache, 65, 65, 0);
     expect(cache.size).toBe(0);
+  });
+});
+
+describe("boundedGet", () => {
+  it("returns null for a missing key and marks a hit as the newest entry", () => {
+    const cache = new Map([
+      ["a", 1],
+      ["b", 2],
+    ]);
+    expect(boundedGet(cache, "missing")).toBeNull();
+    expect(boundedGet(cache, "a")).toBe(1);
+    expect([...cache.keys()]).toEqual(["b", "a"]);
   });
 });

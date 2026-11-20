@@ -104,10 +104,12 @@ function SkillListGroup({
           {label}
         </SectionLabel>
       </Surface>
+      {/* Collapsed groups keep the region for aria-controls but mount no rows; the
+          parent owns selection, preview and actions state, so they survive a collapse. */}
       <div id={id} hidden={!expanded}>
-        {group.entries.map((entry) => (
-          <div key={entry.key}>{renderRow(entry)}</div>
-        ))}
+        {expanded
+          ? group.entries.map((entry) => <div key={entry.key}>{renderRow(entry)}</div>)
+          : null}
       </div>
     </section>
   );

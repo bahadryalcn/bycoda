@@ -1,10 +1,14 @@
 # Inspect chat output and connected-machine files
 
+Markdown formatting appears in the chat composer as you type. Move the caret onto a Markdown
+marker to see and edit it. Sent messages display Markdown, and **Show full content** opens long
+messages with the same formatting. **Copy message** and **Save as note** use the original Markdown.
+
 Markdown replies and document previews up to 131,072 characters parse without a background worker. Longer content, including 1 MiB documents, parses in a background worker. Documents with many blocks fill in progressively while the rendering indicator remains visible; completed blocks stay selectable. If parsing fails, the complete source text remains visible with a warning. Closing the failed preview allows a fresh worker attempt when another preview opens.
 
 When Host delegation is unavailable for a turn, the conversation notice uses your app language. Automatic without an effort ceiling permits built-in subagents; otherwise subagents remain limited to your selected models and effort ceiling. Model-facing fallback guidance stays in English.
 
-Tool rows keep the conversation compact. Use **Changes** beside an edit or the output chevron beside a command to inspect its saved code, patch, or result. Expanded text can be selected and copied. A failed call shows its error before any earlier output.
+Tool rows keep the conversation compact. Long command lines end in an ellipsis. Select the command row or its output chevron to inspect the saved command and result. Use **Changes** beside an edit to inspect its saved code or patch. Expanded text can be selected and copied. A failed call shows its error before any earlier output.
 
 Command details and Copy preserve retained output indentation, blank output and final line breaks. A log containing the failure message remains available alongside the error. If loading full output from a connected machine fails, its summary stays visible and **Retry** requests the same revision again.
 
@@ -73,7 +77,7 @@ Use **Add citation** to attach the excerpt to your next message, with an optiona
 
 Hover or focus a reference to briefly highlight its exact source without scrolling. Click it to return to the source in the current conversation. If the source has changed or is unavailable, the saved quote remains readable; an equal phrase in another message is never substituted. The information control on a sent reference shows its full excerpt and comment.
 
-Translation previews keep model selection, cancellation and retry. After applying a translation, the compact **Original text / Translation** control switches the displayed version. **Copy** copies that version. **Close translation** dismisses the control without deleting the translation or changing saved message text.
+Translation previews keep model selection, cancellation and retry. After applying a translation, the **Translation view** control switches between **Original text** and **Translation**. With the transcript focused, press **↑** for the original or **↓** for the translation. **Copy** copies the displayed version. **Close translation** dismisses the control and keeps the applied translation and saved message text.
 
 These details describe the tool call at that point in the conversation. They do not reread the current file and present it as historical output. New code details are bounded to keep long conversations responsive; subagent history has a shared retention budget. When only an older shortened preview remains, the viewer says so.
 
@@ -81,6 +85,7 @@ These details describe the tool call at that point in the conversation. They do 
 
 While a turn is open, **Queue message** or **Shift+Tab** saves your message for
 after that turn finishes, including while the AI waits for background commands.
+When there is nothing to queue, Shift+Tab moves focus back out of the composer.
 **Steer** sends a follow-up to the current turn instead. If a server or watcher
 keeps the turn open, queued messages keep waiting; use the queued row's **Steer**
 action to send one immediately. After the turn, while subagents it delegated still
@@ -153,8 +158,10 @@ own errors in the conversation history.
 
 HTTP failures and structured provider responses show a short message in the
 conversation. Open **Technical details** to read or copy the complete original
-response, including its status, request identity and diagnostics. Plain errors
-keep their original explanation.
+response, including its status, request identity and diagnostics. Queue notices
+with diagnostics use **Details**. The copy button at the top of either panel
+copies the full text, including any lines you need to scroll to read. Plain
+errors keep their original explanation.
 
 ## Documents, tables, and media
 
@@ -174,15 +181,17 @@ Move the caret into a link to see and edit it in full; the message keeps the ful
 
 Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
 
+On desktop, use **Download** on a file attachment card to choose where to save a copy. The action also works with formats such as ZIP that the conversation does not preview. Attachment copies are limited to 20 MiB.
+
 CSV and TSV file tabs offer **Preview** and **Source**. Switching views retains source edits. The preview displays the saved file; unsaved changes remain in Source. Delimited values are displayed as text, without evaluating formulas.
 
-Document previews are limited to 25 MiB. Connected project files are checked before downloading. Large media uses a local authorized file or an on-demand disk copy instead of keeping the whole video in JavaScript memory. Session attachment previews use the session's authorized reader and have a 25 MiB limit.
+Document previews are limited to 25 MiB. Connected project files are checked before downloading. Large media uses a local authorized file or an on-demand disk copy instead of keeping the whole video in JavaScript memory. The owning Host serves session attachment previews up to 20 MiB through the session's authorized reader.
 
 ## Files on another computer
 
 Every connected path retains its owning machine. Windows drive paths, macOS/Linux paths, and network paths are never interpreted as a local path merely because they have the same spelling.
 
-- **Open local copy** downloads a snapshot and opens it on this computer. Changes to that copy do not sync to the connected machine.
+- **Open local copy** downloads a snapshot and opens it on this computer. Changes to that copy do not sync to the connected machine. Copies are cached for reuse; when the cache is full the least recently used ones are removed automatically, and copies unused for 30 days are removed at startup. A copy you edited, or one opened within the last hour, is kept.
 - Existing shared or mounted folders can be configured under **Shared folder settings**. The mapping is local to the viewing computer and applies to subfolders. Opening a mapped file accesses that shared original.
 - **Open live folder (read-only)** uses the saved bycoda connection to expose a temporary folder to this computer's file manager. It supports browsing and opening; writes are rejected. The OS must provide its WebDAV client. An unavailable OS client produces an actionable error and leaves the shared-folder and copy alternatives available.
 
@@ -192,9 +201,15 @@ Local downloads are limited to 1 GiB per file and four simultaneous transfers. T
 
 ## Open a remote development website
 
-Use **Open in this computer's browser** in Development servers, or click a matching development URL in the remote conversation. bycoda resolves the conversation's machine and project, finds the registered running server, and verifies its process identity before creating a private local browser address. Refresh Development servers when a process restarts.
+On desktop, use **Open in this computer's browser** in Development servers, or click a matching development URL in a user or assistant message in the remote conversation. bycoda resolves the conversation's machine and project, finds the registered running server, and verifies its process identity before creating a private local browser address. Refresh Development servers when a process restarts.
 
 HTTP requests and WebSocket connections use the paired host connection. No public tunnel is created. Remote HTTPS sites open in the owning host's browser preview. Ordinary public URLs continue to open normally.
+
+On mobile, tap a `localhost` link in the original conversation or its composer. When the computer supports phone tunnels and the phone does (iOS 17 or later, or an Android WebView with proxy support), the page opens on the phone itself. It runs in a private in-app browser, and only its bytes travel to the computer's development server over the paired connection. The address bar still shows `localhost`. The server must be an HTTP development server that this project started. The toolbar offers **Open in Host Browser** for anything else.
+
+Otherwise, the conversation's Browser opens with that address. Use the browser's existing control action and **Go** to load the page on the owning computer. The phone then displays that browser's view through the paired connection.
+
+**Data saver** (Settings, default **Auto**: on over mobile data) loads chat images only on tap. It streams the Host Browser at lower quality and blocks images and media in the phone browser.
 
 The HTTP bridge accepts fixed-length request bodies; streaming/chunked request bodies are rejected. Custom private DNS names are not automatically classified from arbitrary chat links; choose the registered endpoint in Development servers. Opening a file or server never silently falls back to a different machine.
 

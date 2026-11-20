@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, test, type Page, type Locator } from "@playwright/test";
 
 const captures = join(process.cwd(), "temp/verification/2026-10-24-voice-setup");
+const recoveryCaptures = join(process.cwd(), "temp/verification/voice-setup-recovery");
 
 async function assertVoiceRows(region: Locator) {
   const problems = await region.evaluate((root) => {
@@ -59,7 +60,7 @@ for (const [theme, width] of [
     page,
   }) => {
     const region = await openVoice(page, "ready", theme, width);
-    const output = join(process.cwd(), "temp/verification/voice-settings-layout-20261113/after");
+    const output = join(process.cwd(), "temp/verification/assistant-settings-simplify/voice");
     await mkdir(output, { recursive: true });
     const capture = async (name: string) => {
       await page.mouse.move(0, 0);
@@ -71,12 +72,25 @@ for (const [theme, width] of [
     await expect(region.getByText("Voice is ready", { exact: true })).toBeVisible();
     await assertVoiceRows(region);
     await capture("top");
+    const wake = region.locator('[data-setting-id="voice-wake"]').getByRole("switch");
+    const wakeField = region.locator('[data-setting-id="voice-wake-phrase"]').getByRole("textbox");
+    await expect(wake).toBeInViewport();
+    await expect(wakeField).not.toBeVisible();
+    await wake.check();
+    await wakeField.fill("Hey Arif");
+    await wakeField.press("Enter");
+    await expect(wakeField).toHaveValue("Hey Arif");
+    await wakeField.scrollIntoViewIfNeeded();
+    await capture("wake-phrase");
+    await wake.uncheck();
+    await expect(wakeField).not.toBeVisible();
     await region.locator('[data-setting-id="voice-persona"]').scrollIntoViewIfNeeded();
     await capture("bottom");
     for (const title of [
       "Voice options",
+      "Transcription models",
       "Dictation options",
-      "Sleep and wake",
+      "When you step away",
       "Appearance and voice style",
     ])
       await region.getByRole("button", { name: new RegExp(`^${title}`) }).click();
@@ -99,6 +113,16 @@ for (const [theme, width] of [
         return !!hit && (hit === element || element.contains(hit));
       }),
     ).toBe(true);
+    await region.getByRole("button", { name: "Customize", exact: true }).click();
+    const style = page.getByRole("dialog", { name: "Voice style", exact: true });
+    await expect(style).toBeVisible();
+    await capture("voice-style");
+    await style
+      .locator("summary")
+      .filter({ hasText: /^Tasks$/ })
+      .click();
+    await capture("voice-style-tasks");
+    await style.getByRole("button", { name: "Cancel", exact: true }).click();
     await region.getByRole("button", { name: /^Reply voice:/ }).click();
     await expect(page.getByRole("listbox")).toBeVisible();
     const popup = (await page.getByRole("listbox").boundingBox())!;
@@ -198,21 +222,26 @@ async function openVoice(page: Page, fixture: string, theme = "dark", width = 12
     .filter({ has: page.locator('[data-setting-id="voice-companion"]') });
 }
 
+test("settings search takes wake up to voice activation", async ({ page }) => {
+  const region = await openVoice(page, "ready");
+  await page.getByRole("button", { name: "Search settings", exact: true }).click();
+  const search = page.getByRole("combobox", { name: "Search settings", exact: true });
+  await search.fill("wake up");
+  await expect(page.getByRole("option").first()).toContainText("Wake and sleep phrases");
+  await search.press("Enter");
+  await expect(region.locator('[data-setting-id="voice-wake"]').getByRole("switch")).toBeFocused();
+});
+
 for (const theme of ["light", "dark"]) {
-  for (const width of [390, 1280]) {
-    test(`voice setup keeps install direct and existing files in its action menu: ${theme} ${width}`, async ({
+  for (const width of [390, 800, 1280]) {
+    test(`voice setup keeps install and find actions visible: ${theme} ${width}`, async ({
       page,
     }, testInfo) => {
       const group = await openVoice(page, "missing", theme, width);
       await expect(group.getByText("Voice setup is needed", { exact: true })).toBeVisible();
       await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
-      const more = group.getByRole("button", { name: "More voice setup actions", exact: true });
-      await expect(more).toBeVisible();
-      await more.click();
-      await expect(
-        page.getByRole("menuitem", { name: "Locate existing", exact: true }),
-      ).toBeVisible();
-      await page.keyboard.press("Escape");
+      const locate = group.getByRole("button", { name: "Locate existing", exact: true });
+      await expect(locate).toBeVisible();
       await expect(group).not.toContainText("faster-whisper");
       await expect(group).not.toContainText("pip install");
       await expect(group).not.toContainText("Missing:");
@@ -224,11 +253,20 @@ for (const theme of ["light", "dark"]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await mkdir(captures, { recursive: true });
+      await mkdir(recoveryCaptures, { recursive: true });
       const status = page
         .locator(".settings-group")
         .filter({ has: page.locator('[data-setting-id="voice-companion"]') });
-      await status.screenshot({ path: testInfo.outputPath(`voice-missing-${theme}-${width}.png`) });
+      await status.screenshot({
+        path: join(recoveryCaptures, `voice-missing-${theme}-${width}.png`),
+      });
+      await locate.click();
+      const dialog = page.getByRole("dialog", { name: "Locate voice files", exact: true });
+      await expect(dialog.getByRole("button", { name: "Automatic detection" })).toBeVisible();
+      await dialog.screenshot({
+        path: join(recoveryCaptures, `voice-locate-${theme}-${width}.png`),
+      });
+      await page.keyboard.press("Escape");
       const bounds = await status.boundingBox();
       await testInfo.attach("setup-bounds", {
         body: JSON.stringify({ theme, width, height: bounds!.height }),
@@ -297,13 +335,14 @@ test("voice locations are optional, keyboard accessible and return focus", async
   const group = await openVoice(page, "missing", "dark", 390);
   await group.getByRole("button", { name: /^Reply voice:/ }).click();
   await page.getByRole("option", { name: "High quality (VoxCPM2)", exact: true }).click();
-  const locate = group.getByRole("button", { name: "More voice setup actions", exact: true });
+  const locate = group.getByRole("button", { name: "Locate existing", exact: true });
   await locate.focus();
-  await page.keyboard.press("Enter");
-  await page.getByRole("menuitem", { name: "Locate existing", exact: true }).focus();
   await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", { name: "Locate voice files", exact: true });
   await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Automatic detection", exact: true }),
+  ).toBeVisible();
   await expect(dialog.getByRole("textbox", { name: "Python", exact: true })).toBeVisible();
   await expect(
     dialog.getByRole("textbox", { name: "Speech recognition model", exact: true }),
@@ -355,9 +394,7 @@ test("Turkish voice setup keeps the same simple actions at a narrow width", asyn
     group.getByText("Sesli konuşma için kurulum gerekli", { exact: true }),
   ).toBeVisible();
   await expect(group.getByRole("button", { name: "Kur", exact: true })).toBeVisible();
-  await group.getByRole("button", { name: "Diğer ses kurulumu eylemleri", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name: "Yerini göster", exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect(group.getByRole("button", { name: "Yerini göster", exact: true })).toBeVisible();
   await expect(group).not.toContainText("faster-whisper");
   await expect(group).not.toContainText("pip install");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

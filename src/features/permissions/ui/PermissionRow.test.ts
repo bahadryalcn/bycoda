@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   } as PermissionEntry,
   refresh: vi.fn(async () => {}),
   request: vi.fn(async (_id: string): Promise<PermissionEntry> => state.entry),
+  restart: vi.fn(async () => {}),
 }));
 vi.mock("../hooks/usePermissionStatus", () => ({
   usePermissionStatus: () => ({
@@ -25,6 +26,7 @@ vi.mock("../hooks/usePermissionStatus", () => ({
 }));
 vi.mock("../../../platform/tauri/systemPermissions", () => ({
   requestSystemPermission: (id: string) => state.request(id),
+  restartToApplyPermission: () => state.restart(),
 }));
 vi.mock("./PermissionSetupSheet", () => ({
   PermissionSetupSheet: () => createElement("div", { "data-testid": "setup-sheet" }),
@@ -102,7 +104,22 @@ it("opens the guide when the prompt leaves access missing", async () => {
 it("opens the guide from Review access without prompting", async () => {
   state.entry = { id: "microphone", state: "denied", canRequest: false, canOpenSettings: true };
   const host = await render();
-  await act(async () => button(host, "Review access…")!.click());
+  await act(async () => button(host, "Review access")!.click());
   expect(state.request).not.toHaveBeenCalled();
   expect(host.querySelector("[data-testid=setup-sheet]")).not.toBeNull();
+});
+
+it("offers a restart instead of the guide when the OS switch waits for one", async () => {
+  state.entry = {
+    id: "screen-recording",
+    state: "denied",
+    canRequest: false,
+    canOpenSettings: true,
+    detail: "restart-required",
+  };
+  const host = await render();
+  expect(host.textContent).toContain("Restart to apply");
+  expect(button(host, "Review access")).toBeUndefined();
+  await act(async () => button(host, "Restart now")!.click());
+  expect(state.restart).toHaveBeenCalledOnce();
 });

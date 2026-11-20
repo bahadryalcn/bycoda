@@ -96,7 +96,7 @@ for (const width of [1280, 800]) {
     await capture("picker-offline");
     await blank.click();
     const name = page.getByRole("textbox", { name: "Automation name", exact: true });
-    const instructions = page.getByRole("textbox", { name: "Instructions", exact: true });
+    const instructions = page.getByRole("combobox", { name: "Instructions", exact: true });
     await name.fill("Preserve offline draft");
     await instructions.fill("Owner instructions survive connection recovery.");
     await retry.click();
@@ -180,7 +180,7 @@ test("automation save keeps its label and focus while fields lock and failures p
       await expect
         .poll(() =>
           page
-            .getByRole("textbox", { name: "Instructions", exact: true, includeHidden: true })
+            .getByRole("combobox", { name: "Instructions", exact: true, includeHidden: true })
             .evaluate((node) => node.getBoundingClientRect().height),
         )
         .toBeLessThan(220);
@@ -315,7 +315,7 @@ test("automation gallery, event picker, focus mode and scoped AI", async ({ page
   await expect(page.getByRole("textbox", { name: "Automation name", exact: true })).toHaveValue(
     "Triage incoming messages",
   );
-  await page.getByRole("button", { name: "Add Trigger: Add Trigger", exact: true }).click();
+  await page.getByRole("button", { name: /^Add trigger/ }).click();
   await page.getByRole("combobox", { name: "Search triggers", exact: true }).fill("tasks");
   const option = page.getByRole("option", { name: /^Task blocked/ });
   await expect(option).toBeVisible();

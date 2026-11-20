@@ -1,3 +1,4 @@
+import { errorText } from "../../shared/lib/errors";
 import { Button } from "../../shared/ui/Button";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { FULLSCREEN_SHORTCUT } from "../../platform/tauri/platform";
@@ -20,11 +21,12 @@ async function runFullscreenToggle(onError: (message: string) => void): Promise<
     await setNativeFullscreen();
     await refreshWindowState().catch(() => null);
   } catch (failure) {
-    onError(failure instanceof Error ? failure.message : String(failure));
+    onError(errorText(failure));
   }
 }
 
-export function FullscreenButton() {
+/** Native full-screen state, its toggle and the failure notice the caller renders. */
+export function useFullscreenToggle() {
   const t = useT();
   const shortcut = useSyncExternalStore(subscribeKeybindings, shortcutLabel, shortcutLabel);
   const fullscreen = useNativeWindowState()?.fullscreen ?? false;
@@ -38,20 +40,31 @@ export function FullscreenButton() {
     await runFullscreenToggle(setError);
     pending.current = false;
   };
-  const label = fullscreen ? t("Restore window") : t("Full screen");
+  const notice = error ? (
+    <TransientNotice
+      tone="danger"
+      durationMs={null}
+      message={errorHeadline(error)}
+      extra={fitsOneLine(error) ? undefined : <ErrorDetails detail={error} />}
+      onDismiss={() => setError(null)}
+    />
+  ) : null;
+  return {
+    fullscreen,
+    label: fullscreen ? t("Exit full screen") : t("Full screen"),
+    shortcut,
+    toggle: () => void toggle(),
+    notice,
+  };
+}
+
+export function FullscreenButton() {
+  const { fullscreen, label, shortcut, toggle, notice } = useFullscreenToggle();
   const Icon = fullscreen ? Minimize2 : Maximize2;
 
   return (
     <>
-      {error ? (
-        <TransientNotice
-          tone="danger"
-          durationMs={null}
-          message={errorHeadline(error)}
-          extra={fitsOneLine(error) ? undefined : <ErrorDetails detail={error} />}
-          onDismiss={() => setError(null)}
-        />
-      ) : null}
+      {notice}
       <Button
         iconOnly
         label={label}
@@ -61,7 +74,7 @@ export function FullscreenButton() {
         shortcut={shortcut}
         aria-pressed={fullscreen}
         data-tauri-drag-region="false"
-        onClick={() => void toggle()}
+        onClick={toggle}
       >
         <Icon className="icon-sm" strokeWidth={1.75} />
       </Button>

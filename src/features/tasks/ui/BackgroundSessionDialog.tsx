@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -61,7 +62,7 @@ export function BackgroundSessionDialog({
       },
       (reason: unknown) => {
         if (alive) {
-          setError(reason instanceof Error ? reason.message : String(reason));
+          setError(errorText(reason));
           setLoading(false);
           pending.current = false;
         }

@@ -78,7 +78,8 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   await dialog.getByRole("button", { name: /4\s*Machines/ }).click();
   await expect(dialog.getByRole("button", { name: /Manage connections/ })).toBeVisible();
   await dialog.getByRole("button", { name: /5\s*Projects/ }).click();
-  await dialog.getByRole("button", { name: "Finish setup" }).click();
+  // Nothing is selected, so the primary Import action is disabled and Skip import finishes setup.
+  await dialog.getByRole("button", { name: "Skip import" }).click();
   await expect(page.getByText("Workspace ready")).toBeVisible();
   await expect(
     page
@@ -108,11 +109,11 @@ test("finds existing accounts, links another profile and lets the user choose a 
   const codex = page
     .locator(".onboarding-agent")
     .filter({ has: page.getByRole("switch", { name: "Use Codex", exact: true }) });
-  await expect(claude.getByRole("status")).toHaveText("Signed in");
+  await expect(claude.locator(".onboarding-agent-status")).toHaveText("Signed in");
   await expect(
     claude.getByRole("button", { name: "Sign in to Claude Code", exact: true }),
   ).toHaveCount(0);
-  await expect(codex.getByRole("status")).toHaveText("Not signed in");
+  await expect(codex.locator(".onboarding-agent-status")).toHaveText("Not signed in");
   await expect(codex.getByRole("button", { name: "Sign in to Codex", exact: true })).toBeEnabled();
   await claude.getByRole("button", { name: "More options for Claude Code", exact: true }).click();
   await page.getByRole("button", { name: "Terminal account profiles", exact: true }).click();
@@ -218,7 +219,9 @@ test("adds only the chosen missing provider after validation and keeps it on res
   const cursor = page
     .locator(".onboarding-agent")
     .filter({ has: page.getByRole("switch", { name: "Use Cursor", exact: true }) });
-  await expect(cursor.getByRole("status")).toHaveText("CLI path saved · restart required");
+  await expect(cursor.locator(".onboarding-agent-status")).toHaveText(
+    "CLI path saved · restart required",
+  );
   await expect(cursor.getByRole("button", { name: "Sign in to Cursor", exact: true })).toHaveCount(
     0,
   );
@@ -352,7 +355,7 @@ for (const theme of ["light", "dark"])
     test(`guide wiki search and article ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${fixture}?guideHub&theme=${theme}`);
-      await page.getByRole("button", { name: "Wiki", exact: true }).click();
+      await page.getByRole("button", { name: "Read the Projects article", exact: true }).click();
       const wiki = page.getByRole("tab", { name: "Wiki" });
       await expect(wiki).toBeFocused();
       await expect(page.getByRole("heading", { name: "Projects and workbench" })).toBeVisible();

@@ -11,14 +11,33 @@ import {
   type Automation,
 } from "../model/automations";
 import { SUPPORTED_INBOX_TRIGGER_EVENTS } from "../model/automationEvents";
+import { AUTOMATION_TEMPLATES } from "../model/automationTemplates";
 import * as hostAutomationClient from "../model/hostAutomationClient";
 import { AutomationsView as RawAutomationsView } from "./AutomationsView";
+import { AutomationTemplateCard } from "./AutomationTemplateCard";
 import { EventTriggerSentence } from "./TriggerEditor";
 import { TRIGGER_EVENTS } from "../model/automationTriggerCatalog";
 import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { focusManager } from "@tanstack/react-query";
 const AutomationsView = withQueryClient(RawAutomationsView);
+
+it("shows each template description without repeating it in a tooltip", async () => {
+  const template = AUTOMATION_TEMPLATES[0];
+  const onPick = vi.fn();
+  await act(async () => root.render(createElement(AutomationTemplateCard, { template, onPick })));
+  const card = container.querySelector("button")!;
+  expect(card.textContent).toContain(template.description);
+  expect(card.querySelector("[title]")).toBeNull();
+  expect(card.getAttribute("aria-describedby")).toBeNull();
+  await act(async () => {
+    card.focus();
+    card.dispatchEvent(new MouseEvent("mouseenter"));
+  });
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  await act(async () => card.click());
+  expect(onPick).toHaveBeenCalledExactlyOnceWith(template);
+});
 
 it("keeps an unfocused assistant reveal paused, then opens its exact Host row when normal focus loading resumes", async () => {
   const row: Automation = {
@@ -316,7 +335,11 @@ it("parks assistant navigation behind an unsaved draft and owner filters, then r
     );
     await act(async () =>
       Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
-        .find((button) => button.textContent?.trim() === "Reset filters")!
+        .find(
+          (button) =>
+            button.getAttribute("aria-label") === "Reset filters" ||
+            button.textContent?.trim() === "Reset filters",
+        )!
         .click(),
     );
     expect(container.textContent).not.toContain("requested automation is hidden by your filters");
@@ -439,7 +462,7 @@ it("reports an unreadable automation list as unavailable with a retry instead of
   invoke.mockReset();
   invoke.mockResolvedValue([]);
   const retry = Array.from(unavailable!.querySelectorAll("button")).find(
-    (node) => node.textContent?.trim() === "Retry",
+    (node) => node.textContent?.trim() === "Try again",
   )!;
   await act(async () => retry.click());
   await act(async () => {});
@@ -559,7 +582,7 @@ it("shows run-history read failures with retry instead of claiming the automatio
   expect(container.textContent).not.toContain("This automation has not run yet.");
   failHistory = false;
   const retry = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
-    (button) => button.textContent === "Retry",
+    (button) => button.textContent === "Try again",
   )!;
   await act(async () => retry.click());
   expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -699,6 +722,8 @@ it("keeps edited drafts while the compact filter popover changes and resets the 
   )!;
   await changeInput(search, "no-match");
   expect(filter.hasAttribute("data-button-selected")).toBe(true);
+  expect(filter.textContent?.trim()).toBe("1");
+  expect(filter.closest("[data-filter-trigger]")?.hasAttribute("data-filter-active")).toBe(true);
   expect(container.querySelector('[aria-label="Open Controls review"]')).toBeNull();
   expect(name.value).toBe("Retained draft");
   const reset = Array.from(
@@ -747,7 +772,7 @@ it("restores unsaved automation work after returning to the tool without sharing
 
 it("searches trigger events by provider while retaining readiness gates and saves added schedules", async () => {
   const automation = await renderControlEditor();
-  const trigger = container.querySelector<HTMLButtonElement>('button[aria-label^="Add Trigger:"]')!;
+  const trigger = container.querySelector<HTMLButtonElement>('button[aria-label^="Add trigger:"]')!;
   const before = container.querySelectorAll('[aria-label="Remove trigger"]').length;
   await act(async () => trigger.click());
   const search = document.querySelector<HTMLInputElement>('input[placeholder="Search triggers"]')!;
@@ -861,7 +886,7 @@ it("keeps the twenty-trigger limit visible and unavailable", async () => {
     triggers: Array.from({ length: 20 }, () => createAutomationTrigger("time", "daily")),
   });
   expect(
-    container.querySelector<HTMLButtonElement>('button[aria-label^="Add Trigger:"]')!.disabled,
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Add trigger:"]')!.disabled,
   ).toBe(true);
   expect(container.querySelectorAll('[aria-label="Remove trigger"]')).toHaveLength(20);
 });
@@ -889,7 +914,7 @@ it.each([false, true])(
       const form = name.closest("form")!;
       const triggers = container.querySelectorAll('[aria-label="Remove trigger"]').length;
       await act(async () =>
-        container.querySelector<HTMLButtonElement>('button[aria-label^="Add Trigger:"]')!.click(),
+        container.querySelector<HTMLButtonElement>('button[aria-label^="Add trigger:"]')!.click(),
       );
       const option = Array.from(
         document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
@@ -1130,3 +1155,57 @@ it("keeps a failed run's full error outside its disabled session button", async 
     detail.parentElement?.closest("li")?.querySelector('button[aria-disabled="true"]'),
   ).not.toBeNull();
 });
+
+it.each([
+  [100, true],
+  [2, false],
+])(
+  "shows the run-history limit note only when the bounded read is full (%i runs)",
+  async (count, limited) => {
+    const automation: Automation = {
+      ...newAutomationDraft("/work/history-project", "codex", "model"),
+      id: "limited-history",
+      name: "Limited history",
+      prompt: "Review",
+      nextRunAt: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const runs = Array.from({ length: count }, (_, index) => ({
+      id: `limited-run-${index}`,
+      automationId: automation.id,
+      trigger: "manual",
+      scheduledFor: index + 1,
+      createdAt: index + 1,
+      status: "succeeded",
+    }));
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "automations_list") return [automation];
+      if (command === "automation_runs_list") return runs;
+      if (command.endsWith("_status")) return { connected: false };
+      return [];
+    });
+    await act(async () =>
+      root.render(
+        createElement(AutomationsView, {
+          cwd: automation.cwd,
+          recents: [],
+          onClose: vi.fn(),
+          onLaunch: vi.fn(),
+          onOpenSession: vi.fn(),
+          onOpenBackgroundSession: vi.fn(),
+        }),
+      ),
+    );
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Open Limited history"]')!.click(),
+    );
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+        .find((button) => button.textContent === "Run history")!
+        .click(),
+    );
+    const note = "Showing the latest 100 runs. Older runs may not be shown.";
+    expect(container.textContent.includes(note)).toBe(limited);
+  },
+);

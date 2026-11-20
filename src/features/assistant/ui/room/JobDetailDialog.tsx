@@ -159,7 +159,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
               loading={pending?.key === `note:${job.id}`}
               disabled={!!pending}
               onClick={() =>
-                run(`note:${job.id}`, t("Loading..."), async () => {
+                run(`note:${job.id}`, t("Loading…"), async () => {
                   const id = job.quickResult?.noteId;
                   if (!id) throw new Error(t("The saved note is no longer available."));
                   const result = await assistantRequest({
@@ -194,7 +194,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
           {!job.quickResult?.automationId && job.quickIntent?.automationId && (
             <Text as="p" leading="inherit" className={styles.muted}>
               {t(
-                "Automation creation is unconfirmed. Inspect its original target before retrying.",
+                "Automation creation could not be confirmed. Inspect its original target before retrying.",
               )}{" "}
               <Code>{job.quickIntent.automationId}</Code>
             </Text>
@@ -205,7 +205,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
                 loading={pending?.key === `automation:${job.id}`}
                 disabled={!!pending}
                 onClick={() =>
-                  run(`automation:${job.id}`, t("Loading..."), async () => {
+                  run(`automation:${job.id}`, t("Loading…"), async () => {
                     const navigationEpoch = scopeEpoch.current.value;
                     const id = job.quickResult?.automationId ?? job.quickIntent?.automationId;
                     if (!id || !environmentId || job.quickAction.kind !== "automation")

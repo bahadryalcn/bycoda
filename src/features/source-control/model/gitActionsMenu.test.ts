@@ -113,6 +113,20 @@ describe("gitActionsMenuItems layout", () => {
     ]);
   });
 
+  it("names each branch and stage action once, in sentence case", () => {
+    const labels = Object.fromEntries(
+      flatten(gitActionsMenuItems(state())).map((item) => [item.id, item.label]),
+    );
+    expect(labels["branch-create"]).toBe("Create branch…");
+    expect(labels["branch-create-from"]).toBe("Create branch from…");
+    expect(labels["branch-rename"]).toBe("Rename branch…");
+    expect(labels["stage-all"]).toBe("Stage all changes");
+    const all = Object.values(labels);
+    expect(
+      all.some((label) => /Create Branch|New Branch|Rename Branch|Stage All Changes/.test(label)),
+    ).toBe(false);
+  });
+
   it("offers no force push anywhere", () => {
     const labels = flatten(gitActionsMenuItems(state())).map((item) => item.label);
     expect(labels.some((label) => /force/i.test(label))).toBe(false);

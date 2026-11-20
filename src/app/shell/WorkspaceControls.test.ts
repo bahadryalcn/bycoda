@@ -25,19 +25,10 @@ it("opens each destination and refreshes without reloading the app", async () =>
     document.body.append(host);
     expect(
       [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["Workspace controls", "Sounds", "Full screen"]);
-    const openMenu = async () =>
-      act(async () =>
-        host.querySelector<HTMLButtonElement>('button[aria-label="Workspace controls"]')!.click(),
-      );
-    for (const label of ["Refresh current view"]) {
-      await openMenu();
-      const item = [...document.body.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find(
-        (item) => item.textContent?.includes(label),
-      );
-      expect(item, label).toBeDefined();
-      await act(async () => item!.click());
-    }
+    ).toEqual(["Refresh current view", "Sounds", "Full screen", "More"]);
+    const refreshButton = () =>
+      host.querySelector<HTMLButtonElement>('button[aria-label="Refresh current view"]')!;
+    await act(async () => refreshButton().click());
     expect(reload).toHaveBeenCalledOnce();
     expect(document.body.textContent).not.toContain("Manage hidden groups");
     expect(document.body.textContent).not.toContain("Provider usage");
@@ -49,17 +40,45 @@ it("opens each destination and refreshes without reloading the app", async () =>
         }),
       ),
     );
-    await openMenu();
-    const refresh = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-      (item) => item.textContent?.includes("Refresh current view"),
-    )!;
-    expect((refresh as HTMLButtonElement).disabled).toBe(true);
-    await act(async () => refresh.click());
+    expect(refreshButton().disabled).toBe(true);
+    await act(async () => refreshButton().click());
     expect(reload).toHaveBeenCalledOnce();
   } finally {
     await act(async () => root.unmount());
     window.removeEventListener(WORKSPACE_REFRESH_EVENT, reload);
     host.remove();
+  }
+});
+
+it("offers every control in the narrow-footer menu", async () => {
+  localStorage.clear();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const reload = vi.fn();
+  window.addEventListener(WORKSPACE_REFRESH_EVENT, reload);
+  const openMenu = async () => {
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
+    );
+    return (label: string) =>
+      document.body.querySelector<HTMLButtonElement>(`[role^="menuitem"][aria-label="${label}"]`)!;
+  };
+  try {
+    await act(async () => root.render(createElement(WorkspaceControls, {})));
+    const row = await openMenu();
+    expect(row("Full screen")).not.toBeNull();
+    expect(row("Sounds").getAttribute("aria-checked")).toBe("true");
+    await act(async () => row("Sounds").click());
+    expect(loadSoundsEnabled()).toBe(false);
+    expect(row("Sounds").getAttribute("aria-checked")).toBe("false");
+    await act(async () => row("Refresh current view").click());
+    expect(reload).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => root.unmount());
+    window.removeEventListener(WORKSPACE_REFRESH_EVENT, reload);
+    host.remove();
+    localStorage.clear();
   }
 });
 

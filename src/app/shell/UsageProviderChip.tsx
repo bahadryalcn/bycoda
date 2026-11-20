@@ -75,7 +75,7 @@ import {
   accountStatusWith,
   accountUsageKey,
   bestAlternativeAccount,
-  needsProviderLogin,
+  providerAccountSignedOut,
   useProviderAccountUsage,
 } from "../../features/providers/model/accountUsage";
 import {
@@ -259,7 +259,7 @@ function UsageProviderDetails({
     onReconnect &&
     !viewingOtherAccount &&
     detailWindows.length === 0 &&
-    (needsProviderLogin(detailLimits) || reconnectState !== "idle"),
+    (providerAccountSignedOut(detailLimits) || reconnectState !== "idle"),
   );
   const providerLabel = presentation?.label ?? HARNESS_TITLE[limits.provider];
   const iconHarness = presentation?.harness ?? limits.provider;
@@ -315,7 +315,7 @@ function UsageProviderDetails({
       await onReconnect();
       setReconnectState("complete");
     } catch (error) {
-      setReconnectError(usageErrorMessage(error, "Could not complete sign-in"));
+      setReconnectError(usageErrorMessage(error, t("Could not complete sign-in")));
       setReconnectState("error");
     }
   };
@@ -334,14 +334,12 @@ function UsageProviderDetails({
       side="top"
       align="start"
       gap={7}
-      width={accountView === "accounts" ? 340 : 300}
+      width={340}
       maxHeight={460}
-      autoFocus
       onDismiss={dismiss}
-      role="dialog"
+      kind="dialog"
       aria-label={t("{p0} usage details", { p0: providerLabel })}
-      tabIndex={-1}
-      className={`overflow-y-auto ${accountView === "usage" && loginView && !canBrowseUsage ? "" : "p-2.5"}`}
+      className="overflow-y-auto p-2.5"
     >
       <Text as="div" size="inherit" tone="primary">
         {canBrowseUsage || (!showUsageHeader && refreshButton) ? (
@@ -423,6 +421,7 @@ function UsageProviderDetails({
             ) : null}
             <ProviderSignInPanel
               harness={limits.provider}
+              accountId={accountId}
               state={reconnectState}
               error={reconnectError}
               onSignIn={() => void reconnect()}
@@ -624,7 +623,7 @@ function ProviderAccountPicker({
   const statusId = useId();
   return (
     <div>
-      <div className="flex h-7 items-center gap-1">
+      <div className="flex min-h-(--ui-control-height-compact) items-center gap-1">
         <Button
           iconOnly
           label={t("Back to usage")}
@@ -638,12 +637,11 @@ function ProviderAccountPicker({
           <ArrowLeft className="icon-sm" aria-hidden />
         </Button>
         <Heading size="item" level={2}>
-          {providerLabel}
-          {t(" accounts")}
+          {t("{p0} accounts", { p0: providerLabel })}
         </Heading>
       </div>
       <Text as="p" size="caption" tone="secondary" className="mt-1 px-1">
-        {t("Applies to this conversation only; new ones use the default account.")}
+        {t("Applies to this session only; new sessions use the default account.")}
       </Text>
       <div
         className="mt-2 flex flex-col gap-1"
@@ -828,7 +826,7 @@ function AddProviderAccount({
   };
   return (
     <form onSubmit={(event) => void submit(event)}>
-      <div className="flex h-7 items-center gap-1">
+      <div className="flex min-h-(--ui-control-height-compact) items-center gap-1">
         <Button
           iconOnly
           label={t("Back to accounts")}
@@ -843,9 +841,7 @@ function AddProviderAccount({
           <ArrowLeft className="icon-sm" aria-hidden />
         </Button>
         <Heading size="item" level={2}>
-          {t("Add ")}
-          {providerLabel}
-          {t(" account")}
+          {t("Add {p0} account", { p0: providerLabel })}
         </Heading>
       </div>
       <Text as="p" size="caption" tone="secondary" className="mt-1 px-1">

@@ -64,3 +64,64 @@ describe("Room visibility admission", () => {
     fence.register(source, 2, [target], fence.currentEpoch());
   });
 });
+
+describe("Room visibility capacity", () => {
+  const room = (index: number) => ({ ...source, threadId: `room-${index}` });
+  function fill(fence: AssistantVisibilityFence, register: (index: number) => void) {
+    fence.reopen(fence.currentEpoch());
+    for (let index = 0; index < 1024; index++) register(index);
+  }
+
+  it("retires drained entries from a closed epoch instead of refusing new sources", async () => {
+    const fence = new AssistantVisibilityFence();
+    fill(fence, (index) => fence.register(room(index), 1, [target], fence.currentEpoch()));
+    expect(() => fence.register(room(1024), 1, [target], fence.currentEpoch())).toThrow(
+      "Room visibility capacity reached",
+    );
+    const staleEpoch = fence.currentEpoch();
+    await fence.revokeAll();
+    fence.reopen(fence.currentEpoch());
+    expect(() => fence.register(room(1024), 1, [target], staleEpoch)).toThrow();
+    fence.register(room(1024), 1, [target], fence.currentEpoch());
+    expect(fence.acquire(room(1024), target).valid()).toBe(true);
+    expect(() => fence.acquire(room(0), target)).toThrow();
+    expect(() => fence.acquireSource(room(0))).toThrow();
+  });
+
+  it("keeps entries revoked in the current epoch, with their sequence floor, and fails closed", () => {
+    const fence = new AssistantVisibilityFence();
+    fill(fence, (index) => void fence.revoke(room(index), 5));
+    expect(() => fence.revoke(room(1024), 1)).toThrow("Room visibility capacity reached");
+    expect(() => fence.register(room(1024), 1, [target], fence.currentEpoch())).toThrow(
+      "Room visibility capacity reached",
+    );
+    expect(() => fence.register(room(0), 4, [target], fence.currentEpoch())).toThrow();
+    expect(() => fence.acquire(room(0), target)).toThrow();
+  });
+
+  it("keeps an old-epoch entry that was revoked again in the current epoch", async () => {
+    const fence = new AssistantVisibilityFence();
+    fill(fence, (index) => fence.register(room(index), 1, [target], fence.currentEpoch()));
+    await fence.revokeAll();
+    fence.reopen(fence.currentEpoch());
+    await fence.revoke(room(0), 10);
+    fence.register(room(1024), 1, [target], fence.currentEpoch());
+    expect(() => fence.register(room(0), 9, [target], fence.currentEpoch())).toThrow();
+    fence.register(room(0), 11, [target], fence.currentEpoch());
+    expect(fence.acquire(room(0), target).valid()).toBe(true);
+  });
+
+  it("never retires an entry that still has a permit or a waiter", async () => {
+    const fence = new AssistantVisibilityFence();
+    fill(fence, (index) => fence.register(room(index), 1, [target], fence.currentEpoch()));
+    const permit = fence.acquire(room(0), target);
+    const drained = fence.revokeAll();
+    expect(() => fence.reopen(fence.currentEpoch())).toThrow();
+    expect(() => fence.register(room(1024), 1, [target], fence.currentEpoch())).toThrow();
+    permit.release();
+    await drained;
+    fence.reopen(fence.currentEpoch());
+    fence.register(room(1024), 1, [target], fence.currentEpoch());
+    expect(permit.valid()).toBe(false);
+  });
+});

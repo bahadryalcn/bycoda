@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { McpStdioCallTracker } from "../mcp/stdio-call-tracker";
 import { randomUUID } from "node:crypto";
 import {
   SOCIAL_TOOLS,
@@ -637,10 +638,16 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
   ),
   "inbox.unified": object({ filter: { type: "object" }, cursor: string() }, []),
   "inbox.setStatus": object(
-    { threadId: string(), status: { enum: ["unread", "replied", "assigned", "done"] } },
-    ["threadId", "status"],
+    {
+      threadId: string(),
+      status: { enum: ["unread", "replied", "assigned", "done"] },
+      tags: strings(),
+      addTags: strings(),
+      removeTags: strings(),
+    },
+    ["threadId"],
   ),
-  "inbox.timeline": object({ personId: string() }, ["personId"]),
+  "inbox.timeline": object({ personId: string(), cursor: string() }, ["personId"]),
   "inbox.replyOptions": object({ threadId: string() }, ["threadId"]),
   "autonomy.get": object({ accountId: string() }, ["accountId"]),
   "ai.actions.list": object({ cursor: string(), accountId: string() }, []),
@@ -972,6 +979,7 @@ export async function callSocialTool(
   requestId?: string,
   env: NodeJS.ProcessEnv = process.env,
   fetcher: typeof fetch = fetch,
+  cancel?: AbortSignal,
 ): Promise<unknown> {
   socialAuthorizationScope(action);
   const normalized = normalizeSocialToolRequest(input, requestId);
@@ -1001,7 +1009,9 @@ export async function callSocialTool(
       params: { action: action.replace(/^social\./, ""), ...normalized },
     }),
     redirect: "error",
-    signal: AbortSignal.timeout(35_000),
+    signal: cancel
+      ? AbortSignal.any([AbortSignal.timeout(35_000), cancel])
+      : AbortSignal.timeout(35_000),
   });
   const value = (await response.json()) as { result?: unknown; error?: string };
   if (!response.ok || value.error) throw new Error(value.error ?? "Social host request failed.");
@@ -1014,13 +1024,18 @@ export async function runSocialMcp(
   call = callSocialTool,
 ): Promise<void> {
   const lines = createInterface({ input, crlfDelay: Infinity });
+  // Tool calls run beside the read loop so ping, tools/list and parallel calls never wait
+  // behind one slow call. Calls sharing a requestId stay ordered so a retry sees the first
+  // call's receipt instead of racing it.
+  const calls = new McpStdioCallTracker();
+  const sameRequest = new Map<string, Promise<unknown>>();
   for await (const line of lines) {
     if (line.length > 1024 * 1024) continue;
     let request: {
       jsonrpc?: string;
       id?: string | number;
       method?: string;
-      params?: { name?: string; arguments?: Record<string, unknown> };
+      params?: { name?: string; arguments?: Record<string, unknown>; requestId?: unknown };
     };
     try {
       request = JSON.parse(line);
@@ -1030,6 +1045,7 @@ export async function runSocialMcp(
       );
       continue;
     }
+    if (request?.method === "notifications/cancelled") calls.cancel(request.params?.requestId);
     if (request.id === undefined) continue;
     const respond = (result: unknown) =>
       output.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
@@ -1056,32 +1072,60 @@ export async function runSocialMcp(
           isError: true,
           content: [{ type: "text", text: "Invalid social tool or arguments." }],
         });
+      else if (calls.full)
+        respond({
+          isError: true,
+          content: [{ type: "text", text: "Too many social tool calls are in flight." }],
+        });
       else {
-        try {
-          const normalized = normalizeSocialToolRequest(request.params.arguments);
-          respond({
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(await call(tool, normalized.input, normalized.requestId)),
-              },
-            ],
-          });
-        } catch (error) {
-          respond({
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text: error instanceof Error ? error.message : "Social tool failed.",
-              },
-            ],
-          });
-        }
+        const args = request.params.arguments;
+        calls.start(request.id, async (signal) => {
+          // A cancelled call gets no response (MCP cancellation), even if the Host finished it.
+          const reply = (result: unknown) => {
+            if (!signal.aborted) respond(result);
+          };
+          try {
+            const normalized = normalizeSocialToolRequest(args);
+            const key = normalized.requestId;
+            const previous = key ? sameRequest.get(key) : undefined;
+            const running = (async () => {
+              await previous?.catch(() => undefined);
+              return await call(
+                tool,
+                normalized.input,
+                normalized.requestId,
+                undefined,
+                undefined,
+                signal,
+              );
+            })();
+            if (key) {
+              sameRequest.set(key, running);
+              // Cleanup only; the caller below reports this promise's failure.
+              void running
+                .catch(() => undefined)
+                .finally(() => {
+                  if (sameRequest.get(key) === running) sameRequest.delete(key);
+                });
+            }
+            reply({ content: [{ type: "text", text: JSON.stringify(await running) }] });
+          } catch (error) {
+            reply({
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: error instanceof Error ? error.message : "Social tool failed.",
+                },
+              ],
+            });
+          }
+        });
       }
     } else
       output.write(
         `${JSON.stringify({ jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "Unknown MCP method." } })}\n`,
       );
   }
+  await calls.drain();
 }

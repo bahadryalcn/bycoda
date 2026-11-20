@@ -15,10 +15,6 @@ export function machineAddress(machine: RemoteMachine) {
   }
 }
 
-export function errorText(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason);
-}
-
 export async function copyWithFeedback(copyAsync: CopyAsync, run: () => Promise<unknown>) {
   let failure: unknown;
   const copied = await copyAsync(

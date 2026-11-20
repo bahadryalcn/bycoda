@@ -1,5 +1,4 @@
 import { Badge } from "../../../shared/ui/Badge";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
@@ -15,10 +14,12 @@ import {
   delegationOptionSelected,
   crossDelegationSummary,
   delegationShortLabel,
+  type DelegationOption,
 } from "../model/crossDelegation";
 import type { ModelSetting } from "../model/models";
 import type { HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
+import { ModelAccountNumber } from "./ModelAccountIdentity";
 import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 import type { DropdownMenuItem, DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
 import { decodeAdvisor } from "../../../shared/model/host-contracts/delegation";
@@ -140,7 +141,7 @@ export function DelegationField({
 }: {
   setting: ModelSetting;
   label: string;
-  picked: { value: string; label: string } | undefined;
+  picked: ModelSetting["options"][number] | undefined;
   emptyLabel: string;
   disabled: boolean;
   describedBy?: string;
@@ -189,7 +190,16 @@ export function DelegationField({
 }
 
 /** The provider icon of one any-provider delegation option; nothing for Off. */
-export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting; value: string }) {
+export function DelegationOptionIcon({
+  setting,
+  value,
+  showAccountNumber = true,
+}: {
+  setting: ModelSetting;
+  value: string;
+  /** Fixed-size picker icon slots only hold the provider glyph. */
+  showAccountNumber?: boolean;
+}) {
   if (value === "auto") return <WandSparkles className="icon-sm shrink-0" />;
   if (value === "" && setting.options.find((option) => option.value === "")?.label === "Off")
     return <X className="icon-sm shrink-0" />;
@@ -200,33 +210,11 @@ export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting
     return harness ? providerIcon(harness) : null;
   }
   const ref = isDelegationSetting(setting) ? decodeAdvisor(value) : undefined;
-  const color = (
-    setting.options.find((option) => option.value === value) as
-      | { accountColor?: string }
-      | undefined
-  )?.accountColor;
-  const dot = color ? (
-    <span
-      {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-2 shrink-0 ")}
-      style={{ "--surface-user-color": color } as React.CSSProperties}
-      aria-hidden
-    />
-  ) : null;
-  if (!ref?.harness) return dot;
-  // The account dot sits on the icon's corner so both fit one icon slot (select triggers are 16px).
+  const option: DelegationOption | undefined = setting.options.find((item) => item.value === value);
   return (
-    <span className="relative inline-flex shrink-0">
-      {providerIcon(ref.harness)}
-      {dot ? (
-        <span
-          {...surfaceAttributes(
-            { radius: "pill", ring: "base-outer" },
-            "absolute -right-0.5 -bottom-0.5 flex [&>span]:size-1.5",
-          )}
-        >
-          {dot}
-        </span>
-      ) : null}
+    <span className="inline-flex shrink-0 items-center gap-1">
+      {providerIcon(ref?.harness)}
+      {showAccountNumber ? <ModelAccountNumber account={option} /> : null}
     </span>
   );
 }
@@ -244,7 +232,8 @@ function delegationMenuItems(
 ): DropdownMenuItem[] {
   const groups = new Map<string, DropdownMenuAction[]>();
   const leading: DropdownMenuAction[] = [];
-  for (const option of setting.options) {
+  const options: DelegationOption[] = setting.options;
+  for (const option of options) {
     const ref = isDelegationSetting(setting) ? decodeAdvisor(option.value) : undefined;
     const provider = ref ? HARNESS_TITLE[ref.harness] : "";
     const parts = option.label.split(" · ");
@@ -257,12 +246,15 @@ function delegationMenuItems(
       title: t(option.label),
       checked: delegationOptionSelected(setting, values, option.value),
       selectionRole: "checkbox",
-      icon: <DelegationOptionIcon setting={setting} value={option.value} />,
+      icon: (
+        <DelegationOptionIcon setting={setting} value={option.value} showAccountNumber={false} />
+      ),
       content: (
         <span className="flex min-w-0 flex-1 items-center gap-3">
           <Text size="inherit" tone="inherit" truncate>
             {primary}
           </Text>
+          <ModelAccountNumber account={option} />
           {secondary ? (
             <Text size="caption" tone="muted" truncate>
               {secondary}

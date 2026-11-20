@@ -29,6 +29,7 @@ export function CheckEvidence({
 }) {
   useLocale();
   const [showAll, setShowAll] = useState(false);
+  const hiddenCount = annotations.length - 5;
   const sources = useMemo<SourceCache>(() => new Map(), [cwd, headOid]);
   return (
     <div className="min-w-0 space-y-3">
@@ -45,9 +46,9 @@ export function CheckEvidence({
       ))}
       {!showAll && annotations.length > 5 ? (
         <Button variant="ghost" type="button" onClick={() => setShowAll(true)}>
-          {t("Show ")}
-          {annotations.length - 5}
-          {t(" more annotations")}
+          {hiddenCount === 1
+            ? t("Show {p0} more annotation", { p0: hiddenCount })
+            : t("Show {p0} more annotations", { p0: hiddenCount })}
         </Button>
       ) : null}
     </div>

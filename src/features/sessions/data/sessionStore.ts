@@ -1,9 +1,10 @@
+import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import { inlineVisualValue } from "../model/inlineVisual";
 import { readToolWindow } from "../../../app/model/toolWindows";
 import { serverTerminalRestoreState } from "../../connections/public/serverTerminalRestoreState";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
-import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
+import { parseHead, type ConversationHead } from "../../sync/public/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
 import {
   hostSessionBinding,
@@ -43,8 +44,10 @@ import { pathKey } from "../../../shared/lib/paths";
 import { persistableAttachment } from "../model/attachments";
 import { boundedToolPreview } from "../model/toolInspection";
 import { clearComposerDraft } from "../model/draftCache";
+import { retireToolsDraftsForSession } from "../../host-tools/toolsDraftTransfer";
 import { buildConversationReplay } from "../model/conversationRewind";
 import { repairSessionModelIdentity } from "../model/sessionModelIdentity";
+import { recoverClaudeWorkflows } from "./claudeWorkflowRecovery";
 import {
   markMissingAttachments,
   persistableQueue,
@@ -92,6 +95,7 @@ import type {
 } from "../model/session";
 import { sanitizeModelSwitch } from "../model/modelSwitchHistory";
 import { HARNESSES } from "../model/session";
+import { isBtwErrorCode } from "../model/btwError";
 import { asRuntimeMode, withSessionDelegation } from "./storedSessionFields";
 import { assistantSessionManagement, sessionMessageAuthor } from "../model/sessionProvenance";
 import {
@@ -1270,6 +1274,8 @@ export async function searchSessionContent(options: {
 }
 
 export type SessionHydrationOptions = {
+  /** Read the recent window and wait for explicit requests for older pages. */
+  deferHistory?: boolean;
   /** Applied only if the consumer still owns the original, idle snapshot. */
   onHydrated?: (original: Session, hydrated: Session) => void;
   onHydrationFailed?: (original: Session) => void;
@@ -1280,6 +1286,32 @@ type StoredTranscriptPage = {
   totalBlocks: number;
   revision: number;
 };
+
+const STORED_HISTORY_INITIAL_BLOCKS = 48;
+const STORED_HISTORY_INITIAL_TURNS = 10;
+const STORED_HISTORY_PAGE_BLOCKS = 80;
+
+export async function getEarlierStoredHistory(session: Session) {
+  const cursor = session.storedHistory;
+  if (cursor?.before == null || deletedSessionIds.has(session.id)) return null;
+  const page = await invoke<StoredTranscriptPage | null>("session_get_page", {
+    sessionId: session.id,
+    before: cursor.before,
+    revision: cursor.revision,
+    limit: STORED_HISTORY_PAGE_BLOCKS,
+  });
+  if (deletedSessionIds.has(session.id)) return null;
+  if (
+    !page ||
+    page.revision !== cursor.revision ||
+    (page.before != null && page.before >= cursor.before)
+  )
+    throw new Error("Invalid transcript cursor");
+  return {
+    blocks: recordToSession(page.session).blocks,
+    cursor: { revision: page.revision, before: page.before ?? undefined },
+  };
+}
 
 export function getSession(
   sessionId: string,
@@ -1293,8 +1325,7 @@ export function getSession(
     try {
       result = await loadStoredSession(sessionId, options, work);
     } catch (error) {
-      if ((error instanceof Error ? error.message : String(error)) !== "Session was deleted")
-        throw error;
+      if (errorText(error) !== "Session was deleted") throw error;
       deletedSessionIds.add(sessionId);
       work.confirmRecovery();
       return null;
@@ -1335,7 +1366,7 @@ async function loadStoredSession(
   const finish = startPerformanceSpan("session-load");
   // Consumers without progressive callbacks require complete history and queues.
   // The native full read uses the authoritative transcript compatibility view.
-  if (!options.onHydrated) {
+  if (!options.onHydrated && !options.deferHistory) {
     try {
       const record = await invoke<SessionRecord | null>("session_get", { sessionId });
       if (!record || deletedSessionIds.has(sessionId)) return null;
@@ -1354,7 +1385,10 @@ async function loadStoredSession(
   }
   let page: StoredTranscriptPage | null;
   try {
-    page = await invoke<StoredTranscriptPage | null>("session_get_page", { sessionId, limit: 80 });
+    page = await invoke<StoredTranscriptPage | null>("session_get_page", {
+      sessionId,
+      limit: options.deferHistory ? STORED_HISTORY_INITIAL_BLOCKS : 80,
+    });
   } catch (error) {
     finish();
     throw error;
@@ -1365,8 +1399,21 @@ async function loadStoredSession(
   }
   const record = page.session;
   const session = recordToSession(record);
+  if (options.deferHistory) {
+    let turns = 0;
+    for (let index = session.blocks.length - 1; index > 0; index--) {
+      if (session.blocks[index].role !== "user" || ++turns !== STORED_HISTORY_INITIAL_TURNS)
+        continue;
+      session.blocks = session.blocks.slice(index);
+      page.before = (page.before ?? 0) + index;
+      break;
+    }
+    if (page.before != null)
+      session.storedHistory = { before: page.before, revision: page.revision };
+  }
   session.historyLoading = page.before != null;
   finish({ blocks: session.blocks.length, revision: page.revision });
+  if (session.storedHistory) return withStoredQueue(session);
   if (!session.historyLoading)
     persistenceBaselines.set(sessionId, {
       blocks: incrementalBlocks(session),
@@ -1522,6 +1569,18 @@ async function repairStoredSession(
   expectedRevision?: number,
   work?: PersistenceWork,
 ): Promise<Session> {
+  if (session.harness === "claude") {
+    const recovered = await recoverClaudeWorkflows(session);
+    if (recovered !== session) {
+      const committed = await upsertSessionIfUnchanged(
+        recovered,
+        expectedUpdatedAt,
+        expectedRevision,
+        work,
+      ).catch(() => false);
+      if (committed) session = recovered;
+    }
+  }
   if (session.harness === "claude" && session.providerSessionId) {
     const toolIds = shellPlaceholderIds(session.blocks);
     if (toolIds.length) {
@@ -1669,6 +1728,7 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
     forgetHostSessionShell(sessionId);
     await flushHostSessionBindings(sessionId);
     clearComposerDraft(sessionId);
+    retireToolsDraftsForSession(sessionId);
     return;
   }
   // Native deletion can also strip a lead's ownership from stored worker rows.
@@ -1700,6 +1760,7 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
       removeSessionAdditionalDirs(sessionId);
       // The cache's change listener deletes the saved draft row.
       clearComposerDraft(sessionId, work);
+      retireToolsDraftsForSession(sessionId);
       // IDs are never reused after explicit deletion. A delayed hydration,
       // recovery or sibling snapshot may still arrive long after one minute.
       // Native deletion also retains this decision across renderer restarts.
@@ -1709,6 +1770,127 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
       throw error;
     }
   });
+}
+
+/** Ids the project lists, split by owner: Native rows, and Host-owned shells (deleted through their Host). */
+async function listedProjectSessionIds(
+  cwd: string,
+): Promise<{ native: string[]; hostOwned: string[] }> {
+  const normalized = normalizeProjectPath(cwd);
+  // Ids only: the summary list runs git and provenance work for every row.
+  const rows = await invoke<string[]>("session_ids_by_project", { cwd: normalized });
+  return {
+    native: rows.filter((id) => !hasHostSessionOwnerFence(id)),
+    hostOwned: hostSessionShellSummaries()
+      .filter((entry) => normalizeProjectPath(entry.cwd) === normalized)
+      .map((entry) => entry.id),
+  };
+}
+
+/** How many conversations `listSessionsByProject` would return, without loading them. */
+export async function countSessionsByProject(cwd: string): Promise<number> {
+  if (!cwd || cwd === "~") return 0;
+  const { native, hostOwned } = await listedProjectSessionIds(cwd);
+  return native.length + hostOwned.length;
+}
+
+type ProjectDeleteOutcome = {
+  deleted: string[];
+  skipped: string[];
+  failed: { sessionId: string; error: string } | null;
+  notAttempted: string[];
+};
+
+/** At most this many Native conversations per call: bounds one write-lane hold and one failure's reach. */
+const PROJECT_DELETE_BATCH = 200;
+
+async function deleteNativeProjectBatch(
+  cwd: string,
+  sessionIds: string[],
+): Promise<ProjectDeleteOutcome> {
+  const batch = new Set(sessionIds);
+  return sessionPersistence.run(sessionIds, "delete-project", async (work) => {
+    for (const id of sessionIds) deletedSessionIds.add(id);
+    let outcome: ProjectDeleteOutcome;
+    try {
+      // A lead with workers still has writes in flight. Finish those before
+      // the deletion transaction strips their ownership metadata.
+      const pendingWrites = [...sessionWriteQueues.entries()]
+        .filter(
+          ([queuedId]) =>
+            batch.has(queuedId) || batch.has(sessionWriteLeadById.get(queuedId) ?? ""),
+        )
+        .map(([, pending]) => pending);
+      if (pendingWrites.length > 0) await Promise.all(pendingWrites);
+      outcome = await invoke<ProjectDeleteOutcome>("session_delete_by_project", {
+        cwd,
+        sessionIds,
+      });
+    } catch (error) {
+      for (const id of sessionIds) deletedSessionIds.delete(id);
+      throw error;
+    }
+    const gone = new Set(outcome.deleted);
+    // A conversation that was kept can be saved again.
+    for (const id of sessionIds) if (!gone.has(id)) deletedSessionIds.delete(id);
+    for (const id of outcome.deleted) {
+      persistenceBaselines.delete(id);
+      removeSessionAdditionalDirs(id);
+      // The cache's change listener deletes the saved draft row.
+      clearComposerDraft(id, work);
+      retireToolsDraftsForSession(id);
+    }
+    sessionPersistence.forget?.(outcome.deleted);
+    work.confirmRecovery();
+    return outcome;
+  });
+}
+
+/**
+ * Delete every conversation `listSessionsByProject` shows for the project:
+ * Native rows in bulk, Host-owned ones through their owning Host. Stops at the
+ * first failure and says how far it got; what was deleted stays deleted, the
+ * rest is untouched, so the caller keeps the project and can retry.
+ */
+export async function deleteSessionsByProject(cwd: string): Promise<number> {
+  if (!cwd || cwd === "~") return 0;
+  const normalized = normalizeProjectPath(cwd);
+  const { native, hostOwned } = await listedProjectSessionIds(cwd);
+  const total = native.length + hostOwned.length;
+  let deleted = 0;
+  let settled = 0;
+  const stopped = (error: unknown) => {
+    const detail = errorText(error);
+    return new Error(
+      `Deleted ${deleted} of ${total} conversations; ${total - settled} could not be removed and the project was kept. ${detail}`,
+      { cause: error },
+    );
+  };
+  for (let start = 0; start < native.length; start += PROJECT_DELETE_BATCH) {
+    let outcome: ProjectDeleteOutcome;
+    try {
+      outcome = await deleteNativeProjectBatch(
+        normalized,
+        native.slice(start, start + PROJECT_DELETE_BATCH),
+      );
+    } catch (error) {
+      throw stopped(error);
+    }
+    deleted += outcome.deleted.length;
+    // A skipped row is no longer filed under the project, so it is not ours to delete.
+    settled += outcome.deleted.length + outcome.skipped.length;
+    if (outcome.failed) throw stopped(new Error(outcome.failed.error));
+  }
+  for (const id of hostOwned) {
+    try {
+      await deleteSession(id);
+    } catch (error) {
+      throw stopped(error);
+    }
+    deleted += 1;
+    settled += 1;
+  }
+  return deleted;
 }
 
 /** Delete a draft-only record while allowing its still-open blank session id to be saved later. */
@@ -2165,6 +2347,7 @@ function sanitizeBtwThreads(value: unknown, hydrate: boolean): BtwThread[] | und
       return [];
     }
     const error = typeof record.error === "string" ? record.error.trim() : "";
+    const errorCode = isBtwErrorCode(record.errorCode) ? record.errorCode : undefined;
     const model = typeof record.model === "string" ? record.model.trim() : "";
     const harness =
       typeof record.harness === "string" &&
@@ -2192,10 +2375,12 @@ function sanitizeBtwThreads(value: unknown, hydrate: boolean): BtwThread[] | und
         ...(interrupted
           ? {
               error: error || "This by-the-way request was interrupted before reload.",
+              ...(errorCode ? { errorCode } : error ? {} : { errorCode: "interrupted" as const }),
             }
-          : error
-            ? { error }
-            : {}),
+          : {
+              ...(error ? { error } : {}),
+              ...(errorCode ? { errorCode } : {}),
+            }),
       },
     ];
   });

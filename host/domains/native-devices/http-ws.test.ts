@@ -189,10 +189,14 @@ it("rejects forged/malformed/environment-mismatched calls before any device effe
   expect(
     (await ws.request("devices.capture", { deviceId: "emulator-5554", projectId: "absent" })).error,
   ).toBeTruthy();
-  expect(
-    (await f.http("devices.capture", { deviceId: "emulator-5554" }, f.device.token, "wrong-host"))
-      .error,
-  ).toContain("Host identity changed");
+  const mismatch = await f.http(
+    "devices.capture",
+    { deviceId: "emulator-5554" },
+    f.device.token,
+    "wrong-host",
+  );
+  expect(mismatch.error).toContain("Host identity changed");
+  expect(mismatch.code).toBe("HOST_IDENTITY_MISMATCH");
   expect(f.binary.mock.calls.length).toBe(before);
   await f.store.revokeDevice(f.device.id);
   const enrolled = await f.store.issueDevice("Same owner reenrolled"),

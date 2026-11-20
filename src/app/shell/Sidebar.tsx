@@ -1,10 +1,13 @@
+import { errorText } from "../../shared/lib/errors";
 import { CheckboxMark } from "../../shared/ui/Checkbox";
 import { actionContentAttributes } from "../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
+import { LiveText } from "../../shared/ui/LiveText";
 import { ScrollArea } from "../../shared/ui/ScrollArea";
 import { motionAttributes } from "../../shared/ui/Motion";
 import { ClampText } from "../../shared/ui/ClampText";
+import { useHoverCard } from "../../shared/ui/HoverCard";
 import { useCrewManagedIndex } from "../../features/crews/public/managed";
 import { folderCandidates, projectSessionCollection } from "./sidebarSessionCollections";
 import { isUserConversation } from "../../shared/model/host-contracts/delegation";
@@ -40,11 +43,8 @@ import { SessionDetailTimes } from "./SessionDetailTimes";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { SIDE_BY_SIDE_LIMIT } from "../../features/workspace/model/workspaceTabGroups";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
-import {
-  ExpandingSearch,
-  type ExpandingSearchHandle,
-  type ExpandingSearchItem,
-} from "../../shared/ui/ExpandingSearch";
+import type { ExpandingSearchHandle } from "../../shared/ui/ExpandingSearch";
+import { SidebarSessionSearch } from "./SidebarSessionSearch";
 import { MatchText } from "../../shared/ui/MatchText";
 import { fuzzyMatch, prepareFuzzyQuery } from "../../shared/lib/fuzzy";
 import { themePalette } from "../../shared/theme/palette";
@@ -103,6 +103,7 @@ import {
   Sparkles,
   SplitSquare,
   StickyNote,
+  Internet,
   Server,
   Trash2,
   Zap,
@@ -149,7 +150,8 @@ import { RemoteDataStatus } from "../../features/connections/ui/RemoteDataStatus
 import { RemoteLoadError } from "../../features/connections/ui/RemoteLoadError";
 import { useRemoteConnectionFeedback } from "../../features/connections/ui/RemoteConnectionFeedback";
 import { useRemoteConnection } from "../../features/connections/model/useRemoteConnection";
-import { useMachineFocus } from "../../features/connections/model/machineFocus";
+import { useRemoteLoadFailure } from "../../features/connections/public/remoteHealth";
+import { useMachineFocus } from "../../features/connections/hooks/useMachineFocus";
 import {
   classifyRemoteError,
   isConnectionFailure,
@@ -175,7 +177,8 @@ import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { MiddleTruncate } from "../../shared/ui/MiddleTruncate";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
-import { orchestrationTaskLabel } from "../../features/orchestration/model/orchestrationSummary";
+import { orchestrationTaskLabelCode } from "../../features/orchestration/model/orchestrationSummary";
+import { orchestrationTaskLabelTextWith } from "../../features/orchestration/ui/orchestrationTaskLabelText";
 import { orderedSessionActionIds } from "../../features/sessions/model/sessionSelection";
 import { paneDropFromPoint, setExternalPaneDrop } from "../../features/workspace/model/paneDrop";
 import type { PaneEdge } from "../../features/workspace/model/layout";
@@ -359,7 +362,12 @@ import {
 import { SessionsEmpty } from "../../features/sessions/ui/SessionsEmpty";
 import { SessionsNoMatch } from "../../features/sessions/ui/SessionsNoMatch";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
-import { useRemoteProject } from "./useRemoteProject";
+import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
+import {
+  machineHidesView,
+  useMachineAvailability,
+} from "../../features/connections/public/machineAvailability";
+import { MachineUnavailable } from "../../features/connections/public/MachineUnavailable";
 import { useRemoteSessionBindings } from "../../features/connections/model/useRemoteSessionBinding";
 import { pathKey } from "../../shared/lib/paths";
 import {
@@ -704,7 +712,16 @@ function SidebarComponent({
   const format = useFormat();
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
-  const remote = useRemoteProjectSessions(cwd, remoteProject);
+  const machineAvailability = useMachineAvailability(remoteProject ? cwd : undefined);
+  // An offline machine keeps its last session list unread until it answers again; one this
+  // computer cannot ask at all (not added, pairing refused, off, sign-in) drops it.
+  const remote = useRemoteProjectSessions(
+    cwd,
+    remoteProject && (machineAvailability.available || machineAvailability.reason === "offline"),
+    machineAvailability.available,
+  );
+  // While offline the retained list is dimmed under the same unreachable notice as other panes.
+  const sessionsFailure = useRemoteLoadFailure(cwd, "sessions");
   const closeFilesSearch = useCallback(
     () => onFilesSearchOpenChange(false),
     [onFilesSearchOpenChange],
@@ -844,6 +861,12 @@ function SidebarComponent({
     () => projectSessionCollection(remoteProject, remote.sessions, sessions, cwd),
     [remoteProject, remote.sessions, sessions, cwd],
   );
+  // The list shows the shared notice in place of the sessions (and of their load status) for a
+  // machine this computer cannot ask; an offline one keeps a list that was already loaded.
+  const sessionsHidden =
+    remoteProject &&
+    machineHidesView(machineAvailability, remote.loaded || projectSessions.length > 0);
+  const sessionsStale = remoteProject && !machineAvailability.available && !sessionsHidden;
   // Count the whole workspace before search, pagination or worktree filters.
   // Local busy IDs also include sessions continued on this desktop's host.
   const workingSessionCount = new Set(
@@ -874,22 +897,27 @@ function SidebarComponent({
     workingSessionCount > 0 ? (
       // Shell totals use the compact accent count; the shared live mark preserves
       // the distinction between working conversations and a plain total.
-      <Badge
-        variant="count"
-        size="sm"
-        tone="accent"
-        appearance="subtle"
-        icon={<TerminalSpinner />}
-        data-workspace-working-count
-        aria-live="polite"
-        aria-label={t(
-          workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions",
-          { p0: workingSessionCount },
-        )}
-        className="ms-1 shrink-0"
-      >
-        {workingSessionCount}
-      </Badge>
+      <>
+        <Badge
+          variant="count"
+          size="sm"
+          tone="accent"
+          appearance="subtle"
+          icon={<TerminalSpinner />}
+          aria-hidden="true"
+          data-workspace-working-count
+          className="ms-1 shrink-0"
+        >
+          {workingSessionCount}
+        </Badge>
+        {/* The count alone is not announced with its meaning; the live region carries the localized total. */}
+        <LiveText
+          className="sr-only"
+          text={t(workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions", {
+            p0: workingSessionCount,
+          })}
+        />
+      </>
     ) : null;
   const remoteExecutionCwd =
     remote.sessions.find((session) => session.id === activeRemoteId)?.cwd ??
@@ -973,7 +1001,7 @@ function SidebarComponent({
         ...current,
         [session.id]: {
           pending: false,
-          error: reason instanceof Error ? reason.message : String(reason),
+          error: errorText(reason),
         },
       }));
     } finally {
@@ -1386,11 +1414,13 @@ function SidebarComponent({
     active: panelOpen && sidebarAvailable,
   });
 
-  const [sessionStateCwd, setSessionStateCwd] = useState(cwd);
-  // Reset project-owned state before children render the next project. React
-  // retries this component immediately instead of committing stale folder rows.
-  if (sessionStateCwd !== cwd) {
-    setSessionStateCwd(cwd);
+  const sessionStateCwd = useRef(cwd);
+  // Reset project-owned state before paint when switching projects. Initialization already
+  // loaded the preferences for the first project.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps project-owned folder state in step with the selected project before paint
+  useLayoutEffect(() => {
+    if (sessionStateCwd.current === cwd) return;
+    sessionStateCwd.current = cwd;
     organizationReady.current = !NATIVE_SESSION_ORGANIZATION_ACTIVE;
     setSessionFolders(NATIVE_SESSION_ORGANIZATION_ACTIVE ? [] : loadSessionFolders(cwd));
     setSessionOrder(NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd));
@@ -1399,7 +1429,7 @@ function SidebarComponent({
     setRenamingFolderId(null);
     setFolderMenu(null);
     setSessionDrop(null);
-  }
+  }, [cwd]);
   useEffect(() => {
     pendingFolderSessionIds.current.clear();
   }, [cwd]);
@@ -1807,7 +1837,7 @@ function SidebarComponent({
                 disabled: menuSessions.length > SIDE_BY_SIDE_LIMIT,
                 description:
                   menuSessions.length > SIDE_BY_SIDE_LIMIT
-                    ? t("Select at most {p0} conversations to open side by side.", {
+                    ? t("Select at most {p0} sessions to open side by side.", {
                         p0: SIDE_BY_SIDE_LIMIT,
                       })
                     : undefined,
@@ -1916,7 +1946,7 @@ function SidebarComponent({
             return t("Remind me");
           },
           disabled: !onSetReminders,
-          submenu: sessionReminderPresets(),
+          submenu: sessionReminderPresets(t, format.formatDate),
         },
         ...(!multipleMenuSessions && !selectionMode
           ? [
@@ -3032,26 +3062,16 @@ function SidebarComponent({
             : undefined
         }
       >
-        <ExpandingSearch
+        <SidebarSessionSearch
           ref={sessionSearchRef}
-          inline
-          constrainToSlot
           onExpandedChange={setSessionSearchExpanded}
-          anchor="end"
-          expandedWidth={248}
-          items={NO_SEARCH_ITEMS}
-          label={t("Search sessions")}
-          activeLabel={t("Search conversations, filtering by “{p0}”", {
-            p0: searchQuery.trim(),
-          })}
-          placeholder={t("Search conversations...")}
           query={searchQuery}
           onQueryChange={setSearchQuery}
         />
       </div>
       {!sessionSearchExpanded && !lastSessionsOpen ? (
         <SessionsHeaderButton
-          label={selectionMode ? t("Stop selecting") : t("Select conversations")}
+          label={selectionMode ? t("Stop selecting") : t("Select sessions")}
           active={selectionMode}
           onClick={() => {
             if (selectionMode) {
@@ -3093,7 +3113,7 @@ function SidebarComponent({
             kind: "item",
             id: "move-left",
             get label() {
-              return t("Move Left");
+              return t("Move left");
             },
             disabled: viewTabIndex === 0,
           },
@@ -3101,7 +3121,7 @@ function SidebarComponent({
             kind: "item",
             id: "move-right",
             get label() {
-              return t("Move Right");
+              return t("Move right");
             },
             disabled: viewTabIndex === visibleTabs.length - 1,
           },
@@ -3326,8 +3346,9 @@ function SidebarComponent({
             ) : null}
             {compactRailVisible && onToggleProjectRail ? (
               <IconButton
-                label={t("Expand projects")}
+                label={t("Toggle sidebar")}
                 command="App: Toggle Sidebar"
+                active={railVisible}
                 onClick={onToggleProjectRail}
               >
                 <PanelLeft className="icon-sm" strokeWidth={1.75} />
@@ -3350,7 +3371,7 @@ function SidebarComponent({
                     {
                       kind: "item" as const,
                       id: "select",
-                      label: selectionMode ? t("Stop selecting") : t("Select conversations"),
+                      label: selectionMode ? t("Stop selecting") : t("Select sessions"),
                       checked: selectionMode,
                       icon: <CheckList className="icon-sm" />,
                     },
@@ -3544,7 +3565,7 @@ function SidebarComponent({
         {tab === "sessions" && !lastSessionsOpen && cwd && cwd !== "~" && showBulkBar ? (
           <Text
             role="toolbar"
-            aria-label={t("Selected conversations")}
+            aria-label={t("Selected sessions")}
             data-session-bulk-bar
             data-session-selection-keep
             as="div"
@@ -3556,8 +3577,7 @@ function SidebarComponent({
             )}
           >
             <Text size="inherit" tone="primary" className="mr-auto shrink-0 pl-0.5 tabular-nums">
-              {selectedSessionIds.size}
-              {t(" selected")}
+              {t("{p0} selected", { p0: selectedSessionIds.size })}
             </Text>
             <Button
               variant="ghost"
@@ -3644,8 +3664,10 @@ function SidebarComponent({
               : undefined
           }
         />
-        {tab === "sessions" && remoteProject && !lastSessionsOpen ? (
-          !remote.machine && remote.dataState.error && remoteConnectionIssue ? (
+        {tab === "sessions" && remoteProject && !lastSessionsOpen && !sessionsHidden ? (
+          sessionsStale && sessionsFailure ? (
+            <RemoteLoadError cwd={cwd} failure={sessionsFailure} stale compact />
+          ) : !remote.machine && remote.dataState.error && remoteConnectionIssue ? (
             <RemoteLoadError cwd={cwd} failure={classifyRemoteError(remote.dataState.error)} />
           ) : (
             <RemoteDataStatus
@@ -3786,8 +3808,9 @@ function SidebarComponent({
             </Text>
           ) : (
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
-              <div>
-                {onOpenCrewSession && (
+              <div className={sessionsStale ? "opacity-60" : undefined}>
+                {/* Crews read through the same machine; its error would only repeat the notice. */}
+                {onOpenCrewSession && !sessionsHidden && (
                   <CrewSidebar
                     key={cwd}
                     cwd={cwd}
@@ -3798,9 +3821,11 @@ function SidebarComponent({
                 )}
                 {/* Loading and errors precede empty results, so an unfinished
                   request never claims this project has no conversations. */}
-                {remoteProject &&
-                projectSessions.length === 0 &&
-                !["ready", "empty"].includes(remote.dataState.phase) ? null : pendingFirstLoad ? (
+                {sessionsHidden ? (
+                  <MachineUnavailable cwd={cwd} size="panel" />
+                ) : remoteProject &&
+                  projectSessions.length === 0 &&
+                  !["ready", "empty"].includes(remote.dataState.phase) ? null : pendingFirstLoad ? (
                   <Text
                     role="status"
                     as="p"
@@ -3878,15 +3903,11 @@ function SidebarComponent({
                           tone="secondary"
                           className="flex flex-col items-start gap-1.5 px-3 py-2"
                         >
-                          <p role="status">{t("No sessions match these filters")}</p>
+                          <LiveText text={t("No sessions match these filters")} />
                           {clearFilters}
                         </Text>
                       );
                     })()
-                  ) : remoteProject && !remote.machine ? (
-                    <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
-                      {t("This project’s machine isn’t connected on this computer.")}
-                    </Text>
                   ) : (
                     <SessionsEmpty message="Sessions you start will show up here" />
                   )
@@ -3940,18 +3961,28 @@ function SidebarComponent({
                 collapsible
               />
             </div>
-            <SidebarUpdateFooter
-              noticesOnly
-              update={updateNotice}
-              onOpenWhatsNew={onOpenWhatsNew}
-              onDismissUpdate={onDismissUpdate}
-            />
-            {!compactProjectRail ? (
+            {compactProjectRail ? (
+              <SidebarUpdateFooter
+                noticesOnly
+                update={updateNotice}
+                onOpenWhatsNew={onOpenWhatsNew}
+                onDismissUpdate={onDismissUpdate}
+              />
+            ) : (
               <SidebarAccountFooter
+                updateNotice={
+                  <SidebarUpdateFooter
+                    noticesOnly
+                    inlineNotice
+                    update={updateNotice}
+                    onOpenWhatsNew={onOpenWhatsNew}
+                    onDismissUpdate={onDismissUpdate}
+                  />
+                }
                 onOpenSettings={onOpenSettings}
                 onOpenAccountSettings={openAccountSettings}
               />
-            ) : null}
+            )}
           </>
         ) : null}
       </>
@@ -4188,7 +4219,7 @@ function SidebarComponent({
 
   return (
     <div
-      className={`flex h-full shrink-0 ${
+      className={`relative flex h-full shrink-0 ${
         railVisible || compactRailVisible || sidebarVisible ? "" : "hidden"
       }`}
     >
@@ -4296,12 +4327,11 @@ function SidebarComponent({
         <Popover
           anchor={projectNavigationAnchor}
           side="right"
-          autoFocus
           align="start"
-          width={320}
+          size="lg"
           maxHeight={760}
           onDismiss={() => setProjectNavigationAnchor(null)}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Projects and groups")}
           data-project-navigation-flyout
           // The popover bounds its own height to the room left in the window. The ledger is
@@ -4309,6 +4339,7 @@ function SidebarComponent({
           className="flex min-h-0 flex-col [&>nav]:min-h-0 [&>nav]:w-full! [&>nav]:max-w-full [&>nav]:flex-1 [&>nav]:shrink"
         >
           <ProjectsFlyoutChrome
+            railVisible={railVisible}
             onNewProject={() => {
               setProjectNavigationAnchor(null);
               void onOpenProject();
@@ -4386,12 +4417,14 @@ function SidebarComponent({
       ) : null}
       {sidebarVisible ? sidebarContent : null}
       {drawerRendered ? (
-        // Pinned to the right edge, so the sidebar slides in as the width grows.
+        // Pinned to the right edge, so the sidebar slides in as the width grows. Below
+        // MAIN_PANE_MIN_WIDTH + compact rail + SESSION_SIDEBAR_WIDTH_MIN (596px) it floats
+        // over the workspace instead of squeezing it.
         <div
           ref={drawerRef}
           data-sidebar-drawer={drawerClosing ? "closing" : "open"}
           inert={drawerClosing || undefined}
-          className={`flex shrink-0 justify-end overflow-hidden ${
+          className={`flex shrink-0 justify-end overflow-hidden max-[596px]:absolute max-[596px]:inset-y-0 max-[596px]:start-14 max-[596px]:z-(--layer-pane-sheet) ${
             drawerClosing ? "pointer-events-none" : ""
           }`}
         >
@@ -4409,10 +4442,12 @@ export const Sidebar = memo(SidebarComponent);
  * only place a project is chosen; search narrows that list instead of opening a second picker.
  */
 function ProjectsFlyoutChrome({
+  railVisible,
   onNewProject,
   onExpand,
   children,
 }: {
+  railVisible: boolean;
   onNewProject: () => void;
   onExpand: () => void;
   children: (projectFilter: string) => ReactNode;
@@ -4446,7 +4481,8 @@ function ProjectsFlyoutChrome({
             variant="ghost"
             motion="none"
             iconOnly
-            label={t("Expand projects")}
+            label={t("Toggle sidebar")}
+            pressed={railVisible}
             onClick={onExpand}
           >
             <PanelLeft className="icon-md" aria-hidden />
@@ -4458,7 +4494,7 @@ function ProjectsFlyoutChrome({
             focusOwner="group"
             type="text"
             value={filter}
-            placeholder={t("Search projects...")}
+            placeholder={t("Search projects…")}
             aria-label={t("Search projects")}
             spellCheck={false}
             autoComplete="off"
@@ -5016,7 +5052,7 @@ function CompactRailAction({
 function WorkspaceNewSessionButton({ onNew }: { onNew: () => void }) {
   const t = useT();
   const shortcut = useKeybindingShortcut("Tab: New");
-  const label = t("New Session");
+  const label = t("New session");
   return (
     <Button
       aria-label={label}
@@ -5228,8 +5264,6 @@ const SESSION_PREFETCH_DELAY_MS = 120;
 /** Hover waits this long before the detail card; keyboard focus shows it at once. */
 const SESSION_DETAIL_DELAY_MS = 600;
 /** Rows created this recently slide in; older ones are just being listed. */
-/** The folder-less list search: the session filter owns the matches, rows only draw them. */
-const NO_SEARCH_ITEMS: ExpandingSearchItem[] = [];
 
 /** The inline filter text, so rows can highlight what matched without threading a prop through every group. */
 const SessionSearchQueryContext = createContext("");
@@ -5383,13 +5417,20 @@ const SessionCard = memo(function SessionCard({
   );
   const [pressing, setPressing] = useState(false);
   const prefetchTimer = useRef<number | null>(null);
-  const orchestrationTooltipRootRef = useRef<HTMLDivElement>(null);
-  const orchestrationTooltipId = useId();
   const detailRootRef = useRef<HTMLDivElement>(null);
   const detailId = useId();
   const [detailOpen, setDetailOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [orchestrationTooltipOpen, setOrchestrationTooltipOpen] = useState(false);
+  // The card is a hover preview: the pointer can cross into it and wheel scrolls its list.
+  const orchestrationHover = useHoverCard({
+    side: "right",
+    align: "end",
+    size: "sm",
+    maxHeight: 320,
+    flow: "scroll",
+    className: "p-2.5",
+    "aria-label": t("Subagents"),
+  });
   const orchestration = session.orchestration;
   // A saved draft, or text typed into this session's composer and left unsent.
   // The session being typed in already shows its composer, so only other rows are marked.
@@ -5917,34 +5958,53 @@ const SessionCard = memo(function SessionCard({
     bottom: orchestrationExpanded ? "lg" : compact ? "xs" : "sm",
   } as const;
 
-  const modelLabel = showModel ? (
-    <span data-session-row-model className="flex shrink-0 items-center gap-1.5" aria-label={model}>
-      <span className="sr-only">
-        <SessionSearchText text={model} />
+  const remoteSession = isRemoteProjectPath(session.cwd);
+  const remoteLabel = t("On another machine");
+  const modelLabel =
+    showModel || remoteSession ? (
+      <span
+        data-session-row-model={showModel ? "" : undefined}
+        className="flex shrink-0 items-center gap-1.5"
+        aria-label={showModel ? model : undefined}
+      >
+        {showModel ? (
+          <span className="sr-only">
+            <SessionSearchText text={model} />
+          </span>
+        ) : null}
+        {remoteSession ? (
+          <Tooltip label={remoteLabel} asChild>
+            <Text role="img" aria-label={remoteLabel} size="inherit" tone="secondary">
+              <Internet className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+            </Text>
+          </Tooltip>
+        ) : null}
+        {showModel &&
+          providerHistory.providers.map((harness) => (
+            <Tooltip key={harness} label={HARNESS_TITLE[harness]}>
+              <Text
+                as="span"
+                size="inherit"
+
+                data-session-provider={harness}
+                data-provider-active={harness === providerHistory.activeHarness ? "true" : "false"}
+
+                tone={harness === providerHistory.activeHarness ? "primary" : "muted"}
+                className={
+                  harness === providerHistory.activeHarness
+                    ? undefined
+                    : "session-provider-inactive"
+                }
+              >
+                <HarnessIcon
+                  harness={harness}
+                  className={`${compact ? "icon-xs" : "icon-md"} shrink-0`}
+                />
+              </Text>
+            </Tooltip>
+          ))}
       </span>
-      {providerHistory.providers.map((harness) => (
-        <Tooltip key={harness} label={HARNESS_TITLE[harness]}>
-          <Text
-            as="span"
-            size="inherit"
-
-            data-session-provider={harness}
-            data-provider-active={harness === providerHistory.activeHarness ? "true" : "false"}
-
-            tone={harness === providerHistory.activeHarness ? "primary" : "muted"}
-            className={
-              harness === providerHistory.activeHarness ? undefined : "session-provider-inactive"
-            }
-          >
-            <HarnessIcon
-              harness={harness}
-              className={`${compact ? "icon-xs" : "icon-md"} shrink-0`}
-            />
-          </Text>
-        </Tooltip>
-      ))}
-    </span>
-  ) : null;
+    ) : null;
   const BranchIcon = worktree ? FolderTree : GitBranch;
   const branchLabel =
     showBranch && !compact && branchText ? (
@@ -6053,12 +6113,7 @@ const SessionCard = memo(function SessionCard({
         </Tooltip>
       ) : null}
       {orchestration ? (
-        <div
-          ref={orchestrationTooltipRootRef}
-          className="relative shrink-0"
-          onMouseEnter={() => setOrchestrationTooltipOpen(true)}
-          onMouseLeave={() => setOrchestrationTooltipOpen(false)}
-        >
+        <div className="relative shrink-0">
           <InlineAction
             reveal="always"
             label={t(
@@ -6079,11 +6134,9 @@ const SessionCard = memo(function SessionCard({
                 : "Orchestrator, {p0} subagents, {p2} done",
               { p0: orchestration.tasks.length, p2: orchestrationDone },
             )}
-            aria-describedby={orchestrationTooltipOpen ? orchestrationTooltipId : undefined}
-            onFocus={() => setOrchestrationTooltipOpen(true)}
-            onBlur={() => setOrchestrationTooltipOpen(false)}
+            {...orchestrationHover.trigger}
             onClick={(event) => {
-              setOrchestrationTooltipOpen(false);
+              orchestrationHover.close();
               onSelect(session.id, event);
             }}
           >
@@ -6258,7 +6311,7 @@ const SessionCard = memo(function SessionCard({
               <AssistantManagedBadge
                 management={session.managedBy}
                 compact
-                local={!isRemoteProjectPath(session.cwd)}
+                local={!remoteSession}
               />
               {compact ? modelLabel : null}
               {!compact ? null : (
@@ -6339,7 +6392,7 @@ const SessionCard = memo(function SessionCard({
           side="right"
           align="start"
           gap={6}
-          width={264}
+          size="sm"
           maxHeight={280}
           role="tooltip"
           id={detailId}
@@ -6454,67 +6507,58 @@ const SessionCard = memo(function SessionCard({
           </Text>
         </Popover>
       ) : null}
-      {orchestration && orchestrationTooltipOpen ? (
-        <Popover
-          anchor={orchestrationTooltipRootRef}
-          side="right"
-          align="end"
-          width={248}
-          maxHeight={320}
-          role="tooltip"
-          id={orchestrationTooltipId}
-          passive
-          restoreFocus={false}
-          className="pointer-events-none overflow-y-auto p-2.5"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <Text as="span" weight="medium" tone="primary">
-              {t("Subagents")}
-            </Text>
-            <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
-              {orchestrationDone}/{orchestration.tasks.length}
-              {t(" done")}
-            </Text>
-          </div>
-          <div className="mt-1.5 flex flex-col gap-0.5">
-            {orchestration.tasks.map((task) => {
-              const label = orchestrationTaskLabel(task, orchestration);
-              return (
-                <div
-                  key={task.sessionId}
-                  {...surfaceAttributes(
-                    { radius: "row" },
-                    "flex min-w-0 items-center gap-1.5 px-1 py-1",
-                  )}
-                >
-                  <HarnessIcon harness={task.harness} className="icon-sm shrink-0 opacity-75" />
-                  <Text as="span" truncate className="min-w-0 flex-1">
-                    {task.title}
-                  </Text>
-                  <Text
-                    size="caption"
-                    tone={
-                      task.needsInput ||
-                      task.status === "failed" ||
-                      task.status === "blocked" ||
-                      task.status === "interrupted"
-                        ? "warning"
-                        : label === "Working"
-                          ? "accent"
-                          : task.status === "completed"
-                            ? "success"
-                            : "secondary"
-                    }
-                    className="shrink-0"
-                  >
-                    {label}
-                  </Text>
-                </div>
-              );
-            })}
-          </div>
-        </Popover>
-      ) : null}
+      {orchestration
+        ? orchestrationHover.card(
+            <>
+              <div className="flex items-center justify-between gap-3">
+                <Text as="span" weight="medium" tone="primary">
+                  {t("Subagents")}
+                </Text>
+                <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
+                  {t("{p0} done", { p0: `${orchestrationDone}/${orchestration.tasks.length}` })}
+                </Text>
+              </div>
+              <div className="mt-1.5 flex flex-col gap-0.5">
+                {orchestration.tasks.map((task) => {
+                  const labelCode = orchestrationTaskLabelCode(task, orchestration);
+                  const label = orchestrationTaskLabelTextWith(labelCode, t);
+                  return (
+                    <div
+                      key={task.sessionId}
+                      {...surfaceAttributes(
+                        { radius: "row" },
+                        "flex min-w-0 items-center gap-1.5 px-1 py-1",
+                      )}
+                    >
+                      <HarnessIcon harness={task.harness} className="icon-sm shrink-0 opacity-75" />
+                      <Text as="span" truncate className="min-w-0 flex-1">
+                        {task.title}
+                      </Text>
+                      <Text
+                        size="caption"
+                        tone={
+                          task.needsInput ||
+                          task.status === "failed" ||
+                          task.status === "blocked" ||
+                          task.status === "interrupted"
+                            ? "warning"
+                            : labelCode === "working"
+                              ? "accent"
+                              : task.status === "completed"
+                                ? "success"
+                                : "secondary"
+                        }
+                        className="shrink-0"
+                      >
+                        {label}
+                      </Text>
+                    </div>
+                  );
+                })}
+              </div>
+            </>,
+          )
+        : null}
     </div>
   );
 });
@@ -6559,7 +6603,7 @@ function SessionRenameRow({
       const failed = (reason: unknown) => {
         finished.current = false;
         setSaving(false);
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(errorText(reason));
         inputRef.current?.focus();
       };
       try {

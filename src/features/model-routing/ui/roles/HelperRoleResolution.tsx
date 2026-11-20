@@ -1,13 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
-import { t } from "../../../../shared/i18n";
-import { withTimeout } from "../../../../shared/lib/withTimeout";
+import { t, useLocale } from "../../../../shared/i18n";
 import type { ModelRoutingChoice } from "../../../../shared/model/host-contracts/model-routing";
 import { Text } from "../../../../shared/ui/Text";
 import { ModelLabel } from "../../../sessions/public/ModelLabel";
 import type { HelperModelRole } from "../../model/helperModelRouting";
-import { resolveModelRouting } from "../../model/modelRoutingClient";
+import { useModelRoutingPreview } from "../../model/useModelRoutingPreview";
 
-/** Helpers fall back immediately instead of holding a run when no entry is eligible. */
+/**
+ * Helpers fall back immediately instead of holding a run when no entry is eligible. That
+ * fallback is only claimed when the Host answered; a timeout or failure is shown as unchecked.
+ */
 export function HelperRoleResolution({
   machineId,
   role,
@@ -19,35 +20,31 @@ export function HelperRoleResolution({
   role: HelperModelRole;
   choice: ModelRoutingChoice;
   version: number;
-  /** Hide the routine "Now uses" line and the pending state; show only the fallback. */
+  /** Hide the routine "Now uses" line and the pending state; show only what needs attention. */
   problemsOnly?: boolean;
 }) {
-  const query = useQuery({
-    queryKey: ["helper-role-preview", machineId, role, choice, version],
-    queryFn: () =>
-      withTimeout(
-        resolveModelRouting(machineId, {
-          role,
-          choice: choice.kind === "fixed" ? { kind: "fixed" } : choice,
-          fixed: choice.kind === "fixed" ? choice.target : undefined,
-        }),
-        500,
-        "Helper model preview",
-      ),
-    retry: false,
-    staleTime: 3000,
-    refetchInterval: 60_000,
-  });
+  useLocale();
+  const query = useModelRoutingPreview(
+    machineId,
+    ["helper-role-preview", machineId, role, choice, version],
+    {
+      role,
+      choice: choice.kind === "fixed" ? { kind: "fixed" } : choice,
+      fixed: choice.kind === "fixed" ? choice.target : undefined,
+    },
+  );
   const result = query.data;
-  if (problemsOnly && (query.isPending || result?.ok)) return null;
+  if (problemsOnly && !query.isError && (query.isPending || result?.ok)) return null;
   return (
     <Text as="p" tone="secondary">
-      {result?.ok ? (
+      {query.isError ? (
+        t("Current model could not be checked. You can still edit this choice.")
+      ) : result?.ok ? (
         <span className="inline-flex items-center gap-1">
           {t("Now uses")}
           <ModelLabel model={result.target.model} harness={result.target.harness} />
         </span>
-      ) : query.isPending ? (
+      ) : !result ? (
         t("Checking current model…")
       ) : (
         t("Automatic uses this helper's own model selection.")
