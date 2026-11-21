@@ -1222,18 +1222,37 @@ fn reconcile_pending_noting(
 /// One bounded idle pass. Without it a lost reply or ACK waits for new traffic that may
 /// never come, and its slot holds the epoch prefix: retry consumed ACKs, settle orphaned
 /// results, then take one gap/compaction step while the prefix trails its high water.
+/// `Ok(true)` when the prefix moved, so the caller can run the next pass without idling.
 pub(super) fn maintain(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     if !channel.delivery_supported || !epochs_supported(channel) {
-        return Ok(());
+        return Ok(false);
     }
     let mut failure = None;
-    reconcile_pending_noting(channel, deadline, &mut failure)
-        .map_err(|e| format!("pending: {e}"))?;
     let fingerprint = route(channel)?;
     let backlog = || access(channel)?.with(|store| journal::epochs::backlog(store, &fingerprint));
+    // Before the head ACK below, which compacts on its own when it lands.
+    let initial = backlog().map_err(|e| format!("backlog: {e}"))?;
+    // The prefix head first, with a fresh budget; the pager below may not reach it this lap.
+    if channel.delivery_ack_supported {
+        let head = access(channel)?
+            .with(|store| journal::unacked_prefix_blocker(store, &fingerprint))
+            .map_err(|e| format!("prefix head: {e}"))?;
+        if let Some(original) = head.filter(|original| {
+            matches!(
+                original.method(),
+                "native.services.conversation.desktop.finish" | "native.services.workspace.format"
+            )
+        }) {
+            if let Err(error) = acknowledge_remote(channel, &original, &[], deadline) {
+                failure.get_or_insert(format!("prefix ACK: {error}"));
+            }
+        }
+    }
+    reconcile_pending_noting(channel, deadline, &mut failure)
+        .map_err(|e| format!("pending: {e}"))?;
     // Each step retires at most 32 slots; repeat while it makes progress so a large
     // backlog drains in hours, not one step per pass.
     let start = backlog().map_err(|e| format!("backlog: {e}"))?;
@@ -1246,15 +1265,15 @@ pub(super) fn maintain(
         }
         through = next;
     }
-    if through.is_some() && through == start {
+    if through.is_some() && through == initial {
         if let Some(error) = failure {
             return Err(format!(
                 "prefix held at {}: {error}",
-                start.unwrap_or_default()
+                initial.unwrap_or_default()
             ));
         }
     }
-    Ok(())
+    Ok(through != initial)
 }
 
 #[cfg(test)]

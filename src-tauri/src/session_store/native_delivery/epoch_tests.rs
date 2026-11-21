@@ -643,3 +643,24 @@ fn slot_counts_run_once_per_change_and_still_catch_a_foreign_commit() {
         .unwrap();
     assert!(current(&store, &handle).is_err());
 }
+
+#[test]
+fn the_prefix_head_is_offered_for_its_remote_ack_until_it_has_one() {
+    let db = FileDb::new();
+    let store = db.open();
+    let handle = epoch(&store);
+    let first = consumed(&store, &original(&store, &handle, "head"), false);
+    consumed(&store, &original(&store, &handle, "next"), false);
+    let head = super::super::unacked_prefix_blocker(&store, ROUTE)
+        .unwrap()
+        .unwrap();
+    assert_eq!(head.id(), first.id());
+    assert!(super::super::unacked_prefix_blocker(&store, OTHER)
+        .unwrap()
+        .is_none());
+    write(&store, |conn| mark_remote_acked_tx(conn, &first)).unwrap();
+    // Still the head until compaction moves the prefix, but no longer missing its ACK.
+    assert!(super::super::unacked_prefix_blocker(&store, ROUTE)
+        .unwrap()
+        .is_none());
+}

@@ -895,6 +895,47 @@ fn remote_acked(conn: &Connection, original: &Original) -> Result<bool, String> 
     }
 }
 
+/// The original just past an open epoch's prefix when it is consumed locally but its remote
+/// ACK is missing. The paged ACK retry walks thousands of rows, so a timed-out ACK of this one
+/// slot otherwise waits a whole lap of the pager while the prefix it blocks cannot compact.
+pub(crate) fn unacked_prefix_blocker(
+    store: &SessionStore,
+    route_fingerprint: &str,
+) -> Result<Option<Original>, String> {
+    let connection = pin(store)?;
+    let conn = store.lock_conn()?;
+    let epochs: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_delivery_epochs')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !epochs || !exists(&conn)? {
+        return Ok(None);
+    }
+    let head: Option<(String, i64, i64)> = conn
+        .query_row(
+            "SELECT owner_id,generation,local_through+1 FROM native_delivery_epochs
+             WHERE route_fingerprint=?1 AND closed=0 AND local_through<high_water ORDER BY local_through LIMIT 1",
+            [route_fingerprint],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some((owner, generation, sequence)) = head else {
+        return Ok(None);
+    };
+    let id = format!("nd2:{owner}:{generation}:{sequence}");
+    let Some(record) = read(&conn, &id, store.native_instance_id(), connection)? else {
+        return Ok(None);
+    };
+    if record.phase != Phase::Acknowledged || remote_acked(&conn, &record)? {
+        return Ok(None);
+    }
+    Ok(Some(record))
+}
+
 /// Reload an exact original after its local ACK committed. A pre-ACK metadata
 /// handle cannot itself authorize retirement; the actual current row must agree.
 pub(crate) fn remote_ack_candidate(

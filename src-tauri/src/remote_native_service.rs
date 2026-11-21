@@ -167,9 +167,9 @@ impl NativeServiceChannel {
     pub(crate) fn maintain_delivery(
         self: &Arc<Self>,
         budget: std::time::Duration,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         if self.journal.is_none() {
-            return Ok(());
+            return Ok(false);
         }
         delivery::maintain(self, Instant::now() + budget)
     }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { invokeWorkspace, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { joinPath, pathKey } from "../../../shared/lib/paths";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
@@ -19,29 +19,50 @@ const cached = new Map<string, Discovery>();
  * kept the app busy around half a core. */
 const lastScan = new Map<string, number>();
 export const REPOSITORY_RESCAN_MS = 30_000;
+/** A failed discovery waits this long, doubling per consecutive failure up to the cap. A scan
+ * that times out on a loaded remote Host was restarted by every Git change, so agents that
+ * commit continuously kept that Host spending its whole deadline on it about 100 times an hour. */
+export const FAILED_DISCOVERY_BACKOFF_MS = 30_000;
+const MAX_FAILED_DISCOVERY_BACKOFF_MS = 10 * 60_000;
+const failures = new Map<string, { until: number; delayMs: number; reason: unknown }>();
 
 export function resetGitSubmoduleCache() {
   cached.clear();
   lastScan.clear();
+  failures.clear();
 }
 
 const cacheKey = (cwd: string, includeRepositories: boolean) =>
   `${includeRepositories ? "repositories" : "submodules"}:${pathKey(cwd)}`;
 
-function list(cwd: string, includeRepositories: boolean): Promise<Discovery> {
+function list(cwd: string, includeRepositories: boolean, force: boolean): Promise<Discovery> {
   const key = cacheKey(cwd, includeRepositories);
   const running = pending.get(key);
   if (running) return running;
+  const failed = failures.get(key);
+  // Only an explicit refresh asks again before the backoff ends.
+  if (!force && failed && monotonicNow() < failed.until) return Promise.reject(failed.reason);
   // Only the repository scan has a size bound to report; gitlink-only discovery answers a plain list.
   const request = invokeWorkspace<string[] | { paths: string[]; limit: DiscoveryLimit | null }>(
     "git_submodules",
     { cwd, ...(includeRepositories ? { includeRepositories: true } : {}) },
-  ).then((result) => {
-    const { paths, limit } = Array.isArray(result) ? { paths: result, limit: null } : result;
-    const found = { modules: paths.map((path) => joinPath(cwd, path)), limit };
-    cached.set(key, found);
-    return found;
-  });
+  ).then(
+    (result) => {
+      const { paths, limit } = Array.isArray(result) ? { paths: result, limit: null } : result;
+      const found = { modules: paths.map((path) => joinPath(cwd, path)), limit };
+      cached.set(key, found);
+      failures.delete(key);
+      return found;
+    },
+    (reason: unknown) => {
+      const delayMs = Math.min(
+        Math.max((failures.get(key)?.delayMs ?? 0) * 2, FAILED_DISCOVERY_BACKOFF_MS),
+        MAX_FAILED_DISCOVERY_BACKOFF_MS,
+      );
+      failures.set(key, { until: monotonicNow() + delayMs, delayMs, reason });
+      throw reason;
+    },
+  );
   pending.set(key, request);
   lastScan.set(key, monotonicNow());
   const clear = () => {
@@ -72,13 +93,21 @@ export function useGitSubmodules(
   });
   const [revision, refresh] = useReducer((value: number) => value + 1, 0);
   const reload = useCallback(() => refresh(), []);
+  // Set by an explicit refresh only; Git changes and focus wait out a failure's backoff.
+  const forced = useRef(false);
+  const refreshNow = useCallback(() => {
+    forced.current = true;
+    refresh();
+  }, []);
 
   useEffect(() => {
     if (!enabled) return;
     const roots: string[] = JSON.parse(rootsKey);
     if (!roots.length) return;
     let cancelled = false;
-    void Promise.allSettled(roots.map((root) => list(root, includeRepositories))).then(
+    const force = forced.current;
+    forced.current = false;
+    void Promise.allSettled(roots.map((root) => list(root, includeRepositories, force))).then(
       (results) => {
         if (cancelled) return;
         setSnapshot((previous) => {
@@ -166,6 +195,6 @@ export function useGitSubmodules(
             known.flatMap(([root, found]) => (found.limit ? [[root, found.limit]] : [])),
           ),
     error: snapshot.key === key ? snapshot.error : undefined,
-    refresh: reload,
+    refresh: refreshNow,
   };
 }
