@@ -82,6 +82,22 @@ console.log('stdout diagnostic'); console.error('stderr diagnostic');
 }
 
 #[test]
+#[cfg(windows)]
+fn repairs_stray_windows_path_quote_before_launch() {
+    let fixture =
+        Fixture::new("require('node:fs').writeFileSync('received-path', process.env.PATH)");
+    let mut config = fixture.config();
+    config["path"] = json!(
+        r#"C:\Windows;"C:\Tools;Extra";C:\Program Files\PowerShell\7";C:\Program Files\Git\cmd"#
+    );
+    assert!(fixture.launch(&config, "0").status.success());
+    assert_eq!(
+        fs::read_to_string(fixture.0.join("received-path")).unwrap(),
+        r#"C:\Windows;"C:\Tools;Extra";C:\Program Files\PowerShell\7;C:\Program Files\Git\cmd"#,
+    );
+}
+
+#[test]
 fn failure_restarts_and_limit_preserves_actual_exit_code() {
     let fixture = Fixture::new(
         r#"

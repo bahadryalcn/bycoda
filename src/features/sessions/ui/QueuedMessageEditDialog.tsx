@@ -24,7 +24,7 @@ import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFe
 import { attachmentDropVerdict } from "../model/attachmentDrop";
 import {
   isFileReferenceText,
-  messageFilesFromClipboard,
+  messageFromClipboard,
   nativeClipboardAttachments,
 } from "../../../platform/tauri/clipboard";
 import {
@@ -34,7 +34,8 @@ import {
   revokeAttachment,
 } from "../model/attachments";
 import { collectSkippedAttachments } from "../model/attachmentSkips";
-import { attachmentTokens } from "../model/attachmentTokens";
+import { attachmentDraftTokens } from "../model/attachmentTokens";
+import { ComposerHighlight, type ComposerReferenceContext } from "./ComposerHighlight";
 import {
   addDraftAttachments,
   applyQueuedEdit,
@@ -61,6 +62,7 @@ type Props = {
   message: QueuedMessage;
   /** False when the harness cannot take attachments: chips can then only be removed. */
   canAttach: boolean;
+  references?: ComposerReferenceContext;
   onSave: (text: string, attachments: Attachment[]) => void;
   /** Take the message out of the queue; offered when nothing would be left to send. */
   onRemove: () => void;
@@ -118,6 +120,7 @@ function QueueEditContent({
   parentSessionId,
   message,
   canAttach,
+  references,
   onSave,
   onRemove,
   onCancel,
@@ -174,7 +177,7 @@ function QueueEditContent({
 
   const empty = isQueuedEditEmpty(message, draft);
   const dirty = hasQueuedEditChanges(message, draft);
-  const tokens = attachmentTokens(draft.attachments);
+  const tokens = attachmentDraftTokens(draft.attachments);
 
   useEffect(() => {
     const el = field.current;
@@ -266,7 +269,8 @@ function QueueEditContent({
     }
     if (incoming.length === 0) return;
     const el = field.current;
-    const selection = el ? { start: el.selectionStart, end: el.selectionEnd } : null;
+    const caret = pendingCaret.current;
+    const selection = caret === null ? captureDraft(el) : { start: caret, end: caret };
     const result = addDraftAttachments(draftRef.current, incoming, selection);
     for (const file of incoming) {
       if (result.draft.attachments.includes(file)) {
@@ -315,10 +319,17 @@ function QueueEditContent({
       return;
     }
     const data = event.clipboardData;
-    const messageFiles = messageFilesFromClipboard(data);
-    const files = messageFiles ?? filesFromClipboard(data);
+    const message = messageFromClipboard(data);
+    const files = message?.files ?? filesFromClipboard(data);
     if (files.length > 0) {
       event.preventDefault();
+      if (message?.text) {
+        const { value, selectionStart, selectionEnd } = event.currentTarget;
+        change(
+          value.slice(0, selectionStart) + message.text + value.slice(selectionEnd),
+          selectionStart + message.text.length,
+        );
+      }
       if (!canAttach) return;
       void attachBlobs(files);
       return;
@@ -507,6 +518,20 @@ function QueueEditContent({
           label={t("Queued message text")}
           readOnly={parentClosed}
           value={draft.text}
+          overlay={
+            <ComposerHighlight
+              text={draft.text}
+              mode={null}
+              names={references?.names ?? new Set()}
+              skillParts={references?.skillParts ?? ((text) => [{ text }])}
+              mentions={references?.mentions ?? new Map()}
+              mcpTags={references?.mcpTags ?? []}
+              {...references}
+              attachments={draft.attachments}
+              citations={0}
+              field={field}
+            />
+          }
           minRows={5}
           maxRows={14}
           spellCheck={false}

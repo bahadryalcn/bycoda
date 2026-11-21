@@ -84,7 +84,7 @@ export function useUsageLimitFailover({
     for (const session of sessions) {
       const limit = session.usageLimit;
       // A turn still ending may yet fall back on its own; wait until it is idle.
-      if (!limit || session.busy || seenRef.current.has(limit)) continue;
+      if (!limit || limit.recoveryFrom || session.busy || seenRef.current.has(limit)) continue;
       seenRef.current.add(limit);
       limitedRef.current.hold(
         failoverAccountKey(session.harness, accountOf(session)),

@@ -79,6 +79,7 @@ type Props = {
   onStopAll?: () => Promise<void>;
   /** Cross-provider children of this session, already mapped to rows. */
   delegatedAgents?: DockAgent[];
+  goalControl?: React.ReactNode;
 };
 
 /**
@@ -104,6 +105,7 @@ export const ActivityDock = memo(function ActivityDock({
   onStopAgent,
   onStopAll,
   delegatedAgents,
+  goalControl,
 }: Props) {
   useLocale();
   const t = useT();
@@ -180,7 +182,11 @@ export const ActivityDock = memo(function ActivityDock({
       {/* Always mounted, so a state change is announced rather than the dock
           appearing. The ticking clock stays out of it. */}
       <LiveText className="sr-only" text={questionOnlyNotice ? "" : displayLabel} />
-      {dock.state === "idle" || questionOnlyNotice ? null : (
+      {dock.state === "idle" || questionOnlyNotice ? (
+        goalControl ? (
+          <div className="flex justify-end px-3">{goalControl}</div>
+        ) : null
+      ) : (
         <DockBody
           key={dock.state === "done" ? "done" : "live"}
           sessionId={sessionId}
@@ -192,6 +198,7 @@ export const ActivityDock = memo(function ActivityDock({
           clockOrigin={clockOrigin ?? dock.startedAt}
           clockInTranscript={clockInTranscript}
           onOpenAgent={onOpenAgent}
+          goalControl={goalControl}
           stop={{
             ...stops,
             perItem: perItemStop && !!onStopAgent,
@@ -220,6 +227,7 @@ function DockBody({
   clockOrigin,
   clockInTranscript,
   onOpenAgent,
+  goalControl,
   stop,
 }: {
   sessionId: string;
@@ -231,6 +239,7 @@ function DockBody({
   clockOrigin?: number;
   clockInTranscript: boolean;
   onOpenAgent: (agent: DockAgent) => void;
+  goalControl?: React.ReactNode;
   stop: DockStop;
 }) {
   const t = useT();
@@ -364,6 +373,7 @@ function DockBody({
               </span>
             </Button>
           )}
+          {goalControl}
         </div>
       </Text>
       {open ? (

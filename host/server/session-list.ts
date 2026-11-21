@@ -192,14 +192,10 @@ export async function createSessionListRuntime(
   /** Other registered ids of the same folder (legacy path spellings), in a stable order. */
   // The registry changes only in addProject, which moves projectRegistryVersion; reuse the
   // loaded rows until then instead of scanning every registered project on each poll.
-  let registeredProjects: { version: number; rows: { id: string; cwd: string }[] } | undefined;
-  // Registered ids by folder key. Every project poll asked for its siblings, which compared
-  // its path with every registered path (100+ projects: ~10,000 normalizations a round).
-  // Rebuilt with the registry, and after the path normalizer's realpath TTL so a retargeted
-  // junction still regroups.
-  let folders: { rows: unknown; at: number; ids: Map<string, string[]> } | undefined;
-  const FOLDER_KEYS_TTL_MS = 5_000;
-  const siblingProjectIds = async (project: { id: string; cwd: string }) => {
+  let registeredProjects:
+    | { version: number; rows: { id: string; cwd: string; name: string }[] }
+    | undefined;
+  const loadRegistry = async () => {
     const { store } = dependencies.engine;
     const version = store.projectRegistryVersion;
     let registry = registeredProjects;
@@ -207,6 +203,16 @@ export async function createSessionListRuntime(
       registry = { version, rows: await store.projects() };
       registeredProjects = registry;
     }
+    return registry;
+  };
+  // Registered ids by folder key. Every project poll asked for its siblings, which compared
+  // its path with every registered path (100+ projects: ~10,000 normalizations a round).
+  // Rebuilt with the registry, and after the path normalizer's realpath TTL so a retargeted
+  // junction still regroups.
+  let folders: { rows: unknown; at: number; ids: Map<string, string[]> } | undefined;
+  const FOLDER_KEYS_TTL_MS = 5_000;
+  const siblingProjectIds = async (project: { id: string; cwd: string }) => {
+    const registry = await loadRegistry();
     const now = Date.now();
     if (folders?.rows !== registry.rows || now - folders.at >= FOLDER_KEYS_TTL_MS) {
       const ids = new Map<string, string[]>();
@@ -229,30 +235,42 @@ export async function createSessionListRuntime(
   ) => {
     const projectId = project.id;
     const stamps = new Map(local.map((session) => [session.id, session]));
-    for (const adopted of await dependencies.engine.store.adopted(projectId)) {
-      const stamp = stamps.get(adopted.id);
-      // Only a desktop copy newer than the one the host caught up with needs
-      // the session loaded; a running one is not pulled yet.
-      if (
-        adopted.projectId === projectId &&
-        stamp &&
-        stamp.status !== "running" &&
-        stamp.updatedAt > adopted.desktopUpdatedAt
-      )
-        await dependencies.catchUp(adopted.id, {
-          updatedAt: stamp.updatedAt,
-          running: false,
-        });
-    }
+    const { store } = dependencies.engine;
     // The Host directory lists one entry per folder, so sessions stored under a
     // legacy duplicate id of the same folder stay visible through the listed id.
-    const folderSessions = (
-      await Promise.all(
-        [projectId, ...(siblingIds ?? (await siblingProjectIds(project)))].map((id) =>
-          dependencies.engine.store.summaries(id),
-        ),
-      )
-    ).flat();
+    // Pure reads: they run on read connections beside the writer, so a rebuild never waits
+    // behind (or holds up) the writer queue; the summaries cache serves most without SQL.
+    const readFolder = async () => {
+      const ids = [projectId, ...(siblingIds ?? (await siblingProjectIds(project)))];
+      const [summaries, crews] = await Promise.all([
+        Promise.all(ids.map((id) => store.summaries(id))),
+        // Read with the list, so a new crew assignment shows on the next rebuild (a session
+        // change or the PROJECT_LIST_SAFETY_MS refresh), like branch names.
+        store.readScope(() => crewSessionRuns(store, projectId)),
+      ]);
+      return { folderSessions: summaries.flat(), crews };
+    };
+    // catchUp may write, so it runs between the reads.
+    const catchUps: { id: string; updatedAt: number }[] = [];
+    // Only ids present in the local list can need a catch-up.
+    if (stamps.size)
+      for (const adopted of await store.adopted(projectId)) {
+        const stamp = stamps.get(adopted.id);
+        // Only a desktop copy newer than the one the host caught up with needs
+        // the session loaded; a running one is not pulled yet.
+        if (
+          adopted.projectId === projectId &&
+          stamp &&
+          stamp.status !== "running" &&
+          stamp.updatedAt > adopted.desktopUpdatedAt
+        )
+          catchUps.push({ id: adopted.id, updatedAt: stamp.updatedAt });
+      }
+    for (const { id, updatedAt } of catchUps)
+      await dependencies.catchUp(id, { updatedAt, running: false });
+    // The catch-up changed what the summaries show, so they are read after it.
+    const folder = await readFolder();
+    const { folderSessions, crews } = folder;
     const own = folderSessions.map((session) =>
       session.status !== "running" && stamps.get(session.id)?.status === "running"
         ? { ...session, status: "running" as const }
@@ -266,9 +284,6 @@ export async function createSessionListRuntime(
     const branches = new Map(
       await Promise.all(paths.map(async (cwd) => [cwd, await branchCache.get(cwd)] as const)),
     );
-    // Read with the list, so a new crew assignment shows on the next rebuild (a session
-    // change or the PROJECT_LIST_SAFETY_MS refresh), like branch names.
-    const crews = await crewSessionRuns(dependencies.engine.store, projectId);
     const decorated = summaries.map((session) => {
       const crewRunId = crews.get(session.id);
       const branch = branches.get(session.cwd ?? project.cwd);
@@ -336,10 +351,20 @@ export async function createSessionListRuntime(
   const taskChangeEtag = async () => await dependencies.tasks.changeEtag();
   const allProjectSessions = async (projectId: string) => {
     const now = Date.now();
-    const project = await dependencies.engine.store.project(projectId);
+    // The row comes from the registry rows loaded once per registry version, not a scope
+    // per poll; an id missing there falls back to the store, which rejects it.
+    const project =
+      (await loadRegistry()).rows.find((row) => row.id === projectId) ??
+      (await dependencies.engine.store.project(projectId));
     const currentProject = async () => {
-      if ((await dependencies.engine.store.project(projectId)).cwd !== project.cwd)
+      // The one read of a poll: only the database can say whether the folder moved while
+      // the list was built (the registry version moves on addProject alone).
+      const stored = await dependencies.engine.store.project(projectId);
+      if (stored.cwd !== project.cwd || stored.name !== project.name) {
+        // The cached rows are what disagrees; reload them on the next poll.
+        registeredProjects = undefined;
         throw new Error("Project changed while reading its sessions.");
+      }
     };
     const local = await dependencies.desktop.listSnapshotAsync(
       project.cwd,

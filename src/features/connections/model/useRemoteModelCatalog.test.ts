@@ -174,6 +174,52 @@ describe("useRemoteModelCatalog", () => {
     expect(latest.error).toBe("");
   });
 
+  it("keeps Codex models through partial and failed snapshots, then accepts an explicit empty list", async () => {
+    const request = asRequest(
+      vi
+        .fn()
+        .mockResolvedValueOnce(catalog("codex:known"))
+        .mockResolvedValueOnce({ models: {}, errors: {}, pending: ["codex"] })
+        .mockResolvedValueOnce({ models: {}, errors: { codex: "timeout" } })
+        .mockResolvedValueOnce({ models: { codex: [] }, errors: {} }),
+    );
+    await render({ scope: scopeA, enabled: true, request });
+    expect(ids(latest.catalog)).toEqual(["codex:known"]);
+    await act(async () => latest.refresh());
+    expect(ids(latest.catalog)).toEqual(["codex:known"]);
+    await act(async () => latest.refresh());
+    expect(ids(latest.catalog)).toEqual(["codex:known"]);
+    await act(async () => latest.refresh());
+    expect(ids(latest.catalog)).toEqual([]);
+  });
+
+  it("drops remembered Codex models when the Host removes the default account", async () => {
+    const request = asRequest(
+      vi
+        .fn()
+        .mockResolvedValueOnce(catalog("codex:known"))
+        .mockResolvedValueOnce({
+          models: {},
+          errors: { codex: "timeout" },
+          accounts: { codex: [] },
+        }),
+    );
+    await render({ scope: scopeA, enabled: true, request });
+    await act(async () => latest.refresh());
+    expect(ids(latest.catalog)).toBeUndefined();
+  });
+
+  it("asks the Host to refresh on an explicit retry", async () => {
+    const request = vi.fn().mockResolvedValue({ models: {}, errors: { codex: "timeout" } });
+    await render({ scope: scopeA, enabled: true, request: asRequest(request) });
+    await act(async () => latest.retry());
+    expect(request).toHaveBeenLastCalledWith("models.list", {
+      projectId: scopeA.projectId,
+      progressive: true,
+      refresh: true,
+    });
+  });
+
   it("does not read while disabled and reads once enabled", async () => {
     const request = vi.fn(async () => catalog("a1"));
     await render({ scope: scopeA, enabled: false, request: asRequest(request) });

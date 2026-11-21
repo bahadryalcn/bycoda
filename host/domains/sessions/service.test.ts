@@ -68,6 +68,10 @@ function setup() {
       withHead: vi.fn(() => ({ head: { count: 4, chain: "hash" } })),
       previewRewindHistory: vi.fn(() => ({})),
     },
+    visuals: {
+      contains: vi.fn(() => false),
+      read: vi.fn(async () => ({ title: "Chart", html: "<p>Chart</p>", height: 240 })),
+    },
     transfers: { respond: vi.fn((_id, value) => value), chunk: vi.fn(() => ({ data: "piece" })) },
     revisionWaits: { wait: vi.fn(async () => {}) },
   };
@@ -75,6 +79,25 @@ function setup() {
 }
 
 describe("session read domain", () => {
+  it("reads a stored visual only from its conversation and rechecks authorization before disclosure", async () => {
+    const { service, ports, auth, value } = setup();
+    const id = "a".repeat(64);
+    await expect(service.inlineVisual({ sessionId: "other", id }, auth)).rejects.toThrow(
+      "Visual is unavailable in this conversation",
+    );
+    expect(ports.visuals.read).not.toHaveBeenCalled();
+
+    vi.mocked(ports.visuals.contains).mockReturnValue(true);
+    await expect(service.inlineVisual({ sessionId: "owner", id }, auth)).resolves.toMatchObject({
+      html: "<p>Chart</p>",
+    });
+    expect(ports.visuals.contains).toHaveBeenCalledWith(value.session.blocks, id);
+    expect(ports.visuals.read).toHaveBeenCalledWith(id);
+    vi.mocked(auth.authorized).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await expect(service.inlineVisual({ sessionId: "owner", id }, auth)).rejects.toThrow(
+      "Device authorization was revoked",
+    );
+  });
   it("checks an explicit reference before reading and again before disclosure", async () => {
     const { service, ports, auth } = setup();
     ports.assertReference = vi.fn(async () => {});

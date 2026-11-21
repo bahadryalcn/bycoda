@@ -40,6 +40,20 @@ fn continuation_lines_are_indented() {
 }
 
 #[test]
+fn updater_outage_noise_is_dropped_but_other_updater_errors_are_kept() {
+    let outage = "update endpoint did not respond with a successful status code";
+    assert!(is_updater_outage_noise(
+        "tauri_plugin_updater::updater",
+        outage
+    ));
+    assert!(!is_updater_outage_noise(
+        "tauri_plugin_updater::updater",
+        "signature mismatch"
+    ));
+    assert!(!is_updater_outage_noise("bycoda::app_update", outage));
+}
+
+#[test]
 fn level_env_parses_or_falls_back() {
     assert_eq!(level_from_env(Some("warn")), log::LevelFilter::Warn);
     assert_eq!(level_from_env(Some("nope")), level_from_env(None));

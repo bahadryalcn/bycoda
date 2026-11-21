@@ -986,6 +986,120 @@ for (const light of [false, true]) {
 }
 
 const settleEvidence = path.resolve("temp/verification/2026-11-08-session-settle");
+test("bulk Settle includes all 258 selected remote conversations", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(
+    "/tests/browser/sessions/session-row-layout.html?remote-header&remote-settle&bulk-large",
+  );
+  const row = page.locator('[data-session-card="office-session"]');
+  const select = row.locator("[data-session-select]");
+  await select.hover();
+  await expect(row.getByRole("button", { name: /^Settle / })).toBeVisible();
+  await select.click({ modifiers: ["ControlOrMeta"] });
+  const toolbar = page.getByRole("toolbar", { name: "Selected sessions" });
+  await toolbar.getByRole("button", { name: "Select all", exact: true }).click();
+  await expect(toolbar).toContainText("258 selected");
+  await select.click({ button: "right" });
+  await page
+    .getByRole("menu", { name: "258 selected session actions" })
+    .getByRole("menuitem", { name: "Settle", exact: true })
+    .click();
+  await expect(page.locator("[data-settled-sessions]")).toHaveAttribute(
+    "data-section-collapsed",
+    "",
+  );
+  await expect(page.locator("[data-session-card]")).toHaveCount(0);
+});
+for (const remote of [false, true]) {
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      test(`bulk Settle via menu and row on ${remote ? "remote" : "local"} Host (${theme} ${width})`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        const fixture = remote ? "remote-header&remote-settle&bulk" : "local-bulk-settle";
+        const [first, second, unselected] = (
+          remote
+            ? ["office-session", "office-second", "office-third"]
+            : ["row-multi", "row-long", "row-working"]
+        ).map((id) => page.locator(`[data-session-card="${id}"]`));
+        const selectFirst = first.locator("[data-session-select]");
+        const settle = first.getByRole("button", { name: /^Settle / });
+        const evidence = path.resolve("temp/verification/bulk-session-settle");
+        const name = `${remote ? "remote" : "local"}-${theme}-${width}`;
+        await mkdir(evidence, { recursive: true });
+        for (const action of ["menu", "row"]) {
+          await page.goto(`/tests/browser/sessions/session-row-layout.html?${fixture}&${theme}`);
+          await selectFirst.hover();
+          await expect(settle).toBeVisible();
+          await selectFirst.click({ modifiers: ["ControlOrMeta"] });
+          await second.locator("[data-session-select]").click({ modifiers: ["ControlOrMeta"] });
+          await expect(page.getByRole("toolbar", { name: "Selected sessions" })).toContainText(
+            "2 selected",
+          );
+          if (action === "menu") {
+            await selectFirst.click({ button: "right" });
+            const menuSettle = page
+              .getByRole("menu", { name: "2 selected session actions" })
+              .getByRole("menuitem", { name: "Settle", exact: true });
+            await expect(menuSettle).toBeVisible();
+            await page.screenshot({ path: path.join(evidence, `${name}-menu.png`) });
+            await menuSettle.click();
+          } else {
+            await selectFirst.hover();
+            await page.screenshot({ path: path.join(evidence, `${name}-row.png`) });
+            await settle.click();
+          }
+          const shelf = page.locator("[data-settled-sessions]");
+          await expect(first).toHaveCount(0);
+          await expect(second).toHaveCount(0);
+          await expect(unselected).toBeVisible();
+          await shelf.getByRole("button").first().click();
+          await expect(first).toBeVisible();
+          await expect(second).toBeVisible();
+          await shelf.getByRole("button").first().click();
+        }
+      });
+    }
+  }
+}
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`remote project Settle and Un-settle ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 700 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?remote-header&remote-settle&${theme}`,
+      );
+      const row = page.locator('[data-session-card="office-session"]');
+      const open = row.locator("[data-session-select]");
+      const settle = row.getByRole("button", { name: "Settle Remote project conversation" });
+      const shelf = page.locator("[data-settled-sessions]");
+      await expect(row).toBeVisible();
+      await open.hover();
+      await expect(settle).toBeVisible();
+      const evidence = path.resolve("temp/verification/remote-project-settle");
+      await mkdir(evidence, { recursive: true });
+      await open.click({ button: "right" });
+      const menu = page.getByRole("menu", { name: "Session actions" });
+      await expect(menu.getByRole("menuitem", { name: "Settle", exact: true })).toBeVisible();
+      await page.screenshot({ path: path.join(evidence, `${theme}-${width}-menu.png`) });
+      await menu.getByRole("menuitem", { name: "Settle", exact: true }).click();
+      await expect(row).toHaveCount(0);
+      await expect(shelf).toContainText("Settled");
+      await shelf.getByRole("button").first().click();
+      await open.hover();
+      const undo = row.getByRole("button", { name: "Un-settle Remote project conversation" });
+      await expect(undo).toBeVisible();
+      await page.screenshot({ path: path.join(evidence, `${theme}-${width}-shelf.png`) });
+      await undo.click();
+      await expect(shelf).toHaveCount(0);
+      await expect(row).toBeVisible();
+    });
+  }
+}
+
 for (const light of [false, true]) {
   for (const width of [1280, 800]) {
     test(`settled sessions file on a collapsed Settled group at ${width} ${light ? "light" : "dark"}`, async ({

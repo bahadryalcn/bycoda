@@ -1,4 +1,5 @@
 import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "./git-exec-pool";
 import {
   gitMutationScope,
   isHostGitMutation,
@@ -587,11 +588,11 @@ export async function headBranchFromFiles(cwd: string): Promise<string | undefin
 export const branchCache = new BranchCache(async (cwd) => {
   const fromFiles = await headBranchFromFiles(cwd);
   if (fromFiles !== undefined) return fromFiles;
-  const { stdout } = await exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+  const { stdout } = await hostGitExec.exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
     cwd,
     timeout: 2_000,
     windowsHide: true,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+    env: { GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
   });
   return stdout.trim();
 });

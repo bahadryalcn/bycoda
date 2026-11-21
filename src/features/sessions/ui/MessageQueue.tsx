@@ -114,6 +114,7 @@ export function MessageQueue({
   status,
   onDelete,
   canAttach,
+  references,
   remote = false,
   busy = false,
   waitingOnSubagents = false,
@@ -847,6 +848,7 @@ export function MessageQueue({
           parentSessionId={parentSessionId}
           message={editingMessage}
           canAttach={canAttach}
+          references={references}
           onSave={(text, attachments) => {
             if (!queueOwner.canMutate()) return;
             onEdit?.(editingMessage.id, text, attachments);

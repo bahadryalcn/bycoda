@@ -29,6 +29,12 @@ const PROBE_ID = "bycoda-codex-probe";
 const DISCOVERY_TIMEOUT_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 12_000;
 
+export class CodexCatalogSignedOut extends Error {
+  constructor() {
+    super("Codex CLI is not authenticated. Run `codex login` and try again.");
+  }
+}
+
 const REASONING_LABELS: Record<string, string> = {
   none: "None",
   minimal: "Minimal",
@@ -111,7 +117,7 @@ export async function discoverCodexModels(workingDirectory?: string): Promise<Ag
             .catch(() => null);
 
           if (account && !account.account && account.requiresOpenaiAuth) {
-            throw new Error("Codex CLI is not authenticated. Run `codex login` and try again.");
+            throw new CodexCatalogSignedOut();
           }
 
           return await listAllModels(rpc);

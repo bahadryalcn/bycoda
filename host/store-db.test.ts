@@ -42,7 +42,7 @@ it("names a store queue owner that is still holding, before it ever returns", as
   await database.ready;
   cleanups.push(() => database.close());
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   try {
     let release!: () => void;
     let entered!: () => void;
@@ -769,7 +769,8 @@ it("refreshes a prepared guard for an explicit check after external work", async
   const prepare = vi.fn(async () => {
     expect(store.db.ownsScope).toBe(false);
     const prepared = generation;
-    return () => store.db.ownsScope && prepared === generation;
+    // A read checks before it starts; only the explicit check runs inside admission.
+    return () => prepared === generation && (prepared === 0 || store.db.ownsScope);
   });
   await store.db.withAuthorization({ prepare, check }, async () => {
     await store.projects();
@@ -1190,4 +1191,177 @@ it("logs bounded stage timings: queue wait, guard, worker execution, round trip 
   expect(Number(/worker=(\d+)ms/.exec(line!)?.[1])).toBeLessThanOrEqual(roundTrip);
   // Numbers only: no SQL text, bound parameters or payloads.
   expect(line).not.toMatch(/stage_probe|secret-payload-value|INSERT|BEGIN/);
+});
+
+async function walDatabase(options: { readers?: number } = {}) {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-read-pool-"));
+  const database = new StoreDatabase(
+    join(directory, "host.db"),
+    new URL("./store-worker.mjs", import.meta.url),
+    options,
+  );
+  cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+  cleanups.push(() => database.close());
+  // The first writer scope is what lets reader connections start, as the store's own
+  // initialization is.
+  await database.scope(async () => {
+    await database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000");
+    await database.exec("CREATE TABLE notes (id INTEGER PRIMARY KEY, value TEXT NOT NULL)");
+  });
+  return database;
+}
+const countNotes = async (database: StoreDatabase) =>
+  Number((await database.prepare("SELECT count(*) AS n FROM notes").get())?.n);
+
+it("serves read scopes while a long writer scope holds the queue", async () => {
+  const database = await walDatabase();
+  await database.scope(async () => {
+    await database.prepare("INSERT INTO notes(value) VALUES ('committed')").run();
+  });
+  const entered = gate();
+  const release = gate();
+  const writer = database.scope(async () => {
+    entered.resolve();
+    await release.promise;
+  });
+  await entered.promise;
+  // Nothing from the writer queue is needed: the reads finish while it is still held.
+  const counts = await Promise.all([
+    database.readScope(() => countNotes(database)),
+    database.readScope(() => countNotes(database)),
+    database.readScope(() => countNotes(database)),
+  ]);
+  expect(counts).toEqual([1, 1, 1]);
+  expect(await database.dataVersion()).toEqual(expect.any(Number));
+  release.resolve();
+  await writer;
+});
+
+it("shows a read scope only committed state and the writer scope its own writes", async () => {
+  const database = await walDatabase();
+  const inserted = gate();
+  const release = gate();
+  const writer = database.scope(async () => {
+    await database.exec("BEGIN IMMEDIATE");
+    await database.prepare("INSERT INTO notes(value) VALUES ('uncommitted')").run();
+    // Inside the owner, a read scope runs on the writer connection.
+    expect(await database.readScope(() => countNotes(database))).toBe(1);
+    inserted.resolve();
+    await release.promise;
+    await database.exec("COMMIT");
+  });
+  await inserted.promise;
+  expect(await database.readScope(() => countNotes(database))).toBe(0);
+  release.resolve();
+  await writer;
+  expect(await database.readScope(() => countNotes(database))).toBe(1);
+});
+
+it("reads every statement of one read scope from one snapshot", async () => {
+  const database = await walDatabase();
+  const firstRead = gate();
+  const committed = gate();
+  const read = database.readScope(async () => {
+    const before = await countNotes(database);
+    firstRead.resolve();
+    await committed.promise;
+    return [before, await countNotes(database)];
+  });
+  await firstRead.promise;
+  await database.scope(async () => {
+    await database.prepare("INSERT INTO notes(value) VALUES ('later')").run();
+  });
+  committed.resolve();
+  expect(await read).toEqual([0, 0]);
+  expect(await database.readScope(() => countNotes(database))).toBe(1);
+});
+
+it("queues read scopes beyond the reader count and rejects a write inside one", async () => {
+  const database = await walDatabase({ readers: 1 });
+  const entered = gate();
+  const release = gate();
+  const first = database.readScope(async () => {
+    entered.resolve();
+    await release.promise;
+    return "first";
+  });
+  await entered.promise;
+  const order: string[] = [];
+  const second = database.readScope(async () => order.push("second"));
+  const aborted = new AbortController();
+  const third = database.readScope(async () => order.push("third"), aborted.signal);
+  aborted.abort();
+  await expect(third).rejects.toThrow(/cancelled/);
+  expect(order).toEqual([]);
+  release.resolve();
+  expect(await first).toBe("first");
+  await second;
+  expect(order).toEqual(["second"]);
+  await expect(
+    database.readScope(() => database.prepare("INSERT INTO notes(value) VALUES ('x')").run()),
+  ).rejects.toThrow(/cannot write/);
+  expect(await countNotes(database)).toBe(0);
+});
+
+it("falls back to the writer for in-memory databases and when the pool is off", async () => {
+  const memory = new StoreDatabase(":memory:");
+  await memory.ready;
+  cleanups.push(() => memory.close());
+  await memory.exec("CREATE TABLE notes (id INTEGER PRIMARY KEY, value TEXT NOT NULL)");
+  const viaWriter = vi.spyOn(memory, "scope");
+  expect(await memory.readScope(() => countNotes(memory))).toBe(0);
+  expect(viaWriter).toHaveBeenCalled();
+
+  const off = await walDatabase({ readers: 0 });
+  const offScope = vi.spyOn(off, "scope");
+  expect(await off.readScope(() => countNotes(off))).toBe(0);
+  expect(offScope).toHaveBeenCalled();
+
+  vi.stubEnv("BYCODA_HOST_READ_POOL", "0");
+  try {
+    const flagged = await walDatabase();
+    const flaggedScope = vi.spyOn(flagged, "scope");
+    expect(await flagged.readScope(() => countNotes(flagged))).toBe(0);
+    expect(flaggedScope).toHaveBeenCalled();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it("uses the writer for reads of a database that is not in WAL mode", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-read-pool-delete-"));
+  cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+  const database = new StoreDatabase(join(directory, "host.db"));
+  cleanups.push(() => database.close());
+  await database.scope(() => database.exec("CREATE TABLE notes (id INTEGER, value TEXT)"));
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    expect(await database.readScope(() => countNotes(database))).toBe(0);
+    expect(await database.readScope(() => countNotes(database))).toBe(0);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+it("admits scopes without a timer per scope and one watchdog while busy", async () => {
+  const database = await walDatabase();
+  const intervals = vi.spyOn(globalThis, "setInterval");
+  const timeouts = vi.spyOn(globalThis, "setTimeout");
+  try {
+    await Promise.all(
+      Array.from({ length: 50 }, () =>
+        database.scope(async () => {
+          await database.prepare("INSERT INTO notes(value) VALUES ('x')").run();
+        }),
+      ),
+    );
+    expect(intervals).not.toHaveBeenCalled();
+    // The deadline timer of each scope aside, the stuck-holder watchdog is one timer, and
+    // an idle database keeps none of its own.
+    const watchdogs = timeouts.mock.calls.filter(([, delay]) => delay === 15_000);
+    expect(watchdogs.length).toBeLessThanOrEqual(1);
+  } finally {
+    intervals.mockRestore();
+    timeouts.mockRestore();
+  }
 });

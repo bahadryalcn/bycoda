@@ -7,7 +7,7 @@ import { CrewManagedBar, useCrewManagedSession } from "../../crews/public/manage
 import { AssistantManagedBadge } from "./AssistantManagedBadge";
 import { SessionPanelTargetsContext, SessionPanelTargetHost } from "./SessionPanelTargets";
 import { AssistantSessionControl } from "./AssistantSessionControl";
-import { useSessionLifecycleActions } from "./SessionLifecycleControl";
+import { useSessionLifecycleActions, type RemoteLifecycleTarget } from "./SessionLifecycleControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -118,6 +118,7 @@ import { useSubagentRelay } from "./useSubagentRelay";
 import { dockTurnOpen, isBackgroundOnly } from "../model/activityDock";
 import { requestOpenSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
+import type { InlineVisualHostRoute } from "../hooks/useInlineVisualSource";
 import type { CodeExecutionScope } from "./CodeExecutionContext";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import { EditFromHereDialog } from "./EditFromHereDialog";
@@ -319,6 +320,8 @@ export type SessionPaneProps = {
   remoteHistoryError?: string;
   onLoadRemoteHistory?: () => Promise<number | void> | void;
   onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
+  inlineVisualHost?: InlineVisualHostRoute;
+  remoteLifecycleTarget?: RemoteLifecycleTarget;
 };
 
 type Props = SessionPaneProps & {
@@ -416,6 +419,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteFeatures,
   remoteSessionLoading = false,
   remoteSessionStarted = false,
+  remoteLifecycleTarget,
   managedWorkspaceCreationReady = false,
   headerStatus,
   interruptedTurn,
@@ -504,6 +508,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteHistoryError,
   onLoadRemoteHistory,
   onLoadRemoteBlock,
+  inlineVisualHost,
 }: Props) {
   const performanceTraceId = useSessionPerformanceTrace(session.id);
   const rootParentRef = useRef<ParentInputHandle | null>(null);
@@ -1315,7 +1320,25 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const providerGoalCommand = useStableCallback((command: "/goal resume" | "/goal clear") =>
     onSubmit(session.id, command, [], { intent: "default" }),
   );
-  // One status stack above the card: running work, goal, interrupted turn, provider retry.
+  const goalControl = stableSession.providerGoal ? (
+    <SessionProviderGoal
+      key={`${session.id}:${session.providerSessionId}`}
+      session={stableSession}
+      blockedReason={
+        sendBlockedReason ||
+        (managed ||
+        editingLastTurn ||
+        stableSession.worktreeRemoved ||
+        stableSession.inboxAsk ||
+        rewindingMessage ||
+        workspaceSwitchingSessionId === session.id ||
+        windowMovingSessionIds?.has(session.id)
+          ? t("Messaging is unavailable in this conversation.")
+          : undefined)
+      }
+      onCommand={providerGoalCommand}
+    />
+  ) : undefined;
   const composerNotices = (
     <>
       <ApprovalDecisionProvider {...approvalContext}>
@@ -1339,25 +1362,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
           onStopAgent={stopDockAgent}
           onStopAll={stopDockAll}
           delegatedAgents={delegatedAgents}
+          goalControl={goalControl}
         />
       </ApprovalDecisionProvider>
-      <SessionProviderGoal
-        key={`${session.id}:${session.providerSessionId}:${session.providerGoal?.status}`}
-        session={stableSession}
-        blockedReason={
-          sendBlockedReason ||
-          (managed ||
-          editingLastTurn ||
-          stableSession.worktreeRemoved ||
-          stableSession.inboxAsk ||
-          rewindingMessage ||
-          workspaceSwitchingSessionId === session.id ||
-          windowMovingSessionIds?.has(session.id)
-            ? t("Messaging is unavailable in this conversation.")
-            : undefined)
-        }
-        onCommand={providerGoalCommand}
-      />
       <InterruptedNotice
         session={stableSession}
         interruptedTurn={interruptedTurn}
@@ -1574,6 +1581,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     cwd: session.cwd,
     local: !remote,
     hasMessages,
+    remoteTarget: remoteLifecycleTarget,
   });
   const notesAction: ExpandingButtonGroupItem | null =
     notesEnabled && visible && focused
@@ -1934,6 +1942,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           : onLoadRemoteHistory
                       }
                       onLoadRemoteBlock={onLoadRemoteBlock}
+                      inlineVisualHost={inlineVisualHost}
                       canRewindMessage={canRewindMessage}
                       onRewindMessage={rewindMessage}
                       busy={!!session.busy}

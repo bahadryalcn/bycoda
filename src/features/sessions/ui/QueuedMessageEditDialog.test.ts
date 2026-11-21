@@ -66,7 +66,7 @@ describe("QueuedMessageEditDialog", () => {
     act(() => field.setSelectionRange(10, 10));
     expect([field.selectionStart, field.selectionEnd]).toEqual([8, 8]);
     act(() => field.setSelectionRange(9, 13));
-    expect([field.selectionStart, field.selectionEnd]).toEqual([8, 16]);
+    expect([field.selectionStart, field.selectionEnd]).toEqual([8, field.value.length]);
   });
   it("keeps a rejected queue edit available for correction and retry", async () => {
     const onSave = vi.fn().mockImplementationOnce(() => {
@@ -133,8 +133,30 @@ describe("QueuedMessageEditDialog", () => {
   });
   it("starts with the full text and its attachment chips", async () => {
     const { field } = await open();
-    expect(field.value).toBe("look at [image1]");
+    expect(field.value).toBe("look at [Image 1 · shot.png · 1 B]");
     expect(document.body.querySelector('[aria-label="Remove shot.png"]')).not.toBeNull();
+  });
+
+  it("pastes copied prose with a single reference for the attached image", async () => {
+    const file = message.attachments[0];
+    vi.spyOn(attachmentApi, "attachmentsFromFiles").mockResolvedValue([file]);
+    const { field, button, onSave } = await open({
+      message: { id: "empty", text: "Before replace after", attachments: [] },
+    });
+    field.setSelectionRange(7, 14);
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: (type: string) =>
+          type === "text/html"
+            ? '<img data-bycoda-file="shot.png" src="data:image/png;base64,AA==">'
+            : "[image1] See image",
+      },
+    });
+    await act(async () => field.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenCalledWith("Before See image [Image 1 · 1 B] after", [file]);
   });
 
   it("removing a chip removes its token", async () => {

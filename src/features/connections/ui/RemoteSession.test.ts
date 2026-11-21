@@ -2576,7 +2576,7 @@ function offerRemoteAccounts(includeDefault = true) {
 }
 
 it.each([true, false])(
-  "shows the remote account in the composer with the Host default offered: %s",
+  "shows only named remote accounts in the composer when the Host includes its CLI profile: %s",
   async (includeDefault) => {
     offerRemoteAccounts(includeDefault);
     openExistingChat();
@@ -2590,8 +2590,9 @@ it.each([true, false])(
         '[role="radiogroup"][aria-label="Account"]',
       );
       expect(accounts?.textContent).toContain("Remote work");
-      expect(accounts?.textContent?.includes("Host default")).toBe(includeDefault);
+      expect(accounts?.textContent).not.toContain("Host default");
     });
+    expect(commands).toHaveLength(0);
     const account = [
       ...container.ownerDocument.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
     ].find((button) => button.textContent?.includes("Remote work"))!;

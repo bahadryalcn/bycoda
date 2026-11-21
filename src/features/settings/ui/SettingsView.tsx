@@ -321,7 +321,10 @@ export function SettingsView({
   // One header row per page: identity on the left, 28px ghost icon actions on the right.
   const pageBar = (
     <header
-      {...surfaceAttributes({ variant: "canvas" }, "settings-page-bar bycoda-settings-toolbar")}
+      {...surfaceAttributes(
+        { variant: "canvas", ...(embedded ? { frame: "pane", edge: "block-end" } : {}) },
+        "settings-page-bar bycoda-settings-toolbar",
+      )}
     >
       <div className="settings-page-bar-inner">
         <div className="bycoda-settings-category-picker">
@@ -338,6 +341,11 @@ export function SettingsView({
             onChange={(value) => onReveal(value as SettingsSectionId, null)}
           />
         </div>
+        {embedded ? (
+          <Text as="span" size="secondary" tone="secondary" className="bycoda-settings-breadcrumb">
+            {t("Settings")} <span aria-hidden="true">/</span>
+          </Text>
+        ) : null}
         <Heading size="page" truncate className="settings-page-title" tabIndex={-1}>
           {settingsSectionLabel(section)}
         </Heading>

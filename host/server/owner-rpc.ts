@@ -472,6 +472,7 @@ const handlers: Record<
   "sessions.queue.lease": handleSessionsRpc,
   "sessions.syncChunk": handleSessionsRpc,
   "sessions.block": handleSessionsRpc,
+  "sessions.inlineVisual": handleSessionsRpc,
   "sessions.workedTime": handleSessionsRpc,
   "sessions.get": handleSessionsRpc,
   "sessions.contextual.preview": handleSessionsRpc,

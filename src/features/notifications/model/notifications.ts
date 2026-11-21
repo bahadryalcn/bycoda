@@ -2,6 +2,7 @@ import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 import { invoke } from "@tauri-apps/api/core";
 import { projectName } from "../../../shared/lib/paths";
 import { t } from "../../../shared/i18n";
+import { sessionDelegationParent } from "../../../shared/model/host-contracts/delegation";
 import type { Session } from "../../sessions/model/session";
 import { loadSoundsEnabled, playCue } from "../../settings/model/sounds";
 import { isProjectLocked } from "../../group-lock/model/groupLock";
@@ -589,7 +590,12 @@ export async function announceSessionFinished(
 }
 
 async function announceFinished(session: Session, sessionVisible: boolean): Promise<void> {
-  if (session.inboxAsk) return;
+  if (
+    session.inboxAsk ||
+    session.orchestrationLeadId ||
+    sessionDelegationParent(session)?.kind === "subagent"
+  )
+    return;
   const occurredAt = Date.now();
   const project = knownNotificationProject(session.cwd);
   if (!project) return;

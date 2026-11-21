@@ -454,8 +454,9 @@ it("returns the Host save promise to the shared leave guard", async () => {
 
 it("starts an empty catalog with setup instead of the role assignment form", async () => {
   await renderScreen([]);
-  expect(container.textContent).toContain("Choose the models for unattended work");
-  expect(container.textContent).toContain("Plan with AI");
+  expect(container.textContent).toContain("No models configured");
+  expect(container.textContent).toContain("Setup options");
+  expect(container.textContent).not.toContain("Plan setup with AI");
   expect(tabButton("Models & order").getAttribute("aria-selected")).toBe("true");
 });
 
@@ -598,7 +599,7 @@ it("edits the group effort and saves it with the draft", async () => {
   )!;
   await act(async () => high.click());
   const save = [...container.querySelectorAll("button")].find(
-    (item) => item.textContent === "Save",
+    (item) => item.textContent === "Save changes",
   );
   await act(async () => save!.click());
   expect(saves[0]!.routing.pools[0]!.effort).toBe("high");
@@ -656,7 +657,7 @@ it("saves a job choice and a model edit together with one Save", async () => {
   await act(() => picker.onChange("codex", "gpt-new"));
   expect(container.textContent).toContain("unsaved change");
   const save = [...container.querySelectorAll("button")].find(
-    (item) => item.textContent === "Save",
+    (item) => item.textContent === "Save changes",
   );
   expect(save, "Save").toBeTruthy();
   await act(async () => save!.click());
@@ -664,6 +665,6 @@ it("saves a job choice and a model edit together with one Save", async () => {
   expect(saves[0]!.routing.roles["task.worker"]).toEqual({ kind: "pool", poolId: "p" });
   expect(saves[0]!.routing.entries.some((item) => item.model === "gpt-new")).toBe(true);
   expect(
-    [...container.querySelectorAll("button")].filter((item) => item.textContent === "Save"),
+    [...container.querySelectorAll("button")].filter((item) => item.textContent === "Save changes"),
   ).toHaveLength(1);
 });

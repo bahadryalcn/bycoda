@@ -3,8 +3,77 @@ import { mkdir } from "node:fs/promises";
 
 const captures = "temp/verification/2026-11-04-chat-thumbnails";
 
+test("inline draft references open and keep a shared baseline", async ({ page }) => {
+  await page.goto("/tests/browser/chat/attachment-cards.html?references&opener");
+  const section = page.getByRole("region", { name: "Reference tokens", exact: true });
+  const field = section.getByRole("textbox", { name: "Reference token message" });
+  const draft =
+    "Review /frontend-design /group-interface-design [image1] and https://example.com/design";
+  await field.fill(draft);
+  const skill = section.getByRole("button", { name: "frontend-design", exact: true });
+  const group = section.getByRole("button", { name: "Design interfaces", exact: true });
+  await expect(skill).toBeVisible({ timeout: 2000 });
+  await expect(group).toHaveCSS("cursor", "pointer");
+  expect((await skill.boundingBox())?.y).toBe((await group.boundingBox())?.y);
+  await skill.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "frontend-design" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(skill).toBeFocused();
+  await group.click();
+  await expect(page.getByRole("dialog", { name: "Design interfaces" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(group).toBeFocused();
+  const image = section
+    .locator("[data-composer-reference-actions]")
+    .getByRole("button", { name: /Open mountain-reference/ });
+  await image.click();
+  await expect(page.getByRole("dialog").locator("img")).toBeVisible();
+  await page.keyboard.press("Escape");
+  const link = section.getByRole("link", { name: "https://example.com/design" });
+  await expect(link).toHaveCSS("cursor", "pointer");
+  await link.click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-opened-url",
+    "https://example.com/design",
+  );
+  await expect(field).toHaveValue(draft);
+
+  const named =
+    "Before[Image: fixture.png; ref=image_image] [file2] [Image: lost.png; ref=image_other]";
+  await field.fill(named);
+  await image.click();
+  await expect(page.getByRole("dialog").locator("img")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await section.getByRole("button", { name: "Open usage.csv" }).click();
+  await expect(page.getByRole("dialog").getByText("composer")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await section.getByRole("button", { name: "lost.png", exact: true }).click();
+  await expect(
+    page.getByRole("dialog").getByText("Preview unavailable", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(field).toHaveValue(named);
+
+  const longUrl = `https://example.org/${"very-long-path/".repeat(15)}?keep=1`;
+  await field.fill(`Review [site](${longUrl}) afterwards`);
+  const longLink = section.getByRole("link", { name: longUrl });
+  await expect(longLink).toHaveAttribute("href", longUrl);
+  await longLink.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("html")).toHaveAttribute("data-opened-url", longUrl);
+  await field.fill("/group-interface-design");
+  await field.press("Home");
+  await field.pressSequentially("Review");
+  await expect(field).toHaveValue("Review /group-interface-design");
+  await expect(group).toBeVisible();
+  await field.press("Control+z");
+  await expect(field).not.toHaveValue("Review /group-interface-design");
+  await expect(group).toBeVisible();
+});
+
 test("reference token icons preserve editable text in both themes and widths", async ({ page }) => {
-  const evidence = "temp/verification/composer-reference-fix";
+  const evidence = "temp/verification/composer-inline-actions";
   await mkdir(evidence, { recursive: true });
   for (const theme of ["light", "dark"]) {
     for (const width of [1280, 800]) {
@@ -19,12 +88,11 @@ test("reference token icons preserve editable text in both themes and widths", a
       expect(raw).toContain("[Image\u00a01\u00a0·");
       expect(raw).toContain("@jira:PFDEV-1196");
       const overlay = section.locator("[data-reference-overlay]");
-      // Skill chips are the source text at body size (no icon); the textarea keeps the raw token.
-      await expect(overlay.locator("[data-composer-skill-token]")).toHaveText([
-        "/frontend-design",
-        "$frontend-design",
-      ]);
-      await expect(overlay.locator("[data-composer-skill-token] svg")).toHaveCount(0);
+      // The visible skill names use icons while the textarea keeps the raw invocation.
+      await expect(
+        overlay.locator("[data-composer-skill-token] [data-draft-token-label]"),
+      ).toHaveText(["frontend-design", "frontend-design"]);
+      await expect(overlay.locator("[data-composer-skill-token] svg")).toHaveCount(2);
       await expect(overlay.locator("[data-composer-attachment-kind] svg")).toHaveCount(3);
       await expect(overlay.locator("[data-mcp-tag] svg")).toHaveCount(1);
       await expect(overlay.locator("[data-work-item-mention] svg")).toHaveCount(3);
@@ -63,6 +131,16 @@ test("reference token icons preserve editable text in both themes and widths", a
       }));
       expect(dimensions).toEqual({ section: true, document: true, editor: true });
       await page.screenshot({ path: `${evidence}/fixture-${theme}-${width}.png`, fullPage: true });
+      await field.fill(
+        "Review /frontend-design /group-interface-design [image1] and https://example.com/design",
+      );
+      const group = section.getByRole("button", { name: "Design interfaces", exact: true });
+      await group.click();
+      await expect(page.getByRole("dialog", { name: "Design interfaces" })).toBeVisible();
+      await page.screenshot({
+        path: `${evidence}/group-${theme}-${width}.png`,
+        animations: "disabled",
+      });
     }
   }
 });

@@ -4,6 +4,44 @@ import { mkdirSync } from "node:fs";
 // Leave room for the cold Vite module graph before the interaction assertions.
 test.setTimeout(120_000);
 
+test("commit generation notice fits the narrow Changes panel and closes from the keyboard", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+  const evidence = "temp/verification/git-generation-notice";
+  mkdirSync(evidence, { recursive: true });
+  for (const variant of ["review", "suggestion"]) {
+    await page.goto(`/tests/browser/source-control/git-generation.html?notice&${variant}`);
+    const notice = page
+      .getByRole("status")
+      .filter({ hasText: /Review the message|AI message ready/ });
+    const dismiss = page.getByRole("button", { name: "Dismiss notice" });
+    const draft = page.getByRole("textbox", { name: "Commit message" });
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      for (const width of [1280, 800, 300]) {
+        await page.setViewportSize({ width, height: 320 });
+        await expect(dismiss).toBeVisible();
+        const copy = (await notice.boundingBox())!;
+        const close = (await dismiss.boundingBox())!;
+        expect(copy.x + copy.width).toBeLessThanOrEqual(close.x);
+        expect(Math.abs(copy.y + copy.height / 2 - close.y - close.height / 2)).toBeLessThan(2);
+        await page.getByRole("complementary").screenshot({
+          path: `${evidence}/${variant}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      }
+    }
+    await dismiss.focus();
+    await page.keyboard.press("Enter");
+    await expect(notice).toHaveCount(0);
+    await expect(draft).toHaveValue("Describe the staged changes");
+  }
+});
+
 test("commit generation keeps model, effort and speed together beside the wand", async ({
   page,
 }) => {

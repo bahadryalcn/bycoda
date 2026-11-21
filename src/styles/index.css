@@ -758,6 +758,7 @@ html.theme-light {
   );
   /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
   --ui-control-border: color-mix(in oklab, var(--color-content) 44%, var(--ui-surface-muted));
+  --ui-dialog-frame: color-mix(in oklab, var(--ui-pane-border), var(--ui-control-border) 30%);
   /* Ordinary ranges use the exact contrast pair on an opaque fill, including
      content with its own inverse background. Overlay editors keep a tint. */
   /* Before the derived pair is published the plain accent is paired with dark ink. */
@@ -1523,12 +1524,41 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
    Native glass keeps the window translucent: the main pane's glass owns that fill. */
 .chat-pane-background {
   background-color: var(--ui-chat-pane-canvas);
-  --ui-chat-composer-surface: color-mix(in oklch, var(--ui-composer-surface) 80%, transparent);
+}
+
+:is(html, [data-chat-message-preview]) {
+  --ui-chat-message-color: var(--ui-tint-base);
+}
+:is(html, [data-chat-message-preview])[data-chat-message-color="neutral"] {
+  --ui-chat-message-color: var(--palette-canvasPureDark);
+}
+html.theme-light[data-chat-message-color="neutral"],
+html.theme-light [data-chat-message-preview][data-chat-message-color="neutral"] {
+  --ui-chat-message-color: var(--palette-canvasPureLight);
+}
+
+/* The composer and floating chat surfaces share one glass treatment. Streaming
+   uses the opaque fallback so each new frame does not re-sample the backdrop. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html {
+    --ui-chat-glass-fill: var(--ui-activity-dock-glass);
+    --ui-chat-glass-edge: var(--ui-activity-dock-edge);
+    --ui-chat-glass-filter: var(--ui-activity-dock-filter);
+  }
+}
+
+html[data-performance-no-blur],
+[data-session-streaming="true"] {
+  --ui-chat-glass-fill: initial;
+  --ui-chat-glass-edge: initial;
+  --ui-chat-glass-filter: initial;
 }
 
 @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  .chat-pane-background {
-    --ui-chat-composer-surface: var(--ui-composer-surface);
+  html {
+    --ui-chat-glass-fill: initial;
+    --ui-chat-glass-edge: initial;
+    --ui-chat-glass-filter: initial;
   }
 }
 
@@ -2445,9 +2475,8 @@ html.has-user-accent .user-message-bubble[data-draft="true"] {
 }
 
 /*
- * After a send, the live turn fills the transcript viewport so the prompt sits
- * at the top. Switching tabs keeps this. Closing the tab drops it, so opening
- * that conversation again uses the true bottom (latest reply on the composer).
+ * The active turn fills the transcript viewport so the prompt sits at the top.
+ * Once it settles, the transcript ends at the latest reply.
  */
 /* Not inherited: resizing the transcript restyles the anchored turn only, not its rows. */
 @property --transcript-viewport {

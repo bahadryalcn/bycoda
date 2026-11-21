@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { HARNESS_TITLE, type Session } from "../model/session";
 import { isSessionGoal, type SessionGoal } from "../model/providerGoal";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { ClampText } from "../../../shared/ui/ClampText";
+import { Popover } from "../../../shared/ui/Popover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Text, type TextTone } from "../../../shared/ui/Text";
 import { CircleDot } from "../../../shared/ui/icons";
@@ -29,6 +29,8 @@ export function SessionProviderGoal({
 }) {
   const t = useT();
   const format = useFormat();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
   const [failed, setFailed] = useState(false);
   const goal = session.providerGoal;
   if (
@@ -63,67 +65,91 @@ export function SessionProviderGoal({
     }
   };
   return (
-    <div data-provider-goal={goal.status} className="flex min-w-0 flex-col gap-1">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-        <Text
-          as="span"
-          size="caption"
-          weight="medium"
-          tone={status.tone}
-          className="flex items-center gap-2"
-        >
-          <CircleDot className="icon-sm shrink-0" aria-hidden />
-          {t(status.label)}
-        </Text>
-        {usage.length ? (
-          <Text as="span" size="caption" tone="muted">
-            {usage.join(" · ")}
-          </Text>
-        ) : null}
-        <div className="ms-auto flex shrink-0 items-center gap-1">
-          {goal.status !== "active" && goal.status !== "complete" && !session.busy ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!!disabledReason}
-              disabledReason={disabledReason}
-              onClick={() => run("/goal resume")}
-            >
-              {t("Resume goal")}
-            </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!!disabledReason}
-            disabledReason={disabledReason}
-            onClick={() => run("/goal clear")}
-          >
-            {t("Clear goal")}
-          </Button>
-        </div>
-      </div>
-      <ClampText
-        key={`${goal.providerSessionId}:${goal.objective}`}
-        lines={2}
-        size="caption"
-        tone="secondary"
-        wrap="anywhere"
+    <>
+      <Button
+        ref={anchor}
+        data-provider-goal={goal.status}
+        className="ms-auto"
+        variant="ghost"
+        size="xs"
+        expanded={open}
+        opens="up"
+        aria-haspopup="dialog"
+        aria-label={t(status.label)}
+        startIcon={<CircleDot className="icon-sm" aria-hidden />}
+        onClick={() => setOpen(!open)}
       >
-        {goal.objective}
-      </ClampText>
-      {goal.status === "blocked" ? (
-        <Text size="caption" tone="muted">
-          {t("{p0} did not provide a reason for this goal's blocked state.", {
-            p0: HARNESS_TITLE[session.harness],
-          })}
-        </Text>
+        {t(goal.status === "active" ? "Goal" : status.label)}
+      </Button>
+      {open ? (
+        <Popover
+          anchor={anchor}
+          side="top"
+          align="end"
+          width={356}
+          kind="dialog"
+          solid
+          aria-label={t("Goal")}
+          onDismiss={() => setOpen(false)}
+        >
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+              <Text
+                as="span"
+                size="caption"
+                weight="medium"
+                tone={status.tone}
+                className="flex items-center gap-2"
+              >
+                <CircleDot className="icon-sm shrink-0" aria-hidden />
+                {t(status.label)}
+              </Text>
+              {usage.length ? (
+                <Text as="span" size="caption" tone="muted">
+                  {usage.join(" · ")}
+                </Text>
+              ) : null}
+            </div>
+            <Text size="caption" tone="secondary" wrap="anywhere">
+              {goal.objective}
+            </Text>
+            <div className="flex flex-wrap justify-end gap-1">
+              {goal.status !== "active" && goal.status !== "complete" && !session.busy ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!!disabledReason}
+                  disabledReason={disabledReason}
+                  onClick={() => run("/goal resume")}
+                >
+                  {t("Resume goal")}
+                </Button>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!!disabledReason}
+                disabledReason={disabledReason}
+                onClick={() => run("/goal clear")}
+              >
+                {t("Clear goal")}
+              </Button>
+            </div>
+            {goal.status === "blocked" ? (
+              <Text size="caption" tone="muted">
+                {t("{p0} did not provide a reason for this goal's blocked state.", {
+                  p0: HARNESS_TITLE[session.harness],
+                })}
+              </Text>
+            ) : null}
+            {failed ? (
+              <InlineError>
+                {t("Goal action was not sent. Try again when the conversation is ready.")}
+              </InlineError>
+            ) : null}
+          </div>
+        </Popover>
       ) : null}
-      {failed ? (
-        <InlineError>
-          {t("Goal action was not sent. Try again when the conversation is ready.")}
-        </InlineError>
-      ) : null}
-    </div>
+    </>
   );
 }

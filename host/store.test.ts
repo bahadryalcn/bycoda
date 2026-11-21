@@ -1218,6 +1218,61 @@ it("keeps session revisions in bounded metadata memory after the first indexed r
   expect((await reopened.sessionStateMetadata("metadata"))?.status).toBe("idle");
   expect(prepare).toHaveBeenCalledTimes(1);
 });
+describe("reads beside the writer queue", () => {
+  it("serves summaries, projects and adopted rows while a writer scope holds the queue", async () => {
+    const store = new HostStore(join(open(), "beside-writer.db"));
+    cleanups.push(async () => await store.close());
+    const project = await store.addProject("/beside-writer", "Beside");
+    await store.save(session("beside", project.id), {});
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const writer = store.db.storeScope(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    try {
+      expect(await store.summaries(project.id)).toHaveLength(1);
+      expect((await store.project(project.id)).name).toBe("Beside");
+      expect((await store.projects()).length).toBe(1);
+      expect(await store.adopted(project.id)).toEqual([]);
+    } finally {
+      release.resolve();
+      await writer;
+    }
+  });
+  it("shows an unflushed save and then its flush, never an older row than the version it caches", async () => {
+    const path = join(open(), "beside-pending.db");
+    const store = new HostStore(path);
+    cleanups.push(async () => await store.close());
+    const project = await store.addProject("/beside-pending", "Pending");
+    let value = await store.save(session("moving", project.id), {});
+    expect((await store.summaries(project.id))[0]?.revision).toBe(value.revision);
+    for (let index = 0; index < 5; index++) {
+      value = await store.save(
+        { ...value, revision: value.revision + 1, updatedAt: value.updatedAt + 1 },
+        {},
+        { deferred: true },
+      );
+      // Unwritten state wins over the stored row, cached or not.
+      expect((await store.summaries(project.id))[0]?.revision).toBe(value.revision);
+    }
+    await store.flushAll();
+    expect((await store.summaries(project.id))[0]?.revision).toBe(value.revision);
+    // The reader connection sees the flushed commit and a rebuilt list agrees with the cache.
+    const reopened = new HostStore(path);
+    cleanups.push(async () => await reopened.close());
+    expect((await reopened.summaries(project.id))[0]?.revision).toBe(value.revision);
+  });
+  it("sees a project registered by a committed transaction on the next read", async () => {
+    const store = new HostStore(join(open(), "beside-registry.db"));
+    cleanups.push(async () => await store.close());
+    await store.addProject("/beside-registry-a", "A");
+    expect((await store.projects()).map((row) => row.name)).toEqual(["A"]);
+    await store.addProject("/beside-registry-b", "B");
+    expect((await store.projects()).map((row) => row.name)).toEqual(["A", "B"]);
+  });
+});
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });

@@ -45,6 +45,13 @@
     min-block-size: var(--ui-leading-secondary);
     margin-block: 0;
   }
+  .centerActions .actions {
+    align-self: center;
+    margin-block: 0;
+  }
+  .centerDismiss {
+    align-self: center;
+  }
 }
 /* A tone is a pairing of border and subtle surface; the glyph carries the ink, the text stays neutral. */
 .alert {

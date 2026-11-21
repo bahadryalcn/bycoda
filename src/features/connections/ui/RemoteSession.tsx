@@ -147,7 +147,11 @@ import {
 } from "../model/connections";
 import { beginRemoteCreate, endRemoteCreate } from "../model/remoteCreateIntent";
 import { blocksSending, needsSignIn, sendAfterReconnect } from "../model/remoteConnection";
-import { CONTINUE_PROMPT } from "../../sessions/public/inFlight";
+import {
+  CONTINUE_PROMPT,
+  RESUME_PROMPT,
+  usageLimitAfterTargetChange,
+} from "../../sessions/public/inFlight";
 import { consumeOperatorCommand } from "../../sessions/public/operatorCommand";
 import { sameQueuedModelTarget } from "../../sessions/public/messageQueue";
 import {
@@ -580,6 +584,7 @@ function ConnectedRemoteSession({
     error: catalogError,
     loading: catalogLoading,
     refresh: refreshCatalog,
+    retry: retryCatalog,
   } = useRemoteModelCatalog({
     scope: {
       machineId: machine.id,
@@ -2928,6 +2933,12 @@ function ConnectedRemoteSession({
     adoptedAuthorityGeneration: hostSession ? snapshot?.authorityGeneration : undefined,
     hostBinding: hostSessionBinding(shell),
     providerAccountId: selectedProviderAccountId,
+    usageLimit: hostSession
+      ? usageLimitAfterTargetChange(hostSession, {
+          ...configuration,
+          providerAccountId: selectedProviderAccountId,
+        })
+      : undefined,
     cwd: displayPath(project.cwd),
     worktreeCwd: executionCwd === project.cwd ? undefined : displayPath(executionCwd),
     workspaceMode: hostSession ? undefined : draftWorkspaceMode,
@@ -2962,9 +2973,16 @@ function ConnectedRemoteSession({
   };
 
   const catalogFailure = catalog?.errors[configuration.harness] ?? catalogError;
-  const catalogProblem = useQuietRetry(catalogFailure, refreshCatalog, catalogLoading)
+  const visibleCatalogFailure =
+    configuration.harness === "codex" &&
+    catalog?.models.codex?.length &&
+    (/\btimed out\b/i.test(catalogFailure) ||
+      classifyRemoteError(catalogFailure).kind === "temporary")
+      ? ""
+      : catalogFailure;
+  const catalogProblem = useQuietRetry(visibleCatalogFailure, refreshCatalog, catalogLoading)
     ? undefined
-    : catalogFailure;
+    : visibleCatalogFailure;
   /** Settles or sends again the pending command. The Host's receipt settles it; with
    * no receipt the same command is sent again, except shell, cancel, approve and
    * answer, which only a receipt can settle. `automatic` checks run from the pending
@@ -3214,7 +3232,7 @@ function ConnectedRemoteSession({
                     get label() {
                       return t("Retry");
                     },
-                    run: () => refreshCatalog(),
+                    run: retryCatalog,
                   },
                 }
               : undefined;
@@ -3942,6 +3960,15 @@ function ConnectedRemoteSession({
     },
     remoteSessionLoading: !!sessionId && !hostSession && !session.blocks.length,
     remoteSessionStarted: !!sessionId,
+    remoteLifecycleTarget:
+      hostSession && !remoteDeleted && !pageCacheOnly && !blocksSending(connection.status)
+        ? {
+            machineId: machine.id,
+            sessionId: hostSession.id,
+            projectKey: project.key,
+            lastActivityAt: snapshot?.lastActivityAt,
+          }
+        : undefined,
     managedWorkspaceCreationReady: !!descriptor?.capabilities.includes(
       "sessions.managedCreation.v1",
     ),
@@ -3950,6 +3977,14 @@ function ConnectedRemoteSession({
     remoteHistoryError: remoteHistoryError || undefined,
     onLoadRemoteHistory: loadEarlierRemote,
     onLoadRemoteBlock: loadLargeRemoteBlock,
+    inlineVisualHost:
+      !activeSessionId || isLocalSyncMachine(machine)
+        ? undefined
+        : {
+            machineId: machine.id,
+            environmentId: machine.environmentId,
+            sessionId: activeSessionId,
+          },
     sendBlockedReason: remoteDeleted
       ? t("This conversation was deleted on the host.")
       : pageCacheOnly
@@ -4136,7 +4171,7 @@ function ConnectedRemoteSession({
       };
     },
     interruptedTurn,
-    onUsageLimitResume: undefined,
+    onUsageLimitResume: hostSession?.usageLimit ? () => submit(RESUME_PROMPT) : undefined,
     onUsageLimitResumeAtReset: (_, enabled) => usageLimit(enabled ? "arm" : "disarm"),
     onUsageLimitDismiss: () => usageLimit("dismiss"),
     onOpenPlan: (_, blockId) => onOpenPlan(shell.id, blockId),

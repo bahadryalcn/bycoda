@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 // Fixture evidence for the composer reading mode (V2-001). Captures are written
@@ -39,6 +39,174 @@ const url = (query: Record<string, string> = {}, light = false) => {
 const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
+test("shows the complete attached filename in the card and inline while writing", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(url({ attach: "" }));
+  const input = field(page);
+  await input.fill("I wrote this first. Review ");
+  const box = page.locator("[data-composer]");
+  const name = box
+    .locator('[data-attachment-chip="file"]')
+    .getByText("draft-context.txt", { exact: true });
+  await expect(name).toBeVisible();
+  expect(await name.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await box.getByRole("button", { name: /^Insert .* into the message$/ }).click();
+  const label = box.locator(
+    "[data-composer-attachment-kind] [data-draft-token-label] > :last-child",
+  );
+  await expect(label).toBeVisible();
+  await expect(label).toHaveText("draft-context.txt · 7 B");
+  await expect(label).toHaveCSS("text-overflow", "clip");
+  expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await expect(input).toBeFocused();
+  await input.pressSequentially(" and reply.");
+  await expect(input).toHaveValue(/and reply\.$/);
+});
+test("wraps a long attached filename on narrow layouts without losing characters", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  const filename = `${"very-long-export-".repeat(10)}report.txt`;
+  await page.goto(url({ attach: filename, draft: "legacyFile" }));
+  const box = page.locator("[data-composer]");
+  const card = box.locator('[data-attachment-chip="file"]').getByText(filename, { exact: true });
+  await expect(card).toBeVisible();
+  expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  const token = box.locator("[data-full-attachment-label]");
+  await expect(token).toHaveAttribute("data-draft-token-wrapped", "");
+  await expect(token.locator(":scope > :not([aria-hidden])")).toContainText(filename);
+  expect(await box.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await expect(
+    box.getByRole("button", { name: `Open ${filename}`, exact: true }).first(),
+  ).toBeVisible();
+});
+test("opens references from the real session composer in both themes and widths", async ({
+  page,
+}) => {
+  const evidence = "temp/verification/composer-full-filenames";
+  mkdirSync(evidence, { recursive: true });
+  for (const light of [true, false]) {
+    for (const width of [800, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ attach: "", draft: "legacyFile" }, light));
+      const input = field(page);
+      const draft =
+        "I wrote this first. Review [File\u00a01\u00a0·\u00a0draft-context.txt\u00a0·\u00a07\u00a0B] and https://example.com/design";
+      await expect(input).toHaveValue(draft);
+      const references = page.locator("[data-composer-reference-actions]");
+      const file = references.getByRole("button", { name: "Open draft-context.txt" });
+      await expect(file).toHaveCSS("cursor", "pointer");
+      await expect(
+        references.getByRole("link", { name: "https://example.com/design" }),
+      ).toBeVisible();
+      await file.click();
+      await expect(page.getByRole("dialog").getByText("context", { exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(file).toBeFocused();
+      await expect(input).toHaveValue(draft);
+      await page.mouse.move(0, 0);
+      await page.locator("[data-composer]").screenshot({
+        path: `${evidence}/session-${light ? "light" : "dark"}-${width}.png`,
+        animations: "disabled",
+      });
+    }
+  }
+});
+const expectedMessageFill = (node: Locator, opacity: number, opaque = false) =>
+  node.evaluate(
+    (element, { opacity, opaque }) => {
+      const sample = document.createElement("span");
+      sample.style.background = opaque
+        ? "var(--ui-chat-message-color)"
+        : `color-mix(in oklab, var(--ui-chat-message-color) ${opacity}%, transparent)`;
+      element.append(sample);
+      const fill = getComputedStyle(sample).backgroundColor;
+      sample.remove();
+      return fill;
+    },
+    { opacity, opaque },
+  );
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`chat message surfaces and Working ${light ? "light" : "dark"} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ goal: "" }, light));
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        root.classList.add(
+          "has-chat-background",
+          "chat-background-effect-ready",
+          "has-user-accent",
+        );
+        root.style.setProperty(
+          "--chat-background-image",
+          "radial-gradient(currentColor 1px, transparent 1px), linear-gradient(120deg, #234368, #284c46)",
+        );
+        root.style.setProperty("--chat-background-session-opacity", "0.65");
+      });
+      const box = page.locator("[data-composer-box]");
+      const dock = page.locator('[data-activity-dock="working"]');
+      const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
+      const reply = page.locator('[data-selectable-agent-response="reply-39"]');
+      await expect(dock).toBeVisible();
+      await expect(box).toBeVisible();
+      await expect(message).toBeInViewport();
+      await expect(reply).toBeInViewport();
+      await capture(page, `user-message-working-${light ? "light" : "dark"}-${width}`);
+
+      for (const mode of ["glass", "no-blur", "streaming", "forced-colors"] as const) {
+        await page.emulateMedia({ forcedColors: mode === "forced-colors" ? "active" : "none" });
+        await page.evaluate((state) => {
+          document.documentElement.toggleAttribute("data-performance-no-blur", state === "no-blur");
+          const pane = document.querySelector(".chat-pane-background")!;
+          if (state === "streaming") pane.setAttribute("data-session-streaming", "true");
+          else pane.removeAttribute("data-session-streaming");
+        }, mode);
+        const working = await dock.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { fill: style.backgroundColor, filter: style.backdropFilter };
+        });
+        await expect(box).toHaveCSS("background-color", working.fill);
+        await expect(box).toHaveCSS("backdrop-filter", working.filter);
+        for (const [node, opacity] of [
+          [message, 42],
+          [reply, 26],
+        ] as const) {
+          await expect(node).toHaveCSS("backdrop-filter", working.filter);
+          await expect(node).toHaveCSS(
+            "background-color",
+            await expectedMessageFill(node, opacity, mode === "forced-colors"),
+          );
+        }
+      }
+    });
+
+test("saved chat message appearance reaches the real transcript", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "bycoda.appearancePreferences.v1",
+      JSON.stringify({
+        userMessageOpacity: 100,
+        assistantMessageOpacity: 0,
+        messageColor: "neutral",
+      }),
+    );
+  });
+  await page.goto(url());
+  const root = page.locator("html");
+  const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
+  const reply = page.locator('[data-selectable-agent-response="reply-39"]');
+  await expect(root).toHaveAttribute("data-chat-message-color", "neutral");
+  await expect(root).toHaveAttribute("data-chat-assistant-surface-off", "");
+  await expect(reply).toHaveCSS("backdrop-filter", "none");
+  await expect(message).toHaveCSS("background-color", await expectedMessageFill(message, 100));
+  await expect(reply).toHaveCSS("background-color", await expectedMessageFill(reply, 0));
+});
 
 for (const light of [true, false])
   for (const width of [800, 1280])
@@ -94,9 +262,13 @@ for (const light of [true, false])
             return { alpha: sample.getImageData(0, 0, 1, 1).data[3]!, filter: s.backdropFilter };
           });
           expect(actual.alpha).toBeGreaterThan(0);
-          if (mode === "forced-colors") expect(actual.alpha).toBe(255);
-          else expect(actual.alpha).toBeLessThan(255);
-          expect(actual.filter).toBe("none");
+          if (mode === "glass") {
+            expect(actual.alpha).toBeLessThan(255);
+            expect(actual.filter).toContain("blur(");
+          } else {
+            expect(actual.alpha).toBe(255);
+            expect(actual.filter).toBe("none");
+          }
         }
         await expect(field(page)).toHaveValue("Retained composer draft");
         await page.screenshot({

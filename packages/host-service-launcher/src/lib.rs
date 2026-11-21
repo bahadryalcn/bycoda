@@ -54,16 +54,38 @@ impl Configuration {
             .arg("--port")
             .arg(self.port.to_string())
             .current_dir(&self.directory)
-            .env("PATH", &self.path)
             .env_remove("BYCODA_LAUNCHER_RESTARTS")
             .stdin(Stdio::null());
+        #[cfg(not(windows))]
+        command.env("PATH", &self.path);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            command
+                .env("PATH", repair_windows_path(&self.path))
+                .creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
         command
     }
+}
+
+#[cfg(windows)]
+fn repair_windows_path(path: &str) -> String {
+    // An orphan trailing quote can make Rust's PATH parser consume every later entry.
+    // Keep paired quotes, including around directories that contain semicolons.
+    path.split(';')
+        .scan(false, |quoted, entry| {
+            if *quoted || entry.starts_with('"') {
+                if entry.bytes().filter(|byte| *byte == b'"').count() % 2 != 0 {
+                    *quoted = !*quoted;
+                }
+                Some(entry)
+            } else {
+                Some(entry.trim_end_matches('"'))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 fn supervise(

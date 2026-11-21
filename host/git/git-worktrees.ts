@@ -1,4 +1,5 @@
 import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "./git-exec-pool";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
 import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
@@ -17,12 +18,17 @@ import {
   workspacePathKey,
 } from "../workspaces/workspace-paths";
 
-const options = (cwd: string, mutation = false) => ({
+const gitEnv = { GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" };
+const bufferedOptions = (cwd: string, mutation = false) => ({
   cwd,
   windowsHide: true,
-  env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+  env: gitEnv,
   timeout: mutation ? 120_000 : 10_000,
   maxBuffer: 1024 * 1024,
+});
+const options = (cwd: string, mutation = false) => ({
+  ...bufferedOptions(cwd, mutation),
+  env: { ...process.env, ...gitEnv },
 });
 
 /** Stable names are allocated before execution and never renamed by title generation. */
@@ -280,7 +286,7 @@ function listCached(cwd: string, force = false): Promise<HostWorktrees> {
   const entry: CachedList = {
     at: Date.now(),
     generation: listGeneration,
-    promise: exec("git", LIST_ARGS, options(cwd)).then(({ stdout }) => {
+    promise: hostGitExec.exec("git", LIST_ARGS, bufferedOptions(cwd)).then(({ stdout }) => {
       const value = build(stdout);
       entry.value = value;
       return value;

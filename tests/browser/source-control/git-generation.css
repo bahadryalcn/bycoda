@@ -1,6 +1,8 @@
 /* Scope Tailwind scanning to the controls under test in the shared dirty tree. */
 @import "tailwindcss" source(none);
 @source "./git-generation.tsx";
+@source "../../../src/features/source-control/ui/GitFeedback.tsx";
+@source "../../../src/shared/ui/InlineError.tsx";
 @source "../../src/features/source-control/ui/GitGenerationSettings.tsx";
 @source "../../src/features/sessions/ui/ModelPicker.tsx";
 @source "../../src/features/sessions/ui/ModelExtras.tsx";

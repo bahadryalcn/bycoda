@@ -67,9 +67,23 @@ export function SessionSettleAction({
   session: Pick<SessionSummary, "id" | "cwd" | "lastActivityAt">;
   title: string;
 }) {
-  const { available, settled, label, run } = useSessionSettleCommand(session);
+  const command = useSessionSettleCommand(session);
+  return command.available ? <SessionSettleButton command={command} title={title} /> : null;
+}
+
+export type SessionSettleCommand = Pick<
+  ReturnType<typeof useSessionSettleCommand>,
+  "settled" | "label" | "run"
+>;
+
+export function SessionSettleButton({
+  command: { settled, label, run },
+  title,
+}: {
+  command: SessionSettleCommand;
+  title: string;
+}) {
   const [busy, setBusy] = useState(false);
-  if (!available) return null;
   const Icon = settled ? Undo2 : CheckCheck;
   return (
     <InlineAction

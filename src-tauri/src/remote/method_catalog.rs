@@ -198,6 +198,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "sessions.page"
             | "sessions.sideQuestion"
             | "sessions.block"
+            | "sessions.inlineVisual"
             | "sessions.workedTime"
             | "sessions.syncChunk"
             | "sessions.adopted"

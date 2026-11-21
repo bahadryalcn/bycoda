@@ -14,6 +14,15 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 afterEach(() => vi.restoreAllMocks());
 
+function requireCompleteClipboardWrite() {
+  const write = navigator.clipboard.write.bind(navigator.clipboard);
+  vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
+    // Happy DOM normally stores the items before resolving their representations.
+    await Promise.all(items.flatMap((item) => item.types.map((type) => item.getType(type))));
+    await write(items);
+  });
+}
+
 it("reads an empty clipboard as no image rather than as a failure", async () => {
   vi.mocked(invoke).mockRejectedValueOnce("The clipboard does not contain an image.");
   await expect(readClipboardImage()).resolves.toBeNull();
@@ -36,8 +45,15 @@ it("returns clipboard bytes as a PNG file", async () => {
 
 it("copies lazy remote images and documents through their authorized readers", async () => {
   vi.mocked(invoke).mockClear();
-  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
-  const imageReader = vi.fn(async () => btoa("remote image"));
+  let userGesture = true;
+  const write = vi.spyOn(navigator.clipboard, "write").mockImplementation(async ([item]) => {
+    if (!userGesture) throw new DOMException("Clipboard write denied", "NotAllowedError");
+    await Promise.all(item.types.map((type) => item.getType(type)));
+  });
+  const imageReader = vi.fn(async () => {
+    userGesture = false;
+    return btoa("remote image");
+  });
   const documentReader = vi.fn(async () => btoa("remote document"));
   await copyMessage("Remote files", [
     {
@@ -62,7 +78,10 @@ it("copies lazy remote images and documents through their authorized readers", a
   expect(imageReader).toHaveBeenCalledOnce();
   expect(documentReader).toHaveBeenCalledOnce();
   expect(invoke).not.toHaveBeenCalled();
-  const html = await (await write.mock.calls[0][0][0].getType("text/html")).text();
+  const item = write.mock.calls[0][0][0];
+  expect(await (await item.getType("text/plain")).text()).toBe("Remote files");
+  expect(item.types).toEqual(["text/plain", "text/html"]);
+  const html = await (await item.getType("text/html")).text();
   const pasted = messageFilesFromClipboard({ getData: () => html });
   expect(await Promise.all(pasted!.map((file) => file.text()))).toEqual([
     "remote image",
@@ -74,8 +93,8 @@ it.each(["image", "file"] as const)(
   "preserves the clipboard and exposes a failed lazy %s read without a local fallback",
   async (kind) => {
     await navigator.clipboard.writeText("Previous clipboard");
+    requireCompleteClipboardWrite();
     vi.mocked(invoke).mockClear();
-    const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
     const reader = vi.fn(async () => {
       throw new Error("Remote owner disconnected");
     });
@@ -94,7 +113,6 @@ it.each(["image", "file"] as const)(
     ).rejects.toThrow("Could not copy remote.bin: Remote owner disconnected");
     expect(reader).toHaveBeenCalledOnce();
     expect(invoke).not.toHaveBeenCalled();
-    expect(write).not.toHaveBeenCalled();
     expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
   },
 );
@@ -113,14 +131,13 @@ function zeroFile(size: number, id: string) {
 
 it("rejects valid individual files above the combined 20 MiB budget before replacing the clipboard", async () => {
   await navigator.clipboard.writeText("Previous clipboard");
-  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
+  requireCompleteClipboardWrite();
   await expect(
     copyMessage("Large pair", [
       zeroFile(MAX_EMBED_BYTES / 2 + 1, "first"),
       zeroFile(MAX_EMBED_BYTES / 2 + 1, "second"),
     ]),
   ).rejects.toThrow("combined 20 MB clipboard limit");
-  expect(write).not.toHaveBeenCalled();
   expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
 });
 
@@ -136,15 +153,16 @@ it("round trips multiple files exactly at the combined 20 MiB budget", async () 
   // Encodes 20 MiB of file data; allow headroom when the full suite runs in parallel.
 }, 20_000);
 
-it("rejects too many copied files before touching the clipboard", async () => {
-  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
+it("rejects too many copied files without replacing the clipboard", async () => {
+  await navigator.clipboard.writeText("Previous clipboard");
+  requireCompleteClipboardWrite();
   await expect(
     copyMessage(
       "Files",
       Array.from({ length: MAX_ATTACHMENTS + 1 }, (_, i) => zeroFile(0, `${i}`)),
     ),
   ).rejects.toThrow(`up to ${MAX_ATTACHMENTS} files`);
-  expect(write).not.toHaveBeenCalled();
+  expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
 });
 
 it("uses the native text clipboard if WebView permissions reject a long copy", async () => {
@@ -239,7 +257,7 @@ it("copies a message with multiple attachments and preserves names and bytes on 
   vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
     written = items;
   });
-  await copyMessage("Look at these", [
+  await copyMessage("[Image 1 · 3 B] Look at these [File 1 · 3 B]", [
     {
       id: "1",
       name: "screen.png",
@@ -265,9 +283,7 @@ it("copies a message with multiple attachments and preserves names and bytes on 
   expect(files?.map((file) => file.name)).toEqual(["screen.png", "report.pdf"]);
   expect(await files![0].text()).toBe("abc");
   expect(await files![1].text()).toBe("def");
-  expect(
-    Array.from(new Uint8Array(await (await written[0].getType("image/png")).arrayBuffer())),
-  ).toEqual([97, 98, 99]);
+  expect(written[0].types).toEqual(["text/plain", "text/html"]);
 });
 
 it("pastes attachment bytes and names copied by an older Bycoda build", async () => {
@@ -449,6 +465,7 @@ it.each(["File is too large to attach inline (maximum 20 MB).", "File no longer 
   async (reason) => {
     vi.mocked(invoke).mockRejectedValue(new Error(reason));
     await navigator.clipboard.writeText("Previous clipboard");
+    requireCompleteClipboardWrite();
     await expect(
       copyMessage("New message", [
         {

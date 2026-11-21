@@ -31,13 +31,21 @@ import { languageReady, setLanguagePreference } from "../../../src/shared/i18n";
 import "../../../src/styles/index.css";
 
 const query = new URLSearchParams(location.search);
+const codexCatalog = query.get("codexCatalog");
+const codexModel = {
+  id: "codex:fixture",
+  harness: "codex",
+  name: "Codex fixture",
+  nativeId: "fixture",
+};
+let codexCatalogReads = 0;
 const original = {
   id: "rewind-session",
   workspaceId: "workspace",
   cwd: "C:/fixture/rewind",
   title: "Review the working copy",
-  harness: "claude",
-  model: "claude:fixture",
+  harness: codexCatalog ? "codex" : "claude",
+  model: codexCatalog ? codexModel.id : "claude:fixture",
   modelSettings: {},
   runtimeMode: "auto",
   blocks: [
@@ -193,7 +201,7 @@ Object.assign(window, {
             protocolVersion: 1,
             environmentId: machine.environmentId,
             name: machine.name,
-            providers: ["claude"],
+            providers: codexCatalog ? ["codex"] : ["claude"],
             platform: "win32",
             capabilities: query.has("olderHost")
               ? []
@@ -211,6 +219,16 @@ Object.assign(window, {
                 ],
           };
         case "models.list":
+          if (codexCatalog) {
+            codexCatalogReads++;
+            if (args.params.refresh) return { models: { codex: [codexModel] }, errors: {} };
+            if (codexCatalog === "first-failure" || codexCatalogReads > 1)
+              return {
+                models: {},
+                errors: { codex: "codex-probe initialize response timed out after 12000 ms" },
+              };
+            return { models: { codex: [codexModel] }, errors: {}, pending: ["codex"] };
+          }
           return {
             models: {
               claude: [

@@ -6,12 +6,15 @@ fill. Reduced transparency and forced colors use a solid fill.
 Markdown formatting appears in the chat composer as you type. Move the caret onto a Markdown
 marker to see and edit it. Sent messages display Markdown, and **Show full content** opens long
 messages with the same formatting. **Copy message** and **Save as note** use the original Markdown.
+**Copy message** includes available file and image attachments, including those loaded from a connected machine.
+If copying fails, press **Copy message** again to retry or open **Details** for the reason.
+Pasting into a Bycoda draft restores the text and attachments. Other apps can paste the plain message text.
 
 Markdown replies and document previews up to 131,072 characters parse without a background worker. Longer content, including 1 MiB documents, parses in a background worker. Documents with many blocks fill in progressively while the rendering indicator remains visible; completed blocks stay selectable. If parsing fails, the complete source text remains visible with a warning. Closing the failed preview allows a fresh worker attempt when another preview opens.
 
 When Host delegation is unavailable for a turn, the conversation notice uses your app language. Automatic without an effort ceiling permits built-in subagents; otherwise subagents remain limited to your selected models and effort ceiling. Model-facing fallback guidance stays in English.
 
-Tool rows keep the conversation compact. Long command lines end in an ellipsis. Select the command row or its output chevron to inspect the saved command and result. Use **Changes** beside an edit to inspect its saved code or patch. Expanded text can be selected and copied. A failed call shows its error before any earlier output.
+Tool rows keep the conversation compact. Long command lines end in an ellipsis. Select the command row or its output chevron to inspect the saved command and result. Use **Changes** beside an edit to inspect its saved code or patch. Expanded text can be selected and copied. A failed call shows its error before any earlier output. The summary skips terminal control codes so startup sequences do not hide the error text.
 
 Command details and Copy preserve retained output indentation, blank output and final line breaks. A log containing the failure message remains available alongside the error. If loading full output from a connected machine fails, its summary stays visible and **Retry** requests the same revision again.
 
@@ -66,7 +69,8 @@ The side panel can be resized while you continue using the conversation. Close
 it or press Escape to return to the inline view. Switching to source and back
 keeps the current preview running; reloading starts the example again.
 
-Visuals are saved with the conversation. They cannot access your files, the
+Visuals reopen with the conversation on desktop, including conversations on a
+connected Host that supports visual reads. They cannot access your files, the
 network or application actions. A visual is an explanation or prototype, not an
 implemented change to your project. Unsupported clients retain the source result.
 
@@ -194,9 +198,15 @@ behavior. In the composer and queue editor, caret movement and selections treat 
 resolved reference as a whole. A missing or unavailable preview never removes the
 attachment.
 
-Web links you type or paste in the composer are boxed in their own color without the
-`https://` prefix, with an open icon at the end that opens the link in your browser.
-Move the caret into a link to see and edit it in full; the message keeps the full link.
+Click anywhere on a draft link to open it in your browser, including links that wrap.
+Move the caret into a link to edit its full address. Tab moves from the message field
+to its reference actions. Enter opens the focused reference.
+
+In the desktop composer, attachment references and file cards show the complete
+filename. A long filename wraps when the composer is narrow. Click a file or image
+reference to preview it. Click a skill
+for its description, or a skill group to see its members. Skill icons replace the
+invocation prefix in the display. The draft keeps the original invocation.
 
 Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
 

@@ -181,8 +181,24 @@ pub(crate) fn start_desktop_relay(app: AppHandle) {
             if relay_stopped() {
                 return;
             }
+            // Buffer reports share the epoch: their consumed head is ACKed first so the
+            // service pass below can compact past it.
+            let buffers = {
+                use tauri::Manager;
+                let store = maintenance_app.state::<crate::session_store::SessionStore>();
+                crate::remote::NativeWorkspaceTransport::connect(
+                    &maintenance_app,
+                    "workspaces.native-activity.v1",
+                )
+                .and_then(|host| host.maintain_buffer_acknowledgements(&store))
+            };
             let outcome = crate::remote::NativeServiceChannel::connect(&maintenance_app)
-                .and_then(|channel| channel.maintain_delivery(std::time::Duration::from_secs(5)));
+                .and_then(|channel| channel.maintain_delivery(std::time::Duration::from_secs(5)))
+                .and_then(|moved| {
+                    buffers
+                        .map(|()| moved)
+                        .or_else(|e| if moved { Ok(true) } else { Err(e) })
+                });
             // While a backlog drains, each pass is a few sequential Host round trips; idling
             // 30 s between them stretched an existing user's drain over many hours.
             let progressed = outcome.as_ref().is_ok_and(|moved| *moved);

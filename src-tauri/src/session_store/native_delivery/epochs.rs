@@ -208,17 +208,11 @@ pub(super) fn check_structure(conn: &Connection) -> Result<(), String> {
         return Err(invalid());
     }
     if count == 0 && !anchored {
-        if exists(conn)? {
-            let v2:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM native_delivery_originals WHERE original_id LIKE 'nd2:%')",[],|r|r.get(0)).map_err(|_|invalid())?;
-            if v2 {
-                return Err(invalid());
-            }
+        if exists(conn)? && has_epoch_ids(conn, TABLE)? {
+            return Err(invalid());
         }
-        if remote_ack_table_exists(conn)? {
-            let v2:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM native_delivery_remote_acks WHERE original_id LIKE 'nd2:%')",[],|r|r.get(0)).map_err(|_|invalid())?;
-            if v2 {
-                return Err(invalid());
-            }
+        if remote_ack_table_exists(conn)? && has_epoch_ids(conn, "native_delivery_remote_acks")? {
+            return Err(invalid());
         }
         return Ok(());
     }
@@ -227,6 +221,21 @@ pub(super) fn check_structure(conn: &Connection) -> Result<(), String> {
     }
     namespace(conn)?;
     Ok(())
+}
+
+fn has_epoch_ids(conn: &Connection, table: &str) -> Result<bool, String> {
+    // Fixed-prefix GLOB uses the ID index. Keep the case-insensitive evidence
+    // check from LIKE even though only lowercase nd2 IDs can be valid.
+    conn.query_row(
+        &format!(
+            "SELECT EXISTS(SELECT 1 FROM {table}
+          WHERE original_id GLOB 'nd2:*' OR original_id GLOB 'Nd2:*'
+          OR original_id GLOB 'nD2:*' OR original_id GLOB 'ND2:*')"
+        ),
+        [],
+        |r| r.get(0),
+    )
+    .map_err(|_| invalid())
 }
 fn namespace(conn: &Connection) -> Result<(String, String), String> {
     let ids = identity(conn)?;
@@ -254,14 +263,15 @@ fn namespace(conn: &Connection) -> Result<(String, String), String> {
     Ok(ids)
 }
 
-fn initialize(conn: &Connection) -> Result<(), String> {
+fn initialize(conn: &Connection, runtime: uuid::Uuid) -> Result<(), String> {
     require_full(conn)?;
     check_structure(conn)?;
     if table(conn, TABLES[0])? {
-        read_budget(conn)?;
         // Existing epoch Stores gain the gap-proof table in this FULL write.
         gaps::migrate(conn)?;
-        return check_structure(conn);
+        install_allocation_index(conn)?;
+        check_integrity(conn, runtime, true)?;
+        return Ok(());
     }
     schema(conn)?;
     remote_ack_schema(conn)?;
@@ -287,7 +297,15 @@ fn initialize(conn: &Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     install_guards(conn)?;
-    check_structure(conn)
+    install_allocation_index(conn)?;
+    check_structure(conn)?;
+    check_integrity(conn, runtime, true)?;
+    Ok(())
+}
+
+fn install_allocation_index(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS native_delivery_allocation_semantic ON native_delivery_epoch_allocations(source_store_id,source_profile_id,semantic_key)")
+        .map_err(|e| e.to_string())
 }
 
 const STATE_COLUMNS:&str="open_id,owner_id,generation,source_store_id,source_profile_id,route_fingerprint,local_through,high_water,host_through,host_high_water,closed,digest";
@@ -327,18 +345,19 @@ fn decode_state(row: &rusqlite::Row<'_>) -> rusqlite::Result<(State, String)> {
         row.get(11)?,
     ))
 }
-fn state(conn: &Connection, owner: &str, generation: i64) -> Result<State, String> {
-    state_inner(conn, owner, generation, true)
-}
-fn state_inner(
+fn state(
     conn: &Connection,
+    runtime: uuid::Uuid,
     owner: &str,
     generation: i64,
-    check_budget: bool,
 ) -> Result<State, String> {
     #[cfg(test)]
     tests::STATE_READS.with(|reads| reads.set(reads.get() + 1));
     check_structure(conn)?;
+    check_integrity(conn, runtime, true)?;
+    state_metadata(conn, owner, generation)
+}
+fn state_metadata(conn: &Connection, owner: &str, generation: i64) -> Result<State, String> {
     let read = |name: &str| {
         conn.query_row(
             &format!(
@@ -365,54 +384,32 @@ fn state_inner(
     if intent != value.open_id {
         return Err(invalid());
     }
-    let expected = value.high_water - value.local_through;
-    if expected > MAX_ROWS as i64 {
+    if value.high_water - value.local_through > MAX_ROWS as i64 {
         return Err(invalid());
-    }
-    let version = change_version(conn)?;
-    if !verified(conn, &value, version) {
-        verify_slots(conn, &value, expected)?;
-        remember(conn, &value, version);
-    }
-    if check_budget {
-        read_budget(conn)?;
     }
     Ok(value)
 }
 
-/// `(data_version, total_changes)`: the first moves when any other connection commits, the
-/// second on every row this connection changes, triggers included. While both hold, no row
-/// the slot counts read can differ from the last time they passed.
-fn change_version(conn: &Connection) -> Result<(i64, u64), String> {
-    let data: i64 = conn
-        .query_row("PRAGMA data_version", [], |r| r.get(0))
-        .map_err(|_| invalid())?;
-    Ok((data, conn.total_changes()))
+const AUDIT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+type AuditKey = (uuid::Uuid, usize, i64, i64);
+// Normal FULL journal transactions preserve coverage. A foreign commit or DDL
+// forces another audit even before the periodic deadline.
+static AUDITS: std::sync::Mutex<Vec<(AuditKey, std::time::Instant)>> =
+    std::sync::Mutex::new(Vec::new());
+
+pub(in crate::session_store) fn invalidate_connection_audit(
+    conn: &Connection,
+) -> Result<(), String> {
+    // The RegisteredConnection can preserve this address across a writer swap,
+    // but SQLite's data_version is scoped to the old connection.
+    let address = conn as *const Connection as usize;
+    AUDITS
+        .lock()
+        .map_err(|_| invalid())?
+        .retain(|(key, _)| key.1 != address);
+    Ok(())
 }
-type Verified = (usize, (i64, u64), State);
-// The slot counts scan every live slot of the epoch. Each delivery step reads its original
-// several times, so recounting on every read cost seconds per delivery at a large backlog.
-static VERIFIED: std::sync::Mutex<Vec<Verified>> = std::sync::Mutex::new(Vec::new());
-fn verified(conn: &Connection, value: &State, version: (i64, u64)) -> bool {
-    let key = (conn as *const Connection) as usize;
-    VERIFIED.lock().is_ok_and(|entries| {
-        entries
-            .iter()
-            .any(|(at, seen, state)| *at == key && *seen == version && state == value)
-    })
-}
-fn remember(conn: &Connection, value: &State, version: (i64, u64)) {
-    let key = (conn as *const Connection) as usize;
-    if let Ok(mut entries) = VERIFIED.lock() {
-        entries.retain(|(at, _, state)| {
-            *at != key || state.owner_id != value.owner_id || state.generation != value.generation
-        });
-        if entries.len() >= 16 {
-            entries.remove(0);
-        }
-        entries.push((key, version, value.clone()));
-    }
-}
+
 fn verify_slots(conn: &Connection, value: &State, expected: i64) -> Result<(), String> {
     #[cfg(test)]
     tests::SLOT_COUNTS.with(|counts| counts.set(counts.get() + 1));
@@ -522,7 +519,12 @@ fn pinned(conn: &Connection, expected: &EpochHandle) -> Result<State, String> {
     if conn as *const Connection as usize != expected.connection {
         return Err(stale());
     }
-    let value = state(conn, &expected.state.owner_id, expected.state.generation)?;
+    let value = state(
+        conn,
+        expected.runtime,
+        &expected.state.owner_id,
+        expected.state.generation,
+    )?;
     if value.open_id != expected.state.open_id
         || value.route != expected.state.route
         || value.source_store_id != expected.state.source_store_id
@@ -544,7 +546,7 @@ pub(crate) fn open_id(store: &SessionStore, route: &str) -> Result<String, Strin
         return Err(invalid());
     }
     write(store, |conn| {
-        initialize(conn)?;
+        initialize(conn, store.native_instance_id())?;
         let ids = namespace(conn)?;
         if let Some(id) = read_intent(conn, &ids, route)? {
             return Ok(id);
@@ -624,7 +626,7 @@ pub(crate) fn bind_tx(
     if !hex(route) {
         return Err(invalid());
     }
-    initialize(conn)?;
+    initialize(conn, store.native_instance_id())?;
     let ids = namespace(conn)?;
     if read_intent(conn, &ids, route)?.as_deref() != Some(&description.open_id) {
         return Err(stale());
@@ -634,7 +636,7 @@ pub(crate) fn bind_tx(
         if owner != description.owner_id || generation as u64 != description.generation {
             return Err(stale());
         }
-        let value = state(conn, &owner, generation)?;
+        let value = state(conn, store.native_instance_id(), &owner, generation)?;
         if description.through < value.host_through as u64
             || description.high_water < value.host_high_water as u64
             || description.high_water > value.high_water as u64
@@ -772,6 +774,9 @@ pub(super) fn legacy_allocation_allowed(conn: &Connection, route: &str) -> Resul
             "NATIVE_DELIVERY_V2_REQUIRED: this route already initialized an ordered stream".into(),
         );
     }
+    // A legacy original has no epoch to pin. Before minting a UUID, validate
+    // the bounded route catalog so a damaged v2 binding can't fall back to v1.
+    verify_catalog(conn, &ids, false)?;
     Ok(())
 }
 
@@ -779,7 +784,7 @@ pub(super) fn validate_original(conn: &Connection, original: &Original) -> Resul
     let Some(id) = parse_id(original.id()) else {
         return Ok(());
     };
-    let value = state(conn, &id.owner, id.generation)?;
+    let value = state(conn, original.runtime, &id.owner, id.generation)?;
     validate_original_in_state(conn, original, &id, &value)
 }
 
@@ -805,7 +810,7 @@ impl<'c> PageValidator<'c> {
         let value = self
             .states
             .entry((id.owner.clone(), id.generation))
-            .or_insert_with(|| state(conn, &id.owner, id.generation))
+            .or_insert_with(|| state(conn, original.runtime, &id.owner, id.generation))
             .clone()?;
         validate_original_in_state(conn, original, &id, &value)
     }
@@ -846,7 +851,7 @@ pub(crate) fn for_original(
     Ok(Some(handle(
         &conn,
         store,
-        state(&conn, &id.owner, id.generation)?,
+        state(&conn, original.runtime, &id.owner, id.generation)?,
     )))
 }
 
@@ -878,10 +883,31 @@ fn read_budget(conn: &Connection) -> Result<(i64, i64), String> {
         || value.0 > MARKER_ROWS
         || value.1 < 0
         || value.1 > MARKER_BYTES
+        || (value.0 == 0) != (value.1 == 0)
         || budget_hash(&ids, value.0, value.1) != value.2
     {
         return Err(invalid());
     }
+    let tip: Option<String> = conn
+        .query_row(
+            &format!(
+                "SELECT {} FROM native_delivery_semantic_retirements ORDER BY rowid DESC LIMIT 1",
+                bounded("budget_digest", 64, 64)
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| invalid())?;
+    if tip.as_deref() != (value.0 != 0).then_some(value.2.as_str()) {
+        return Err(invalid());
+    }
+    Ok((value.0, value.1))
+}
+
+fn verify_budget(conn: &Connection, expected: (i64, i64)) -> Result<(), String> {
+    #[cfg(test)]
+    tests::MARKER_COUNTS.with(|counts| counts.set(counts.get() + 1));
     let actual: (i64, i64) = conn
         .query_row(
             "SELECT COUNT(*),COALESCE(SUM(weight),0) FROM native_delivery_semantic_retirements",
@@ -889,13 +915,106 @@ fn read_budget(conn: &Connection) -> Result<(i64, i64), String> {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(|_| invalid())?;
-    if actual != (value.0, value.1) {
+    if actual != expected {
         return Err(invalid());
     }
-    Ok((value.0, value.1))
+    Ok(())
+}
+
+fn check_integrity(conn: &Connection, runtime: uuid::Uuid, has_epochs: bool) -> Result<(), String> {
+    if has_epochs {
+        read_budget(conn)?;
+    }
+    let connection = conn as *const Connection as usize;
+    let (data, schema) = conn
+        .query_row(
+            "SELECT data_version,schema_version FROM pragma_data_version(),pragma_schema_version()",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| invalid())?;
+    let key = (runtime, connection, data, schema);
+    if AUDITS
+        .lock()
+        .map_err(|_| invalid())?
+        .iter()
+        .any(|(cached, at)| *cached == key && at.elapsed() < AUDIT_INTERVAL)
+    {
+        return Ok(());
+    }
+    let audit = |snapshot: &Connection| -> Result<bool, String> {
+        usage::verify(snapshot)?;
+        if !has_epochs {
+            return Ok(true);
+        }
+        let guarded = guards_present(snapshot)?;
+        if !guarded {
+            static MISSING_GUARDS: std::sync::Once = std::sync::Once::new();
+            MISSING_GUARDS.call_once(|| {
+                log::warn!(
+                    "Native delivery epoch guards missing. Running a full audit on every call."
+                );
+            });
+        }
+        verify_budget(snapshot, read_budget(snapshot)?)?;
+        verify_catalog(snapshot, &namespace(snapshot)?, true)?;
+        Ok(guarded)
+    };
+    let guarded = if conn.is_autocommit() {
+        let tx = conn.unchecked_transaction().map_err(|_| invalid())?;
+        let guarded = audit(&tx)?;
+        tx.commit().map_err(|_| invalid())?;
+        guarded
+    } else {
+        audit(conn)?
+    };
+    let mut audits = AUDITS.lock().map_err(|_| invalid())?;
+    audits.retain(|(cached, _)| cached.0 != runtime || cached.1 != connection);
+    if guarded {
+        if audits.len() >= 16 {
+            audits.remove(0);
+        }
+        audits.push((key, std::time::Instant::now()));
+    }
+    Ok(())
+}
+
+fn guards_present(conn: &Connection) -> Result<bool, String> {
+    // A local statement could erase replay evidence without changing either cookie.
+    let guards: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN (
+              'native_delivery_semantic_retirements_retained',
+              'native_delivery_semantic_retirements_immutable',
+              'native_delivery_semantic_retirements_no_replace',
+              'native_delivery_semantic_marker_account',
+              'native_delivery_semantic_marker_valid',
+              'native_delivery_semantic_marker_capacity',
+              'native_delivery_semantic_budget_retained',
+              'native_delivery_semantic_budget_monotonic',
+              'native_delivery_semantic_budget_witness_retained',
+              'native_delivery_semantic_budget_witness_monotonic',
+              'native_delivery_epochs_retained',
+              'native_delivery_epoch_witnesses_retained',
+              'native_delivery_epoch_intents_retained',
+              'native_delivery_epoch_intent_witnesses_retained',
+              'native_delivery_epoch_allocation_retained',
+              'native_delivery_epoch_allocation_immutable',
+              'native_delivery_no_delete',
+              'native_delivery_identity_immutable',
+              'native_delivery_identity_no_replace',
+              'native_delivery_epoch_gaps_retained',
+              'native_delivery_epoch_gaps_immutable',
+              'native_delivery_epoch_gaps_no_replace')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| invalid())?;
+    Ok(guards == if gaps::installed(conn)?.0 { 22 } else { 19 })
 }
 pub(super) fn check_semantic(
     conn: &Connection,
+    runtime: uuid::Uuid,
     ids: &(String, String),
     semantic: &str,
     route: &str,
@@ -904,10 +1023,27 @@ pub(super) fn check_semantic(
     bytes: usize,
 ) -> Result<(), String> {
     check_structure(conn)?;
-    if !table(conn, "native_delivery_semantic_retirements")? {
+    let has_epochs = table(conn, "native_delivery_semantic_retirements")?;
+    check_integrity(conn, runtime, has_epochs)?;
+    if !has_epochs {
         return Ok(());
     }
-    read_budget(conn)?;
+    read_intent(conn, ids, route)?;
+    let old:Option<(String,String,String,i64)>=conn.query_row(&format!("SELECT {},{},{},payload_bytes FROM native_delivery_semantic_retirements WHERE source_store_id=?1 AND source_profile_id=?2 AND semantic_key=?3",bounded("route_fingerprint",64,64),bounded("method",1,128),bounded("payload_sha256",64,64)),params![ids.0,ids.1,semantic],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(|_|invalid())?;
+    if let Some(old) = old {
+        if old != (route.into(), method.into(), hash.into(), bytes as i64) {
+            return Err("NATIVE_DELIVERY_CONFLICT: this retired original key belongs to a different route, method or exact request bytes".into());
+        }
+        return Err("NATIVE_DELIVERY_RETIRED: this semantic original was durably consumed and compacted; do not create another identity".into());
+    }
+    gaps::check_semantic(conn, ids, semantic, route, method, hash, bytes)
+}
+
+fn verify_catalog(
+    conn: &Connection,
+    ids: &(String, String),
+    audit_slots: bool,
+) -> Result<(), String> {
     // A v1 writer must not remint an original after losing a v2 slot/marker.
     // Validate the bounded initialized stream catalog; never reconstruct tips.
     let mut intents = conn
@@ -942,16 +1078,12 @@ pub(super) fn check_semantic(
         return Err(invalid());
     }
     for (owner, generation) in bound {
-        state_inner(conn, &owner, generation, false)?;
-    }
-    let old:Option<(String,String,String,i64)>=conn.query_row(&format!("SELECT {},{},{},payload_bytes FROM native_delivery_semantic_retirements WHERE source_store_id=?1 AND source_profile_id=?2 AND semantic_key=?3",bounded("route_fingerprint",64,64),bounded("method",1,128),bounded("payload_sha256",64,64)),params![ids.0,ids.1,semantic],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(|_|invalid())?;
-    if let Some(old) = old {
-        if old != (route.into(), method.into(), hash.into(), bytes as i64) {
-            return Err("NATIVE_DELIVERY_CONFLICT: this retired original key belongs to a different route, method or exact request bytes".into());
+        let value = state_metadata(conn, &owner, generation)?;
+        if audit_slots {
+            verify_slots(conn, &value, value.high_water - value.local_through)?;
         }
-        return Err("NATIVE_DELIVERY_RETIRED: this semantic original was durably consumed and compacted; do not create another identity".into());
     }
-    gaps::check_semantic(conn, ids, semantic, route, method, hash, bytes)
+    Ok(())
 }
 
 struct Prefix {

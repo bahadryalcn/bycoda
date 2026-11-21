@@ -2,7 +2,7 @@ import { URL as NodeURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { AsyncResource } from "node:async_hooks";
 import {
-  desktopDatabasePaths,
+  cachedDesktopDatabasePaths,
   type DesktopMetadataReply,
   type DesktopMetadataRecord,
   type DesktopSnapshotMetaRecord,
@@ -76,7 +76,7 @@ export class AsyncHostNotes implements HostNotesAccess {
   private readonly pending = new Map<number, DispatchedJob>();
   private readonly admission: HostNotesAdmission;
   constructor(
-    private readonly paths: () => string[] = desktopDatabasePaths,
+    private readonly paths: () => string[] = cachedDesktopDatabasePaths,
     private readonly workerUrl = new NodeURL("./host-notes-worker.mjs", import.meta.url),
     options: HostNotesAdmissionOptions = {},
   ) {

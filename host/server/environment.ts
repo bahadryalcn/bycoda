@@ -152,6 +152,7 @@ export function createEnvironmentRuntime(
         "sessions.longPoll",
         "sessions.lazyHistory",
         "sessions.block",
+        "sessions.inlineVisual",
         "sessions.digests",
         "machine.changes",
         "machine.changes.inlineSync",

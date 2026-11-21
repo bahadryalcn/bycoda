@@ -73,6 +73,10 @@ is at most 64 KiB. `sessions.block` fetches full content for the same
 session/block/revision on explicit demand. Large responses use the existing bounded
 `syncChunk` transport. Apply full blocks only to a still-matching revision.
 
+`sessions.inlineVisual` resolves a stored visual from its owning Host using
+`{ sessionId, id }`. The Host verifies the transcript reference and content hash
+before returning the HTML. Large results use the existing bulk RPC transport.
+
 `sessions.workedTime` returns `{ workedMs }`, the sum of finished submitted user
 turns' `durationMs`, without transferring the transcript. The session detail card
 reads it on open and adds a still-running turn from its own start time.

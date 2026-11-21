@@ -303,7 +303,7 @@ export function ModalPanel({
               onMouseDown={(event) => event.stopPropagation()}
               {...surfaceAttributes(
                 { variant: workspacePanel ? undefined : surface },
-                `relative isolate flex flex-col overflow-hidden border-(color:--ui-pane-border) shadow-(--ui-elevation-floating) ${workspacePanel ? "bg-(--ui-surface-panel)" : ""} ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`,
+                `relative isolate flex flex-col overflow-hidden border-[color:var(--modal-frame-color,var(--ui-pane-border))] shadow-(--ui-elevation-floating) ${workspacePanel ? "bg-(--ui-surface-panel)" : ""} ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`,
               )}
             >
               {workspacePanel ? null : <GlassBackdrop />}

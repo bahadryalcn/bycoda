@@ -162,6 +162,7 @@ describe("model picker account states", () => {
           model: "claude:opus-5.5",
           values: {},
           hideSettings: true,
+          compactIdentity: true,
           accountChoices: true,
           accountId: "account-lab",
           onChange: vi.fn(),
@@ -170,6 +171,7 @@ describe("model picker account states", () => {
       ),
     );
     expect(trigger().querySelector("[data-model-account]")?.textContent).toBe("lab");
+    expect(trigger().getAttribute("aria-label")).toContain("Account: lab");
     await act(async () => trigger().click());
     expect(
       [...container.querySelectorAll('[role="option"]')].map((row) =>

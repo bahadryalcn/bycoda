@@ -5,7 +5,18 @@ import {
   getDiagnosticsMode,
   setDiagnosticsMode,
 } from "./diagnosticsConsent";
-import { createLogBuffer, sourceLocation } from "./uiLogBuffer";
+import { createLogBuffer, isBenignResizeObserverError, sourceLocation } from "./uiLogBuffer";
+
+describe("benign window errors", () => {
+  it("drops only the ResizeObserver loop notices", () => {
+    expect(
+      isBenignResizeObserverError("ResizeObserver loop completed with undelivered notifications."),
+    ).toBe(true);
+    expect(isBenignResizeObserverError("ResizeObserver loop limit exceeded")).toBe(true);
+    expect(isBenignResizeObserverError("ResizeObserver is not defined")).toBe(false);
+    expect(isBenignResizeObserverError(undefined)).toBe(false);
+  });
+});
 
 describe("log buffer", () => {
   it("writes lines in the shared format with a category", () => {

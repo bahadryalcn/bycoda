@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useRemoteSessionLifecycleLists } from "../hooks/useSessionLifecycle";
 import type { SessionLifecycleView } from "./sessionLifecycle";
 import {
   applyLifecycleListRead,
@@ -219,4 +220,40 @@ it("keeps the snapshot object when a fenced list changes nothing", async () => {
 
   expect(snapshots.at(-1)).toBe(before);
   expect(snapshots.length).toBe(renders);
+});
+
+it("shares a remote lifecycle read and keeps the confirmed settle across both consumers", async () => {
+  const machineId = "remote-fence-machine";
+  const sessionId = "remote-fence-session";
+  const { promise, resolve } = Promise.withResolvers<{
+    records: SessionLifecycleView[];
+    autoSettle: typeof autoSettle;
+  }>();
+  remoteRequest.mockReturnValueOnce(promise);
+  const readers = new Map<string, ReturnType<typeof useRemoteSessionLifecycleLists>>();
+  function RemoteProbe({ name }: { name: string }) {
+    readers.set(name, useRemoteSessionLifecycleLists(JSON.stringify([machineId])));
+    return null;
+  }
+  await act(async () =>
+    root.render([
+      createElement(RemoteProbe, { name: "sidebar", key: "sidebar" }),
+      createElement(RemoteProbe, { name: "header", key: "header" }),
+    ]),
+  );
+  expect(remoteRequest).toHaveBeenCalledExactlyOnceWith(machineId, "sessions.lifecycle.list", {});
+
+  remoteRequest.mockResolvedValueOnce(settled(sessionId));
+  await act(async () => readers.get("header")!.change(machineId, sessionId, false));
+  await act(async () => resolve({ records: [], autoSettle }));
+
+  expect(remoteRequest).toHaveBeenLastCalledWith(
+    machineId,
+    "sessions.lifecycle.settle",
+    { sessionId },
+    false,
+    true,
+  );
+  for (const reader of readers.values())
+    expect(reader.lists.get(machineId)?.get(sessionId)).toEqual(settled(sessionId));
 });

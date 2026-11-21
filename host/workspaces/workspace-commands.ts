@@ -2,7 +2,7 @@ import { replaceHostContent } from "./workspace-replace";
 import { joined, alreadyExists } from "./workspace-path-labels";
 import { moveWithRecovery } from "./cross-volume-move";
 import { renameWithRetry } from "../storage/rename-retry";
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "../git/git-exec-pool";
 import {
   gitMutationScope,
   hostGitRepositoryKey,
@@ -25,7 +25,8 @@ import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:
 import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../../src/platform/tauri/fs";
 import { hostUnmerged, unmergedMessage } from "../git/git-conflicts";
 import { hostWorktrees } from "../git/git-worktrees";
-import { hostGitSubmodules } from "../git/git-submodules";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps.ts";
+import { sharedHostGitSubmodules } from "../git/git-submodules";
 import { GhRuntime } from "../git/gh-runtime";
 import { createHostBranch, hostBranches, switchHostBranch } from "../git/git-branches";
 import {
@@ -158,6 +159,34 @@ const MAX_TRANSFER_FILE = 1024 * 1024 * 1024;
 const MAX_TRANSFER_CHUNK = 1024 * 1024;
 const MAX_STAT_FILES = 64;
 const ROOTS_TTL_MS = 5_000;
+/** A known worktree list keeps admitting the paths it names this long; only a path no known
+ * list contains rescans every project. Each rescan runs `git worktree list` per project, and
+ * on Windows each spawn blocks the main thread: a Host with 124 projects stalled for seconds
+ * whenever worktree paths kept arriving after the short TTL. This Host's own worktree changes
+ * call `invalidateRoots`. */
+const ROOTS_ADMIT_MS = 10 * 60_000;
+
+/** A denial for a path inside a checkout that no registered project or listed worktree
+ * contains is remembered this long, so sibling paths do not each rescan every project. A
+ * worktree created outside this Host becomes visible once the entry expires. */
+const MISS_TTL_MS = 10_000;
+const MAX_MISSES = 256;
+
+/** The nearest folder at or above `path` that has a `.git` file or folder, if any. */
+async function gitCheckoutRoot(path: string): Promise<string | undefined> {
+  for (let current = path; ;) {
+    if (
+      await lstat(resolve(current, ".git")).then(
+        () => true,
+        () => false,
+      )
+    )
+      return current;
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
 // Connections may own different command instances. Windows cannot replace the
 // same destination concurrently, so serialize canonical destinations host-wide.
 const textFileSaves = new Map<string, Promise<void>>();
@@ -175,12 +204,16 @@ export class WorkspaceCommands {
   private searches = new Map<string, { owner: string; controller: AbortController }>();
   private cancelledSearches = new Map<string, number>();
   private revokedSearchOwners = new Map<string, number>();
-  private roots = new Map<string, { at: number; roots: string[] }>();
+  /** `complete` is false when the listing failed and `roots` is only the project folder. */
+  private roots = new Map<string, { at: number; roots: string[]; complete: boolean }>();
   private rootsGeneration = 0;
+  /** Denials only, keyed by physical checkout root; never an admission. */
+  private misses = new Map<string, { at: number; registry: number; generation: number }>();
 
   invalidateRoots(): void {
     this.rootsGeneration++;
     this.roots.clear();
+    this.misses.clear();
   }
 
   constructor(
@@ -543,9 +576,10 @@ export class WorkspaceCommands {
       case "git_worktrees":
         return await this.gitWorktrees(input.cwd);
       case "git_submodules": {
-        const found = await hostGitSubmodules(
+        const found = await sharedHostGitSubmodules(
           await this.gitRoot(input.cwd),
           input.includeRepositories === true,
+          input.fresh === true,
         );
         // Gitlink-only discovery has no size bound to report, so existing clients keep the plain list.
         return input.includeRepositories === true ? found : found.paths;
@@ -603,9 +637,16 @@ export class WorkspaceCommands {
   }
 
   /** The project folders and worktrees files may be read and written in. */
-  private async allowedRoots(): Promise<string[]> {
+  private async allowedRoots(): Promise<{
+    roots: string[];
+    /** Every project's worktrees were listed successfully. */
+    complete: boolean;
+    /** False when `invalidateRoots` ran during the scan, so the roots may be stale. */
+    current: boolean;
+  }> {
     const generation = this.rootsGeneration;
     const out: string[] = [];
+    let complete = true;
     const projects = await this.store.projects();
     let cursor = 0;
     // hostWorktrees bounds each listing subprocess with a 10 s timeout.
@@ -616,23 +657,52 @@ export class WorkspaceCommands {
           const cached = this.roots.get(project.cwd);
           if (cached && Date.now() - cached.at < ROOTS_TTL_MS) {
             out.push(...cached.roots);
+            if (!cached.complete) complete = false;
             continue;
           }
+          let listed = true;
           const roots = await hostWorktrees(project.cwd)
-            .then((listed) => [
+            .then((result) => [
               project.cwd,
-              ...listed.worktrees
+              ...result.worktrees
                 .filter((tree) => !tree.missing && tree.path !== project.cwd)
                 .map((tree) => tree.path),
             ])
-            .catch(() => [project.cwd]);
+            .catch(() => {
+              listed = false;
+              return [project.cwd];
+            });
+          if (!listed) complete = false;
           if (generation === this.rootsGeneration)
-            this.roots.set(project.cwd, { at: Date.now(), roots });
+            this.roots.set(project.cwd, { at: Date.now(), roots, complete: listed });
           out.push(...roots);
         }
       }),
     );
-    return out;
+    return { roots: out, complete, current: generation === this.rootsGeneration };
+  }
+
+  private missIsFresh(root: string): boolean {
+    const miss = this.misses.get(root);
+    if (!miss) return false;
+    if (
+      miss.registry === this.store.projectRegistryVersion &&
+      miss.generation === this.rootsGeneration &&
+      elapsedSince(miss.at) < MISS_TTL_MS
+    )
+      return true;
+    this.misses.delete(root);
+    return false;
+  }
+
+  private rememberMiss(root: string, registry: number, generation: number): void {
+    this.misses.delete(root);
+    while (this.misses.size >= MAX_MISSES) {
+      const oldest = this.misses.keys().next();
+      if (oldest.done) break;
+      this.misses.delete(oldest.value);
+    }
+    this.misses.set(root, { at: monotonicNow(), registry, generation });
   }
 
   /** Finds the project root that contains `input`, which may not exist yet. */
@@ -680,11 +750,36 @@ export class WorkspaceCommands {
           found = { root: roots[index], relative: rel };
       }
     };
-    await find((await this.store.projects()).map((project) => project.cwd));
+    const projects = await this.store.projects();
+    await find(projects.map((project) => project.cwd));
     if (found) return found;
-    await find(await this.allowedRoots());
+    await find(
+      projects.flatMap((project) => {
+        const known = this.roots.get(project.cwd);
+        return known && Date.now() - known.at < ROOTS_ADMIT_MS ? known.roots : [];
+      }),
+    );
     if (found) return found;
-    throw new Error("Path is outside this machine’s projects");
+    // Every worktree root holds a `.git` entry; a path with none above it is in no worktree,
+    // so it is refused without listing every project's worktrees.
+    const outside = () => new Error("Path is outside this machine’s projects");
+    const checkout = await gitCheckoutRoot(actual);
+    if (!checkout || this.missIsFresh(checkout)) throw outside();
+    // A scan that raced `invalidateRoots` may hold removed roots: neither admit from it nor
+    // remember its result, and try once more against the current roots.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const registry = this.store.projectRegistryVersion;
+      const generation = this.rootsGeneration;
+      const scan = await this.allowedRoots();
+      if (!scan.current || registry !== this.store.projectRegistryVersion) continue;
+      await find(scan.roots);
+      if (found) return found;
+      // Only a full, successful listing proves the denial; a failed one only fell back to the
+      // project folders.
+      if (scan.complete) this.rememberMiss(checkout, registry, generation);
+      break;
+    }
+    throw outside();
   }
 
   private async existing(input: unknown, allowRoot = false) {
@@ -1255,16 +1350,18 @@ export class WorkspaceCommands {
   private async gitCommand(cwd: unknown, args: string[]): Promise<string> {
     const root = await this.gitRoot(cwd);
     return (
-      await exec(
+      await hostGitExec.exec(
         "git",
         [...(args.includes("--") ? ["--literal-pathspecs"] : []), "-c", "core.pager=cat", ...args],
         {
           cwd: root,
           timeout: ["pull", "push", "fetch", "commit"].includes(args[0]) ? 120_000 : 30_000,
+          // Network calls can hold a slot for minutes; their own lane keeps probes moving.
+          lane: ["pull", "push", "fetch", "clone"].includes(args[0]) ? "network" : "default",
           maxBuffer: 4 * 1024 * 1024,
           encoding: "utf8",
           windowsHide: true,
-          env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+          env: { GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
         },
       )
     ).stdout;
@@ -1475,14 +1572,14 @@ export class WorkspaceCommands {
 
   private async gitBlob(root: string, spec: string) {
     try {
-      const { stdout } = await exec("git", ["show", spec], {
+      const { stdout } = await hostGitExec.exec("git", ["show", spec], {
         cwd: root,
         timeout: 30_000,
         maxBuffer: MAX_TEXT_FILE + 1024,
         encoding: "buffer",
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        env: { GIT_TERMINAL_PROMPT: "0" },
       });
-      return { bytes: Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout), tooLarge: false };
+      return { bytes: stdout, tooLarge: false };
     } catch (reason) {
       return { bytes: Buffer.alloc(0), tooLarge: String(reason).includes("maxBuffer") };
     }

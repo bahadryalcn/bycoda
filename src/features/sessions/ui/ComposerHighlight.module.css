@@ -1,10 +1,5 @@
 /* A web link in the draft: boxed in the info tone, apart from attachment tokens. */
 .link {
-  /* The inline padding gives the link room inside its box; the equal and opposite
-     negative margin cancels it, so the link keeps the advance width of its characters
-     and the textarea underneath stays aligned. Block padding changes no line height. */
-  padding-inline: 3px;
-  margin-inline: -3px;
   padding-block: 2px;
   border-radius: var(--ui-radius-control);
   background: var(--ui-tone-info-subtle);
@@ -18,70 +13,78 @@
   color: transparent;
 }
 
-.linkPrefix {
+.linkLabelled {
   position: relative;
+  color: var(--ui-tone-info-fg);
 }
 
-.linkMark {
+.linkFace {
   position: absolute;
   inset-block-start: 50%;
-  inset-inline-end: 1px;
+  inset-inline-start: 1px;
+  max-inline-size: calc(100% - 2px);
   display: inline-flex;
-  inline-size: 0.75em;
-  block-size: 0.75em;
+  align-items: center;
+  gap: 0.35em;
+  padding: 2px 0.35em;
+  border-radius: var(--ui-radius-inset);
+  background: var(--ui-tone-info-subtle);
+  font-size: 0.85em;
+  line-height: 1.25;
   text-indent: 0;
+  white-space: nowrap;
   transform: translateY(-50%);
 }
 
-.linkMark > * {
+.linkFace > :not(.linkName) {
+  display: inline-flex;
+  flex: none;
+  inline-size: 0.9em;
+  block-size: 0.9em;
+}
+
+.linkFace svg {
   inline-size: 100%;
   block-size: 100%;
 }
 
-/* The scheme's remaining characters reserve the room the open badge sits in. */
-.badge {
-  position: relative;
-  color: transparent;
+.linkName {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Above the textarea so it can be clicked; the rest of the overlay lets clicks through. */
-.open {
+.linkName::before {
+  content: attr(data-link-label);
+}
+
+.referenceLayer {
   position: absolute;
   z-index: 1;
-  top: 50%;
-  left: 50%;
-  display: flex;
-  width: 14px;
-  height: 14px;
-  align-items: center;
-  justify-content: center;
-  transform: translate(-50%, -50%);
-  border-radius: var(--ui-radius-control);
-  color: var(--ui-tone-info-fg);
-  text-indent: 0;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Hit boxes follow the painted source fragments without consuming text layout space. */
+.referenceLayer .referenceHit {
+  position: absolute;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 0;
   cursor: pointer;
   pointer-events: auto;
+  border: 0;
+  border-radius: var(--ui-radius-inset);
+  background: transparent;
 }
 
-.open:hover {
-  background: var(--ui-tone-info-hover);
+.referenceLayer .referenceHit:hover {
+  background: color-mix(in oklch, var(--ui-tone-neutral-fg) 9%, transparent);
 }
 
-.openIcon {
-  width: 12px;
-  height: 12px;
-}
-
-/* Inline padding offset by an equal negative margin: room inside the fill without moving
-   a character away from the textarea underneath. */
-.skill {
-  padding-inline: 1px;
-  margin-inline: -1px;
-  padding-block: 2px;
-  border-radius: var(--ui-radius-control);
-  background: color-mix(in oklch, currentColor 12%, transparent);
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
+.referenceLayer .referenceHit:focus-visible {
+  outline: 2px solid var(--ui-focus-ring-color);
+  outline-offset: -2px;
 }
 
 /* Keep glyph advances and the line box aligned with the native textarea. */

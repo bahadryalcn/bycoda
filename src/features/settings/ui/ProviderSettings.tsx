@@ -440,7 +440,7 @@ export function ProvidersPage({
                       tone={pendingUpdates.length ? "accent" : "neutral"}
                       disabled={pendingUpdates.length === 0}
                       tooltip={pendingUpdates.length === 0 ? t("Nothing to update") : undefined}
-                      startIcon={<ArrowDownCircle className="icon-sm text-accent" aria-hidden />}
+                      startIcon={<ArrowDownCircle aria-hidden />}
                     >
                       {pendingUpdates.length
                         ? t("Update all ({p0})", { p0: pendingUpdates.length })

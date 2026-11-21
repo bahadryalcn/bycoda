@@ -18,6 +18,7 @@ import { languageReady } from "../../../src/shared/i18n";
 import { Button } from "../../../src/shared/ui/Button";
 import { TextareaField } from "../../../src/shared/ui/TextareaField";
 import { WandSparkles } from "../../../src/shared/ui/icons";
+import { GitCommitGenerationNotice } from "../../../src/features/source-control/ui/GitFeedback";
 // Shared tokens (control heights, field roles) so shared Buttons size as in the app.
 import "../../../src/styles/index.css";
 import "./git-generation.css";
@@ -136,8 +137,47 @@ function CommitControlFixture() {
   );
 }
 
+function CommitNoticeFixture() {
+  const [notice, setNotice] = useState(true);
+  const [draft, setDraft] = useState("Describe the staged changes");
+  const hasSuggestion = new URLSearchParams(location.search).has("suggestion");
+  return (
+    <aside className="m-3 flex w-[calc(100%-24px)] max-w-[440px] flex-col gap-1.5 p-2">
+      <TextareaField
+        label="Commit message"
+        hideLabel
+        fieldSize="sm"
+        minRows={1}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      <Button variant="primary">Commit</Button>
+      {notice && (
+        <GitCommitGenerationNotice
+          result={{
+            changesUpdated: !hasSuggestion,
+            suggestion: hasSuggestion ? "Generated commit message" : undefined,
+          }}
+          onUse={() => {
+            setDraft("Generated commit message");
+            setNotice(false);
+          }}
+          onDismiss={() => setNotice(false)}
+        />
+      )}
+    </aside>
+  );
+}
+
+const mode = new URLSearchParams(location.search);
 void languageReady.then(() =>
   createRoot(document.getElementById("root")!).render(
-    new URLSearchParams(location.search).has("commit") ? <CommitControlFixture /> : <Fixture />,
+    mode.has("notice") ? (
+      <CommitNoticeFixture />
+    ) : mode.has("commit") ? (
+      <CommitControlFixture />
+    ) : (
+      <Fixture />
+    ),
   ),
 );

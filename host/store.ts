@@ -56,7 +56,7 @@ import {
 } from "./storage/snapshots";
 import { normalizeProjectPath } from "./desktop/project-path";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
-import { StoreDatabase, type StoreStatement } from "./store-db";
+import { StoreDatabase } from "./store-db";
 import { initializeNativeDeliveryStore } from "./native-delivery/native-delivery-store";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -90,6 +90,14 @@ export type { DesktopCommandAcceptance } from "./domains/commands/service";
 export { blockRevisions } from "./sessions/block-revisions";
 // A machine can register over a hundred projects, and the phone reads them all every few seconds;
 // the row budget below bounds memory, so this count must not evict projects a poll still needs.
+/** `model` is "" for the provider default; only its absence marks a summary written before the field existed. */
+const hasCurrentSummaryFields = (cached: HostSessionSummary): boolean =>
+  typeof cached.model === "string" &&
+  cached.needsInput !== undefined &&
+  cached.providerSessionId !== undefined &&
+  cached.providerHistory !== undefined &&
+  cached.delegationParent !== undefined &&
+  cached.unread !== undefined;
 const SUMMARY_PROJECTS = 512;
 const SUMMARY_ROWS = 100000;
 // The 64 MiB weight budget in `remember` bounds memory. At 32 entries, listing one parent's
@@ -478,6 +486,32 @@ export class HostStore {
     this.summaryRows.clear();
     this.summaryRowCount = 0;
   }
+  /** A summary is derived from every block of its session; one save derives it once. */
+  private readonly summaryMemo = new WeakMap<HostSession, HostSessionSummary>();
+  private summaryOf(value: HostSession): HostSessionSummary {
+    let derived = this.summaryMemo.get(value);
+    if (!derived) this.summaryMemo.set(value, (derived = summary(value)));
+    return derived;
+  }
+  /**
+   * Committed saves whose cached summary row still waits for its patch, per project. A list
+   * served without the database overlays them; the patch used to be ordered before every
+   * read by the writer queue, and the cache is now read beside it.
+   */
+  private readonly unpatchedSummaries = new Map<string, Map<string, HostSession>>();
+  /** Counts committed saves, so a list read from SQLite is not cached across one it may miss. */
+  private summarySaves = 0;
+  private expectSummaryPatch(value: HostSession): void {
+    this.summarySaves++;
+    let project = this.unpatchedSummaries.get(value.projectId);
+    if (!project) this.unpatchedSummaries.set(value.projectId, (project = new Map()));
+    project.set(value.session.id, value);
+  }
+  private settleSummaryPatch(value: HostSession): void {
+    const project = this.unpatchedSummaries.get(value.projectId);
+    if (project?.get(value.session.id) === value) project.delete(value.session.id);
+    if (project && !project.size) this.unpatchedSummaries.delete(value.projectId);
+  }
   /** Patch one streamed row instead of reparsing the project's entire history. */
   private async savedSummary(value: HostSession): Promise<void> {
     if (this.closePromise) return;
@@ -485,7 +519,13 @@ export class HostStore {
       await assertHostAuthority(this.db, value.session.id, value.authorityGeneration);
     if (this.inTransaction) {
       this.afterCommit(() => {
-        if (!this.closePromise) return this.db.scope(() => this.savedSummary(value));
+        // Registered in the tick that publishes the commit: a list served from the cache
+        // overlays this save until the queued patch below has applied it.
+        this.expectSummaryPatch(value);
+        if (this.closePromise) return this.settleSummaryPatch(value);
+        return this.db
+          .scope(() => this.savedSummary(value))
+          .finally(() => this.settleSummaryPatch(value));
       });
       return;
     }
@@ -501,7 +541,7 @@ export class HostStore {
       return;
     }
     const before = entry.rows.size;
-    entry.rows.set(value.session.id, summary(value));
+    entry.rows.set(value.session.id, this.summaryOf(value));
     entry.raw.delete(value.session.id);
     this.summaryRowCount += entry.rows.size - before;
     entry.version = this.projectVersion(value.projectId);
@@ -1470,18 +1510,39 @@ export class HostStore {
     });
   }
   async project(id: string): Promise<HostProject> {
-    return this.db.storeScope(async () => {
+    return this.db.readScope(async () => {
       const row = await this.db.prepare("SELECT * FROM projects WHERE id=?").get(id);
       if (!row) throw new Error("Project is not registered on this machine");
       return row as unknown as HostProject;
     });
   }
   async projects(): Promise<HostProject[]> {
-    return this.db.storeScope(async () => {
+    return this.db.readScope(async () => {
       return (await this.db
         .prepare("SELECT * FROM projects ORDER BY name")
         .all()) as unknown as HostProject[];
     });
+  }
+  /**
+   * Pure reads of stored and unwritten session state beside the writer queue, on one committed
+   * snapshot. The unwritten (not yet flushed) sessions are captured before the snapshot, so a
+   * flush that commits meanwhile still shows its newer value. While a transaction holds
+   * uncommitted in-memory state the read waits behind it instead, like a writer scope.
+   * Inside a writer scope it runs there and sees that scope's own writes.
+   */
+  readScope<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (this.db.ownsScope || this.readStates.getStore()) return this.db.readScope(work, signal);
+    if (this.inTransaction) return this.db.storeScope(work, undefined);
+    return this.readStates.run({ pending: new Map(this.pending) }, () =>
+      this.db.readScope(work, signal),
+    );
+  }
+  private readonly readStates = new AsyncLocalStorage<{
+    pending: ReadonlyMap<string, PendingWrite>;
+  }>();
+  /** Unwritten sessions this read works from: the captured set inside a read scope, else the live one. */
+  private get readPending(): ReadonlyMap<string, PendingWrite> {
+    return this.readStates.getStore()?.pending ?? this.pending;
   }
   async addProject(cwd: string, name: string): Promise<HostProject> {
     return this.db.storeScope(async () => {
@@ -1696,7 +1757,92 @@ export class HostStore {
         : undefined;
     });
   }
+  /**
+   * Session summaries of one project. A cached list is served without the database; a miss
+   * reads the stored rows on a read connection beside the writer. Only rows that must be
+   * rebuilt and written back (legacy projections) take the writer queue.
+   */
   async summaries(projectId: string): Promise<HostSessionSummary[]> {
+    if (this.db.ownsScope || this.inTransaction) return this.summariesLocked(projectId);
+    // Everything the cache is keyed by is read before the snapshot: a later change moves
+    // one of these, so rows older than their key are never cached.
+    const outermost = !this.readStates.getStore();
+    const external = await this.db.dataVersion();
+    const version = this.projectVersion(projectId);
+    const mutations = this.db.dataMutationVersion;
+    const saves = this.summarySaves;
+    const entry = this.summaryRows.get(projectId);
+    if (!this.inTransaction && entry?.version === version && entry.external === external) {
+      const unpatched = this.unpatchedSummaries.get(projectId);
+      if (!unpatched?.size) {
+        entry.sorted ??= [...entry.rows.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+        return entry.sorted.slice();
+      }
+      const rows = new Map(entry.rows);
+      for (const [id, value] of unpatched) rows.set(id, this.summaryOf(value));
+      return [...rows.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    }
+    const read = () => this.readStoredSummaries(projectId, entry);
+    const stored = outermost ? await this.readScope(read) : await read();
+    if (!stored) return this.summariesLocked(projectId);
+    const { list, raws } = stored;
+    list.sort((a, b) => b.updatedAt - a.updatedAt);
+    // Only a read that owned its snapshot is cached, and only when nothing the store knows
+    // moved while it ran; a nested read began its snapshot before these stamps.
+    const externalAfter = outermost ? await this.db.dataVersion() : undefined;
+    if (
+      outermost &&
+      !this.inTransaction &&
+      list.length <= SUMMARY_ROWS &&
+      version === this.projectVersion(projectId) &&
+      mutations === this.db.dataMutationVersion &&
+      saves === this.summarySaves &&
+      external === externalAfter
+    ) {
+      this.setSummaryRows(projectId, {
+        version,
+        external,
+        rows: new Map(list.map((item) => [item.id, item])),
+        raw: raws,
+        sorted: list,
+      });
+      while (this.summaryRows.size > SUMMARY_PROJECTS || this.summaryRowCount > SUMMARY_ROWS)
+        this.dropSummaryRows(this.summaryRows.keys().next().value!);
+    }
+    return list.slice();
+  }
+  /** Current summaries of the stored rows, or `undefined` when any row needs rebuilding. */
+  private async readStoredSummaries(
+    projectId: string,
+    entry: SummaryEntry | undefined,
+  ): Promise<{ list: HostSessionSummary[]; raws: Map<string, string> } | undefined> {
+    const unwritten = this.readPending;
+    const rows = await this.db
+      .prepare("SELECT id, revision, summary FROM session_state WHERE project_id=?")
+      .all(projectId);
+    const list: HostSessionSummary[] = [];
+    const raws = new Map<string, string>();
+    for (const row of rows) {
+      const id = String(row.id);
+      const pending = unwritten.get(id);
+      if (pending) {
+        if (pending.value.authorityGeneration !== undefined)
+          await assertHostAuthority(this.db, id, pending.value.authorityGeneration);
+        list.push(this.summaryOf(pending.value));
+        continue;
+      }
+      const stored = row.summary == null ? undefined : String(row.summary);
+      // An unchanged stored summary reuses the parsed copy the cache already holds.
+      const reused =
+        stored !== undefined && entry?.raw.get(id) === stored ? entry.rows.get(id) : undefined;
+      const cached = reused ?? (stored ? (JSON.parse(stored) as HostSessionSummary) : undefined);
+      if (!cached || !hasCurrentSummaryFields(cached)) return undefined;
+      raws.set(id, stored!);
+      list.push(cached);
+    }
+    return { list, raws };
+  }
+  private async summariesLocked(projectId: string): Promise<HostSessionSummary[]> {
     return this.db.storeScope(async () => {
       const external = await this.dataVersion();
       const version = this.projectVersion(projectId);
@@ -1735,16 +1881,7 @@ export class HostStore {
                 : undefined;
             const cached =
               reused ?? (stored ? (JSON.parse(stored) as HostSessionSummary) : undefined);
-            // `model` is "" for the provider default; only its absence marks a summary
-            // written before the field existed.
-            if (
-              typeof cached?.model === "string" &&
-              cached.needsInput !== undefined &&
-              cached.providerSessionId !== undefined &&
-              cached.providerHistory !== undefined &&
-              cached.delegationParent !== undefined &&
-              cached.unread !== undefined
-            ) {
+            if (cached && hasCurrentSummaryFields(cached)) {
               if (stored !== undefined) raws.set(id, stored);
               return cached;
             }
@@ -1873,7 +2010,7 @@ export class HostStore {
       desktopUpdatedAt: number;
     }[]
   > {
-    return this.db.storeScope(async () => {
+    return this.readScope(async () => {
       const rows = new Map(
         (
           await this.db
@@ -1898,7 +2035,7 @@ export class HostStore {
           },
         ]),
       );
-      for (const [id, { value }] of this.pending) {
+      for (const [id, { value }] of this.readPending) {
         if (projectId !== undefined && value.projectId !== projectId) {
           rows.delete(id);
           continue;
@@ -3113,10 +3250,9 @@ export class HostStore {
       return known;
     });
   }
-  private dataVersionStatement?: StoreStatement;
-  private async dataVersion(): Promise<number> {
-    this.dataVersionStatement ??= this.db.prepare("PRAGMA data_version");
-    return Number((await this.dataVersionStatement.get())?.data_version);
+  /** Moves only when another connection or process committed; read without a queue scope. */
+  private dataVersion(): Promise<number> {
+    return this.db.dataVersion();
   }
   private hash(token: string): string {
     return createHash("sha256").update(token).digest("hex");

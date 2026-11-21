@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useLocalLifecycleMachine } from "./useLocalLifecycleMachine";
 import {
   applyLifecycleListRead,
@@ -76,48 +76,57 @@ export function useSessionLifecycleList(enabled = true) {
   return { machineId, ...useSessionLifecycleSnapshot() };
 }
 
-/** Recent sessions can span several Hosts. Keep their records separate from the local shelf. */
+let remoteLists: ReadonlyMap<string, ReadonlyMap<string, SessionLifecycleView>> = new Map();
+const remoteRevisions = new Map<string, number>();
+const remoteListeners = new Set<() => void>();
+
+function publishRemoteList(machineId: string, records: ReadonlyMap<string, SessionLifecycleView>) {
+  remoteLists = new Map(remoteLists).set(machineId, records);
+  for (const listener of remoteListeners) listener();
+}
+
+function subscribeRemoteLists(listener: () => void) {
+  remoteListeners.add(listener);
+  return () => remoteListeners.delete(listener);
+}
+
+const subscribeNothing = () => () => {};
+
+async function changeRemoteLifecycle(machineId: string, sessionId: string, undo: boolean) {
+  const client = sessionLifecycleClient(machineId, false);
+  const view = await (undo ? client.unsettle(sessionId) : client.settle(sessionId));
+  remoteRevisions.set(machineId, (remoteRevisions.get(machineId) ?? 0) + 1);
+  publishRemoteList(machineId, new Map(remoteLists.get(machineId)).set(sessionId, view));
+}
+
+/** The header, project shelf and recent list share a lifecycle snapshot per owning Host. */
 export function useRemoteSessionLifecycleLists(machineKey: string) {
-  const scope = useId();
-  const [lists, setLists] = useState<
-    ReadonlyMap<string, ReadonlyMap<string, SessionLifecycleView>>
-  >(() => new Map());
-  const revisions = useRef(new Map<string, number>());
-  const pending = [...lists.values()].some((views) =>
-    [...views.values()].some((view) => view.state === "settling"),
+  const lists = useSyncExternalStore(
+    machineKey ? subscribeRemoteLists : subscribeNothing,
+    () => remoteLists,
   );
-  const publish = useCallback(
-    (machineId: string, records: ReadonlyMap<string, SessionLifecycleView>) => {
-      setLists((current) => new Map(current).set(machineId, records));
-    },
-    [],
+  const machineIds = machineKey ? (JSON.parse(machineKey) as string[]) : [];
+  const pending = machineIds.some((machineId) =>
+    [...(lists.get(machineId)?.values() ?? [])].some((view) => view.state === "settling"),
   );
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Subscribe to lifecycle reads for the visible remote Hosts.
   useEffect(() => {
     if (!machineKey) return;
     const stops = (JSON.parse(machineKey) as string[]).map((machineId) =>
       subscribeSharedRead(
-        `recent-remote-list:${scope}:${machineId}`,
+        `remote-lifecycle-list:${machineId}:${pending}`,
         async (isCurrent) => {
-          const revision = revisions.current.get(machineId);
+          const revision = remoteRevisions.get(machineId);
           const { records } = await sessionLifecycleClient(machineId, false).list();
-          if (isCurrent() && revision === revisions.current.get(machineId))
-            publish(machineId, new Map(records.map((view) => [view.sessionId, view])));
+          if (isCurrent() && revision === remoteRevisions.get(machineId))
+            publishRemoteList(machineId, new Map(records.map((view) => [view.sessionId, view])));
         },
         { intervalMs: pending ? POLL_SETTLING_MS : REFRESH_LIST_MS, refreshOnFocus: true },
       ),
     );
     return () => stops.forEach((stop) => stop());
-  }, [machineKey, pending, publish, scope]);
-  const change = async (machineId: string, sessionId: string, undo: boolean) => {
-    const client = sessionLifecycleClient(machineId, false);
-    const view = await (undo ? client.unsettle(sessionId) : client.settle(sessionId));
-    revisions.current.set(machineId, (revisions.current.get(machineId) ?? 0) + 1);
-    setLists((current) =>
-      new Map(current).set(machineId, new Map(current.get(machineId)).set(sessionId, view)),
-    );
-  };
-  return { lists, change };
+  }, [machineKey, pending]);
+  return { lists, change: changeRemoteLifecycle };
 }
 
 /**

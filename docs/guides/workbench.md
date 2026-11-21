@@ -139,6 +139,11 @@ shortcuts in that menu: **Changes** opens the existing Git overview, and **Lock 
 retains the same lock action. Appearance exposes background controls
 directly below the compact icon picker.
 
+In Settings > Appearance > Interface > Chat messages, set the background opacity
+of your messages and AI replies independently. Zero leaves the text on the chat
+canvas. Both use the selected theme color or a neutral tone. The preview updates
+as you move a slider.
+
 In Settings > Appearance > Background > Image, the Library keeps previously used
 images. A failed library read shows Retry instead of an empty library; any loaded
 images remain visible. Image apply and delete controls wait while a background
@@ -165,6 +170,9 @@ choices within the viewport. Escape closes the inner picker first.
 When you scroll up in a conversation, **Jump to latest** appears above the composer.
 Click it, or focus it and press Enter or Space, to return to the end and resume
 following new messages.
+With **Anchor prompts to top** enabled, the active prompt stays at the top while
+the assistant works. When the turn finishes, the conversation ends at the latest
+reply.
 
 On Windows and Linux, scrollbar thumbs appear when you hover over or focus a
 scrolling area. Touch-only devices and high-contrast mode keep them visible.
@@ -226,6 +234,11 @@ interrupted runs. Select a row to inspect the run. When available, the action
 to stop all work appears above the expanded list. Its tooltip explains whether it stops
 background work only or interrupts the whole turn. Missing child-model metadata
 stays unspecified.
+
+The **Session subagents** button by the composer also opens past runs. Each row
+shows the run title, a status icon, the reported model with its provider icon,
+and the elapsed time when available. Hover over a row to read the full title and
+status. Select a row to open the run.
 
 Tooltip content is chosen by each control: readable labels stay quiet on hover,
 while hints explain icons, missing shortcuts and additional context. Overflow
@@ -392,18 +405,22 @@ assistant. It uses the Host's management record for local and remote projects an
 combines with provider, time, archive and status filters. Clear filters restores the full list.
 
 **Settle** (the check mark in a conversation's header, or on its sidebar row
-when you hover it) moves a finished conversation to the collapsed **Settled**
+when you hover it) uses the owning Host for both local and connected remote
+projects. It moves a finished conversation to the collapsed **Settled**
 group at the end of the project's list. The **Settled** filter lists only
 settled conversations. It does not lock anything: the conversation stays writable, and its next
 message moves it back to the active list. Settling while a turn runs waits for
 the turn; a failed turn or a queued message leaves it active. **Un-settle**
 brings it back and keeps it out of automatic settling until its next message.
 Settle stays disabled in a new conversation until it has a submitted message; unsent drafts do not enable it.
+In a project list, select several conversations and choose **Settle** from the
+right-click menu or the check mark on a selected row. The same action works in
+local and connected remote projects. It leaves already settled conversations in place.
 Conversations idle for three days settle on their own; change or turn this off
 in Settings → Session list → **Auto-settle after**. Pinned, archived, running and
 waiting conversations never settle automatically, and pinned, foldered or
 reminder conversations stay where you placed them. Settling applies to
-conversations on this computer's Host; archive and tasks are unchanged by it.
+conversations on their owning Host. Archive and tasks are separate actions.
 
 To keep the shelf short, Settings → Session list → **Archive settled after**
 archives conversations that stayed settled for 7, 14, 30 or 90 days. It is off
@@ -478,7 +495,9 @@ with tooltips; a failed copy or save shows the reason and a retry icon in place.
 
 The notifications sheet lists pending requests and **Recent**, the common log of
 what the app announced (the last 100): questions, approvals, finished and failed
-turns, reminders, background work, assistant messages and account notices. Each
+turns, reminders, background work, assistant messages and account notices.
+Successful subagent runs appear in the conversation's activity without a desktop
+banner, completion sound or entry in **Recent**. Each notification history
 row has a prominent title, a quieter two-line preview and a plain status icon.
 The project, event label and relative time sit below the preview. Expand a row
 to read its full title and message, inspect its path, open its destination or

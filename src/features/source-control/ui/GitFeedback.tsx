@@ -7,6 +7,8 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { X } from "../../../shared/ui/icons";
+import type { CommitGenerationResult } from "../model/gitPanelState";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { createNote } from "../../notes";
@@ -16,6 +18,35 @@ import { requestWorktreeManagement } from "../model/worktreeManagement";
 export function GitLoading({ text }: { text: string }) {
   useLocale();
   return <LoadingText className="px-3 py-2">{t(text)}</LoadingText>;
+}
+
+export function GitCommitGenerationNotice({
+  result,
+  onUse,
+  onDismiss,
+  disabled,
+}: {
+  result: CommitGenerationResult;
+  onUse: () => void;
+  onDismiss: () => void;
+  disabled?: boolean;
+}) {
+  useLocale();
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
+      <InlineMessage tone="warning" className="me-auto flex-1 self-center">
+        {t(result.changesUpdated ? "Changes updated. Review the message." : "AI message ready.")}
+      </InlineMessage>
+      {result.suggestion && (
+        <Button size="xs" onClick={onUse} disabled={disabled}>
+          {t("Use AI message")}
+        </Button>
+      )}
+      <Button size="xs" iconOnly label={t("Dismiss notice")} onClick={onDismiss}>
+        <X className="icon-sm" />
+      </Button>
+    </div>
+  );
 }
 
 type GitFeedbackProps = {

@@ -2,6 +2,20 @@ import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
+  test(`provider Update all icon uses button text color in ${theme} mode`, async ({ page }) => {
+    await page.goto(
+      `/tests/browser/settings/settings.html?providersFixture&section=providers&theme=${theme}&lang=en`,
+    );
+    await page.getByRole("tab", { name: "Providers", exact: true }).click();
+    const update = page.getByRole("button", { name: "Update all (1)", exact: true });
+    const icon = update.locator("svg");
+    await expect(icon).toBeVisible();
+    await update.screenshot({ path: `temp/verification/provider-update-icon/${theme}.png` });
+    const textColor = await update.evaluate((button) => getComputedStyle(button).color);
+    await expect(icon).toHaveCSS("stroke", textColor);
+  });
+
+for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
     test(`provider account quota typography ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });

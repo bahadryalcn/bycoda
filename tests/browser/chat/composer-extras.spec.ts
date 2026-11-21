@@ -286,28 +286,93 @@ for (const theme of ["light", "dark"] as const) {
     test(`quota recovery retains long draft ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
-      await page.goto(
-        `/tests/browser/chat/composer-extras.html?accounts=8&data=worst&quota-stress&theme=${theme}`,
-      );
       const editor = page.getByRole("textbox", { name: "Message", exact: true });
-      const draft = await editor.inputValue();
-      expect(draft.length).toBeGreaterThan(1000);
-      await expect(page.locator("[data-usage-limit]")).toHaveCount(1);
-      const recover = page.getByRole("button", { name: "Switch model", exact: true });
+      const notice = page.locator("[data-usage-limit]");
+      const switchModel = notice.getByRole("button", { name: "Switch model", exact: true });
+      const switchAccount = notice.getByRole("button", { name: "Switch account", exact: true });
+      const cancel = notice.getByRole("button", { name: "Cancel auto-resume", exact: true });
+      const dismiss = notice.getByRole("button", {
+        name: "Dismiss usage limit notice",
+        exact: true,
+      });
       for (const zoom of [1, 2]) {
+        await page.goto(
+          `/tests/browser/chat/composer-extras.html?accounts=8&account-usage&data=worst&quota-stress&theme=${theme}`,
+        );
+        const draft = await editor.inputValue();
+        expect(draft.length).toBeGreaterThan(1000);
         await page.evaluate((value) => {
           document.documentElement.style.zoom = String(value);
         }, zoom);
-        await recover.scrollIntoViewIfNeeded();
-        await recover.click();
+        await page.screenshot({
+          path: `temp/verification/usage-limit-recovery/notice-${theme}-${width}-${zoom}x.png`,
+        });
+        await switchModel.scrollIntoViewIfNeeded();
+        await expect(switchModel).toBeInViewport();
+        await expect(switchAccount).toBeInViewport();
+        await expect(cancel).toBeInViewport();
+        await expect(dismiss).toBeInViewport();
+        if (width === 1280 && zoom === 1) {
+          const copyTop = (await notice
+            .getByText("Usage limit reached", { exact: true })
+            .boundingBox())!;
+          const copyBottom = (await notice.getByText(/^Resets /).boundingBox())!;
+          const copyCenter = (copyTop.y + copyBottom.y + copyBottom.height) / 2;
+          for (const control of [switchModel, switchAccount, cancel, dismiss]) {
+            const bounds = (await control.boundingBox())!;
+            expect(Math.abs(bounds.y + bounds.height / 2 - copyCenter)).toBeLessThan(2);
+          }
+        }
+        expect(
+          await notice.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            return [...element.querySelectorAll("button")].every((button) => {
+              const rect = button.getBoundingClientRect();
+              return (
+                rect.left >= bounds.left &&
+                rect.right <= bounds.right &&
+                rect.top >= bounds.top &&
+                rect.bottom <= bounds.bottom
+              );
+            });
+          }),
+        ).toBe(true);
         const panel = page.locator("[data-model-panel]");
-        await expect(panel).toBeVisible();
-        await page.keyboard.press("Escape");
+        if (zoom === 1) {
+          await cancel.click();
+          await expect(notice.getByRole("button", { name: "Resume at reset" })).toBeVisible();
+          await switchAccount.click();
+          const accounts = page.getByRole("menuitemradio");
+          await expect(accounts).toHaveCount(8);
+          await expect(panel).toHaveCount(0);
+          await page.screenshot({
+            path: `temp/verification/usage-limit-recovery/accounts-${theme}-${width}.png`,
+          });
+          await accounts.nth(1).click();
+        } else {
+          await switchModel.click();
+          await expect(panel).toBeVisible();
+          await page.screenshot({
+            path: `temp/verification/usage-limit-recovery/models-${theme}-${width}.png`,
+          });
+          await panel.getByRole("option", { name: /^Claude Opus 4\.7$/ }).click();
+        }
         await expect(panel).toHaveCount(0);
+        await expect(notice).toContainText("Ready to continue");
+        await expect(cancel).toHaveCount(0);
+        await expect(switchModel).toHaveCount(0);
+        await expect(switchAccount).toHaveCount(0);
+        const resume = notice.getByRole("button", { name: "Continue", exact: true });
+        await expect(resume).toBeInViewport();
+        await expect(page.getByTestId("quota-resumes")).toHaveText("0");
         await expect(editor).toHaveValue(draft);
         await page.screenshot({
-          path: `temp/verification/2026-11-13-ui-coherence/models/quota-${theme}-${width}-${zoom}x.png`,
+          path: `temp/verification/usage-limit-recovery/continue-${theme}-${width}-${zoom}x.png`,
         });
+        await resume.click();
+        await expect(page.getByTestId("quota-resumes")).toHaveText("1");
+        await expect(notice).toHaveCount(0);
+        await expect(editor).toHaveValue(draft);
       }
     });
   }
@@ -1465,7 +1530,9 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   });
 });
 
-test("composer keeps named account and controls visible at narrow widths", async ({ page }) => {
+test("composer shows the account name when it fits and keeps narrow controls aligned", async ({
+  page,
+}) => {
   await initializeChatLayout(page);
   for (const theme of ["dark", "light"]) {
     for (const width of [420, 320, 800, 1280]) {
@@ -1484,9 +1551,16 @@ test("composer keeps named account and controls visible at narrow widths", async
         await trigger.click();
         const picker = page.getByRole("dialog", { name: "Model and settings", exact: true });
         await picker.getByRole("radio", { name: /^work\b/ }).click();
-        if (theme === "dark" && width === 800) {
+        if (width === 800) {
+          const selected = picker.getByRole("option", { selected: true }).locator("..");
+          const indicator = await selected.evaluate((row) => {
+            const style = getComputedStyle(row, "::before");
+            return { width: style.inlineSize, color: style.backgroundColor };
+          });
+          expect(indicator.width).toBe("2px");
+          expect(indicator.color).not.toBe("rgba(0, 0, 0, 0)");
           await picker.screenshot({
-            path: "temp/verification/composer-account-layout/picker-dark-800.png",
+            path: `temp/verification/composer-account-layout/picker-${theme}-800.png`,
           });
         }
         await page.keyboard.press("Escape");
@@ -1494,14 +1568,21 @@ test("composer keeps named account and controls visible at narrow widths", async
       }
       const name = selectWork ? "work" : "personal";
       await expect(trigger.locator("[data-model-trigger-name]")).toHaveText("Sonnet 5");
-      await expect(trigger).not.toContainText(name);
+      const accountName = trigger.locator("[data-model-account]");
+      if (width <= 420) await expect(accountName).toBeHidden();
+      else {
+        await expect(accountName).toBeVisible();
+        await expect(accountName).toHaveText(name);
+      }
       await expect(trigger).toHaveAccessibleName(new RegExp(`Account: ${name}`));
       const icon = trigger.locator("[data-model-provider-icon]");
       const number = icon.locator("[data-model-account-number]");
       await expect(number).toHaveText(selectWork ? "2" : "1");
       const iconBounds = (await icon.boundingBox())!;
       const numberBounds = (await number.boundingBox())!;
-      expect(numberBounds.x).toBeGreaterThan(iconBounds.x);
+      expect(numberBounds.x + numberBounds.width / 2).toBeGreaterThan(
+        iconBounds.x + iconBounds.width,
+      );
       expect(numberBounds.y).toBeLessThan(iconBounds.y);
       const model = (await trigger.boundingBox())!;
       const accessBounds = (await access.boundingBox())!;
@@ -1525,6 +1606,13 @@ test("composer keeps named account and controls visible at narrow widths", async
       await box.screenshot({
         path: `temp/verification/composer-account-layout/${theme}-${width}.png`,
       });
+      if (width === 1280) {
+        await page.locator("main").evaluate((node) => {
+          node.style.inlineSize = "420px";
+        });
+        await expect(accountName).toBeHidden();
+        await expect(trigger).toHaveAccessibleName(new RegExp(`Account: ${name}`));
+      }
     }
   }
 });
@@ -2095,6 +2183,14 @@ test("model picker aligns account rows and keeps quota readable in both themes a
         const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
         if (count === 3) {
           const trigger = panel.locator("[data-model-account-menu]");
+          const account = trigger.getByText("personal", { exact: true });
+          const quota = trigger.getByText("8% used", { exact: true });
+          await expect(quota).toBeVisible();
+          const accountBox = (await account.boundingBox())!;
+          const quotaBox = (await quota.boundingBox())!;
+          const triggerBox = (await trigger.boundingBox())!;
+          expect(quotaBox.x).toBeGreaterThanOrEqual(accountBox.x + accountBox.width);
+          expect(triggerBox.x + triggerBox.width - (quotaBox.x + quotaBox.width)).toBeLessThan(60);
           await trigger.click();
           await expect(trigger).toHaveAccessibleName("Accounts");
         }
@@ -2144,10 +2240,12 @@ test("remote model picker selects a Host account in both themes and widths", asy
       const trigger = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
       await trigger.click();
       const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+      await expect(panel.locator("[data-model-account-menu]")).toHaveAccessibleName("Accounts");
       await panel.locator("[data-model-account-menu]").click();
       const list = panel.locator("[data-model-account-list]");
       await expect(list.getByRole("radio")).toHaveCount(3);
-      await expect(list.getByRole("radio", { name: /^Host default/ })).toBeChecked();
+      await expect(list.getByRole("radio", { name: /^Host default/ })).toHaveCount(0);
+      await expect(list.getByRole("radio", { checked: true })).toHaveCount(0);
       await expect(list.getByRole("radio", { name: "work", exact: true })).toHaveCount(0);
       await panel.screenshot({
         path: `temp/verification/remote-provider-accounts/picker-${width}-${theme}.png`,

@@ -5,12 +5,15 @@ import { t } from "../../../shared/i18n/git";
 
 export type AmendTarget = { branch: string | null; head: string | null };
 
+export type CommitGenerationResult = { changesUpdated: boolean; suggestion?: string };
+
 type PanelState = {
   busy: string | null;
   pending: string | null;
   status: string | null;
   message: string;
   generating: boolean;
+  generationResult: CommitGenerationResult | null;
   stashAction: "create" | `entry:${string}` | null;
   amendTarget: AmendTarget | null;
   feedback: GitOperationFeedback | null;
@@ -34,6 +37,7 @@ function createEntry() {
       status: null,
       message: "",
       generating: false,
+      generationResult: null,
       stashAction: null,
       amendTarget: null,
       feedback: null,
@@ -63,6 +67,7 @@ const entries = new CheckoutCache<string, ReturnType<typeof createEntry>>(
     !!entry.state.status ||
     !!entry.state.message ||
     entry.state.generating ||
+    !!entry.state.generationResult ||
     !!entry.state.stashAction ||
     !!entry.state.amendTarget ||
     !!entry.state.feedback,

@@ -323,6 +323,8 @@ export type UsageLimit = {
   resetsAt?: number;
   /** Send a continue turn once the window resets. */
   resumeAtReset?: boolean;
+  /** The limited target, retained while the user can continue on a different target. */
+  recoveryFrom?: Pick<Session, "harness" | "model" | "providerAccountId">;
 };
 
 /** Provider/model provenance captured when a user turn is submitted. */

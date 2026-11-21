@@ -10,6 +10,7 @@ import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { groupDockAgents, type DockAgent } from "../model/activityDock";
 import { AgentStatusDot } from "./ActivityDock";
+import { ModelLabel } from "./ModelLabel";
 import { formatElapsed } from "./useElapsedFrom";
 
 /**
@@ -39,6 +40,7 @@ export function SessionSubagentsMenu({
     interrupted: t("Interrupted"),
   };
   const row = (agent: DockAgent): DropdownMenuAction => {
+    const status = statusWord[agent.status];
     const elapsed =
       agent.startedAt !== undefined && agent.endedAt !== undefined
         ? formatElapsed(Math.max(0, agent.endedAt - agent.startedAt))
@@ -46,16 +48,27 @@ export function SessionSubagentsMenu({
     return {
       kind: "item",
       id: agent.blockId,
-      label: [agent.name, agent.model, statusWord[agent.status]].filter(Boolean).join(", "),
+      label: [agent.name, agent.model, status, elapsed].filter(Boolean).join(", "),
+      title: `${agent.name} · ${status}`,
       icon: <AgentStatusDot status={agent.status} />,
       content: (
-        <span className="flex min-w-0 flex-col">
-          <Text as="span" size="inherit" tone="neutral" truncate>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <Text size="inherit" tone="neutral" weight="medium" truncate>
             {agent.name}
           </Text>
-          <Text as="span" size="caption" tone="muted" truncate>
-            {[agent.model, statusWord[agent.status], elapsed].filter(Boolean).join(" · ")}
-          </Text>
+          {agent.model || elapsed ? (
+            <Text size="caption" tone="secondary" className="flex items-center gap-2">
+              {agent.model ? (
+                <ModelLabel
+                  model={agent.model}
+                  harness={agent.harness}
+                  name={agent.model}
+                  size="xs"
+                />
+              ) : null}
+              {elapsed ? <span className="ms-auto shrink-0 tabular-nums">{elapsed}</span> : null}
+            </Text>
+          ) : null}
         </span>
       ),
     };
@@ -126,7 +139,7 @@ export function SessionSubagentsMenu({
           label={t("Session subagents")}
           side="top"
           align="end"
-          width={280}
+          width={340}
           items={items}
           onPick={(id) => {
             const agent = agents.find((candidate) => candidate.blockId === id);

@@ -8,8 +8,10 @@
   them content-addressed in the Host data folder. The tool result is a version 2
   reference, so provider output limits never cut a page and the model never reads
   the page back.
-- The desktop resolves references from the local Host folder by id. Visuals from a
-  remote Host show a retryable unavailable message until a remote read path exists.
+- The desktop resolves local references from the local Host folder by id.
+- 2026-11-21, owner: “hatayı tamamen düzeltelim.” On a remote conversation the
+  desktop asks its authenticated Host for the stored visual. The Host checks that
+  the conversation references the id and verifies the stored content before returning it.
 - Pages receive app theme variables named like the reference app's (`--background`,
   `--chart-1`…) so agents can write one page that fits both themes.
 - 2026-11-07, owner: "users should not have to bother with installing; all of these need to come built in"

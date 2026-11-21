@@ -77,14 +77,19 @@ async function mount(run = false) {
 }
 const primary = (container: HTMLElement) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Smart setup",
+    (button) => button.textContent === "Prepare setup draft",
   )!;
 async function planWithAi(container: HTMLElement) {
-  const item = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (element) => element.textContent === "Plan with AI",
+  const options = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (element) => element.textContent === "Setup options",
+  )!;
+  await act(async () => options.click());
+  const item = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (element) => element.textContent === "Plan setup with AI",
   );
-  expect(item, "Plan with AI").toBeTruthy();
+  expect(item, "Plan setup with AI").toBeTruthy();
   await act(async () => item!.click());
+  expect(options.getAttribute("aria-expanded")).toBe("false");
 }
 
 it("fills the draft with the researched rules at once, without asking a model", async () => {
@@ -94,7 +99,7 @@ it("fills the draft with the researched rules at once, without asking a model", 
   const catalog = { models: { codex: [{ id: "gpt", name: "GPT" }] } };
   vi.mocked(localSetupCatalog).mockResolvedValue(catalog);
   const { edits, container } = await mount(true);
-  expect(container.textContent).toContain("Smart setup");
+  expect(container.textContent).toContain("Prepare setup draft");
   await act(async () => primary(container).click());
   expect(planSmartSetup).not.toHaveBeenCalled();
   expect(setupCandidates).toHaveBeenCalledWith(expect.anything(), catalog);
@@ -103,7 +108,7 @@ it("fills the draft with the researched rules at once, without asking a model", 
   expect(applySmartSetup).toHaveBeenCalledWith(expect.anything(), [candidate], plan);
   expect(toast.show).toHaveBeenCalledWith({
     tone: "info",
-    message: "Smart setup filled the draft. Review it, then save.",
+    message: "Setup draft ready. Review it, then save.",
   });
   expect(primary(container).getAttribute("aria-busy")).not.toBe("true");
 });

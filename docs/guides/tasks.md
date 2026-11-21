@@ -49,7 +49,7 @@ A review with acceptance criteria is bound to the working-copy contents it inspe
 
 An epic runs only the reviews its plan needs. A plan with one task skips the final epic review, because that task's own review already covered the whole job. When the planner marks a small, low-risk job as simple, its tasks run their configured checks without a separate reviewer. Neither rule adds a review you turned off.
 
-An epic is a planned outcome split into tasks for owner approval. Existing saved goal records and Host API identifiers continue to work. Codex's native `/goal` command remains a separate conversation capability; it does not create or approve an epic.
+An epic is a planned outcome split into tasks for owner approval. Existing saved goal records and Host API identifiers continue to work. For a native Codex `/goal`, open **Goal** in the conversation activity bar to see the full objective, usage and available actions.
 
 Epic progress and budget totals reflect the Host scheduler's latest recorded state and can take a scheduler tick to catch up with task changes.
 

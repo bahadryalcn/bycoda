@@ -7,6 +7,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
 pub(crate) mod epochs;
+#[path = "native_delivery/usage.rs"]
+mod usage;
 
 pub(crate) const MAX_PARAMS_BYTES: usize = 16 * 1024 * 1024;
 pub(crate) const MAX_RESULT_BYTES: usize = 32 * 1024 * 1024;
@@ -493,6 +495,7 @@ fn prepare_tx(
     let ids = identity(conn)?;
     epochs::check_semantic(
         conn,
+        store.native_instance_id(),
         &ids,
         semantic_key,
         route_fingerprint,
@@ -519,14 +522,8 @@ fn prepare_tx(
         }
         return Ok(record);
     }
-    let counts = |conn: &Connection| -> Result<(i64, i64, i64), String> {
-        // Independent bounded lanes prevent uncertain formatter work and
-        // unconfirmed buffer snapshots from using control capacity, so a relay
-        // finish is never starved by them. Legacy 32 MiB reservations retain
-        // their original allowance; only a qualified Host may use the smaller
-        // format lane.
-        conn.query_row("SELECT (SELECT COUNT(*) FROM native_delivery_originals),COALESCE(SUM(CASE WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results u WHERE u.original_id=native_delivery_originals.original_id) THEN 0 ELSE 1 END),0),COALESCE(SUM(payload_bytes+CASE WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results u WHERE u.original_id=native_delivery_originals.original_id) THEN 0 ELSE result_budget END),0) FROM native_delivery_originals WHERE phase!='acknowledged' AND CASE WHEN ?1='native.services.workspace.format' THEN method=?1 AND result_budget=?2 WHEN ?1=?3 THEN method=?3 ELSE method NOT IN('native.services.workspace.format',?3) END",params![method,budget as i64,BUFFER_UPDATE],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())
-    };
+    usage::initialize(conn)?;
+    let counts = |conn: &Connection| usage::read(conn, method, budget);
     let full = |(rows, active, bytes): (i64, i64, i64)| {
         rows < 0
             || active < 0
@@ -614,14 +611,14 @@ pub(crate) fn retire_stale_buffer_originals(store: &SessionStore) -> Result<usiz
         if !exists(&conn)? {
             return Ok(0);
         }
-        let stale: i64 = conn
+        let stale: bool = conn
             .query_row(
-                "SELECT COUNT(*) FROM native_delivery_originals WHERE phase='recorded' AND method=?1 AND created_instance!=?2",
+                "SELECT EXISTS(SELECT 1 FROM native_delivery_originals WHERE phase='recorded' AND method=?1 AND created_instance!=?2)",
                 params![BUFFER_UPDATE, store.native_instance_id().to_string()],
                 |r| r.get(0),
             )
             .map_err(|e| e.to_string())?;
-        if stale == 0 {
+        if !stale {
             return Ok(0);
         }
     }

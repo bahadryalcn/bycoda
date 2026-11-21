@@ -4,49 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { listHostFiles } from "./workspace";
 
-// Fake `git check-ignore`: records what was spawned and what was written to stdin,
-// then answers with the NUL-terminated list the test sets.
+// Record the args and stdin sent to Git and return the configured ignored paths.
 const fake = vi.hoisted(() => ({
   calls: [] as { args: string[]; input: string }[],
   reply: "",
 }));
 
-vi.mock("node:child_process", async (importOriginal) => {
-  const { EventEmitter } = await import("node:events");
-  const { Writable } = await import("node:stream");
-  const actual = await importOriginal<typeof import("node:child_process")>();
-  return {
-    ...actual,
-    spawn: (_command: string, args: string[]) => {
-      const child = new EventEmitter() as InstanceType<typeof EventEmitter> &
-        Record<string, unknown>;
-      const chunks: Buffer[] = [];
-      child.stdout = new EventEmitter();
-      child.stderr = new EventEmitter();
-      child.kill = () => {};
-      child.stdin = new Writable({
-        write(chunk: Buffer, _encoding, callback) {
-          chunks.push(chunk);
-          callback();
-        },
-        final(callback) {
-          fake.calls.push({ args, input: Buffer.concat(chunks).toString("utf8") });
-          callback();
-          process.nextTick(() => {
-            (child.stdout as InstanceType<typeof EventEmitter>).emit(
-              "data",
-              Buffer.from(fake.reply),
-            );
-            child.emit("close", 0);
-          });
-        },
-      });
-      return child;
+vi.mock("../git/git-exec-pool", () => ({
+  hostGitExec: {
+    exec: async (_command: string, args: string[], options: { input: string }) => {
+      fake.calls.push({ args, input: options.input });
+      return { stdout: fake.reply, stderr: "" };
     },
-  };
-});
-
-vi.mock("../git/git-start-gate", () => ({ hostGitStarts: { enter: async () => {} } }));
+  },
+}));
 
 let root: string;
 

@@ -251,6 +251,12 @@ recheck reviewed status inside the checkout lock. Publishing, credentials, pairi
 destructive recovery and operations absent from the catalog retain their owner
 workflows. See [Voice companion](voice.md#global-voice-management) for controls.
 
+For chat message appearance, `preferences.read` returns `application.chatMessages`.
+Use `preferences.patch` with `kind: "chatMessages"`, the read revision, and at
+least one field in `value`. `userMessageOpacity` and `assistantMessageOpacity`
+are integer percentages from 0 to 100. `messageColor` accepts `theme` or `neutral`.
+The change goes through the existing desktop owner review.
+
 Saved Servers can be edited through `servers.*`. To run a command, ask the
 assistant to use `servers.ssh.execute` with the saved server's ID. The connected
 desktop asks you to approve the exact target and command inside bycoda before starting it,

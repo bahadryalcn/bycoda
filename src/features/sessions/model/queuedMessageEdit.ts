@@ -1,6 +1,8 @@
 import {
   attachmentsDroppedByEdit,
+  compactAttachmentDraftTokens,
   deleteTokenAtCaret,
+  expandAttachmentDraftTokens,
   insertAtSelection,
   removeAttachmentFromText,
   tokensForIncoming,
@@ -20,7 +22,10 @@ import type { Attachment, QueuedMessage } from "./session";
 export type QueuedEditDraft = { text: string; attachments: Attachment[] };
 
 export function queuedEditDraft(message: QueuedMessage): QueuedEditDraft {
-  return { text: message.text, attachments: message.attachments };
+  return {
+    text: expandAttachmentDraftTokens(message.text, message.attachments),
+    attachments: message.attachments,
+  };
 }
 
 /** Take the attachments at `indices` out; their tokens go and the rest renumber. */
@@ -117,7 +122,10 @@ export function addDraftAttachments(
  * were; attachments that are gone are dropped with their tokens, as before.
  */
 export function applyQueuedEdit(message: QueuedMessage, draft: QueuedEditDraft): QueuedMessage {
-  return withoutMissingAttachments({ ...message, attachments: draft.attachments }, draft.text);
+  const text = hasQueuedEditChanges(message, draft)
+    ? compactAttachmentDraftTokens(draft.text, draft.attachments)
+    : message.text;
+  return withoutMissingAttachments({ ...message, attachments: draft.attachments }, text);
 }
 
 /** Nothing would be left to send after attachment cleanup, including retained cards. */
@@ -129,7 +137,7 @@ export function isQueuedEditEmpty(message: QueuedMessage, draft: QueuedEditDraft
 /** True when saving would change the row. */
 export function hasQueuedEditChanges(message: QueuedMessage, draft: QueuedEditDraft): boolean {
   return (
-    draft.text !== message.text ||
+    draft.text !== expandAttachmentDraftTokens(message.text, message.attachments) ||
     draft.attachments.length !== message.attachments.length ||
     draft.attachments.some((file, i) => file.id !== message.attachments[i]?.id)
   );

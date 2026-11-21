@@ -72,6 +72,10 @@ hover/selected/drag states that already have roles. Appearance previews and dang
 zones keep their status tone. Tinted canvas and custom surface colors keep the same
 hierarchy one step above their own ground.
 
+Settings dialogs use a visible outer frame, a divider between navigation and content,
+and a header that shows the current page. Keep empty-state actions and the save bar in
+the editor's content column so the next step and its result read together.
+
 Background tone offers Pure (the default) and Tinted. Under Pure, the window, rail,
 sidebars, chat, side panels, editor and terminal share one pure ground. Derived
 layers (surfaces, text, borders) keep their steps above that ground, and a custom

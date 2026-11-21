@@ -11,6 +11,7 @@ import type { Session } from "../../../features/sessions/model/session";
 import {
   type ProviderAccountProvider,
   providerAccountExists,
+  sessionProviderAccountId,
 } from "../../../features/providers/model/providerAccounts";
 import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
 import { isPreparingHandoff } from "../../../features/sessions/model/handoff";
@@ -26,6 +27,7 @@ import {
   type HarnessEvent,
 } from "../../../integrations/harness";
 import { RESUME_PROMPT } from "../../../features/sessions/model/inFlight";
+import { usageLimitAfterTargetChange } from "../../../features/sessions/model/usageLimit";
 import type { useSubmitSession } from "../sessions/submit/useSubmitSession";
 
 export interface UsageLimitAccountActionDeps {
@@ -170,7 +172,19 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
         say("The conversation changed while switching accounts. Pick the account again.");
         return false;
       }
-      setSessions((prev) => prev.map((s) => (s.id === sessionId ? result.update(s) : s)));
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== sessionId) return s;
+          const next = result.update(s);
+          if (next === s || !s.usageLimit) return next;
+          return {
+            ...next,
+            usageLimit: usageLimitAfterTargetChange(s, next, (target) =>
+              sessionProviderAccountId(provider, target),
+            ),
+          };
+        }),
+      );
       recordModelSwitch(sessionId, latest, result.mode === "handoff" ? { note: "summary" } : {});
       promptProviderAccountSignIn(sessionId, provider, accountId);
       return true;
@@ -215,7 +229,8 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
     (sessionId: string) => {
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
       if (!session?.usageLimit || session.busy) return;
-      onUsageLimitDismiss(sessionId);
+      // Submission clears a switched limit once a turn starts. A refused send keeps Continue available.
+      if (!session.usageLimit.recoveryFrom) onUsageLimitDismiss(sessionId);
       onSubmit(sessionId, RESUME_PROMPT);
     },
     [onSubmit, onUsageLimitDismiss, sessionsRef],

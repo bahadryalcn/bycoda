@@ -5,6 +5,37 @@ export function applyTextareaEdit(el: HTMLTextAreaElement, text: string, caret: 
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+/** Type directly before an existing skill without joining the invocation to the new word. */
+export function keepSkillBoundary(
+  field: HTMLTextAreaElement,
+  event: InputEvent,
+  isSkillStart: (text: string, position: number) => boolean,
+) {
+  const { value, selectionStart: caret, selectionEnd } = field;
+  const text = event.data;
+  if (
+    event.defaultPrevented ||
+    !event.cancelable ||
+    event.isComposing ||
+    event.inputType !== "insertText" ||
+    !text ||
+    /\s$/.test(text) ||
+    field.readOnly ||
+    caret !== selectionEnd ||
+    !/[/$]/.test(value[caret] ?? "") ||
+    !isSkillStart(value, caret)
+  )
+    return;
+  event.preventDefault();
+  const end = caret + text.length;
+  // The native insertion keeps this keystroke in the textarea's undo history.
+  if (field.ownerDocument.execCommand?.("insertText", false, `${text} `)) {
+    field.setSelectionRange(end, end);
+  } else {
+    applyTextareaEdit(field, `${value.slice(0, caret)}${text} ${value.slice(caret)}`, end);
+  }
+}
+
 /** Inserts spoken or generated text at the caret, separated from neighboring words. */
 export function insertAtCaret(el: HTMLTextAreaElement, text: string) {
   const start = el.selectionStart ?? el.value.length;

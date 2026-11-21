@@ -258,7 +258,7 @@ it("takes a file URI back out when the webview inserted it and the file attached
 
   expect(event.defaultPrevented).toBe(true);
   // The URI is gone; the file is referenced by its token instead.
-  expect(field.value).toBe("keep [File 1 · 4 KB]");
+  expect(field.value).toBe("keep [File 1 · report.pdf · 4 KB]");
 });
 
 it("sends a screenshot that is still being read when the turn is sent", async () => {
@@ -360,7 +360,7 @@ it.each(["button", "keyboard", "parent"])(
     release();
     await waitForAttachments(1);
     expect(submit).not.toHaveBeenCalled();
-    expect(field.value).toBe("keep for review [Image 1 · 8 B]");
+    expect(field.value).toBe("keep for review [Image 1 · clipboard-image.png · 8 B]");
     await send();
     expect(submit).toHaveBeenCalledOnce();
     expect(submit.mock.calls[0][1]).toHaveLength(1);

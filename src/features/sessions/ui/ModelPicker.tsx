@@ -115,6 +115,8 @@ type Props = {
   hotkeys?: boolean;
   /** Bump to open the picker from outside, e.g. a usage-limit notice. */
   openRequest?: number;
+  /** Close the panel after a model pick so the caller's next action is visible. */
+  closeOnPick?: boolean;
   /** An existing button owns opening and anchors the model panel. */
   externalTrigger?: {
     anchor: React.RefObject<HTMLButtonElement | null>;
@@ -125,7 +127,7 @@ type Props = {
    * full-width, left-aligned form field, for forms where the picker answers a labelled question.
    */
   presentation?: "inline" | "field";
-  /** In the composer, the provider icon and account number carry the inline identity. */
+  /** In the composer, shorten the model label and hide the account name when space is tight. */
   compactIdentity?: boolean;
   /**
    * Optional labelled "no explicit model" choice, e.g. "Use the global agent". It leads the menu;
@@ -189,6 +191,7 @@ export function ModelPicker({
   allowedHarnesses,
   hotkeys = false,
   openRequest = 0,
+  closeOnPick = false,
   externalTrigger,
   presentation = "inline",
   compactIdentity = false,
@@ -558,7 +561,13 @@ export function ModelPicker({
     activeModelKey == null
       ? -1
       : visibleModels.findIndex((item) => modelChoiceKey(item) === activeModelKey);
-  const activeModel = chosenModelIndex >= 0 ? chosenModelIndex : Math.max(0, currentModelIndex);
+  // The selected model stays marked without scrolling the account rows out of view on open.
+  const activeModel =
+    chosenModelIndex >= 0
+      ? chosenModelIndex
+      : accountListOpen
+        ? -1
+        : Math.max(0, currentModelIndex);
   const setActiveModel = (next: number | ((index: number) => number)) => {
     const item = visibleModels[typeof next === "function" ? next(activeModel) : next];
     if (item) setActiveModelKey(modelChoiceKey(item));
@@ -731,7 +740,7 @@ export function ModelPicker({
           : undefined;
     if (accountId) onChange(item.harness, item.id, accountId);
     else onChange(item.harness, item.id);
-    if (hideSettings || recentOpen) {
+    if (hideSettings || recentOpen || closeOnPick) {
       dismiss(true);
     } else {
       setQuery("");
@@ -899,7 +908,7 @@ export function ModelPicker({
                     {!field ? (
                       <ModelAccountNumber
                         account={activeAccount}
-                        className="absolute -end-1.5 [inset-block-start:-0.25rem]"
+                        className="absolute -end-2.5 [inset-block-start:-0.375rem]"
                       />
                     ) : null}
                   </span>
@@ -925,20 +934,34 @@ export function ModelPicker({
                 />
               ) : (
                 <>
-                  {!compactIdentity && triggerAccountLabel && !inheritSelected ? (
-                    <Text
-                      data-model-account
-                      size="inherit"
-                      tone="secondary"
-                      truncate
-                      className="min-w-0 max-w-24"
+                  {triggerAccountLabel && !inheritSelected ? (
+                    <span
+                      className={`flex min-w-0 max-w-24 shrink-[2] items-center gap-1${compactIdentity ? " @max-[31rem]/chat-composer:hidden" : ""}`}
                     >
-                      {triggerAccountLabel}
-                    </Text>
+                      {compactIdentity ? <span aria-hidden="true">·</span> : null}
+                      <Text
+                        data-model-account
+                        size="inherit"
+                        tone="secondary"
+                        truncate
+                        className="min-w-0"
+                      >
+                        {triggerAccountLabel}
+                      </Text>
+                    </span>
                   ) : null}
 
                   {triggerEffortLabel ? (
-                    <Text data-model-effort size="inherit" tone="secondary" className="shrink-0">
+                    <Text
+                      data-model-effort
+                      size="inherit"
+                      tone="secondary"
+                      className={
+                        compactIdentity
+                          ? "shrink-0 before:me-1 before:content-['·'] @max-[31rem]/chat-composer:before:hidden"
+                          : "shrink-0"
+                      }
+                    >
                       {triggerEffortLabel}
                     </Text>
                   ) : null}

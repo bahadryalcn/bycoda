@@ -1,5 +1,6 @@
 import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
 import { spawn } from "node:child_process";
+import { hostGitExec } from "../git/git-exec-pool";
 import { hostGitStarts } from "../git/git-start-gate";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -90,6 +91,29 @@ export async function safeGitPath(root: string, input: unknown): Promise<string>
   }
 }
 
+const gitEnv = { LC_ALL: "C.UTF-8", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
+const NETWORK_COMMANDS = new Set(["push", "pull", "fetch", "clone"]);
+
+/**
+ * Whether HEAD names a commit. Only Git's own "not found" exit (1 under --quiet) means an
+ * unborn repository; a pool timeout, abort or crash must never be read as one, because the
+ * unborn branch of unstage runs `git rm --cached`.
+ */
+export async function gitHasHead(root: string): Promise<boolean> {
+  try {
+    await git(root, ["rev-parse", "--verify", "--quiet", "HEAD"]);
+    return true;
+  } catch (reason) {
+    const { code, killed, signal } = reason as {
+      code?: unknown;
+      killed?: boolean;
+      signal?: unknown;
+    };
+    if (code === 1 && !killed && !signal) return false;
+    throw reason;
+  }
+}
+
 async function git(
   root: string,
   args: string[],
@@ -98,9 +122,8 @@ async function git(
   literalPaths = args.includes("--") && args[0] !== "check-ignore" && args[0] !== "grep",
 ) {
   try {
-    await hostGitStarts.enter();
     return (
-      await exec(
+      await hostGitExec.exec(
         "git",
         [...(literalPaths ? ["--literal-pathspecs"] : []), "-c", "core.pager=cat", ...args],
         {
@@ -111,72 +134,56 @@ async function git(
           maxBuffer,
           encoding: "utf8",
           windowsHide: true,
-          env: {
-            ...process.env,
-            LC_ALL: "C.UTF-8",
-            GIT_TERMINAL_PROMPT: "0",
-            GIT_OPTIONAL_LOCKS: "0",
-          },
+          env: gitEnv,
+          // Long transports must not occupy the slots that short probes need.
+          lane: NETWORK_COMMANDS.has(args[0]) ? "network" : "default",
         },
       )
     ).stdout;
   } catch (reason) {
     if (
-      (reason as { killed?: boolean }).killed &&
-      (reason as { code?: string }).code !== "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+      (reason as { code?: string }).code === "ETIMEDOUT" ||
+      ((reason as { killed?: boolean }).killed && (reason as { code?: string }).code === null)
     )
       throw new Error(`git ${args[0]} timed out after ${timeout / 1000} seconds`);
     throw reason;
   }
 }
 
-function gitWithInput(
+async function gitWithInput(
   root: string,
   args: string[],
   input: string,
   timeout = 10_000,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", ["--literal-pathspecs", "-c", "core.pager=cat", ...args], {
-      cwd: root,
-      windowsHide: true,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, LC_ALL: "C.UTF-8", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let inputError: Error | undefined;
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-      // A helper can inherit the pipes after Git exits. Do not wait forever for
-      // its handles to close before releasing the failed operation's queue slot.
-      child.stdin.destroy();
-      child.stdout.destroy();
-      child.stderr.destroy();
-      reject(new Error(`git ${args[0]} timed out after ${timeout / 1000} seconds`));
-    }, timeout);
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    // Git may reject a locked index before consuming stdin. Keep its stderr
-    // rather than replacing the useful lock error with EPIPE.
-    child.stdin.on("error", (error) => {
-      inputError = error;
-    });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (timedOut) reject(new Error(`git ${args[0]} timed out after ${timeout / 1000} seconds`));
-      else if (code === 0 && inputError) reject(inputError);
-      else if (code === 0) resolve(Buffer.concat(stdout).toString("utf8"));
-      else reject(new Error(Buffer.concat(stderr).toString("utf8") || `git exited ${code}`));
-    });
-    child.stdin.end(input);
-  });
+  try {
+    const { stdout } = await hostGitExec.exec(
+      "git",
+      ["--literal-pathspecs", "-c", "core.pager=cat", ...args],
+      {
+        cwd: root,
+        env: gitEnv,
+        timeout,
+        input,
+        // check-ignore can echo every byte of its path list.
+        maxBuffer: Math.max(
+          4 * 1024 * 1024,
+          args[0] === "check-ignore" ? Buffer.byteLength(input) : 0,
+        ),
+      },
+    );
+    return stdout;
+  } catch (reason) {
+    const { code, killed, stderr } = reason as {
+      code?: number | string | null;
+      killed?: boolean;
+      stderr?: string;
+    };
+    if (code === "ETIMEDOUT" || (code === null && killed))
+      throw new Error(`git ${args[0]} timed out after ${timeout / 1000} seconds`);
+    if (typeof code === "number" || code === null) throw new Error(stderr || `git exited ${code}`);
+    throw reason;
+  }
 }
 
 export type HostFileEntry = {
@@ -199,7 +206,6 @@ export async function listHostFiles(root: string, input: unknown): Promise<HostF
   if (paths.length) {
     try {
       // Paths go on stdin, NUL-terminated (-z): a large folder must not overflow the argv limit.
-      await hostGitStarts.enter();
       const output = await gitWithInput(
         root,
         ["check-ignore", "-z", "--stdin"],
@@ -985,11 +991,21 @@ async function countLines(path: string): Promise<number> {
 
 async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffIndex> {
   // An ordinary folder has an empty Changes view, just as it does locally.
-  const repository = await git(root, ["rev-parse", "--is-inside-work-tree"]).catch((error) => {
-    if (String(error).includes("not a git repository")) return "";
+  const probe = await git(root, [
+    "rev-parse",
+    "--is-inside-work-tree",
+    "--verify",
+    "--quiet",
+    "HEAD",
+  ]).catch((error: Error & { code?: number; stdout?: string }) => {
+    if (error.message.includes("not a git repository")) return "";
+    // An unborn HEAD exits 1 after printing the worktree flag.
+    if (error.code === 1 && error.stdout && /^(?:true|false)\s*$/.test(error.stdout))
+      return error.stdout;
     throw error;
   });
-  if (repository.trim() !== "true") {
+  const [repository, headText = ""] = probe.trim().split(/\r?\n/);
+  if (repository !== "true") {
     return {
       repository: false,
       branch: null,
@@ -1008,7 +1024,6 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
       operation: null,
     };
   }
-  const headRead = git(root, ["rev-parse", "--verify", "HEAD"]).catch(() => "");
   const branchStatusRead = git(root, [
     "status",
     "--porcelain=v1",
@@ -1020,7 +1035,6 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
   const prefixRead = git(root, ["rev-parse", "--show-prefix"]);
   const [
     branchText,
-    headText,
     statusText,
     numstat,
     remoteText,
@@ -1033,11 +1047,8 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
     prefixText,
   ] = await Promise.all([
     branchStatusRead.then((value) => value.branch),
-    headRead,
     statusRead,
-    Promise.all([headRead, statusRead]).then(([head, status]) =>
-      cachedHostNumstat(root, head, status),
-    ),
+    statusRead.then((status) => cachedHostNumstat(root, headText, status)),
     full ? git(root, ["remote", "get-url", "origin"]).catch(() => "") : "",
     full ? branchStatusRead.then((value) => value.upstream) : "",
     full ? branchStatusRead.then((value) => `${value.behind} ${value.ahead}`) : "",
@@ -1578,12 +1589,7 @@ async function runHostGitAction(
             .split(sep)
             .join("/"),
         );
-      const hasHead =
-        !staging &&
-        (await git(root, ["rev-parse", "--verify", "HEAD"]).then(
-          () => true,
-          () => false,
-        ));
+      const hasHead = !staging && (await gitHasHead(root));
       if (hasHead) {
         const renames = (await readChangedEntries(root)).filter(
           (entry) =>
@@ -1609,7 +1615,17 @@ async function runHostGitAction(
           ? ["add", "--pathspec-from-file=-", "--pathspec-file-nul"]
           : hasHead
             ? ["restore", "--staged", "--pathspec-from-file=-", "--pathspec-file-nul"]
-            : ["rm", "--cached", "-r", "-f", "--pathspec-from-file=-", "--pathspec-file-nul"],
+            : // --quiet: git rm prints a line per path, which would overflow the output cap
+              // after the index is already half changed.
+              [
+                "rm",
+                "--cached",
+                "-r",
+                "-f",
+                "--quiet",
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
+              ],
         [...new Set(paths)].join("\0") + "\0",
         120_000,
       );
@@ -1634,13 +1650,9 @@ async function runHostGitAction(
       return;
     }
     case "unstageAll": {
-      const hasHead = await git(root, ["rev-parse", "--verify", "HEAD"]).then(
-        () => true,
-        () => false,
-      );
-      if (hasHead) await git(root, ["restore", "--staged", "--", "."]);
-      else if ((await git(root, ["ls-files", "--cached"])).trim())
-        await git(root, ["rm", "--cached", "-r", "-f", "--", "."]);
+      if (await gitHasHead(root)) await git(root, ["restore", "--staged", "--", "."]);
+      else if ((await git(root, ["ls-files", "--cached"], 64 * 1024 * 1024)).trim())
+        await git(root, ["rm", "--cached", "-r", "-f", "--quiet", "--", "."]);
       return;
     }
     case "discard": {
@@ -1697,7 +1709,8 @@ async function runHostGitAction(
         throw new Error("Enter a commit message");
       const unresolved = await hostUnmerged(root);
       if (unresolved.length) throw new Error(unmergedMessage(unresolved));
-      await git(root, ["commit", "-m", message], 1024 * 1024);
+      // --quiet: the per-file "create mode" summary can exceed the cap on a large first commit.
+      await git(root, ["commit", "--quiet", "-m", message], 1024 * 1024);
       return;
     }
     case "push": {

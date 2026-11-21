@@ -15,6 +15,7 @@ import { updateNotificationPreferences } from "./notificationPreferences";
 import { newSession, type Block } from "../../sessions/model/session";
 import { saveNotificationEvent } from "./notificationEvents";
 import { saveSoundsEnabled } from "../../settings/model/sounds";
+import { DELEGATION_PARENT_KEY } from "../../../shared/model/host-contracts/delegation";
 
 const { invoke, play, locked } = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -151,6 +152,38 @@ function turn(...blocks: Block[]) {
   session.blocks = [{ id: "u1", role: "user", text: "go" }, ...blocks];
   return session;
 }
+
+it.each([
+  ["orchestration worker", { orchestrationLeadId: "lead" }],
+  [
+    "delegated subagent",
+    {
+      modelSettings: {
+        [DELEGATION_PARENT_KEY]: JSON.stringify({
+          parentSessionId: "lead",
+          runId: "delegation-run",
+          kind: "subagent",
+          model: "claude",
+          startedAt: 1,
+        }),
+      },
+    },
+  ],
+] as const)("keeps a successful %s quiet", async (kind, metadata) => {
+  saveSoundsEnabled(true);
+  const session = {
+    ...turn({ id: "a", role: "assistant", text: "Done." }),
+    ...metadata,
+    id: kind,
+  };
+
+  await announceSessionFinished(session, false);
+  setWindowFocused(true);
+  await announceBackgroundFinish(session, true);
+
+  expect(banners()).toEqual([]);
+  expect(play).not.toHaveBeenCalled();
+});
 
 it("announces a failed turn as a failure, not a finish", async () => {
   await announceSessionFinished(

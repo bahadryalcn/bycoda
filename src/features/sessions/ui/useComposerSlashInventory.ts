@@ -211,12 +211,28 @@ export function useComposerSlashInventory(input: {
       ]),
     [slashItems, dollarSkills, groupItems],
   );
+  const skillDetails = new Map(
+    [...slashItems, ...dollarSkills].flatMap((skill) =>
+      "description" in skill
+        ? [
+            [
+              skill.invocation,
+              {
+                description: skill.description,
+                path: skill.kind === "file" ? skill.path : undefined,
+              },
+            ] as const,
+          ]
+        : [],
+    ),
+  );
   return {
     skillCatalog,
     promptTemplates,
     dollarSkills: dollarWithGroups,
     rankedSkills,
     skillNames,
+    skillDetails,
     skillGroups: groupItems,
   };
 }

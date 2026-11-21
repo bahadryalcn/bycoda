@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 
 // Settings opens as a dialog over a workspace that stays mounted (the App wiring), not as a page.
 const evidence = "temp/verification/2026-10-28-ui-redesign/n1";
+const modelOrderEvidence = "temp/verification/settings-dialog-model-order";
 
 for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
@@ -53,6 +54,35 @@ for (const theme of ["light", "dark"] as const) {
       await expect(dialog).toHaveCount(0);
       await expect(opener).toBeFocused();
       await expect(draft).toHaveValue("unsent draft");
+    });
+
+    test(`model order setup stays in one column: ${theme} ${width}`, async ({ page }) => {
+      mkdirSync(modelOrderEvidence, { recursive: true });
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?dialog=1&section=providers&workFixture=empty&theme=${theme}&lang=en`,
+      );
+      await page.getByTestId("open-settings").click();
+      const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+      await dialog.getByRole("tab", { name: "Background work", exact: true }).click();
+      const heading = dialog.getByRole("heading", { name: "Model priority" });
+      const prepare = dialog.getByRole("button", { name: "Prepare setup draft" });
+      const options = dialog.getByRole("button", { name: "Setup options" });
+      await expect(heading).toBeVisible();
+      await expect(dialog.getByText("No models configured", { exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Save changes" })).toBeDisabled();
+      const headingBox = await heading.boundingBox();
+      const prepareBox = await prepare.boundingBox();
+      expect(prepareBox?.x).toBe(headingBox?.x);
+      await page.screenshot({ path: `${modelOrderEvidence}/empty-${theme}-${width}.png` });
+      await options.click();
+      const setup = page.getByRole("dialog", { name: "Setup options", exact: true });
+      await expect(setup.getByRole("button", { name: "Plan setup with AI" })).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(setup).toHaveCount(0);
+      await expect(options).toBeFocused();
+      await expect(dialog).toBeVisible();
     });
   }
 }

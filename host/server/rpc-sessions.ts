@@ -754,6 +754,12 @@ export async function handleSessionsRpc(
         request.domainContext,
       );
       break;
+    case "sessions.inlineVisual":
+      request.result = await dependencies.sessionService.inlineVisual(
+        request.params,
+        request.domainContext,
+      );
+      break;
     case "sessions.get":
       request.result = await dependencies.sessionService.get(request.params, request.domainContext);
       break;

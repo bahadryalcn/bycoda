@@ -580,6 +580,21 @@ it("blocks missing/corrupt owners or witnesses without rebuilding them from rece
   }
 });
 
+it("skips the full header count on ordinary status, admission and compaction", async () => {
+  const f = await fixture();
+  const first = await f.journal.epochs.open(f.principal, randomUUID());
+  for (let index = 0; index < 32; index++) {
+    await f.journal.epochs.open(f.principal, randomUUID());
+  }
+  const statements = vi.spyOn(f.store.db, "prepare");
+  const id = await retire(f, first, 1);
+  await f.journal.epochs.compact(f.principal, { ...first, expectedThrough: 0, through: 1 });
+  expect(await f.journal.readMetadata(f.principal, finish, id)).toMatchObject({ state: "fenced" });
+  expect(statements.mock.calls.some(([sql]) => sql.includes("AS matched,MAX(o.generation)"))).toBe(
+    false,
+  );
+});
+
 it("never remints a compacted open intent after both retained header rows disappear", async () => {
   for (const missing of ["first", "middle"]) {
     const f = await fixture();

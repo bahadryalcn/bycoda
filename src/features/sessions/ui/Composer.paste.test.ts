@@ -20,78 +20,88 @@ vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
 }));
 
-it("pastes copied message text at the selection together with its attachment", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  const submit = vi.fn();
-  let written: ClipboardItem[] = [];
-  vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
-    written = items;
-  });
-  try {
-    await copyMessage("See image", [
-      {
-        id: "a",
+it.each([false, true])(
+  "pastes text and one attachment at the selection (old clipboard: %s)",
+  async (oldClipboard) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const submit = vi.fn();
+    let written: ClipboardItem[] = [];
+    vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
+      written = items;
+    });
+    try {
+      const original = "[Image 1 · 3 B] See image";
+      await copyMessage(original, [
+        {
+          id: "a",
+          name: "shot.png",
+          mimeType: "image/png",
+          kind: "image",
+          size: 3,
+          data: "YWJj",
+        },
+      ]);
+      const html = await (await written[0].getType("text/html")).text();
+      const plainText = oldClipboard
+        ? original
+        : await (await written[0].getType("text/plain")).text();
+      await act(async () =>
+        root.render(
+          createElement(Composer, {
+            focused: false,
+            harness: "codex",
+            model: "",
+            runtimeMode: "supervised",
+            executionCwd: "~",
+            initialDraft: "Before replace after",
+            hideTopBar: true,
+            onFocus: vi.fn(),
+            onCwdChange: vi.fn(),
+            onModelChange: vi.fn(),
+            onRuntimeModeChange: vi.fn(),
+            onSubmit: submit,
+          }),
+        ),
+      );
+      const textarea = container.querySelector("textarea")!;
+      textarea.setSelectionRange(7, 14);
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: {
+          getData: (type: string) => (type === "text/html" ? html : plainText),
+          files: oldClipboard ? [new File(["abc"], "image.png", { type: "image/png" })] : [],
+          items: [],
+        },
+      });
+      await act(async () => {
+        textarea.dispatchEvent(event);
+      });
+      // Restoring the attachment is asynchronous and slower on shared runners.
+      await act(async () =>
+        vi.waitFor(() =>
+          expect(textarea.value).toBe("Before See image after [Image 1 · shot.png · 3 B]"),
+        ),
+      );
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!.click(),
+      );
+      expect(submit.mock.calls[0][0]).toBe("Before See image after [Image 1 · 3 B]");
+      expect(submit.mock.calls[0][1]).toHaveLength(1);
+      expect(submit.mock.calls[0][1][0]).toMatchObject({
         name: "shot.png",
-        mimeType: "image/png",
-        kind: "image",
-        size: 3,
         data: "YWJj",
-      },
-    ]);
-    const html = await (await written[0].getType("text/html")).text();
-    await act(async () =>
-      root.render(
-        createElement(Composer, {
-          focused: false,
-          harness: "codex",
-          model: "",
-          runtimeMode: "supervised",
-          executionCwd: "~",
-          initialDraft: "Before replace after",
-          hideTopBar: true,
-          onFocus: vi.fn(),
-          onCwdChange: vi.fn(),
-          onModelChange: vi.fn(),
-          onRuntimeModeChange: vi.fn(),
-          onSubmit: submit,
-        }),
-      ),
-    );
-    const textarea = container.querySelector("textarea")!;
-    textarea.setSelectionRange(7, 14);
-    const event = new Event("paste", { bubbles: true, cancelable: true });
-    Object.defineProperty(event, "clipboardData", {
-      value: {
-        getData: (type: string) => (type === "text/html" ? html : "See image"),
-        files: [],
-        items: [],
-      },
-    });
-    await act(async () => {
-      textarea.dispatchEvent(event);
-    });
-    // Restoring the attachment is asynchronous and slower on shared runners.
-    await act(async () =>
-      vi.waitFor(() => expect(textarea.value).toBe("Before See image after [Image 1 · 3 B]")),
-    );
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!.click(),
-    );
-    expect(submit.mock.calls[0][0]).toBe("Before See image after [Image 1 · 3 B]");
-    expect(submit.mock.calls[0][1][0]).toMatchObject({
-      name: "shot.png",
-      data: "YWJj",
-    });
-  } finally {
-    act(() => root.unmount());
-    container.remove();
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-  }
-});
+      });
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("leaves a pasted GitHub pull request URL as editable text", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

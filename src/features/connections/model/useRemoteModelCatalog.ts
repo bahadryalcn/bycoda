@@ -54,6 +54,25 @@ function rememberCatalog(key: string, catalog: HostModelCatalog) {
 /** Memory cache first, then the persisted last-known catalog. */
 const knownCatalog = (key: string) => cachedCatalogs.get(key) ?? readPersistedModelCatalog(key);
 
+function retainCodexCatalog(
+  value: HostModelCatalog,
+  previous?: HostModelCatalog,
+): HostModelCatalog {
+  const models = previous?.models.codex;
+  if (
+    !models?.length ||
+    value.models.codex !== undefined ||
+    (!value.pending?.includes("codex") && !value.errors.codex) ||
+    value.errors.codex?.startsWith("Codex CLI is not authenticated.") ||
+    (value.accounts &&
+      !value.accounts.codex?.some(
+        (account) => account.id === "default" && account.status !== "signed-out",
+      ))
+  )
+    return value;
+  return { ...value, models: { ...value.models, codex: models } };
+}
+
 /** Isolate UI harnesses that intentionally reuse machine/project identifiers. */
 export function resetRemoteModelCatalogCacheForTests() {
   cachedCatalogs.clear();
@@ -112,7 +131,10 @@ export function useRemoteModelCatalog({
     fresh: false,
     settled: 0,
   }));
-  const [refreshToken, setRefreshToken] = useState(0);
+  const [{ token: refreshToken, force: forceRefresh }, setRefresh] = useState({
+    token: 0,
+    force: false,
+  });
   // The read attempt whose stream closed or failed; that attempt polls instead.
   const [streamFailed, setStreamFailed] = useState("");
   const streaming = useSyncExternalStore(
@@ -135,8 +157,9 @@ export function useRemoteModelCatalog({
     const attempt = `${key}\n${hostEnvironmentId ?? ""}\n${refreshToken}`;
 
     const apply = (value: HostModelCatalog) => {
-      rememberCatalog(key, value);
-      setState({ key, catalog: value, error: "", fresh: true, settled: refreshToken });
+      const catalog = retainCodexCatalog(value, knownCatalog(key));
+      rememberCatalog(key, catalog);
+      setState({ key, catalog, error: "", fresh: catalog === value, settled: refreshToken });
     };
     const fail = (reason: unknown) =>
       setState((current) => ({
@@ -159,14 +182,18 @@ export function useRemoteModelCatalog({
           else load();
         }, delay);
       };
-      const load = () =>
+      const load = (refresh = false) =>
         void requestRef
-          .current<HostModelCatalog>("models.list", { projectId, progressive: true })
+          .current<HostModelCatalog>("models.list", {
+            projectId,
+            progressive: true,
+            ...(refresh ? { refresh: true } : {}),
+          })
           .then((value) => {
             if (disposed) return;
             apply(value);
             failures = 0;
-            if (!value.pending?.length) waits = 0;
+            if (!value.pending?.length && !value.errors.codex) waits = 0;
             else if (waits < POLL_PENDING_LIMIT) schedule(pollDelay(waits++));
           })
           .catch((reason) => {
@@ -182,13 +209,13 @@ export function useRemoteModelCatalog({
       };
       document.addEventListener("visibilitychange", onVisible);
       unwatchVisibility = () => document.removeEventListener("visibilitychange", onVisible);
-      load();
+      load(forceRefresh);
     };
     const fallBack = () => {
       if (!disposed) setStreamFailed(attempt);
     };
 
-    if (streaming && streamFailed !== attempt) {
+    if (streaming && !forceRefresh && streamFailed !== attempt) {
       try {
         route = acquireRemoteHostRuntime(machineId);
         release = route?.runtime.retain(
@@ -198,6 +225,7 @@ export function useRemoteModelCatalog({
             commit: (value, input) => {
               if (disposed || !input.isCurrent()) return;
               apply(value);
+              if (value.errors.codex) fallBack();
             },
             closed: fallBack,
             onError: (error) => {
@@ -230,11 +258,19 @@ export function useRemoteModelCatalog({
     enabled,
     hostEnvironmentId,
     refreshToken,
+    forceRefresh,
     streaming,
     streamFailed,
   ]);
 
-  const refresh = useCallback(() => setRefreshToken((value) => value + 1), []);
+  const refresh = useCallback(
+    () => setRefresh(({ token }) => ({ token: token + 1, force: false })),
+    [],
+  );
+  const retry = useCallback(
+    () => setRefresh(({ token }) => ({ token: token + 1, force: true })),
+    [],
+  );
   const current = state.key === key ? state : undefined;
   const catalog = current ? current.catalog : knownCatalog(key);
   return {
@@ -245,5 +281,6 @@ export function useRemoteModelCatalog({
     /** True from a `refresh` until the Host answers or fails that read. */
     loading: enabled && !!current && current.settled !== refreshToken,
     refresh,
+    retry,
   };
 }

@@ -7,6 +7,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { request } from "node:http";
+import { once } from "node:events";
+import { WebSocket } from "ws";
+import {
+  HOST_SCHEMA_VERSION,
+  WS_SUBPROTOCOL,
+  WS_WIRE_VERSION,
+} from "../src/shared/model/host-contracts";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
 import { createHostServer } from "./server";
@@ -25,6 +32,7 @@ import { AsyncHostNotes } from "./host-notes-async";
 import { GenericAcpService } from "./providers/generic-acp";
 import * as accessCenter from "./security/access/access-center";
 import { ConversationDesktopRelay } from "./conversation/conversation-tools";
+import { storeInlineVisual } from "./conversation/inline-visual-store";
 import { DevicePreviews } from "./devices/device-preview";
 import { ProviderInboxBridge } from "./providers/provider-inbox";
 import { VoiceSetupService } from "./voice/voice-setup";
@@ -4691,6 +4699,78 @@ describe("remote host API", () => {
         })
       ).status,
     ).not.toBe(200);
+  });
+
+  it("serves an existing inline visual only to its owning conversation", async () => {
+    const s = await setup();
+    const create = (commandId: string) =>
+      s.engine.command({
+        type: "create",
+        workspaceMode: "current",
+        commandId,
+        projectId: s.project.id,
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "supervised",
+      });
+    const owner = await create("visual-owner");
+    const other = await create("visual-other");
+    const source = { title: "Chart", html: "<p>Stored chart</p>", height: 240 };
+    const ref = await storeInlineVisual(s.directory, source);
+    const before = await s.store.session(owner.sessionId);
+    await s.store.save(
+      {
+        ...before,
+        revision: before.revision + 1,
+        updatedAt: before.updatedAt + 1,
+        session: {
+          ...before.session,
+          blocks: [{ id: "visual", role: "tool", text: "", inlineVisual: ref }],
+        },
+      },
+      { type: "test" },
+    );
+
+    const read = (sessionId: string, id = ref.id) =>
+      s.call("sessions.inlineVisual", { sessionId, id });
+    expect((await read(owner.sessionId)).value.result).toEqual(source);
+    expect((await read(other.sessionId)).status).not.toBe(200);
+    expect((await read(owner.sessionId, "../invalid")).status).not.toBe(200);
+    const socket = new WebSocket(s.url.replace(/^http:(.*)\/rpc$/, "ws:$1/ws"), WS_SUBPROTOCOL, {
+      headers: { Authorization: `Bearer ${s.first.token}` },
+      handshakeTimeout: 3000,
+    });
+    try {
+      await once(socket, "open");
+      const send = async (method: string, params: unknown) => {
+        const response = once(socket, "message");
+        socket.send(JSON.stringify({ jsonrpc: "2.0", id: method, method, params }));
+        const [message] = await response;
+        return JSON.parse(String(message));
+      };
+      expect(
+        await send("connection.hello", {
+          environmentId: s.store.environmentId,
+          supportedWireVersions: [WS_WIRE_VERSION],
+          supportedSchemaVersions: [HOST_SCHEMA_VERSION],
+          clientId: "inline-visual-test",
+          clientKind: "desktop",
+        }),
+      ).toMatchObject({ result: { environmentId: s.store.environmentId } });
+      expect(
+        await send("sessions.inlineVisual", { sessionId: owner.sessionId, id: ref.id }),
+      ).toMatchObject({ result: source });
+      expect(
+        await send("sessions.inlineVisual", { sessionId: other.sessionId, id: ref.id }),
+      ).toHaveProperty("error");
+    } finally {
+      socket.terminate();
+    }
+    writeFileSync(
+      join(s.directory, "inline-visuals", `${ref.id}.json`),
+      JSON.stringify({ ...source, html: "<p>Changed</p>" }),
+    );
+    expect((await read(owner.sessionId)).status).not.toBe(200);
   });
 
   it("accepts a command while a revision long-poll is pending", async () => {

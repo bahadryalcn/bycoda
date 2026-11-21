@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeProjectPath, sameProjectPath } from "./project-path";
+import { normalizeProjectPath, resetProjectPathCache, sameProjectPath } from "./project-path";
 
 const folders: string[] = [];
 afterEach(() => {
@@ -50,6 +50,17 @@ describe("normalizeProjectPath", () => {
     link(b);
     // Still inside the TTL: an evicted entry would be resolved again, now to b.
     expect(normalizeProjectPath(alias)).toBe(first);
+  });
+
+  it("resolves a retargeted junction afresh after the cache is reset", () => {
+    const { a, b, alias, link } = retargetable();
+    vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    expect(normalizeProjectPath(alias)).toBe(normalizeProjectPath(a));
+    unlinkSync(alias);
+    link(b);
+    expect(normalizeProjectPath(alias)).toBe(normalizeProjectPath(a));
+    resetProjectPathCache();
+    expect(normalizeProjectPath(alias)).toBe(normalizeProjectPath(b));
   });
 
   it("compares a missing folder as written", () => {

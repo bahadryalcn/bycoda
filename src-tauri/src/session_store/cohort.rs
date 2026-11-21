@@ -724,6 +724,7 @@ impl RegisteredConnection {
         if self.registration.is_some() {
             self.verify_connection(&replacement)?;
         }
+        super::native_delivery::epochs::invalidate_connection_audit(&self.connection)?;
         Ok(std::mem::replace(&mut self.connection, replacement))
     }
     pub(super) fn verify_connection(&self, connection: &Connection) -> Result<(), String> {

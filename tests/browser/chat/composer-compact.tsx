@@ -22,7 +22,7 @@ import { registerHarness } from "../../../src/integrations/harness/core/registry
 import { languageReady } from "../../../src/shared/i18n";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import {
-  APPEARANCE_DEFAULTS,
+  loadAppearancePreferences,
   applyAppearancePreferences,
   normalizeAppearancePreferences,
 } from "../../../src/features/settings/model/appearancePreferences";
@@ -62,6 +62,8 @@ const params = new URLSearchParams(location.search);
 const sessionId = "composer-reading-fixture";
 const DRAFTS: Record<string, string> = {
   none: "",
+  legacyFile:
+    "I wrote this first. Review [File\u00a01\u00a0·\u00a07\u00a0B] and https://example.com/design",
   short: "Summarise the failing tests",
   multi:
     "Please check the three files below,\nthen explain the failure\nand propose the smallest safe fix.",
@@ -91,9 +93,22 @@ const baseBlocks: Block[] = Array.from({ length: turns }, (_, index): Block[] =>
   },
 ]).flat();
 const initial: Session = {
-  ...newSession("claude", "/fixture", modelId),
+  ...newSession(params.has("goal") ? "codex" : "claude", "/fixture", modelId),
   id: sessionId,
   title: "Composer reading mode",
+  ...(params.has("goal")
+    ? {
+        busy: true,
+        providerSessionId: sessionId,
+        providerGoal: {
+          provider: "codex",
+          providerSessionId: sessionId,
+          status: "active",
+          objective: "Run the Expo app on the connected device, fix the UI flows and verify them.",
+          tokensUsed: 665,
+        },
+      }
+    : {}),
   ...(params.has("docked-question")
     ? {
         pendingQuestion: {
@@ -131,7 +146,7 @@ function seedComposer() {
       {
         id: "draft-file",
         kind: "file",
-        name: "draft-context.txt",
+        name: params.get("attach") || "draft-context.txt",
         mimeType: "text/plain",
         size: 7,
         data: btoa("context"),
@@ -243,7 +258,7 @@ applyThemePreference(params.has("light") ? "light" : "dark");
 // ?density=compact|comfortable|touch applies the real control-density preference.
 applyAppearancePreferences(
   normalizeAppearancePreferences({
-    ...APPEARANCE_DEFAULTS,
+    ...loadAppearancePreferences(),
     controlDensity: params.get("density") as "compact" | "comfortable" | "touch",
   }),
 );

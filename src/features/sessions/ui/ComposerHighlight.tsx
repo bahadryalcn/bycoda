@@ -1,5 +1,5 @@
-import { memo, type RefObject } from "react";
-import { Server, SkillGroupIcon, StickyNote } from "../../../shared/ui/icons";
+import { memo, useEffect, useRef, type ComponentProps, type RefObject } from "react";
+import { Server, SkillGroupIcon, SkillIcon, StickyNote } from "../../../shared/ui/icons";
 import { DraftToken } from "../../../shared/ui/DraftToken";
 import { useLocale } from "../../../shared/i18n";
 import type { ProjectFile } from "../../../platform/tauri/fs";
@@ -10,12 +10,16 @@ import type { Attachment } from "../model/session";
 import { mcpTagParts, type McpTag } from "../model/mcpPicker";
 import { ComposerAttachmentHighlight } from "./ComposerAttachmentHighlight";
 import { LinkRuns, useEditedLink, useLinkWrap } from "./ComposerLinkRuns";
-import styles from "./ComposerHighlight.module.css";
 import { ModeCommandText, type ModeCommandToken } from "./modeCommands";
 import { workItemMentionParts } from "./ChatCitationText";
 import { ComposerWorkItemToken } from "./WorkItemMentionChip";
-import { ComposerSkillGroupHover, type ComposerSkillGroup } from "./ComposerSkillGroupHover";
 import { ComposerMarkdown, mayHaveComposerMarkdown } from "./ComposerMarkdown";
+import {
+  ComposerReferenceActions,
+  type ComposerSkillDetails,
+  type ComposerSkillGroup,
+} from "./ComposerReferenceActions";
+import { keepSkillBoundary } from "./composerTextareaEdit";
 
 const NO_GROUPS: readonly { invocation: string; name: string; members: readonly string[] }[] = [];
 
@@ -26,11 +30,13 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   names,
   skillParts,
   skillGroups = NO_GROUPS,
+  skillDetails,
   mentions,
   mcpTags,
   attachments,
   citations,
   field,
+  onOpenFile,
   modeIndent,
   modeIconClassName,
 }: {
@@ -44,6 +50,7 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   ) => readonly { text: string; skill?: unknown }[];
   /** Group tokens kept whole in the draft; painted with the group's name. */
   skillGroups?: readonly { invocation: string; name: string; members: readonly string[] }[];
+  skillDetails?: ReadonlyMap<string, ComposerSkillDetails>;
   mentions: ReadonlyMap<string, ProjectFile>;
   mcpTags: McpTag[];
   attachments: Attachment[];
@@ -51,10 +58,29 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   citations: number;
   /** The textarea under the overlay; a link holding its caret shows in full. */
   field?: RefObject<HTMLTextAreaElement | null>;
+  onOpenFile?: (path: string) => void;
   modeIndent?: string;
   modeIconClassName?: string;
 }) {
   useLocale();
+  const paint = useRef<HTMLSpanElement>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- The native textarea keeps its undo history when inserting at an existing skill boundary.
+  useEffect(() => {
+    const input = field?.current;
+    if (!input || names.size === 0) return;
+    const beforeInput = (event: InputEvent) =>
+      keepSkillBoundary(input, event, (value, position) => {
+        let offset = 0;
+        for (const part of skillParts(value, names)) {
+          if (offset === position) return Boolean(part.skill);
+          offset += part.text.length;
+          if (offset > position) break;
+        }
+        return false;
+      });
+    input.addEventListener("beforeinput", beforeInput);
+    return () => input.removeEventListener("beforeinput", beforeInput);
+  }, [field, names, skillParts]);
   const edited = useEditedLink(text, field);
   const wrap = useLinkWrap(text, field);
   const rest = mode ? text.slice(mode.end) : text;
@@ -84,18 +110,24 @@ export const ComposerHighlight = memo(function ComposerHighlight({
                   className="text-skill"
                   data-composer-skill-token=""
                   data-composer-skill-group={name}
-                  data-composer-skill-group-prefix={part.text[0]}
+                  data-composer-reference="group"
+                  data-reference-value={name}
                 >
                   {name}
                 </DraftToken>
               ) : part.skill ? (
-                <span
+                <DraftToken
                   key={index}
-                  className={`text-skill ${styles.skill}`}
+                  prefix={part.text[0]}
+                  icon={<SkillIcon />}
+                  label={name}
+                  className="text-skill"
                   data-composer-skill-token=""
+                  data-composer-reference="skill"
+                  data-reference-value={name}
                 >
-                  {part.text}
-                </span>
+                  {name}
+                </DraftToken>
               ) : (
                 <MentionRuns key={index} text={part.text} mentions={mentions} mcpTags={mcpTags} />
               );
@@ -107,29 +139,45 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   );
   return (
     <>
-      {groups.size ? <ComposerSkillGroupHover field={field} groups={groups} /> : null}
-      {mode ? (
-        <ModeCommandText
-          text={text}
-          mode={mode}
-          indent={modeIndent}
-          iconClassName={modeIconClassName}
+      <span ref={paint} className="contents">
+        {mode ? (
+          <ModeCommandText
+            text={text}
+            mode={mode}
+            indent={modeIndent}
+            iconClassName={modeIconClassName}
+          />
+        ) : null}
+        {mayHaveComposerMarkdown(rest) ? (
+          <ComposerMarkdown
+            text={rest}
+            offset={mode?.end ?? 0}
+            field={field}
+            renderText={renderText}
+          />
+        ) : (
+          renderText(rest)
+        )}
+        {text.endsWith("\n") ? "\n" : null}
+      </span>
+      {field ? (
+        <ComposerReferenceActions
+          paint={paint}
+          field={field}
+          attachments={attachments}
+          groups={skillGroups}
+          skills={skillDetails}
+          onOpenFile={onOpenFile}
         />
       ) : null}
-      {mayHaveComposerMarkdown(rest) ? (
-        <ComposerMarkdown
-          text={rest}
-          offset={mode?.end ?? 0}
-          field={field}
-          renderText={renderText}
-        />
-      ) : (
-        renderText(rest)
-      )}
-      {text.endsWith("\n") ? "\n" : null}
     </>
   );
 });
+
+export type ComposerReferenceContext = Pick<
+  ComponentProps<typeof ComposerHighlight>,
+  "names" | "skillParts" | "skillDetails" | "skillGroups" | "mentions" | "mcpTags" | "onOpenFile"
+>;
 
 function MentionRuns({
   text,
@@ -185,6 +233,8 @@ function FileMentionRuns({
             key={index}
             className="text-mention"
             prefix="@"
+            data-composer-reference={part.file.isDir ? undefined : "file"}
+            data-reference-value={part.file.path}
             icon={
               isNoteMentionPath(part.file.path) ? (
                 <StickyNote />

@@ -9,6 +9,7 @@ import { browseHostDirectories, createHostDirectory } from "../browser/browse";
 import { initializeEmptyProjectRepository } from "../git/git-init";
 import { DesktopCommandDelivery } from "../desktop/desktop-command-delivery";
 import { spawn } from "node:child_process";
+import { dirname } from "node:path";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { createProjectsService } from "../domains/projects/service";
 import {
@@ -28,6 +29,8 @@ import type { ServerBindings } from "./bindings";
 import { DESKTOP_RUN_ID } from "./support";
 import { clientMessageQueue } from "../sessions/client-message-queue";
 import { assertDomainAuthority } from "../domains/context";
+import { readInlineVisual } from "../conversation/inline-visual-store";
+import { inlineVisualIds } from "../conversation/inline-visual-retention";
 export function createSessionServicesRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -124,6 +127,10 @@ export function createSessionServicesRuntime(
       view: dependencies.desktopView,
       sync: dependencies.desktopSync,
       recheckMs: dependencies.desktopRecheckMs,
+    },
+    visuals: {
+      contains: (blocks, id) => inlineVisualIds({ blocks }).includes(id),
+      read: (id) => readInlineVisual(dirname(dependencies.engine.store.attachmentDir), id),
     },
     transcript: {
       page: (...args) => dependencies.transcriptPages.page(...args),

@@ -10,6 +10,34 @@ import {
 } from "./appearancePreferences";
 
 describe("appearance preferences", () => {
+  it("defaults, bounds and applies chat message appearance independently", () => {
+    expect(normalizeAppearancePreferences({})).toMatchObject({
+      userMessageOpacity: 42,
+      assistantMessageOpacity: 26,
+      messageColor: "theme",
+    });
+    const base = loadAppearancePreferences();
+    const saved = saveAppearancePreferences(
+      {
+        ...base,
+        userMessageOpacity: -10,
+        assistantMessageOpacity: 115,
+        messageColor: "neutral",
+      },
+      base,
+    );
+    expect(loadAppearancePreferences()).toMatchObject({
+      userMessageOpacity: 0,
+      assistantMessageOpacity: 100,
+      messageColor: "neutral",
+    });
+    applyAppearancePreferences(saved);
+    const root = document.documentElement;
+    expect(root.dataset.chatMessageColor).toBe("neutral");
+    expect(root.hasAttribute("data-chat-user-surface-off")).toBe(true);
+    expect(root.hasAttribute("data-chat-assistant-surface-off")).toBe(false);
+    expect(root.style.getPropertyValue("--appearance-assistant-message-opacity")).toBe("100%");
+  });
   it("defaults the image layer on, persists off and restores its default DOM state", () => {
     expect(normalizeAppearancePreferences({}).chatBackgroundLayer).toBe(true);
     expect(

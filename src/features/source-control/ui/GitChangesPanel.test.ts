@@ -415,7 +415,7 @@ describe("GitChangesPanel commit message generation", () => {
     expect(container.textContent).not.toContain("Commit and pull request generation");
   });
 
-  it("blocks deferred generation commits from the header while staging stays usable and preserves the draft after index changes", async () => {
+  it("blocks commits during generation, then keeps the result after staging changes", async () => {
     vi.mocked(gitCommit).mockClear();
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({ files: [{ ...changedFile("src/app.ts"), staged: true, unstaged: true }] }),
@@ -450,9 +450,40 @@ describe("GitChangesPanel commit message generation", () => {
     await act(async () => stage.click());
     expect(gitStageFile).toHaveBeenCalledWith("/generation-header-race", "src/app.ts");
     await act(async () => finish("Stale generated message"));
-    expect(container.querySelector("textarea")?.value).toBe("Retained draft");
-    expect(container.textContent).toContain("Draft or changes changed during generation");
+    expect(container.querySelector("textarea")?.value).toBe("Stale generated message");
+    expect(container.textContent).toContain("Changes updated. Review the message.");
+    const dismiss = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Dismiss notice"]',
+    )!;
+    await act(async () => dismiss.click());
+    expect(container.textContent).not.toContain("Changes updated. Review the message.");
+    expect(container.querySelector("textarea")?.value).toBe("Stale generated message");
+    expect(generateCommitMessage).toHaveBeenCalledTimes(1);
     expect(gitCommit).not.toHaveBeenCalled();
+  });
+
+  it("offers the generated message without overwriting edits made during generation", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [changedFile("src/app.ts")] }));
+    let finish!: (message: string) => void;
+    vi.mocked(generateCommitMessage).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await renderPanel("/generation-edited-draft");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')!.click(),
+    );
+    await fillCommitMessage("My edited draft");
+    await act(async () => finish("AI commit message"));
+    const useMessage = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Use AI message",
+    )!;
+    expect(container.querySelector("textarea")?.value).toBe("My edited draft");
+    await act(async () => useMessage.click());
+    expect(container.querySelector("textarea")?.value).toBe("AI commit message");
+    expect(generateCommitMessage).toHaveBeenCalledTimes(1);
   });
   it("keeps a generated message when only unstaged files change meanwhile", async () => {
     const staged = { ...changedFile("src/app.ts"), staged: true, unstaged: false };
@@ -484,7 +515,7 @@ describe("GitChangesPanel commit message generation", () => {
     expect(vi.mocked(gitDiffIndex).mock.calls.length).toBeGreaterThan(reads);
     await act(async () => finish("feat: add app"));
     expect(container.querySelector("textarea")?.value).toBe("feat: add app");
-    expect(container.textContent).not.toContain("Draft or changes changed during generation");
+    expect(container.textContent).not.toContain("Changes updated. Review the message.");
   });
   it.each([false, true])("uses saved model (commit override: %j)", async (override) => {
     const legacy = {

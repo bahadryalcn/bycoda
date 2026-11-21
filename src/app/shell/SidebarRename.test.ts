@@ -2711,6 +2711,74 @@ it("settles a Last sessions row on its remote Host and removes it from the activ
   expect(container.querySelector('[data-session-card="remote-settle"]')).toBeNull();
 });
 
+it("settles and un-settles a remote project row through its Host", async () => {
+  const project = rememberRemoteProject("project-settle-office", {
+    id: "remote-project",
+    cwd: "/repo",
+  } as HostProject);
+  const machine = {
+    id: "project-settle-machine",
+    environmentId: project.environmentId,
+    endpoint: "ssh://office",
+    name: "Office",
+  };
+  vi.spyOn(connections, "knownRemoteMachine").mockReturnValue(machine);
+  const session = {
+    id: "remote-project-session",
+    projectId: project.projectId,
+    status: "idle" as const,
+    revision: 1,
+    title: "Remote project session",
+    harness: "codex" as const,
+    updatedAt: Date.now(),
+  };
+  props.cwd = project.key;
+  vi.spyOn(connections, "useRemoteProjectSessions").mockReturnValue({
+    machine,
+    sessions: [session],
+    loaded: true,
+    machinesLoaded: true,
+    failed: false,
+    dataState: { phase: "ready" },
+    refresh: vi.fn(),
+  });
+  const client = lifecycleClient.sessionLifecycleClient(machine.id);
+  vi.spyOn(client, "list").mockResolvedValue({ records: [], autoSettle: { afterDays: 3 } });
+  const settle = vi.spyOn(client, "settle").mockResolvedValue({
+    sessionId: session.id,
+    state: "settled",
+    settledAt: Date.now(),
+    participants: [],
+  });
+  const unsettle = vi.spyOn(client, "unsettle").mockResolvedValue({
+    sessionId: session.id,
+    state: "active",
+    participants: [],
+  });
+  const lifecycle = vi.spyOn(lifecycleClient, "sessionLifecycleClient").mockReturnValue(client);
+
+  await act(async () => render());
+  const row = container.querySelector(`[data-session-card="${session.id}"] [data-session-select]`)!;
+  act(() => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (entry) => entry.textContent === "Settle",
+  );
+  expect(item).toBeDefined();
+  await act(async () => item!.click());
+  expect(lifecycle).toHaveBeenCalledWith(machine.id, false);
+  expect(settle).toHaveBeenCalledExactlyOnceWith(session.id);
+  expect(container.querySelector(`[data-session-card="${session.id}"]`)).toBeNull();
+  const shelf = container.querySelector("[data-settled-sessions]")!;
+  await act(async () => shelf.querySelector("button")!.click());
+  const undo = container.querySelector<HTMLButtonElement>(
+    `[data-session-card="${session.id}"] [aria-label="Un-settle ${session.title}"]`,
+  )!;
+  await act(async () => undo.click());
+  expect(unsettle).toHaveBeenCalledExactlyOnceWith(session.id);
+  expect(container.querySelector("[data-settled-sessions]")).toBeNull();
+  expect(container.querySelector(`[data-session-card="${session.id}"]`)).not.toBeNull();
+});
+
 it("drops a repository prefix that repeats the project in detailed rows", () => {
   saveSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY, density: "detailed" });
   try {

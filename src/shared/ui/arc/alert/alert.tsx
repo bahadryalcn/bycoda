@@ -40,6 +40,8 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
   secondaryAction?: NoticeAction;
   /** Escape for one non-button control after the actions (an ErrorDetails trigger, a menu). */
   extra?: ReactNode;
+  /** Vertically center the actions and dismiss control beside multiline copy. */
+  actionsAlign?: "center";
   /** Accessible name of the dismiss control. Defaults to `Dismiss` plus the title. */
   dismissLabel?: string;
 }
@@ -56,6 +58,7 @@ function AlertBox({
   action,
   secondaryAction,
   extra,
+  actionsAlign,
   dismissLabel,
   ...props
 }: AlertBoxProps) {
@@ -65,7 +68,13 @@ function AlertBox({
   return (
     <div
       {...props}
-      className={[styles.alert, styles[tone], noticeEnterClass, className]
+      className={[
+        styles.alert,
+        styles[tone],
+        actionsAlign && styles.centerActions,
+        noticeEnterClass,
+        className,
+      ]
         .filter(Boolean)
         .join(" ")}
       role={role ?? (tone === "danger" ? "alert" : "status")}
@@ -86,7 +95,7 @@ function AlertBox({
         ) : null}
       </div>
       {onDismiss ? (
-        <NoticeSlot size="box">
+        <NoticeSlot size="box" className={actionsAlign ? styles.centerDismiss : undefined}>
           <Button
             type="button"
             variant="ghost"

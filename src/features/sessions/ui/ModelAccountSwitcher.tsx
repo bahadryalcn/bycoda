@@ -16,6 +16,7 @@ import {
   useProviderAccountUsage,
 } from "../../providers/public/accountUsage";
 import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
   providerAccounts,
   subscribeProviderAccounts,
   supportsProviderAccounts,
@@ -134,6 +135,7 @@ export function ModelAccountControl({
   const t = useT();
   const { formatNumber } = useFormat();
   const current = accounts.find((account) => account.id === accountId);
+  const implicitAccount = !current && accountId === DEFAULT_PROVIDER_ACCOUNT_ID;
   const label = current?.label ?? t("Unavailable Host account");
   // The default lives on another account: hint at it so the path to it stays visible.
   const elsewhere =
@@ -152,21 +154,24 @@ export function ModelAccountControl({
       variant="ghost"
       size="sm"
       type="button"
-      className="min-w-0 max-w-full"
+      fullWidth
+      align="start"
+      motion="none"
+      className="min-w-0 flex-1"
       data-model-account-menu
       expanded={listOpen}
-      aria-label={listOpen ? undefined : name}
-      tooltip={listOpen ? undefined : name}
+      aria-label={listOpen || implicitAccount ? undefined : name}
+      tooltip={listOpen || implicitAccount ? undefined : name}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onToggleList}
     >
       {!listOpen ? <ModelAccountNumber account={current} /> : null}
-      <Text size="inherit" tone="inherit" truncate className="min-w-0">
-        {listOpen ? t("Accounts") : label}
+      <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1 text-start">
+        {listOpen || implicitAccount ? t("Accounts") : label}
       </Text>
-      {!listOpen ? <Percent value={current?.usedPercent ?? null} /> : null}
       {!listOpen && current && current.id === defaultAccountId ? <DefaultMark /> : null}
       {!listOpen && elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
+      {!listOpen ? <Percent value={current?.usedPercent ?? null} /> : null}
     </Button>
   );
 }

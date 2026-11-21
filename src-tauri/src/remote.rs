@@ -2662,6 +2662,7 @@ fn shareable_remote_read(method: &str, params: &Value) -> bool {
         "sessions.sync"
             | "sessions.page"
             | "sessions.block"
+            | "sessions.inlineVisual"
             | "sessions.syncChunk"
             | "sessions.list"
             | "environment.describe"

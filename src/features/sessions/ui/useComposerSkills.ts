@@ -10,6 +10,7 @@ import {
   type Skill,
   type SkillCatalogContext,
 } from "../../skills/model/skills";
+import { readMachineAvailability } from "../../connections/public/machineAvailability";
 import type { HarnessId } from "../model/session";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 
@@ -42,6 +43,12 @@ export function visibleComposerSkills(
   fallback: Skill[],
 ): Skill[] {
   return state.key === currentKey ? state.skills : (cached ?? fallback);
+}
+
+/** A failed catalog load is logged unless its machine is known unavailable (already shown to the user). */
+export function logComposerSkillsFailure(cwd: string, error: unknown): void {
+  if (!readMachineAvailability(cwd).available) return;
+  console.warn("useComposerSkills operation failed", error);
 }
 
 export function useComposerSkills(input: {
@@ -102,9 +109,7 @@ export function useComposerSkills(input: {
   useEffect(() => {
     const cached = peekSkills(context);
     if (cached) commit(contextToken, cached);
-    void refresh().catch((error) => {
-      console.warn("useComposerSkills operation failed", error);
-    });
+    void refresh().catch((error) => logComposerSkillsFailure(context.cwd, error));
   }, [commit, context, contextToken, refresh]);
 
   useEffect(() => {
@@ -121,9 +126,7 @@ export function useComposerSkills(input: {
       context.cwd.startsWith(REMOTE_PATH_PREFIX)
         ? undefined
         : pickerSkillLoadOptions(input.harness),
-    ).catch((error) => {
-      console.warn("useComposerSkills operation failed", error);
-    });
+    ).catch((error) => logComposerSkillsFailure(context.cwd, error));
   }, [context.cwd, input.harness, input.pickerOpen, refresh]);
 
   return {

@@ -4,6 +4,7 @@ import type { HostStore } from "../store";
 import type { StoreDatabase } from "../store-db";
 import type { NativeDeliveryKind } from "./native-delivery-store";
 import type { NativeDeliveryIdentity } from "../../src/shared/model/host-contracts/native-delivery-identity";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import {
   nativeDeliveryEpochOriginalId,
   parseNativeDeliveryEpochOriginalId,
@@ -305,7 +306,7 @@ export async function initializeNativeDeliveryEpochs(db: StoreDatabase): Promise
       SELECT CASE WHEN ${gapHeld("OLD")} THEN RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_HELD') END;
     END;
   `);
-  await globalGeneration(db);
+  await globalGeneration(db, true);
 }
 
 type Execution = {
@@ -341,10 +342,22 @@ function description(row: Record<string, unknown>): NativeDeliveryEpochDescripti
     closed: row.closed === 1,
   };
 }
-async function globalGeneration(db: StoreDatabase): Promise<number> {
+const COVERAGE_INTERVAL_MS = 5 * 60_000;
+const coverageAudits = new WeakMap<
+  StoreDatabase,
+  { root: string; schema: number; data: number; checkedAt: number }
+>();
+
+async function globalGeneration(db: StoreDatabase, opening = false): Promise<number> {
   const value = await db
     .prepare(
-      "SELECT c.root_id,c.generation,w.root_id AS witness_root,w.generation AS witness_generation FROM native_delivery_epoch_counter c LEFT JOIN native_delivery_epoch_counter_witness w ON w.id=c.id WHERE c.id=1",
+      `SELECT c.root_id,c.generation,w.root_id AS witness_root,w.generation AS witness_generation,
+      (c.generation=0 OR EXISTS(SELECT 1 FROM native_delivery_epochs o
+        JOIN native_delivery_epoch_witnesses x ON ${ownerMatch("o", "x")}
+        WHERE o.generation=c.generation)) AS tip,
+      schema_version,data_version FROM native_delivery_epoch_counter c
+      LEFT JOIN native_delivery_epoch_counter_witness w ON w.id=c.id
+      CROSS JOIN pragma_schema_version() CROSS JOIN pragma_data_version() WHERE c.id=1`,
     )
     .get();
   if (
@@ -352,9 +365,23 @@ async function globalGeneration(db: StoreDatabase): Promise<number> {
     !UUID.test(String(value.root_id)) ||
     value.root_id !== value.witness_root ||
     !integer(value.generation) ||
-    value.generation !== value.witness_generation
+    value.generation !== value.witness_generation ||
+    value.tip !== 1 ||
+    !integer(value.schema_version) ||
+    !integer(value.data_version)
   )
     throw failure();
+  const previous = coverageAudits.get(db);
+  if (
+    !opening &&
+    previous &&
+    previous.root === value.root_id &&
+    previous.schema === value.schema_version &&
+    previous.data === value.data_version &&
+    elapsedSince(previous.checkedAt) < COVERAGE_INTERVAL_MS
+  )
+    return value.generation;
+  coverageAudits.delete(db);
   // Epoch headers never retire. The independent global counter therefore
   // commits to a complete, contiguous population, including compacted owners.
   // Checking only MAX would let a lost header+witness pair look like a new
@@ -363,6 +390,12 @@ async function globalGeneration(db: StoreDatabase): Promise<number> {
     .prepare(`SELECT
       (SELECT COUNT(*) FROM native_delivery_epochs) AS owners,
       (SELECT COUNT(*) FROM native_delivery_epoch_witnesses) AS witnesses,
+      (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN (
+        'native_delivery_epoch_delete','native_delivery_epoch_update','native_delivery_epoch_insert',
+        'native_delivery_epoch_insert_sync','native_delivery_epoch_witness_delete',
+        'native_delivery_epoch_witness_update','native_delivery_epoch_witness_insert',
+        'native_delivery_epoch_counter_update','native_delivery_epoch_counter_witness_update'
+      )) AS guards,
       COUNT(*) AS matched,MAX(o.generation) AS maximum
       FROM native_delivery_epochs o JOIN native_delivery_epoch_witnesses w ON ${ownerMatch("o", "w")}
       WHERE ${sqlInteger("o.generation", 1)}`)
@@ -375,6 +408,16 @@ async function globalGeneration(db: StoreDatabase): Promise<number> {
     (value.generation === 0 ? coverage.maximum !== null : coverage.maximum !== value.generation)
   )
     throw failure();
+  // Missing retention/sync guards make same-connection changes unverifiable
+  // from the cookies alone. Keep checking the full population in that case.
+  if (coverage.guards === 9) {
+    coverageAudits.set(db, {
+      root: String(value.root_id),
+      schema: value.schema_version,
+      data: value.data_version,
+      checkedAt: monotonicNow(),
+    });
+  }
   return value.generation;
 }
 async function protocol(store: HostStore, principal: string): Promise<0 | 2> {
@@ -594,11 +637,14 @@ export function createNativeDeliveryEpochs(store: HostStore) {
         await store.db.checkAuthorization();
         return { ...exact, outcome: "not_admitted" as const };
       }
+      // Gap repair is a maintenance operation. Bound the scoped search and
+      // count all retained gap witnesses for the global cap.
       const count = await store.db
-        .prepare(`SELECT COUNT(*) AS total,SUM(CASE WHEN environment_id=? AND principal_id=? THEN 1 ELSE 0 END) AS own
-          FROM native_delivery_epoch_gap_witnesses`)
+        .prepare(`SELECT (SELECT COUNT(*) FROM native_delivery_epoch_gap_witnesses) AS total,
+          EXISTS(SELECT 1 FROM native_delivery_epoch_gap_witnesses WHERE environment_id=? AND principal_id=?
+            LIMIT 1 OFFSET ${MAX_OWN_GAPS - 1}) AS own_full`)
         .get(store.environmentId, principal);
-      if (Number(count?.total) >= MAX_GAPS || Number(count?.own ?? 0) >= MAX_OWN_GAPS)
+      if (Number(count?.total) >= MAX_GAPS || Number(count?.own_full) === 1)
         throw failure("CAPACITY");
       await store.db.checkAuthorization();
       await store.db
@@ -793,16 +839,15 @@ export function createNativeDeliveryEpochs(store: HostStore) {
           });
         }
         if (generation === MAX) throw failure("EXHAUSTED");
-        const total = await store.db
-          .prepare("SELECT COUNT(*) AS total FROM native_delivery_epoch_witnesses")
-          .get();
+        if (generation >= MAX_OWNERS) throw failure("CAPACITY");
+        // This runs only for an unseen intent and visits at most the scope's cap.
         const own = await store.db
           .prepare(
-            "SELECT COUNT(*) AS total FROM native_delivery_epoch_witnesses WHERE environment_id=? AND principal_id=?",
+            `SELECT 1 FROM native_delivery_epoch_witnesses WHERE environment_id=? AND principal_id=?
+              LIMIT 1 OFFSET ${MAX_OWN_PRINCIPAL - 1}`,
           )
           .get(store.environmentId, principal);
-        if (Number(total?.total) >= MAX_OWNERS || Number(own?.total) >= MAX_OWN_PRINCIPAL)
-          throw failure("CAPACITY");
+        if (own) throw failure("CAPACITY");
         const next = generation + 1,
           ownerId = randomUUID();
         const changed = await store.db

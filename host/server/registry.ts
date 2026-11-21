@@ -175,6 +175,7 @@ export function createRegistryRuntime(
       "sessions.sync": dependencies.sessionService.sync,
       "sessions.get": dependencies.sessionService.get,
       "sessions.block": dependencies.sessionService.block,
+      "sessions.inlineVisual": dependencies.sessionService.inlineVisual,
       "sessions.workedTime": dependencies.sessionService.workedTime,
       "sessions.syncChunk": dependencies.sessionService.syncChunk,
       "commands.status": dependencies.commandService.status,

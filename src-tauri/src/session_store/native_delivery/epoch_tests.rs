@@ -277,7 +277,12 @@ fn raw_sql_cannot_assign_legacy_or_noncanonical_originals_to_an_epoch() {
     let handle = epoch(&store);
     original(&store, &handle, "valid-v2");
     let rejected: Result<(), String> = write(&store, |conn| {
-        let mut tip = state(conn, handle.owner_id(), handle.generation() as i64)?;
+        let mut tip = state(
+            conn,
+            handle.runtime,
+            handle.owner_id(),
+            handle.generation() as i64,
+        )?;
         tip.high_water += 1;
         save_state(conn, &tip, false)?;
         for id in [
@@ -575,6 +580,13 @@ fn descriptions_ids_and_closed_streams_are_strict_and_never_rotate_implicitly() 
     assert!(prepare(&store, "another", ROUTE, METHOD, RAW, &bound)
         .unwrap_err()
         .contains("CLOSED"));
+    assert!(prepare(&store, "done", ROUTE, METHOD, RAW, &bound)
+        .unwrap_err()
+        .starts_with("NATIVE_DELIVERY_RETIRED"));
+    let other = bind(&store, OTHER, &description(&store, OTHER)).unwrap();
+    assert!(prepare(&store, "done", OTHER, METHOD, RAW, &other)
+        .unwrap_err()
+        .starts_with("NATIVE_DELIVERY_CONFLICT"));
     assert!(bind(
         &store,
         ROUTE,
@@ -609,32 +621,52 @@ fn a_pending_page_reads_its_epoch_state_once_not_once_per_original() {
 
 thread_local! {
     pub(super) static SLOT_COUNTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    pub(super) static MARKER_COUNTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[test]
-fn slot_counts_run_once_per_change_and_still_catch_a_foreign_commit() {
+fn ordinary_delivery_writes_do_not_recount_slots_or_retirements() {
     let db = FileDb::new();
     let store = db.open();
     let handle = epoch(&store);
+    for index in 1..=32 {
+        let record = original(&store, &handle, &format!("consumed-{index}"));
+        consumed(&store, &record, true);
+    }
+    compact(&store, &handle, &floor(&store, &handle, 32)).unwrap();
+    assert_eq!(
+        usage::read(&store.lock_conn().unwrap(), METHOD, 65536).unwrap(),
+        (0, 0, 0)
+    );
     let first = original(&store, &handle, "first");
     original(&store, &handle, "second");
     current(&store, &handle).unwrap();
     SLOT_COUNTS.with(|counts| counts.set(0));
+    MARKER_COUNTS.with(|counts| counts.set(0));
     for _ in 0..5 {
         current(&store, &handle).unwrap();
     }
-    assert_eq!(SLOT_COUNTS.with(|counts| counts.get()), 0);
     original(&store, &handle, "third");
     current(&store, &handle).unwrap();
-    assert_eq!(SLOT_COUNTS.with(|counts| counts.get()), 1);
+    assert!(prepare(&store, "consumed-1", ROUTE, METHOD, RAW, &handle)
+        .unwrap_err()
+        .starts_with("NATIVE_DELIVERY_RETIRED"));
+    assert_eq!(SLOT_COUNTS.with(|counts| counts.get()), 0);
+    assert_eq!(MARKER_COUNTS.with(|counts| counts.get()), 0);
+    assert_eq!(
+        usage::read(&store.lock_conn().unwrap(), METHOD, 65536).unwrap(),
+        (3, 3, 3 * (65536 + RAW.len() as i64))
+    );
     // Any commit by another connection, as another process would make, forces a recount.
     let foreign = rusqlite::Connection::open(&db.path).unwrap();
     foreign
         .execute_batch("CREATE TABLE unrelated(x); INSERT INTO unrelated VALUES(1);")
         .unwrap();
     current(&store, &handle).unwrap();
-    assert_eq!(SLOT_COUNTS.with(|counts| counts.get()), 2);
+    assert_eq!(SLOT_COUNTS.with(|counts| counts.get()), 1);
+    assert_eq!(MARKER_COUNTS.with(|counts| counts.get()), 1);
     foreign.execute_batch("DROP TRIGGER native_delivery_no_delete; DROP TRIGGER native_delivery_epoch_allocation_retained;").unwrap();
+    current(&store, &handle).unwrap();
     foreign
         .execute(
             "DELETE FROM native_delivery_epoch_allocations WHERE original_id=?1",
@@ -642,6 +674,172 @@ fn slot_counts_run_once_per_change_and_still_catch_a_foreign_commit() {
         )
         .unwrap();
     assert!(current(&store, &handle).is_err());
+}
+
+#[test]
+fn replacing_the_writer_after_a_foreign_commit_reaudits_matching_cookies() {
+    let db = FileDb::new();
+    let store = db.open();
+    store
+        .lock_conn()
+        .unwrap()
+        .execute_batch("CREATE TABLE unrelated(x)")
+        .unwrap();
+    let handle = epoch(&store);
+    current(&store, &handle).unwrap();
+    let cookies = |conn: &Connection| {
+        conn.query_row(
+            "SELECT data_version,schema_version FROM pragma_data_version(),pragma_schema_version()",
+            [],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        )
+        .unwrap()
+    };
+    let before = cookies(&store.lock_conn().unwrap());
+    let foreign = Connection::open(&db.path).unwrap();
+    foreign
+        .execute("INSERT INTO unrelated VALUES(1)", [])
+        .unwrap();
+    {
+        let mut conn = store.lock_conn().unwrap();
+        assert_ne!(cookies(&conn).0, before.0);
+        let replacement = Connection::open(&db.path).unwrap();
+        replacement
+            .execute_batch(
+                "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
+            )
+            .unwrap();
+        assert_eq!(cookies(&replacement), before);
+        drop(conn.replace_connection(replacement).unwrap());
+    }
+    MARKER_COUNTS.with(|counts| counts.set(0));
+    current(&store, &handle).unwrap();
+    assert_eq!(MARKER_COUNTS.with(|counts| counts.get()), 1);
+}
+
+#[test]
+fn missing_tail_marker_is_rejected_before_the_full_audit() {
+    let db = FileDb::new();
+    let store = db.open();
+    let handle = epoch(&store);
+    let record = original(&store, &handle, "consumed");
+    consumed(&store, &record, true);
+    compact(&store, &handle, &floor(&store, &handle, 1)).unwrap();
+    store
+        .lock_conn()
+        .unwrap()
+        .execute_batch(
+            "DROP TRIGGER native_delivery_semantic_retirements_retained;
+         DELETE FROM native_delivery_semantic_retirements
+         WHERE rowid=(SELECT MAX(rowid) FROM native_delivery_semantic_retirements);",
+        )
+        .unwrap();
+    MARKER_COUNTS.with(|counts| counts.set(0));
+    assert!(current(&store, &handle).is_err());
+    assert_eq!(MARKER_COUNTS.with(|counts| counts.get()), 0);
+}
+
+#[test]
+fn missing_accounting_or_identity_guards_disable_audit_reuse() {
+    let db = FileDb::new();
+    let store = db.open();
+    let handle = epoch(&store);
+    for guard in [
+        "native_delivery_semantic_marker_account",
+        "native_delivery_semantic_marker_valid",
+        "native_delivery_identity_no_replace",
+        "native_delivery_semantic_budget_retained",
+        "native_delivery_semantic_budget_monotonic",
+        "native_delivery_semantic_budget_witness_retained",
+        "native_delivery_semantic_budget_witness_monotonic",
+    ] {
+        let sql: String = {
+            let conn = store.lock_conn().unwrap();
+            let sql = conn
+                .query_row(
+                    "SELECT sql FROM sqlite_master WHERE name=?1",
+                    [guard],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            conn.execute_batch(&format!("DROP TRIGGER {guard}"))
+                .unwrap();
+            sql
+        };
+        current(&store, &handle).unwrap();
+        MARKER_COUNTS.with(|counts| counts.set(0));
+        current(&store, &handle).unwrap();
+        assert_eq!(MARKER_COUNTS.with(|counts| counts.get()), 1, "{guard}");
+        store.lock_conn().unwrap().execute_batch(&sql).unwrap();
+    }
+}
+
+#[test]
+fn maintenance_rechecks_quota_totals_after_the_audit_interval() {
+    let db = FileDb::new();
+    let store = db.open();
+    let handle = epoch(&store);
+    original(&store, &handle, "charged");
+    current(&store, &handle).unwrap();
+    store
+        .lock_conn()
+        .unwrap()
+        .execute(
+            "UPDATE native_delivery_usage SET retained=0,active=0,bytes=0 WHERE lane=1",
+            [],
+        )
+        .unwrap();
+    current(&store, &handle).unwrap();
+    AUDITS.lock().unwrap().retain_mut(|(key, at)| {
+        if key.0 != store.native_instance_id() {
+            return true;
+        }
+        // On Windows an Instant may not represent a timestamp before boot.
+        let Some(expired) = at.checked_sub(AUDIT_INTERVAL) else {
+            return false;
+        };
+        *at = expired;
+        true
+    });
+    assert!(maintenance_plan(&store, &handle, true).is_err());
+    assert!(prepare(&store, "next", ROUTE, METHOD, RAW, &handle).is_err());
+}
+
+#[test]
+fn quota_backfill_charges_nonstandard_format_budgets_to_the_large_format_lane() {
+    const FORMAT: &str = "native.services.workspace.format";
+    let store = SessionStore::open_in_memory().unwrap();
+    write(&store, |conn| {
+        schema(conn)?;
+        let ids = identity(conn)?;
+        conn.execute(
+            "INSERT INTO native_delivery_originals(
+               original_id,semantic_key,route_fingerprint,method,source_store_id,
+               source_profile_id,payload_sha256,payload_bytes,params_json,
+               created_instance,phase,revision,result_budget,created_at)
+             VALUES(?1,'older-format',?2,?3,?4,?5,?6,?7,?8,?9,'prepared',0,12345,0)",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                ROUTE,
+                FORMAT,
+                ids.0,
+                ids.1,
+                digest(RAW),
+                RAW.len() as i64,
+                RAW,
+                store.native_instance_id().to_string()
+            ],
+        )
+        .unwrap();
+        usage::initialize(conn)?;
+        assert_eq!(
+            usage::read(conn, FORMAT, MAX_RESULT_BYTES)?,
+            (1, 1, 12345 + RAW.len() as i64)
+        );
+        assert_eq!(usage::read(conn, FORMAT, FORMAT_RESULT_BYTES)?, (1, 0, 0));
+        Ok(())
+    })
+    .unwrap();
 }
 
 #[test]

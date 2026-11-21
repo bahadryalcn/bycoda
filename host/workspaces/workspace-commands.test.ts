@@ -323,6 +323,7 @@ it("admits a registered junction project and its worktree by physical root while
   const nested = join(physical, "nested");
   const linkedNested = join(root, "linked-nested");
   for (const path of [physical, tree, outside]) await mkdir(path);
+  await writeFile(join(tree, ".git"), "gitdir: elsewhere\n");
   await mkdir(nested);
   await symlink(physical, registered, "junction");
   await symlink(tree, linkedTree, "junction");
@@ -627,21 +628,165 @@ it("blocks all working-tree stash mutations while project is busy", async () => 
 
 it("resolves worktrees, caches results, invalidates and still rejects outside paths", async () => {
   const { root, projects, commands } = await setup();
+  const { path, other } = await worktreeFixture(root, projects);
+  await commands.run("read_text_file", { path });
+  expect(hostWorktrees).toHaveBeenCalledTimes(105);
+  await commands.run("read_text_file", { path });
+  expect(hostWorktrees).toHaveBeenCalledTimes(105);
+  commands.invalidateRoots();
+  await expect(commands.run("read_text_file", { path: other })).rejects.toThrow("outside");
+  expect(hostWorktrees).toHaveBeenCalledTimes(210);
+});
+
+/** A worktree of the first project and an unrelated checkout, both with `.git` like real ones. */
+async function worktreeFixture(root: string, projects: { cwd: string }[]) {
   const tree = join(root, "tree");
-  await mkdir(tree);
+  const checkout = join(root, "other-checkout");
+  for (const folder of [tree, checkout]) {
+    await mkdir(folder);
+    await writeFile(join(folder, ".git"), "gitdir: elsewhere\n");
+  }
   const path = join(tree, "hello.txt");
   await writeFile(path, "hello");
   vi.mocked(hostWorktrees).mockImplementation(async (cwd) => ({
     defaultRoot: cwd,
     worktrees: cwd === projects[0].cwd ? [{ path: tree, missing: false } as never] : [],
   }));
-  await commands.run("read_text_file", { path });
-  expect(hostWorktrees).toHaveBeenCalledTimes(105);
-  await commands.run("read_text_file", { path });
-  expect(hostWorktrees).toHaveBeenCalledTimes(105);
-  commands.invalidateRoots();
+  return { tree, path, other: join(checkout, "outside.txt") };
+}
+
+it("refuses a path outside every checkout without listing worktrees", async () => {
+  const { root, projects, commands } = await setup();
+  await worktreeFixture(root, projects);
   await expect(commands.run("read_text_file", { path: join(root, "outside.txt") })).rejects.toThrow(
     "outside",
   );
-  expect(hostWorktrees).toHaveBeenCalledTimes(210);
+  expect(hostWorktrees).not.toHaveBeenCalled();
+});
+
+it("keeps admitting a known worktree after the rescan TTL without listing every project again", async () => {
+  const { root, projects, commands } = await setup();
+  const { path, other } = await worktreeFixture(root, projects);
+  const start = Date.now();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(start);
+  try {
+    await commands.run("read_text_file", { path });
+    expect(hostWorktrees).toHaveBeenCalledTimes(105);
+    clock.mockReturnValue(start + 60_000);
+    expect(await commands.run("read_text_file", { path })).toBe("hello");
+    expect(hostWorktrees).toHaveBeenCalledTimes(105);
+    // An unknown path still asks every project once its lists are older than the TTL.
+    await expect(commands.run("read_text_file", { path: other })).rejects.toThrow("outside");
+    expect(hostWorktrees).toHaveBeenCalledTimes(210);
+    clock.mockReturnValue(start + 11 * 60_000);
+    await commands.run("read_text_file", { path });
+    expect(hostWorktrees).toHaveBeenCalledTimes(315);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+/** Two plain projects and an unrelated checkout holding two files, with a controllable registry. */
+async function missFixture() {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-misses-")));
+  roots.push(root);
+  const projects = [join(root, "project-a"), join(root, "project-b")].map((cwd) => ({ cwd }));
+  const checkout = join(root, "checkout");
+  for (const folder of [...projects.map((project) => project.cwd), checkout]) await mkdir(folder);
+  await writeFile(join(checkout, ".git"), "gitdir: elsewhere\n");
+  await writeFile(join(checkout, "a.txt"), "a");
+  await writeFile(join(checkout, "b.txt"), "b");
+  const store = { projects: () => projects, projectRegistryVersion: 0, attachmentDir: root };
+  const commands = new WorkspaceCommands(
+    store as never,
+    (async (_id: string, action: () => Promise<unknown>) => await action()) as never,
+  );
+  const listing = (...paths: string[]) =>
+    vi.mocked(hostWorktrees).mockImplementation(async (cwd) => ({
+      defaultRoot: cwd,
+      worktrees: paths.map((path) => ({ path, missing: false }) as never),
+    }));
+  const read = (name: string) => commands.run("read_text_file", { path: join(checkout, name) });
+  return { commands, store, projects, checkout, listing, read };
+}
+
+it("scans once for sibling paths denied inside one checkout, and rescans after the TTL", async () => {
+  const { listing, read, checkout } = await missFixture();
+  listing();
+  const wall = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  const mono = vi.spyOn(performance, "now").mockReturnValue(5_000);
+  try {
+    await expect(read("a.txt")).rejects.toThrow("outside");
+    expect(hostWorktrees).toHaveBeenCalledTimes(2);
+    await expect(read("b.txt")).rejects.toThrow("outside");
+    await expect(read("a.txt")).rejects.toThrow("outside");
+    expect(hostWorktrees).toHaveBeenCalledTimes(2);
+    // A worktree created outside this Host shows up once the denial expires.
+    listing(checkout);
+    wall.mockReturnValue(1_000_000 + 11_000);
+    mono.mockReturnValue(5_000 + 11_000);
+    expect(await read("b.txt")).toBe("b");
+    expect(hostWorktrees).toHaveBeenCalledTimes(4);
+  } finally {
+    wall.mockRestore();
+    mono.mockRestore();
+  }
+});
+
+it("admits a newly registered project immediately despite a remembered denial", async () => {
+  const { listing, read, store, projects, checkout } = await missFixture();
+  listing();
+  await expect(read("a.txt")).rejects.toThrow("outside");
+  expect(hostWorktrees).toHaveBeenCalledTimes(2);
+  projects.push({ cwd: checkout });
+  store.projectRegistryVersion++;
+  expect(await read("a.txt")).toBe("a");
+  expect(hostWorktrees).toHaveBeenCalledTimes(2);
+});
+
+it("never remembers a denial from a failed worktree listing", async () => {
+  const { listing, read, checkout } = await missFixture();
+  const wall = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+  try {
+    vi.mocked(hostWorktrees).mockRejectedValue(new Error("git failed"));
+    await expect(read("a.txt")).rejects.toThrow("outside");
+    // Within the listing cache the failed entry is reused, still without proving a denial.
+    await expect(read("b.txt")).rejects.toThrow("outside");
+    listing(checkout);
+    wall.mockReturnValue(1_000_000 + 6_000);
+    expect(await read("a.txt")).toBe("a");
+  } finally {
+    wall.mockRestore();
+  }
+});
+
+it("neither admits from nor remembers a scan that raced invalidateRoots", async () => {
+  const { commands, listing, read, checkout } = await missFixture();
+  let invalidate = true;
+  vi.mocked(hostWorktrees).mockImplementation(async (cwd) => {
+    if (invalidate) commands.invalidateRoots();
+    return { defaultRoot: cwd, worktrees: [{ path: checkout, missing: false } as never] };
+  });
+  await expect(read("a.txt")).rejects.toThrow("outside");
+  // The scan and its single retry were both stale; nothing was admitted or remembered.
+  invalidate = false;
+  listing(checkout);
+  expect(await read("a.txt")).toBe("a");
+});
+
+it("retries once against current roots when invalidateRoots races a scan", async () => {
+  const { commands, read, checkout } = await missFixture();
+  let first = true;
+  vi.mocked(hostWorktrees).mockImplementation(async (cwd) => {
+    const stale = first;
+    first = false;
+    if (stale) commands.invalidateRoots();
+    // The stale scan still lists a root that has since been removed.
+    return {
+      defaultRoot: cwd,
+      worktrees: stale ? [{ path: checkout, missing: false } as never] : [],
+    };
+  });
+  await expect(read("a.txt")).rejects.toThrow("outside");
+  expect(hostWorktrees).toHaveBeenCalledTimes(4);
 });

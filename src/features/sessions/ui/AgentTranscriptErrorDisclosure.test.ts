@@ -40,7 +40,8 @@ describe("tool error disclosure", () => {
         tool: {
           kind: "shell",
           status: "failed",
-          detail: "Error: listen EPERM\n    at Server.setupListenHandle",
+          detail:
+            "\u001b[?9001h\u001b]0;pwsh.exe\u0007\r\nError: listen EPERM\n    at Server.setupListenHandle",
         },
       },
     ];
@@ -53,6 +54,8 @@ describe("tool error disclosure", () => {
     expect(trigger).not.toBeNull();
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     expect(container.textContent).toContain("Error: listen EPERM");
+    expect(container.textContent).not.toContain("pwsh.exe");
+    expect(container.textContent).not.toContain("\u001b");
     expect(container.textContent).not.toContain("Server.setupListenHandle");
 
     const failedRow = container.querySelector<HTMLElement>('[aria-label^="Failed tool call:"]');

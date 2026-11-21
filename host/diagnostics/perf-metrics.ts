@@ -463,6 +463,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "runtimeLogs.tools.call",
   "sessions.adopted",
   "sessions.block",
+  "sessions.inlineVisual",
   "sessions.workedTime",
   "sessions.delete",
   "sessions.desktopLive",

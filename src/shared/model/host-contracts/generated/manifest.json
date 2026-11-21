@@ -41053,6 +41053,45 @@
       "retry": "safe-query",
       "scope": "device"
     },
+    "sessions.inlineVisual": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "maxLength": 64, "minLength": 64, "type": "string" },
+          "sessionId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": ["sessionId", "id"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.sessions.v2",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" },
+          { "items": { "$ref": "#" }, "type": "array" },
+          {
+            "additionalProperties": { "$ref": "#" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        ]
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
     "sessions.lifecycle.configure": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -78375,6 +78414,31 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "sessions.inlineVisual", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "id": { "maxLength": 64, "minLength": 64, "type": "string" },
+                "sessionId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": ["sessionId", "id"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "sessions.workedTime", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -82391,5 +82455,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "05373de7b45aa7f577428a528fc331a106de676602d962e2e3a5697ded72e210"
+  "schemaHash": "faa3df713683c7910d99bf0377d3cf79f58fc00b40b3d80d1a938dea40e5a348"
 }

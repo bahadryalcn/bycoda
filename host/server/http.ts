@@ -9,6 +9,7 @@ import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps
 import { AssistantResponseValidationSchema } from "../../src/shared/model/host-contracts/assistant";
 import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects";
 import { getHostRpcMethod } from "../../src/shared/model/host-contracts/methods";
+import { trackRpc } from "../diagnostics/loop-stall";
 import { mcpMetricName, perfMetrics } from "../diagnostics/perf-metrics";
 import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
 import { requestingDeviceName } from "../desktop/remoteActivity";
@@ -26,6 +27,7 @@ import {
   isInternalFailure,
   OwnerRpcDeadlineError,
   ownerRpcDeadlineMs,
+  slowRpcThresholdMs,
 } from "./owner-rpc";
 import { body, boundRequestReceive, REQUEST_RECEIVE_TIMEOUT_MS } from "./support";
 import { handleAssistantObservationTools } from "./tools-assistant-observation";
@@ -736,25 +738,36 @@ export function createHttpRuntime(
           await dependencies.engine.store.db.withAuthorization(
             () => dependencies.engine.store.authenticated(token),
             async () => {
-              await dispatchOwnerRpc(dependencies, {
-                input,
-                params,
-                get result() {
-                  return result;
-                },
-                set result(value: unknown) {
-                  result = value;
-                },
-                token,
-                domainContext,
-                tokenHash,
-                request,
-                pollState,
-                response,
-                get closing() {
-                  return closing;
-                },
-              });
+              const method = String(input.method);
+              // Only registered names are recorded; a held long poll is never a stall suspect.
+              const done = trackRpc(
+                getHostRpcMethod(method) ? method : "unknown",
+                undefined,
+                slowRpcThresholdMs(method, params) > slowRpcThresholdMs("", {}),
+              );
+              try {
+                await dispatchOwnerRpc(dependencies, {
+                  input,
+                  params,
+                  get result() {
+                    return result;
+                  },
+                  set result(value: unknown) {
+                    result = value;
+                  },
+                  token,
+                  domainContext,
+                  tokenHash,
+                  request,
+                  pollState,
+                  response,
+                  get closing() {
+                    return closing;
+                  },
+                });
+              } finally {
+                done();
+              }
             },
           );
           const finishResult = () =>

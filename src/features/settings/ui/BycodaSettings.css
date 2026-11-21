@@ -44,6 +44,9 @@
   flex-shrink: 0;
   /* Sticky text must occlude the form while it scrolls underneath. */
 }
+.bycoda-settings-breadcrumb {
+  flex: none;
+}
 .settings-page-bar-inner {
   --settings-page-bar-side-padding: 32px;
   display: flex;
@@ -117,6 +120,9 @@
 }
 
 @container settings-workbench (max-width: 760px) {
+  .bycoda-settings-breadcrumb {
+    display: none;
+  }
   .bycoda-settings-category-picker {
     display: block;
     flex: 1 1 8rem;

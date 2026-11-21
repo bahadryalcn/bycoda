@@ -1,4 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { CodexCatalogStore } from "./codex-catalog-store";
 import { ModelCatalogCache } from "./model-catalog-cache";
 import type { AgentModel } from "../../src/features/sessions/model/models";
 
@@ -13,6 +17,82 @@ const deferred = () => {
   });
   return { promise, resolve, reject };
 };
+
+it("restores a Codex snapshot after Host restart and clears it on a successful empty result", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-codex-catalog-"));
+  const file = join(directory, "catalog.json");
+  const previous = [{ ...model("codex:known"), harness: "codex" as const }];
+  const makeCache = (
+    discover: () => Promise<AgentModel[]>,
+    identity = "account-a",
+    environment = "host-a",
+  ) =>
+    new ModelCatalogCache(["codex"], async () => "v1", discover, undefined, {
+      store: new CodexCatalogStore(file, environment),
+      identity: async () => identity,
+    });
+  try {
+    await makeCache(async () => previous).read("/project");
+
+    const refresh = deferred();
+    const restarted = makeCache(() => refresh.promise);
+    expect(await restarted.read("/project", true)).toMatchObject({
+      models: { codex: previous },
+      pending: ["codex"],
+    });
+    const complete = restarted.read("/project");
+    refresh.reject(new Error("initialize timeout"));
+    expect(await complete).toMatchObject({
+      models: { codex: previous },
+      errors: { codex: "initialize timeout" },
+    });
+
+    const offline = () => Promise.reject(new Error("offline"));
+    expect((await makeCache(offline).read("/elsewhere")).models.codex).toEqual([]);
+    expect((await makeCache(offline, "account-b").read("/project")).models.codex).toEqual([]);
+    expect((await makeCache(offline, "account-a", "host-b").read("/project")).models.codex).toEqual(
+      [],
+    );
+    expect((await makeCache(async () => []).read("/project")).models.codex).toEqual([]);
+    expect((await makeCache(offline).read("/project")).models.codex).toEqual([]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("does not publish a late result after the default Codex profile changes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-codex-catalog-"));
+  try {
+    let identity = "account-a";
+    const old = deferred();
+    let beginOld!: () => void;
+    const started = new Promise<void>((resolve) => (beginOld = resolve));
+    const store = new CodexCatalogStore(join(directory, "catalog.json"), "host");
+    const replacement = [{ ...model("codex:new"), harness: "codex" as const }];
+    const cache = new ModelCatalogCache(
+      ["codex"],
+      async () => "v1",
+      async () => {
+        if (identity === "account-a") {
+          beginOld();
+          return old.promise;
+        }
+        return replacement;
+      },
+      undefined,
+      { store, identity: async () => identity },
+    );
+    const previous = cache.read("/project");
+    await started;
+    identity = "account-b";
+    expect((await cache.read("/project")).models.codex).toEqual(replacement);
+    old.resolve([{ ...model("codex:old"), harness: "codex" }]);
+    expect((await previous).models.codex).toEqual([]);
+    expect(await store.read("/project", "account-a")).toBeUndefined();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 it("publishes a fast provider within 150ms while sharing a slow discovery across callers", async () => {
   vi.useFakeTimers();

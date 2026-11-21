@@ -6,6 +6,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import {
   accountStatusWith,
   accountUsageKey,
+  providerAccountSignedOut,
   useProviderAccountUsage,
 } from "../../providers/model/accountUsage";
 import {
@@ -66,15 +67,12 @@ export function ProviderAccountMenu({
   return (
     <>
       <Button
-        className="max-w-28 shrink-0"
-        variant="ghost"
+        className={variant === "pill" ? "max-w-28 shrink-0" : "max-w-full"}
+        size={variant === "notice" ? "sm" : undefined}
+        variant={variant === "notice" ? "secondary" : "ghost"}
         ref={trigger}
         type="button"
-        tooltip={
-          variant === "pill"
-            ? t("Account: {p0}", { p0: label })
-            : t("Continue this conversation with another account")
-        }
+        tooltip={variant === "pill" ? t("Account: {p0}", { p0: label }) : undefined}
         aria-label={variant === "pill" ? t("Account: {p0}", { p0: label }) : t("Switch account")}
         expanded={open}
         aria-haspopup="menu"
@@ -82,7 +80,9 @@ export function ProviderAccountMenu({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setOpen((value) => !value)}
       >
-        {current && storedAccounts.find((account) => account.id === current.id) ? (
+        {variant === "pill" &&
+        current &&
+        storedAccounts.find((account) => account.id === current.id) ? (
           <AccountColorDot account={storedAccounts.find((account) => account.id === current.id)!} />
         ) : null}
         <Text
@@ -101,13 +101,18 @@ export function ProviderAccountMenu({
           side="top"
           align={variant === "pill" ? "start" : "end"}
           width={260}
-          label={variant === "pill" ? t("Account") : t("Continue with another account")}
+          label={variant === "pill" ? t("Account") : t("Accounts")}
           data-model-control
           items={accounts.map((account) => {
             const local = storedAccounts.find((entry) => entry.id === account.id);
-            const status = local
-              ? accountStatusWith(usage.usage[accountUsageKey(local)], usage.now, t, format)
-              : undefined;
+            const limits = local ? usage.usage[accountUsageKey(local)] : undefined;
+            const status = local ? accountStatusWith(limits, usage.now, t, format) : undefined;
+            const statusLabel =
+              status?.tone === "unknown"
+                ? limits && providerAccountSignedOut(limits)
+                  ? t("Not signed in")
+                  : t("Usage unavailable")
+                : status && t(status.label);
             return {
               kind: "item" as const,
               id: account.id,
@@ -115,8 +120,8 @@ export function ProviderAccountMenu({
               icon: local ? <AccountColorDot account={local} /> : undefined,
               description: status
                 ? status.detail
-                  ? `${status.label} · ${status.detail}`
-                  : status.label
+                  ? `${statusLabel} · ${status.detail}`
+                  : statusLabel
                 : undefined,
               checked: account.id === currentId,
               selectionRole: "radio" as const,

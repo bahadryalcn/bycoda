@@ -79,6 +79,10 @@ import { useSessionListStatus } from "../../features/sessions/hooks/useSessionLi
 import { useSettledShelf } from "../../features/sessions/hooks/useSettledShelf";
 import { useRemoteSessionLifecycleLists } from "../../features/sessions/hooks/useSessionLifecycle";
 import { isSettledSession } from "../../features/sessions/model/sessionLifecycle";
+import {
+  sessionLifecycleClient,
+  setSessionLifecycle,
+} from "../../features/sessions/model/sessionLifecycleClient";
 import type { BackgroundSessionTarget } from "../../features/tasks/model/backgroundSession";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -254,6 +258,7 @@ import {
   type SessionOrganizationState,
 } from "../../features/sessions/model/sessionOrganizationStore";
 import { isProjectPasswordLocked } from "../../features/group-lock/model/groupLock";
+import { isProjectLocked } from "../../features/group-lock/public/projectLock";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { roomPrivacyRetryAction } from "../../features/group-lock/ui/roomPrivacyRetry";
 import {
@@ -355,7 +360,9 @@ import { useProjectMenu } from "./useProjectMenu";
 import { SessionFiltersMenu } from "../../features/sessions/ui/SessionFiltersMenu";
 import {
   SessionSettleAction,
+  SessionSettleButton,
   useSessionSettleCommand,
+  type SessionSettleCommand,
 } from "../../features/sessions/ui/SessionSettleAction";
 import { LinkSessionWorkItemDialog } from "../../features/sessions/ui/LinkSessionWorkItemDialog";
 import { sessionReminderPresets } from "../../features/sessions/ui/sessionReminderPresets";
@@ -1082,11 +1089,6 @@ function SidebarComponent({
   const [reminderSessionsCollapsed, setReminderSessionsCollapsed] = useState(() =>
     loadReminderSessionsCollapsed(cwd),
   );
-  const {
-    shelve: shelveSettled,
-    isSettled,
-    setCollapsed: setSettledCollapsed,
-  } = useSettledShelf(!remoteProject || lastSessionsOpen);
   const remoteLifecycleMachines = new Set(
     lastSessionsOpen
       ? (lastSessionsRemoteRows ?? []).flatMap(({ project, fresh }) => {
@@ -1097,9 +1099,80 @@ function SidebarComponent({
         })
       : [],
   );
+  const projectLifecycleMachine =
+    remoteProject &&
+    !lastSessionsOpen &&
+    remote.loaded &&
+    machineAvailability.available &&
+    !isProjectPasswordLocked(cwd)
+      ? remote.machine?.id
+      : undefined;
+  if (projectLifecycleMachine) remoteLifecycleMachines.add(projectLifecycleMachine);
   const remoteLifecycle = useRemoteSessionLifecycleLists(
     remoteLifecycleMachines.size ? JSON.stringify([...remoteLifecycleMachines].sort()) : "",
   );
+  const projectLifecycleViews = remote.machine
+    ? remoteLifecycle.lists.get(remote.machine.id)
+    : undefined;
+  const {
+    shelve: shelveSettled,
+    isSettled,
+    setCollapsed: setSettledCollapsed,
+    lifecycle: localLifecycle,
+  } = useSettledShelf(!remoteProject || lastSessionsOpen, projectLifecycleViews);
+  const lifecycleMachine = remoteProject
+    ? projectLifecycleMachine
+    : localLifecycle.autoSettle && localLifecycle.machineId;
+  const lifecycleViews = remoteProject ? projectLifecycleViews : localLifecycle.views;
+  const settlingProjectSessions = useRef(false);
+  const runProjectSettle = async (sessions: readonly SessionSummary[], undo = false) => {
+    if (!lifecycleMachine || settlingProjectSessions.current) return;
+    settlingProjectSessions.current = true;
+    const client = sessionLifecycleClient(lifecycleMachine);
+    let firstError: string | undefined;
+    try {
+      for (const session of sessions) {
+        if (remoteProject ? isProjectPasswordLocked(cwd) : isProjectLocked(session.cwd)) continue;
+        if (
+          remoteProject &&
+          (!readMachineAvailability(cwd).available ||
+            remoteProjectFor(cwd)?.projectId !== hostProject?.projectId)
+        ) {
+          firstError ??= t("Connect this project’s machine to load its sessions.");
+          break;
+        }
+        try {
+          if (remoteProject) await remoteLifecycle.change(lifecycleMachine, session.id, undo);
+          else
+            setSessionLifecycle(
+              await (undo ? client.unsettle(session.id) : client.settle(session.id)),
+            );
+        } catch (cause) {
+          firstError ??= presentRemoteError(cause, { explicit: true });
+        }
+      }
+    } finally {
+      settlingProjectSessions.current = false;
+    }
+    if (firstError) toast.show({ tone: "danger", message: firstError });
+  };
+  const canSettleProjectSession = (session: SessionSummary) =>
+    lifecycleMachine &&
+    lifecycleViews &&
+    !session.draft &&
+    !session.archived &&
+    !crewManagedIndex.has(session.id);
+  const projectSettleCommand = (session: SessionSummary): SessionSettleCommand | undefined => {
+    if (!canSettleProjectSession(session)) return undefined;
+    const view = lifecycleViews?.get(session.id);
+    const settled = view?.state === "settling" || isSettledSession(view, session.lastActivityAt);
+    return {
+      settled,
+      label:
+        view?.state === "settling" ? t("Cancel settle") : settled ? t("Un-settle") : t("Settle"),
+      run: () => runProjectSettle([session], settled),
+    };
+  };
   const globalRemoteView = (session: SessionSummary) => {
     const environmentId = parseRemotePath(session.cwd)?.environmentId;
     const machine = environmentId && knownRemoteMachine(environmentId);
@@ -1861,6 +1934,20 @@ function SidebarComponent({
   const multipleMenuSessions = menuSessionIds.length > 1;
   // Conversations a live crew runs are archived, deleted and stopped from Crews only.
   const crewManagedIndex = useCrewManagedIndex();
+  const batchSettleCommand = (sessions: SessionSummary[]): SessionSettleCommand | undefined => {
+    const active = sessions.filter(
+      (session) =>
+        canSettleProjectSession(session) &&
+        !isSettled(session) &&
+        lifecycleViews?.get(session.id)?.state !== "settling",
+    );
+    return active.length
+      ? { settled: false, label: t("Settle"), run: () => runProjectSettle(active) }
+      : undefined;
+  };
+  const menuSettle = multipleMenuSessions
+    ? batchSettleCommand(menuSessions)
+    : menuSessions[0] && projectSettleCommand(menuSessions[0]);
   const menuCrewManaged = menuSessionIds.some((id) => crewManagedIndex.has(id));
   const selectedCrewManaged = [...selectedSessionIds].some((id) => crewManagedIndex.has(id));
   const menuReminderTimes = [
@@ -1940,6 +2027,7 @@ function SidebarComponent({
   const sessionMenuItems: ExplorerMenuItem[] = !sessionMenu
     ? EMPTY_MENU_ITEMS
     : [
+        ...(menuSettle ? [{ kind: "item" as const, id: "settle", label: menuSettle.label }] : []),
         ...(onCancelReminders && menuReminderTimes.length > 0
           ? [
               {
@@ -2203,6 +2291,11 @@ function SidebarComponent({
 
   const onSessionMenuPick = (id: string) => {
     if (!sessionMenu) return;
+    if (id === "settle") {
+      closeSessionMenu();
+      void menuSettle?.run().catch(() => {});
+      return;
+    }
     const sessionId = sessionMenu.sessionId;
     const sessionIds = menuSessionIds;
     const providerSessionId = menuSessions[0]?.providerSessionId;
@@ -2368,6 +2461,10 @@ function SidebarComponent({
 
   // The bar acts on the selection in list order, like the context menu.
   const selectedSessions = listedSessions.filter((session) => selectedSessionIds.has(session.id));
+  const selectedSettle =
+    selectedSessions.length > 1 && !contextSelection
+      ? batchSettleCommand(selectedSessions)
+      : undefined;
   const allSelectedArchived =
     selectedSessions.length > 0 && selectedSessions.every((session) => session.archived);
   const allSelectedPinned =
@@ -2921,6 +3018,13 @@ function SidebarComponent({
       onListDropTargetChange={setSessionDrop}
       onContextMenu={cardActions.contextMenu}
       settleable={!remoteProject}
+      settleCommand={
+        selectedSettle && selectedSessionIds.has(session.id)
+          ? selectedSettle
+          : remoteProject
+            ? projectSettleCommand(session)
+            : undefined
+      }
       onArchive={
         onArchiveSession && !crewManagedIndex.has(session.id) ? cardActions.archive : undefined
       }
@@ -4348,7 +4452,7 @@ function SidebarComponent({
           y={filterMenu.y}
           harnesses={sessionHarnesses}
           local={!remoteProject}
-          settled={lastSessionsOpen || !remoteProject}
+          settled={lastSessionsOpen || !remoteProject || !!projectLifecycleViews}
           filters={lastSessionsOpen ? globalSessionFilters : sessionFilters}
           allowedTimeFilters={lastSessionsOpen ? GLOBAL_SESSION_TIME_FILTERS : undefined}
           defaultFilters={lastSessionsOpen ? GLOBAL_SESSION_FILTERS : undefined}
@@ -5527,6 +5631,7 @@ const SessionCard = memo(function SessionCard({
   onListDropTargetChange,
   onContextMenu,
   settleable = false,
+  settleCommand,
   onArchive,
   onRename,
   onDelete,
@@ -5579,6 +5684,7 @@ const SessionCard = memo(function SessionCard({
   onContextMenu?: (sessionId: string, e: ReactMouseEvent<HTMLDivElement>) => void;
   /** A session of this computer's Host: offers Settle / Un-settle. */
   settleable?: boolean;
+  settleCommand?: SessionSettleCommand;
   onArchive?: (sessionId: string, archived: boolean) => void;
   onRename?: (sessionId: string) => void;
   onDelete?: (sessionId: string) => void;
@@ -6245,7 +6351,7 @@ const SessionCard = memo(function SessionCard({
     ) : null;
   // Compact idle rows let hover actions sit over the time instead of reserving a gutter.
   const compactActionCount = compact
-    ? [onPin, settleable, onArchive, onDelete].filter(Boolean).length
+    ? [onPin, settleable || settleCommand, onArchive, onDelete].filter(Boolean).length
     : 0;
   const timeYields =
     compactActionCount && idle && !linkedWorkItem && !session.automationId && !orchestration;
@@ -6256,7 +6362,11 @@ const SessionCard = memo(function SessionCard({
       className={`relative flex shrink-0 items-center ${compact ? "" : "gap-0"}`}
     >
       {compact ? pinAction() : null}
-      {settleable ? <SessionSettleAction session={session} title={title} /> : null}
+      {settleCommand ? (
+        <SessionSettleButton command={settleCommand} title={title} />
+      ) : settleable ? (
+        <SessionSettleAction session={session} title={title} />
+      ) : null}
       {onArchive ? (
         <InlineAction
           label={`${archiveLabel} ${title}`}

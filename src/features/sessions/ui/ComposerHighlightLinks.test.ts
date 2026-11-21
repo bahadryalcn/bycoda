@@ -3,11 +3,6 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openUrl: vi.fn(async () => undefined),
-}));
-
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { ComposerHighlight } from "./ComposerHighlight";
 
 let host: HTMLDivElement;
@@ -64,7 +59,7 @@ it("highlights known tracker aliases, repeated refs and more than five tokens wi
   ).toEqual(tokens);
 });
 
-it("boxes each link with its text intact and opens it from the end badge", () => {
+it("boxes each link with its source intact and marks the destination for the action layer", () => {
   const text = "https://github.com/acme/app/pull/1267 bunu incele, https://example.com.";
   act(() =>
     root.render(
@@ -80,16 +75,14 @@ it("boxes each link with its text intact and opens it from the end badge", () =>
       }),
     ),
   );
-  // The overlay may rearrange a link's own characters, never their count.
-  expect(host.textContent).toHaveLength(text.length);
+  expect(host.textContent).toBe(text);
   const links = [...host.querySelectorAll("[data-composer-link-token]")];
   expect(links.map((link) => link.textContent)).toEqual([
-    "hgithub.com/acme/app/pull/1267ttps:/",
-    "hexample.comttps:/",
+    "https://github.com/acme/app/pull/1267",
+    "https://example.com",
   ]);
   expect(host.querySelectorAll("[data-composer-link-icon] svg")).toHaveLength(2);
-  act(() => host.querySelectorAll<HTMLElement>("[data-composer-link-open]")[1].click());
-  expect(openUrl).toHaveBeenCalledWith("https://example.com/");
+  expect(links[1].getAttribute("data-reference-value")).toBe("https://example.com/");
 });
 
 it("keeps the attachment and citation tokens inside Markdown emphasis", () => {
@@ -147,10 +140,11 @@ it("decorates recognized skills and MCP references without changing the draft", 
       }),
     ),
   );
-  // Skill chips are the source text itself, at the textarea's size.
-  expect(host.textContent).toBe(text);
+  const source = host.cloneNode(true) as HTMLElement;
+  source.querySelectorAll("[data-draft-token-label]").forEach((face) => face.remove());
+  expect(source.textContent).toBe(text);
   expect(host.querySelectorAll("[data-composer-skill-token]")).toHaveLength(2);
-  expect(host.querySelector("[data-composer-skill-token] svg")).toBeNull();
+  expect(host.querySelectorAll("[data-composer-skill-token] svg")).toHaveLength(2);
   expect(host.querySelector("[data-mcp-tag] svg")).not.toBeNull();
 });
 
