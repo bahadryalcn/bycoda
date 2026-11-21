@@ -1083,6 +1083,15 @@ pub(super) fn reconcile_remote_acks(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,
 ) -> Result<usize, String> {
+    reconcile_remote_acks_noting(channel, deadline, &mut None)
+}
+
+/// `reconcile_remote_acks` that keeps the first refused ACK, for maintenance diagnostics.
+fn reconcile_remote_acks_noting(
+    channel: &Arc<NativeServiceChannel>,
+    deadline: Instant,
+    failure: &mut Option<String>,
+) -> Result<usize, String> {
     if !channel.delivery_ack_supported {
         return Ok(0);
     }
@@ -1110,8 +1119,12 @@ pub(super) fn reconcile_remote_acks(
             complete_page = false;
             break;
         }
-        if acknowledge_remote(channel, &original, &[], deadline).is_ok() {
-            acknowledged += 1;
+        match acknowledge_remote(channel, &original, &[], deadline) {
+            Ok(()) => acknowledged += 1,
+            Err(error) => {
+                let sequence = original.id().rsplit(':').next().unwrap_or_default();
+                failure.get_or_insert_with(|| format!("ACK {sequence}: {error}"));
+            }
         }
         cursor = Some(original.ack_cursor());
     }
@@ -1145,7 +1158,7 @@ fn reconcile_pending_noting(
     if channel.delivery_ack_supported {
         let now = Instant::now();
         let ack_deadline = now + deadline.saturating_duration_since(now) / 2;
-        if let Err(error) = reconcile_remote_acks(channel, ack_deadline) {
+        if let Err(error) = reconcile_remote_acks_noting(channel, ack_deadline, failure) {
             failure.get_or_insert(format!("ACK retry: {error}"));
         }
     }

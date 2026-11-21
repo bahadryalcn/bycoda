@@ -374,6 +374,7 @@ export function TranscriptSelectionMenu({
         align="start"
         width={336}
         kind="dialog"
+        frosted
         aria-label={t("Add citation")}
         flow="scroll"
         onDismiss={closeComment}
@@ -450,6 +451,7 @@ export function TranscriptSelectionMenu({
       side="top"
       align="center"
       width={menuWidth}
+      frosted
       onDismiss={(reason) => {
         if (reason === "escape") window.getSelection()?.removeAllRanges();
         onDismiss();
@@ -457,9 +459,7 @@ export function TranscriptSelectionMenu({
       className={styles.menu}
       data-selection-menu
     >
-      {/* Raised popup family: the Popover owns surface, elevation and radius; the
-          rows are compact and calm. This wrapper is the one scroll owner on
-          short viewports. */}
+      {/* Popover paints the glass. The rail owns scrolling on short viewports. */}
       <div ref={rail} className={styles.rail}>
         <FloatingButtonGroup
           label={t("Selected text actions")}

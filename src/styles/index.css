@@ -891,6 +891,7 @@ html.theme-light {
   --ui-fill-subtle: color-mix(in srgb, var(--color-content) 8%, transparent);
   --ui-fill-muted: color-mix(in srgb, var(--color-content) 10%, transparent);
   --ui-fill-strong: color-mix(in srgb, var(--color-content) 12%, transparent);
+  --ui-inline-code-surface: var(--ui-fill-strong);
   --theme-hue: 216;
   --theme-saturation: 24%;
   --theme-dark-lightness: 4%;
@@ -3198,6 +3199,23 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   unicode-bidi: isolate;
 }
 
+/* Inline actions let the transcript canvas show through their resting fills. */
+[data-session-review-actions] {
+  --ui-surface: var(--ui-fill-strong);
+  --ui-surface-raised: var(--ui-fill-subtle);
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  :root {
+    --ui-inline-code-surface: var(--ui-surface-raised);
+  }
+
+  [data-session-review-actions] {
+    --ui-surface: var(--ui-surface-panel);
+    --ui-surface-raised: var(--ui-surface-floating);
+  }
+}
+
 .agent-markdown .markdown-code-shell [data-streamdown="code-block"] {
   margin-block: 0;
   background: var(--ui-surface-panel);
@@ -4441,7 +4459,7 @@ html.theme-light .popover-backdrop {
   background: var(--ui-surface-floating);
 }
 
-/* Frosted glass for non-interactive hover cards (Popover `frosted`). The doubled selector outranks
+/* Frosted glass for opt-in popovers. The doubled selector outranks
    the shared .popover-backdrop rules below; without blur the opaque floating surface stays readable. */
 .popover-backdrop.popover-frosted,
 html.theme-light .popover-backdrop.popover-frosted {
@@ -5006,7 +5024,7 @@ html.is-reordering
 }
 /* The floating surface (.popover-backdrop: popovers, menus, dialogs, sheets) is 95-100% opaque, so a
    blur behind it is invisible yet re-samples the pane on every repaint. Only .popover-frosted
-   (a deliberately translucent hover card) blurs, through its own rule above. */
+   (a deliberately translucent popover) blurs, through its own rule above. */
 /* A nested glass surface samples the already blurred parent only once. */
 .popover-backdrop
   ~ *

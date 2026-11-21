@@ -122,7 +122,7 @@ if (new URLSearchParams(location.search).has("reviewFixture")) {
               additions: 7,
               deletions: 2,
               exact: true,
-              undoable: true,
+              undoable: false,
             },
           ],
         };
@@ -203,7 +203,7 @@ const baseBlocks: Block[] = [
   {
     id: "reply",
     role: "assistant",
-    text: "The report is ready for review. Your draft and selected model remain available below.",
+    text: "The report is ready for review. See `src/example.ts`. Your draft and selected model remain available below.",
   },
 ];
 const initial: Session = {

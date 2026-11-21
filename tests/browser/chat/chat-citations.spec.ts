@@ -101,6 +101,10 @@ for (const width of [1280, 800]) {
       await page.goto(`/tests/browser/chat/chat-citations.html?theme=${theme}`, {
         waitUntil: "domcontentloaded",
       });
+      await page.addStyleTag({
+        content:
+          "main { background-image: radial-gradient(ellipse at 70% 16%, var(--ui-tone-info-subtle), transparent 65%); }",
+      });
       const prompt = page.getByRole("textbox", { name: "Message", exact: true });
       await expect(prompt).toHaveValue("Keep my existing draft.");
 
@@ -109,6 +113,16 @@ for (const width of [1280, 800]) {
       await page.keyboard.press("Escape");
       const source = await selectReply(page);
       const menu = page.getByRole("toolbar", { name: "Selected text actions" });
+      const glass = page.locator(".popover-backdrop:has(+ [data-selection-menu])");
+      await expect(glass).toHaveCSS("backdrop-filter", /blur\(/);
+      await expect(menu).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await page.evaluate(() =>
+        document.documentElement.setAttribute("data-performance-no-blur", ""),
+      );
+      await expect(glass).toHaveCSS("backdrop-filter", "none");
+      await page.evaluate(() =>
+        document.documentElement.removeAttribute("data-performance-no-blur"),
+      );
       await expect(menu.getByRole("button", { name: "Reprompt", exact: true })).toHaveCount(0);
       await expect(menu.getByRole("button", { name: "Copy", exact: true })).toBeVisible();
       const sourceBox = await source.boundingBox();
@@ -128,6 +142,10 @@ for (const width of [1280, 800]) {
       await menu.getByRole("button", { name: "Add citation", exact: true }).click();
       const comment = page.getByRole("dialog", { name: "Add citation", exact: true });
       await expect(comment).toBeVisible();
+      await expect(page.locator(".popover-backdrop:has(+ [data-citation-comment])")).toHaveCSS(
+        "backdrop-filter",
+        /blur\(/,
+      );
       await comment
         .getByLabel("Comment", { exact: true })
         .fill("Bunu daha kompakt hale getirelim.");

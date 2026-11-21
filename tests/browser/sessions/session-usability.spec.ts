@@ -56,7 +56,29 @@ for (const light of [true, false])
       await page.goto(
         `/tests/browser/sessions/session-usability.html?reviewFixture${light ? "&light" : ""}`,
       );
+      await page.addStyleTag({
+        content:
+          ".agent-transcript { background-image: radial-gradient(ellipse at 70% 25%, var(--ui-tone-info-subtle), transparent 75%); }",
+      });
       await expect(page.locator("[data-session-review]")).toContainText("Changed 1 file");
+      const review = page.getByRole("button", { name: "Review", exact: true });
+      const undo = page.getByRole("button", { name: "Undo", exact: true });
+      await expect(undo).toBeDisabled();
+      await expect(undo).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      const undoSurface = page.locator("[data-session-review-actions] [data-ui-focus-group] > div");
+      const file = page.locator(".agent-markdown code").filter({ hasText: "src/example.ts" });
+      await expect(file).toBeVisible();
+      for (const [name, control] of Object.entries({ review, undoSurface, file })) {
+        const alpha = await control.evaluate((element) => {
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d")!;
+          context.fillStyle = getComputedStyle(element).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3];
+        });
+        expect(alpha, name).toBeGreaterThan(0);
+        expect(alpha, name).toBeLessThan(255);
+      }
       await page.screenshot({
         path: `temp/verification/sessions-callers/session-review-${light ? "light" : "dark"}-${width}.png`,
       });

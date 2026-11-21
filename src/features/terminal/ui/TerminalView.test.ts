@@ -116,6 +116,15 @@ vi.mock("@xterm/xterm", () => ({
     onRender() {
       return { dispose() {} };
     }
+    onSelectionChange() {
+      return { dispose() {} };
+    }
+    onScroll() {
+      return { dispose() {} };
+    }
+    getSelection() {
+      return "";
+    }
     attachCustomKeyEventHandler() {}
     attachCustomWheelEventHandler() {}
   },

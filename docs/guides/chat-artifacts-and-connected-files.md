@@ -72,7 +72,7 @@ implemented change to your project. Unsupported clients retain the source result
 
 ## Quote and translate selected text
 
-Select text in a message to open actions beside the selection. **Copy** copies the excerpt. **Reprompt** is available only for your own messages; translation remains available on replies too.
+Select text in a message to open actions beside the selection. The menu uses frosted glass when blur is available. **Copy** copies the excerpt. **Reprompt** is available only for your own messages; translation remains available on replies too.
 
 Selection actions stay on one row. In a narrow window, scroll the action row horizontally or use its arrow keys to reach the remaining actions.
 

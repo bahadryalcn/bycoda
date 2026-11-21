@@ -461,7 +461,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
         <code
           {...props}
           dir="ltr"
-          className={`inline-flex items-center gap-1 rounded-md bg-(--ui-surface-raised) px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-(--ui-tone-neutral-fg) ${
+          className={`inline-flex items-center gap-1 rounded-md bg-(--ui-inline-code-surface) px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-(--ui-tone-neutral-fg) ${
             open ? "cursor-pointer hover:text-(--ui-tone-info-fg) hover:underline" : ""
           } ${className ?? ""}`}
           role={open ? "link" : undefined}
