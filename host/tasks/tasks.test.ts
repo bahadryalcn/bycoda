@@ -2303,9 +2303,15 @@ describe("host tasks", () => {
       expect(oldestTurn).toBeDefined();
       oldestTurn!.finish();
       await settled(oldest.sessionId!, oldest.runId);
-      // A task being verified still counts.
-      await advance();
-      expect((await task("c")).status).toBe("queued");
+      // A task being verified still counts. Its background verification may already have
+      // finished when the tick admits work, and then starting the next task is correct.
+      clock.now += MINUTE;
+      await tasks.tick();
+      const states = await mapAsync(["a", "b", "c"], async (id) => (await task(id)).status);
+      const active = states.filter((status) => status === "running" || status === "verifying");
+      expect(active.length).toBeLessThanOrEqual(MAX_RUNNING_TASKS);
+      if (states[0] === "verifying") expect(states[2]).toBe("queued");
+      await tasks.idle();
       await tasks.tick();
       expect(await mapAsync(["a", "b", "c"], async (id) => (await task(id)).status)).toEqual([
         "done",

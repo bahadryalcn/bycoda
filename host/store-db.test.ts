@@ -9,6 +9,7 @@ import { Worker } from "node:worker_threads";
 import { HostStore } from "./store";
 import { monotonicNow } from "../src/shared/lib/time/timestamps";
 import { RequestAuthorizationError, StoreDatabase } from "./store-db";
+import { ReadPoolUnavailableError, StoreReadPool } from "./store-read-pool";
 import type { HostSession } from "../src/features/connections/model/protocol";
 
 const cleanups: Array<() => void | Promise<void>> = [];
@@ -1301,6 +1302,36 @@ it("queues read scopes beyond the reader count and rejects a write inside one", 
     database.readScope(() => database.prepare("INSERT INTO notes(value) VALUES ('x')").run()),
   ).rejects.toThrow(/cannot write/);
   expect(await countNotes(database)).toBe(0);
+});
+
+it("keeps a reader read-only even after it turns query_only off", async () => {
+  const database = await walDatabase({ readers: 1 });
+  await expect(
+    database.readScope(async () => {
+      await database.prepare("PRAGMA query_only=OFF").all();
+      return database.prepare("INSERT INTO notes(value) VALUES ('x')").run();
+    }),
+  ).rejects.toThrow(/readonly|cannot write/);
+  expect(await countNotes(database)).toBe(0);
+});
+
+it("fails a lease waiting on a reader that is stopped before it reports ready", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-read-pool-silent-"));
+  cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+  const silent = join(directory, "silent-worker.mjs");
+  writeFileSync(silent, "setInterval(() => {}, 1000);\n");
+  const pool = new StoreReadPool({
+    path: join(directory, "host.db"),
+    workerURL: pathToFileURL(silent),
+    size: 1,
+    onError: () => {},
+  });
+  const work = vi.fn(async () => "ran");
+  const leased = pool.lease(work);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await pool.close();
+  await expect(leased).rejects.toBeInstanceOf(ReadPoolUnavailableError);
+  expect(work).not.toHaveBeenCalled();
 });
 
 it("falls back to the writer for in-memory databases and when the pool is off", async () => {

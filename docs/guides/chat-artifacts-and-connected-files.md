@@ -198,13 +198,14 @@ behavior. In the composer and queue editor, caret movement and selections treat 
 resolved reference as a whole. A missing or unavailable preview never removes the
 attachment.
 
-Click anywhere on a draft link to open it in your browser, including links that wrap.
-Move the caret into a link to edit its full address. Tab moves from the message field
-to its reference actions. Enter opens the focused reference.
+Click a draft link to open it in your browser. Tab moves from the desktop message
+field to its reference actions. Enter opens the focused reference. With a link
+focused, F2 shows its full address for editing.
 
 In the desktop composer, attachment references and file cards show the complete
-filename. A long filename wraps when the composer is narrow. Click a file or image
-reference to preview it. Click a skill
+filename. An attachment with an inline reference appears at that reference. A long
+filename wraps when the composer is narrow. Click a file or image reference to
+preview it. Focus an attachment reference and press Delete to remove it. Click a skill
 for its description, or a skill group to see its members. Skill icons replace the
 invocation prefix in the display. The draft keeps the original invocation.
 

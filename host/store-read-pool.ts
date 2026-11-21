@@ -33,6 +33,8 @@ type Request = { resolve: (value: any) => void; reject: (error: Error) => void }
 type Slot = {
   worker: Worker;
   ready: Promise<boolean>;
+  /** Settles `ready`; every way a slot stops calls it so no acquire waits forever. */
+  markReady: (usable: boolean) => void;
   pending: Map<number, Request>;
   sequence: number;
   busy: boolean;
@@ -224,6 +226,7 @@ export class StoreReadPool {
     const slot: Slot = {
       worker,
       ready,
+      markReady,
       pending: new Map(),
       sequence: 0,
       busy: false,
@@ -302,6 +305,7 @@ export class StoreReadPool {
 
   private async kill(slot: Slot, error: Error): Promise<void> {
     slot.dead = true;
+    slot.markReady(false);
     for (const request of slot.pending.values()) request.reject(error);
     slot.pending.clear();
     slot.kill?.(error);

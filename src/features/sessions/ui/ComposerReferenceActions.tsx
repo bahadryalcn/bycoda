@@ -205,53 +205,82 @@ export function ComposerReferenceActions({
         <UnavailableReference anchor={active.anchor} name={active.target.value} close={close} />
       ) : null}
       {active && (group || active.target.kind === "skill") ? (
-        <Popover
+        <ComposerSkillReference
           anchor={active.anchor}
-          kind="dialog"
-          side="top"
-          align="start"
-          aria-label={group?.name ?? active.target.value}
-          onDismiss={close}
-          className="max-w-80 space-y-2 p-3"
-        >
-          <Text as="p" size="secondary" weight="medium">
-            {group?.name ?? active.target.value}
-          </Text>
-          {group ? (
-            <ul className="flex flex-col gap-1">
-              {group.members.map((member) => (
-                <li key={member} className="flex items-center gap-1.5">
-                  <SkillIcon className="icon-xs shrink-0" aria-hidden />
-                  <Text size="caption" className="break-all">
-                    {member}
-                  </Text>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Text as="p" size="caption" tone="secondary">
-              {skill?.description || t("No description")}
-            </Text>
-          )}
-          {skill?.path && onOpenFile ? (
-            <Button
-              variant="link"
-              onClick={() => {
-                close();
-                onOpenFile(skill.path!);
-              }}
-            >
-              {t("Open {p0}", { p0: "SKILL.md" })}
-            </Button>
-          ) : null}
-        </Popover>
+          label={group?.name ?? active.target.value}
+          group={group}
+          skill={skill}
+          close={close}
+          onOpenFile={onOpenFile}
+        />
       ) : null}
     </div>,
     geometry.parent,
   );
 }
 
-function ComposerAttachmentPreview({
+export function ComposerSkillReference({
+  anchor,
+  label,
+  group,
+  skill,
+  close,
+  onOpenFile,
+}: {
+  anchor: HTMLElement;
+  label: string;
+  group?: Pick<ComposerSkillGroup, "members">;
+  skill?: ComposerSkillDetails;
+  close: () => void;
+  onOpenFile?: (path: string) => void;
+}) {
+  const t = useT();
+  const path = skill?.path;
+  return (
+    <Popover
+      anchor={anchor}
+      kind="dialog"
+      side="top"
+      align="start"
+      aria-label={label}
+      onDismiss={close}
+      className="max-w-80 space-y-2 p-3"
+    >
+      <Text as="p" size="secondary" weight="medium">
+        {label}
+      </Text>
+      {group ? (
+        <ul className="flex flex-col gap-1">
+          {group.members.map((member) => (
+            <li key={member} className="flex items-center gap-1.5">
+              <SkillIcon className="icon-xs shrink-0" aria-hidden />
+              <Text size="caption" className="break-all">
+                {member}
+              </Text>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Text as="p" size="caption" tone="secondary">
+          {skill?.description || t("No description")}
+        </Text>
+      )}
+      {path && onOpenFile ? (
+        <Button
+          variant="link"
+          onClick={() => {
+            close();
+            onOpenFile(path);
+          }}
+        >
+          {t("Open {p0}", { p0: "SKILL.md" })}
+        </Button>
+      ) : null}
+    </Popover>
+  );
+}
+
+export function ComposerAttachmentPreview({
   attachment,
   anchor,
   close,
@@ -296,7 +325,7 @@ function ComposerAttachmentPreview({
   return <UnavailableReference anchor={anchor} name={attachment.name} close={close} />;
 }
 
-function UnavailableReference({
+export function UnavailableReference({
   anchor,
   name,
   close,

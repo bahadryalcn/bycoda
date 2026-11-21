@@ -39,6 +39,104 @@ const url = (query: Record<string, string> = {}, light = false) => {
 const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
+test("the session composer renders all eight compact references in the editable line", async ({
+  page,
+}) => {
+  const evidence = "temp/verification/composer-compact-references";
+  mkdirSync(evidence, { recursive: true });
+  for (const [width, light] of [
+    [800, false],
+    [800, true],
+    [1280, false],
+    [1280, true],
+  ] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(url({ inlineExamples: "" }, light));
+    const box = page.locator("[data-composer]");
+    const editor = box.locator("[data-composer-inline-input]");
+    const references = editor.locator("[data-inline-reference]");
+    await expect(references).toHaveCount(8);
+    await expect(editor).toHaveCSS("font-family", /sans-serif/);
+    await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
+    await expect(references.locator(":scope > span")).toHaveText([
+      "image.png",
+      "Bahadir-Halay.pdf",
+      "bycoda-usage.csv",
+      "bycoda-export.json",
+      "PreviewTunnel.ts",
+      "github.com · t3code",
+      "ui-ux-pro-max",
+      "Design and polish interfaces",
+    ]);
+    expect(
+      await references.evaluateAll((chips) =>
+        chips.every((chip) => {
+          const style = getComputedStyle(chip);
+          const first = chip.firstElementChild!.getBoundingClientRect();
+          const last = chip.lastElementChild!.getBoundingClientRect();
+          const rect = chip.getBoundingClientRect();
+          return style.paddingInline === "5px" && rect.width - (last.right - first.left) <= 12.5;
+        }),
+      ),
+    ).toBe(true);
+    await box.screenshot({
+      path: `${evidence}/${light ? "light" : "dark"}-${width}.png`,
+      animations: "disabled",
+    });
+
+    if (width !== 800 || light) continue;
+    await editor.getByRole("button", { name: "Open PreviewTunnel.ts" }).click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-composer-opened-file",
+      "/fixture/src/PreviewTunnel.ts",
+    );
+    await editor.getByRole("link", { name: "https://github.com/pingdotgg/t3code" }).click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-composer-opened-url",
+      "https://github.com/pingdotgg/t3code",
+    );
+    await editor.getByRole("link", { name: "https://github.com/pingdotgg/t3code" }).press("F2");
+    await expect(editor).toContainText("https://github.com/pingdotgg/t3code");
+    await page.keyboard.press("Control+End");
+    await expect(references).toHaveCount(8);
+
+    await editor.getByRole("button", { name: "Open image.png" }).click();
+    await expect(page.getByRole("dialog").locator("img")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await editor.getByRole("button", { name: "Open bycoda-usage.csv" }).click();
+    await expect(page.getByRole("dialog").getByText("composer", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await editor.getByRole("button", { name: "Design and polish interfaces" }).click();
+    await expect(page.getByRole("dialog", { name: "Design and polish interfaces" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await editor.focus();
+    await page.keyboard.press("Control+Home");
+    await page.keyboard.type("Not: ");
+    await expect(field(page)).toHaveValue(/^Not: Önce /);
+    await page.keyboard.press("Control+z");
+    await expect(field(page)).toHaveValue(/^Önce /);
+    await expect(references).toHaveCount(8);
+
+    const client = await page.context().newCDPSession(page);
+    await page.keyboard.press("Control+End");
+    await client.send("Input.imeSetComposition", {
+      text: "入力",
+      selectionStart: 2,
+      selectionEnd: 2,
+    });
+    await client.send("Input.insertText", { text: "入力" });
+    await expect(field(page)).toHaveValue(/入力$/);
+    await expect(references).toHaveCount(8);
+    await client.detach();
+    await editor
+      .getByRole("button", { name: "Open bycoda-export.json" })
+      .click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Remove bycoda-export.json" }).click();
+    await expect(references).toHaveCount(7);
+    await expect(field(page)).not.toHaveValue(/bycoda-export\.json/);
+  }
+});
 test("shows the complete attached filename in the card and inline while writing", async ({
   page,
 }) => {
@@ -53,15 +151,14 @@ test("shows the complete attached filename in the card and inline while writing"
   await expect(name).toBeVisible();
   expect(await name.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await box.getByRole("button", { name: /^Insert .* into the message$/ }).click();
-  const label = box.locator(
-    "[data-composer-attachment-kind] [data-draft-token-label] > :last-child",
-  );
+  const editor = box.locator("[data-composer-inline-input]");
+  const label = editor.locator('[data-inline-reference="attachment"] > span');
   await expect(label).toBeVisible();
-  await expect(label).toHaveText("draft-context.txt · 7 B");
-  await expect(label).toHaveCSS("text-overflow", "clip");
+  await expect(label).toHaveText("draft-context.txt");
+  await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
   expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-  await expect(input).toBeFocused();
-  await input.pressSequentially(" and reply.");
+  await expect(editor).toBeFocused();
+  await editor.pressSequentially(" and reply.");
   await expect(input).toHaveValue(/and reply\.$/);
 });
 test("wraps a long attached filename on narrow layouts without losing characters", async ({
@@ -71,12 +168,10 @@ test("wraps a long attached filename on narrow layouts without losing characters
   const filename = `${"very-long-export-".repeat(10)}report.txt`;
   await page.goto(url({ attach: filename, draft: "legacyFile" }));
   const box = page.locator("[data-composer]");
-  const card = box.locator('[data-attachment-chip="file"]').getByText(filename, { exact: true });
-  await expect(card).toBeVisible();
-  expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-  const token = box.locator("[data-full-attachment-label]");
-  await expect(token).toHaveAttribute("data-draft-token-wrapped", "");
-  await expect(token.locator(":scope > :not([aria-hidden])")).toContainText(filename);
+  const label = box.locator('[data-inline-reference="attachment"] > span');
+  await expect(label).toBeVisible();
+  await expect(label).toHaveText(filename);
+  expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   expect(await box.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await expect(
     box.getByRole("button", { name: `Open ${filename}`, exact: true }).first(),
@@ -85,7 +180,7 @@ test("wraps a long attached filename on narrow layouts without losing characters
 test("opens references from the real session composer in both themes and widths", async ({
   page,
 }) => {
-  const evidence = "temp/verification/composer-full-filenames";
+  const evidence = "temp/verification/composer-compact-references";
   mkdirSync(evidence, { recursive: true });
   for (const light of [true, false]) {
     for (const width of [800, 1280]) {
@@ -95,7 +190,7 @@ test("opens references from the real session composer in both themes and widths"
       const draft =
         "I wrote this first. Review [File\u00a01\u00a0·\u00a0draft-context.txt\u00a0·\u00a07\u00a0B] and https://example.com/design";
       await expect(input).toHaveValue(draft);
-      const references = page.locator("[data-composer-reference-actions]");
+      const references = page.locator("[data-composer-inline-input]");
       const file = references.getByRole("button", { name: "Open draft-context.txt" });
       await expect(file).toHaveCSS("cursor", "pointer");
       await expect(

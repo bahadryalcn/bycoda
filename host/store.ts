@@ -1772,7 +1772,13 @@ export class HostStore {
     const mutations = this.db.dataMutationVersion;
     const saves = this.summarySaves;
     const entry = this.summaryRows.get(projectId);
-    if (!this.inTransaction && entry?.version === version && entry.external === external) {
+    // A nested read keeps its outer scope's snapshot; the live cache may already be newer.
+    if (
+      outermost &&
+      !this.inTransaction &&
+      entry?.version === version &&
+      entry.external === external
+    ) {
       const unpatched = this.unpatchedSummaries.get(projectId);
       if (!unpatched?.size) {
         entry.sorted ??= [...entry.rows.values()].sort((a, b) => b.updatedAt - a.updatedAt);

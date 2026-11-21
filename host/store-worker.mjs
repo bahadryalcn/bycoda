@@ -4,7 +4,8 @@ import { DatabaseSync, backup } from "node:sqlite";
 // "reader" workers serve concurrent read-only transactions on the same WAL file; the
 // default worker is the one writer that owns scopes, transactions and cursors.
 const reader = workerData.role === "reader";
-const db = new DatabaseSync(workerData.path);
+// A reader opens read-only, so no statement can turn `query_only` back off and write.
+const db = new DatabaseSync(workerData.path, { readOnly: reader });
 if (reader) db.exec("PRAGMA busy_timeout=5000; PRAGMA query_only=ON");
 let active;
 let databaseClosed = false;

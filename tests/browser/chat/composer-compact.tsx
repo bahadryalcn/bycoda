@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createSkillGroup } from "../../../src/features/skills/model/skillGroups";
 import { SessionPane, type SessionPaneProps } from "../../../src/features/sessions/ui/SessionPane";
 import { setNotesPanelOpen } from "../../../src/features/notes/notesPanel";
 import { ContextMeter } from "../../../src/features/sessions/ui/ContextMeter";
@@ -59,6 +60,14 @@ const modelSource = {
 };
 
 const params = new URLSearchParams(location.search);
+const exampleSkills = ["frontend-design", "ui-ux-pro-max", "unslop"];
+if (params.has("inlineExamples")) {
+  createSkillGroup({
+    name: "Design and polish interfaces",
+    invocation: "group-interface-design",
+    skillNames: exampleSkills,
+  });
+}
 const sessionId = "composer-reading-fixture";
 const DRAFTS: Record<string, string> = {
   none: "",
@@ -140,6 +149,47 @@ const initial: Session = {
   context: { used: 64000, window: 128000 },
 };
 function seedComposer() {
+  if (params.has("inlineExamples")) {
+    setComposerAttachments(sessionId, [
+      {
+        id: "image",
+        kind: "image",
+        mimeType: "image/png",
+        name: "image.png",
+        size: 158 * 1024,
+        previewUrl:
+          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='60'%3E%3Crect width='100' height='60' fill='teal'/%3E%3C/svg%3E",
+      },
+      {
+        id: "pdf",
+        kind: "file",
+        mimeType: "application/pdf",
+        name: "Bahadir-Halay.pdf",
+        size: 98 * 1024,
+      },
+      {
+        id: "csv",
+        kind: "file",
+        mimeType: "text/csv",
+        name: "bycoda-usage.csv",
+        size: 32 * 1024,
+        data: btoa("feature,events\ncomposer,128"),
+      },
+      {
+        id: "json",
+        kind: "file",
+        mimeType: "application/json",
+        name: "bycoda-export.json",
+        size: 5 * 1024,
+        data: btoa('{"attachments":42}'),
+      },
+    ]);
+    setComposerDraft(
+      sessionId,
+      "Önce [image1] ve [file1] dosyasına bak.\n[file2] ile [file3] verilerini karşılaştır.\n@PreviewTunnel.ts ve https://github.com/pingdotgg/t3code örneğini incele.\n/ui-ux-pro-max /group-interface-design ile arayüzü değerlendir.",
+    );
+    return;
+  }
   setComposerDraft(sessionId, DRAFTS[params.get("draft") ?? "none"] ?? "");
   if (params.has("attach")) {
     setComposerAttachments(sessionId, [
@@ -237,7 +287,9 @@ function Fixture() {
     onUsageLimitDismiss: noop,
     onApproval: noop,
     onQuestionReply: noop,
-    onOpenFile: noop,
+    onOpenFile: (path) => {
+      document.documentElement.dataset.composerOpenedFile = path;
+    },
     onOpenDiff: noop,
     onOpenPlan: noop,
     onBuildPlan: noop,
@@ -266,7 +318,31 @@ Object.assign(window, {
   __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   __TAURI_INTERNALS__: {
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
-    invoke: async (command: string) => {
+    invoke: async (command: string, args?: { url?: string }) => {
+      if (params.has("inlineExamples")) {
+        if (command === "plugin:opener|open_url") {
+          document.documentElement.dataset.composerOpenedUrl = args?.url;
+          return null;
+        }
+        if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
+        if (command === "list_skills")
+          return exampleSkills.map((name) => ({
+            name,
+            description: "Design review",
+            path: `/fixture/.claude/skills/${name}/SKILL.md`,
+            scope: "project",
+            source: "claude",
+          }));
+        if (command === "list_project_files")
+          return [
+            {
+              name: "PreviewTunnel.ts",
+              path: "/fixture/src/PreviewTunnel.ts",
+              relative: "src/PreviewTunnel.ts",
+            },
+          ];
+        if (command === "list_claude_commands") return [];
+      }
       if (command === "canonical_store_session_guard_ready") return false;
       if (command === "canonical_store_list") return { entries: [], revision: 0 };
       if (command === "session_list_drafts") return [];

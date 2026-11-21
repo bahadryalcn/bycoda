@@ -13,6 +13,8 @@ export { ComposerAction } from "./ComposerAction";
 import { MessageQueue } from "./MessageQueue";
 import { RemoteOriginMark } from "./RemoteOriginMark";
 import { ComposerHighlight } from "./ComposerHighlight";
+import { ComposerInlineEditor } from "./ComposerInlineEditor";
+import { composerInputFocused } from "./composerInlineInput";
 import { mayHaveComposerMarkdown } from "./ComposerMarkdown";
 import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
 import { DeliveryProgressIndicator } from "./DeliveryProgressNotice";
@@ -106,6 +108,7 @@ import {
   expandAttachmentDraftTokens,
   attachmentsDroppedByEdit,
   deleteTokenAtCaret,
+  findTokens,
   insertAtSelection,
   removeAttachmentFromText,
   tokensForIncoming,
@@ -656,6 +659,7 @@ export const Composer = memo(function Composer({
   const parentClosed = useParentInputsClosed(logicalParentSessionId);
   const parentInputRef = useRef<ParentInputHandle | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [inlineActive, setInlineActive] = useState(false);
   const [initial] = useState(() => {
     const value = extractChatCitations(initialDraft ?? "");
     return {
@@ -1093,6 +1097,24 @@ export const Composer = memo(function Composer({
     (!remote || !!remoteFeatures?.attachments) && harnessSupportsAttachments(harness);
   const leadingMode = leadingModeCommand(draft, skillNames, { shell: true });
   const modeIndent = leadingMode ? MODE_COMMAND_INDENT : undefined;
+  const inlineAttachments =
+    inlineActive && !shell
+      ? new Set(
+          findTokens(draft, attachments)
+            .filter((token) => token.start >= (leadingMode?.end ?? 0))
+            .map((token) => attachments[token.index].id),
+        )
+      : undefined;
+  const cardAttachments = attachments.filter((file) => !inlineAttachments?.has(file.id));
+  const composerPlaceholder = worktreeRemoved
+    ? t("Select a branch or worktree to continue…")
+    : inboxCard
+      ? t("Add a note, or send to start…")
+      : noteCard
+        ? t("Add a message, or send…")
+        : handoffCard
+          ? t("Add context, or send to continue…")
+          : (placeholder ?? t("Message"));
   // No token can be styled without one of these introducers. Plain drafts use
   // the native text once, avoiding a second full wrapping layout in the overlay.
   const plainDraft =
@@ -1224,7 +1246,7 @@ export const Composer = memo(function Composer({
         }
         return;
       }
-      const focused = document.activeElement === el;
+      const focused = composerInputFocused(el);
       const edit = insertAtSelection(
         el.value,
         focused ? { start: el.selectionStart, end: el.selectionEnd } : null,
@@ -3520,13 +3542,13 @@ export const Composer = memo(function Composer({
               else publishDraft(el?.value ?? draftTextRef.current);
             }}
           />
-          {attachments.length > 0 ? (
+          {cardAttachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
-              {attachments.map((file, index) => (
+              {cardAttachments.map((file) => (
                 <AttachmentChip
                   key={file.id}
                   attachment={file}
-                  token={tokens[index]}
+                  token={tokens[attachments.indexOf(file)]}
                   onInsertToken={() => insertAttachmentToken(file.id)}
                   onRemove={() => removeAttachment(file.id)}
                 />
@@ -3573,7 +3595,7 @@ export const Composer = memo(function Composer({
                 <SessionSubagentsMenu agents={subagentList} onOpen={onOpenSubagent} />
               </div>
             ) : null}
-            {!plainDraft ? (
+            {!plainDraft && !inlineActive ? (
               <div
                 ref={highlightRef}
                 aria-hidden
@@ -3600,9 +3622,35 @@ export const Composer = memo(function Composer({
                 </WorkItemMentionCwd>
               </div>
             ) : null}
+            <ComposerInlineEditor
+              field={ref}
+              text={draft}
+              references={{
+                names: skillNames,
+                skillParts: skillTextParts,
+                skillGroups,
+                skillDetails,
+                mentions: mentionIndex.labels,
+                mcpTags: selectedMcp,
+                attachments,
+                citations: citations.length,
+                modeEnd: leadingMode?.end ?? 0,
+                onOpenFile,
+              }}
+              label={inputAriaLabel ?? t("Message")}
+              placeholder={composerPlaceholder}
+              readOnly={parentClosed}
+              disabled={disabled}
+              spellCheck={spelling && !hasGroupToken}
+              hasSubagents={hasSubagents}
+              onReady={setInlineActive}
+              onRemoveAttachment={removeAttachment}
+            />
             {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}
             <textarea
               ref={ref}
+              hidden={inlineActive}
+              aria-hidden={inlineActive || undefined}
               readOnly={parentClosed}
               data-ui-focus="group"
               data-composer-empty={navigationEmpty ? "true" : undefined}
@@ -3613,17 +3661,7 @@ export const Composer = memo(function Composer({
               spellCheck={spelling && !hasGroupToken}
               autoCorrect={spelling ? "on" : "off"}
               defaultValue={mountDraft}
-              placeholder={
-                worktreeRemoved
-                  ? t("Select a branch or worktree to continue…")
-                  : inboxCard
-                    ? t("Add a note, or send to start…")
-                    : noteCard
-                      ? t("Add a message, or send…")
-                      : handoffCard
-                        ? t("Add context, or send to continue…")
-                        : (placeholder ?? t("Message"))
-              }
+              placeholder={composerPlaceholder}
               aria-label={inputAriaLabel ?? t("Message")}
               disabled={disabled}
               className={`composer-field relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
