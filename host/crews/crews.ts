@@ -388,9 +388,8 @@ export class HostCrews {
               agents: run.definition.agents.map((a) => ({ ...a, instructions: "" })),
             },
             messages: run.messages.map((m) => ({ ...m, text: m.text.slice(0, 1000) })),
-            tasks: (await this.tasks.list(projectId))
-              .filter((task) => task.crewRunId === run.id)
-              .map(redactCrewTask),
+            // Indexed per-run read: scanning the whole project once per run stalled the DB queue.
+            tasks: (await this.tasks.listCrewRun(run.id, projectId)).map(redactCrewTask),
           };
         },
       ),

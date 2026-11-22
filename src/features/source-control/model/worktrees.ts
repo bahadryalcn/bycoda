@@ -48,7 +48,8 @@ export const reviewWorktreeRemoval = async (cwd: string, path: string) => {
   return invoke<WorktreeRemovalReview>("git_worktree_removal_review", { cwd, path });
 };
 
-export const listWorktrees = (cwd: string) => invokeWorkspace<Worktrees>("git_worktrees", { cwd });
+export const listWorktrees = (cwd: string, background = false) =>
+  invokeWorkspace<Worktrees>("git_worktrees", background ? { cwd, background } : { cwd });
 
 /** A missing parent may be an unmounted volume, not a deleted worktree. */
 export async function worktreeDeletedExternally(path: string): Promise<boolean> {

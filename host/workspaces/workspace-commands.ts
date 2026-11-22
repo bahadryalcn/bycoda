@@ -622,7 +622,7 @@ export class WorkspaceCommands {
       case "git_create_branch":
         return await this.gitCreateBranch(input.cwd, input.name);
       case "git_worktrees":
-        return await this.gitWorktrees(input.cwd);
+        return await this.gitWorktrees(input.cwd, input.background === true);
       case "git_submodules": {
         const found = await sharedHostGitSubmodules(
           await this.gitRoot(input.cwd),
@@ -1813,8 +1813,8 @@ export class WorkspaceCommands {
       : await run();
   }
 
-  private async gitWorktrees(cwd: unknown) {
-    const listed = await hostWorktrees(await this.gitRoot(cwd));
+  private async gitWorktrees(cwd: unknown, background: boolean) {
+    const listed = await hostWorktrees(await this.gitRoot(cwd), background);
     return {
       defaultRoot: listed.defaultRoot,
       worktrees: listed.worktrees.map((tree) => ({

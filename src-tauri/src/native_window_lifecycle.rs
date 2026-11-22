@@ -718,6 +718,14 @@ fn tracker(app: &AppHandle) -> Result<WindowBarrier, String> {
         .ok_or_else(|| "Native window lifecycle is unavailable".into())
 }
 
+fn clear_editor_buffers(app: &AppHandle, label: &str) {
+    if let Some(registry) =
+        app.try_state::<crate::native_workspace::editor_buffers::EditorBuffers>()
+    {
+        registry.clear(label);
+    }
+}
+
 fn destruction_callback(slot: Arc<WindowSlot>) -> impl Fn(&tauri::WindowEvent) + Send + 'static {
     move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
@@ -735,6 +743,13 @@ fn observe_ready(window: &tauri::Window) {
         // Native Ready happens once per physical window. Page starts update the
         // existing slot and cannot accumulate native destruction listeners.
         window.on_window_event(destruction_callback(slot));
+        let app = window.app_handle().clone();
+        let label = window.label().to_owned();
+        window.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                clear_editor_buffers(&app, &label);
+            }
+        });
     }
 }
 
@@ -775,6 +790,8 @@ pub(crate) fn on_page_load(webview: &Webview, payload: &tauri::webview::PageLoad
         return;
     };
     let window = webview.window();
+    // The reloaded page has no open editors until it reports again.
+    clear_editor_buffers(webview.app_handle(), window.label());
     let slot = slot(&window.resources_table());
     if let Some(slot) = slot {
         slot.reloaded();

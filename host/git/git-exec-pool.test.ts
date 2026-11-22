@@ -5,6 +5,9 @@ import { Worker } from "node:worker_threads";
 import { afterEach, expect, it, vi } from "vitest";
 import { GitExecPool } from "./git-exec-pool";
 
+const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
+vi.mock("../diagnostics/logger", () => ({ createLogger: () => ({ warn }) }));
+
 let pool: GitExecPool | undefined;
 let cwd: string | undefined;
 const node = (code: string, options: Partial<Parameters<GitExecPool["exec"]>[2]> = {}) =>
@@ -33,6 +36,8 @@ afterEach(async () => {
   pool = undefined;
   cwd = undefined;
   vi.unstubAllEnvs();
+  vi.useRealTimers();
+  warn.mockClear();
 });
 
 async function markerDirectory() {
@@ -237,24 +242,75 @@ it("waits for active children to stop during close", async () => {
   expectStopped(pid);
 });
 
-it("keeps slow network commands from starving default-lane probes", async () => {
-  pool = new GitExecPool(4, 16);
-  const directory = await markerDirectory();
-  const slow = Array.from({ length: 4 }, (_, index) => {
-    const marker = join(directory, `network-${index}`);
-    return {
-      marker,
-      result: node(waitingChild(marker), { lane: "network" }).catch((error) => error),
-    };
-  });
-  // Two network jobs run; the other two wait in the queue ahead of the probe.
-  await Promise.all(slow.slice(0, 2).map(({ marker }) => waitForPid(marker)));
-  await expect(node('process.stdout.write("probe")', { timeout: 5_000 })).resolves.toMatchObject({
-    stdout: "probe",
-  });
-  await expect(readFile(slow[2].marker)).rejects.toMatchObject({ code: "ENOENT" });
-  await pool.close();
-  for (const { result } of slow) expect(await result).toMatchObject({ code: "ECANCELED" });
+it.each([
+  { lane: "network" as const, capacity: 2, backgroundCapacity: undefined },
+  { lane: "background" as const, capacity: 1, backgroundCapacity: 1 },
+  { lane: "background" as const, capacity: 2, backgroundCapacity: 2 },
+])(
+  "isolates $lane at capacity $capacity from default probes",
+  async ({ lane, capacity, backgroundCapacity }) => {
+    pool = new GitExecPool(1, 16, undefined, 2, backgroundCapacity);
+    const directory = await markerDirectory();
+    const slow = Array.from({ length: 4 }, (_, index) => {
+      const marker = join(directory, `${lane}-${index}`);
+      return {
+        marker,
+        result: node(waitingChild(marker), { lane }).catch((error) => error),
+      };
+    });
+    await Promise.all(slow.slice(0, capacity).map(({ marker }) => waitForPid(marker)));
+    await expect(node('process.stdout.write("probe")', { timeout: 5_000 })).resolves.toMatchObject({
+      stdout: "probe",
+    });
+    for (const { marker } of slow.slice(capacity))
+      await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
+    await pool.close();
+    for (const { result } of slow) expect(await result).toMatchObject({ code: "ECANCELED" });
+  },
+);
+
+it("rate limits queue expiry warnings and logs only safe command labels", async () => {
+  vi.useFakeTimers({ toFake: ["performance"] });
+  pool = new GitExecPool(
+    1,
+    8,
+    () =>
+      new Worker(
+        `const { parentPort } = require("node:worker_threads");
+      parentPort.on("message", ({ type }) => { if (type === "close") parentPort.close(); });`,
+        { eval: true, execArgv: [] },
+      ),
+    2,
+    1,
+  );
+  const active = pool
+    .exec("C:/private/git.exe", ["--no-pager", "rev-parse", "secret"], {
+      timeout: 10_000,
+      lane: "background",
+    })
+    .catch((error) => error);
+  const expire = () =>
+    expect(
+      pool!.exec("C:/private/powershell.exe", ["-Command", "secret"], {
+        timeout: 10,
+        lane: "background",
+      }),
+    ).rejects.toMatchObject({ code: "ETIMEDOUT" });
+  try {
+    await expire();
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      "git pool busy lane=background waitedMs=0 queued=1 active=1 top=powershell:1,git rev-parse:1 suppressed=0",
+    );
+    await expire();
+    expect(warn).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000);
+    await expire();
+    expect(warn).toHaveBeenLastCalledWith(expect.stringMatching(/ suppressed=1$/));
+    expect(warn).toHaveBeenCalledTimes(2);
+  } finally {
+    await pool.close();
+    await active;
+  }
 });
 
 function treeChild(parentMarker: string, grandchildMarker: string) {

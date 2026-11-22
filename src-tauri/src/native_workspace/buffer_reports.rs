@@ -150,9 +150,13 @@ pub(super) fn release_earlier_runs(conn: &Connection) -> rusqlite::Result<usize>
         |r| r.get(0),
     )?;
     let draft_guard = if drafts {
+        // Physical identities are validated when recorded. Keep the path fallback
+        // for older rows and rows missing either part of the window identity.
         "AND NOT EXISTS(SELECT 1 FROM native_editor_drafts d WHERE (d.store_instance IS i.store_instance AND d.window_incarnation IS i.incarnation)
            OR d.owner_id=b.owner_id OR 'physical:v2:'||d.owner_id=b.owner_id
-           OR d.path IN (SELECT json_extract(e.value,'$.path') FROM json_each(b.snapshot_json) e))"
+           OR (NOT (i.kind='physical' AND typeof(i.store_instance)='text' AND i.store_instance!=''
+                    AND typeof(i.incarnation)='text' AND i.incarnation!='')
+               AND d.path IN (SELECT json_extract(e.value,'$.path') FROM json_each(b.snapshot_json) e)))"
     } else {
         ""
     };

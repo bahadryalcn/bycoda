@@ -10,7 +10,11 @@ import type {
 } from "../domains/native-delivery/ports";
 import type { NativeWorkspaceOwnerScope } from "../domains/native-workspaces/ports";
 import type { NativeServiceOwnerPorts } from "../domains/native-services/ports";
-import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
+import {
+  HostDomainAuthorizationError,
+  HostDomainOutcomeError,
+  refuseHost,
+} from "../domains/context";
 import { StoreAdmissionExpiredError } from "../store-db";
 import {
   NativeDeliveryIdentitySchema,
@@ -29,6 +33,17 @@ import {
   parseNativeDeliveryEpochOriginalId,
 } from "../../src/shared/model/host-contracts/native-delivery-epochs";
 import { nativeDeliveryMatchesEpochFence } from "../../src/shared/model/host-contracts/native-delivery";
+
+/**
+ * A compaction or close whose expected floor is stale (an earlier one applied but its reply was
+ * lost) rolls its transaction back before any change. It is a refusal the desktop answers by
+ * reading the epoch status, not an unknown outcome.
+ */
+function refuseStaleFloor(error: unknown): never {
+  if (error instanceof Error && error.message.startsWith("NATIVE_DELIVERY_EPOCH_CAS:"))
+    throw refuseHost(error, "CONTEXT_CHANGED", "conflict", false);
+  throw error;
+}
 
 /** One retained paired principal; request DTOs and stored rows never mint an owner. */
 export function bindNativeDeliveryOwner(
@@ -67,9 +82,9 @@ export function bindNativeDeliveryOwner(
               return journal.epochs.status(principal, NativeDeliveryEpochRefSchema.parse(params));
             const request = parseNativeDeliveryEpochCompactParams(params);
             if (method === "native.delivery.epochs.compact")
-              return journal.epochs.compact(principal, request);
+              return journal.epochs.compact(principal, request).catch(refuseStaleFloor);
             if (method === "native.delivery.epochs.close")
-              return journal.epochs.close(principal, request);
+              return journal.epochs.close(principal, request).catch(refuseStaleFloor);
             throw new HostDomainAuthorizationError();
           })();
           parseNativeDeliveryEpochDescription(value);

@@ -215,6 +215,14 @@ async function worktreeRemoval(deps: GitRemovalBindings, request: OwnerRpcReques
             await mutate(assertLease);
           },
           async () => current.projectCwd,
+          // Clean proof (checked above, re-bound by `leased.state`): nothing for force to delete,
+          // so an unattended Host may remove it without a desktop; Git refuses anything dirty.
+          {
+            unattended:
+              !current.status &&
+              current.ignoredEntryCount === 0 &&
+              !expected.managedPreservationRequired,
+          },
         );
         if (keepSessions === false) {
           try {

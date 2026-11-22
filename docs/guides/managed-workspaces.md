@@ -65,8 +65,11 @@ The Worktrees view keeps the selected project and create/refresh actions togethe
 For worktree rows on connected machines, **Delete worktree** opens a fresh review
 from the owning Host when it supports remote removal. The Host checks the same
 checkout again before deleting. Close active agents and terminals before retrying.
-If the Host cannot verify usage, it stops the removal. Older Hosts show the
-existing remote removal notice.
+If the Host cannot verify usage, it stops the removal. When no desktop has
+been connected to that Host for two minutes, a clean worktree (no changes, no
+untracked or ignored files) is removed without that check, and Git still
+refuses anything it would have to force. Older Hosts show the existing remote
+removal notice.
 
 On a dedicated Linux server, the system administrator can set
 `BYCODA_HEADLESS_WORKSPACE_ROOT=/var/lib/bycoda/workspaces` in the execution

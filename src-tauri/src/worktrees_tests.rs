@@ -1078,3 +1078,40 @@ fn startup_defers_removal_recovery_and_keeps_unlistable_rows_pending() {
     assert_eq!(pending(&conn), expected);
     assert!(crate::worktree_lifecycle::reserve_spawn(&blocked).is_err());
 }
+#[test]
+fn live_editor_registry_allows_cleanup_before_the_first_report() {
+    let store = SessionStore::open_in_memory().unwrap();
+    let buffers = crate::native_workspace::editor_buffers::EditorBuffers::default();
+    let terminals = crate::pty::PtyHost::new();
+    let agents = crate::harness::HarnessHost::new();
+    let check = || {
+        managed_cleanup_local_check(
+            &store,
+            &terminals,
+            &agents,
+            &buffers,
+            "workspace",
+            Path::new("/fixture"),
+        )
+    };
+    assert!(check().is_ok());
+    buffers.report(
+        "main",
+        &serde_json::from_value::<Vec<_>>(serde_json::json!([
+            {"path":"/fixture-sibling/dirty.txt","dirty":true},
+            {"path":"/fixture/clean.txt","dirty":false}
+        ]))
+        .unwrap(),
+    );
+    assert!(check().is_ok());
+    buffers.report(
+        "secondary",
+        &serde_json::from_value::<Vec<_>>(serde_json::json!([
+            {"path":"/fixture/dirty.txt","dirty":true}
+        ]))
+        .unwrap(),
+    );
+    assert!(check().unwrap_err().contains("unsaved workspace files"));
+    buffers.clear("secondary");
+    assert!(check().is_ok());
+}

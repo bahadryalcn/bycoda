@@ -5122,6 +5122,34 @@ describe("headless session ownership", () => {
     expect((await store.session(id)).session.title).toBe("codex · My own title");
   });
 
+  it("exposes an empty placeholder for fresh sessions without changing the read contract", async () => {
+    const { store, project, id } = await setup();
+    expect((await store.session(id)).session.title).toBe("");
+    expect((await store.summaries(project.id)).find((session) => session.id === id)?.title).toBe("");
+  });
+
+  it.each(["draft", "send"] as const)(
+    "keeps a manually chosen legacy placeholder string on the first %s",
+    async (type) => {
+      const { engine, store, provider, turns, id, waitForTurnStart } = await setup();
+      provider.generateTitle = vi.fn(async () => ({ title: "Generated title", workItem: null }));
+      await engine.updateSession(id, { title: "New remote session" });
+      const receipt = await engine.command({
+        type,
+        commandId: `preserve-title-${type}`,
+        sessionId: id,
+        text: "Keep the title I chose",
+      });
+      if (type === "send") {
+        await waitForTurnStart();
+        turns[0].finish();
+        await engine.waitForRun(id, receipt.runId);
+      }
+      expect((await store.session(id)).session.title).toBe("New remote session");
+      expect(provider.generateTitle).not.toHaveBeenCalled();
+    },
+  );
+
   it("uses one creation timestamp and advances only updatedAt on later commands", async () => {
     let now = 1_700_000_000_000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => now++);

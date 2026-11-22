@@ -583,7 +583,7 @@ fn quiesce_cancellation_and_fence_compete_without_dual_ownership() {
         )
     });
     barrier.wait();
-    let fenced = store.authority_fence_source(proof);
+    let fenced = store.authority_fence_source(proof, &EditorBuffers::default());
     let cancelled = cancel.join().unwrap();
     assert_ne!(fenced.is_ok(), cancelled.is_ok());
     let state = store.authority_status("race").unwrap().unwrap();
@@ -599,7 +599,7 @@ fn inventory(store: &SessionStore, id: &str) -> WriterInventory {
         identity: identity(&conn).unwrap(),
         protocols: vec![2],
         observation_digest: sha(b"explicit isolated native launcher/window qualification"),
-        buffers_digest: buffers_digest(&conn, id).unwrap(),
+        buffers_digest: buffers_digest(&conn, id, &[]).unwrap(),
     }
 }
 fn idle(store: &SessionStore, id: &str, migration: &str) -> IdleProof {
@@ -609,6 +609,7 @@ fn idle(store: &SessionStore, id: &str, migration: &str) -> IdleProof {
             id,
             migration,
             &crate::harness::HarnessHost::new(),
+            &EditorBuffers::default(),
             inventory(store, id),
         )
         .unwrap()
@@ -618,7 +619,7 @@ fn fence(store: &SessionStore, id: &str, migration: &str) -> SourceSnapshot {
         .authority_begin_quiesce("env.1", id, migration, 0)
         .unwrap();
     store
-        .authority_fence_source(idle(store, id, migration))
+        .authority_fence_source(idle(store, id, migration), &EditorBuffers::default())
         .unwrap()
 }
 struct IsolatedAuthenticatedPort;
@@ -1139,12 +1140,38 @@ fn old_connection_without_bridge_functions_cannot_change_fenced_rows_but_other_i
 }
 
 #[test]
-fn source_fence_and_immutable_bytes_survive_reopen_without_changing_store_identity() {
+fn legacy_source_fence_and_immutable_bytes_survive_reopen_without_changing_store_identity() {
     let directory = Directory::new();
     let path = directory.0.join("isolated.db");
     let store = SessionStore::open(path.clone()).unwrap();
     seed(&store, "native");
-    let source = fence(&store, "native", "migration.restart");
+    let mut source = fence(&store, "native", "migration.restart");
+    // Encode the pre-registry SQL tuple, including its raw snapshot JSON.
+    let legacy_buffers = sha(encode(&json!([[
+        "previous-window-owner",
+        r#"[{"path":"/fixture/clean.txt","dirty":false}]"#,
+        1
+    ]]))
+    .unwrap()
+    .as_bytes());
+    let mut legacy_fence = source.fence.clone();
+    legacy_fence.evidence_digest.clear();
+    legacy_fence.evidence_digest = sha(encode(&json!({
+        "fence": legacy_fence,
+        "writerInventoryDigest": sha(b"explicit isolated native launcher/window qualification"),
+        "buffersDigest": legacy_buffers,
+    }))
+    .unwrap()
+    .as_bytes());
+    {
+        let conn = store.lock_conn().unwrap();
+        conn.execute(
+            "UPDATE native_authority_journal SET fence_json=?1,buffers_digest=?2 WHERE migration_id='migration.restart'",
+            params![serde_json::to_string(&legacy_fence).unwrap(), legacy_buffers],
+        )
+        .unwrap();
+    }
+    source.fence = legacy_fence;
     let ids = store.authority_identity().unwrap();
     assert_eq!(
         source.fence.source_digest,
@@ -1155,13 +1182,9 @@ fn source_fence_and_immutable_bytes_survive_reopen_without_changing_store_identi
     drop(store);
     let reopened = SessionStore::open(path).unwrap();
     assert_eq!(ids, reopened.authority_identity().unwrap());
-    assert_eq!(
-        source.snapshot_json,
-        reopened
-            .authority_snapshot("migration.restart")
-            .unwrap()
-            .snapshot_json
-    );
+    let checkpoint = reopened.authority_snapshot("migration.restart").unwrap();
+    assert_eq!(source.snapshot_json, checkpoint.snapshot_json);
+    assert_eq!(source.fence, checkpoint.fence);
     assert_eq!(
         reopened.authority_status("native").unwrap().unwrap().phase,
         "FENCED"
@@ -1206,7 +1229,14 @@ fn incomplete_or_old_writer_inventory_never_mints_idle_proof() {
         .unwrap();
     let host = crate::harness::HarnessHost::new();
     assert!(store
-        .authority_verify_idle("env.1", "native", "m", &host, WriterInventory::Unknown)
+        .authority_verify_idle(
+            "env.1",
+            "native",
+            "m",
+            &host,
+            &EditorBuffers::default(),
+            WriterInventory::Unknown,
+        )
         .is_err());
     for protocols in [vec![], vec![1], vec![2, 1]] {
         let mut observation = inventory(&store, "native");
@@ -1217,7 +1247,14 @@ fn incomplete_or_old_writer_inventory_never_mints_idle_proof() {
             *values = protocols;
         }
         assert!(store
-            .authority_verify_idle("env.1", "native", "m", &host, observation)
+            .authority_verify_idle(
+                "env.1",
+                "native",
+                "m",
+                &host,
+                &EditorBuffers::default(),
+                observation
+            )
             .is_err());
     }
 }
@@ -1244,6 +1281,7 @@ fn unknown_admission_after_external_boundary_is_retained_and_blocks_transfer() {
             "native",
             "m",
             &crate::harness::HarnessHost::new(),
+            &EditorBuffers::default(),
             inventory(&store, "native")
         )
         .is_err());
@@ -1277,6 +1315,7 @@ fn quiesce_and_pre_fork_admission_have_no_unreserved_race_window() {
             "native",
             "m",
             &crate::harness::HarnessHost::new(),
+            &EditorBuffers::default(),
             inventory(&store, "native")
         )
         .is_err());
@@ -1286,7 +1325,7 @@ fn quiesce_and_pre_fork_admission_have_no_unreserved_race_window() {
     admitted.finish().unwrap();
     assert_eq!(
         store
-            .authority_fence_source(idle(&store, "native", "m"))
+            .authority_fence_source(idle(&store, "native", "m"), &EditorBuffers::default())
             .unwrap()
             .fence
             .generation,
@@ -1316,7 +1355,7 @@ fn injected_fence_write_failure_rolls_back_generation_snapshot_and_permits() {
         .unwrap();
     store.lock_conn().unwrap().execute_batch("CREATE TEMP TRIGGER fault BEFORE UPDATE ON native_authority_floor WHEN NEW.phase='FENCED' BEGIN SELECT RAISE(ABORT,'injected storage fault'); END;").unwrap();
     assert!(store
-        .authority_fence_source(idle(&store, "native", "m"))
+        .authority_fence_source(idle(&store, "native", "m"), &EditorBuffers::default())
         .is_err());
     let state = store.authority_status("native").unwrap().unwrap();
     assert_eq!(state.phase, "QUIESCING");
@@ -1328,7 +1367,7 @@ fn injected_fence_write_failure_rolls_back_generation_snapshot_and_permits() {
         .execute_batch("DROP TRIGGER fault")
         .unwrap();
     assert!(store
-        .authority_fence_source(idle(&store, "native", "m"))
+        .authority_fence_source(idle(&store, "native", "m"), &EditorBuffers::default())
         .is_ok());
 }
 
@@ -1530,7 +1569,7 @@ fn unsafe_source_numbers_cannot_be_silently_rewritten_during_migration() {
         .authority_begin_quiesce("env.1", "native", "m", 0)
         .unwrap();
     assert!(store
-        .authority_fence_source(idle(&store, "native", "m"))
+        .authority_fence_source(idle(&store, "native", "m"), &EditorBuffers::default())
         .unwrap_err()
         .contains("unsafe snapshot number"));
     assert_eq!(
@@ -1553,11 +1592,67 @@ fn changed_or_unsaved_native_editor_barrier_prevents_source_fence() {
     store
         .authority_begin_quiesce("env.1", "native", "m", 0)
         .unwrap();
+    let buffers = EditorBuffers::default();
+    let cwd = std::env::current_dir().unwrap();
+    let report = |path: &std::path::Path, dirty| {
+        buffers.report(
+            "window",
+            &serde_json::from_value::<Vec<_>>(json!([
+                {"path": path.to_string_lossy(), "dirty": dirty}
+            ]))
+            .unwrap(),
+        );
+    };
+    let outside = cwd.with_file_name("authority-unrelated-file.txt");
+    report(&outside, false);
+    let clean_snapshot = buffers.snapshot();
+    let clean = buffers_digest(&store.lock_conn().unwrap(), "native", &clean_snapshot).unwrap();
+    let mut observed = inventory(&store, "native");
+    if let WriterInventory::Complete { buffers_digest, .. } = &mut observed {
+        *buffers_digest = clean.clone();
+    }
+    let proof = store
+        .authority_verify_idle(
+            "env.1",
+            "native",
+            "m",
+            &crate::harness::HarnessHost::new(),
+            &buffers,
+            observed,
+        )
+        .unwrap();
+    report(&outside, true);
+    let dirty_snapshot = buffers.snapshot();
+    let dirty = buffers_digest(&store.lock_conn().unwrap(), "native", &dirty_snapshot).unwrap();
+    assert_ne!(dirty, clean);
+    assert_eq!(
+        store.authority_fence_source(proof, &buffers).unwrap_err(),
+        "NATIVE_AUTHORITY_NOT_QUIESCENT: editor barrier changed",
+    );
+    buffers.clear("window");
     let proof = idle(&store, "native", "m");
-    let raw=json!([{"path":std::env::current_dir().unwrap().join("authority-unsaved-file.txt").to_string_lossy(),"dirty":true}]).to_string();
-    store.lock_conn().unwrap().execute("INSERT INTO native_workspace_buffers(owner_id,snapshot_json,updated_at,confirmed) VALUES('window',?1,1,1)",[raw]).unwrap();
-    assert!(store.authority_fence_source(proof).is_err());
-    assert!(buffers_digest(&store.lock_conn().unwrap(), "native").is_err());
+    report(&cwd.join("authority-unsaved-file.txt"), true);
+    assert_eq!(
+        store.authority_fence_source(proof, &buffers).unwrap_err(),
+        "NATIVE_AUTHORITY_NOT_QUIESCENT: unsaved affected editor buffers",
+    );
+}
+
+#[test]
+fn live_editor_registry_allows_authority_with_stale_unconfirmed_report() {
+    let store = store();
+    seed(&store, "native");
+    store
+        .lock_conn()
+        .unwrap()
+        .execute(
+            "INSERT INTO native_workspace_buffers(owner_id,snapshot_json,updated_at,confirmed)
+         VALUES('retired-window','[]',1,0)",
+            [],
+        )
+        .unwrap();
+    let source = fence(&store, "native", "m");
+    assert_eq!(store.authority_snapshot("m").unwrap().fence, source.fence);
 }
 
 #[test]
@@ -1648,6 +1743,7 @@ fn observed_sessionless_mutations_keep_promotion_unqualified() {
             "native",
             "m",
             &crate::harness::HarnessHost::new(),
+            &EditorBuffers::default(),
             inventory(&store, "native")
         )
         .is_err());

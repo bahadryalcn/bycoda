@@ -1576,13 +1576,16 @@ fn managed_cleanup_local_check(
     store: &SessionStore,
     terminals: &crate::pty::PtyHost,
     agents: &crate::harness::HarnessHost,
+    buffers: &crate::native_workspace::editor_buffers::EditorBuffers,
     workspace_id: &str,
     path: &Path,
 ) -> Result<(), String> {
     if terminals.has_working_dir(path) || agents.has_working_dir(path) {
         return Err("Close the terminals and agent processes using this worktree first.".into());
     }
-    crate::native_workspace::assert_buffers_settled(store, path)?;
+    if !buffers.dirty_under(&path_to_js(path)).is_empty() {
+        return Err("Save or close unsaved workspace files before removing this worktree.".into());
+    }
     let sessions = {
         let conn = store.lock_conn()?;
         let mut statement = conn
@@ -1609,6 +1612,7 @@ pub async fn managed_worktree_removal_plan(
         let store = app.state::<SessionStore>();
         let terminals = app.state::<crate::pty::PtyHost>();
         let agents = app.state::<crate::harness::HarnessHost>();
+        let buffers = app.state::<crate::native_workspace::editor_buffers::EditorBuffers>();
         let workspace_id = request["workspaceId"]
             .as_str()
             .ok_or("Workspace ID is required")?;
@@ -1628,7 +1632,7 @@ pub async fn managed_worktree_removal_plan(
             {
                 return Err("Workspace cleanup identity or revision changed; preview again".into());
             }
-            managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
+            managed_cleanup_local_check(&store, &terminals, &agents, &buffers, workspace_id, path)?;
             let raw = serde_json::to_string(plan).map_err(|e| e.to_string())?;
             crate::remote::NativeProjection::commit(&[projection], || {
                 store.lock_conn()?.execute("INSERT INTO native_cleanup_plans(token,workspace_id,plan_json) VALUES(?1,?2,?3)
@@ -1651,6 +1655,7 @@ pub async fn managed_worktree_removal_apply(
         let store = app.state::<SessionStore>();
         let terminals = app.state::<crate::pty::PtyHost>();
         let agents = app.state::<crate::harness::HarnessHost>();
+        let buffers = app.state::<crate::native_workspace::editor_buffers::EditorBuffers>();
         let workspace_id = request["workspaceId"]
             .as_str()
             .ok_or("Workspace ID is required")?;
@@ -1675,7 +1680,7 @@ pub async fn managed_worktree_removal_apply(
                 .ok_or("Host returned no cleanup path")?,
         );
         let _reservation = crate::worktree_lifecycle::reserve_removal(path)?;
-        managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
+        managed_cleanup_local_check(&store, &terminals, &agents, &buffers, workspace_id, path)?;
         let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
         // No native force-removal fallback. An unknown response remains the same Host operation.
         host.project("workspaces.cleanup.apply", request.clone(), |receipt, projection| {

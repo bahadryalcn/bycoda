@@ -1106,17 +1106,26 @@ export function createNativeBufferReports(deps: Dependencies) {
     });
   }
 
-  // A dead predecessor that is unknown but not dirty, none of whose owners its live successor
-  // still reports: the successor keeps every earlier window that was dirty or may have a
-  // draft, so it no longer vouches for any of these and nothing unsaved is on record.
+  // The successor omits released windows and can carry the fence for an exact physical
+  // owner. Its report must still fence every path the predecessor associated with that owner.
   const released = (prior: BufferLease, successor: BufferLease) => {
-    const kept = new Set(successor.owners.map((item) => item.ownerId));
-    const sources = prior.owners.map((item) => item.ownerId);
-    if (prior.recovery?.sourceOwnerId) sources.push(prior.recovery.sourceOwnerId);
-    return (
-      !prior.owners.some((item) => item.buffers.some((buffer) => buffer.dirty)) &&
-      !sources.some((id) => kept.has(id))
-    );
+    const kept = new Map(successor.owners.map((item) => [item.ownerId, item]));
+    if (prior.recovery?.sourceOwnerId && kept.has(prior.recovery.sourceOwnerId)) return false;
+    return prior.owners.every((item) => {
+      if (item.buffers.some((buffer) => buffer.dirty)) return false;
+      const carried = kept.get(item.ownerId);
+      if (!carried) return true;
+      if (
+        prior.recovery?.kind === "hold" ||
+        prior.recovery?.ownerLineages[item.ownerId] === "legacy" ||
+        successor.recovery?.ownerLineages[item.ownerId] === "legacy" ||
+        !held(carried) ||
+        !sameLineage(item, carried)
+      )
+        return false;
+      const paths = new Set(carried.buffers.map((buffer) => buffer.path));
+      return item.buffers.every((buffer) => paths.has(buffer.path));
+    });
   };
   const processGone = (processId: number) => {
     try {
@@ -1169,8 +1178,8 @@ export function createNativeBufferReports(deps: Dependencies) {
           continue;
         if (prior.device !== device) {
           // The same desktop install under an earlier authorization (after re-pairing) never
-          // reports again, so nothing else can ever retire it. Release it only when it is
-          // dead, clean and unreported; anything else stays its own device's to recover.
+          // reports again. Release it only when it is dead, has no dirty buffers,
+          // and its owners are released or covered by this report.
           if (!released(prior, latest.value) || !processGone(prior.processId)) continue;
           if (prior.recovery?.kind === "hold") continue;
         } else if (!clean(prior) || prior.recovery?.kind === "hold") {

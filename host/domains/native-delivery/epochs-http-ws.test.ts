@@ -441,6 +441,8 @@ it("keeps a real committed floor after a lost HTTP compaction acknowledgement an
     highWater: 1,
   });
   expect(await receipts(f)).toBe(0);
+  // The retry still expects the old floor: a refusal that changed nothing, so the desktop reads
+  // the status instead of holding delivery on an unknown outcome.
   expect(
     (
       await ws.request("native.delivery.epochs.compact", {
@@ -449,7 +451,10 @@ it("keeps a real committed floor after a lost HTTP compaction acknowledgement an
         through: 1,
       })
     ).error,
-  ).toBeDefined();
+  ).toMatchObject({
+    message: expect.stringContaining("NATIVE_DELIVERY_EPOCH_CAS"),
+    data: { category: "conflict", delivery: "not-sent", code: "CONTEXT_CHANGED" },
+  });
   expect(await f.callHttp("native.services.delivery.apply", applying)).toEqual({
     ...original,
     target: formatTarget,

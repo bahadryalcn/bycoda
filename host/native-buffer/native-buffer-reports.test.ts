@@ -1177,7 +1177,7 @@ it("drops an omitted clean unknown owner without a hold but keeps an omitted dir
   }
 });
 
-it("retires a dead clean unknown predecessor only once its successor stops reporting its owners", async () => {
+it("retires a dead clean unknown predecessor after omission and keeps ambiguous legacy overlaps", async () => {
   const reconcile = (f: Awaited<ReturnType<typeof fixture>>) =>
     f.service.reconcileBuffers(
       { clientId: "client", instanceId: "instance", predecessors: [] },
@@ -1209,6 +1209,75 @@ it("retires a dead clean unknown predecessor only once its successor stops repor
     if (scenario === "released") expect(outcome).toEqual({ acknowledged: true });
     else expect(outcome).toMatchObject({ state: "recovery-required", total: 1 });
   }
+});
+
+it("archives dead predecessors across repeated restarts while preserving the carried draft fence", async () => {
+  const f = await fixture();
+  const report = f.report(false, true);
+  report.owners[0].unknown = true;
+  const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+    throw Object.assign(new Error("gone"), { code: "ESRCH" });
+  });
+  for (let restart = 0; restart < 4; restart++) {
+    const instanceId = `restart-${restart}`;
+    await f.service.updateBuffers({ ...report, instanceId, processId: 99_999 + restart }, owner);
+    if (restart === 0) continue;
+    const id = hash([hash(owner.ownerId), report.clientId, instanceId]);
+    const currentPath = join(f.directory, `${id}.json`);
+    const before = await readFile(currentPath, "utf8");
+    await expect(
+      f.service.reconcileBuffers(
+        { clientId: report.clientId, instanceId, predecessors: [] },
+        owner,
+      ),
+    ).resolves.toEqual({ acknowledged: true });
+    expect(await readFile(currentPath, "utf8")).toBe(before);
+    const previousId = hash([hash(owner.ownerId), report.clientId, `restart-${restart - 1}`]);
+    const previous = JSON.parse(await readFile(join(f.directory, `${previousId}.json`), "utf8"));
+    expect(previous.retiredAt).toBeDefined();
+    expect(await readdir(join(f.history, "reports"))).toContain(previousId);
+    expect(await f.service.probe("workspace")).toHaveLength(1);
+  }
+  kill.mockRestore();
+});
+
+it.each([
+  "dirty predecessor",
+  "fewer paths",
+  "live PID",
+  "mismatched provenance",
+  "clean successor",
+])("keeps a shared physical owner fenced with %s", async (scenario) => {
+  const f = await fixture();
+  const prior = f.report(scenario === "dirty predecessor", true);
+  const priorOwner = prior.owners[0];
+  priorOwner.unknown = true;
+  const successor = f.report(false, true);
+  const successorOwner = successor.owners[0];
+  successorOwner.unknown = scenario !== "clean successor";
+  if (scenario === "fewer paths") {
+    priorOwner.buffers.push({ path: join(f.path, "second.txt"), dirty: false });
+    priorOwner.source!.snapshotDigest = hash(priorOwner.buffers);
+  }
+  if (scenario === "mismatched provenance")
+    successorOwner.source!.sourceProfileId = "different-profile";
+  const priorPid = 99_999;
+  await f.service.updateBuffers({ ...prior, instanceId: "prior", processId: priorPid }, owner);
+  await f.service.updateBuffers(successor, owner);
+  vi.spyOn(process, "kill").mockImplementation(() => {
+    if (scenario === "live PID") return true;
+    throw Object.assign(new Error("gone"), { code: "ESRCH" });
+  });
+  await expect(
+    f.service.reconcileBuffers(
+      { clientId: successor.clientId, instanceId: successor.instanceId, predecessors: [] },
+      owner,
+    ),
+  ).resolves.toMatchObject({
+    state: "recovery-required",
+    total: 1,
+    blocked: [{ instanceId: "prior", processId: priorPid }],
+  });
 });
 
 it("lets a clean hold of a retired dead predecessor go inert instead of rewriting it", async () => {

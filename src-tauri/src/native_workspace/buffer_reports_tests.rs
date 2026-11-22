@@ -510,6 +510,47 @@ fn reported(conn: &Connection) -> Vec<String> {
 }
 
 #[test]
+fn restart_releases_clean_physical_windows_sharing_another_windows_draft_path() {
+    let conn = setup();
+    let draft_path = crate::fs::path_to_js(&std::env::temp_dir().join("shared-draft"));
+    let clean = serde_json::json!([{"path":draft_path,"dirty":false}]).to_string();
+    let dirty = serde_json::json!([{"path":draft_path,"dirty":true}]).to_string();
+    let draft_owner = stamp();
+    record_owned(&conn, &draft_owner, &clean, 11, "draft").unwrap();
+    conn.execute_batch("CREATE TABLE native_editor_drafts(owner_id TEXT,store_instance TEXT,window_incarnation TEXT,path TEXT)").unwrap();
+    conn.execute(
+        "INSERT INTO native_editor_drafts VALUES(?1,?2,?3,?4)",
+        params![
+            draft_owner.id.trim_start_matches("physical:v2:"),
+            draft_owner.store_instance,
+            draft_owner.incarnation,
+            draft_path,
+        ],
+    )
+    .unwrap();
+
+    // Each later run opens the same path with its own physical window identity.
+    for (time, body) in [(12, &clean), (13, &clean), (14, &dirty)] {
+        let incarnation = uuid::Uuid::new_v4().to_string();
+        let store = &draft_owner.store_instance;
+        let window = OwnerStamp {
+            id: format!("physical:v2:{}", sha(&format!("{store}:{incarnation}"))),
+            incarnation: Some(incarnation),
+            ..stamp()
+        };
+        record_owned(&conn, &window, body, time, &time.to_string()).unwrap();
+        super::super::ensure_schema(&conn).unwrap();
+        assert_eq!(reported(&conn).contains(&window.id), time == 14);
+        assert!(reported(&conn).contains(&draft_owner.id));
+    }
+    legacy(&conn, "legacy-window", &clean, None);
+    super::super::ensure_schema(&conn).unwrap();
+    let held = reported(&conn);
+    assert!(held.iter().any(|owner| owner == "legacy-window"));
+    assert_eq!(held.len(), 3);
+}
+
+#[test]
 fn restart_releases_only_clean_earlier_rows_without_a_draft_at_their_exact_version() {
     let conn = setup();
     let path = |tag: &str| crate::fs::path_to_js(&std::env::temp_dir().join(tag));

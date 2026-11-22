@@ -150,7 +150,18 @@ fn compact_epoch(
         Some(params) => (epoch_wire::COMPACT, params),
         None => (epoch_wire::STATUS, epoch_wire::reference(&epoch)),
     };
-    let response = epoch_call(channel, method, params, deadline)?;
+    let response = match epoch_call(channel, method, params, deadline) {
+        Ok(response) => response,
+        Err(error) if method == epoch_wire::COMPACT && epoch_wire::stale_floor(&error) => {
+            epoch_call(
+                channel,
+                epoch_wire::STATUS,
+                epoch_wire::reference(&epoch),
+                deadline,
+            )?
+        }
+        Err(error) => return Err(error),
+    };
     commit_epoch(channel, &response)?;
     Ok(())
 }

@@ -6,7 +6,8 @@ const { execFile, createSocket, networkInterfaces } = vi.hoisted(() => ({
   createSocket: vi.fn(),
   networkInterfaces: vi.fn(),
 }));
-vi.mock("node:child_process", () => ({ execFile }));
+// The probe runs through the Host process worker (execFileAsync), not child_process.
+vi.mock("../../src/shared/lib/processExecution.node", () => ({ execFileAsync: execFile }));
 vi.mock("node:dgram", () => ({ createSocket }));
 vi.mock("node:os", async (original) => ({
   ...(await original<typeof import("node:os")>()),
@@ -33,9 +34,7 @@ it.each([
   ['["Public"]', false],
   ['{"Ethernet":true}', false],
 ])("only hints for a Public interface with firewall enabled: %s", async (output, expected) => {
-  execFile.mockImplementation((_file, _args, _options, callback) =>
-    callback(null, Buffer.from(output)),
-  );
+  execFile.mockResolvedValue({ stdout: Buffer.from(output), stderr: Buffer.alloc(0) });
   const { createWindowsNetworkHint } = await import("./mobile-network");
   const hint = createWindowsNetworkHint("win32");
   expect(Boolean(await hint("Ethernet"))).toBe(expected);
@@ -52,9 +51,7 @@ it.each([
 });
 
 it("ignores and caches timeouts, command failures and unknown interfaces", async () => {
-  execFile.mockImplementation((_file, _args, _options, callback) =>
-    callback(new Error("timeout"), Buffer.alloc(0)),
-  );
+  execFile.mockRejectedValue(new Error("timeout"));
   const { createWindowsNetworkHint } = await import("./mobile-network");
   const hint = createWindowsNetworkHint("win32");
   expect(await hint()).toBeUndefined();
@@ -75,9 +72,10 @@ it("shares one adapter snapshot and fingerprints only external IPv4 addresses", 
 });
 
 it("asks Windows for network profiles again only when the adapters change", async () => {
-  execFile.mockImplementation((_file, _args, _options, callback) =>
-    callback(null, Buffer.from('{"Wi-Fi":"Public"}')),
-  );
+  execFile.mockResolvedValue({
+    stdout: Buffer.from('{"Wi-Fi":"Public"}'),
+    stderr: Buffer.alloc(0),
+  });
   let network = "Wi-Fi=192.168.1.5";
   const { createWindowsNetworkHint } = await import("./mobile-network");
   const hint = createWindowsNetworkHint("win32", () => network);
@@ -91,9 +89,10 @@ it("asks Windows for network profiles again only when the adapters change", asyn
 it("rechecks a Public answer soon, so the hint clears after a switch to Private", async () => {
   vi.useFakeTimers();
   let category = "Public";
-  execFile.mockImplementation((_file, _args, _options, callback) =>
-    callback(null, Buffer.from(`{"Wi-Fi":"${category}"}`)),
-  );
+  execFile.mockImplementation(async () => ({
+    stdout: Buffer.from(`{"Wi-Fi":"${category}"}`),
+    stderr: Buffer.alloc(0),
+  }));
   const { createWindowsNetworkHint } = await import("./mobile-network");
   const hint = createWindowsNetworkHint("win32", () => "Wi-Fi=192.168.1.5");
   expect(await hint("Wi-Fi")).toBeDefined();

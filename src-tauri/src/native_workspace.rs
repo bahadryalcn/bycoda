@@ -7,6 +7,7 @@ use tauri::{AppHandle, Manager};
 
 pub(crate) mod buffer_reports;
 pub(crate) use buffer_reports::UNRELEASED;
+pub(crate) mod editor_buffers;
 mod heartbeat;
 pub(crate) mod recovery_bridge;
 
@@ -375,6 +376,9 @@ pub async fn managed_workspace_buffers(
     window: tauri::Window,
     buffers: Vec<BufferState>,
 ) -> Result<(), String> {
+    // Live registry first: it must not depend on the legacy report path succeeding.
+    app.state::<editor_buffers::EditorBuffers>()
+        .report(window.label(), &buffers);
     crate::harness::run_blocking("managed_workspace_buffers", move || {
         let store = app.state::<crate::session_store::SessionStore>();
         crate::native_window_lifecycle::workspace_buffer_report(&window, &store, |owner| {

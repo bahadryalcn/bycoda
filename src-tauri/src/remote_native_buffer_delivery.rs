@@ -147,8 +147,20 @@ fn compact_epoch(
         Some(params) => (epoch_wire::COMPACT, params),
         None => (epoch_wire::STATUS, epoch_wire::reference(&epoch)),
     };
-    let response =
-        call_until(channel, method, params, None, deadline).map_err(|error| error.message)?;
+    let response = match call_until(channel, method, params, None, deadline) {
+        Ok(response) => response,
+        Err(error) if method == epoch_wire::COMPACT && epoch_wire::stale_floor(&error.message) => {
+            call_until(
+                channel,
+                epoch_wire::STATUS,
+                epoch_wire::reference(&epoch),
+                None,
+                deadline,
+            )
+            .map_err(|error| error.message)?
+        }
+        Err(error) => return Err(error.message),
+    };
     commit_epoch(channel, store, &response.reply)?;
     Ok(())
 }

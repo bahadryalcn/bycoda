@@ -103,6 +103,31 @@ it("keeps a selected child repository as the Changes tab target", async () => {
   expect(JSON.parse(host.textContent!).changeScopeLabel).toContain("mobile");
 });
 
+it("scans no checkout tree when one checkout is selected", async () => {
+  saveCheckoutSelection(
+    checkoutSelectionScope(
+      "/repo",
+      data.trees.map((tree) => tree.path),
+    ),
+    "/trees/worker",
+  );
+  await act(async () => root.render(createElement(View)));
+  expect(data.discovery).toHaveBeenCalledWith([], true, true);
+  expect(data.single).toHaveBeenCalledWith("/trees/worker", true);
+});
+
+it("scans only the checkout holding a selected child repository", async () => {
+  saveCheckoutSelection(
+    checkoutSelectionScope(
+      "/repo",
+      data.trees.map((tree) => tree.path),
+    ),
+    "/repo/mobile",
+  );
+  await act(async () => root.render(createElement(View)));
+  expect(data.discovery).toHaveBeenCalledWith(["/repo"], true, true);
+});
+
 it("keeps All totals unknown until every repository has a reading", async () => {
   saveCheckoutSelection(
     checkoutSelectionScope(

@@ -32,6 +32,7 @@ import { acquireHostOwner, probeHostOwner } from "./owner";
 import { startHostDiagnostics, type HostDiagnostics } from "./diagnostics/host-lifecycle";
 import { createBootTimer } from "./server/boot-phases";
 import { hostGitExec } from "./git/git-exec-pool";
+import { registerHostProcessExecution } from "./git/host-process-execution";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -376,6 +377,8 @@ Connect another computer using an SSH forward to the loopback port.`);
     // Use Windows trust for outbound TLS, preserving bundled and explicitly configured CAs.
     setDefaultCACertificates([...getCACertificates("default"), ...getCACertificates("system")]);
   }
+  const unregisterProcessExecution =
+    command === "serve" ? registerHostProcessExecution() : undefined;
   const diagnostics: HostDiagnostics | undefined =
     command === "serve" ? startHostDiagnostics({ dataDir: directory, version }) : undefined;
   const boot = command === "serve" ? createBootTimer() : undefined;
@@ -626,6 +629,7 @@ Connect another computer using an SSH forward to the loopback port.`);
         await drain("tunnels", () => server.tunnels.close());
         await drain("engine", () => engine.close());
         await drain("provider backend", () => backend.close());
+        unregisterProcessExecution?.();
         await drain("git workers", () => hostGitExec.close());
         release();
         await drain("database", cleanup);

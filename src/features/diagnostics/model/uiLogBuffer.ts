@@ -92,7 +92,14 @@ function keep(
   fields?: DiagnosticLogFields,
 ): void {
   buffer.push(level, category, message, fields);
-  if (level === "warn" || level === "error") sink?.(level, category, message);
+  if (level !== "warn" && level !== "error") return;
+  // The file line keeps the fields (method, code, ms…): without them a failure in bycoda.log
+  // cannot be attributed. Fields are already limited to safe values; the sink still redacts.
+  const detail = Object.entries(fields ?? {})
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+  sink?.(level, category, detail ? `${message} ${detail}` : message);
 }
 
 /** Adds one line to the UI log; never throws. Used by the console hook and the breadcrumbs. */

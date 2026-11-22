@@ -487,6 +487,7 @@ pub fn run() {
         .manage(ssh_execution::SshExecutionReviews::default())
         .manage(std::sync::Arc::new(ssh_execution::SshExecutions::default()))
         .manage(window_transfer::WindowTransferState::new())
+        .manage(native_workspace::editor_buffers::EditorBuffers::default())
         .manage(session_store::window_barrier::WindowBarrier::new())
         .on_page_load(|webview, payload| {
             native_window_lifecycle::on_page_load(webview, payload);

@@ -58,11 +58,20 @@ export function useCheckoutChangeStats({
     `source-control:checkouts:${checkoutSelectionKey}:selected`,
     () => loadCheckoutSelection(checkoutSelectionKey),
   );
+  // Only the overview totals every checkout's child repositories. One checkout needs discovery
+  // only when the stored choice is a child repository inside it: walking every worktree's tree
+  // whenever the sidebar opened queued 20+ scans on the Host at startup.
+  const discoveryRoot =
+    storedCheckout && !checkoutPaths.some((path) => sameProjectPath(path, storedCheckout))
+      ? sessionCheckout(storedCheckout, checkoutPaths)
+      : undefined;
+  const discoveryPaths =
+    storedCheckout === "" ? checkoutPaths : discoveryRoot ? [discoveryRoot] : [];
   const {
     modules,
     limits,
     error: discoveryError,
-  } = useGitSubmodules(checkoutPaths, checkoutScopeEnabled, true);
+  } = useGitSubmodules(discoveryPaths, checkoutScopeEnabled, true);
   const repositoryTargets = checkoutRepositoryPaths(checkoutPaths, modules);
   const selectedCheckout = checkoutScope
     ? resolveCheckoutSelection(

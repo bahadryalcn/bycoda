@@ -121,6 +121,11 @@ Pending outgoing or incoming commits keep their own **Push**, **Pull**, **Sync
 Changes** or **Publish Branch** button beside it. With nothing to commit, that sync,
 Create PR or View PR action leads instead.
 
+On mobile, **Changes** shows a short status when the working folder is clean.
+Search and filters appear with changed files. An existing commit message is still
+editable, and **Git actions > Commit message** opens the field to start a draft. **Push**
+stays available when the branch has local commits to send to its remote.
+
 Remote actions distinguish incoming and outgoing commits and display their upstream
 destination. Existing publication, amend, conflict and destructive-operation gates
 remain in force. Diagnostic **Details** retains raw output and the checkout path,

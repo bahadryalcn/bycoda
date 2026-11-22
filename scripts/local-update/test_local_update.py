@@ -1102,6 +1102,36 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertIn('-eq "bycoda"', command)
 
     @unittest.skipUnless(__import__('os').name == 'nt', 'Windows installer regression')
+    def test_windows_install_asks_the_app_to_quit_before_any_forced_stop(self):
+        with temp_dir() as folder:
+            root = pathlib.Path(folder)
+            app = root / 'bycoda/bycoda.exe'
+            written = {}
+            class Pipe(io.BytesIO):
+                def __exit__(self, *args):
+                    written['data'] = self.getvalue()
+                    return super().__exit__(*args)
+            def open_pipe(path, mode, buffering):
+                written['path'] = path
+                return Pipe()
+            with patch.dict('os.environ', {'APPDATA': str(root / 'roaming')}), \
+                 patch('local_install.open', side_effect=open_pipe, create=True), \
+                 patch('local_install.ps', return_value='0') as shell:
+                self.assertTrue(local_install.request_windows_app_quit(app, windows_app_process_filter(app)))
+                expected = local_install.windows_instance_pipe(app)
+                other = local_install.windows_instance_pipe(root / 'other.exe')
+            self.assertEqual(written['data'], b'\x03')
+            self.assertRegex(written['path'], r'^\\\\\.\\pipe\\bycoda-relaunch-[0-9a-f]{64}$')
+            self.assertEqual(written['path'], expected)
+            self.assertNotEqual(written['path'], other)
+            self.assertIn('Wait-Process', shell.call_args.args[0])
+            # No running app answers the pipe: the caller falls back to its forced stop.
+            with patch('local_install.open', side_effect=FileNotFoundError, create=True), \
+                 patch('local_install.ps') as shell:
+                self.assertFalse(local_install.request_windows_app_quit(app, windows_app_process_filter(app)))
+            shell.assert_not_called()
+
+    @unittest.skipUnless(__import__('os').name == 'nt', 'Windows installer regression')
     def test_windows_install_still_cancels_force_close_when_a_new_turn_starts(self):
         with temp_dir() as folder:
             root = pathlib.Path(folder)

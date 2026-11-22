@@ -95,8 +95,8 @@ async function fixture(headless?: (path: string, project: string) => Promise<voi
       );
       return removal;
     },
-    expireHeartbeat: () => {
-      clockOffset += 60_000;
+    expireHeartbeat: (ms = 60_000) => {
+      clockOffset += ms;
     },
     close: () => rm(root, { recursive: true, force: true }),
   };
@@ -131,15 +131,57 @@ it("keeps a stale desktop's native fence on a declared dedicated Host", async ()
   }
 });
 
-it.each(["unknown", "stale", "stale alongside a live client"])(
+const worktreeListed = async (f: Awaited<ReturnType<typeof fixture>>) =>
+  (await f.git("worktree", "list", "--porcelain")).stdout.includes("refs/heads/linked");
+
+it("removes a clean worktree without any desktop ever connected", async () => {
+  const f = await fixture();
+  try {
+    // The Host has been up past the grace period, so no desktop is still reconnecting.
+    f.expireHeartbeat(3 * 60_000);
+    const { token } = await f.review();
+    await expect(f.remove(token)).resolves.toMatchObject({ sessionIds: [] });
+    expect(await worktreeListed(f)).toBe(false);
+  } finally {
+    await f.close();
+  }
+}, 30_000);
+
+it("removes a clean worktree when the desktop left more than two minutes ago", async () => {
+  const f = await fixture();
+  try {
+    f.live.beat({ clientId: "old-desktop", sessions: [] });
+    f.expireHeartbeat(3 * 60_000);
+    const { token } = await f.review();
+    await expect(f.remove(token)).resolves.toMatchObject({ sessionIds: [] });
+    expect(await worktreeListed(f)).toBe(false);
+  } finally {
+    await f.close();
+  }
+}, 30_000);
+
+it("still refuses without a desktop for a forced, dirty or untracked worktree", async () => {
+  const g = await fixture();
+  try {
+    await writeFile(join(g.path, "untracked"), "x");
+    const dirty = await g.review();
+    await expect(g.remove(dirty.token)).rejects.toThrow("uncommitted changes");
+    await expect(g.remove(dirty.token, { force: true })).rejects.toThrow(
+      "Reconnect the execution Host desktop and retry",
+    );
+    expect(await worktreeListed(g)).toBe(true);
+  } finally {
+    await g.close();
+  }
+}, 60_000);
+
+it.each(["stale", "stale alongside a live client"])(
   "preserves the checkout when desktop liveness is %s",
   async (state) => {
     const f = await fixture();
     try {
-      if (state !== "unknown") {
-        f.live.beat({ clientId: "old-desktop", sessions: [] });
-        f.expireHeartbeat();
-      }
+      f.live.beat({ clientId: "old-desktop", sessions: [] });
+      f.expireHeartbeat();
       if (state === "stale alongside a live client")
         f.live.beat({ clientId: "desktop", sessions: [] });
       const { token } = await f.review();
@@ -310,3 +352,31 @@ it("lists ignored local data and requires force even when Git status is clean", 
     await f.close();
   }
 }, 60_000);
+
+it("keeps the worktree and names unsaved files when the desktop refuses for editors", async () => {
+  const f = await fixture();
+  try {
+    const { token } = await f.review();
+    const beat = { clientId: "desktop", sessions: [] };
+    f.live.beat(beat);
+    const removal = f.remove(token);
+    const refused = expect(removal).rejects.toThrow("Save or close unsaved files");
+    await vi.waitFor(
+      () => {
+        const job = f.live.removalLeaseBeat(beat).jobs.find((entry) => entry.path);
+        expect(job).toBeDefined();
+        f.live.removalLeaseBeat({
+          ...beat,
+          removalLeaseReplies: [
+            { id: job!.id, granted: false, release: false, reason: "editors", checks: ["editors"] },
+          ],
+        });
+      },
+      { timeout: 10_000 },
+    );
+    await refused;
+    expect(await worktreeListed(f)).toBe(true);
+  } finally {
+    await f.close();
+  }
+});

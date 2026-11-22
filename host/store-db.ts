@@ -9,7 +9,12 @@ import {
 } from "./storage/persistence-health";
 import { createDedupedWarn } from "./diagnostics/log-dedupe";
 import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
-import { HostDbClosingError, ReadPoolUnavailableError, StoreReadPool, type ReadLease } from "./storage/store-read-pool";
+import {
+  HostDbClosingError,
+  ReadPoolUnavailableError,
+  StoreReadPool,
+  type ReadLease,
+} from "./storage/store-read-pool";
 
 export type StoreRow = Record<string, any>;
 /** Every Host read and write waits behind a scope this long; the owner names the holder. */
