@@ -13,7 +13,7 @@ test("resizes tool panels from their shared edge in all four placements", async 
     await dock.getByRole("button", { name: /^Placement:/ }).click();
     await page
       .getByRole("menuitemradio", {
-        name: `Dock ${side[0].toUpperCase()}${side.slice(1)}`,
+        name: `Dock ${side}`,
         exact: true,
       })
       .click();

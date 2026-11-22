@@ -67,6 +67,7 @@ it.each(["idle", "saved"] as const)(
         canStart: true,
         onCreate: vi.fn(),
         onStart: vi.fn(),
+        onDone: vi.fn(),
       }),
     );
     expect(html).not.toContain("All changes saved");

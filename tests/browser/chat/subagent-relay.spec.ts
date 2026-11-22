@@ -148,7 +148,7 @@ for (const theme of ["light", "dark"])
       const toggle = dock.locator("button[data-dock-toggle]");
       // The visible summary is provider marks and counts; the title lives in the accessible name.
       await expect(toggle).not.toContainText("Background work");
-      await expect(toggle).toHaveAccessibleName(/^Background work, /);
+      await expect(toggle).toHaveAccessibleName(/(^|\. )Background work, /);
       await expect(toggle.locator("[data-dock-providers] > *").first()).toBeVisible();
       for (const label of ["1 running", "1 done", "1 failed", "1 stopped", "1 interrupted"]) {
         await expect(toggle.locator("[data-tone]", { hasText: label })).toBeVisible();
@@ -415,14 +415,13 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/chat/subagent-relay.html?inline-status&theme=${theme}`);
-      const label = page
-        .locator('[data-action-content="always"][data-interaction-tone="neutral"]')
-        .first();
+      // The row is one step trigger: chrome ink at rest, body ink on hover (shared Disclosure step).
+      const label = page.locator('summary[aria-label$="\'s work"]').first();
       const before = await label.evaluate((node) => getComputedStyle(node).color);
       await label.hover();
       const actual = await label.evaluate((node) => {
         const p = document.createElement("span");
-        p.style.color = "var(--ui-tone-neutral-fg)";
+        p.style.color = "var(--transcript-ink-chrome-active, var(--foreground))";
         node.appendChild(p);
         const expected = getComputedStyle(p).color;
         p.remove();
@@ -468,7 +467,7 @@ for (const theme of ["light", "dark"])
       ).toBeHidden();
       await advisor.locator("summary").click();
       // Transcript: a completion folds into its card; a notice without a card stays a disclosure.
-      const benchmark = page.getByRole("button", { name: /^(Show|Hide) Benchmark review's work$/ });
+      const benchmark = page.locator('summary[aria-label$="Benchmark review\'s work"]');
       await expect(async () => {
         if ((await benchmark.getAttribute("aria-expanded")) !== "true") await benchmark.click();
         await expect(page.getByText("Result received by the main agent")).toHaveCount(1, {

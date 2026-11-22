@@ -33,7 +33,13 @@ for (const [theme, width] of [
       const form = page.locator(`[data-settings-section="${section}"]`);
       await expect(form).toBeVisible();
       // Every page shares one bounded column: the form fills the panel until it reaches the single
-      // column cap (80rem; 96rem only when the dialog is maximized), then centres.
+      // column cap (60rem; 80rem only when the dialog is maximized), then centres.
+      // The cap settles once the page's layout has run, so wait for it before measuring.
+      await expect
+        .poll(() => form.evaluate((node) => Number.parseFloat(getComputedStyle(node).maxWidth)), {
+          message: section,
+        })
+        .toBe(60 * 16);
       const dimensions = await form.evaluate((node) => {
         const bounds = node.getBoundingClientRect();
         const parent = node.parentElement!.getBoundingClientRect();
@@ -48,8 +54,8 @@ for (const [theme, width] of [
         };
       });
       // No page keeps its own track any more: preferences, collections and list/detail libraries
-      // all measure the same 80rem column.
-      expect(dimensions.cap, section).toBe(80 * 16);
+      // all measure the same 60rem column.
+      expect(dimensions.cap, section).toBe(60 * 16);
       expect(dimensions.width, section).toBeGreaterThan(
         Math.min(dimensions.parent, dimensions.cap) * 0.95,
       );
@@ -156,8 +162,10 @@ test("Turkish policies and usage limits remain usable at intermediate widths", a
   }
 });
 
-test("keybinding rows keep command and key on one line at 800px", async ({ page }) => {
-  await page.setViewportSize({ width: 800, height: 900 });
+// Rows stack under 560px of topic width (the shared settings row rule), so the single line is held
+// at the first viewport that leaves the topic wider than that.
+test("keybinding rows keep command and key on one line at 1024px", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
   await page.goto("/tests/browser/settings/settings.html?section=keybindings&theme=light&lang=en");
   const rows = page.locator('[data-settings-section="keybindings"] .settings-row');
   await expect(rows.first()).toBeVisible();

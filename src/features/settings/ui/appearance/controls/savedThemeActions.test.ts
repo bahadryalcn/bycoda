@@ -134,7 +134,7 @@ describe("applyAppearanceSnapshot", () => {
     expect(captured.preferences).toMatchObject({
       userMessageOpacity: 42,
       transcriptSurface: "reply",
-      transcriptSurfaceOpacity: 45,
+      transcriptSurfaceOpacity: 90,
       messageColor: "theme",
     });
     applyAppearanceSnapshot(appearance, {

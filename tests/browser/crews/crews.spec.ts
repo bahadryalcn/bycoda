@@ -202,7 +202,7 @@ for (const theme of ["light", "dark"] as const)
       await expect(task.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
       await task.getByRole("button", { name: "Cancel", exact: true }).click();
       await editCrew(page);
-      const editor = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      const editor = page.getByRole("dialog", { name: "Edit crew", exact: true });
       await expect(editor.getByRole("textbox", { name: "Crew name", exact: true })).toBeVisible();
       await capture("editor");
       await editor
@@ -662,7 +662,7 @@ async function openWork(page: Page, runId = "run") {
 async function deleteSelectedWork(_page: Page, work: ReturnType<Page["locator"]>) {
   await work.getByRole("button", { name: "Delete work", exact: true }).click();
 }
-const editor = (page: Page) => page.getByRole("dialog", { name: /New crew|Website Crew|Mobile/ });
+const editor = (page: Page) => page.getByRole("dialog", { name: /New crew|Edit crew/ });
 for (const theme of ["light", "dark"] as const) {
   test(`bycoda defaults stay editable with independent library profiles in ${theme} theme`, async ({
     page,
@@ -678,7 +678,7 @@ for (const theme of ["light", "dark"] as const) {
     await content.getByRole("tab", { name: "Teams", exact: true }).click();
     await page.getByRole("button", { name: "Edit bycoda Product Team", exact: true }).click();
     const team = page.getByRole("dialog", {
-      name: "bycoda Product Team",
+      name: "Edit crew",
       exact: true,
     });
     await expect(team.locator("[data-member-row]")).toHaveCount(17);
@@ -732,7 +732,7 @@ for (const theme of ["light", "dark"] as const) {
     await content.getByRole("tab", { name: "Teams", exact: true }).click();
     await page.getByRole("button", { name: "Edit bycoda Product Team", exact: true }).click();
     const saved = page.getByRole("dialog", {
-      name: "bycoda Product Team",
+      name: "Edit crew",
       exact: true,
     });
     await expect(saved.getByRole("region", { name: "Specialists", exact: true })).toContainText(
@@ -986,7 +986,7 @@ test("work management returns from crew editing without starting another deliver
   await page.goto("/tests/browser/crews/crews.html");
   const management = await openWork(page);
   await management.getByRole("button", { name: "Edit crew", exact: true }).click();
-  const form = page.getByRole("dialog", { name: "Website Crew", exact: true });
+  const form = page.getByRole("dialog", { name: "Edit crew", exact: true });
   await expect(form.getByRole("textbox", { name: "Crew name" })).toBeVisible();
   await form.getByRole("button", { name: "Close", exact: true }).click();
   await expect(
@@ -1032,7 +1032,7 @@ test("editing is one page: roster first, advanced settings one disclosure away, 
 }, testInfo) => {
   await page.goto("/tests/browser/crews/crews.html?theme=light");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Website Crew" });
+  const dialog = page.getByRole("dialog", { name: "Edit crew" });
   await expect(dialog.getByRole("region", { name: "Coordinator" })).toBeVisible();
   await dialog.getByRole("button", { name: "UI", exact: true }).click();
   // The expanded member uses the same provider/model picker as the roster.
@@ -1278,7 +1278,7 @@ test("access is set once for every member, model rules open on demand, and edits
 }) => {
   await page.goto("/tests/browser/crews/crews.html");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Website Crew" });
+  const dialog = page.getByRole("dialog", { name: "Edit crew" });
   // Access for the whole crew is one row at the top of the page, not inside Advanced.
   const access = dialog.getByRole("region", {
     name: "Access for every member",
@@ -1319,7 +1319,7 @@ test("access is set once for every member, model rules open on demand, and edits
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await page.getByRole("button", { name: "Edit Website Crew", exact: true }).click();
-  const reopened = page.getByRole("dialog", { name: "Website Crew" });
+  const reopened = page.getByRole("dialog", { name: "Edit crew" });
   await expect(
     reopened
       .getByRole("region", { name: "Access for every member" })
@@ -1336,7 +1336,7 @@ test("an unsupported Host hides the access picker but keeps the grants", async (
   await page.goto("/tests/browser/crews/crews.html?noAccess");
   await editCrew(page);
   const access = page
-    .getByRole("dialog", { name: "Website Crew" })
+    .getByRole("dialog", { name: "Edit crew" })
     .getByRole("region", { name: "Access for every member" });
   await expect(access.getByRole("button", { name: "Supervised", exact: true })).toHaveCount(0);
   await expect(
@@ -1349,7 +1349,7 @@ test("an unsupported Host hides the access picker but keeps the grants", async (
 test("one model with its options can be applied to chosen members at once", async ({ page }) => {
   await page.goto("/tests/browser/crews/crews.html");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Website Crew" });
+  const dialog = page.getByRole("dialog", { name: "Edit crew" });
   const apply = dialog.getByRole("button", { name: /^Apply to / });
   const stored = () =>
     page.evaluate(() =>
@@ -1360,13 +1360,18 @@ test("one model with its options can be applied to chosen members at once", asyn
     .toEqual(
       expect.arrayContaining([expect.objectContaining({ id: "ui", selection: "automatic" })]),
     );
-  // The bar offers a real model from the start, so Apply is ready.
-  await expect(apply).toBeEnabled();
+  // The bar offers a real model from the start; Apply waits for at least one selected member.
+  await expect(apply).toBeDisabled();
   await dialog.getByRole("checkbox", { name: "Select UI" }).check();
+  await expect(apply).toBeEnabled();
   await expect(apply).toHaveText("Apply to 1 member");
   await dialog.getByRole("checkbox", { name: "Select all" }).check();
   await expect(apply).toHaveText(/^Apply to \d+ members$/);
   await apply.click();
+  // Applying to several members asks first; the confirmation names the selection.
+  const confirm = page.getByRole("dialog", { name: "Apply model choice", exact: true });
+  await expect(confirm.getByText("Apply this model choice to 3 selected members?")).toBeVisible();
+  await confirm.getByRole("button", { name: "Apply", exact: true }).click();
   await expect(dialog.getByText("Model choice applied.", { exact: true })).toBeVisible();
   const assigned = ["coordinator", "ui", "review"].map((id) =>
     expect.objectContaining({
@@ -1394,7 +1399,7 @@ test("one model with its options can be applied to chosen members at once", asyn
 test("a failed save stays visible, keeps the draft and starts nothing", async ({ page }) => {
   await page.goto("/tests/browser/crews/crews.html?saveError&longRoster");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Website Crew" });
+  const dialog = page.getByRole("dialog", { name: "Edit crew" });
   await dialog.getByRole("textbox", { name: "Crew name", exact: true }).fill("Website Crew v2");
   // The autosave fails: the error and Retry stay in the footer, the draft stays as typed.
   await expect(
@@ -1414,7 +1419,7 @@ test("a long roster scrolls under an opaque header and keeps the footer actions"
   await page.setViewportSize({ width: 1280, height: 560 });
   await page.goto("/tests/browser/crews/crews.html?longRoster");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Website Crew" });
+  const dialog = page.getByRole("dialog", { name: "Edit crew" });
   await expect(dialog.locator("[data-member-row]")).toHaveCount(15);
   await dialog.getByRole("textbox", { name: "Crew name", exact: true }).fill("Website Crew v2");
   await dialog.getByRole("region", { name: "Advisors" }).scrollIntoViewIfNeeded();
@@ -1552,7 +1557,7 @@ for (const theme of ["light", "dark"] as const) {
       await content.getByRole("tab", { name: "Teams", exact: true }).click();
       await page.getByRole("button", { name: "Edit Website Crew", exact: true }).click();
       const dialog = page.getByRole("dialog", {
-        name: "Website Crew",
+        name: "Edit crew",
         exact: true,
       });
       // A member that no longer follows its library profile shows a quiet icon, not a badge.
@@ -1677,7 +1682,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(page.locator(".settings-collection").first()).toBeVisible();
       await shot("library");
       await editCrew(page);
-      const dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Edit crew", exact: true });
       await expect(dialog.getByRole("checkbox", { name: "Select all", exact: true })).toBeVisible();
       await expect(dialog.getByText("All changes saved", { exact: true })).toBeVisible();
       await shot("editor");
@@ -1764,7 +1769,7 @@ for (const theme of ["light", "dark"] as const) {
         });
       await page.goto(`/tests/browser/crews/crews.html?longRoster&saveError&theme=${theme}`);
       await editCrew(page);
-      let dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      let dialog = page.getByRole("dialog", { name: "Edit crew", exact: true });
       const search = dialog.getByRole("textbox", {
         name: "Search members by name, role, model or group",
         exact: true,
@@ -1783,7 +1788,7 @@ for (const theme of ["light", "dark"] as const) {
       await shot("footer-error");
       await page.goto(`/tests/browser/crews/crews.html?library=empty&theme=${theme}`);
       await editCrew(page);
-      dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      dialog = page.getByRole("dialog", { name: "Edit crew", exact: true });
       await dialog.getByRole("button", { name: "Add members", exact: true }).click();
       await dialog.getByRole("tab", { name: /^Library/ }).click();
       await expect(dialog.getByText("Your member library is empty", { exact: true })).toBeVisible();

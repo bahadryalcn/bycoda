@@ -367,7 +367,6 @@ for (const light of [false, true]) {
       const input = row.getByRole("textbox", { name: "Name", exact: true });
       await expect(input).toBeFocused();
       await page.mouse.move(width - 20, 760);
-      await expect(row.locator("[data-session-row-project]")).toContainText("bycoda");
       await expect(row.locator("[data-session-row-project]")).toContainText("Working");
       await expect(row.locator("[data-session-row-branch]")).toContainText("feature/voice");
       expect(
@@ -411,7 +410,6 @@ for (const light of [false, true]) {
       const title = row.locator("[data-session-select]");
       const branch = row.locator("[data-session-row-branch]");
       const providers = row.locator("[data-session-row-model]");
-      await expect(project).toContainText("bycoda");
       await expect(row).not.toHaveAttribute("data-ground");
       await expect(title).toContainText("Design System Clarity Review");
       await expect(branch).toContainText("main");

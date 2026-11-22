@@ -24,7 +24,7 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?providersFixture&providerQuotaFixture&section=providers&theme=${theme}&lang=en`,
       );
       await page
-        .locator(".provider-tabs")
+        .getByRole("tablist", { name: "Models", exact: true })
         .getByRole("tab", { name: "Providers", exact: true })
         .click();
       const picker = page.locator(".provider-cli-select").getByRole("button");
@@ -66,7 +66,7 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?providersFixture&openCodePricing&section=providers&theme=${theme}&lang=en`,
       );
       await page
-        .locator(".provider-tabs")
+        .getByRole("tablist", { name: "Models", exact: true })
         .getByRole("tab", { name: "Providers", exact: true })
         .click();
       const picker = page.locator(".provider-cli-select").getByRole("button");
@@ -114,7 +114,7 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?providersFixture&section=providers&theme=${theme}&lang=en`,
       );
       await expect(page.locator(".settings-page-title")).toHaveText("Models");
-      const tabs = page.locator(".provider-tabs");
+      const tabs = page.getByRole("tablist", { name: "Models", exact: true });
       await expect(tabs.getByRole("tab")).toHaveText(["Providers", "Background work", "Defaults"]);
       await tabs.getByRole("tab", { name: "Defaults", exact: true }).click();
       await expect(tabs.getByRole("tab", { name: "Defaults", exact: true })).toHaveAttribute(
@@ -131,7 +131,8 @@ for (const theme of ["light", "dark"])
           .getByRole("tablist", { name: "Settings categories", exact: true })
           .getByRole("tab", { name: "Models", exact: true }),
       ).toHaveCount(1);
-      const saveBar = page.locator('[data-save-bar="models-defaults"]:visible');
+      // The save-scope picker sits in the "Defaults saved to" group above the defaults.
+      const saveBar = page.getByRole("group", { name: "Defaults saved to", exact: true });
       const scope = saveBar.getByRole("button", { name: "Save in", exact: true });
       await expect(scope).toHaveText("Bycoda defaults");
       await expect(scope).toBeInViewport();
@@ -182,7 +183,7 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?providersFixture&section=providers&theme=${theme}&lang=en`,
       );
       const categories = page.getByRole("tablist", { name: "Settings categories", exact: true });
-      const providerTabs = page.locator(".provider-tabs");
+      const providerTabs = page.getByRole("tablist", { name: "Models", exact: true });
       await expect(providerTabs.getByRole("tab")).toHaveCount(3);
       await providerTabs.getByRole("tab", { name: "Providers", exact: true }).click();
       await expect(
@@ -518,10 +519,11 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
             await page.getByRole("button", { name: new RegExp(`^${provider},`) }).click();
           }
           await add.click();
-          const form = accounts.locator("form");
+          // Adding an account opens a dialog over the list (the dialog is the only one open).
+          const form = page.getByRole("dialog");
           await expect(form).toBeVisible();
-          await expect(form.locator("input")).toBeFocused();
-          await form.locator("input").fill("A very long review account name for layout checks");
+          await expect(form.getByRole("textbox")).toBeFocused();
+          await form.getByRole("textbox").fill("A very long review account name for layout checks");
           expect(await form.evaluate((node) => node.scrollWidth <= node.clientWidth + 2)).toBe(
             true,
           );

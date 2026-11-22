@@ -324,6 +324,30 @@
       ]
     },
     {
+      "id": "transcript-surface",
+      "config": "tests/browser/chat/playwright.transcript-surface.config.ts",
+      "files": ["transcript-surface.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/chat/vite.transcript-scenario.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/chat/transcript-scenario.html",
+        "fixedPort": 15710,
+        "portReason": "Existing absolute-origin config; occupied endpoints are never reused."
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["transcript-surface.spec.ts"]
+        },
+        {
+          "name": "webkit",
+          "browser": "webkit",
+          "files": ["transcript-surface.spec.ts"]
+        }
+      ]
+    },
+    {
       "id": "arc-controls",
       "config": "tests/browser/shared-ui/playwright.arc-controls.config.ts",
       "files": ["arc-controls.spec.ts"],
@@ -1830,6 +1854,11 @@
       "config": "tests/browser/chat/edit-from-here.playwright.config.ts",
       "files": ["edit-from-here.spec.ts"],
       "browsers": ["chromium"]
+    },
+    {
+      "config": "tests/browser/chat/playwright.transcript-surface.config.ts",
+      "files": ["transcript-surface.spec.ts"],
+      "browsers": ["chromium", "webkit"]
     },
     {
       "config": "tests/browser/shared-ui/playwright.arc-controls.config.ts",

@@ -697,7 +697,12 @@ describe("settings pages", () => {
     expect(localStorage.getItem("bycoda.themeHue")).toBe("205");
     expect(localStorage.getItem("bycoda.accentColor")).toBe("#65b4db");
     expect(ocean.getAttribute("aria-checked")).toBe("true");
-    expect(container.querySelector(".appearance-settings details")).toBeNull();
+    // The Transcript preview shows a sample step row; no setting itself is a collapsed section.
+    expect(
+      Array.from(container.querySelectorAll(".appearance-settings details")).filter(
+        (node) => !node.closest("[data-transcript-preview]"),
+      ),
+    ).toHaveLength(0);
     // The tone field is shown directly on the Theme tab, so its settings are always reachable.
     expect(container.querySelector('[data-setting-id="dark-lightness"]')).not.toBeNull();
   });

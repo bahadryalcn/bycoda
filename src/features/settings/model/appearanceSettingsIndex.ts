@@ -50,6 +50,11 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
         () => t("Message actions"),
         "transcript copy actions hover always eylem kopyala",
       ],
+      [
+        "transcript-backdrop",
+        () => t("Backdrop"),
+        "transcript chat background image backdrop arka plan görsel",
+      ],
     ] as const
   ).map(([id, label, keywords]) => ({
     id,

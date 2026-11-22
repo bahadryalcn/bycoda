@@ -172,7 +172,10 @@ it("keeps recovery inside Crew management's modal even when a shared notice prov
             createElement(CrewManagementDialog, {
               key: "dialog",
               cwd,
-              state: { ...(error ? visibleFailure(error) : { error }), refetch } as CrewState,
+              state: {
+                ...(error ? visibleFailure(error) : { error }),
+                refetch,
+              } as unknown as CrewState,
               onClose: vi.fn(),
             }),
           ],

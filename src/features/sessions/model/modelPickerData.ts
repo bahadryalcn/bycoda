@@ -5,7 +5,6 @@ import {
   type ModelPickerTab,
 } from "./models";
 import type { HarnessId } from "./session";
-import { t } from "../../../shared/i18n";
 import { decodeSubagents } from "../../../shared/model/host-contracts/delegation";
 import { offeredDelegationSetting } from "./claudeAdvisor";
 import {
@@ -198,7 +197,7 @@ export function pillSettings(model: AgentModel): ModelSetting[] {
 
 /** One display name per setting meaning, whatever label the provider catalog uses. */
 export function settingLabel(setting: ModelSetting): string {
-  return REASONING_IDS.has(setting.id) ? t("Reasoning") : setting.label;
+  return REASONING_IDS.has(setting.id) ? "Reasoning" : setting.label;
 }
 
 export function settingValue(setting: ModelSetting, values: Record<string, string>): string {

@@ -76,8 +76,7 @@ export function TranscriptViewGroup({
     />
   );
   const percent = (value: number) => formatNumber(value / 100, { style: "percent" });
-  const pixels = (value: number) =>
-    formatNumber(value, { style: "unit", unit: "pixel", unitDisplay: "narrow" });
+  const pixels = (value: number) => `${value}px`;
   const offReason = t("Turn on a reading surface first");
   return (
     <Group title={t("Transcript view")}>

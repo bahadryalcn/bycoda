@@ -240,8 +240,13 @@ for (const theme of ["light", "dark"]) {
       const group = await openVoice(page, "missing", theme, width);
       await expect(group.getByText("Voice setup is needed", { exact: true })).toBeVisible();
       await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
-      const locate = group.getByRole("button", { name: "Locate existing", exact: true });
-      await expect(locate).toBeVisible();
+      const more = group.getByRole("button", { name: "More voice setup actions", exact: true });
+      await expect(more).toBeVisible();
+      await more.click();
+      await expect(
+        page.getByRole("menuitem", { name: "Locate existing", exact: true }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
       await expect(group).not.toContainText("faster-whisper");
       await expect(group).not.toContainText("pip install");
       await expect(group).not.toContainText("Missing:");
@@ -260,7 +265,8 @@ for (const theme of ["light", "dark"]) {
       await status.screenshot({
         path: join(recoveryCaptures, `voice-missing-${theme}-${width}.png`),
       });
-      await locate.click();
+      await more.click();
+      await page.getByRole("menuitem", { name: "Locate existing", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Locate voice files", exact: true });
       await expect(dialog.getByRole("button", { name: "Automatic detection" })).toBeVisible();
       await dialog.screenshot({
@@ -335,9 +341,10 @@ test("voice locations are optional, keyboard accessible and return focus", async
   const group = await openVoice(page, "missing", "dark", 390);
   await group.getByRole("button", { name: /^Reply voice:/ }).click();
   await page.getByRole("option", { name: "High quality (VoxCPM2)", exact: true }).click();
-  const locate = group.getByRole("button", { name: "Locate existing", exact: true });
-  await locate.focus();
+  const more = group.getByRole("button", { name: "More voice setup actions", exact: true });
+  await more.focus();
   await page.keyboard.press("Enter");
+  await page.getByRole("menuitem", { name: "Locate existing", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Locate voice files", exact: true });
   await expect(dialog).toBeVisible();
   await expect(
@@ -358,7 +365,7 @@ test("voice locations are optional, keyboard accessible and return focus", async
   await dialog.screenshot({ path: join(captures, "voice-locate-dark-390.png") });
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  await expect(locate).toBeFocused();
+  await expect(more).toBeFocused();
 });
 
 test("connection failure offers a retry instead of installation instructions", async ({ page }) => {
@@ -394,7 +401,12 @@ test("Turkish voice setup keeps the same simple actions at a narrow width", asyn
     group.getByText("Sesli konuşma için kurulum gerekli", { exact: true }),
   ).toBeVisible();
   await expect(group.getByRole("button", { name: "Kur", exact: true })).toBeVisible();
-  await expect(group.getByRole("button", { name: "Yerini göster", exact: true })).toBeVisible();
+  await expect(
+    group.getByRole("button", { name: "Diğer ses kurulumu eylemleri", exact: true }),
+  ).toBeVisible();
+  await group.getByRole("button", { name: "Diğer ses kurulumu eylemleri", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Yerini göster", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(group).not.toContainText("faster-whisper");
   await expect(group).not.toContainText("pip install");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

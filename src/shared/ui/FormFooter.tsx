@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { t } from "../i18n";
+import { useT } from "../i18n";
 import { Button } from "./Button";
 import { InlineError } from "./InlineError";
 import { ModalActions } from "./Modal";
@@ -33,6 +33,7 @@ export function useFormFooter({
   onSave,
   onCancel,
 }: FormFooterOptions): { footer: ReactNode } {
+  const t = useT();
   const reason = error ? undefined : blockedReason;
   return {
     footer: (

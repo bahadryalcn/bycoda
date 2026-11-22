@@ -2,6 +2,18 @@ import { test, expect, type Page, type Locator } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
+// A create or edit form sits beside its footer (Cancel, Add) inside one dialog, so the dialog
+// holding the form is the scope that reaches both the fields and the footer actions.
+const formDialog = (page: Page, name: string) =>
+  page.getByRole("dialog").filter({ has: page.getByRole("form", { name, exact: true }) });
+
+// The final acceptance label and its status are two texts in one row.
+const finalAcceptance = (page: Page, status: string) =>
+  page
+    .getByText("Final epic acceptance", { exact: true })
+    .locator("xpath=..")
+    .getByText(status, { exact: true });
+
 type HostCall = {
   command: string;
   args: {
@@ -393,9 +405,7 @@ for (const width of [1280, 800])
         expect(
           await label.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
         ).toBe(true);
-        const status = page
-          .locator(".goal-card-meta")
-          .getByText("(offline, last known)", { exact: false });
+        const status = page.locator(".goal-card-meta").getByText("Offline", { exact: true });
         await expect(status).toBeVisible();
         expect(
           await status.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
@@ -415,7 +425,7 @@ for (const width of [1280, 800])
         ).toBe(true);
         await page.getByRole("radio", { name: "Demo data", exact: true }).click();
         await expect(page.getByText("Daily agent time", { exact: true })).toBeVisible();
-        await expect(page.locator(".goal-card-meta")).not.toContainText("offline");
+        await expect(page.locator(".goal-card-meta")).not.toContainText("Offline");
       });
     }
 for (const width of [1280, 800])
@@ -473,10 +483,7 @@ for (const width of [1280, 800])
       await mkdir("temp/verification/s5", { recursive: true });
       for (const kind of ["task", "goal"] as const) {
         await openCreate(page, kind);
-        const form = page.getByRole("form", {
-          name: `New ${kind === "goal" ? "epic" : "task"}`,
-          exact: true,
-        });
+        const form = formDialog(page, `New ${kind === "goal" ? "epic" : "task"}`);
         if (kind === "task")
           await form.locator("details.task-form-agent-disclosure > summary").click();
         const preference = form.getByRole("checkbox", { name: /^Merge automatically/ });
@@ -491,7 +498,7 @@ for (const width of [1280, 800])
       }
       await openGoals(page);
       await page.getByRole("button", { name: "Edit epic settings", exact: true }).click();
-      const settings = page.getByRole("form", { name: "Edit epic settings", exact: true });
+      const settings = formDialog(page, "Edit epic settings");
       await expect(settings).toContainText("Delivery requires approval");
       const existing = settings.getByRole("checkbox", { name: /^Merge automatically/ });
       await expect(existing).toBeChecked();
@@ -891,7 +898,7 @@ for (const { width, theme } of [
     expect(JSON.parse(String(input.prompt)).objective).toBe(objective);
     await openTasks(page, page.url());
     await openCreate(page, "task");
-    const reopened = page.getByRole("form", { name: "New task", exact: true });
+    const reopened = formDialog(page, "New task");
     await openAdvanced(reopened);
     await reopened
       .locator("summary")
@@ -1043,7 +1050,7 @@ test("editing a saved custom reviewer can restore the worker profile", async ({
   await openTasks(page, `${fixture}?boardControls&harness&customReviewer`);
   const card = page.getByRole("article", { name: "First queued task", exact: true });
   await taskMenuAction(page, card, "Edit");
-  const form = page.getByRole("form", { name: "Edit task", exact: true });
+  const form = formDialog(page, "Edit task");
   await form.locator("details.task-form-agent-disclosure > summary").click();
   const reviewer = form.locator("details.task-form-reviewer");
   await reviewer.locator("summary").click();
@@ -1097,9 +1104,7 @@ for (const state of ["finalPending", "finalFailure"] as const) {
         theme,
       );
       await expect(
-        page.getByText(`Final epic acceptance: ${state === "finalFailure" ? "Failed" : "Queued"}`, {
-          exact: true,
-        }),
+        finalAcceptance(page, state === "finalFailure" ? "Failed" : "Queued"),
       ).toBeVisible();
       if (state === "finalFailure") {
         await mkdir(harnessCaptures, { recursive: true });
@@ -1113,9 +1118,7 @@ for (const state of ["finalPending", "finalFailure"] as const) {
         const recheck = page.getByRole("button", { name: "Recheck final acceptance", exact: true });
         await recheck.focus();
         await page.keyboard.press("Enter");
-        await expect(
-          page.getByText("Final epic acceptance: Queued", { exact: true }),
-        ).toBeVisible();
+        await expect(finalAcceptance(page, "Queued")).toBeVisible();
         expect(
           await page.evaluate(
             () =>
@@ -1306,7 +1309,7 @@ for (const width of [390, 768, 1440]) {
       );
       const edit = page.getByRole("button", { name: "Edit epic settings", exact: true });
       await edit.click();
-      const form = page.getByRole("form", { name: "Edit epic settings", exact: true });
+      const form = formDialog(page, "Edit epic settings");
       await expect(form).toBeVisible();
       await expect(form).toContainText("Applies to existing unfinished tasks.");
       const merge = form.getByRole("checkbox", { name: /^Merge automatically/ });
@@ -1497,7 +1500,7 @@ test("a goal lists its created session links", async ({ page }) => {
     .click();
   const dialog = page.getByRole("dialog", { name: "Task sessions", exact: true });
   await expect(dialog).toContainText("Session will appear when this task starts.");
-  await dialog.getByRole("button", { name: "Open worker session", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Open worker session/ }).click();
   await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
   await expect
     .poll(() =>
@@ -1555,7 +1558,7 @@ async function start(page: Page, kind: "task" | "goal", query = "") {
   await openTasks(page, fixture + query);
   await expect(page.getByRole("region", { name: "Tasks", exact: true })).toBeVisible();
   await openCreate(page, kind);
-  return page.getByRole("form", { name: `New ${kind === "goal" ? "epic" : "task"}`, exact: true });
+  return formDialog(page, `New ${kind === "goal" ? "epic" : "task"}`);
 }
 async function fillTask(form: Locator) {
   await form
@@ -1732,10 +1735,7 @@ test("task and goal controls stay inside a narrow viewport", async ({ page }, te
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
       }
       await openCreate(page, kind);
-      const form = page.getByRole("form", {
-        name: `New ${kind === "goal" ? "epic" : "task"}`,
-        exact: true,
-      });
+      const form = formDialog(page, `New ${kind === "goal" ? "epic" : "task"}`);
       await expect(machine(form)).toBeVisible();
       const title = form.getByRole("textbox", {
         name: kind === "task" ? "Task title" : "Epic title",
@@ -1868,7 +1868,7 @@ for (const method of ["environment.describe", "goals.list"]) {
       ),
     ).toBe(false);
     await page.getByRole("button", { name: "New task", exact: true }).click();
-    const form = page.getByRole("form", { name: "New task", exact: true });
+    const form = formDialog(page, "New task");
     await expect(machine(form)).toHaveAccessibleName("Machine: This computer");
     await fillTask(form);
     await form.getByRole("button", { name: "Add to To do", exact: true }).click();
@@ -1961,13 +1961,11 @@ test("task worker, running reviewer and retained attempts navigate to their own 
       "aria-expanded",
       "false",
     );
-    await expect(
-      history.getByRole("button", { name: "Open worker session", exact: true }),
-    ).toBeVisible();
+    await expect(history.getByRole("button", { name: /^Open worker session/ })).toBeVisible();
     await expect(
       history.getByRole("button", { name: "Open review session", exact: true }),
     ).toBeVisible();
-    await history.getByRole("button", { name: "Open worker session", exact: true }).click();
+    await history.getByRole("button", { name: /^Open worker session/ }).click();
     await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
     await history.getByRole("button", { name: "Open review session", exact: true }).click();
     await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
@@ -2248,9 +2246,7 @@ for (const width of [800, 1280])
       await expect(rows).toHaveCount(3);
       await expect(rows.first()).toHaveCSS("border-bottom-width", "1px");
       await expect(rows.last()).toHaveCSS("border-bottom-width", "0px");
-      await expect(
-        dialog.getByRole("button", { name: "Open worker session", exact: true }),
-      ).toBeVisible();
+      await expect(dialog.getByRole("button", { name: /^Open worker session/ })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/task-surfaces/goal-sessions-${theme}-${width}.png`,
       });

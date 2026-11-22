@@ -33,7 +33,7 @@
   background-image:
     radial-gradient(
       circle at 20% 25%,
-      color-mix(in srgb, var(--color-accent) 70%, transparent),
+      color-mix(in srgb, var(--accent) 70%, transparent),
       transparent 55%
     ),
     radial-gradient(
@@ -56,7 +56,7 @@
 
 .bubble {
   justify-self: end;
-  padding: var(--space-1-5) var(--space-3);
+  padding: var(--space-2) var(--space-3);
   max-inline-size: 70%;
 }
 
@@ -71,13 +71,13 @@
 
 .code {
   margin: 0;
-  padding: var(--space-1-5) var(--space-2);
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--transcript-inset-border);
   border-radius: var(--ui-radius-control);
   background: var(--transcript-card-fill);
   color: var(--transcript-ink-body);
   font-family: var(--font-mono);
-  font-size: var(--text-caption);
+  font-size: var(--text-ui-caption);
   overflow: hidden;
 }
 
@@ -85,7 +85,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding-inline: var(--space-1-5);
+  padding-inline: var(--space-2);
   border-radius: var(--ui-radius-control);
   background: var(--transcript-card-fill);
   font-family: var(--font-mono);

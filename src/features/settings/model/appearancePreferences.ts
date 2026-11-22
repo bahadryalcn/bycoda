@@ -59,7 +59,7 @@ export const APPEARANCE_DEFAULTS = {
   chatWidth: "comfortable",
   userMessageOpacity: 42,
   transcriptSurface: "reply",
-  transcriptSurfaceOpacity: 45,
+  transcriptSurfaceOpacity: 90,
   transcriptSurfaceBlur: 0,
   transcriptBodyInk: 92,
   transcriptChromeInk: 76,

@@ -242,10 +242,10 @@ test("uses the full settings width, distinguishes views and follows configured a
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/usage/usage-budgets.html?page=1&analytics=1");
   await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
-  // Usage uses the shared 80rem Settings column (1280px including its inline padding).
+  // Usage uses the shared 60rem Settings column (960px including its inline padding).
   const analyticsWidth = (await page.locator(".usage-analytics").boundingBox())!.width;
-  expect(analyticsWidth).toBeGreaterThan(900);
-  expect(analyticsWidth).toBeLessThanOrEqual(1280);
+  expect(analyticsWidth).toBeGreaterThan(800);
+  expect(analyticsWidth).toBeLessThanOrEqual(960);
   const colors = () =>
     page
       .locator('[data-usage-chart="trend"]')

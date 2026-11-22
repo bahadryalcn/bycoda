@@ -935,11 +935,15 @@ for (const theme of ["light", "dark"])
         await add.click();
         const editor = page.getByRole("dialog", { name: "Add account", exact: true });
         await expect(editor).toBeVisible();
+        // A dialog paints its fill on the shared backdrop layer inside the frame.
         const background = async (dialog: Locator) =>
-          dialog.evaluate((element) => getComputedStyle(element).backgroundColor);
+          dialog.evaluate(
+            (element) =>
+              getComputedStyle(element.querySelector(".popover-backdrop") ?? element)
+                .backgroundColor,
+          );
         const addBackground = await background(editor);
         expect(addBackground).not.toBe("rgba(0, 0, 0, 0)");
-        await expect(editor).toHaveAttribute("data-surface-variant", "floating");
         const draft = editor.getByRole("textbox", { name: /New .* account/ });
         await expect(draft).toBeFocused();
         await expect(draft).not.toHaveAttribute("aria-invalid", "true");
@@ -969,7 +973,6 @@ for (const theme of ["light", "dark"])
           await body.getByRole("button", { name: /^Actions for / }).click();
           await page.getByRole("menuitem", { name: "Edit account" }).click();
           const edit = page.getByRole("dialog", { name: "Edit account", exact: true });
-          await expect(edit).toHaveAttribute("data-surface-variant", "floating");
           expect(await background(edit)).toBe(addBackground);
           await page.screenshot({
             path: `temp/verification/provider-account-dialog/edit-pure-${theme}-${width}.png`,

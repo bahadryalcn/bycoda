@@ -68,7 +68,7 @@ for (const theme of ["light", "dark"])
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      await page.getByRole("button", { name: /^Show output for/ }).click();
+      await page.locator('summary[aria-label^="Show output for"]').click();
       const wrap = page.getByRole("button", { name: "Wrap lines" });
       await expect(wrap).toBeVisible();
       if ((await wrap.getAttribute("aria-pressed")) !== "true") await wrap.click();
@@ -121,7 +121,7 @@ for (const theme of ["light", "dark"])
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      await page.getByRole("button", { name: /^Show output for/ }).click();
+      await page.locator('summary[aria-label^="Show output for"]').click();
       const output = page.locator("[data-tool-inspection] pre[tabindex='0']").last();
       await expect(output).toContainText("output-marker");
       await page.keyboard.press("Tab");
@@ -401,7 +401,7 @@ test("chat messages, attachment references and running work keep a readable hier
   await page.setViewportSize({ width: 390, height: 900 });
   // Trail rows keep one line height; a long command ends in an ellipsis inside its row
   // while the row's accessible name keeps the full command.
-  const row = group.getByLabel(/^Tool call: .*very-long-command-path-0\.tsx$/).first();
+  const row = group.locator(`summary[aria-label$="very-long-command-path-0.tsx"]`).first();
   const command = row.getByText(/very-long-command-path-0\.tsx/).first();
   await expect(command).toContainText("very-long-command-path-0.tsx");
   expect(
@@ -439,7 +439,7 @@ test("clipped transcript commands stay inline on hover", async ({ page }, info) 
   await page.goto("/tests/browser/chat/transcript.html?chat-layout");
   const group = page.locator(".transcript-activity-group").last();
   await group.getByRole("button", { name: "Show more", exact: true }).click();
-  const row = group.getByLabel(/^Tool call: .*very-long-command-path-0\.tsx$/).first();
+  const row = group.locator(`summary[aria-label$="very-long-command-path-0.tsx"]`).first();
   const command = row.getByText(/very-long-command-path-0\.tsx/).first();
   await expect(command).toBeVisible();
   expect(await command.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
@@ -468,11 +468,11 @@ test("chat code and command results remain compact until explicitly opened", asy
     waitUntil: "domcontentloaded",
   });
   await expect(page.locator("[data-tool-inspection]")).toHaveCount(0);
-  await page.getByRole("button", { name: /^Show changes for/ }).click();
+  await page.locator('summary[aria-label^="Show changes for"]').click();
   const code = page.locator("[data-tool-inspection]").first();
   await expect(code).toContainText("saved-code-marker");
   await expect(code.locator("pre")).toHaveCSS("user-select", "text");
-  await page.getByRole("button", { name: /^Show output for/ }).click();
+  await page.locator('summary[aria-label^="Show output for"]').click();
   await expect(page.locator("[data-tool-inspection]").last()).toContainText("output-marker");
   await page.setViewportSize({ width: 420, height: 800 });
   await expect(code).toBeVisible();
@@ -510,8 +510,9 @@ test("chat code and command results remain compact until explicitly opened", asy
       }),
     )
     .toBe(true);
-  await expect(page.getByRole("button", { name: /^Hide output for/ }).first()).toBeInViewport({
-    ratio: 1,
+  await expect(page.locator('summary[aria-label^="Hide output for"]').first()).toBeInViewport({
+    // The summary row carries a 6px hover overhang that the viewport edge may clip by a pixel.
+    ratio: 0.95,
   });
   const box = await code.boundingBox();
   expect(box!.x + box!.width).toBeLessThanOrEqual(420);
@@ -519,11 +520,8 @@ test("chat code and command results remain compact until explicitly opened", asy
     true,
   );
   await page.screenshot({ path: info.outputPath("chat-code-details.png") });
-  await page
-    .getByRole("button", { name: /^Hide output for/ })
-    .first()
-    .click();
-  await page.getByRole("button", { name: /^Hide output for/ }).click();
+  await page.locator('summary[aria-label^="Hide output for"]').first().click();
+  await page.locator('summary[aria-label^="Hide output for"]').click();
   await expect(page.locator("[data-tool-inspection]")).toHaveCount(0);
   await expect
     .poll(() => page.locator(".zen-phase-live").evaluate((node) => node.clientHeight))

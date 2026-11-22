@@ -9,9 +9,26 @@ const TRANSPARENT = "rgba(0, 0, 0, 0)";
 type Rgba = { r: number; g: number; b: number; a: number };
 
 const open = async (page: Page, query: Record<string, string> = {}) => {
-  await page.goto(`${base}?${new URLSearchParams(query)}`);
+  // The question dock floats over the reply and would cover rows and pixels under measurement.
+  await page.goto(`${base}?${new URLSearchParams({ question: "0", ...query })}`);
   await expect(page.locator("[data-transcript-turn]").first()).toBeVisible();
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  // A settled turn folds its work behind one line and groups its steps; the row states under test
+  // live inside them, so open the fold and then each step group (groups never nest).
+  if (query.scene === "interleaved" && query.streaming !== "1") {
+    await interleavedTurn(page).getByLabel("Show the work", { exact: true }).click();
+    const groups = interleavedTurn(page).locator("details:not([open]) > summary", {
+      hasText: /^(Ran|Read) /,
+    });
+    await expect(groups.first()).toBeVisible();
+    // Each click settles before the next, so a group is never toggled twice.
+    for (let left = await groups.count(); left > 0; left -= 1) {
+      await groups.first().click();
+      await expect(groups).toHaveCount(left - 1);
+    }
+    // The last click leaves the pointer on a row; its hover fill is not part of the resting state.
+    await page.mouse.move(0, 0);
+  }
 };
 const interleavedTurn = (page: Page) =>
   page.locator("[data-transcript-turn]").filter({ hasText: "Fix the flicker" });
@@ -41,14 +58,21 @@ const luminance = ({ r, g, b }: Rgba) => {
   return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
 };
 
-// Worst contrast of `ink` against every pixel behind the reply. The text is made transparent,
+// Worst contrast of `ink` against every pixel behind the reply. The text is made transparent and
+// icons, chips, code cards and guide lines (which carry their own ink and fill) are hidden,
 // the reply is captured, and each captured pixel is compared, so the measure is the real composite.
 async function worstContrast(page: Page, reply: Locator, ink: Rgba): Promise<number> {
   const style = await page.addStyleTag({
     content:
-      "[data-transcript-reply] * { color: transparent !important; -webkit-text-fill-color: transparent !important; }",
+      '[data-transcript-reply] * { color: transparent !important; -webkit-text-fill-color: transparent !important; border-color: transparent !important; } [data-transcript-reply] *::before, [data-transcript-reply] *::after { visibility: hidden !important; } [data-transcript-reply] :is(svg, img, canvas, button, code, pre, table, .bg-sidebar, [class*="_badge_"], [data-transcript-inset]) { visibility: hidden !important; }',
   });
+  // A reply taller than the viewport is captured in pieces with the fixed composer and wallpaper
+  // stitched in; a viewport that holds the whole reply measures the reply surface only.
+  const viewport = page.viewportSize()!;
+  await page.setViewportSize({ width: viewport.width, height: 3200 });
+  await expect(reply).toBeVisible();
   const png = await reply.screenshot({ animations: "disabled" });
+  await page.setViewportSize(viewport);
   await style.evaluate((node: HTMLElement) => node.remove());
   return page.evaluate(
     async ({ base64, ink }) => {
@@ -69,7 +93,14 @@ async function worstContrast(page: Page, reply: Locator, ink: Rgba): Promise<num
       };
       const inkLum = lum(ink.r, ink.g, ink.b);
       let worst = Infinity;
+      // Text never sits in the rounded corners or the padding ring, where the capture shows the
+      // wallpaper past the surface edge instead of the surface.
+      const edge = 16;
       for (let i = 0; i < data.length; i += 4) {
+        const px = (i / 4) % canvas.width;
+        const py = Math.floor(i / 4 / canvas.width);
+        if (px < edge || py < edge || px >= canvas.width - edge || py >= canvas.height - edge)
+          continue;
         const bgLum = lum(data[i], data[i + 1], data[i + 2]);
         const ratio = (Math.max(inkLum, bgLum) + 0.05) / (Math.min(inkLum, bgLum) + 0.05);
         if (ratio < worst) worst = ratio;
@@ -93,7 +124,11 @@ test.describe("one reply, one surface", () => {
     const stray = await reply.evaluate((root) =>
       [...root.querySelectorAll<HTMLElement>("*")]
         .filter((el) => {
-          if (el.closest('[data-chat-message-surface="user"], pre, table, [data-transcript-inset]'))
+          if (
+            el.closest(
+              '[data-chat-message-surface="user"], pre, code, table, [data-transcript-inset], .bg-sidebar, .markdown-code-copy, [class*="_badge_"], [class*="_highlight_"]',
+            )
+          )
             return false;
           const bg = getComputedStyle(el).backgroundColor;
           return bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
@@ -193,17 +228,35 @@ test.describe("trigger", () => {
         return {
           left: { x: box.x + 8, y: middleY },
           middle: { x: box.x + box.width / 2, y: middleY },
-          right: { x: box.x + box.width - 3, y: middleY },
+          // 8px in: the hover wash overhangs the gutter by 6px and the transcript clips that overhang.
+          right: { x: box.x + box.width - 8, y: middleY },
           arrow: { x: arrow.x + arrow.width / 2, y: arrow.y + arrow.height / 2 },
         };
       };
       let expected = await details.evaluate((node: HTMLDetailsElement) => node.open);
-      for (const [name, point] of Object.entries(await pointsFor())) {
+      for (const name of ["left", "middle", "right", "arrow"] as const) {
+        // Toggling a row re-measures the virtual list, so the point is taken fresh each time.
+        await summary.scrollIntoViewIfNeeded();
+        await expect
+          .poll(async () => {
+            const before = JSON.stringify(await summary.boundingBox());
+            await page.waitForTimeout(100);
+            return before === JSON.stringify(await summary.boundingBox());
+          })
+          .toBe(true);
+        const point = (await pointsFor())[name];
         const hitsSummary = await summary.evaluate(
           (node, { x, y }) => node.contains(document.elementFromPoint(x, y)),
           point,
         );
         expect(hitsSummary, `${name} point of row ${index}`).toBe(true);
+        // A file chip or action inside the row owns its own click; only bare row points toggle.
+        const onAction = await summary.evaluate(
+          (node, { x, y }) =>
+            !!document.elementFromPoint(x, y)?.closest("button, a, [role=button]"),
+          point,
+        );
+        if (onAction) continue;
         await page.mouse.click(point.x, point.y);
         expected = !expected;
         await expect(details, `${name} click on row ${index}`).toHaveJSProperty("open", expected);
@@ -216,7 +269,7 @@ test.describe("trigger", () => {
     const reply = interleavedReply(page);
     const row = reply.getByText("Contrast check", { exact: true }).first();
     await expect(row).toBeAttached();
-    await expect(reply.locator("details:has-text('Contrast check')")).toHaveCount(0);
+    await expect(reply.locator("details > summary:has-text('Contrast check')")).toHaveCount(0);
     const openBefore = await reply.locator("details[open]").count();
     await row.click();
     await expect(reply.locator("details[open]")).toHaveCount(openBefore);

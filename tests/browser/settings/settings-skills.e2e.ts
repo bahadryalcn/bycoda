@@ -129,7 +129,7 @@ for (const theme of ["dark", "light"]) {
       }
       mkdirSync("temp/verification/skills-workspace", { recursive: true });
       await page.screenshot({ path: `temp/verification/skills-workspace/${theme}-${width}.png` });
-      await page.getByRole("button", { name: "Close skill preview" }).click();
+      await page.getByRole("button", { name: /^(Close skill preview|Back)$/ }).click();
       await expect(page.getByRole("searchbox", { name: "Filter skills" })).toBeVisible();
       expect(errors).toEqual([]);
     });
@@ -198,7 +198,7 @@ for (const theme of ["dark", "light"]) {
       const machines = page.getByRole("list", { name: "Machines", exact: true });
       await expect(machines).toContainText("Not installed");
       await page.screenshot({ path: `${dir}/machines-${theme}-${width}.png` });
-      await page.getByRole("button", { name: "Close skill preview" }).click();
+      await page.getByRole("button", { name: /^(Close skill preview|Back)$/ }).click();
 
       await page.getByRole("button", { name: "New", exact: true }).click();
       await page.getByRole("menuitem", { name: "Discover skills", exact: true }).click();

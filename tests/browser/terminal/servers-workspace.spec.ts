@@ -68,7 +68,7 @@ for (const theme of ["light", "dark"]) {
       await details.getByRole("button", { name: "Cancel", exact: true }).click();
       await details.getByRole("tab", { name: "Organization", exact: true }).click();
       await details.getByRole("button", { name: "SSH group settings", exact: true }).click();
-      const group = page.getByRole("dialog", { name: "SSH group settings", exact: true });
+      const group = page.getByRole("dialog", { name: /^SSH group settings/ });
       await group.getByRole("button", { name: "Edit group", exact: true }).click();
       const defaults = group.locator('[aria-label="Group defaults"]');
       await defaults.scrollIntoViewIfNeeded();
@@ -95,7 +95,7 @@ for (const theme of ["light", "dark"]) {
       const settings = page.getByRole("dialog", { name: "SSH settings", exact: true });
       await expect(settings.getByText("id_ed25519_work", { exact: true })).toBeVisible();
       await capture("ssh-keys");
-      await settings.getByRole("tab", { name: "Known hosts", exact: true }).click();
+      await settings.getByRole("tab", { name: /^Known hosts/ }).click();
       await expect(settings.getByText("deploy.example.invalid", { exact: true })).toBeVisible();
       await capture("known-hosts");
       await settings
@@ -185,14 +185,16 @@ for (const theme of ["light", "dark"]) {
       await details.getByRole("spinbutton", { name: "Local port", exact: true }).fill("8088");
       await nav.getByRole("tab", { name: "Automation", exact: true }).click();
       const commands = details.getByRole("region", { name: "Saved SSH commands", exact: true });
-      await commands.getByRole("textbox", { name: "Name", exact: true }).fill("Unfinished command");
+      await commands
+        .getByRole("textbox", { name: "Name (optional)", exact: true })
+        .fill("Unfinished command");
       await commands.getByRole("textbox", { name: "Command preview", exact: true }).fill("pwd");
       await nav.getByRole("tab", { name: "Organization", exact: true }).click();
       await details.getByRole("combobox", { name: "Group", exact: true }).fill("Unfinished group");
       await nav.getByRole("tab", { name: "Automation", exact: true }).click();
-      await expect(commands.getByRole("textbox", { name: "Name", exact: true })).toHaveValue(
-        "Unfinished command",
-      );
+      await expect(
+        commands.getByRole("textbox", { name: "Name (optional)", exact: true }),
+      ).toHaveValue("Unfinished command");
       await page.screenshot({ path: `${folder}/commands-${theme}-${width}.png` });
       await nav.getByRole("tab", { name: "Port forwarding", exact: true }).click();
       await expect(

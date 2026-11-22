@@ -601,14 +601,19 @@ for (const theme of ["light", "dark"])
       await chip.click();
       const dialog = page.getByRole("dialog");
       await expect(dialog).toBeVisible();
-      const colors = await dialog.evaluate((node) => {
+      const colors = await dialog.evaluate((node, light) => {
         const probe = document.createElement("span");
         node.appendChild(probe);
-        probe.style.background = "var(--ui-surface-floating)";
+        // The shared backdrop is the opaque floating surface in light and 95% of it in dark.
+        probe.style.background = light
+          ? "var(--ui-surface-floating)"
+          : "color-mix(in srgb, var(--ui-surface-floating) 95%, transparent)";
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();
-        return { actual: getComputedStyle(node).backgroundColor, expected };
-      });
+        // The dialog paints its floating surface on the shared backdrop layer inside the frame.
+        const surface = node.querySelector(".popover-backdrop") ?? node;
+        return { actual: getComputedStyle(surface).backgroundColor, expected };
+      }, theme === "light");
       expect(colors.actual).toBe(colors.expected);
       await page.screenshot({
         animations: "disabled",

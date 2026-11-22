@@ -194,7 +194,7 @@ export function SignupAccountDialog({
           ) : null}
           {live ? (
             <Button
-              variant="primary"
+              variant="secondary"
               loading={is("advance")}
               onClick={advance}
               disabled={advanceGate.disabled}
@@ -204,7 +204,7 @@ export function SignupAccountDialog({
             </Button>
           ) : null}
           {workflow?.status === "window_closed" && accountId ? (
-            <Button variant="primary" onClick={() => onCreated(accountId)}>
+            <Button variant="secondary" onClick={() => onCreated(accountId)}>
               {t("Continue to sign-in")}
             </Button>
           ) : null}

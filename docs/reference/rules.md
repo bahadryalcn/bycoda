@@ -58,12 +58,16 @@ fall. Suppress one line only, always with a reason.
   - The React Compiler compiles the components and hooks of this folder and memoizes values, callbacks and components itself. Drop `useMemo`, `useCallback`, `memo()` and the `"use memo"` directive here: compute the value in render and pass plain functions. If the compiler skips this function (a `[react-compiler]` build warning names it), fix what it cannot prove safe, or keep the hook with `// oxlint-disable-next-line bycoda/compiler-owns-memo -- <why the compiler cannot memoize this>` on the line above.
 - `bycoda/compiler-stays-on` (`src/**`)
   - `"use no memo"` hides code the React Compiler cannot prove safe instead of fixing it. Remove the directive and fix the cause the `[react-compiler]` build warning names (a mutation after render, a ref read in render, state read outside React). The build guard already opts out functions that read state the compiler cannot see. If the opt-out must stay, put `// oxlint-disable-next-line bycoda/compiler-stays-on -- <what the compiler gets wrong here>` on the line above.
+- `bycoda/disabled-needs-reason` (`src/**/*.tsx`)
+  - Explain why this Button is disabled through disabledReason and show the reason beside the control so it stays visible.
 - `bycoda/effect-names-its-sync` (`src/**`)
   - Stop and reconsider before adding this effect. Computable from props or state? Compute it in render. A response to a user action? Do it in that handler. Resetting state when a prop changes? Key the component on that prop. Telling a parent or store that a value changed? Do it where the change happens. Reading a value from outside React? Use `useSyncExternalStore` or a store hook. Loading data? Use the query or store that owns it. An effect is right only when it keeps something outside React in step with this component while mounted: a DOM node, listener, timer, observer, native event, connection or a resource held until unmount. Moving the same logic into a ref or store to dodge this rule is not a fix. If the effect does that, name what it keeps in step on the line above: `// oxlint-disable-next-line bycoda/effect-names-its-sync -- <what it syncs with and why>`.
 - `bycoda/grapheme-safe-truncate` (`src/**, host/**`)
   - `slice(0, n)` cuts UTF-16 code units and can leave half of an emoji; native (Rust) JSON parsing then rejects the string. Use `truncateGraphemes(text, n)` from src/shared/lib/text/truncate.ts for user-visible or IPC-bound text.
 - `bycoda/handled-background-promise` (`host/**, packages/**`)
   - A `void`-discarded promise with no rejection handler becomes an unhandled rejection; the Host logs it through guardUnhandledRejections (host/server/support.ts) and marks the service degraded, and the failed work is silently lost. Append `.catch(...)` that logs or reports (a `.finally()` alone does not handle the rejection), pass a rejection handler as the second `then` argument, or await it inside a try/catch (an async IIFE whose body has a try/catch is fine).
+- `bycoda/no-raw-error-text` (`src/**/*.tsx`)
+  - Show what happened in a translated title and put raw error text in the shared ErrorDetails, or use the existing describe/present error helpers. See K1.
 - `bycoda/safe-timestamp-render` (`src/**, host/**`)
   - `new Date(value).toISOString()` throws a RangeError on an invalid date and takes the whole React tree down. Use `isoTimestamp(value)` from src/shared/lib/time/timestamps.ts, which returns undefined for invalid input.
 - `bycoda/shared-container-appearance` (`src/features/**/*.tsx, src/app/**/*.tsx`)
@@ -75,7 +79,9 @@ fall. Suppress one line only, always with a reason.
 - `bycoda/suppression-has-reason` (`src/**, host/**, packages/**`)
   - A suppression comment needs a reason so the next reader can tell a justified exception from a silenced defect. Append ` -- <why this line is safe>` in the same comment, for example `// oxlint-disable-next-line no-restricted-imports -- scratch file, not read at startup`.
 - `bycoda/transcript-ink-roles` (`src/features/sessions/ui/**/*.tsx`)
-  - Full text ink (`--color-content`) on transcript chrome flattens the hierarchy: commands, chips and icons read as loud as the emphasis they support. Use `--ui-text-secondary` (or `--ui-text-muted` for the resting state) through `text-(--ui-text-secondary)` / `text-(--ui-text-muted)` or the `Text tone="secondary"` prop. Full ink is for emphasis only; if this is emphasis, keep it with `// oxlint-disable-next-line bycoda/transcript-ink-roles -- <what is emphasized>` on the line above.
+  - Transcript text ink must come from the transcript ink roles, not full or global text tokens: `--color-content` flattens the hierarchy (commands, chips and icons read as loud as the emphasis they support), and `--ui-text-secondary` / `--ui-text-muted` do not follow the reading surface. Use `text-(--transcript-ink-emphasis)` for emphasis, `text-(--transcript-ink-body)` for body text, and `text-(--transcript-ink-chrome)` / `text-(--transcript-ink-chrome-active)` for chrome at rest and active. If a full-ink use is real emphasis, keep it with `// oxlint-disable-next-line bycoda/transcript-ink-roles -- <what is emphasized>` on the line above.
+- `bycoda/transcript-row-trigger` (`src/features/sessions/ui/**/*.tsx`)
+  - Transcript rows open and close through `Disclosure variant="step"` (src/shared/ui/Disclosure.tsx), which owns the trigger, `aria-expanded`, the keyboard path and the hit area. A `Button expanded=`, a raw `aria-expanded` element, `InlineAction reveal="interaction"` or an `onClick` on a `div` makes a second trigger that drifts from the step row. Use `<Disclosure variant="step" ...>` instead.
 - `bycoda/translation-slot-names` (`src/**`)
   - Named placeholders such as "{name}" stay on screen as raw text: the translator only fills positional slots. Use positional slots and pass the values by position: t("Add {p0}", { p0: name }).
 - `bycoda/utf8-child-locale` (`src/**, host/**`)
@@ -293,8 +299,12 @@ fall. Suppress one line only, always with a reason.
   - themePalette.hex…/rgb…/hsl…/oklch… literal in feature or app code (use a semantic token: a --color-*/--ui-* CSS role or a semantic themePalette role)
 - `tooltip-repeats-label` (`TSX in src/app, src/features, src/shared (excluding tests)`)
   - tooltip= (or \<Tooltip label>) whose static text equals the visible label of the same control (a hint must add a shortcut, detail or reason; drop it or use tooltipWhen="overflow")
+- `transcript-assistant-surface` (`TSX in src/features/sessions/ui (excluding tests)`)
+  - assistant reading surface marked with data-chat-message-surface="assistant"; mark it with data-transcript-reply (the user bubble keeps data-chat-message-surface="user")
 - `transcript-base-ink` (`src/app, src/features, shared stylesheets`)
-  - transcript text color taken from var(--color-content) (or a color-mix of it); use a --ui-text-* role (later a --transcript-ink-* role) so the reading surface owns its ink
+  - transcript text color taken from var(--color-content) (or a color-mix of it), or a --transcript-ink-* / --transcript-surface-* token defined outside transcript-surface.css; use a --transcript-ink-* role (body, chrome, chrome-active, emphasis) so the reading surface owns its ink, and define the roles only in transcript-surface.css
+- `transcript-reply-fill` (`TSX in src/features/sessions/ui (excluding tests)`)
+  - background fill or backdrop filter on a transcript element that is not the data-transcript-reply surface; the reply surface owns the fill, so the chrome around it stays transparent
 - `typography` (`src/app, src/features, shared stylesheets`)
   - literal font size: text-[Npx|rem], text-xs..xl, text-[length:], CSS font-size px or rem
 - `ui-wrapper-import` (`src/app, src/features, shared stylesheets`)

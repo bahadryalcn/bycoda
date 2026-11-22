@@ -10,10 +10,10 @@ for (const theme of ["light", "dark"]) {
       );
       const appearance = page.locator(".appearance-settings");
       await expect(appearance.locator("details, summary")).toHaveCount(0);
-      // One topic per inner tab (Theme, Background, Interface, Typography, Motion); panels stay mounted.
-      await expect(appearance.locator(".appearance-section")).toHaveCount(5);
+      // One topic per inner tab (Theme, Background, Interface, Typography, Motion, Transcript); panels stay mounted.
+      await expect(appearance.locator(".appearance-section")).toHaveCount(6);
       const topics = appearance.getByRole("tablist", { name: "Görünüm", exact: true });
-      await expect(topics.getByRole("tab")).toHaveCount(5);
+      await expect(topics.getByRole("tab")).toHaveCount(6);
       const openTopic = (name: string) => topics.getByRole("tab", { name, exact: true }).click();
       // The dark-mode depth slider is always visible in the Theme tab, next to hue and saturation.
       for (const id of ["hue", "saturation", "dark-lightness"]) {

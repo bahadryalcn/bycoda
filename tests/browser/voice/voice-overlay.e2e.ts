@@ -327,12 +327,13 @@ for (const theme of ["light", "dark"])
       );
       await expect(panel.getByRole("img", { name: "Voice needs attention" })).toBeVisible();
       const errorMessage = "Voice input cleanup was not confirmed. Start voice again.";
-      await expect(panel.getByText(errorMessage, { exact: true })).toBeVisible();
+      // The failure is one alert: a "Voice needs attention" lead-in, then the reason.
+      await expect(panel.getByRole("alert")).toHaveText(`Voice needs attention: ${errorMessage}`);
       await expect(panel.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-attention.png`) });
       await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
       await panel.getByRole("button", { name: "Voice needs attention", exact: true }).click();
-      await expect(panel.getByText(errorMessage, { exact: true })).toBeVisible();
+      await expect(panel.getByRole("alert")).toContainText(errorMessage);
       await expect(panel.getByRole("button", { name: "Dismiss", exact: true })).toBeVisible();
       await page.screenshot({ path: join(output, `${theme}-${width}-error-details.png`) });
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
@@ -404,7 +405,6 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       const presenceMessage =
         "Current computer presence could not be verified. Mark yourself here before talking.";
-      await expect(panel.getByRole("paragraph").filter({ hasText: presenceMessage })).toBeVisible();
       await expect(panel.getByRole("alert")).toHaveText(presenceMessage);
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(0);
       await panel.screenshot({
@@ -553,10 +553,8 @@ for (const theme of ["light", "dark"])
         (window as any).fixtureVoice.remoteAckLost = true;
         (window as any).fixtureVoice.speech("Read remote status");
       });
-      await expect(
-        panel.getByRole("paragraph").filter({ hasText: "Conversation was not saved. Retry." }),
-      ).toBeVisible();
-      await expect(panel.getByRole("alert")).toHaveText("Conversation was not saved. Retry.");
+      await expect(panel.getByRole("alert")).toBeVisible();
+      await expect(panel.getByRole("alert")).toContainText("Conversation was not saved. Retry.");
       await panel.screenshot({ path: join(output, `${theme}-${width}-remote-pending.png`) });
       await panel.getByRole("button", { name: "Save conversation", exact: true }).click();
       await expect(
@@ -580,10 +578,8 @@ for (const theme of ["light", "dark"])
       await panel.screenshot({ path: join(output, `${theme}-${width}-remote-recovered.png`) });
       await page.evaluate(() => ((window as any).fixtureVoice.remoteAvailable = false));
       await page.evaluate(() => (window as any).fixtureVoice.speech("Keep the next remote turn"));
-      await expect(
-        panel.getByRole("paragraph").filter({ hasText: "Conversation was not saved. Retry." }),
-      ).toBeVisible();
-      await expect(panel.getByRole("alert")).toHaveText("Conversation was not saved. Retry.");
+      await expect(panel.getByRole("alert")).toBeVisible();
+      await expect(panel.getByRole("alert")).toContainText("Conversation was not saved. Retry.");
       await panel.screenshot({ path: join(output, `${theme}-${width}-remote-offline.png`) });
     });
 for (const theme of ["light", "dark"])

@@ -786,7 +786,7 @@ export function scanFile(file, text, definitions) {
 
   // Transcript reading surface: the assistant reply is data-transcript-reply, and only that
   // element fills or blurs; the chrome around it stays transparent.
-  if (/^src\/features\/sessions\/ui\//.test(file)) {
+  if (file.startsWith("src/features/sessions/ui/")) {
     for (const match of source.matchAll(/data-chat-message-surface=["']assistant["']/g))
       add("transcript-assistant-surface", match.index);
     for (const match of source.matchAll(

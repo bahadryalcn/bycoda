@@ -369,6 +369,7 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/DetachedWorkingBar.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/GithubStarPrompt.tsx": {
@@ -384,12 +385,21 @@
       "bycoda/effect-names-its-sync": 4
     },
     "src/app/shell/PiUsage.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/ProjectRail.tsx": {
-      "bycoda/button-pressed-prop": 1,
       "bycoda/compiler-owns-memo": 6,
       "bycoda/effect-names-its-sync": 6
+    },
+    "src/app/shell/RailAction.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/app/shell/RailToolGroup.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/app/shell/RecoveryVerification.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/app/shell/SessionDetailTimes.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -400,8 +410,12 @@
     "src/app/shell/SessionListItem.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/app/shell/SessionRecoveryControl.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/app/shell/SessionRecoveryPanel.tsx": {
       "bycoda/compiler-owns-memo": 2,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/SettingsRail.tsx": {
@@ -409,12 +423,16 @@
     },
     "src/app/shell/Sidebar.tsx": {
       "bycoda/compiler-owns-memo": 15,
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 18,
-      "bycoda/shared-container-appearance": 1,
       "jsx-a11y/no-noninteractive-element-interactions": 1,
       "oxlint/no-restricted-imports": 2
     },
+    "src/app/shell/SidebarAccountFooter.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/app/shell/SidebarUpdate.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/TitleBar.tsx": {
@@ -429,8 +447,11 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/UsageProviderChip.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 2,
+      "bycoda/effect-names-its-sync": 1
+    },
+    "src/app/shell/WorkspaceControls.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/app/shell/sessionListWindow.tsx": {
       "bycoda/compiler-owns-memo": 1,
@@ -447,8 +468,7 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/useProjectMenu.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 2
     },
     "src/app/shell/useRailSections.tsx": {
       "bycoda/effect-names-its-sync": 2
@@ -556,9 +576,6 @@
     },
     "src/app/workspace/layout/WorkspaceMainArea.tsx": {
       "bycoda/effect-names-its-sync": 1
-    },
-    "src/app/workspace/layout/WorkspaceSettingsSurface.tsx": {
-      "bycoda/shared-container-appearance": 1
     },
     "src/app/workspace/layout/useAssistantRoomRequests.ts": {
       "bycoda/effect-names-its-sync": 1
@@ -692,8 +709,11 @@
     "src/features/account/hooks/useAnnouncements.ts": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/account/ui/AccountDevices.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/account/ui/AccountScreen.tsx": {
-      "bycoda/effect-names-its-sync": 2
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/account/ui/StatsConsentNotice.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -732,9 +752,14 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/assistant/ui/AssistantBriefingCard.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/assistant/ui/AssistantNoteEditor.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/assistant/ui/AssistantNotificationRecovery.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/assistant/ui/AssistantNotifications.tsx": {
@@ -750,25 +775,69 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/assistant/ui/AssistantRemoteAccess.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/assistant/ui/AssistantSettings.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
     "src/features/assistant/ui/AssistantSetup.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/assistant/ui/AssistantView.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/assistant/ui/ManualSessionSupervision.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 5
+    },
+    "src/features/assistant/ui/MemoryEditor.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/assistant/ui/builder/AssistantBuilderDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/assistant/ui/builder/AvatarGenerator.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/assistant/ui/builder/BuilderInterview.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/assistant/ui/room/CollectionToolbar.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
+    "src/features/assistant/ui/room/ConversationDraftRecovery.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/assistant/ui/room/ConversationThreadList.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/assistant/ui/room/JobDetailActivity.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/assistant/ui/room/JobDetailDialog.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
+    "src/features/assistant/ui/room/JobDiscussion.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
     "src/features/assistant/ui/room/JobOwnerEditDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/assistant/ui/room/JobReviewDialog.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/assistant/ui/room/JobsTab.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/assistant/ui/room/NotesTab.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/assistant/ui/room/RoomUndoBars.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/assistant/ui/room/useAssistantRoomState.ts": {
       "bycoda/effect-names-its-sync": 8
@@ -784,6 +853,9 @@
     },
     "src/features/assistant/ui/settings/AlwaysOnChecklist.tsx": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/assistant/ui/settings/folders/AssistantFoldersSettings.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/assistant/ui/settings/folders/useAssistantFolders.ts": {
       "bycoda/effect-names-its-sync": 4
@@ -813,10 +885,13 @@
     "src/features/automations/model/workspaceAutomationEvents.ts": {
       "oxlint/no-restricted-properties": 1
     },
+    "src/features/automations/ui/AutomationProposalDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/automations/ui/AutomationsView.tsx": {
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 2,
-      "bycoda/safe-timestamp-render": 1,
-      "bycoda/shared-container-appearance": 3
+      "bycoda/safe-timestamp-render": 1
     },
     "src/features/automations/ui/TriggerEditor.tsx": {
       "bycoda/effect-names-its-sync": 2
@@ -881,98 +956,155 @@
     "src/features/connections/model/useSharedRemoteQueue.ts": {
       "bycoda/effect-names-its-sync": 4
     },
-    "src/features/connections/ui/AccountPairDialog.tsx": {
-      "bycoda/translation-slot-names": 4
-    },
     "src/features/connections/ui/AddRemoteProjectDialog.tsx": {
-      "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-container-appearance": 2
+      "bycoda/disabled-needs-reason": 6,
+      "bycoda/effect-names-its-sync": 3
     },
     "src/features/connections/ui/AdoptedSessionNotice.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/connections/ui/ConnectionsSettings.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/connections/ui/DelegatedSessionRequests.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/connections/ui/DiscoveredMachines.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/connections/ui/ExternalTunnelsPanel.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/connections/ui/LocalHostUpdateNotice.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/connections/ui/MachineForm.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/connections/ui/MachineRow.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
+    "src/features/connections/ui/PairedDevicesPanel.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/connections/ui/PhoneAccountConnect.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/translation-slot-names": 2
+      "bycoda/effect-names-its-sync": 2
+    },
+    "src/features/connections/ui/PhonePairingFlow.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/connections/ui/ProjectTunnelDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/connections/ui/RemoteActionError.tsx": {
+      "bycoda/no-raw-error-text": 2
+    },
     "src/features/connections/ui/RemoteConnectionDetails.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/translation-slot-names": 2
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/connections/ui/RemoteConnectionFeedback.tsx": {
       "bycoda/effect-names-its-sync": 4
     },
     "src/features/connections/ui/RemoteDataStatus.tsx": {
-      "bycoda/app-locale-formatting": 3
+      "bycoda/app-locale-formatting": 3,
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/connections/ui/RemoteOutboxNotice.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/connections/ui/RemoteSession.tsx": {
-      "bycoda/effect-names-its-sync": 25,
-      "bycoda/shared-container-appearance": 3
+      "bycoda/effect-names-its-sync": 25
     },
-    "src/features/connections/ui/ServerActivity.tsx": {
-      "bycoda/button-pressed-prop": 1
+    "src/features/connections/ui/RemoveMachineDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/connections/ui/ServerColorPopover.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1,
       "bycoda/suppression-has-reason": 1
     },
     "src/features/connections/ui/ServerFiles.tsx": {
+      "bycoda/disabled-needs-reason": 10,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/connections/ui/ServerItem.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/connections/ui/ServerSnippets.tsx": {
-      "bycoda/button-pressed-prop": 1,
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/connections/ui/ServerTerminalRestorePreview.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/connections/ui/ServerTerminalSession.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/connections/ui/ServersTerminalWorkspace.tsx": {
-      "bycoda/shared-container-appearance": 1
+    "src/features/connections/ui/ServersConnectionTools.tsx": {
+      "bycoda/disabled-needs-reason": 3
     },
     "src/features/connections/ui/ServersView.tsx": {
-      "bycoda/button-pressed-prop": 2,
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1,
       "bycoda/suppression-has-reason": 1
     },
     "src/features/connections/ui/SshAgentForwarding.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/connections/ui/SshCertificateInspection.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/connections/ui/SshConfigImportChoices.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
     "src/features/connections/ui/SshConfigurationConnectReview.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/connections/ui/SshGroupSettings.tsx": {
+      "bycoda/disabled-needs-reason": 9,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/connections/ui/SshIdentityField.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/connections/ui/SshJumpChainEditor.tsx": {
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/connections/ui/SshJumpPolicyEditor.tsx": {
+      "bycoda/disabled-needs-reason": 4
+    },
     "src/features/connections/ui/SshRunbookQueue.tsx": {
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/connections/ui/SshRunbooks.tsx": {
+      "bycoda/disabled-needs-reason": 11,
       "bycoda/effect-names-its-sync": 6
     },
+    "src/features/connections/ui/SshServerEditor.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/connections/ui/SshSettings.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/connections/ui/SshSetupPromptForm.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/connections/ui/TermiusImportDialog.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/connections/ui/TunnelRows.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/connections/ui/TunnelStartForm.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/connections/ui/useConnectionRequestInbox.ts": {
       "bycoda/effect-names-its-sync": 3
@@ -984,6 +1116,7 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/connections/ui/useSshHttpProxyApproval.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/connections/ui/useSshSetupJob.ts": {
@@ -995,19 +1128,42 @@
     "src/features/crews/model/crewManagedFeed.ts": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/crews/ui/CrewAppearancePicker.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/crews/ui/CrewEditor.tsx": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/crews/ui/CrewEditorAdd.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/crews/ui/CrewEditorFooter.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/crews/ui/CrewEditorParts.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
+    "src/features/crews/ui/CrewLibrary.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/crews/ui/CrewLibraryProfileDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/crews/ui/CrewMachineScope.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/crews/ui/CrewManagedBar.tsx": {
       "bycoda/shared-container-appearance": 1
     },
+    "src/features/crews/ui/CrewMemberTable.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/crews/ui/CrewRailSection.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/crews/ui/CrewSessions.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/effect-names-its-sync": 2
     },
     "src/features/crews/ui/CrewTaskPicker.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -1016,15 +1172,19 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/crews/ui/CrewWorkManager.tsx": {
-      "bycoda/shared-container-appearance": 2
+      "bycoda/disabled-needs-reason": 3
     },
     "src/features/crews/ui/CrewWorkSessions.tsx": {
       "jsx-a11y/aria-role": 2
     },
-    "src/features/crews/ui/page/CrewsLoadState.tsx": {
-      "bycoda/shared-container-appearance": 1
+    "src/features/crews/ui/MemberAppearancePicker.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/crews/ui/page/CrewsActive.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/crews/ui/page/CrewsPage.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/crews/ui/useCrewAutosave.ts": {
@@ -1039,25 +1199,47 @@
     "src/features/decision-models/hooks/useDecisionModels.ts": {
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/decision-models/ui/AddMenu.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/decision-models/ui/ApiProviderDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/decision-models/ui/CustomEndpointDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/decision-models/ui/DecisionModelsFirstRunCard.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/decision-models/ui/EditSourceDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/decision-models/ui/FolderModelDialog.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/decision-models/ui/FoundList.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/decision-models/ui/LocalInstallWizard.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2
+    },
+    "src/features/decision-models/ui/ManualPathDialog.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
+    "src/features/decision-models/ui/RoutingTable.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/decision-models/ui/ScanSettings.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
-    "src/features/decision-models/ui/SourcesList.tsx": {
-      "bycoda/shared-container-appearance": 1
+    "src/features/decision-models/ui/SourceOrderPicker.tsx": {
+      "bycoda/disabled-needs-reason": 3
     },
     "src/features/devices/DevicePanel.tsx": {
-      "bycoda/button-pressed-prop": 1,
-      "bycoda/effect-names-its-sync": 14,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 2,
+      "bycoda/effect-names-its-sync": 14
     },
     "src/features/devices/hooks/useDeviceLiveStream.ts": {
       "bycoda/effect-names-its-sync": 1
@@ -1066,7 +1248,10 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/devices/ui/DeviceInspector.tsx": {
-      "bycoda/button-pressed-prop": 1
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/devices/ui/DeviceOptionsMenu.tsx": {
+      "bycoda/disabled-needs-reason": 3
     },
     "src/features/diagnostics/hooks/useDiagnostics.ts": {
       "bycoda/effect-names-its-sync": 1
@@ -1091,19 +1276,19 @@
     },
     "src/features/files/ui/BinaryFileView.tsx": {
       "bycoda/effect-names-its-sync": 4,
-      "bycoda/shared-container-appearance": 2,
       "jsx-a11y/click-events-have-key-events": 1,
       "jsx-a11y/no-noninteractive-element-interactions": 2,
       "jsx-a11y/no-noninteractive-tabindex": 1
     },
     "src/features/files/ui/ChatFolderBrowser.tsx": {
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-container-appearance": 5,
       "bycoda/suppression-has-reason": 1
     },
     "src/features/files/ui/CodeMirrorEditor.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 17,
-      "bycoda/shared-container-appearance": 4
+      "bycoda/no-raw-error-text": 1
     },
     "src/features/files/ui/DocumentView.tsx": {
       "bycoda/effect-names-its-sync": 3
@@ -1112,15 +1297,18 @@
       "bycoda/effect-names-its-sync": 2,
       "jsx-a11y/no-noninteractive-tabindex": 1
     },
+    "src/features/files/ui/EditorConflictBar.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/files/ui/EditorSelectionMenu.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/files/ui/FileEditor.tsx": {
       "bycoda/effect-names-its-sync": 11,
       "jsx-a11y/no-noninteractive-tabindex": 1
     },
     "src/features/files/ui/FileLoadError.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/files/ui/FilePane.tsx": {
@@ -1133,17 +1321,19 @@
       "jsx-a11y/no-noninteractive-tabindex": 1
     },
     "src/features/files/ui/FilePreviewSearch.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 5
     },
     "src/features/files/ui/FileTree.tsx": {
       "bycoda/effect-names-its-sync": 14,
-      "bycoda/shared-container-appearance": 3,
       "bycoda/shared-resize-observer": 1,
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/files/ui/HtmlPreview.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/files/ui/InlineBlameToggle.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/files/ui/MediaView.tsx": {
       "bycoda/effect-names-its-sync": 4
@@ -1188,8 +1378,17 @@
     "src/features/group-lock/ui/ForgotLockPasswordDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/group-lock/ui/PasswordPromptDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/group-lock/ui/SetLockPasswordDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/host-tools/BrowserInspectorNavigation.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/host-tools/BrowserPanel.tsx": {
-      "bycoda/button-pressed-prop": 1,
+      "bycoda/disabled-needs-reason": 5,
       "bycoda/effect-names-its-sync": 8,
       "bycoda/suppression-has-reason": 4,
       "jsx-a11y/no-noninteractive-element-interactions": 1
@@ -1199,12 +1398,15 @@
       "oxlint/no-restricted-imports": 1
     },
     "src/features/host-tools/DesktopControlSettings.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 6
     },
     "src/features/host-tools/DesktopHelperSetup.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 5
     },
     "src/features/host-tools/DevServersPanel.tsx": {
+      "bycoda/disabled-needs-reason": 5,
       "bycoda/effect-names-its-sync": 10,
       "bycoda/suppression-has-reason": 2,
       "oxlint/no-restricted-imports": 1
@@ -1213,11 +1415,11 @@
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/host-tools/HostToolsWindow.tsx": {
-      "bycoda/button-pressed-prop": 1,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 5
     },
     "src/features/host-tools/RuntimeLogsPanel.tsx": {
-      "bycoda/button-pressed-prop": 1,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 6,
       "bycoda/suppression-has-reason": 1,
       "bycoda/whole-sentence-translation": 1
@@ -1241,6 +1443,12 @@
     },
     "src/features/host-tools/runtimeLogsModel.ts": {
       "bycoda/safe-timestamp-render": 1
+    },
+    "src/features/host-tools/ui/BrowserControls.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
+    "src/features/host-tools/ui/BrowserStartPage.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/host-tools/ui/RuntimeLogRow.tsx": {
       "bycoda/app-locale-formatting": 2
@@ -1278,45 +1486,41 @@
     "src/features/inbox/ui/CheckRepairForm.tsx": {
       "bycoda/effect-names-its-sync": 4
     },
-    "src/features/inbox/ui/InboxCard.tsx": {
-      "bycoda/shared-container-appearance": 1
-    },
     "src/features/inbox/ui/InboxComments.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/inbox/ui/InboxDetail.tsx": {
-      "bycoda/shared-container-appearance": 2
-    },
-    "src/features/inbox/ui/InboxFiltersMenu.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/inbox/ui/InboxMedia.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/inbox/ui/InboxNotificationMenu.tsx": {
-      "bycoda/shared-container-appearance": 1
-    },
     "src/features/inbox/ui/InboxPrActions.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 4
     },
     "src/features/inbox/ui/InboxPrChecks.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 2,
       "jsx-a11y/no-noninteractive-element-interactions": 1
     },
     "src/features/inbox/ui/InboxPrOverview.tsx": {
       "bycoda/shared-container-appearance": 1
     },
     "src/features/inbox/ui/InboxView.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/effect-names-its-sync": 2
     },
     "src/features/inbox/ui/JiraBoardView.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 5,
-      "bycoda/shared-container-appearance": 5,
       "oxlint/no-restricted-imports": 1
     },
+    "src/features/inbox/ui/JiraCommentEditor.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/inbox/ui/LinkedWorkItemUpdateNotice.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/messaging/hooks/useMessageThreads.ts": {
@@ -1329,22 +1533,34 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/messaging/ui/MessageThreadView.tsx": {
-      "bycoda/shared-container-appearance": 2
+      "bycoda/no-raw-error-text": 1
     },
-    "src/features/messaging/ui/MessagesPanel.tsx": {
-      "bycoda/shared-container-appearance": 1
+    "src/features/model-routing/ui/choice/ModelChoiceField.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
-    "src/features/model-routing/ui/order/ModelOrderList.tsx": {
-      "bycoda/shared-container-appearance": 1
+    "src/features/model-routing/ui/delegation/DelegationKeyMenu.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/model-routing/ui/delegation/DelegationSettings.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/model-routing/ui/order/ModelOrderLimits.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/model-routing/ui/order/ModelOrderRow.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1
     },
-    "src/features/model-routing/ui/order/ModelOrderRowMore.tsx": {
-      "bycoda/shared-container-appearance": 1
+    "src/features/model-routing/ui/order/OrderSortMenu.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/model-routing/ui/order/PoolMembers.tsx": {
+      "bycoda/disabled-needs-reason": 3
     },
     "src/features/model-routing/ui/order/SmartSetupAction.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/model-routing/ui/roles/ModelRolesGroups.fixture.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/notes/notes.ts": {
       "bycoda/grapheme-safe-truncate": 1
@@ -1353,8 +1569,7 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/notes/ui/NoteEditablePreview.tsx": {
-      "bycoda/effect-names-its-sync": 4,
-      "bycoda/translation-slot-names": 1
+      "bycoda/effect-names-its-sync": 4
     },
     "src/features/notes/ui/NoteEditorPane.tsx": {
       "bycoda/effect-names-its-sync": 1,
@@ -1363,14 +1578,18 @@
     "src/features/notes/ui/NoteMarkdownEditor.tsx": {
       "bycoda/effect-names-its-sync": 3
     },
+    "src/features/notes/ui/NoteTagsEditor.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/notes/ui/NotesView.tsx": {
-      "bycoda/button-pressed-prop": 1,
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 13,
       "bycoda/safe-timestamp-render": 1,
       "bycoda/whole-sentence-translation": 2,
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/notes/ui/SessionNotesPanel.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 5,
       "bycoda/safe-timestamp-render": 1
     },
@@ -1417,10 +1636,16 @@
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/notifications/ui/NotificationMuteControl.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/notifications/ui/NotificationMuteDatePicker.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/notifications/ui/OwnerApprovalRequests.tsx": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/notifications/ui/OwnerSecretInput.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/notifications/ui/ProjectNotificationSettings.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -1432,12 +1657,14 @@
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/onboarding/ui/GuideHub.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/onboarding/ui/GuidedTour.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/onboarding/ui/OnboardingAgents.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 1,
       "oxlint/no-restricted-imports": 1
     },
@@ -1445,9 +1672,11 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/onboarding/ui/OnboardingDialog.tsx": {
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/onboarding/ui/OnboardingHost.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/onboarding/ui/TourOffer.tsx": {
@@ -1457,16 +1686,18 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/onboarding/ui/UsageGuideTooltip.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/onboarding/ui/tourRunner.ts": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/orchestration/ui/OrchestrationPreview.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 2
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/effect-names-its-sync": 2
     },
     "src/features/orchestration/ui/OrchestrationSidebarAgents.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "jsx-a11y/click-events-have-key-events": 1,
       "jsx-a11y/no-static-element-interactions": 1
     },
@@ -1482,31 +1713,24 @@
     "src/features/projects/model/recents.ts": {
       "bycoda/compiler-owns-memo": 1
     },
-    "src/features/projects/ui/AdditionalDirsDialog.tsx": {
-      "bycoda/shared-container-appearance": 1
-    },
     "src/features/projects/ui/ContributePrompt.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/projects/ui/CwdPicker.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/projects/ui/FolderPicker.tsx": {
-      "bycoda/shared-container-appearance": 2
+      "bycoda/disabled-needs-reason": 9
     },
     "src/features/projects/ui/GroupFetchPopover.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
-    },
-    "src/features/projects/ui/GroupGitPopover.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
-    },
-    "src/features/projects/ui/ProjectActionDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/projects/ui/ProjectIconPicker.tsx": {
-      "bycoda/shared-container-appearance": 1
+    "src/features/projects/ui/GroupGitPopover.tsx": {
+      "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/projects/ui/ProjectActionDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/projects/ui/ProjectLogoIcon.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -1515,24 +1739,31 @@
       "bycoda/compiler-owns-memo": 1
     },
     "src/features/projects/ui/ProjectMultiSelect.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/projects/ui/ProjectNameConflictDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/projects/ui/ProjectQuickActions.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 3,
       "oxlint/no-restricted-imports": 1
     },
     "src/features/projects/ui/ProjectSearch.tsx": {
       "bycoda/compiler-owns-memo": 1,
-      "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-container-appearance": 2
+      "bycoda/effect-names-its-sync": 3
+    },
+    "src/features/projects/ui/RailBackgroundControls.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/projects/ui/RemoveProjectDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/projects/ui/RenameProjectFolderDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/projects/ui/SearchableProjectPicker.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/projects/ui/useProjectBackgroundEffect.ts": {
@@ -1555,26 +1786,36 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/providers/ui/AccountColorPicker.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/providers/ui/GenericAcpSettings.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 3
+      "bycoda/disabled-needs-reason": 6,
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/providers/ui/HarnessUpdateNotice.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
+    },
+    "src/features/providers/ui/OllamaSettings.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/providers/ui/ProviderAccountEditor.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/providers/ui/ProviderList.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/quick-composer/hooks/useQuickComposerLaunches.ts": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/quick-composer/ui/QuickComposer.tsx": {
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-container-appearance": 3,
+      "bycoda/no-raw-error-text": 1,
       "jsx-a11y/no-static-element-interactions": 2
     },
     "src/features/quick-composer/ui/QuickGitPopup.tsx": {
-      "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 3
     },
     "src/features/quick-composer/ui/QuickModelSelector.tsx": {
       "bycoda/effect-names-its-sync": 2,
@@ -1584,6 +1825,7 @@
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/quick-composer/ui/QuickWorkspaceControls.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/quick-composer/ui/useQuickAttachments.ts": {
@@ -1609,11 +1851,11 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/search/ui/ChatSearchResults.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/search/ui/SearchView.tsx": {
       "bycoda/effect-names-its-sync": 6,
-      "bycoda/shared-container-appearance": 2,
       "bycoda/suppression-has-reason": 1
     },
     "src/features/secrets/hooks/useOwnerSecrets.ts": {
@@ -1672,11 +1914,9 @@
       "bycoda/grapheme-safe-truncate": 1,
       "bycoda/suppression-has-reason": 1
     },
-    "src/features/sessions/model/workItemSearchNotice.ts": {
-      "bycoda/translation-slot-names": 3
-    },
     "src/features/sessions/ui/ActivityDock.tsx": {
       "bycoda/compiler-owns-memo": 1,
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/sessions/ui/AgentMarkdown.tsx": {
@@ -1687,16 +1927,14 @@
     },
     "src/features/sessions/ui/AgentTranscript.tsx": {
       "bycoda/compiler-owns-memo": 11,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 7,
-      "bycoda/shared-container-appearance": 3,
+      "bycoda/shared-container-appearance": 1,
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
       "bycoda/compiler-owns-memo": 3,
-      "bycoda/effect-names-its-sync": 3,
-      "bycoda/transcript-ink-roles": 2,
-      "jsx-a11y/click-events-have-key-events": 1,
-      "jsx-a11y/no-static-element-interactions": 1
+      "bycoda/effect-names-its-sync": 3
     },
     "src/features/sessions/ui/ApprovalDecisionContext.tsx": {
       "bycoda/compiler-owns-memo": 1
@@ -1705,11 +1943,15 @@
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/sessions/ui/AssistantSessionControl.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/sessions/ui/AttachmentFilePreview.tsx": {
       "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/sessions/ui/AttachmentTokenText.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/sessions/ui/BtwQuestionBurst.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -1722,33 +1964,33 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/ClaudeSessionPicker.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 2
+      "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/sessions/ui/CodeExecutionContext.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/sessions/ui/Composer.tsx": {
       "bycoda/compiler-owns-memo": 28,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 28,
       "bycoda/whole-sentence-translation": 1,
       "jsx-a11y/no-static-element-interactions": 1
     },
+    "src/features/sessions/ui/ComposerCitations.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
     "src/features/sessions/ui/ComposerHighlight.tsx": {
       "bycoda/compiler-owns-memo": 1
-    },
-    "src/features/sessions/ui/ComposerReferenceActions.tsx": {
-      "bycoda/shared-container-appearance": 2
-    },
-    "src/features/sessions/ui/ComposerSkillGroupHover.tsx": {
-      "bycoda/shared-container-appearance": 1
     },
     "src/features/sessions/ui/ComposerSuggestions.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/ComposerTips.tsx": {
       "bycoda/compiler-owns-memo": 1,
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 2
     },
     "src/features/sessions/ui/ContextMeter.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "jsx-a11y/no-noninteractive-tabindex": 1
     },
     "src/features/sessions/ui/CrewBackdrop.tsx": {
@@ -1758,6 +2000,10 @@
       "bycoda/effect-names-its-sync": 2,
       "bycoda/shared-resize-observer": 1
     },
+    "src/features/sessions/ui/DelegationSettings.tsx": {
+      "bycoda/disabled-needs-reason": 2,
+      "bycoda/transcript-row-trigger": 1
+    },
     "src/features/sessions/ui/DeleteSessionDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -1765,14 +2011,17 @@
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/sessions/ui/DeliveryReviewChoice.tsx": {
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/DocumentImage.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/sessions/ui/EditFromHereDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/sessions/ui/GeneratedImage.tsx": {
       "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1,
       "bycoda/shared-resize-observer": 1
     },
     "src/features/sessions/ui/HandoffMiniCard.tsx": {
@@ -1795,40 +2044,48 @@
       "bycoda/compiler-owns-memo": 1
     },
     "src/features/sessions/ui/LocalSessionReferenceLink.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 3,
+      "bycoda/effect-names-its-sync": 2
     },
     "src/features/sessions/ui/MarkdownDocumentPreview.tsx": {
       "bycoda/compiler-owns-memo": 1
     },
     "src/features/sessions/ui/MarkdownModeToggle.tsx": {
       "bycoda/compiler-owns-memo": 3,
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/MessageQueue.tsx": {
       "bycoda/compiler-owns-memo": 1,
-      "bycoda/effect-names-its-sync": 8,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 8
     },
     "src/features/sessions/ui/ModelAccountSwitcher.tsx": {
       "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/transcript-row-trigger": 1
     },
     "src/features/sessions/ui/ModelBrowser.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/sessions/ui/ModelExtras.tsx": {
+      "bycoda/disabled-needs-reason": 2,
+      "bycoda/transcript-row-trigger": 1
+    },
     "src/features/sessions/ui/ModelPicker.tsx": {
       "bycoda/compiler-owns-memo": 5,
-      "bycoda/effect-names-its-sync": 7
+      "bycoda/effect-names-its-sync": 6
+    },
+    "src/features/sessions/ui/ModelSettingPicker.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/sessions/ui/ModelSettingsColumn.tsx": {
-      "bycoda/shared-container-appearance": 1
-    },
-    "src/features/sessions/ui/NotificationRequestCard.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 3,
+      "bycoda/transcript-row-trigger": 1
     },
     "src/features/sessions/ui/OrchestratorConstellation.tsx": {
       "bycoda/compiler-owns-memo": 1
+    },
+    "src/features/sessions/ui/PlanPreview.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/sessions/ui/PlanStepsBurst.tsx": {
       "bycoda/compiler-owns-memo": 1
@@ -1836,23 +2093,28 @@
     "src/features/sessions/ui/PromptOutline.tsx": {
       "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 5,
-      "bycoda/shared-container-appearance": 1,
       "bycoda/shared-resize-observer": 2
     },
     "src/features/sessions/ui/ProviderAccountMenu.tsx": {
-      "bycoda/effect-names-its-sync": 1
+      "bycoda/effect-names-its-sync": 1,
+      "bycoda/transcript-row-trigger": 1
+    },
+    "src/features/sessions/ui/ProviderAccountRecoveryDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/sessions/ui/QuestionFields.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/sessions/ui/QuestionForm.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/QueueRemovalNotice.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/QueuedMessageEditDialog.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 4
     },
     "src/features/sessions/ui/ResumeTurnRow.tsx": {
@@ -1860,16 +2122,21 @@
     },
     "src/features/sessions/ui/SecondOpinionButton.tsx": {
       "bycoda/compiler-owns-memo": 1,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 3
     },
+    "src/features/sessions/ui/SessionDirsPicker.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
     "src/features/sessions/ui/SessionDiscussionPanel.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/sessions/ui/SessionImportDialog.tsx": {
       "bycoda/app-locale-formatting": 11,
       "bycoda/compiler-owns-memo": 7,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/transcript-row-trigger": 2
     },
     "src/features/sessions/ui/SessionImportHost.tsx": {
       "bycoda/effect-names-its-sync": 2
@@ -1880,12 +2147,13 @@
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/sessions/ui/SessionProviderGoal.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/transcript-row-trigger": 1
     },
     "src/features/sessions/ui/SessionReview.tsx": {
       "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/no-raw-error-text": 1,
+      "bycoda/transcript-row-trigger": 1
     },
     "src/features/sessions/ui/SessionSubagentSheet.tsx": {
       "bycoda/compiler-owns-memo": 6,
@@ -1894,11 +2162,19 @@
     "src/features/sessions/ui/SessionSurface.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/sessions/ui/SessionTaskLinkDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/sessions/ui/SubagentCards.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/sessions/ui/SubagentRetryButton.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/sessions/ui/SubagentSheet.tsx": {
       "bycoda/compiler-owns-memo": 2,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 5,
       "bycoda/shared-container-appearance": 1
     },
@@ -1914,10 +2190,8 @@
     },
     "src/features/sessions/ui/TranscriptFind.tsx": {
       "bycoda/compiler-owns-memo": 2,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 4
-    },
-    "src/features/sessions/ui/TranscriptHistoryNotice.tsx": {
-      "bycoda/shared-container-appearance": 1
     },
     "src/features/sessions/ui/TranscriptImagePreview.tsx": {
       "bycoda/effect-names-its-sync": 2
@@ -1929,7 +2203,6 @@
     },
     "src/features/sessions/ui/TranscriptSelectionMenu.tsx": {
       "bycoda/effect-names-its-sync": 4,
-      "bycoda/shared-container-appearance": 1,
       "bycoda/shared-resize-observer": 1
     },
     "src/features/sessions/ui/TranscriptVirtualRows.tsx": {
@@ -1937,6 +2210,7 @@
       "bycoda/effect-names-its-sync": 6
     },
     "src/features/sessions/ui/TranslationResultDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/sessions/ui/TurnActivityLine.tsx": {
@@ -1946,9 +2220,11 @@
     "src/features/sessions/ui/UsageLimitNotice.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/sessions/ui/UserDraftFooter.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
     "src/features/sessions/ui/UserLinkPreview.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 2
     },
     "src/features/sessions/ui/UserTextPreview.tsx": {
       "bycoda/app-locale-formatting": 1,
@@ -2080,6 +2356,9 @@
     "src/features/settings/ui/AppearanceSettings.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/settings/ui/ArchiveSettings.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/settings/ui/BuildIdentityDetails.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -2087,21 +2366,33 @@
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/settings/ui/ExternalMcpAccess.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 4
     },
     "src/features/settings/ui/GeneralProductDetails.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/settings/ui/GeneralSettings.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/settings/ui/GradientBackgroundCard.tsx": {
       "bycoda/effect-names-its-sync": 2
+    },
+    "src/features/settings/ui/HostShellRow.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/settings/ui/InboxConnectionStatus.tsx": {
       "bycoda/app-locale-formatting": 1
     },
+    "src/features/settings/ui/InboxScopeCollection.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/settings/ui/InboxSettings.tsx": {
+      "bycoda/disabled-needs-reason": 6,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/settings/ui/JiraSettings.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2,
       "oxlint/no-restricted-imports": 1
     },
@@ -2109,21 +2400,42 @@
       "bycoda/effect-names-its-sync": 3,
       "bycoda/shared-resize-observer": 2
     },
+    "src/features/settings/ui/McpAddServer.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/settings/ui/McpServerConfigEditor.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/settings/ui/McpServerDetail.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/settings/ui/McpSettings.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/settings/ui/NewProjectFolderSettings.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/settings/ui/PoliciesSettings.tsx": {
       "bycoda/effect-names-its-sync": 1,
       "oxlint/no-restricted-imports": 1
     },
     "src/features/settings/ui/ProviderAccountsSettings.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1,
       "oxlint/no-console": 1
     },
     "src/features/settings/ui/ProviderBinarySettings.tsx": {
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/settings/ui/ProviderDefaultsForm.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/settings/ui/ProviderModelsGroup.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/settings/ui/ProviderSettings.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/settings/ui/ProvidersPageGate.tsx": {
@@ -2136,19 +2448,18 @@
       "bycoda/effect-names-its-sync": 5,
       "bycoda/shared-resize-observer": 1
     },
+    "src/features/settings/ui/ShortcutSettings.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/settings/ui/TemplatesSettings.tsx": {
-      "bycoda/button-pressed-prop": 1,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/settings/ui/TerminalProfileDiscovery.tsx": {
-      "bycoda/effect-names-its-sync": 4,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 4
     },
     "src/features/settings/ui/TerminalSettings.tsx": {
       "bycoda/effect-names-its-sync": 2
-    },
-    "src/features/settings/ui/ToolSettings.tsx": {
-      "bycoda/translation-slot-names": 2
     },
     "src/features/settings/ui/UpdateChannelRow.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -2156,27 +2467,35 @@
     "src/features/settings/ui/WorkspaceSettings.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/settings/ui/appearance/controls/AccentColorPicker.tsx": {
-      "bycoda/shared-container-appearance": 1
-    },
     "src/features/settings/ui/appearance/controls/BackgroundLibrary.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/settings/ui/appearance/controls/FontPicker.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/settings/ui/appearance/controls/GradientStrip.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 2
     },
     "src/features/settings/ui/appearance/controls/ImageDropZone.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/settings/ui/appearance/controls/SavedThemes.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/settings/ui/appearance/controls/SceneStrip.tsx": {
       "bycoda/effect-names-its-sync": 3
     },
+    "src/features/settings/ui/appearance/controls/ThemeGenerationActivity.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/settings/ui/appearance/controls/ThemeGenerator.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/settings/ui/appearance/controls/ThemeNameDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/settings/ui/appearance/controls/TypographyPairings.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -2187,11 +2506,17 @@
     "src/features/settings/ui/integrations/BrowserSignIn.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/settings/ui/integrations/MessagingAccountsCard.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
     "src/features/settings/ui/integrations/MicrosoftDeviceSignIn.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/settings/ui/integrations/useMessagingAccounts.ts": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/settings/ui/providerDefaultsTargetsPicker.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/settings/ui/useAppearanceSettings.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -2199,12 +2524,19 @@
     "src/features/settings/ui/useInboxScopePreference.ts": {
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/skills/ui/RecommendedSkills.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/skills/ui/SkillPicker.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-container-appearance": 1,
       "jsx-a11y/no-noninteractive-element-interactions": 1
     },
+    "src/features/skills/ui/SkillRow.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/skills/ui/SkillsPage.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 6,
       "bycoda/suppression-has-reason": 2
     },
@@ -2232,6 +2564,9 @@
     "src/features/social/model/socialProgramForm.ts": {
       "bycoda/safe-timestamp-render": 1
     },
+    "src/features/social/ui/SocialShortcut.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/social/ui/accounts/ActivityHistory.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -2239,10 +2574,20 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/social/ui/accounts/BrowserSettings.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/social/ui/accounts/ConnectAccountDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/social/ui/accounts/EmailAccountDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/social/ui/accounts/ReplyRules.tsx": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/social/ui/accounts/SignupAccountDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/social/ui/accounts/platform/TelegramChannelConnect.tsx": {
       "bycoda/effect-names-its-sync": 3
@@ -2250,11 +2595,21 @@
     "src/features/social/ui/accounts/useAccountsData.ts": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/social/ui/audience/BulkBar.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/social/ui/audience/BulkDialogs.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/social/ui/audience/CaptureRules.tsx": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/social/ui/audience/FindPeopleDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/social/ui/audience/ImportDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/social/ui/audience/OutreachBoard.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -2262,14 +2617,43 @@
     "src/features/social/ui/audience/PersonPanel.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/social/ui/audience/PersonPanelSections.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
+    "src/features/social/ui/audience/SegmentFilterFields.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/social/ui/audience/SequenceEditor.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/social/ui/audience/SequenceStepEditor.tsx": {
+      "bycoda/disabled-needs-reason": 3
     },
     "src/features/social/ui/audience/useAudienceData.ts": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/social/ui/browser/LiveBrowserPanel.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
     "src/features/social/ui/browser/NeedsHumanList.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/social/ui/command/PlanSteps.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/social/ui/common/DisabledReason.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/social/ui/content/ContentEditorAi.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/social/ui/content/ContentMediaField.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/social/ui/inbox/ConversationView.tsx": {
+      "bycoda/disabled-needs-reason": 3
     },
     "src/features/social/ui/shell/useSocialWorkspace.ts": {
       "bycoda/effect-names-its-sync": 2
@@ -2302,19 +2686,26 @@
     "src/features/source-control/hooks/useSubmodulePointers.ts": {
       "bycoda/effect-names-its-sync": 2
     },
+    "src/features/source-control/ui/BranchManagerDialog.tsx": {
+      "bycoda/disabled-needs-reason": 5
+    },
     "src/features/source-control/ui/BranchPicker.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/source-control/ui/CommitDiff.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/source-control/ui/ConflictLayout.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 7
     },
     "src/features/source-control/ui/CreateBranchDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/source-control/ui/CreateWorktreeDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/source-control/ui/DeleteWorktreeDialog.tsx": {
@@ -2322,7 +2713,7 @@
       "bycoda/suppression-has-reason": 1
     },
     "src/features/source-control/ui/DiffCommentComposer.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/source-control/ui/DiffLayoutToggle.tsx": {
       "bycoda/effect-names-its-sync": 1,
@@ -2333,6 +2724,7 @@
       "bycoda/shared-resize-observer": 1
     },
     "src/features/source-control/ui/GitActionsMenu.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/source-control/ui/GitChangesList.tsx": {
@@ -2340,97 +2732,104 @@
       "bycoda/shared-resize-observer": 1
     },
     "src/features/source-control/ui/GitChangesPanel.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 4,
-      "bycoda/shared-container-appearance": 4,
-      "bycoda/translation-slot-names": 1,
       "oxlint/no-restricted-imports": 1
-    },
-    "src/features/source-control/ui/GitCommitBlameView.tsx": {
-      "bycoda/shared-container-appearance": 2
     },
     "src/features/source-control/ui/GitConflictCompare.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/source-control/ui/GitConflictRows.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/source-control/ui/GitFeedback.tsx": {
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/effect-names-its-sync": 1
     },
     "src/features/source-control/ui/GitFileInspector.tsx": {
       "bycoda/app-locale-formatting": 1,
-      "bycoda/effect-names-its-sync": 4,
-      "bycoda/shared-container-appearance": 2
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/effect-names-its-sync": 4
+    },
+    "src/features/source-control/ui/GitGenerationSettings.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/source-control/ui/GitGraphBranches.tsx": {
-      "bycoda/shared-container-appearance": 4
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/source-control/ui/GitGraphColumnFilter.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/source-control/ui/GitGraphCommitInspector.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 3
     },
     "src/features/source-control/ui/GitGraphConflictEditor.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 3
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/effect-names-its-sync": 2
     },
     "src/features/source-control/ui/GitGraphList.tsx": {
       "bycoda/effect-names-its-sync": 2,
-      "bycoda/shared-container-appearance": 1,
       "bycoda/shared-resize-observer": 1,
       "jsx-a11y/no-noninteractive-element-interactions": 1
     },
     "src/features/source-control/ui/GitGraphWorkspace.tsx": {
-      "bycoda/button-pressed-prop": 1,
+      "bycoda/disabled-needs-reason": 4,
       "bycoda/effect-names-its-sync": 3,
       "bycoda/shared-resize-observer": 1
     },
     "src/features/source-control/ui/GitHistoryGraph.tsx": {
-      "bycoda/shared-container-appearance": 3,
       "oxlint/no-restricted-imports": 1
+    },
+    "src/features/source-control/ui/GitOperationBanner.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/source-control/ui/GitPanelSections.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/source-control/ui/GitStashSection.tsx": {
-      "bycoda/shared-container-appearance": 1
-    },
     "src/features/source-control/ui/MergeConflictEditor.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 6
     },
     "src/features/source-control/ui/QuickDeleteWorktreeDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/source-control/ui/RefNameDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/source-control/ui/SessionChangesDiff.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/source-control/ui/SidebarWorktreeSwitcher.tsx": {
-      "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-container-appearance": 1
-    },
-    "src/features/source-control/ui/StaleReviewNotice.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/effect-names-its-sync": 3
     },
     "src/features/source-control/ui/SwitchBranchDialog.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/source-control/ui/UnifiedDiffView.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 10,
-      "bycoda/shared-container-appearance": 1,
       "bycoda/shared-resize-observer": 1,
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/source-control/ui/WorkingTreeDiff.tsx": {
-      "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-container-appearance": 1
+      "bycoda/effect-names-its-sync": 3
     },
     "src/features/source-control/ui/WorkspaceSourceControl.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/source-control/ui/WorktreePicker.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 3
+    },
+    "src/features/source-control/ui/WorktreeRow.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/source-control/ui/WorktreesPage.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/source-control/ui/useConflictProvenance.ts": {
       "bycoda/effect-names-its-sync": 1
@@ -2444,10 +2843,29 @@
     "src/features/tasks/ui/BackgroundSessionDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/tasks/ui/GoalFinalReview.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/tasks/ui/GoalForm.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/tasks/ui/GoalPlanSteps.tsx": {
+      "bycoda/disabled-needs-reason": 3
+    },
     "src/features/tasks/ui/GoalSection.tsx": {
-      "bycoda/effect-names-its-sync": 1
+      "bycoda/effect-names-its-sync": 2
+    },
+    "src/features/tasks/ui/GoalSettingsDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/tasks/ui/SprintCompletion.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/tasks/ui/SprintEditor.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/tasks/ui/SprintManagement.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/tasks/ui/SprintReports.tsx": {
@@ -2464,11 +2882,27 @@
       "jsx-a11y/click-events-have-key-events": 1,
       "jsx-a11y/no-static-element-interactions": 1
     },
+    "src/features/tasks/ui/TaskBulkToolbar.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/tasks/ui/TaskCardActions.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/features/tasks/ui/TaskDetail.tsx": {
-      "bycoda/app-locale-formatting": 1
+      "bycoda/app-locale-formatting": 1,
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/tasks/ui/TaskForm.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/tasks/ui/TaskFormFields.tsx": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/tasks/ui/TaskLimits.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/tasks/ui/TaskReviewNotes.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/tasks/ui/TaskRunInsights.tsx": {
       "bycoda/app-locale-formatting": 1
@@ -2476,14 +2910,24 @@
     "src/features/tasks/ui/TaskSessionSheet.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/tasks/ui/TaskStewardForm.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/tasks/ui/TaskStewards.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/tasks/ui/TaskSummaryPanel.tsx": {
       "bycoda/app-locale-formatting": 1,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/tasks/ui/TaskToolbar.tsx": {
-      "bycoda/shared-container-appearance": 1
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/tasks/ui/TaskToolbarFilters.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/tasks/ui/TaskWorkflowControls.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/tasks/ui/TaskWorkspacePicker.tsx": {
@@ -2491,6 +2935,9 @@
     },
     "src/features/tasks/ui/TasksView.tsx": {
       "bycoda/effect-names-its-sync": 5
+    },
+    "src/features/tasks/ui/TasksViewDialogs.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/terminal/model/sshShellIntegration.ts": {
       "bycoda/compiler-owns-memo": 11,
@@ -2504,6 +2951,9 @@
     },
     "src/features/terminal/runtime/terminalFitting.ts": {
       "bycoda/shared-resize-observer": 1
+    },
+    "src/features/terminal/ui/CodeTerminalDialog.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/terminal/ui/LocalTerminalSuggestions.tsx": {
       "bycoda/effect-names-its-sync": 3
@@ -2529,12 +2979,12 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/terminal/ui/TerminalTools.tsx": {
+      "bycoda/disabled-needs-reason": 10,
       "bycoda/effect-names-its-sync": 4,
       "jsx-a11y/no-static-element-interactions": 2
     },
     "src/features/terminal/ui/TerminalView.tsx": {
       "bycoda/effect-names-its-sync": 11,
-      "bycoda/shared-container-appearance": 1,
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/terminal/ui/useHideWhileTyping.ts": {
@@ -2542,6 +2992,9 @@
     },
     "src/features/today/hooks/useTodayData.ts": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/today/ui/TodaySummaryPanel.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/usage/ui/UsageBudgets.tsx": {
       "bycoda/effect-names-its-sync": 3
@@ -2560,7 +3013,8 @@
       "jsx-a11y/no-noninteractive-tabindex": 1
     },
     "src/features/usage/ui/UsageVisualizations.tsx": {
-      "bycoda/app-locale-formatting": 5
+      "bycoda/app-locale-formatting": 5,
+      "bycoda/disabled-needs-reason": 3
     },
     "src/features/voice/model/voicePresence.ts": {
       "bycoda/effect-names-its-sync": 1
@@ -2572,16 +3026,33 @@
       "bycoda/suppression-has-reason": 1
     },
     "src/features/voice/ui/DictationButton.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 5
+    },
+    "src/features/voice/ui/DictationDictionarySettings.tsx": {
+      "bycoda/disabled-needs-reason": 5
+    },
+    "src/features/voice/ui/DictationOptions.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/voice/ui/HiddenDictationIndicator.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/voice/ui/LocalDictationModels.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/features/voice/ui/MicrophonePermissionSettings.tsx": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/voice/ui/VoiceActivityRow.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/voice/ui/VoiceChoiceCard.tsx": {
       "bycoda/effect-names-its-sync": 2,
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/features/voice/ui/VoiceCompanion.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 22,
       "bycoda/shared-resize-observer": 1,
       "oxlint/no-console": 2
@@ -2590,11 +3061,20 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/voice/ui/VoiceJobReview.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/voice/ui/VoiceMemoryDialog.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/voice/ui/VoiceOverlayWindow.tsx": {
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 4,
       "bycoda/shared-resize-observer": 1
+    },
+    "src/features/voice/ui/VoiceSetupRow.tsx": {
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/no-raw-error-text": 1
     },
     "src/features/voice/ui/VoiceSetupSteps.tsx": {
       "bycoda/effect-names-its-sync": 3
@@ -2602,11 +3082,20 @@
     "src/features/voice/ui/VoiceToolActivityPanel.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/features/voice/ui/VoiceTurnControl.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/features/voice/ui/VoiceVisualizer.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/voice/ui/companion/VoiceChatTranscript.tsx": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/voice/ui/companion/VoiceCompanionControls.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/features/voice/ui/companion/VoiceCompanionRecovery.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/voice/ui/companion/VoiceLauncher.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -2650,9 +3139,10 @@
       "bycoda/shared-container-appearance": 1
     },
     "src/features/workspace/ui/TabGroupMenu.tsx": {
-      "bycoda/effect-names-its-sync": 1
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/workspace/ui/WorkspacePicker.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 8,
       "jsx-a11y/no-static-element-interactions": 2
     },
@@ -2660,19 +3150,29 @@
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/workspaces/ui/SessionWorkspaceActions.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/features/workspaces/ui/WorkspaceDirectoryRemoval.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/features/workspaces/ui/WorkspaceManagedRow.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/features/workspaces/ui/WorkspacePolicyEditor.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/features/workspaces/ui/WorkspacePolicySettings.tsx": {
       "bycoda/effect-names-its-sync": 2,
       "bycoda/suppression-has-reason": 1
     },
     "src/features/workspaces/ui/WorkspaceReview.tsx": {
+      "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 4
     },
     "src/features/workspaces/ui/WorkspaceRewindPreview.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/integrations/harness/core/auth.ts": {
@@ -2758,27 +3258,33 @@
     },
     "src/shared/ui/ConfirmDialog.tsx": {
       "bycoda/compiler-owns-memo": 3,
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 2
     },
     "src/shared/ui/ContinuousList.tsx": {
       "bycoda/compiler-owns-memo": 1
     },
     "src/shared/ui/ControlBehaviorMatrix.tsx": {
-      "bycoda/button-pressed-prop": 3
+      "bycoda/disabled-needs-reason": 1
     },
     "src/shared/ui/ControlSpecimen.tsx": {
-      "bycoda/button-pressed-prop": 2,
       "bycoda/safe-timestamp-render": 1
     },
     "src/shared/ui/Disclosure.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/shared/ui/DropdownMenu.tsx": {
-      "bycoda/effect-names-its-sync": 4
+      "bycoda/effect-names-its-sync": 5
     },
     "src/shared/ui/FailureState.tsx": {
       "bycoda/effect-names-its-sync": 1,
       "jsx-a11y/no-noninteractive-tabindex": 1
+    },
+    "src/shared/ui/FileField.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
+    "src/shared/ui/FormFooter.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/shared/ui/HoverCard.tsx": {
       "bycoda/effect-names-its-sync": 1
@@ -2808,6 +3314,9 @@
     "src/shared/ui/NumberField.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
+    "src/shared/ui/PanelHeader.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/shared/ui/PasswordField.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -2825,6 +3334,9 @@
       "bycoda/effect-names-its-sync": 2,
       "bycoda/shared-resize-observer": 1
     },
+    "src/shared/ui/RadioTileGroup.tsx": {
+      "bycoda/disabled-needs-reason": 1
+    },
     "src/shared/ui/Sash.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -2833,6 +3345,7 @@
     },
     "src/shared/ui/SearchableSelect.tsx": {
       "bycoda/compiler-owns-memo": 6,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 3
     },
     "src/shared/ui/Select.tsx": {
@@ -2842,6 +3355,7 @@
       "bycoda/effect-names-its-sync": 3
     },
     "src/shared/ui/SplitButton.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2
     },
     "src/shared/ui/TabLabel.tsx": {
@@ -2854,6 +3368,9 @@
     },
     "src/shared/ui/Timeline.tsx": {
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/shared/ui/ToastCard.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/shared/ui/ToastRegion.tsx": {
       "bycoda/effect-names-its-sync": 2
@@ -2888,6 +3405,7 @@
     },
     "src/shared/ui/arc/confirm-morph/confirm-morph.tsx": {
       "bycoda/compiler-owns-memo": 7,
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 10,
       "bycoda/shared-resize-observer": 1,
       "jsx-a11y/no-static-element-interactions": 1
@@ -2916,7 +3434,6 @@
       "bycoda/shared-resize-observer": 1
     },
     "src/shared/ui/arc/floating-button-group/floating-button-group.tsx": {
-      "bycoda/button-pressed-prop": 1,
       "bycoda/compiler-owns-memo": 2,
       "bycoda/effect-names-its-sync": 4,
       "bycoda/shared-resize-observer": 1
@@ -2932,6 +3449,7 @@
     },
     "src/shared/ui/arc/json-viewer/json-viewer.tsx": {
       "bycoda/compiler-owns-memo": 11,
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 7
     },
     "src/shared/ui/arc/lib/use-today.ts": {
@@ -2980,6 +3498,7 @@
       "bycoda/shared-resize-observer": 1
     },
     "src/shared/ui/arc/stepper/stepper.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 2,
       "bycoda/shared-resize-observer": 1,
       "jsx-a11y/no-noninteractive-element-interactions": 1
@@ -3008,8 +3527,14 @@
       "bycoda/suppression-has-reason": 1,
       "jsx-a11y/no-noninteractive-element-interactions": 1
     },
+    "src/shared/ui/date-time/CalendarGrid.tsx": {
+      "bycoda/disabled-needs-reason": 2
+    },
     "src/shared/ui/date-time/RangePicker.tsx": {
-      "bycoda/button-pressed-prop": 2
+      "bycoda/disabled-needs-reason": 2
+    },
+    "src/shared/ui/date-time/SinglePicker.tsx": {
+      "bycoda/disabled-needs-reason": 1
     },
     "src/shared/ui/overlay.ts": {
       "bycoda/effect-names-its-sync": 2
@@ -3019,7 +3544,11 @@
       "jsx-a11y/no-static-element-interactions": 1
     },
     "src/shared/ui/settings/SettingsRows.tsx": {
+      "bycoda/disabled-needs-reason": 1,
       "bycoda/effect-names-its-sync": 1
+    },
+    "src/shared/ui/settings/SettingsSaveBar.tsx": {
+      "bycoda/disabled-needs-reason": 2
     },
     "src/shared/ui/settings/settingsPageReset.ts": {
       "bycoda/effect-names-its-sync": 2

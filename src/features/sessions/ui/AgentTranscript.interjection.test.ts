@@ -8,7 +8,6 @@ import { AgentTranscript } from "./AgentTranscript";
 let container: HTMLDivElement;
 let root: Root;
 let bodyHeight: number;
-let resize: () => void;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -20,12 +19,7 @@ beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      constructor(private callback: (entries: ResizeObserverEntry[]) => void) {}
-      observe(el: Element) {
-        // The shared observer routes entries by target, so a resize names the element.
-        if (el.tagName === "PRE")
-          resize = () => this.callback([{ target: el } as ResizeObserverEntry]);
-      }
+      observe() {}
       unobserve() {}
       disconnect() {}
     },

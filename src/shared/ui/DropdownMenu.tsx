@@ -297,27 +297,6 @@ function MenuSurface({
       document.getElementById(rowId(highlighted.id))?.scrollIntoView?.({ block: "nearest" });
     }
   }, [highlighted?.id]);
-  // `highlight="state"` without a search field: the trigger may keep DOM focus (the composer), so
-  // the navigation keys are taken at the window in capture, re-bound each render to the latest rows.
-  useEffect(() => {
-    if (highlight !== "state" || search || !takesFocus) return;
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.isComposing || closed.current) return;
-      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-        event.preventDefault();
-        event.stopPropagation();
-        move(step(event.key, searchIndex()));
-        return;
-      }
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (highlighted) activate(highlighted, document.getElementById(rowId(highlighted.id)), true);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  });
-
   const openBranch = (action: DropdownMenuAction, row: HTMLElement, keyboard: boolean) => {
     cancelClose();
     setBranch((current) =>
@@ -590,6 +569,26 @@ function MenuSurface({
         />
       )
     ) : null;
+  // `highlight="state"` without a search field: the trigger may keep DOM focus (the composer), so
+  // the navigation keys are taken at the window in capture, re-bound each render to the latest rows.
+  useEffect(() => {
+    if (highlight !== "state" || search || !takesFocus) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.isComposing || closed.current) return;
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        event.stopPropagation();
+        move(step(event.key, searchIndex()));
+        return;
+      }
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (highlighted) activate(highlighted, document.getElementById(rowId(highlighted.id)), true);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
   return (
     <Popover
       {...dataAttributes}

@@ -337,17 +337,20 @@ function DockBody({
       onClick={() => setExpanded(!open)}
       className="max-w-full min-w-0 flex-1 justify-between"
     >
-      {summary}
-      {/* The provider marks name who runs the work; the counts say how it stands.
+      {/* One wrapping row: a narrow dock drops the counts under the summary instead of squeezing it. */}
+      <span className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        {summary}
+        {/* The provider marks name who runs the work; the counts say how it stands.
         "Background work" stays in the accessible label only. */}
-      <span className="flex min-w-0 shrink-0 items-center gap-2">
-        <ProviderStack agents={listed} fallback={harness} />
-        <span className="flex min-w-0 flex-wrap items-center gap-x-1">
-          {counts.map(({ text, tone }, index) => (
-            <Text key={text} size="inherit" tone={tone ?? "inherit"}>
-              {index ? `· ${text}` : text}
-            </Text>
-          ))}
+        <span className="flex min-w-0 shrink-0 items-center gap-2">
+          <ProviderStack agents={listed} fallback={harness} />
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1">
+            {counts.map(({ text, tone }, index) => (
+              <Text key={text} size="inherit" tone={tone ?? "inherit"}>
+                {index ? `· ${text}` : text}
+              </Text>
+            ))}
+          </span>
         </span>
       </span>
     </Button>

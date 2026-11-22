@@ -451,6 +451,7 @@ it("keeps recovery actions independent of feedback dismissal", async () => {
         SettingsFeedback,
         {
           state: "error",
+          children: null,
           onDismiss: dismiss,
           action: { label: "Retry", onClick: retry },
         },
@@ -535,7 +536,7 @@ it("exposes row layout props as data attributes and omits the defaults", async (
     root.render(
       createElement(
         Group,
-        { title: "Group" },
+        { title: "Group", children: null },
         createElement(Row, { label: "Plain" }),
         createElement(Row, {
           label: "Tuned",

@@ -17,6 +17,9 @@ import sharedResizeObserver from "./rules/shared-resize-observer.mjs";
 import sharedContainerAppearance from "./rules/shared-container-appearance.mjs";
 import suppressionHasReason from "./rules/suppression-has-reason.mjs";
 import transcriptInkRoles from "./rules/transcript-ink-roles.mjs";
+import transcriptRowTrigger from "./rules/transcript-row-trigger.mjs";
+import disabledNeedsReason from "./rules/disabled-needs-reason.mjs";
+import noRawErrorText from "./rules/no-raw-error-text.mjs";
 import translationSlotNames from "./rules/translation-slot-names.mjs";
 import utf8ChildLocale from "./rules/utf8-child-locale.mjs";
 import wholeSentenceTranslation from "./rules/whole-sentence-translation.mjs";
@@ -35,6 +38,9 @@ export const rules = {
   "shared-container-appearance": sharedContainerAppearance,
   "suppression-has-reason": suppressionHasReason,
   "transcript-ink-roles": transcriptInkRoles,
+  "transcript-row-trigger": transcriptRowTrigger,
+  "disabled-needs-reason": disabledNeedsReason,
+  "no-raw-error-text": noRawErrorText,
   "translation-slot-names": translationSlotNames,
   "utf8-child-locale": utf8ChildLocale,
   "whole-sentence-translation": wholeSentenceTranslation,

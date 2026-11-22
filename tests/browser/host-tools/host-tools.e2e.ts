@@ -492,7 +492,7 @@ test("starts live logs and moves a separate panel without covering the workspace
     await trigger.click();
     await page
       .getByRole("menuitemradio", {
-        name: `Dock ${placement[0].toUpperCase()}${placement.slice(1)}`,
+        name: `Dock ${placement}`,
         exact: true,
       })
       .click();

@@ -45,12 +45,15 @@ test("settings search metadata uses the available result width", async ({ page }
       );
       await page.getByRole("button", { name: "Search settings", exact: true }).click();
       await page.getByRole("combobox", { name: "Search settings", exact: true }).fill("phone");
-      const result = page
-        .getByRole("option")
-        .filter({ hasText: "Phone" })
-        .filter({ hasText: "Connections" });
+      // Results are grouped under their category heading, so the category is the group's label
+      // rather than metadata inside each option.
+      const group = page.getByRole("group", { name: "Connections", exact: true });
+      const result = group.getByRole("option").filter({ hasText: "Phone" });
       await expect(result).toHaveCount(1);
-      const metadata = result.locator("span").filter({ hasText: /^Connections$/ });
+      const metadata = group
+        .locator("span, div")
+        .filter({ hasText: /^Connections$/ })
+        .first();
       await expect(metadata).toBeVisible();
       const geometry = await metadata.evaluate((node) => ({
         height: node.getBoundingClientRect().height,

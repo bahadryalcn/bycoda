@@ -452,9 +452,10 @@ for (const light of [true, false])
         await expect(box).toHaveCSS("backdrop-filter", working.filter);
         for (const [node, opacity] of [
           [message, 42],
-          [reply, 26],
+          [page.locator("[data-transcript-reply]").last(), 90],
         ] as const) {
-          await expect(node).toHaveCSS("backdrop-filter", working.filter);
+          // The reading surface blurs only by the Transcript surface blur setting (0 by default), not by the dock glass.
+          await expect(node).toHaveCSS("backdrop-filter", "none");
           await expect(node).toHaveCSS(
             "background-color",
             await expectedMessageFill(node, opacity, mode === "forced-colors"),

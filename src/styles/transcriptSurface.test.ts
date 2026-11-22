@@ -43,7 +43,7 @@ it("rolls ink from a body share so chrome can never exceed body", () => {
 it("paints the reading surface without the floating chat glass", () => {
   expect(surface).not.toContain("--ui-chat-glass-");
   expect(surface).toMatch(/--transcript-surface-color:\s*var\(--ui-chat-pane-canvas\)/);
-  expect(surface).toMatch(/--appearance-transcript-surface-opacity, 45%/);
+  expect(surface).toMatch(/--appearance-transcript-surface-opacity, 90%/);
   expect(surface).toMatch(/--transcript-surface-filter:\s*none/);
 });
 

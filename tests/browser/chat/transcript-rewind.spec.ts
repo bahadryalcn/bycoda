@@ -29,7 +29,8 @@ for (const width of [1280, 800])
       const picker = page.locator("[data-model-picker-presentation]").first();
       await picker.click();
       await expect(page.getByText("Codex fixture", { exact: true }).last()).toBeVisible();
-      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toHaveCount(0);
+      // The retained list stays usable, and the failed refresh is shown with Retry instead of hidden.
+      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toBeVisible();
       await page.screenshot({ path: `${captures}/retained-${width}-${theme}.png` });
 
       await page.evaluate(() => localStorage.removeItem("bycoda.remote-models.v1"));

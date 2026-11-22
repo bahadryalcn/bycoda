@@ -19,7 +19,7 @@ for (const theme of ["dark", "light"])
         .locator('[data-setting-id="chat-message-color"]')
         .getByRole("radio", { name: "Neutral", exact: true });
       await expect(user).toHaveAttribute("aria-valuenow", "42");
-      await expect(reply).toHaveAttribute("aria-valuenow", "45");
+      await expect(reply).toHaveAttribute("aria-valuenow", "90");
       await preview.scrollIntoViewIfNeeded();
       if (process.env.CHAT_MESSAGE_APPEARANCE_CAPTURE) {
         const directory = "temp/verification/chat-message-appearance";
@@ -35,7 +35,10 @@ for (const theme of ["dark", "light"])
       await expect(reply).toHaveAttribute("aria-valuenow", "0");
       await expect(user).toHaveAttribute("aria-valuenow", "100");
       await page.reload();
-      await page.getByRole("tab", { name: "Chat", exact: true }).click();
+      await page
+        .locator(".appearance-settings")
+        .getByRole("tab", { name: "Chat", exact: true })
+        .click();
       await expect(user).toHaveAttribute("aria-valuenow", "100");
       await expect(reply).toHaveAttribute("aria-valuenow", "0");
       await expect(neutral).toBeChecked();
@@ -507,13 +510,20 @@ test("appearance topics stay visible and support search into nested controls", a
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=dark&lang=en");
   const topics = page.getByRole("tablist", { name: "Appearance", exact: true }).getByRole("tab");
-  await expect(topics).toHaveCount(5);
+  await expect(topics).toHaveCount(6);
   await page.screenshot({ path: testInfo.outputPath("appearance-overview-dark.png") });
   await openAppearanceTab(page, "Typography");
   await expect(page.locator('[data-setting-id="code-font-size"]')).toBeVisible();
-  await expect(
-    page.locator(".appearance-settings details, .appearance-settings summary"),
-  ).toHaveCount(0);
+  // No setting is a collapsed section; the Transcript preview's sample step row is the only disclosure.
+  await expect
+    .poll(() =>
+      page
+        .locator(".appearance-settings details, .appearance-settings summary")
+        .evaluateAll(
+          (nodes) => nodes.filter((node) => !node.closest("[data-transcript-preview]")).length,
+        ),
+    )
+    .toBe(0);
 
   await page.getByRole("button", { name: "Search settings", exact: true }).click();
   await page
@@ -542,7 +552,7 @@ test("appearance topics stay visible and support search into nested controls", a
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=light&lang=tr");
   await expect(
     page.getByRole("tablist", { name: "Görünüm", exact: true }).getByRole("tab"),
-  ).toHaveCount(5);
+  ).toHaveCount(6);
   await page.screenshot({ path: testInfo.outputPath("appearance-overview-light-tr.png") });
 });
 

@@ -850,11 +850,11 @@ test("populated source control for a remote project keeps restrictions visible",
   await page.goto("/tests/browser/source-control/worktrees.html?populated&remote&theme=light");
   const repo = page.locator('[data-setting-id="project-worktrees"]');
   await expect(
-    repo.getByText("Creating and deleting worktrees runs on this computer", {
+    repo.getByText("Deleting worktrees runs on this computer", {
       exact: false,
     }),
   ).toBeVisible();
-  await expect(repo.getByRole("button", { name: "Create worktree", exact: true })).toBeDisabled();
+  await expect(repo.getByRole("button", { name: "Create worktree", exact: true })).toBeEnabled();
   const remoteTrees = repo.getByRole("list", {
     name: "Worktrees",
     exact: true,

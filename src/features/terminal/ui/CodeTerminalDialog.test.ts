@@ -140,7 +140,7 @@ it("stops a running command before it closes, with no silently locked close", as
   const state: CodeTerminalState = {
     ...exitedController().snapshot(),
     phase: "running",
-    exitCode: undefined,
+    exitCode: null,
     output: "",
   } as CodeTerminalState;
   const stop = vi.fn(async () => {});

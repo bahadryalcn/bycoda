@@ -53,7 +53,14 @@ function rail(onValueChange: (v: string) => void, onKeyDown?: (e: unknown) => vo
     root.render(
       createElement(
         Tabs,
-        { value: "a", onValueChange, orientation: "vertical", variant: "tab", panels: "none" },
+        {
+          value: "a",
+          onValueChange,
+          orientation: "vertical",
+          variant: "tab",
+          panels: "none",
+          children: null,
+        },
         createElement(
           TabList,
           { label: "Providers" },
@@ -104,7 +111,7 @@ it("carries scroll and inset on the strip instead of caller selectors", async ()
     root.render(
       createElement(
         Tabs,
-        { value: "a", onValueChange: vi.fn(), panels: "none" },
+        { value: "a", onValueChange: vi.fn(), panels: "none", children: null },
         createElement(
           TabList,
           { label: "Sections", scroll: "auto", inset: "sm" },

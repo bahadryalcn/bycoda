@@ -12,7 +12,7 @@
   --transcript-surface-color: var(--ui-chat-pane-canvas);
   --transcript-surface-fill: color-mix(
     in oklab,
-    var(--transcript-surface-color) var(--appearance-transcript-surface-opacity, 45%),
+    var(--transcript-surface-color) var(--appearance-transcript-surface-opacity, 90%),
     transparent
   );
   --transcript-surface-filter: none;

@@ -102,7 +102,7 @@ export function VoiceSetupRow({
             ) : null}
             {visibleError ? (
               <Button
-                variant="primary"
+                variant="secondary"
                 onClick={() => {
                   setup.resetJob();
                   setup.check();
