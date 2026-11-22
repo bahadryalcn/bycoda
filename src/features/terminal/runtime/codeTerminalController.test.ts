@@ -112,6 +112,28 @@ it("never falls back to native or repeats an unknown Host creation", async () =>
   expect(controller.snapshot().error).toContain("Terminal identity is unknown");
 });
 
+it.each([
+  ["RPC_WS_OVERLOAD", true],
+  ["RPC_WS_INTERRUPTED", false],
+] as const)("classifies %s without resending terminal creation", async (code, deferred) => {
+  const reason = Object.assign(new Error("Could not start terminal"), { code });
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockRejectedValueOnce(reason);
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  await controller.start();
+  if (deferred)
+    expect(controller.snapshot()).toMatchObject({ phase: "not-started", actionError: reason });
+  else {
+    expect(controller.snapshot().error).toMatch(/outcome is unknown/i);
+    expect(controller.snapshot().actionError).toBeUndefined();
+  }
+  expect(
+    mocks.request.mock.calls.filter(([, method]) => method === "terminals.create"),
+  ).toHaveLength(1);
+});
+
 it("refuses stale conversation after asynchronous shell discovery", async () => {
   mocks.profiles.mockResolvedValue({
     profiles: [{ id: "pwsh", name: "PowerShell", kind: "pwsh" }],
@@ -202,6 +224,41 @@ it("reports failed reads once per distinct error and recovers in one notificatio
   await expect(controller.refresh()).resolves.toBe("progress");
   expect(listener).toHaveBeenCalledTimes(2);
   expect(controller.snapshot()).toMatchObject({ phase: "running", output: "ab", error: undefined });
+});
+
+it("retains output through a transient read failure and never launches the command again", async () => {
+  const outage = Object.assign(new Error("Host is stopping."), { code: "HOST_STOPPING" });
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "PowerShell" })
+    .mockResolvedValueOnce({
+      output: "a",
+      cursor: 1,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    })
+    .mockRejectedValueOnce(outage)
+    .mockResolvedValueOnce({
+      output: "b",
+      cursor: 2,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  await expect(controller.refresh()).resolves.toBe("failed");
+  expect(controller.snapshot()).toMatchObject({ phase: "running", output: "a", readError: outage });
+  await expect(controller.refresh()).resolves.toBe("progress");
+  expect(controller.snapshot()).toMatchObject({
+    phase: "running",
+    output: "ab",
+    readError: undefined,
+  });
+  expect(
+    mocks.request.mock.calls.filter(([, method]) => method === "terminals.create"),
+  ).toHaveLength(1);
 });
 
 it("trims remote output at a grapheme boundary without losing order", async () => {

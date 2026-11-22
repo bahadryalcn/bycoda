@@ -1246,7 +1246,7 @@ it("keeps admitted evidence when Stop arrives before the original dispatch", asy
   expect(outboxFixture.settlements.size).toBe(0);
 });
 
-it("keeps an existing unknown command when a second-window retry is stopped during admission", async () => {
+it("keeps a restored unknown command when stopped without readmitting it", async () => {
   openExistingChat();
   const original: HostCommand = {
     type: "send",
@@ -1255,20 +1255,15 @@ it("keeps an existing unknown command when a second-window retry is stopped duri
     text: "Original",
   };
   await admitDurableRemoteCommand(projectKey, "env", original, "shell");
-  let release!: () => void;
-  outboxFixture.afterCommit = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  // The pending check retries the saved command by itself; its admission is held here.
+  const revision = outboxFixture.revision;
   await render();
-  await vi.waitFor(() => expect(outboxFixture.afterCommit).toBeUndefined());
+  expect(outboxFixture.revision).toBe(revision);
   await act(async () => transportProbe.current!.onStop!("shell"));
   await vi.waitFor(async () =>
     expect(
       (await readDurableRemoteEntry(projectKey, "env", original.commandId)).entry?.stopRequested,
     ).toBe(true),
   );
-  await act(async () => release());
   await settle();
   expect(
     (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
@@ -1303,8 +1298,7 @@ async function chooseEffort(label: string) {
 it("uses the normal composer with the host branch in its top row", async () => {
   await render();
   expect(container.querySelector("textarea")).not.toBeNull();
-  // The machine is named in the project rail, not the composer.
-  expect(document.body.textContent).not.toContain("Home server");
+  expect(container.querySelector("[data-composer]")?.textContent).not.toContain("Home server");
   expect(byLabel("Branch main")).not.toBeNull();
   expect(
     [...document.body.querySelectorAll("button")].some(
@@ -2378,34 +2372,40 @@ it("holds the Extras setting during a running turn and applies it after the turn
 });
 
 it.each([false, true])(
-  "transport: retries a lost create response without duplicating the first turn (remount: %s)",
+  "transport: reconciles a lost create response without redispatching (remount: %s)",
   async (remount) => {
+    commandStatusSupported = true;
     const original = vi.mocked(invoke).getMockImplementation()!;
     let accepted: ReturnType<typeof dispatch> | undefined;
+    let receiptAvailable = !remount;
     const attempts: HostCommand[] = [];
     vi.mocked(invoke).mockImplementation(async (command, input) => {
       const request = input as { method?: string; params?: HostCommand } | undefined;
       if (request?.method === "commands.dispatch" && request.params?.type === "create") {
         attempts.push(request.params);
-        if (accepted) return accepted;
         accepted = dispatch(request.params);
         throw new Error("Response lost after host accepted the request");
       }
+      if (
+        request?.method === "commands.status" &&
+        request.params?.commandId === attempts[0]?.commandId
+      )
+        return receiptAvailable ? accepted : null;
       return original(command, input);
     });
     await render();
     await sendTransport("Keep this first message");
-    // The lost response is not the end: the pending check sends the same create again.
     await settle();
-    expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
     if (remount) {
+      expect(attempts).toHaveLength(1);
+      expect(commands.map((command) => command.type)).toEqual(["create"]);
       await act(async () => root.unmount());
+      receiptAvailable = true;
       root = createRoot(container);
       await render();
       await settle();
     }
-    expect(attempts).toHaveLength(2);
-    expect(attempts[1]).toEqual(attempts[0]);
+    expect(attempts).toHaveLength(1);
     expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
     expect(commands[1]).toMatchObject({
       text: "Keep this first message",
@@ -2414,6 +2414,24 @@ it.each([false, true])(
     expect(transcriptItems("Keep this first message")).toHaveLength(1);
   },
 );
+
+it("holds an unconfirmed create on an older Host without dispatching it again", async () => {
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  const attempts = vi.fn();
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const request = input as { method?: string; params?: HostCommand } | undefined;
+    if (request?.method === "commands.dispatch" && request.params?.type === "create") {
+      attempts(request.params.commandId);
+      throw new Error("RPC_WS_INTERRUPTED: reply lost; outcome is unknown");
+    }
+    return original(command, input);
+  });
+  await render();
+  await sendTransport("Keep my unconfirmed request");
+  await settle();
+  expect(attempts).toHaveBeenCalledOnce();
+  expect(document.body.textContent).toContain("Remote outcome is unknown");
+});
 
 it("settles a send whose response was lost once the Host reports its receipt, without sending it again", async () => {
   commandStatusSupported = true;

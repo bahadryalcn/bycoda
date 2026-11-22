@@ -1,8 +1,5 @@
 import { errorText } from "../../../shared/lib/errors";
-import {
-  isUnsupportedRemoteRoute,
-  presentRemoteError,
-} from "../../connections/public/remoteFailure";
+import { isUnsupportedRemoteRoute } from "../../connections/public/remoteFailure";
 import { useGracedFailure } from "../../connections/public/transientFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { Text as UiText } from "../../../shared/ui/Text";
@@ -589,13 +586,17 @@ export function FileEditor({
           return;
         if (force && dirtyRef.current) {
           await reportFailure(error, {
-            toast: { show: ({ message }) => {
-              if (generation === loadGeneration.current) setSaveState({ status: "error", message });
-            } },
+            toast: {
+              show: ({ message }) => {
+                if (generation === loadGeneration.current)
+                  setSaveState({ status: "error", message });
+              },
+            },
           });
           return;
         }
-        if (dirtyRef.current) pendingDiskRef.current = true;
+        pendingDiskRef.current = true;
+        diskChangeVersion.current += 1;
         setDiskVerificationError(error);
       } finally {
         settled();
@@ -718,7 +719,7 @@ export function FileEditor({
   ]);
   const retryDocumentLoad = () => setReloadKey((value) => value + 1);
   const failureScope = `${documentId}:${path}`;
-  const { visibleError: loadError, pending: loadPending } = useGracedFailure({
+  const { visibleError: loadError } = useGracedFailure({
     error: loadState.status === "error" ? loadState.error : null,
     loading: loadState.status === "loading",
     retry: shown ? retryDocumentLoad : undefined,
@@ -730,12 +731,16 @@ export function FileEditor({
     scope: failureScope,
   });
   // Recheck the current disk baseline without remounting the editor or discarding drafts.
-  useReloadOnReconnect(path, () => {
-    if (loadState.status === "error") retryDocumentLoad();
-    else return reloadFromDisk();
-  }, {
-    active: shown && (loadState.status === "error" || diskVerificationError !== null),
-  });
+  useReloadOnReconnect(
+    path,
+    () => {
+      if (loadState.status === "error") retryDocumentLoad();
+      else return reloadFromDisk();
+    },
+    {
+      active: shown && (loadState.status === "error" || diskVerificationError !== null),
+    },
+  );
 
   useEffect(() => {
     if (!showDiff) {
@@ -1014,10 +1019,12 @@ export function FileEditor({
             });
           } else {
             await reportFailure(error, {
-              toast: { show: ({ message }) => {
-                if (generation === saveGeneration.current)
-                  setSaveState({ status: "error", message });
-              } },
+              toast: {
+                show: ({ message }) => {
+                  if (generation === saveGeneration.current)
+                    setSaveState({ status: "error", message });
+                },
+              },
             });
           }
         }
@@ -1111,9 +1118,11 @@ export function FileEditor({
         notifyGitChanged(cwd, "index");
       } catch (error) {
         await reportFailure(error, {
-          toast: { show: ({ message }) => {
-            if (currentIdentity.current.path === path) setSaveState({ status: "error", message });
-          } },
+          toast: {
+            show: ({ message }) => {
+              if (currentIdentity.current.path === path) setSaveState({ status: "error", message });
+            },
+          },
         });
         throw error;
       }
@@ -1199,9 +1208,11 @@ export function FileEditor({
     } catch (error) {
       if (generation === draftViewGeneration.current)
         await reportFailure(error, {
-          toast: { show: ({ message }) => {
-            if (generation === draftViewGeneration.current) setDraftActionError(message);
-          } },
+          toast: {
+            show: ({ message }) => {
+              if (generation === draftViewGeneration.current) setDraftActionError(message);
+            },
+          },
         });
     } finally {
       settled();
@@ -1228,9 +1239,11 @@ export function FileEditor({
     } catch (error) {
       if (generation === draftViewGeneration.current)
         await reportFailure(error, {
-          toast: { show: ({ message }) => {
-            if (generation === draftViewGeneration.current) setDraftActionError(message);
-          } },
+          toast: {
+            show: ({ message }) => {
+              if (generation === draftViewGeneration.current) setDraftActionError(message);
+            },
+          },
         });
     } finally {
       settled();
@@ -1253,7 +1266,18 @@ export function FileEditor({
     gitSettledPath !== path &&
     renderedDocumentRef.current !== documentId;
 
-  if (loadState.status === "loading" || loadPending || diffPending) {
+  if (loadError) {
+    return (
+      <FileLoadError
+        path={path}
+        message={loadError}
+        retryable={loadState.status !== "error" || !isUnsupportedRemoteRoute(loadState.error)}
+        onRetry={retryDocumentLoad}
+      />
+    );
+  }
+
+  if (loadState.status !== "ready" || diffPending) {
     return (
       <UiText
         role="status"
@@ -1267,18 +1291,6 @@ export function FileEditor({
           {t("Opening {p0}…", { p0: basename(path) })}
         </span>
       </UiText>
-    );
-  }
-
-  if (loadState.status === "error") {
-    if (!loadError) return null;
-    return (
-      <FileLoadError
-        path={path}
-        message={loadError}
-        retryable={!isUnsupportedRemoteRoute(loadState.error)}
-        onRetry={retryDocumentLoad}
-      />
     );
   }
 
@@ -1358,7 +1370,11 @@ export function FileEditor({
   };
 
   return (
-    <div ref={editorRootRef} aria-busy={diskPending} className="flex h-full min-h-0 min-w-0 flex-col">
+    <div
+      ref={editorRootRef}
+      aria-busy={diskPending}
+      className="flex h-full min-h-0 min-w-0 flex-col"
+    >
       {draftPersistence?.initializationDecisionRequired ? (
         <UiText
           role="status"
@@ -1418,7 +1434,7 @@ export function FileEditor({
             t("Draft recovery copy could not be confirmed. Keep this editor open.")}
         </InlineError>
       ) : null}
-      {(diskConflict || (diskError && pendingDiskRef.current)) && (
+      {(diskConflict || (diskError && dirty)) && (
         <Alert
           tone="warning"
           className="shrink-0"
@@ -1447,7 +1463,7 @@ export function FileEditor({
               )}
         </Alert>
       )}
-      {diskError && !diskConflict && !pendingDiskRef.current ? (
+      {diskError && !diskConflict && !dirty ? (
         <InlineError className="shrink-0" retry={{ onRetry: () => reloadFromDisk() }}>
           {diskError}
         </InlineError>

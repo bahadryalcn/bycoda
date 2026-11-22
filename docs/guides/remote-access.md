@@ -703,6 +703,12 @@ Full access reuses execution permission for saved SSH commands in the original c
 
 ### Short connection interruptions
 
+The desktop retries interrupted reads in the background. A read can show a small
+loading indicator during its first three seconds. If the Host reports that it is
+shutting down, the desktop gives the restarted Host seven seconds to answer.
+Failures that need your input appear immediately. Unconfirmed deliveries remain
+visible so you can check the outcome before sending again.
+
 During sleep, network changes or a Host restart, mounted workspace panes share one
 **Reconnecting…** notice per machine for up to 45 seconds. Loaded content and drafts
 stay available; authentication, identity and protocol refusals still need immediate

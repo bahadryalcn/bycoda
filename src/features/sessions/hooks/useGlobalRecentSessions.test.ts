@@ -546,3 +546,32 @@ it("reports a readable retry message after repeated snapshot changes", async () 
     vi.unstubAllGlobals();
   }
 });
+
+it("retries a five-second local Host restart without publishing a recent-session error", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const started = Date.now();
+  fetch.mockImplementation(async () => {
+    if (Date.now() - started < 5_000) throw new Error("Host database is closing.");
+    return { rows: [row], nextCursor: null };
+  });
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(result.loading).toBe(true);
+    expect(result.error).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(2_300));
+    expect(result.error).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(2_400));
+    expect(result.error).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(1_900));
+    expect(result.error).toBeNull();
+    expect(result.loading).toBe(false);
+    expect(result.rows).toEqual([row]);
+    expect(fetch).toHaveBeenCalledTimes(3);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

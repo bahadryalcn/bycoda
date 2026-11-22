@@ -116,6 +116,9 @@ export function useGitResource<T>(
     let cancelled = false;
     let inFlight = false;
     let pending = false;
+    // Throttle background refreshes of this mounted resource after a permanent
+    // refusal without caching its error across visits.
+    let lastPermanentFailure: number | undefined;
     // Progress is for a read someone waits on: the first one, or an explicit
     // refresh. A watcher or focus reload of shown data stays silent, or busy
     // checkouts (many agents committing) would keep the refresh control spinning.
@@ -129,7 +132,7 @@ export function useGitResource<T>(
     }));
     if (!enabled) return;
     const load = async (force = false) => {
-      const prior = completed.get(key);
+      const prior = lastPermanentFailure ?? completed.get(key);
       if (!force && prior !== undefined && Date.now() - prior < minRefreshMs) {
         setSnapshot((previous) => ({ ...previous, loading: false }));
         return;
@@ -195,10 +198,13 @@ export function useGitResource<T>(
             continue;
           }
           if (!outcome.success) throw outcome.error;
+          lastPermanentFailure = undefined;
           setSnapshot({ key, data: outcome.data, loading: false, settled: true });
           break;
         }
       } catch (error) {
+        lastPermanentFailure =
+          classifyFailureLifetime(error) === "permanent" ? Date.now() : undefined;
         if (!cancelled)
           setSnapshot((previous) => ({
             ...previous,
@@ -228,9 +234,10 @@ export function useGitResource<T>(
     };
     const resume = () => {
       if (document.hidden) return;
-      const prior = completed.get(key);
+      const prior = lastPermanentFailure ?? completed.get(key);
       const fresh =
-        (covered && isGitWatched(cwd)) || (prior !== undefined && Date.now() - prior < RESUME_TTL_MS);
+        (covered && isGitWatched(cwd)) ||
+        (prior !== undefined && Date.now() - prior < RESUME_TTL_MS);
       if (!missed && fresh) return;
       missed = false;
       void load();

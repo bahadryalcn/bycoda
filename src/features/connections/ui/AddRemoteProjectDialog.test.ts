@@ -78,7 +78,10 @@ it.each(["online", "recovered"])(
       return original(command, input);
     });
     await render();
-    expect(document.body.textContent).toContain("Data has not been verified");
+    expect(document.body.textContent).not.toContain("Data has not been verified");
+    expect(
+      document.querySelector('[data-remote-data-state="error"][aria-busy="true"]'),
+    ).not.toBeNull();
     const input = document.body.querySelector<HTMLInputElement>(
       'input[aria-label="Folder path on the machine"]',
     )!;
@@ -95,6 +98,7 @@ it.each(["online", "recovered"])(
       else notifyRemoteRecovered("env");
     });
     expect(document.body.textContent).not.toContain("Data has not been verified");
+    expect(document.querySelector('[data-remote-data-state="error"]')).toBeNull();
     expect(input.value).toBe("/my/unsaved/path");
     expect(opened).toEqual([]);
     expect(

@@ -79,6 +79,15 @@ beforeEach(() => {
 });
 
 describe("local session owner resolution", () => {
+  it("retains a temporary Host resolution failure for the mounted session reader", async () => {
+    const failure = new Error("Host is stopping.");
+    mocks.remoteRequest.mockRejectedValue(failure);
+    await expect(
+      resolveLocalSessionReference({ locator: host }, { preserveTransientFailure: true }),
+    ).rejects.toBe(failure);
+    await expect(resolveLocalSessionReference({ locator: host })).rejects.toThrow("unavailable");
+  });
+
   it("opens an exact paired Host only after checking its live reference capability", async () => {
     const paired = {
       ...machine,

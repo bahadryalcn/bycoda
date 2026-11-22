@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { gitHistory, type GitHistoryCommit } from "../../../platform/tauri/fs";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { reportRemoteLoad, useRemoteLoadFailure } from "../../connections/public/remoteHealth";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { useMachineAvailability } from "../../connections/public/machineAvailability";
 import { useGitResource } from "./useGitResource";
 
@@ -16,7 +16,7 @@ type Continuation = {
   commits: GitHistoryCommit[];
   ended: boolean;
   loading: boolean;
-  error: string | null;
+  cause?: unknown;
 };
 
 /**
@@ -60,11 +60,11 @@ export function useGitHistory(cwd: string, enabled: boolean, all: boolean) {
 
   const loadMore = () => {
     // Retained (offline) history stays shown, but its machine is not asked for more.
-    if (!available || !base || tail?.loading || !hasMore) return;
+    if (!enabled || !available || !base || tail?.loading || !hasMore) return;
     const prior = tail?.commits ?? [];
     const skip = base.length + prior.length;
-    setContinuation({ base, commits: prior, ended: false, loading: true, error: null });
-    gitHistory(cwd, HISTORY_PAGE, all, skip).then(
+    setContinuation({ base, commits: prior, ended: false, loading: true, cause: tail?.cause });
+    return gitHistory(cwd, HISTORY_PAGE, all, skip).then(
       (page) => {
         // An older Host ignores `skip`; commits already shown are never added twice.
         const known = new Set([...base, ...prior].map((commit) => commit.sha));
@@ -78,21 +78,23 @@ export function useGitHistory(cwd: string, enabled: boolean, all: boolean) {
                 commits: prior.concat(fresh),
                 ended: fresh.length === 0 || page.commits.length < HISTORY_PAGE,
                 loading: false,
-                error: null,
               }
             : current,
         );
       },
       (error: unknown) =>
         setContinuation((current) =>
-          current?.base === base
-            ? { ...current, loading: false, error: presentRemoteError(error, { explicit: true }) }
-            : current,
+          current?.base === base ? { ...current, loading: false, cause: error } : current,
         ),
     );
   };
 
-  const error = resource.error ?? tail?.error ?? null;
+  const { visibleError, pending } = useGracedFailure({
+    error: enabled && available ? tail?.cause : undefined,
+    retry: loadMore,
+    scope: base,
+  });
+  const error = resource.error ?? visibleError ?? null;
   // Hands each finished read's outcome to remote health; a cached or paused snapshot is none.
   useEffect(() => {
     if (enabled && remote && resource.settled) reportRemoteLoad(cwd, "graph", resource.cause);
@@ -101,7 +103,7 @@ export function useGitHistory(cwd: string, enabled: boolean, all: boolean) {
     commits,
     hasMore,
     loadMore,
-    loading: resource.loading || !!tail?.loading,
+    loading: resource.loading || !!tail?.loading || pending,
     error,
     failure,
     refresh: resource.refresh,

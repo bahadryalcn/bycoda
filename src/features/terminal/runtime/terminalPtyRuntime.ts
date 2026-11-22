@@ -98,9 +98,9 @@ export type TerminalPtyRuntimeOptions = {
   /** Spawn succeeded and the process is live. */
   onSpawned(): void;
   /** Spawn was refused or failed while the view is still attached. */
-  onStartFailed(message: string): void;
+  onStartFailed(error: unknown, attemptedLaunch: boolean): void;
   /** Serial input failed or backed up while the view is still attached. */
-  onInputFailure(message: string): void;
+  onInputFailure(error: unknown): void;
 };
 
 /**
@@ -156,7 +156,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     },
     (error) => {
       if (closed) return;
-      options.onInputFailure(errorText(error));
+      options.onInputFailure(error);
     },
   );
 
@@ -332,13 +332,12 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
           }
         })
         .catch((error) => {
-          options.lifecycle("failed");
           spawned = false;
           const message = errorText(error);
           failRun(message);
           if (!closed) {
             exited = true;
-            options.onStartFailed(message);
+            options.onStartFailed(error, didStart);
           }
           throw error;
         });

@@ -885,8 +885,10 @@ fn rpc_exchange(
         if denied {
             return Err(rejection(Some(error)));
         }
-        if let Some(code @ ("HOST_STOPPING" | "HOST_RPC_DEADLINE" | "HOST_DB_CLOSING" | "REQUEST_CANCELLED")) =
-            value.get("code").and_then(Value::as_str)
+        if let Some(
+            code
+            @ ("HOST_STOPPING" | "HOST_RPC_DEADLINE" | "HOST_DB_CLOSING" | "REQUEST_CANCELLED"),
+        ) = value.get("code").and_then(Value::as_str)
         {
             return Err(format!("Host rejected request: [{code}] {error}"));
         }
@@ -1314,7 +1316,10 @@ fn native_ws_failure(error: WsFailure) -> String {
     }
     if error.code == "RPC_WS_REMOTE" {
         if error.retryable {
-            return format!("Host rejected request: [RPC_WS_RETRYABLE] {}", error.message);
+            return format!(
+                "Host rejected request: [RPC_WS_RETRYABLE] {}",
+                error.message
+            );
         }
         return format!("Host rejected request: {}", error.message);
     }

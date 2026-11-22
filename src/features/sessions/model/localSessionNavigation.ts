@@ -128,7 +128,8 @@ export async function resolveLocalSessionReference(
   if (machine)
     return resolveOnHost(machine, { ...reference, locator }, privacy, false).catch(readFailure);
   const paired = await remoteMachineFor(hostLocator.environmentId).catch(() => undefined);
-  if (!paired || paired.environmentId !== hostLocator.environmentId) return readFailure(localFailure);
+  if (!paired || paired.environmentId !== hostLocator.environmentId)
+    return readFailure(localFailure);
   return resolveOnHost(paired, { ...reference, locator }, privacy, true).catch(readFailure);
 }
 

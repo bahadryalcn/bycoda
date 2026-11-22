@@ -58,7 +58,6 @@ export function RemoteDataStatus({
   const loadingShown = useDelayedVisible(state.phase === "loading");
   // The notice the owner closed; a different phase, error or verification time shows again.
   const [dismissed, setDismissed] = useState("");
-  const noticeKey = JSON.stringify([state.phase, state.error ?? "", state.updatedAt ?? 0]);
   const failure = state.error ? classifyRemoteError(state.error) : undefined;
   const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
   // A busy machine is retried in the background; its failure is not an error yet.
@@ -68,6 +67,13 @@ export function RemoteDataStatus({
     loading: state.phase === "loading" || state.phase === "refreshing",
     scope: cwd,
   });
+  const refreshing = state.phase === "loading" || state.phase === "refreshing";
+  const phase = visibleError && refreshing ? "error" : state.phase;
+  const noticeKey = JSON.stringify([
+    phase,
+    state.error ?? visibleError ?? "",
+    state.updatedAt ?? 0,
+  ]);
   // A machine-level notice cannot explain a failed data/service operation.
   if (
     !machineName &&
@@ -82,8 +88,8 @@ export function RemoteDataStatus({
   const replacedError = !!state.error && isTransientTransportError(state.error);
   const errorView = state.error ? describeRemoteError(state.error) : undefined;
   const shownError = visibleError;
-  const busy = pending || state.phase === "loading" || state.phase === "refreshing";
-  const needsAttention = !pending && (state.phase === "error" || state.phase === "stale");
+  const busy = pending || refreshing;
+  const needsAttention = !pending && (phase === "error" || phase === "stale");
   const message =
     machineName &&
     (connectionIssueHandled || sharedConnectionIssue) &&
@@ -94,11 +100,11 @@ export function RemoteDataStatus({
         : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: dataLabel })
       : pending
         ? t("The machine is busy. Retrying…")
-        : state.phase === "loading"
+        : phase === "loading"
           ? t("Loading {p0}…", { p0: dataLabel })
-          : state.phase === "refreshing"
+          : phase === "refreshing"
             ? t("Refreshing {p0}… Showing last loaded data.", { p0: dataLabel })
-            : state.phase === "error"
+            : phase === "error"
               ? state.updatedAt
                 ? t("Couldn’t refresh {p0}. Showing last loaded data.", { p0: dataLabel })
                 : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: dataLabel })
@@ -117,7 +123,7 @@ export function RemoteDataStatus({
         minute: "2-digit",
       })
     : undefined;
-  if (state.phase === "loading" && !loadingShown && !machineName) return null;
+  if (phase === "loading" && !loadingShown && !machineName) return null;
   if (presentation === "notice" && !needsAttention) return null;
   if (presentation === "indicator" && needsAttention && !machineName) return null;
   if (!needsAttention || (presentation === "indicator" && machineName)) {
@@ -169,9 +175,9 @@ export function RemoteDataStatus({
       </Text>
     );
   }
-  const tone = state.phase === "error" ? "danger" : "info";
+  const tone = phase === "error" ? "danger" : "info";
   const retryLabel =
-    state.phase === "error"
+    phase === "error"
       ? t("Retry loading {p0}", { p0: dataLabel })
       : t("Refresh {p0}", { p0: dataLabel });
   // A floating notice joins the shared alert stack (errors at top center) and can be closed;
@@ -193,7 +199,7 @@ export function RemoteDataStatus({
         tone={tone}
         title={machineLabel ?? machineName ?? dataLabel}
         message={
-          <span data-remote-data-state={state.phase} aria-busy={busy}>
+          <span data-remote-data-state={phase} aria-busy={busy}>
             {message}
             {shownError && fitsOneLine(shownError) ? (
               <Text as="p" size="inherit" tone="muted" className="mt-1 break-words">
@@ -208,7 +214,7 @@ export function RemoteDataStatus({
         action={
           onRefresh
             ? {
-                label: state.phase === "error" ? t("Retry") : t("Refresh"),
+                label: phase === "error" ? t("Retry") : t("Refresh"),
                 ariaLabel: retryLabel,
                 onClick: onRefresh,
                 pending: busy,
@@ -222,7 +228,7 @@ export function RemoteDataStatus({
   }
   return (
     <Alert
-      data-remote-data-state={state.phase}
+      data-remote-data-state={phase}
       aria-busy={busy}
       tone={tone}
       icon={busy ? <Spinner /> : undefined}

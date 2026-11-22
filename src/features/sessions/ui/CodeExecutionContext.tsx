@@ -11,6 +11,7 @@ import { Button } from "../../../shared/ui/Button";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Play } from "../../../shared/ui/icons";
 import { toast } from "../../../shared/ui/ToastRegion";
+import { reportFailure } from "../../../shared/ui/reportFailure";
 import {
   codeShellKind,
   type CodeShellKind,
@@ -115,8 +116,13 @@ export function CodeExecutionProvider({
       .then(() => {
         const state = controller.snapshot();
         if (state.phase !== "running" || !state.profile) {
+          if (state.actionError && options.isCurrent()) {
+            setRun({ controller, options, report: onReport });
+            return;
+          }
           active.current = false;
-          toast.show({ tone: "danger", message: state.error ?? t("Could not run the command.") });
+          if (!state.actionError)
+            return reportFailure(state.error ?? t("Could not run the command."), { toast });
           return;
         }
         if (!options.isCurrent()) {

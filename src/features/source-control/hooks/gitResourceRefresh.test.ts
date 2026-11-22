@@ -32,7 +32,30 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it("keeps a five-second Host restart quiet and retries a failed Git read past the refresh interval", async () => {
+  vi.useFakeTimers();
+  const started = Date.now();
+  const read = vi.fn(async () => {
+    if (Date.now() - started < 5_000) throw new Error("Host is stopping.");
+    return "fresh";
+  });
+  function View() {
+    const result = useGitResource("/restart", "git-restart", true, read, false, 60_000);
+    return createElement("output", null, result.error ?? (result.data || "waiting"));
+  }
+  await act(async () => root.render(createElement(View)));
+  expect(container.textContent).toBe("waiting");
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(container.textContent).toBe("waiting");
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+  expect(container.textContent).toBe("waiting");
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  expect(container.textContent).toBe("fresh");
+  expect(read).toHaveBeenCalledTimes(3);
 });
 
 it("settles loading when a cached resource remounts inside its refresh interval", async () => {

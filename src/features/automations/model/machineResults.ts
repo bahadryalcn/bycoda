@@ -114,7 +114,11 @@ export async function collectMachineResults<T>(
         };
       } catch (reason: unknown) {
         // A passing outage keeps the last known entries (see `failed`) and shows no raw error.
-        return failed(machine, presentRemoteError(reason) ?? "The machine is not reachable.", reason);
+        return failed(
+          machine,
+          presentRemoteError(reason) ?? "The machine is not reachable.",
+          reason,
+        );
       }
     }),
   );

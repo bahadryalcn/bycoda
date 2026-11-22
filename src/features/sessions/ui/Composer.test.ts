@@ -1285,10 +1285,10 @@ describe("Composer question focus", () => {
     expect(skill).toBeDefined();
     await act(async () => skill!.click());
     expect(textarea.value).toBe("Review this $plugin:review ");
-    // The chip is the source text itself, so it keeps the textarea's size and spacing.
-    expect(document.querySelector("[data-composer-skill-token]")?.textContent).toBe(
-      "$plugin:review",
-    );
+    // The chip keeps the source text hidden (for the textarea's size and spacing) and draws the skill name as its face.
+    const chip = document.querySelector("[data-composer-skill-token]");
+    expect(chip?.textContent).toContain("$plugin:review");
+    expect(chip?.querySelector("[data-draft-token-label]")?.textContent).toBe("plugin:review");
   });
 
   it("hides /operator from suggestions but submits the typed command", async () => {

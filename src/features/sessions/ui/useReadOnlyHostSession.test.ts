@@ -129,9 +129,10 @@ async function setHidden(hidden: boolean) {
 
 it("reads the exact local Host worker through bounded preview pages without mounting any dispatch owner", async () => {
   await render();
-  expect(mocks.resolve).toHaveBeenCalledWith({
-    locator: { kind: "host", environmentId: "environment", sessionId: "canonical" },
-  });
+  expect(mocks.resolve).toHaveBeenCalledWith(
+    { locator: { kind: "host", environmentId: "environment", sessionId: "canonical" } },
+    { preserveTransientFailure: true },
+  );
   expect(mocks.load).toHaveBeenCalledWith(
     "machine",
     "canonical",
@@ -166,6 +167,40 @@ it("offers retry after an initial read error without changing session ownership"
   expect(view.error).toBeUndefined();
   expect(view.session.blocks).toHaveLength(1);
   expect(mocks.dispatch).not.toHaveBeenCalled();
+});
+
+it("recovers a five-second Host restart during initial session resolution without an error", async () => {
+  vi.useFakeTimers();
+  const started = Date.now();
+  mocks.resolve.mockImplementation(async () => {
+    if (Date.now() - started < 5_000) throw new Error("Host is stopping.");
+    return { cwd: "/project", host: { machine: { id: "machine" }, project: { id: "project" } } };
+  });
+  await render();
+  expect(view.session.historyLoading).toBe(true);
+  expect(view.error).toBeUndefined();
+  await advance(2_000);
+  await advance(3_000);
+  expect(view.error).toBeUndefined();
+  expect(view.session.blocks).toEqual([]);
+  await advance(1_000);
+  expect(view.error).toBeUndefined();
+  expect(view.session.blocks).toEqual(snapshot.session.blocks);
+  expect(mocks.resolve).toHaveBeenCalledTimes(3);
+  expect(mocks.dispatch).not.toHaveBeenCalled();
+});
+
+it("retries a transient earlier-page read without showing a failure", async () => {
+  vi.useFakeTimers();
+  await render();
+  mocks.page.mockRejectedValueOnce(new Error("Host database is closing."));
+  await act(async () => view.onLoadRemoteHistory());
+  expect(view.remoteHistoryLoading).toBe(true);
+  expect(view.remoteHistoryError).toBeUndefined();
+  await advance(2_000);
+  expect(view.remoteHistoryLoading).toBe(false);
+  expect(view.session.blocks.map((block) => block.id)).toEqual(["older", "tail"]);
+  expect(view.remoteHistoryError).toBeUndefined();
 });
 
 it("does not read a mismatched machine or publish a mismatched project", async () => {

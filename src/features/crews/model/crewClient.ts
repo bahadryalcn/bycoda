@@ -175,7 +175,11 @@ export function useProjectCrews(cwd: string, enabled = true) {
     catalogRead.catalog && !(catalogRead.error && catalogRead.stale)
       ? catalogRead.catalog
       : EMPTY_CATALOG;
-  const catalogError = catalogRead.error ? catalogRead.error.replace(/^Error: /, "") : undefined;
+  const { visibleError: catalogError } = useGracedFailure({
+    error: catalogRead.error,
+    loading: catalogRead.loading,
+    scope: cwd,
+  });
   useEffect(() => {
     if (firstCursor.current === query.data?.historyNextCursor) return;
     firstCursor.current = query.data?.historyNextCursor;

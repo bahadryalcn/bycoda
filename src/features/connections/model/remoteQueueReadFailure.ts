@@ -1,5 +1,5 @@
 import { isoTimestamp } from "../../../shared/lib/time/timestamps";
-import { classifyRemoteError } from "./remoteFailure";
+import { classifyRemoteError, isTransientTransportError } from "./remoteFailure";
 
 /** What a failed read of a remote queue was, in a form that stays the same across wordings. */
 export type QueueReadFailure = {
@@ -26,7 +26,7 @@ export function classifyQueueReadFailure(
     ...context,
     operation: "queue.read",
     code: `QUEUE_READ_${failure.kind.toUpperCase()}`,
-    transient: failure.kind === "temporary" || failure.kind === "unreachable",
+    transient: isTransientTransportError(error),
     message: failure.message,
   };
 }

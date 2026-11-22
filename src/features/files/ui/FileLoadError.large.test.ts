@@ -12,7 +12,6 @@ const { readTextFileSlice, unsupported } = vi.hoisted(() => ({
 vi.mock("../data/largeTextFile", () => ({ readTextFileSlice }));
 vi.mock("../../connections/public/remoteFailure", () => ({
   isUnsupportedRemoteRoute: () => unsupported.value,
-  presentRemoteError: (error: unknown) => String(error),
 }));
 vi.mock("../../../platform/tauri/platform", () => ({ IS_MAC: false, IS_WIN: true }));
 vi.mock("../../../platform/tauri/fs", async (original) => ({
@@ -42,6 +41,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   readTextFileSlice.mockReset();
   unsupported.value = false;
+  vi.useRealTimers();
 });
 
 // #611: a remote file over the editor limit opens as a read-only paged view, not a dead end.
@@ -62,11 +62,17 @@ it("pages a too-large remote file read-only instead of showing an error", async 
   await view.unmount();
 });
 
-it("offers Retry when the paged read failed transiently", async () => {
+it("offers Retry after a sustained transport failure while reading a page", async () => {
+  vi.useFakeTimers();
   readTextFileSlice.mockRejectedValue(new Error("connection reset"));
   const view = await mount(REMOTE, TOO_LARGE);
-  await vi.waitFor(() => expect(view.buttons()).toContain("Retry"));
-  expect(view.host.textContent).toContain("connection reset");
+  await act(async () => {});
+  expect(view.buttons()).not.toContain("Retry");
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(readTextFileSlice).toHaveBeenCalledTimes(2);
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  expect(view.buttons()).toContain("Retry");
+  expect(view.host.textContent).toContain("Waiting for the connection");
   await view.unmount();
 });
 

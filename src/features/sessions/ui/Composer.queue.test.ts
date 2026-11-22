@@ -349,6 +349,7 @@ describe("Shift+Tab queues while a turn runs", () => {
           busy: true,
           remoteSession,
           remoteFeatures: { attachments: true, plan: true, draft: true, steer: true },
+          adoptedSteerSupported: true,
         },
         onSubmit,
       );
@@ -367,7 +368,10 @@ describe("Shift+Tab queues while a turn runs", () => {
     localStorage.setItem("bycoda.followUpBehavior", "queue");
     const onSubmit = vi.fn(() => true);
     const onStop = vi.fn();
-    const textarea = await renderComposer({ busy: true, onStop }, onSubmit);
+    const textarea = await renderComposer(
+      { busy: true, onStop, adoptedSteerSupported: true },
+      onSubmit,
+    );
     await type(textarea, "send now");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),

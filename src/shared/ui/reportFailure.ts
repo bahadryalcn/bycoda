@@ -34,10 +34,13 @@ export async function reportFailure(
   },
 ): Promise<void> {
   if (signal?.aborted) return;
-  const failure = policy(error);
+  let failure = policy(error);
   if (failure.transient) {
     const recovered = await new Promise<boolean>((resolve) => {
+      let settled = false;
       const complete = (success: boolean) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(deadline);
         clearTimeout(attempt);
         signal?.removeEventListener("abort", abort);
@@ -52,7 +55,14 @@ export async function reportFailure(
                 .then(() => {
                   if (!signal?.aborted) return retry();
                 })
-                .then(() => complete(true), () => undefined);
+                .then(
+                  () => complete(true),
+                  (reason) => {
+                    if (settled) return;
+                    failure = policy(reason);
+                    if (!failure.transient) complete(false);
+                  },
+                );
             }, FAILURE_RETRY_DELAYS_MS[0])
           : undefined;
       signal?.addEventListener("abort", abort, { once: true });

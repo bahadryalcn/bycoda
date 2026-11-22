@@ -1906,7 +1906,9 @@ function SidebarComponent({
     } catch (error) {
       if (admitted) organizationUnresolved.current = true;
       if (admitted)
-        setOrganizationNotice(t("Folder change outcome needs verification: {p0}", { p0: gestureId }));
+        setOrganizationNotice(
+          t("Folder change outcome needs verification: {p0}", { p0: gestureId }),
+        );
       else reportOrganizationFailure(error);
       return false;
     } finally {
@@ -2463,8 +2465,7 @@ function SidebarComponent({
 
   const pinSessions = (sessionIds: readonly string[], pinned: boolean) => {
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-      void performPinSaga(null, [...sessionIds], pinned).catch(reportOrganizationFailure,
-      );
+      void performPinSaga(null, [...sessionIds], pinned).catch(reportOrganizationFailure);
       return;
     }
     if (sessionIds.length > 1 && onPinSessions) {
@@ -2832,8 +2833,7 @@ function SidebarComponent({
             };
       }
       if (pinChanges.length) {
-        void performPinSaga(operation, pinChanges, pinTo!).catch(reportOrganizationFailure,
-        );
+        void performPinSaga(operation, pinChanges, pinTo!).catch(reportOrganizationFailure);
         return;
       }
       void performOrganizationOperation(operation, () => {
@@ -4405,10 +4405,7 @@ function SidebarComponent({
                     });
                   },
                 }
-              : roomPrivacyRetryAction(
-                  () => setOrganizationNotice(null),
-                  reportOrganizationFailure,
-                )
+              : roomPrivacyRetryAction(() => setOrganizationNotice(null), reportOrganizationFailure)
           }
           actions={
             partialPinSagas.length

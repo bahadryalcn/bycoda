@@ -13,6 +13,15 @@ export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
       "diagnostics performance trace freeze lag slow startup long task debug performans tanılama izleme donma",
   },
   {
+    id: "host-stall-profiles",
+    section: "general",
+    get label() {
+      return t("Host CPU profiles");
+    },
+    keywords:
+      "stall profile cpu diagnostics host event loop freeze developer performance profil donma tanılama",
+  },
+  {
     id: "performance-trace-data",
     section: "general",
     get label() {

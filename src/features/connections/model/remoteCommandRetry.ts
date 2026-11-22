@@ -1,4 +1,8 @@
-import { nativeConnectionFailureCode, remoteErrorText } from "./remoteFailure";
+import {
+  isHostRestartFailure,
+  nativeConnectionFailureCode,
+  remoteErrorText,
+} from "./remoteFailure";
 
 /**
  * What a failed remote command tells about the Host.
@@ -30,7 +34,8 @@ const NOT_SENT_CODES = new Set([
   "RPC_WS_TLS",
 ]);
 const DEFINITIVE_TEXT = /Host rejected request:|REQUEST_EXPIRED|older than 30 days/i;
-const UNCERTAIN_TEXT = /outcome is unknown|RPC_CONNECTION_INTERRUPTED|RPC_WS_INTERRUPTED/;
+const UNCERTAIN_TEXT =
+  /outcome is unknown|RPC_CONNECTION_INTERRUPTED|RPC_WS_INTERRUPTED|HOST_RPC_DEADLINE/i;
 // RPC_HOST_UNAVAILABLE is absent on purpose: it covers resets, aborts and EOFs, which can
 // follow a delivered command. Only a refused connect, DNS, proxy or tunnel failure is proof.
 const NOT_SENT_TEXT =
@@ -41,15 +46,21 @@ const NOT_SENT_TEXT =
 export function classifyCommandFailure(error: unknown): CommandFailureClass {
   const text = remoteErrorText(error);
   const code = nativeConnectionFailureCode(error);
+  const delivery =
+    error && typeof error === "object" && "delivery" in error ? error.delivery : undefined;
   // An explicit delivery outcome survives the legacy HTTP refusal prefix.
   if (
     (typeof error === "object" &&
       error !== null &&
       "uncertain" in error &&
       error.uncertain === true) ||
-    UNCERTAIN_TEXT.test(text)
+    delivery === "unknown" ||
+    delivery === "accepted" ||
+    UNCERTAIN_TEXT.test(text) ||
+    (delivery !== "not-sent" && isHostRestartFailure(error))
   )
     return "uncertain";
+  if (delivery === "not-sent") return "not-sent";
   if (DEFINITIVE_TEXT.test(text) || (code !== undefined && DEFINITIVE_CODES.has(code)))
     return "definitive";
   // The native connection preserved the Host's pre-execution refusal.

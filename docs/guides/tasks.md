@@ -22,7 +22,7 @@ revisions and unmerged branches retain their Host protections. Successful deleti
 leave the selection; failures remain available for Retry failed tasks. Identical
 failure reasons share one explanation with the affected task names.
 
-Tasks opens on the current project's Host. Select All projects to include other machines. A remote machine being unavailable does not mean a successfully read local task list failed. Connection details and optional data warnings describe the affected source; Retry refreshes the selected scope.
+Tasks opens on the current project's Host. Select All projects to include other machines. During a brief interruption, the board keeps loaded data and retries in the background. Connection details and optional data warnings appear for sustained interruptions or a failure that needs attention. Retry refreshes the selected scope.
 
 Local project options can appear while other sources are still loading. Sprint data appears as soon as its planning Host answers; source history synchronization can continue afterward. Actions that require current history still wait for that synchronization. Repeated refresh ticks do not accumulate an unlimited queue.
 

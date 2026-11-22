@@ -4,6 +4,7 @@ import { createElement, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { HOST_CREWS } from "./crew";
 const fixture = vi.hoisted(() => ({
   options: undefined as any,
   data: undefined as any,
@@ -31,7 +32,10 @@ vi.mock("@tanstack/react-query", () => ({
   },
   useQueryClient: () => ({ invalidateQueries: fixture.invalidate }),
 }));
-vi.mock("../../automations/model/machineSnapshot", () => ({ machineCapabilities: async () => [] }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: async () => [] }));
+vi.mock("../../automations/model/machineSnapshot", () => ({
+  machineCapabilities: async () => [HOST_CREWS],
+}));
 vi.mock("../../automations/model/hostAutomationClient", () => ({
   backgroundMachines: async () => [],
   backgroundMachineFor: () => ({ id: "local" }),

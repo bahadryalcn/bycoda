@@ -233,21 +233,75 @@ it("retries a busy machine in the toolbar instead of showing an error", async ()
   }
 });
 
-it("shows the classified reason after quiet retries and keeps the raw text behind Details", () => {
-  const raw = "Host rejected request: [RPC_TIMEOUT] request timed out";
-  act(() =>
-    root.render(
-      createElement(RemoteDataStatus, {
-        state: { phase: "error", error: raw },
-        onRefresh: vi.fn(),
-        disabled: true,
-      }),
-    ),
-  );
-  const alert = document.body.querySelector('[role="alert"]');
-  expect(alert?.textContent).toContain("This computer is busy right now. Try again in a moment.");
-  expect(alert?.textContent).not.toContain("RPC_TIMEOUT");
-  expect(alert?.textContent).toContain("Details");
+it("shows the classified reason after the grace and keeps raw text behind Details", async () => {
+  vi.useFakeTimers();
+  try {
+    const raw = "Host rejected request: [RPC_TIMEOUT] request timed out";
+    act(() =>
+      root.render(
+        createElement(RemoteDataStatus, {
+          state: { phase: "error", error: raw },
+          onRefresh: vi.fn(),
+          disabled: true,
+        }),
+      ),
+    );
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTime(3_000));
+    const alert = document.body.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("This computer is busy right now. Try again in a moment.");
+    expect(alert?.textContent).not.toContain("RPC_TIMEOUT");
+    expect(alert?.textContent).toContain("Details");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps an open conversation's retained data quiet through a declared five-second restart", async () => {
+  vi.useFakeTimers();
+  try {
+    const onRecord = vi.fn();
+    let online = false;
+    const refresh = vi.fn(() =>
+      render(
+        online
+          ? { phase: "ready", updatedAt: 6_000 }
+          : {
+              phase: "stale",
+              updatedAt: 1_000,
+              error: "Machine is unreachable",
+            },
+      ),
+    );
+    const render = (state: RemoteDataState) =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(ToastRegion, { onRecord }),
+          createElement(RemoteDataStatus, {
+            state,
+            presentation: "indicator",
+            onRefresh: refresh,
+            autoRetry: false,
+          }),
+          createElement(RemoteDataStatus, { state, presentation: "notice", onRefresh: refresh }),
+        ),
+      );
+    act(() => render({ phase: "error", error: "Host is stopping.", updatedAt: 1_000 }));
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(refresh).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(onRecord).not.toHaveBeenCalled();
+    online = true;
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
+    expect(onRecord).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("names the machine and data of a stale notice and keeps separate notices apart", async () => {
@@ -289,30 +343,37 @@ it("names the machine and data of a stale notice and keeps separate notices apar
   );
 });
 
-it("records a stale read's verification time and sanitized reason in history", () => {
-  const record = vi.fn<(entry: ToastAnnouncement) => void>();
-  act(() =>
-    root.render(
-      createElement(
-        "div",
-        null,
-        createElement(ToastRegion, { onRecord: record }),
-        createElement(RemoteDataStatus, {
-          state: {
-            phase: "stale",
-            updatedAt: 1000,
-            error: "Host rejected request: [RPC_TIMEOUT] token=private-test-value",
-          },
-          machineLabel: "Office Mac",
-          presentation: "notice",
-          label: "conversation",
-        }),
+it("records a sustained stale read's verification time and sanitized reason in history", async () => {
+  vi.useFakeTimers();
+  try {
+    const record = vi.fn<(entry: ToastAnnouncement) => void>();
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(ToastRegion, { onRecord: record }),
+          createElement(RemoteDataStatus, {
+            state: {
+              phase: "stale",
+              updatedAt: 1000,
+              error: "Host rejected request: [RPC_TIMEOUT] token=private-test-value",
+            },
+            machineLabel: "Office Mac",
+            presentation: "notice",
+            label: "conversation",
+          }),
+        ),
       ),
-    ),
-  );
-  const entry = record.mock.calls.at(-1)?.[0];
-  expect(entry?.title).toBe("Office Mac");
-  expect(entry?.message).toContain("1970-01-01T00:00:01.000Z");
-  expect(entry?.message).toContain("RPC_TIMEOUT");
-  expect(entry?.message).not.toContain("private-test-value");
+    );
+    expect(record).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    const entry = record.mock.calls.at(-1)?.[0];
+    expect(entry?.title).toBe("Office Mac");
+    expect(entry?.message).toContain("1970-01-01T00:00:01.000Z");
+    expect(entry?.message).toContain("RPC_TIMEOUT");
+    expect(entry?.message).not.toContain("private-test-value");
+  } finally {
+    vi.useRealTimers();
+  }
 });

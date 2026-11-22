@@ -93,10 +93,13 @@ it("keeps the tree readable through an announced five-second Host restart", asyn
   });
   directories.set(cwd, [entry("fresh.ts")]);
   await refresh();
-  expect(host.querySelector('[aria-label="Refresh files"][aria-busy="true"]')).not.toBeNull();
+  expect(
+    host.querySelector('[data-remote-data-state="refreshing"][aria-busy="true"]'),
+  ).not.toBeNull();
   for (const elapsed of [2_000, 3_000, 1_000]) {
     await act(async () => vi.advanceTimersByTimeAsync(elapsed));
     expect(host.textContent).not.toContain("Host is stopping.");
+    expect(host.querySelector('[role="alert"],[data-remote-data-state="stale"]')).toBeNull();
   }
   expect(host.querySelector(`[title="${cwd}/fresh.ts"]`)).not.toBeNull();
 });

@@ -236,8 +236,7 @@ function startReadOnlyReader({
     if (document.hidden && snapshot) return;
     await poll();
   };
-  const tryConnect = () =>
-    connect().catch((error: unknown) => publish({ loading: false, error }));
+  const tryConnect = () => connect().catch((error: unknown) => publish({ loading: false, error }));
   retryRead.current = tryConnect;
   void tryConnect();
   return () => {
@@ -291,7 +290,8 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
     scope: key,
   });
   const { visibleError: historyError, pending: historyPending } = useGracedFailure({
-    error: visible && valid && snapshot?.history?.before !== undefined ? state.historyError : undefined,
+    error:
+      visible && valid && snapshot?.history?.before !== undefined ? state.historyError : undefined,
     retry: retryHistory,
     scope: key,
   });

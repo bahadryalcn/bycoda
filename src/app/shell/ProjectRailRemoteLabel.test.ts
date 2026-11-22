@@ -72,7 +72,11 @@ it("translates the remote project row's accessible name instead of joining a lit
     await act(async () => row.focus());
     const tooltip = document.querySelector('[role="tooltip"]');
     expect(tooltip?.querySelector("svg.lucide-server")).not.toBeNull();
-    expect(tooltip?.textContent).toContain("Studio üzerinde /srv/app");
+    // The tooltip is labeled parts (name, machine, path, status), not one joined "<machine> on <path>" sentence.
+    const tooltipText = tooltip?.textContent ?? "";
+    for (const part of ["Makine", "Studio", "/srv/app", "Bağlı"])
+      expect(tooltipText).toContain(part);
+    expect(tooltipText).not.toMatch(/ on /);
     expect(tooltip?.textContent).not.toContain("tailm");
   } finally {
     await act(async () => root.unmount());

@@ -62,3 +62,19 @@ it("appends pending changes to every state", () => {
     summarizeSync({ state: "error", lastError: UNREACHABLE, pendingOps: 2 }, now).text,
   ).toMatch(/ · 2 pending changes$/);
 });
+
+it("keeps a transient wait muted and treats TLS failures as permanent", () => {
+  expect(
+    summarizeSync(
+      { state: "error", lastError: "[HOST_STOPPING] Host is stopping.", pendingOps: 2 },
+      now,
+      true,
+    ),
+  ).toEqual({ tone: "muted", text: "Syncing… · 2 pending changes" });
+  expect(
+    summarizeSync(
+      { state: "error", lastError: "[RPC_WS_TLS] Certificate refused", pendingOps: 0 },
+      now,
+    ).tone,
+  ).toBe("danger");
+});

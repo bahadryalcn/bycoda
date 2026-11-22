@@ -186,6 +186,7 @@ import {
   classifyRemoteError,
   describeRemoteError,
   isConnectionFailure,
+  isTransientTransportError,
   remoteErrorText,
 } from "../model/remoteFailure";
 import { errorText } from "../../../shared/lib/errors";
@@ -556,6 +557,7 @@ function ConnectedRemoteSession({
     const current = remoteDataStateRef.current;
     publishRemoteDataState({
       phase: snapshotRef.current || current.updatedAt ? "refreshing" : "loading",
+      error: isTransientTransportError(current.error) ? current.error : undefined,
       updatedAt: current.updatedAt,
     });
   };
@@ -645,7 +647,13 @@ function ConnectedRemoteSession({
   const [pending, setPending] = useState(initialDurablePending);
   // Why the last Send was not taken; shown until the next one is.
   const [refusal, setRefusal] = useState("");
-  const lastFailureClass = useRef<CommandFailureClass | undefined>(undefined);
+  const lastCommandFailure = useRef<{ commandId: string; kind: CommandFailureClass } | undefined>(
+    undefined,
+  );
+  const commandFailureKind = (commandId: string) => {
+    const failure = lastCommandFailure.current;
+    return failure?.commandId === commandId ? failure.kind : undefined;
+  };
   // Ticks that re-run the pending check: machine back, window focused, or backoff fired.
   const [recoveryTick, setRecoveryTick] = useState(0);
   const [focusTick, setFocusTick] = useState(0);
@@ -1817,7 +1825,7 @@ function ConnectedRemoteSession({
       const message = String(reason);
       lastRunFailure.current = message;
       const failureClass = classifyCommandFailure(reason);
-      lastFailureClass.current = failureClass;
+      lastCommandFailure.current = { commandId: command.commandId, kind: failureClass };
       // Saved to the outbox: a failure to reach the Host is retried by the pending
       // check, which says so in the notice instead of showing the raw error.
       if (persisted && optimistic) optimistic.saved = true;
@@ -1828,7 +1836,11 @@ function ConnectedRemoteSession({
         reason !== null &&
         "code" in reason &&
         reason.code === "RPC_WS_UNSUPPORTED";
-      if (message.includes("Host rejected request:") && !blockedRetry) {
+      if (
+        failureClass === "definitive" &&
+        message.includes("Host rejected request:") &&
+        !blockedRetry
+      ) {
         if (command.type === "send" || command.type === "compact")
           setUnseenSend((current) =>
             current?.commandId === command.commandId ? undefined : current,
@@ -2971,10 +2983,7 @@ function ConnectedRemoteSession({
     loading: catalogLoading,
     scope: questionDraftScope,
   });
-  /** Settles or sends again the pending command. The Host's receipt settles it; with
-   * no receipt the same command is sent again, except shell, cancel, approve and
-   * answer, which only a receipt can settle. `automatic` checks run from the pending
-   * effect below: a failed check is retried later and raises no error of its own. */
+  /** Reconciles a pending command. Automatic dispatch requires proof it never left the client. */
   const retryPending = async (automatic = false): Promise<"settled" | "retry" | "stop"> => {
     if (!pending || sendingRef.current) return "retry";
     const risky =
@@ -3044,12 +3053,17 @@ function ConnectedRemoteSession({
       );
       return "stop";
     }
+    const knownNotSent = commandFailureKind(pending.commandId) === "not-sent";
+    if (!recovered && !knownNotSent) {
+      setError(t("Remote outcome is unknown. Check the target before another run."));
+      return automatic && descriptor?.capabilities.includes("commands.status") ? "retry" : "stop";
+    }
     if (!stopped) setStarting((current) => (current ? { ...current, failed: false } : current));
-    lastFailureClass.current = undefined;
+    lastCommandFailure.current = undefined;
     const receipt = recovered
       ? await run(pending, undefined, undefined, recovered)
       : await run(pending);
-    if (!receipt) return lastFailureClass.current === "definitive" ? "stop" : "retry";
+    if (!receipt) return commandFailureKind(pending.commandId) === "definitive" ? "stop" : "retry";
     if (receipt && pending.type === "shell")
       shellFollowUps.current.set(pending.commandId, remoteIntentAuthority(pending));
     if (receipt && pending.type === "create" && !stopped && version === bindingGen.version) {
@@ -3066,8 +3080,8 @@ function ConnectedRemoteSession({
     return "settled";
   };
 
-  // A pending command is settled by the Host's receipt, or sent again with the same
-  // command ID. The check runs while the machine answers, on going online or
+  // Check the Host receipt, or send a proven undelivered command with its original
+  // ID. The check runs while the machine answers, on going online or
   // recovering, on window focus, and on a backoff timer that starts at 2 s and stops
   // at 30 s. It never runs while a send is in flight, and stops for good once the
   // Host refuses the request or its ID is past the replay horizon.
@@ -3137,114 +3151,115 @@ function ConnectedRemoteSession({
     commandRetry.current?.commandId === pending.commandId &&
     commandRetry.current.stopped;
   const pendingNeedsConfirmation =
-    pending && ["shell", "cancel", "approve", "answer"].includes(pending.type);
+    pending &&
+    (["shell", "cancel", "approve", "answer"].includes(pending.type) ||
+      commandFailureKind(pending.commandId) !== "not-sent");
   // While the central notice says the machine is reconnecting, a saved request waiting for it adds no
   // second alert; the request stays saved and goes out by itself.
   const outageShownCentrally = useConnectionErrorShownCentrally(error);
   const waitingForReconnect =
     !!pending && !sending && !retryStopped && !online && !pendingNeedsConfirmation;
   // A busy host (deadline, overload) is read again quietly first; sending stays held meanwhile.
-  const { pending: queueRetrying } = useGracedFailure({
+  const { pending: queueRetrying, visibleError: queueProblem } = useGracedFailure({
     error: queue.error,
     retry: queue.retryRead,
     scope: questionDraftScope,
   });
-  const notice = queue.error
-    ? queueRetrying
-      ? undefined
-      : remoteQueueReadNotice(queue.error, queue.retry, queue.failure, machine.name)
-    : pending && !sending && !(waitingForReconnect && outageShownCentrally)
-      ? remotePendingRequestNotice(
-          retryStopped,
-          online,
-          pendingNeedsConfirmation,
-          error,
-          () =>
-            void retryPending().catch((reason) => setError(describeRemoteError(reason).message)),
-        )
-      : starting?.failed
-        ? {
-            text: starting.draft
-              ? t("Couldn’t save the draft on {p0}.", { p0: hostLabel })
-              : t("Couldn’t send the message on {p0}.", { p0: hostLabel }),
-            detail: error,
-            action: {
-              kind: "retry",
-              get label() {
-                return t("Try again");
-              },
-              run: () => {
-                const turn = { ...starting, failed: false };
-                const version = bindingGen.version;
-                const generation = ++submissionGeneration.current;
-                setStarting(turn);
-                preparingRef.current = true;
-                preparingTurn.current = turn;
-                if (!sessionId) void startSession(turn, generation);
-                else
-                  void dispatchTurn(sessionId, turn, undefined, generation)
-                    .then((sent) => {
-                      if (
-                        alive.current &&
-                        version === bindingGen.version &&
-                        generation === submissionGeneration.current
-                      )
-                        if (!sent) setStarting({ ...turn, failed: true });
-                    })
-                    .catch((reason) => {
-                      if (
-                        alive.current &&
-                        version === bindingGen.version &&
-                        generation === submissionGeneration.current
-                      ) {
-                        setError(describeRemoteError(reason).message);
-                        setStarting({ ...turn, failed: true });
-                      }
-                    })
-                    .finally(() => {
-                      if (generation === submissionGeneration.current) {
-                        preparingRef.current = false;
-                        preparingTurn.current = undefined;
-                      }
-                    });
-              },
-            },
-          }
-        : refusal
+  const notice =
+    queueProblem && !pendingNeedsConfirmation
+      ? remoteQueueReadNotice(queueProblem, queue.retry, queue.failure, machine.name)
+      : pending && !sending && !(waitingForReconnect && outageShownCentrally)
+        ? remotePendingRequestNotice(
+            retryStopped,
+            online,
+            pendingNeedsConfirmation,
+            error,
+            () =>
+              void retryPending().catch((reason) => setError(describeRemoteError(reason).message)),
+          )
+        : starting?.failed
           ? {
-              text: refusal,
+              text: starting.draft
+                ? t("Couldn’t save the draft on {p0}.", { p0: hostLabel })
+                : t("Couldn’t send the message on {p0}.", { p0: hostLabel }),
+              detail: error,
               action: {
-                kind: "dismiss",
+                kind: "retry",
                 get label() {
-                  return t("Dismiss");
+                  return t("Try again");
                 },
-                run: () => setRefusal(""),
+                run: () => {
+                  const turn = { ...starting, failed: false };
+                  const version = bindingGen.version;
+                  const generation = ++submissionGeneration.current;
+                  setStarting(turn);
+                  preparingRef.current = true;
+                  preparingTurn.current = turn;
+                  if (!sessionId) void startSession(turn, generation);
+                  else
+                    void dispatchTurn(sessionId, turn, undefined, generation)
+                      .then((sent) => {
+                        if (
+                          alive.current &&
+                          version === bindingGen.version &&
+                          generation === submissionGeneration.current
+                        )
+                          if (!sent) setStarting({ ...turn, failed: true });
+                      })
+                      .catch((reason) => {
+                        if (
+                          alive.current &&
+                          version === bindingGen.version &&
+                          generation === submissionGeneration.current
+                        ) {
+                          setError(describeRemoteError(reason).message);
+                          setStarting({ ...turn, failed: true });
+                        }
+                      })
+                      .finally(() => {
+                        if (generation === submissionGeneration.current) {
+                          preparingRef.current = false;
+                          preparingTurn.current = undefined;
+                        }
+                      });
+                },
               },
             }
-          : error
+          : refusal
             ? {
-                text: error,
+                text: refusal,
                 action: {
                   kind: "dismiss",
                   get label() {
                     return t("Dismiss");
                   },
-                  run: () => setError(""),
+                  run: () => setRefusal(""),
                 },
               }
-            : catalogProblem
+            : error
               ? {
-                  text: t("Couldn’t load models from {p0}.", { p0: hostLabel }),
-                  detail: catalogProblem,
+                  text: error,
                   action: {
-                    kind: "retry",
+                    kind: "dismiss",
                     get label() {
-                      return t("Retry");
+                      return t("Dismiss");
                     },
-                    run: retryCatalog,
+                    run: () => setError(""),
                   },
                 }
-              : undefined;
+              : catalogProblem
+                ? {
+                    text: t("Couldn’t load models from {p0}.", { p0: hostLabel }),
+                    detail: catalogProblem,
+                    action: {
+                      kind: "retry",
+                      get label() {
+                        return t("Retry");
+                      },
+                      run: retryCatalog,
+                    },
+                  }
+                : undefined;
 
   // The notice the owner closed; different text or detail shows again.
   const [closedNotice, setClosedNotice] = useState("");
@@ -3255,6 +3270,7 @@ function ConnectedRemoteSession({
   // independent queue/storage and command failures actionable in their own notice.
   const noticeHandledByConnection =
     connectionIssueHandled &&
+    !pendingNeedsConfirmation &&
     !!notice &&
     isConnectionFailure(classifyRemoteError(notice.detail || notice.text));
 

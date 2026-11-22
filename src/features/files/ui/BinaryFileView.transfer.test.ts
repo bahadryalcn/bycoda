@@ -39,6 +39,7 @@ afterEach(() => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 async function render(path: string) {
@@ -140,5 +141,22 @@ describe("BinaryFileView remote transfer", () => {
 
     expect(container.textContent).toContain("File is too large to preview");
     expect(fs.readBinaryFile).not.toHaveBeenCalled();
+  });
+
+  it("quietly retries the read when the Host restarts during a preview transfer", async () => {
+    vi.useFakeTimers();
+    const startedAt = Date.now();
+    fs.prepare.mockImplementation(async () => {
+      if (Date.now() - startedAt < 5_000) throw new Error("Host is stopping.");
+      return "C:/cache/a.png";
+    });
+    fs.readBinaryFile.mockResolvedValue(PNG);
+    await render(REMOTE);
+    for (const elapsed of [2_000, 3_000, 1_000]) {
+      await act(async () => vi.advanceTimersByTimeAsync(elapsed));
+      expect(container.textContent).not.toContain("Couldn’t open");
+    }
+    expect(fs.prepare).toHaveBeenCalledTimes(3);
+    expect(container.querySelector("img")).not.toBeNull();
   });
 });

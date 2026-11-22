@@ -446,9 +446,11 @@ export function useFileTreeOperations({
     } catch (err: unknown) {
       if (activeRoot.current === cwd) {
         await reportFailure(err, {
-          toast: { show: ({ message }) => {
-            if (activeRoot.current === cwd) setOpError(message);
-          } },
+          toast: {
+            show: ({ message }) => {
+              if (activeRoot.current === cwd) setOpError(message);
+            },
+          },
         });
       }
     } finally {

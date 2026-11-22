@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -27,7 +28,7 @@ function HostStallProfilesRow() {
         if (active) setEnabled(value);
       },
       (reason: unknown) => {
-        if (active) setError(reason instanceof Error ? reason.message : String(reason));
+        if (active) setError(errorText(reason));
       },
     );
     return () => {
@@ -39,7 +40,7 @@ function HostStallProfilesRow() {
     setError(undefined);
     saveHostStallProfiles(next)
       .then(setEnabled, (reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : String(reason)),
+        setError(errorText(reason)),
       )
       .finally(() => setSaving(false));
   };

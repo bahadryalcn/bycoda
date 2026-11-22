@@ -151,7 +151,7 @@ export class StoreReadPool {
       if (!slot.dead) void this.send(slot, "registerFunction", { name }).catch(() => undefined);
   }
 
-  async close(error = new HostDbClosingError()): Promise<void> {
+  async close(error: Error = new HostDbClosingError()): Promise<void> {
     this.closed = true;
     clearTimeout(this.watchdog);
     this.watchdog = undefined;

@@ -25,6 +25,9 @@ import { setSessionLifecycleList } from "../../features/sessions/model/sessionLi
 import * as connections from "../../features/connections/model/connections";
 import { rememberRemoteProject } from "../../features/connections/model/remoteProjects";
 import type { HostProject } from "../../features/connections/model/protocol";
+import { describeActionFailure } from "../../features/connections/public/transientFailure";
+import { registerFailurePolicy } from "../../shared/ui/reportFailure";
+import { toast } from "../../shared/ui/ToastRegion";
 vi.mock("../../features/sessions/hooks/useLocalLifecycleMachine", () => ({
   useLocalLifecycleMachine: vi.fn(() => undefined),
 }));
@@ -2636,7 +2639,22 @@ it.each(["standard", "compact", "detailed"] as const)(
   },
 );
 
-it("archives a global remote row through its own project even when the open project is local", async () => {
+it.each([
+  ["archives a remote row through its own project", undefined, false],
+  [
+    "delays a transient archive failure without replaying it",
+    "RPC_WS_DETACHED: Member detached",
+    false,
+  ],
+  [
+    "reports an uncertain archive immediately without replaying it",
+    "RPC_WS_INTERRUPTED: Link interrupted",
+    true,
+  ],
+] as const)("%s even when the open project is local", async (_label, failure, uncertain) => {
+  vi.useFakeTimers();
+  registerFailurePolicy(describeActionFailure);
+  const show = vi.spyOn(toast, "show").mockReturnValue("sidebar-test-toast");
   const local = props.sessions[0];
   const remote = rememberRemoteProject("recent-remote", {
     id: "host-project",
@@ -2644,6 +2662,7 @@ it("archives a global remote row through its own project even when the open proj
   } as HostProject);
   const remoteRow = { ...local, id: "remote-session", cwd: remote.key };
   const update = vi.fn().mockResolvedValue(undefined);
+  if (failure) update.mockRejectedValue(new Error(failure));
   vi.spyOn(connections, "knownRemoteMachine").mockReturnValue({
     id: "remote-machine",
     environmentId: remote.environmentId,
@@ -2688,6 +2707,21 @@ it("archives a global remote row through its own project even when the open proj
     archived: true,
   });
   expect(props.onArchiveSession).not.toHaveBeenCalled();
+  if (uncertain) {
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tone: "danger",
+        message: expect.stringContaining("outcome is unknown"),
+      }),
+    );
+  } else {
+    expect(show).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(2_999));
+    expect(show).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(show).toHaveBeenCalledTimes(failure ? 1 : 0);
+  }
+  expect(update).toHaveBeenCalledTimes(1);
 });
 
 it("settles a Last sessions row on its remote Host and removes it from the active list", async () => {

@@ -334,7 +334,13 @@ export function useTranscriptPaging({
   const onHistoryScroll = (scrollTop: number, directInput = false, readerMoved = true) => {
     const previousTop = previousScrollTop.current;
     previousScrollTop.current = scrollTop;
-    if (!readerMoved || pagingError || pending || loadingRef.current || scrollTop > EARLIER_SCROLL_THRESHOLD)
+    if (
+      !readerMoved ||
+      pagingError ||
+      pending ||
+      loadingRef.current ||
+      scrollTop > EARLIER_SCROLL_THRESHOLD
+    )
       return;
     if (directInput || (previousTop !== undefined && scrollTop < previousTop)) void loadEarlier();
   };

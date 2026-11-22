@@ -23,7 +23,10 @@ import { Alert } from "../../../shared/ui/Alert";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useT } from "../../../shared/i18n";
 import { useToast } from "../../../shared/ui/ToastRegion";
-import { errorText } from "../../../shared/lib/errors";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { reportFailure } from "../../../shared/ui/reportFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
+import { describeActionFailure, useGracedFailure } from "../../connections/public/transientFailure";
 import { loadSshSnippets } from "../../connections/model/sshSnippets";
 import { bindTerminalDomInput } from "../runtime/terminalDomInput";
 import { createTerminalFitting } from "../runtime/terminalFitting";
@@ -94,7 +97,7 @@ function checkSavedCommand(serverId: string, initialCommand: string) {
       duplicate: loadSshSnippets(serverId).some((snippet) => snippet.command.trim() === command),
     };
   } catch (reason) {
-    return { error: errorText(reason) };
+    return { error: reason };
   }
 }
 
@@ -186,7 +189,7 @@ export function TerminalView({
   const handleSaveCommand = (initialCommand: string) => {
     if (!sshConnectionId) return;
     const { duplicate, error } = checkSavedCommand(sshConnectionId, initialCommand);
-    if (error) toast.show({ message: error, tone: "danger" });
+    if (error) void reportFailure(error, { toast }).catch(() => undefined);
     else if (duplicate) alreadySaved();
     else setSnippets({ initialCommand });
   };
@@ -210,9 +213,13 @@ export function TerminalView({
   const [tool, setTool] = useState<TerminalTool>(null);
   const getTool = useStableCallback(() => tool);
   const [shellReady, setShellReady] = useState(false);
-  const [inputError, setInputError] = useState<string | null>(null);
+  const [inputError, setInputError] = useState<{ reason: unknown; message: string } | null>(null);
+  const [startupError, setStartupError] = useState<unknown>();
+  const [startupOutcome, setStartupOutcome] = useState<string>();
+  const startupFailure = useGracedFailure({ error: startupError, scope: id });
+  const startupMessage = startupOutcome ?? startupFailure.visibleError;
   // The raw reason of a connection failure is left to the central connection notice.
-  const inputErrorShownCentrally = useConnectionErrorShownCentrally(inputError);
+  const inputErrorShownCentrally = useConnectionErrorShownCentrally(inputError?.reason);
   const [exitCode, setExitCode] = useState<number | null | undefined>(undefined);
   const [reconnecting, setReconnecting] = useState(false);
   const reconnectPending = useRef(false);
@@ -223,6 +230,11 @@ export function TerminalView({
   const runningProcessRef = useRef<string | null>(null);
   /** Refreshes the foreground-process title now (set by the status poll). */
   const metaPokeRef = useRef<() => void>(() => {});
+
+  // Reason: publish the native lifecycle failure when its startup diagnostic becomes visible.
+  useEffect(() => {
+    if (startupMessage) lifecycleRef.current?.("failed");
+  }, [startupMessage]);
 
   useEffect(() => {
     const outer = outerRef.current;
@@ -265,6 +277,8 @@ export function TerminalView({
     setTerminal(term);
     setShellReady(false);
     setInputError(null);
+    setStartupError(undefined);
+    setStartupOutcome(undefined);
     setExitCode(undefined);
     setTool(null);
 
@@ -309,19 +323,23 @@ export function TerminalView({
         }
       },
       onSpawned: () => setShellReady(true),
-      onStartFailed: (message) => {
+      onStartFailed: (error, attemptedLaunch) => {
         term.options.disableStdin = true;
         shellActions.current?.suspendAutomatic();
         setShellReady(false);
-        setExitCode(null);
-        setInputError(message);
-        term.writeln(`\x1b[31m${message}\x1b[0m`);
+        if (attemptedLaunch) {
+          const failure = describeActionFailure(error);
+          if (failure.transient) setStartupError(error);
+          else setStartupOutcome(failure.message);
+        } else {
+          setStartupError(error);
+        }
       },
-      onInputFailure: (message) => {
+      onInputFailure: (reason) => {
         term.options.disableStdin = true;
         shellActions.current?.suspendAutomatic();
         setTool(null);
-        setInputError(message);
+        setInputError({ reason, message: describeRemoteError(reason).message });
       },
     });
     ptyRuntimeRef.current = pty;
@@ -664,7 +682,9 @@ export function TerminalView({
         onAlreadySaved={alreadySaved}
         onSendSelectedText={onSendToAgent}
       />
-      {exitCode !== undefined ? (
+      {startupFailure.pending ? (
+        <LoadingText className="shrink-0 px-3 py-2" aria-busy="true" />
+      ) : startupMessage || exitCode !== undefined ? (
         <div className="shrink-0 px-3 py-2">
           <Alert tone={exitCode === 0 ? "info" : "warning"}>
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -683,7 +703,11 @@ export function TerminalView({
                     setReconnecting(true);
                     await reconnectTerminal(
                       onReconnect,
-                      (reason) => setInputError(String(reason)),
+                      (reason) => {
+                        void reportFailure(reason, {
+                          toast: { show: ({ message }) => setStartupOutcome(message) },
+                        }).catch(() => undefined);
+                      },
                       () => {
                         reconnectPending.current = false;
                         setReconnecting(false);
@@ -699,10 +723,12 @@ export function TerminalView({
                 </Button>
               ) : null}
             </div>
-            {inputError && !inputErrorShownCentrally ? (
-              <p className="mbs-2 break-words text-ui-caption">{inputError}</p>
+            {startupMessage || (inputError != null && !inputErrorShownCentrally) ? (
+              <p className="mbs-2 break-words text-ui-caption">
+                {startupMessage ?? inputError?.message}
+              </p>
             ) : null}
-            {inputError ? (
+            {inputError != null ? (
               <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">
                 {t(
                   "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
@@ -727,7 +753,7 @@ export function TerminalView({
             </p>
             {inputErrorShownCentrally ? null : (
               <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">
-                {inputError}
+                {inputError.message}
               </p>
             )}
           </Alert>

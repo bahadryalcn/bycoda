@@ -151,7 +151,11 @@ it("names a refused or unconfirmed head instead of blaming the person who stoppe
     onResumeQueue: vi.fn(),
     queuedMessages: [{ id: "a", text: "queued task", attachments: [], deliveryUnknown: true }],
   });
-  expect(container.querySelector("[data-delivery-progress]")).toBeNull();
+  // The unconfirmed head carries its own inline "Send again" decision instead of a queue-level Resume.
+  expect(container.querySelector("[data-delivery-progress=unknown]")?.textContent).toContain(
+    "Send again",
+  );
+  expect(button("Resume")).toBeUndefined();
   expect(container.textContent).not.toContain("Queue held: delivery is not confirmed");
   expect(container.textContent).not.toContain("because you interrupted");
 });

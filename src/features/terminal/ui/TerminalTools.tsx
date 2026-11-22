@@ -37,7 +37,7 @@ import type { SshShellController } from "../model/sshShellIntegration";
 import { useHideWhileTyping } from "./useHideWhileTyping";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useToast } from "../../../shared/ui/ToastRegion";
-import { errorText } from "../../../shared/lib/errors";
+import { reportFailure } from "../../../shared/ui/reportFailure";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
 const SEARCH_RESULT_LIMIT = 1000;
@@ -346,9 +346,9 @@ export function TerminalTools({
               const text = terminal?.getSelection();
               if (!text?.trim()) return;
               changeMode(null);
-              void onSendSelectedText(text).catch((reason: unknown) => {
-                toast.show({ message: errorText(reason), tone: "danger" });
-              });
+              void onSendSelectedText(text)
+                .catch((reason: unknown) => reportFailure(reason, { toast }))
+                .catch(() => undefined);
             }}
           >
             {t("Send to agent")}

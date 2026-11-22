@@ -262,11 +262,17 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
     () => [...taskResults, ...goalResults, ...stewardResults],
     [taskResults, goalResults, stewardResults],
   );
-  const resultFailure = (result: MachineResult<unknown>) =>
-    result.status === "error"
-      ? (descriptions[machines.findIndex((machine) => machine.id === result.machineId)]?.data
-          ?.error ?? result.failure ?? result.error ?? "Request failed")
-      : undefined;
+  const resultFailure = useCallback(
+    (result: MachineResult<unknown>) =>
+      result.status === "error"
+        ? (descriptions[machines.findIndex((machine) => machine.id === result.machineId)]?.data
+            ?.error ??
+          result.failure ??
+          result.error ??
+          "Request failed")
+        : undefined,
+    [descriptions, machines],
+  );
   const firstTransient = [
     inventory.error,
     ...catalogDescriptions.map((result) => result.data?.error),
@@ -278,12 +284,6 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
     error: visible ? firstTransient : undefined,
     retry: refresh,
     scope: projectScope,
-    loading:
-      visible &&
-      (inventory.isFetching ||
-        [catalogDescriptions, tasks, goals, stewards, limits, projects].some((reads) =>
-          reads.some((result) => result.isFetching),
-        )),
   });
   // Capable machine lists change only with the inventory or capabilities, so a
   // confirmed mutation patching one collection does not re-key machine consumers.
@@ -369,9 +369,9 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
     const limitErrors = limits.flatMap((result, index) => {
       const error = message(
         result.error ??
-        (descriptions[index]?.data?.capabilities.includes(HOST_SETTINGS)
-          ? descriptions[index]?.data?.error
-          : undefined),
+          (descriptions[index]?.data?.capabilities.includes(HOST_SETTINGS)
+            ? descriptions[index]?.data?.error
+            : undefined),
       );
       return error
         ? [{ machineId: machines[index].id, machineName: machines[index].name, error }]
@@ -408,7 +408,10 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
       error,
       hasTaskAnswer: taskResults.some((result) => result.status === "ok" || result.data.length > 0),
       notice: missingMachinesNotice(
-        { outdated, unreachable: [...new Set([...unreachable, ...failedMachineNames(failedResults)])] },
+        {
+          outdated,
+          unreachable: [...new Set([...unreachable, ...failedMachineNames(failedResults)])],
+        },
         staleMachineNames(failedResults),
       ),
     };
@@ -429,6 +432,7 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
     goalResults,
     stewardResults,
     results,
+    resultFailure,
     grace.pending,
   ]);
   // Change subscriptions start after the first read and then follow only the

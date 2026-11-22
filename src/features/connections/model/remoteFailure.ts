@@ -67,20 +67,35 @@ export function isHostAuthorizationRefusal(error: unknown): boolean {
 export function nativeConnectionFailureCode(error: unknown): string | undefined {
   const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
   if (typeof code === "string" && /^RPC_WS_[A-Z_]+$/.test(code)) return code;
-  return remoteErrorText(error).match(/^(?:Error: )?(RPC_WS_[A-Z_]+):/)?.[1];
+  const message = remoteErrorText(error).replace(
+    /^(?:Error: )?(?:Host rejected request:\s*)?/i,
+    "",
+  );
+  return message
+    .match(/^(?:\[(RPC_WS_[A-Z_]+)\]|(RPC_WS_[A-Z_]+):)/)
+    ?.slice(1)
+    .find(Boolean);
 }
 
 function failureCode(error: unknown, message: string): string {
   const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
   return typeof code === "string"
     ? code
-    : (message.match(/^(?:\[([A-Z][A-Z_]+)\]|([A-Z][A-Z_]+):)/)?.slice(1).find(Boolean) ?? "");
+    : (message
+        .match(/^(?:\[([A-Z][A-Z_]+)\]|([A-Z][A-Z_]+):)/)
+        ?.slice(1)
+        .find(Boolean) ?? "");
 }
 
 export function isHostRestartFailure(error: unknown): boolean {
-  const message = remoteErrorText(error).replace(/^(?:Error: )?(?:Host rejected request:\s*)?/i, "");
-  return HOST_RESTART_CODE.test(failureCode(error, message)) ||
-    HOST_RESTART_TEXT.test(message.replace(/^RPC_WS_INTERRUPTED:\s*/, ""));
+  const message = remoteErrorText(error).replace(
+    /^(?:Error: )?(?:Host rejected request:\s*)?/i,
+    "",
+  );
+  return (
+    HOST_RESTART_CODE.test(failureCode(error, message)) ||
+    HOST_RESTART_TEXT.test(message.replace(/^RPC_WS_INTERRUPTED:\s*/, ""))
+  );
 }
 
 /** Sorts a rejected remote request into what the user can do about it. The
@@ -119,9 +134,14 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   if (OUTDATED.test(text)) return { kind: "outdated", message };
   if (UNSUPPORTED.test(text)) return { kind: "unsupported", message };
   const operationCode = failureCode(error, message);
-  const operationText = message.replace(/^(?:(?:RPC_WS_REMOTE|ETIMEDOUT):\s*|\[RPC_WS_RETRYABLE\]\s*)/, "");
+  const operationText = message.replace(
+    /^(?:(?:RPC_WS_REMOTE|ETIMEDOUT):\s*|\[RPC_WS_RETRYABLE\]\s*)/,
+    "",
+  );
   if (PERMANENT_CODE.test(operationCode) || PERMANENT_TEXT.test(operationText))
     return { kind: "other", message };
+  if (/^RPC_(?:HOST_UNAVAILABLE|CONNECTION_INTERRUPTED|DNS|PROXY)$/.test(operationCode))
+    return { kind: "unreachable", message };
   if (
     isHostRestartFailure(error) ||
     TRANSIENT_CODE.test(operationCode) ||
@@ -221,7 +241,10 @@ export function isTransientTransportError(error: unknown): boolean {
  * transient transport error, otherwise the classified, human message. An
  * explicit user action passes `{ explicit: true }` to always get a message.
  */
-export function presentRemoteError(error: unknown, options: { explicit: true } | { graceExpired: true }): string;
+export function presentRemoteError(
+  error: unknown,
+  options: { explicit: true } | { graceExpired: true },
+): string;
 export function presentRemoteError(
   error: unknown,
   options?: { explicit?: boolean; graceExpired?: boolean },

@@ -115,3 +115,51 @@ it("reads the changes as soon as the machine recovers from a failed read", async
 
   expect(gitDiffIndex).toHaveBeenCalledTimes(2);
 });
+
+it("shows a local Git outage after three seconds and clears it on a successful retry", async () => {
+  vi.useFakeTimers();
+  const started = Date.now();
+  gitDiffIndex.mockImplementation(async () => {
+    if (Date.now() - started < 11_000)
+      throw new Error("RPC_WS_UNAVAILABLE: Host is not running on the machine");
+    return INDEX;
+  });
+  function LocalChanges() {
+    const state = useDiffIndex("/local/git-test", true, true, panel);
+    return createElement("output", null, state.error ?? state.index?.branch ?? "waiting");
+  }
+  await act(async () => root.render(createElement(LocalChanges)));
+  expect(container.textContent).toBe("waiting");
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(container.textContent).toBe("waiting");
+  await act(async () => vi.advanceTimersByTimeAsync(999));
+  expect(container.textContent).toBe("waiting");
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(container.textContent).not.toBe("waiting");
+  expect(container.textContent).not.toContain("RPC_WS_");
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+  await act(async () => vi.advanceTimersByTimeAsync(8_000));
+  expect(container.textContent).toBe("main");
+  expect(gitDiffIndex).toHaveBeenCalledTimes(4);
+});
+
+it("keeps the initial Git Changes panel read quiet during a five-second Host restart", async () => {
+  vi.useFakeTimers();
+  const started = Date.now();
+  gitDiffIndex.mockImplementation(async () => {
+    if (Date.now() - started < 5_000) throw new Error("Host is stopping.");
+    return INDEX;
+  });
+  function LocalChanges() {
+    const state = useDiffIndex("/local/git-restart", true, true, panel);
+    return createElement("output", null, state.error ?? state.index?.branch ?? "waiting");
+  }
+  await act(async () => root.render(createElement(LocalChanges)));
+  expect(container.textContent).toBe("waiting");
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
+  expect(container.textContent).toBe("waiting");
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  expect(container.textContent).toBe("main");
+  expect(gitDiffIndex).toHaveBeenCalledTimes(3);
+});

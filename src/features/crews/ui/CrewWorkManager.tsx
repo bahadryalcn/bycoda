@@ -382,7 +382,10 @@ export function CrewWorkManager({
                 />
               </div>
             ) : null}
-            {hasDetail || data.catalogError || (state.visibleError && !refreshShownCentrally) || error ? (
+            {hasDetail ||
+            data.catalogError ||
+            (state.visibleError && !refreshShownCentrally) ||
+            error ? (
               <div
                 className={`min-w-0 p-4 @min-[640px]/crew-management:min-h-64 ${hideDetailNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
               >

@@ -154,19 +154,28 @@ it("reveals Devices, Sharing and recovery from any nested tab while preserving m
   }
 });
 
-it("shows a failed sync as one inline message with a retry", async () => {
-  machines = [machine];
-  vi.mocked(useSyncStatus).mockReturnValue({
-    state: "error",
-    lastError: "RPC_HOST_UNAVAILABLE: connection closed; reconnect before retrying",
-    pendingOps: 2,
-  });
-  await render();
-  const line = container.querySelector(".connection-sync")!;
-  expect(line.getAttribute("data-sync-tone")).toBe("warning");
-  expect(line.querySelector("details")).toBeNull();
-  expect(line.textContent).toContain("Sync is paused");
-  expect(container.querySelector('button[aria-haspopup="menu"]')).toBeTruthy();
+it("shows a sustained sync failure as one inline message with a retry", async () => {
+  vi.useFakeTimers();
+  try {
+    machines = [machine];
+    vi.mocked(useSyncStatus).mockReturnValue({
+      state: "error",
+      lastError: "RPC_HOST_UNAVAILABLE: connection closed; reconnect before retrying",
+      pendingOps: 2,
+    });
+    await render();
+    expect(container.querySelector(".connection-sync")?.getAttribute("data-sync-tone")).not.toBe(
+      "warning",
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    const line = container.querySelector(".connection-sync")!;
+    expect(line.getAttribute("data-sync-tone")).toBe("warning");
+    expect(line.querySelector("details")).toBeNull();
+    expect(line.textContent).toContain("Sync is paused");
+    expect(container.querySelector('button[aria-haspopup="menu"]')).toBeTruthy();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("labels the kind and icon of each machine row", async () => {

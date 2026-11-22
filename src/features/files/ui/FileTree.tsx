@@ -451,9 +451,11 @@ function FileTreeInner({
       if (activeRoot.current === cwd) {
         setCopyFailedText(value);
         void reportFailure(error, {
-          toast: { show: ({ message }) => {
-            if (activeRoot.current === cwd) setOpError(message);
-          } },
+          toast: {
+            show: ({ message }) => {
+              if (activeRoot.current === cwd) setOpError(message);
+            },
+          },
         });
       }
     }

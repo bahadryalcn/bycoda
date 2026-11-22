@@ -10,10 +10,7 @@ import { crewRunMatchesQuery } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
 import { CrewWorkManager } from "./CrewWorkManager";
 import { CrewWorkStatusText } from "./CrewWorkState";
-import {
-  classifyRemoteError,
-  isConnectionFailure,
-} from "../../connections/model/remoteFailure";
+import { classifyRemoteError, isConnectionFailure } from "../../connections/model/remoteFailure";
 import { reportRemoteConnection } from "../../connections/model/remoteHealth";
 import { useRemoteConnectionFeedback } from "../../connections/ui/RemoteConnectionFeedback";
 

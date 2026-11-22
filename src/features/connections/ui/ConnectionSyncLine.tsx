@@ -4,6 +4,7 @@ import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
 import { summarizeSync } from "../model/syncSummary";
+import { useGracedFailure } from "../model/transientFailure";
 
 export function ConnectionSyncLine({
   machineId,
@@ -14,7 +15,13 @@ export function ConnectionSyncLine({
 }) {
   useLocale();
   const sync = useSyncStatus(machineId);
-  const { tone, text } = summarizeSync(sync, wallClockNow());
+  // Sync owns journal/retry authority. This line only controls when its error is visible.
+  const failure = useGracedFailure({
+    error: sync.state === "error" ? sync.lastError : undefined,
+    loading: sync.state === "syncing",
+    scope: machineId,
+  });
+  const { tone, text } = summarizeSync(sync, wallClockNow(), failure.pending);
   return (
     <Text
       as="div"
@@ -23,6 +30,7 @@ export function ConnectionSyncLine({
       leading="inherit"
       className="connection-sync"
       data-sync-tone={tone}
+      aria-busy={failure.pending || undefined}
     >
       {tone === "muted" ? (
         <Text size="inherit" tone="muted" className="min-w-0">
