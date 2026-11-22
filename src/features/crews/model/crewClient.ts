@@ -1,7 +1,9 @@
 import { HOST_MODEL_ROUTING } from "../../../shared/model/host-contracts/model-routing";
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { invoke } from "@tauri-apps/api/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { errorText } from "../../../shared/lib/errors";
 import {
   backgroundMachineFor,
   backgroundMachines,
@@ -261,7 +263,9 @@ export function useProjectCrews(cwd: string, enabled = true) {
   return {
     ...query,
     data,
-    visibleError: listFailure.visibleError,
+    visibleError: listFailure.visibleError ? redactDiagnosticText(listFailure.visibleError) : undefined,
+    errorDetails:
+      listFailure.visibleError && query.error ? redactDiagnosticText(errorText(query.error)) : undefined,
     pendingFailure: listFailure.pending,
     /** Explicit retry of the model catalog only; `refetch` reads the crew list only. */
     refreshCatalog: catalogRead.refresh,

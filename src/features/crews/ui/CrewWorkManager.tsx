@@ -308,7 +308,8 @@ export function CrewWorkManager({
               <FailureState
                 context="panel"
                 title={t("Could not load crews")}
-                error={state.visibleError}
+                description={state.visibleError}
+                error={state.errorDetails}
                 onRetry={() => state.refetch()}
               />
             ) : (

@@ -117,6 +117,7 @@ export function CrewSessions({
       {state.visibleError && !sharedConnectionIssue ? (
         <InlineError
           className="px-2.5 py-1"
+          details={state.errorDetails}
           retry={{ onRetry: () => void state.refetch(), pending: state.isFetching }}
         >
           {state.visibleError}
