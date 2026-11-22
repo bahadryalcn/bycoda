@@ -107,6 +107,7 @@ beforeEach(() => {
       branches: [{ name: "main", remote: null, current: true }],
     },
     settled: true,
+    unreachable: false,
   });
   vi.mocked(listWorktrees).mockResolvedValue({
     worktrees: [{ ...tree, path: "/repo", branch: "main", isMain: true }, tree],
@@ -378,6 +379,7 @@ it("keeps the selected worktree base visible beside the workspace mode", async (
       ],
     },
     settled: true,
+    unreachable: false,
   });
   await act(async () =>
     root.render(
@@ -570,6 +572,7 @@ it.each([
         branches: [{ name: "main", remote: null, current: current === "main" }],
       },
       settled: true,
+      unreachable: false,
     });
     await act(async () =>
       root.render(
@@ -828,6 +831,7 @@ it("can return to the main working copy after a worktree is deleted externally",
   vi.mocked(useProjectBranchesState).mockReturnValue({
     branches: null,
     settled: true,
+    unreachable: false,
   });
   const onSelect = vi.fn(async () => {});
   await act(async () =>
@@ -1113,6 +1117,7 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
       ],
     },
     settled: true,
+    unreachable: false,
   });
   const onCancel = vi.fn();
   await act(async () =>

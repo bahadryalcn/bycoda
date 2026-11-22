@@ -1,6 +1,7 @@
 import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
+import { errorText } from "../../../shared/lib/errors";
 import {
   gitBranches,
   isGitWatched,
@@ -123,8 +124,7 @@ async function load(entry: Entry, force = false) {
     if (!isRemoteProjectPath(entry.cwd)) return publish(entry, null);
     reportRemoteLoad(entry.cwd, "branches", error);
     // The Host answered that the folder is not a repository: that is a definite "no repository".
-    if (/not a git repository/i.test(error instanceof Error ? error.message : String(error)))
-      return publish(entry, null);
+    if (/not a git repository/i.test(errorText(error))) return publish(entry, null);
     // Otherwise the remote project keeps the branches it last had; the lookup still counts
     // as settled so callers stop waiting, but it is not "no repository".
     publishUnreachable(entry);

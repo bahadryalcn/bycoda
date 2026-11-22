@@ -29,6 +29,7 @@ const { directories, created, gate } = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
   invoke: vi.fn(async (command: string, args: Record<string, string>) => {
     if (command === "list_dir") return directories.get(args.path) ?? [];
     if (command === "clipboard_file_paths") return [];
