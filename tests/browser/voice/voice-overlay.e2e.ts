@@ -5,6 +5,20 @@ import { expect, test, type Locator } from "@playwright/test";
 // Fixture evidence: synthetic state through a stubbed IPC. Native placement,
 // always-on-top and dragging across applications need the desktop app.
 const captures = join(process.cwd(), "temp/verification/voice-overlay");
+test("floating full screen requests the owner workspace", async ({ page }) => {
+  await page.goto("/tests/browser/voice/voice-overlay.html?compact=0");
+  await page.getByRole("button", { name: "Full screen", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).fixtureOverlay.calls.some(
+          (call: any) =>
+            call.cmd === "plugin:event|emit_to" && call.args?.payload === "openWorkspace",
+        ),
+      ),
+    )
+    .toBe(true);
+});
 // Replies are chat bubbles in the companion's "Conversation" list; the newest one is last.
 // The transcript sits behind the call screen's Conversation toggle; it exists once voice is live.
 const showConversation = (panel: Locator) =>

@@ -31,6 +31,13 @@
 
   overflow: clip;
 }
+.tools-workspace-dock[data-embedded="true"] {
+  flex: 1;
+  inline-size: 100% !important;
+  block-size: 100% !important;
+  max-inline-size: none;
+  max-block-size: none;
+}
 .tools-workspace:is([data-placement="top"], [data-placement="bottom"]) .tools-workspace-dock {
   inline-size: 100%;
   max-inline-size: none;

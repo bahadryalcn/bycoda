@@ -14,7 +14,9 @@ import { restoreBrowserDraftTransfer } from "./browserDraftTransfer";
 import { Alert } from "../../shared/ui/Alert";
 import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Portal } from "../../shared/ui/Portal";
+import { OverlayParent } from "../../shared/ui/overlay";
 import { t, useLocale } from "../../shared/i18n/technical";
 import type { ConversationTools } from "./SessionHostTools";
 import { lazySurface } from "../../shared/ui/lazySurface";
@@ -334,10 +336,12 @@ function ToolDock({
   placement,
   children,
   layoutKey,
+  embedded,
 }: {
   placement: Placement;
   children: ReactNode;
   layoutKey: string;
+  embedded: boolean;
 }) {
   const dock = useRef<HTMLElement | null>(null);
   const vertical = placement === "top" || placement === "bottom";
@@ -391,17 +395,18 @@ function ToolDock({
   }, [sizeKey]);
   return (
     <>
-      <Sash {...resize.sashProps} label={t("Tool panels")} />
+      {!embedded && <Sash {...resize.sashProps} label={t("Tool panels")} />}
       <Text
         as="aside"
         size="inherit"
         tone="primary"
         ref={(element) => {
           dock.current = element;
-          resize.setPaneRef(element);
+          resize.setPaneRef(embedded ? null : element);
         }}
         {...surfaceAttributes({ variant: "canvas" }, "tools-workspace-dock")}
         aria-label={t("Tool panels")}
+        data-embedded={embedded || undefined}
       >
         {children}
       </Text>
@@ -415,13 +420,31 @@ export function ToolsWorkspace({
   activeConversation,
   accessibleSessions,
   followEligible = true,
+  outlet,
+  outletOverlayParent,
 }: {
   children: ReactNode;
   activeConversation?: ToolsSession | null;
   accessibleSessions?: readonly ToolsSession[];
   followEligible?: boolean;
+  outlet?: HTMLElement;
+  outletOverlayParent?: symbol | null;
 }) {
   useLocale();
+  const homeOverlayParent = useContext(OverlayParent);
+  const dockHome = useRef<HTMLDivElement>(null);
+  const [dockHost] = useState(() => {
+    if (typeof document === "undefined") return null;
+    const host = document.createElement("div");
+    host.className = "contents";
+    return host;
+  });
+  const embedded = Boolean(outlet);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Moves the same DOM host so docking keeps tool instances and drafts mounted.
+  useLayoutEffect(() => {
+    if (dockHost) (outlet ?? dockHome.current)?.append(dockHost);
+    return () => dockHost?.remove();
+  }, [dockHost, outlet]);
   const activeRef = useRef(activeConversation);
   activeRef.current = activeConversation;
   const eligibleRef = useRef(followEligible);
@@ -947,211 +970,225 @@ export function ToolsWorkspace({
       data-open={!!visiblePanes.length || !!roomPane}
     >
       <div className="tools-workspace-main">{children}</div>
-      {panes.length || roomPane ? (
-        <div
-          className="tools-workspace-dock"
-          data-visible={!!visiblePanes.length || !!roomPane}
-          aria-hidden={!visiblePanes.length && !roomPane}
+      <div className="contents" ref={dockHome} />
+      {dockHost && (panes.length || roomPane) ? (
+        <OverlayParent.Provider
+          value={embedded ? (outletOverlayParent ?? null) : homeOverlayParent}
         >
-          <ToolDock
-            placement={placement}
-            layoutKey={presentationSession ? toolsSessionKey(presentationSession) : "none"}
-          >
-            {error ? <Alert tone="danger">{error}</Alert> : null}
-            <div className="tools-workspace-panes">
-              {roomPane && (
-                <section
-                  {...surfaceAttributes(
-                    { frame: "pane", edge: "block-end" },
-                    "tools-workspace-pane",
-                  )}
-                  key={roomPane.id}
-                >
-                  <PaneHeader
-                    as="header"
-                    {...surfaceAttributes(
-                      { variant: "workspace-panel" },
-                      "tools-workspace-toolbar",
-                    )}
-                    icon={<Wrench className="icon-sm" aria-hidden />}
-                    titleAs="div"
-                    title={t("Browser")}
-                    meta={roomPane.context.title}
-                    actions={
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        iconOnly
-                        label={t("Close panel")}
-                        onClick={() => {
-                          roomPaneRef.current = undefined;
-                          roomMounted.current = undefined;
-                          setRoomPane(undefined);
-                        }}
-                      >
-                        <X className="icon-sm" aria-hidden />
-                      </Button>
-                    }
-                  />
-                  <BrowserPanel
-                    cwd={roomPane.context.cwd}
-                    roomSubject={roomPane.context}
-                    onMounted={() => {
-                      roomMounted.current = roomPane.id;
-                    }}
-                    annotationsAllowed={false}
-                  />
-                </section>
-              )}
-              {panes.map((pane) => (
-                <section
-                  {...surfaceAttributes(
-                    { frame: "pane", edge: "block-end" },
-                    "tools-workspace-pane",
-                  )}
-                  key={pane.id}
-                  data-visible={visiblePanes.includes(pane)}
-                  aria-hidden={!visiblePanes.includes(pane)}
-                >
-                  <PaneHeader
-                    as="header"
-                    bordered={false}
-                    {...surfaceAttributes(
-                      { variant: "workspace-panel" },
-                      "tools-workspace-toolbar",
-                    )}
-                    icon={<Wrench className="icon-sm" aria-hidden />}
-                    titleAs="div"
-                    title={pane.onlyTab ? t("Logs") : t("Conversation tools")}
-                    meta={
-                      <Tooltip label={pane.title} details={[pane.cwd]}>
-                        <span>{pane.title}</span>
-                      </Tooltip>
-                    }
-                    actions={
-                      <>
-                        <PlacementButton
-                          value={placement}
-                          onChange={(next) => setSessionPlacement(pane, next)}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          iconOnly
-                          type="button"
-                          className="tools-workspace-icon"
-                          label={t("Open in new window")}
-                          loading={detaching === pane.id}
-                          disabled={detaching === pane.id}
-                          onClick={async () => {
-                            if (transfers.current.has(pane.id)) return;
-                            transfers.current.add(pane.id);
-                            setDetaching(pane.id);
-                            setError("");
-                            try {
-                              const current = views.current.get(pane.id);
-                              await openHostToolsWindow(
-                                {
-                                  ...pane,
-                                  initialTab: current?.tab ?? pane.initialTab,
-                                  initialMachine: current?.machine ?? pane.initialMachine,
-                                },
-                                pane.onlyTab,
-                              );
-                              setPanes((previous) =>
-                                previous.map((entry) =>
-                                  entry.id === pane.id ? { ...entry, detached: true } : entry,
-                                ),
-                              );
-                            } catch (cause) {
-                              setError(toolsTransferError(cause));
-                            } finally {
-                              transfers.current.delete(pane.id);
-                              setDetaching(undefined);
-                            }
-                          }}
-                        >
-                          <ExternalLink className="icon-sm" aria-hidden />
-                        </Button>
-                        {visiblePanes.length > 1 ? (
+          <Portal target={dockHost}>
+            <div
+              className="tools-workspace-dock"
+              data-visible={!!visiblePanes.length || (!!roomPane && !embedded)}
+              aria-hidden={!visiblePanes.length && (!roomPane || embedded)}
+              data-embedded={embedded || undefined}
+            >
+              <ToolDock
+                placement={placement}
+                layoutKey={presentationSession ? toolsSessionKey(presentationSession) : "none"}
+                embedded={embedded}
+              >
+                {error ? <Alert tone="danger">{error}</Alert> : null}
+                <div className="tools-workspace-panes">
+                  {roomPane && (
+                    <section
+                      {...surfaceAttributes(
+                        { frame: "pane", edge: "block-end" },
+                        "tools-workspace-pane",
+                      )}
+                      key={roomPane.id}
+                      data-visible={!embedded}
+                      aria-hidden={embedded || undefined}
+                    >
+                      <PaneHeader
+                        as="header"
+                        {...surfaceAttributes(
+                          { variant: "workspace-panel" },
+                          "tools-workspace-toolbar",
+                        )}
+                        icon={<Wrench className="icon-sm" aria-hidden />}
+                        titleAs="div"
+                        title={t("Browser")}
+                        meta={roomPane.context.title}
+                        actions={
                           <Button
                             variant="ghost"
                             size="sm"
                             iconOnly
-                            type="button"
-                            className="tools-workspace-icon"
-                            label={t("Close panels")}
-                            onClick={() =>
-                              setPanes((previous) =>
-                                previous.filter((entry) => !visiblePanes.includes(entry)),
-                              )
-                            }
+                            label={t("Close panel")}
+                            onClick={() => {
+                              roomPaneRef.current = undefined;
+                              roomMounted.current = undefined;
+                              setRoomPane(undefined);
+                            }}
                           >
-                            <CircleX className="icon-sm" aria-hidden />
+                            <X className="icon-sm" aria-hidden />
                           </Button>
-                        ) : null}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          iconOnly
-                          type="button"
-                          className="tools-workspace-icon"
-                          label={t("Close panel")}
-                          onClick={() => close(pane.id)}
-                        >
-                          <X className="icon-sm" aria-hidden />
-                        </Button>
-                      </>
-                    }
-                  />
-                  <SessionHostTools
-                    {...pane}
-                    active={visiblePanes.includes(pane)}
-                    hidePresentation
-                    hideHeading
-                    onMounted={(view) => {
-                      mountedPanes.current.add(pane.id);
-                      mountedDomains.current.add(JSON.stringify([pane.id, view.tab, view.machine]));
-                      const pending = pendingReattach.current.filter(
-                        (transfer) =>
-                          sameToolsSession(transfer.session, pane) &&
-                          (transfer.session.initialTab ??
-                            pane.onlyTab ??
-                            pane.initialTab ??
-                            "devices") === view.tab &&
-                          (transfer.session.initialMachine ?? pane.initialMachine ?? "project") ===
-                            view.machine,
-                      );
-                      pendingReattach.current = pendingReattach.current.filter(
-                        (transfer) => !pending.includes(transfer),
-                      );
-                      for (const transfer of pending) {
-                        const ack: import("./toolsHubTransport").ToolsHubMessage = {
-                          kind: "reattached",
-                          requestId: transfer.requestId,
-                          session: {
-                            cwd: transfer.session.cwd,
-                            sessionId: transfer.session.sessionId,
-                            title: transfer.session.title,
-                          },
-                          sourceWindow: sourceWindow.current,
-                          tab: view.tab,
-                          machine: view.machine,
-                        };
-                        reattachReceipts.current.complete(transfer.requestId, ack);
-                        void sendToolsHub(transfer.destination, ack).catch(() => {});
-                      }
-                    }}
-                    onViewChange={(view) => {
-                      views.current.set(pane.id, view);
-                      publishRef.current();
-                    }}
-                  />
-                </section>
-              ))}
+                        }
+                      />
+                      <BrowserPanel
+                        cwd={roomPane.context.cwd}
+                        roomSubject={roomPane.context}
+                        onMounted={() => {
+                          roomMounted.current = roomPane.id;
+                        }}
+                        annotationsAllowed={false}
+                      />
+                    </section>
+                  )}
+                  {panes.map((pane) => (
+                    <section
+                      {...surfaceAttributes(
+                        { frame: "pane", edge: "block-end" },
+                        "tools-workspace-pane",
+                      )}
+                      key={pane.id}
+                      data-visible={visiblePanes.includes(pane)}
+                      aria-hidden={!visiblePanes.includes(pane)}
+                    >
+                      <PaneHeader
+                        as="header"
+                        bordered={false}
+                        {...surfaceAttributes(
+                          { variant: "workspace-panel" },
+                          "tools-workspace-toolbar",
+                        )}
+                        icon={<Wrench className="icon-sm" aria-hidden />}
+                        titleAs="div"
+                        title={pane.onlyTab ? t("Logs") : t("Conversation tools")}
+                        meta={
+                          <Tooltip label={pane.title} details={[pane.cwd]}>
+                            <span>{pane.title}</span>
+                          </Tooltip>
+                        }
+                        actions={
+                          <>
+                            <PlacementButton
+                              value={placement}
+                              onChange={(next) => setSessionPlacement(pane, next)}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              iconOnly
+                              type="button"
+                              className="tools-workspace-icon"
+                              label={t("Open in new window")}
+                              loading={detaching === pane.id}
+                              disabled={detaching === pane.id}
+                              onClick={async () => {
+                                if (transfers.current.has(pane.id)) return;
+                                transfers.current.add(pane.id);
+                                setDetaching(pane.id);
+                                setError("");
+                                try {
+                                  const current = views.current.get(pane.id);
+                                  await openHostToolsWindow(
+                                    {
+                                      ...pane,
+                                      initialTab: current?.tab ?? pane.initialTab,
+                                      initialMachine: current?.machine ?? pane.initialMachine,
+                                    },
+                                    pane.onlyTab,
+                                  );
+                                  setPanes((previous) =>
+                                    previous.map((entry) =>
+                                      entry.id === pane.id ? { ...entry, detached: true } : entry,
+                                    ),
+                                  );
+                                } catch (cause) {
+                                  setError(toolsTransferError(cause));
+                                } finally {
+                                  transfers.current.delete(pane.id);
+                                  setDetaching(undefined);
+                                }
+                              }}
+                            >
+                              <ExternalLink className="icon-sm" aria-hidden />
+                            </Button>
+                            {visiblePanes.length > 1 ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                iconOnly
+                                type="button"
+                                className="tools-workspace-icon"
+                                label={t("Close panels")}
+                                onClick={() =>
+                                  setPanes((previous) =>
+                                    previous.filter((entry) => !visiblePanes.includes(entry)),
+                                  )
+                                }
+                              >
+                                <CircleX className="icon-sm" aria-hidden />
+                              </Button>
+                            ) : null}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              iconOnly
+                              type="button"
+                              className="tools-workspace-icon"
+                              label={t("Close panel")}
+                              onClick={() => close(pane.id)}
+                            >
+                              <X className="icon-sm" aria-hidden />
+                            </Button>
+                          </>
+                        }
+                      />
+                      <SessionHostTools
+                        {...pane}
+                        active={visiblePanes.includes(pane)}
+                        hidePresentation
+                        hideHeading
+                        onMounted={(view) => {
+                          mountedPanes.current.add(pane.id);
+                          mountedDomains.current.add(
+                            JSON.stringify([pane.id, view.tab, view.machine]),
+                          );
+                          const pending = pendingReattach.current.filter(
+                            (transfer) =>
+                              sameToolsSession(transfer.session, pane) &&
+                              (transfer.session.initialTab ??
+                                pane.onlyTab ??
+                                pane.initialTab ??
+                                "devices") === view.tab &&
+                              (transfer.session.initialMachine ??
+                                pane.initialMachine ??
+                                "project") === view.machine,
+                          );
+                          pendingReattach.current = pendingReattach.current.filter(
+                            (transfer) => !pending.includes(transfer),
+                          );
+                          for (const transfer of pending) {
+                            const ack: import("./toolsHubTransport").ToolsHubMessage = {
+                              kind: "reattached",
+                              requestId: transfer.requestId,
+                              session: {
+                                cwd: transfer.session.cwd,
+                                sessionId: transfer.session.sessionId,
+                                title: transfer.session.title,
+                              },
+                              sourceWindow: sourceWindow.current,
+                              tab: view.tab,
+                              machine: view.machine,
+                            };
+                            reattachReceipts.current.complete(transfer.requestId, ack);
+                            void sendToolsHub(transfer.destination, ack).catch(() => {});
+                          }
+                        }}
+                        onViewChange={(view) => {
+                          views.current.set(pane.id, view);
+                          publishRef.current();
+                        }}
+                      />
+                    </section>
+                  ))}
+                </div>
+              </ToolDock>
             </div>
-          </ToolDock>
-        </div>
+          </Portal>
+        </OverlayParent.Provider>
       ) : null}
     </div>
   );

@@ -14,6 +14,12 @@ import { RemoteConnectionFeedbackProvider } from "../features/connections/ui/Rem
 import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
 import { AssistantBackgroundRoom } from "../features/assistant/model/AssistantBackgroundRoom";
 import { useVoiceAppBridge, useVoiceRailProjects } from "./workspace/bridges/useVoiceAppBridge";
+import {
+  VoiceWorkspacePanel,
+  type OpenVoiceTrackedWork,
+  type OpenVoiceWorkspace,
+  type VoiceToolsOutlet,
+} from "./workspace/bridges/VoiceWorkspacePanels";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
 import {
   createConversationTerminalControl,
@@ -2049,6 +2055,15 @@ function Workspace({
   });
   useQuickComposerLaunches(launchQuickSession);
   const voiceProjects = useVoiceRailProjects(recents, projectCwd, lockSnapshot);
+  const [voiceToolsOutlet, setVoiceToolsOutlet] = useState<VoiceToolsOutlet>();
+  const [openVoiceWork, setOpenVoiceWork] = useState<OpenVoiceWorkspace | undefined>();
+  const registerVoiceWork = useStableCallback((open?: OpenVoiceWorkspace) =>
+    setOpenVoiceWork(() => open),
+  );
+  const voiceTrackedWorkOpener = useRef<OpenVoiceTrackedWork | undefined>(undefined);
+  const registerVoiceTrackedWork = useStableCallback((open?: OpenVoiceTrackedWork) => {
+    voiceTrackedWorkOpener.current = open;
+  });
   const voiceApp = useVoiceAppBridge({
     projects: voiceProjects,
     sessions,
@@ -2812,6 +2827,7 @@ function Workspace({
   const { onManageWorktrees } = useManageWorktrees({ openSettings });
 
   const { sessionPaneProps } = useSessionPaneProps({
+    onOpenVoiceWork: openVoiceWork,
     onKeepSession,
     tabs,
     movingWindows,
@@ -3223,6 +3239,15 @@ function Workspace({
               )}
               <VoiceCompanionGate
                 {...voiceApp}
+                renderWorkspaceTool={(panel, session) => (
+                  <VoiceWorkspacePanel
+                    panel={panel}
+                    session={session}
+                    present={setVoiceToolsOutlet}
+                  />
+                )}
+                registerWorkspaceOpener={registerVoiceWork}
+                openWorkspaceTrackedWork={(work) => voiceTrackedWorkOpener.current?.(work) ?? false}
                 activeId={activeSessionId}
                 onSubmit={submitSession}
                 onStop={onStop}
@@ -3419,6 +3444,7 @@ function Workspace({
 
                       <SessionPanelTargetsContext.Provider value={socialSessionTargets}>
                         <WorkspaceMainArea
+                          voiceToolsOutlet={voiceToolsOutlet}
                           dockGridRef={dockGridRef}
                           projectCwd={projectCwd}
                           projectTerminals={projectTerminals}
@@ -3517,6 +3543,7 @@ function Workspace({
                       sessionPaneProps={sessionPaneProps}
                     />
                     <WorkspaceToolPanels
+                      registerVoiceTrackedWork={registerVoiceTrackedWork}
                       serverAgent={serverAgentPanel.api}
                       sessionPaneProps={sessionPaneProps}
                       onLoadCrewCoordinator={(target) =>

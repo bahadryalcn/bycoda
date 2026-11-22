@@ -105,7 +105,7 @@
   max-height: var(--voice-panel-max-height);
   overflow: hidden;
 }
-.panel:has(> .body[data-call-stage]) {
+.panel:not([data-full-screen]):has(> .body[data-call-stage]) {
   /* Keep the call stage and its dock together when a saved panel is taller than both. */
   grid-template-rows:
     [header] auto minmax(0, 1fr) [stage] minmax(0, max-content)
@@ -125,7 +125,7 @@
     visibility: hidden;
   }
 }
-.panel:has(> .body[data-call-stage]) > .header {
+.panel:not([data-full-screen]):has(> .body[data-call-stage]) > .header {
   grid-row: header;
 }
 .body[data-call-stage] {
@@ -144,10 +144,10 @@
   /* The live dock also includes the turn-ending control. */
   --voice-call-chrome-height: 240px;
 }
-.panel:has(> .body[data-call-stage]) > section {
+.panel:not([data-full-screen]):has(> .body[data-call-stage]) > section {
   grid-row: question;
 }
-.panel:has(> .body[data-call-stage]) > .actions {
+.panel:not([data-full-screen]):has(> .body[data-call-stage]) > .actions {
   grid-row: controls;
   padding-block: 8px 12px;
 }
@@ -163,6 +163,168 @@
   right: auto;
   left: 60px;
   --voice-panel-bottom: 12px;
+}
+.panel[data-full-screen] {
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: none;
+  max-block-size: none;
+  grid-template:
+    "header header" auto
+    "voice work" fit-content(55dvh)
+    "controls work" auto
+    ". work" minmax(0, 1fr)
+    / clamp(12rem, 20vw, 17rem) minmax(0, 1fr);
+}
+.panel[data-full-screen] > .header {
+  grid-area: header;
+  cursor: default;
+}
+.panel[data-full-screen] > .body {
+  grid-area: voice;
+  overflow: auto;
+  padding-block-start: var(--space-5);
+  --voice-core-stage-size: clamp(76px, 12vw, 140px);
+}
+.panel[data-full-screen] > .actions {
+  grid-area: controls;
+}
+.panel[data-full-screen] > .liveWorkspace {
+  grid-area: work;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: clamp(var(--space-4), 2.5vw, var(--space-8));
+}
+.liveWorkHeader,
+.liveWorkTools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.liveWorkTools {
+  align-items: start;
+  flex-wrap: wrap;
+}
+.liveWorkActions,
+.liveWorkCounts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.liveWorkSplit {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(0, 2fr);
+  flex: 1;
+  min-block-size: 0;
+}
+.liveWorkTab {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  gap: var(--space-4);
+  overflow: auto;
+}
+.liveWorkCompare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+.liveWorkCompare > * {
+  padding-inline-start: 0;
+}
+.liveWorkList,
+.liveWorkDetail {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  gap: var(--space-3);
+}
+.liveWorkList {
+  padding-inline-end: var(--space-3);
+}
+.liveWorkRows,
+.liveWorkDetail {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.liveWorkRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+}
+.liveWorkRows .liveWorkRow {
+  padding-block: var(--space-2);
+  min-block-size: 44px;
+  inline-size: 100%;
+}
+.liveWorkRowText {
+  display: grid;
+  min-inline-size: 0;
+}
+.liveWorkState {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.liveWorkDetail {
+  padding-inline-start: var(--space-4);
+  overflow-wrap: anywhere;
+}
+.liveWorkDetail > * {
+  flex-shrink: 0;
+}
+@container (width < 30rem) {
+  .liveWorkSplit {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  .liveWorkList {
+    padding-inline-end: 0;
+    max-block-size: 11rem;
+  }
+  .liveWorkDetail {
+    --surface-frame-stacked: 1;
+    padding-inline-start: 0;
+    padding-block-start: var(--space-3);
+  }
+}
+.workSuggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: end;
+  flex-basis: 100%;
+  order: 1;
+}
+.header[data-work-suggestion] {
+  flex-wrap: wrap;
+}
+@media (width < 42rem) {
+  .panel[data-full-screen] {
+    grid-template:
+      "header" auto
+      "work" minmax(0, 1fr)
+      "voice" fit-content(21dvh)
+      "controls" auto
+      / minmax(0, 1fr);
+  }
+  .panel[data-full-screen] > .body {
+    --voice-core-stage-size: 48px;
+    padding-block-start: var(--space-2);
+  }
 }
 .header {
   display: flex;

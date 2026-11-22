@@ -86,6 +86,7 @@ export type * as modelQuestionDraftsApi from "./public/questionDrafts";
 export type * as modelQueuedMessageEditApi from "./public/queuedMessageEdit";
 export type * as modelQueuePersistenceApi from "./public/queuePersistence";
 export type * as modelQuoteDraftApi from "./public/quoteDraft";
+export type * as modelCommandInspectionApi from "./public/commandInspection";
 export type * as modelSessionApi from "./public/session";
 export type * as modelSessionActivityApi from "./public/sessionActivity";
 export type * as modelSessionFiltersApi from "./public/sessionFilters";

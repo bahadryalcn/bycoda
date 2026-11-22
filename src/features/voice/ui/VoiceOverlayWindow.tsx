@@ -456,6 +456,19 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           >
             {compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
           </Button>
+          {!compact ? (
+            <Button
+              iconOnly
+              label={t("Full screen")}
+              disabled={!state}
+              onClick={() => {
+                send("openWorkspace");
+                showApp();
+              }}
+            >
+              <Maximize2 className="icon-sm" />
+            </Button>
+          ) : null}
           <Button iconOnly label={backLabel} onClick={returnToApp}>
             <X className="icon-sm" />
           </Button>

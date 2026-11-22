@@ -1,8 +1,21 @@
 import { stripAnsi } from "../../../shared/lib/ansi";
 import type { Block } from "./session";
 import { blockLifecycle, type DockAgentStatus } from "./activityDock";
+import { executionUserIndex } from "./executionTurn";
 import { boundedToolPreview } from "./toolInspection";
-import { toolCallLabel, toolCallState } from "./transcriptActivity";
+import { isHiddenTool, toolCallLabel, toolCallState } from "./transcriptActivity";
+
+export function currentExecutionTools(blocks: readonly Block[]) {
+  const sent = blocks.filter((block) => !block.draft && !block.internal);
+  const turn = executionUserIndex(sent);
+  return {
+    turnId: sent[turn]?.id,
+    tools:
+      turn < 0
+        ? []
+        : sent.slice(turn + 1).filter((block) => block.role === "tool" && !isHiddenTool(block)),
+  };
+}
 
 /**
  * One pure reading of a command-like tool block, shared by Command details, its

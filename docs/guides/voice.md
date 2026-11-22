@@ -387,6 +387,30 @@ compositor.
 
 ### Push to talk and tool activity
 
+The expanded desktop companion offers **Full screen** in its header. Open it at any time
+to see the selected conversation's current tool output alongside the voice controls.
+Search or filter the activity list, then select a row to keep its details open.
+**Follow** returns to the latest visible entry. Copy the command or output from its details.
+The captured project's Tasks, Goals and active or paused Crew runs appear alongside the
+conversation and Assistant jobs when the owning Host supports them. Filter by **Source**
+and select **Open** to reveal a tracked record in its workspace view.
+**Results** groups the visible work by status. Filter by status in the chart, sort the
+table, or select a result to open its details. **Generate with AI** asks the configured
+decision model to choose a chart and table layout using aggregate counts. **Use default**
+restores the standard layout. **Compare** shows two retained command
+outputs side by side. In **Draft**, you can insert the selected result and edit the
+text before copying it.
+**Changes** shows the session's recorded diff. **Browser**, **Devices**, and
+**Logs** use the conversation's existing tool dock and its current access rules.
+When viewable work is active, **View live work** appears in the header. Bycoda displays
+the suggestion silently and waits for you to open it. Escape returns to the previous
+view while the voice session and work continue. Use **Open conversation** to inspect the
+source and its native panels, or open another available workspace view from the activity area.
+The conversation activity bar also offers **View live work** for work with tool output
+when the voice companion is available. In the transcript, open **Results** beneath a
+completed turn to search its retained output and inspect or copy the result. **Full screen** in the expanded floating window
+returns to the app and opens the same workspace.
+
 Assign **Voice: Push to Talk** in Keyboard shortcuts. It has no default binding.
 While voice is connected and the microphone is paused, hold the shortcut to
 capture one turn. Release it to submit the captured speech and pause the microphone
