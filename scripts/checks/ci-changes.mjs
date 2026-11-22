@@ -14,6 +14,7 @@ const nativeEmbeddedInputs = new Set([
   "src/shared/model/host-contracts/response-limit.ts",
   "src/integrations/harness/core/nativeOutputDelivery.fixture.json",
   "host/windows-acl.ps1",
+  "host/service/registration.ps1",
   "host/git/gh-runtime.ts",
   "public/brand/bycoda/logo-horizontal-black.svg",
 ]);
