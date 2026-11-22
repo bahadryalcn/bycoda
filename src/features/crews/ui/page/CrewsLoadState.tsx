@@ -51,7 +51,7 @@ export function CrewsLoadState({
           <RetryAlert state={state} />
         </div>
       ) : state.pendingFailure ? (
-        <LoadingText className="px-4 pt-4">{t("Loading crews…")}</LoadingText>
+        <LoadingText inset="panel">{t("Loading crews…")}</LoadingText>
       ) : null}
       {children(data)}
     </>

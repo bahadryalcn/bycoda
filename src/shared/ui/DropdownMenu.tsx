@@ -11,6 +11,7 @@ import { contextMenuSlotClassName as slot } from "./arc/context-menu/context-men
 import { MenuRow } from "./MenuRow";
 import { LAYER } from "../lib/layers";
 import { observeResize } from "../lib/observeResize";
+import { popupSizeMinWidth } from "../lib/popover";
 import { Popover, popupListClassName, type PopoverAnchor } from "./Popover";
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { Check, ChevronRight } from "./icons";
@@ -100,13 +101,15 @@ export function DropdownMenu({
   returnFocusRef,
   side = "bottom",
   align = "end",
-  width = 228,
+  size,
+  width = size ? popupSizeMinWidth(size) : 228,
   gap,
   maxHeight,
   density,
   frosted,
   closeOnSelect,
   search,
+  highlight,
   initialActiveId,
   ignore,
   onEscape,
@@ -158,6 +161,7 @@ export function DropdownMenu({
       maxHeight={maxHeight}
       frosted={frosted}
       search={search}
+      highlight={highlight}
       initialActiveId={initialActiveId}
       ignore={ignore}
       onEscape={onEscape}
@@ -179,6 +183,7 @@ type SurfaceProps = {
   maxHeight?: number;
   frosted?: boolean;
   search?: DropdownMenuSearch;
+  highlight?: "focus" | "state";
   initialActiveId?: string;
   ignore?: string;
   onEscape?: () => boolean;
@@ -205,6 +210,7 @@ function MenuSurface({
   maxHeight,
   frosted,
   search,
+  highlight,
   initialActiveId,
   ignore,
   onEscape,
@@ -223,6 +229,7 @@ function MenuSurface({
   const closeTimer = useRef<number | null>(null);
   const uid = useId();
   const [branch, setBranch] = useState<Branch | null>(null);
+  const stateHighlight = Boolean(search) || highlight === "state";
   const [activeId, setActiveId] = useState<string | undefined>(initialActiveId);
   const [contentWidth, setContentWidth] = useState(CONTENT_MIN_WIDTH);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps a content-width menu's minimum width in step with its anchor, measured outside render
@@ -235,8 +242,11 @@ function MenuSurface({
   }, [anchor, width]);
   const actions = actionsOf(items);
   const enabled = actions.filter((action) => !action.disabled);
-  // With a search field the highlight is state (aria-activedescendant); otherwise it is DOM focus.
-  const highlighted = search ? (enabled.find((a) => a.id === activeId) ?? enabled[0]) : undefined;
+  // With a search field or `highlight="state"` the highlight is state (aria-activedescendant);
+  // otherwise it is DOM focus.
+  const highlighted = stateHighlight
+    ? (enabled.find((a) => a.id === activeId) ?? enabled[0])
+    : undefined;
   const rowId = (id: string) => `${uid}-${id}`;
   const rows = () =>
     Array.from(
@@ -266,7 +276,7 @@ function MenuSurface({
       (initialActiveId ? rowOf(initialActiveId) : undefined) ??
       (depth > 0 ? rows().find((row) => row.getAttribute("aria-checked") === "true") : undefined) ??
       rows()[0];
-    if (!search) first()?.focus({ preventScroll: true });
+    if (!stateHighlight) first()?.focus({ preventScroll: true });
     // Popover measures its first pass with visibility:hidden. Browsers cannot
     // focus that pass, so Popover's autoFocus takes the menu surface as soon as it
     // is placed: a key pressed before the next frame reaches the menu instead of
@@ -275,7 +285,7 @@ function MenuSurface({
     const frame = requestAnimationFrame(() => {
       const menu = surface.current;
       const active = document.activeElement;
-      if (closed.current || !menu || search) return;
+      if (closed.current || !menu || stateHighlight) return;
       if (active === menu || !menu.contains(active))
         (first() ?? menu).focus({ preventScroll: true });
       first()?.scrollIntoView?.({ block: "nearest" });
@@ -283,10 +293,31 @@ function MenuSurface({
     return () => cancelAnimationFrame(frame);
   }, []);
   useEffect(() => {
-    if (search && highlighted) {
+    if (stateHighlight && highlighted) {
       document.getElementById(rowId(highlighted.id))?.scrollIntoView?.({ block: "nearest" });
     }
   }, [highlighted?.id]);
+  // `highlight="state"` without a search field: the trigger may keep DOM focus (the composer), so
+  // the navigation keys are taken at the window in capture, re-bound each render to the latest rows.
+  useEffect(() => {
+    if (highlight !== "state" || search || !takesFocus) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.isComposing || closed.current) return;
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        event.stopPropagation();
+        move(step(event.key, searchIndex()));
+        return;
+      }
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (highlighted)
+        activate(highlighted, document.getElementById(rowId(highlighted.id)), true);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
 
   const openBranch = (action: DropdownMenuAction, row: HTMLElement, keyboard: boolean) => {
     cancelClose();
@@ -322,11 +353,11 @@ function MenuSurface({
     if (!action) return;
     const id = action instanceof HTMLElement ? action.dataset.menuId : action.id;
     if (branch && branch.id !== id) setBranch(null);
-    if (action instanceof HTMLElement) focusRow(action);
-    else setActiveId(action.id);
+    if (action instanceof HTMLElement && !stateHighlight) focusRow(action);
+    else if (id !== undefined) setActiveId(id);
   };
   const step = (key: string, index: number) => {
-    const count = search ? enabled.length : rows().length;
+    const count = stateHighlight ? enabled.length : rows().length;
     if (!count) return undefined;
     const next =
       key === "Home"
@@ -338,7 +369,7 @@ function MenuSurface({
             : index <= 0
               ? count - 1
               : index - 1;
-    return search ? enabled[next] : rows()[next];
+    return stateHighlight ? enabled[next] : rows()[next];
   };
   const keyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.nativeEvent.isComposing || event.key === "Process" || event.keyCode === 229) return;
@@ -353,7 +384,9 @@ function MenuSurface({
     }
     if (target === searchField.current) return;
     if (inContent && !(field && (event.key === "ArrowDown" || event.key === "ArrowUp"))) return;
-    const current = rows().indexOf(document.activeElement as HTMLButtonElement);
+    const current = stateHighlight
+      ? searchIndex()
+      : rows().indexOf(document.activeElement as HTMLButtonElement);
     if (event.key === "ArrowLeft" && depth > 0) {
       event.preventDefault();
       back?.();
@@ -421,7 +454,7 @@ function MenuSurface({
     return (
       <MenuRow
         key={item.id}
-        id={search ? rowId(item.id) : undefined}
+        id={stateHighlight ? rowId(item.id) : undefined}
         type="button"
         role={
           item.checked == null
@@ -444,14 +477,15 @@ function MenuSurface({
         data-described={item.description ? "true" : undefined}
         tabIndex={-1}
         branchWidth={item.submenuWidth}
-        // The search field keeps focus: a press on a row must not pull it away.
-        onMouseDown={search ? (event) => event.preventDefault() : undefined}
+        // The search field (or the menu surface, in state highlight) keeps focus: a press on a row
+        // must not pull it away.
+        onMouseDown={stateHighlight ? (event) => event.preventDefault() : undefined}
         onPointerMove={(event) => {
           if (item.disabled) return;
           const row = event.currentTarget;
           if (hasBranch) openBranch(item, row, false);
           else if (branch) scheduleClose();
-          if (search) setActiveId(item.id);
+          if (stateHighlight) setActiveId(item.id);
           else if (!isField(document.activeElement) && document.activeElement !== row) {
             row.focus({ preventScroll: true });
           }
@@ -564,6 +598,9 @@ function MenuSurface({
       anchor={anchor}
       role="menu"
       aria-label={label}
+      aria-activedescendant={
+        highlight === "state" && !search && highlighted ? rowId(highlighted.id) : undefined
+      }
       tabIndex={-1}
       autoFocus={takesFocus}
       side={side}

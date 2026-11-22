@@ -1,9 +1,3 @@
-/* The crew theme row opens with the stage: the real scene sits above the
-   "Crew theme" label and picker. The stage is not interactive, so visual order is enough. */
-[data-setting-id="crew-theme"] > .settings-row-feedback {
-  order: -1;
-}
-
 .crew-stage-card {
   display: grid;
   justify-items: center;
@@ -15,17 +9,4 @@
 .crew-stage-card .crew-scene {
   max-inline-size: 32rem;
   padding-block-end: 0;
-}
-
-/* Four theme names need the row's remaining width; the shared control scrolls when it still
-   does not fit and stays on the right edge when it wraps under the label. */
-[data-setting-id="crew-theme"] > .settings-row-control {
-  max-inline-size: 100%;
-  margin-inline-start: auto;
-}
-@container (width < 560px) {
-  /* Under the label the picker starts at the label's edge like every other wrapped control. */
-  [data-setting-id="crew-theme"] > .settings-row-control {
-    margin-inline-start: 0;
-  }
 }

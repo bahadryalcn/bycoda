@@ -80,9 +80,14 @@ export function SkillGroupDialogs({
       onClose={onClose}
       size="sm"
       footer={
-        <ModalActions>
+        <ModalActions reason={name.trim() ? undefined : t("Enter a name.")}>
           <Button onClick={onClose}>{t("Cancel")}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={save}>
+          <Button
+            variant="primary"
+            disabled={!name.trim()}
+            disabledReason={name.trim() ? undefined : t("Enter a name.")}
+            onClick={save}
+          >
             {t("Save")}
           </Button>
         </ModalActions>

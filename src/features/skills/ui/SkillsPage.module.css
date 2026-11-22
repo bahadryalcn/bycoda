@@ -152,9 +152,6 @@
   flex: none;
   padding: 0.5rem clamp(1rem, 3cqi, 2rem) 0.75rem;
 }
-.detailTabs {
-  margin-block-start: 0.75rem;
-}
 .machinesPane {
   flex: 1;
   min-block-size: 0;

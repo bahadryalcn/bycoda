@@ -283,17 +283,12 @@ export function MediaView({
             }
           />
         ) : state.status === "error" && loadShownCentrally ? null : state.status === "error" ? (
-          <DocumentMessage title={t("Couldn’t open {p0}", { p0: basename(path) })} error>
-            <InlineError>{state.message}</InlineError>
-            <Button
-              variant="ghost"
-              motion="none"
-              type="button"
-              onClick={() => setRetry((value) => value + 1)}
-            >
-              {t("Retry")}
-            </Button>
-          </DocumentMessage>
+          <DocumentMessage
+            title={t("Couldn’t open {p0}", { p0: basename(path) })}
+            error
+            detail={state.message}
+            onRetry={() => setRetry((value) => value + 1)}
+          />
         ) : state.status === "manual" ? (
           <DocumentMessage title={basename(path)}>
             <span className="tabular-nums">{formatFileSize(state.size)}</span>

@@ -73,7 +73,7 @@ it("shows one failure and retry surface when the source has no loaded rows", asy
   expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
   expect(container.textContent?.match(/Could not load\./g)).toHaveLength(1);
   const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Retry",
+    (button) => button.textContent === "Try again",
   )!;
   expect(retry).toBeDefined();
   const before = read.mock.calls.length;

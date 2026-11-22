@@ -325,6 +325,12 @@ function ProjectDevServersPanel({
       }
     }
   };
+  const retryScan = () =>
+    void action("refresh", async () => {
+      // A paused poll resumes once a manual scan succeeds.
+      const recovering = failures.current >= MAX_POLL_FAILURES;
+      if ((await refresh(true)) && recovering) setAutoRefresh(true);
+    });
   useEffect(() => {
     if (!launch?.pending || !transferScope) return;
     return holdToolsDraftTransfer(transferScope);
@@ -941,13 +947,13 @@ function ProjectDevServersPanel({
           <span className="dev-servers-count">
             {scanning && !scan
               ? t("Scanning servers…")
-              : scanError
-                ? t("Scan failed")
-                : !scan
-                  ? t("Refresh to discover servers.")
-                  : t(visibleServers.length === 1 ? "{p0} server" : "{p0} servers", {
-                      p0: visibleServers.length,
-                    })}
+              : !scan
+                ? scanError
+                  ? ""
+                  : t("Refresh to discover servers.")
+                : t(visibleServers.length === 1 ? "{p0} server" : "{p0} servers", {
+                    p0: visibleServers.length,
+                  })}
           </span>
           {autoRefresh ? null : (
             <Text size="inherit" tone="primary" weight="medium" className="dev-servers-paused">
@@ -959,39 +965,19 @@ function ProjectDevServersPanel({
         {/* Counts change on every poll, so only the scan's start and failure are announced. */}
         <LiveText
           className="sr-only"
-          text={scanning && !scan ? t("Scanning servers…") : scanError ? t("Scan failed") : ""}
+          text={scanning && !scan ? t("Scanning servers…") : ""}
         />
         <div className="dev-server-actions">
-          {scanError ? (
-            <Button
-              startIcon={<RefreshCw />}
-              loading={operation === "refresh"}
-              disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
-              onClick={() =>
-                void action("refresh", async () => {
-                  const recovering = failures.current >= MAX_POLL_FAILURES;
-                  if ((await refresh(true)) && recovering) setAutoRefresh(true);
-                })
-              }
-            >
-              {t("Retry scan")}
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Refresh")}
-              loading={operation === "refresh"}
-              disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
-              onClick={() =>
-                void action("refresh", async () => {
-                  await refresh(true);
-                })
-              }
-            >
-              <RefreshCw />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Refresh")}
+            loading={operation === "refresh"}
+            disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
+            onClick={retryScan}
+          >
+            <RefreshCw />
+          </Button>
           <Button
             variant="ghost"
             iconOnly
@@ -1029,6 +1015,12 @@ function ProjectDevServersPanel({
         <Alert
           tone="danger"
           title={t("Could not refresh servers.")}
+          action={{
+            label: t("Try again"),
+            pending: operation === "refresh",
+            disabled: unavailable("refresh") || (scanning && operation !== "refresh"),
+            onClick: retryScan,
+          }}
           extra={<ErrorDetails title={t("Could not refresh servers.")} detail={scanError} />}
         >
           {scan
@@ -1037,9 +1029,14 @@ function ProjectDevServersPanel({
         </Alert>
       ) : null}
       {error ? (
-        <Alert tone="danger" ref={actionError} tabIndex={-1} className="host-tool-error-payload">
-          {error}
-        </Alert>
+        <Alert
+          tone="danger"
+          ref={actionError}
+          tabIndex={-1}
+          className="host-tool-error-payload"
+          title={t("The server action failed.")}
+          extra={<ErrorDetails title={t("The server action failed.")} detail={error} />}
+        />
       ) : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
       {showStart ? (

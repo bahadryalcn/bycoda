@@ -165,7 +165,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
           <EmptyState
             size="inline"
             kind="empty"
-            className="px-3 pt-0"
+            inset="row"
             description={t("No stashes")}
           />
         ) : (

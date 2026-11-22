@@ -44,23 +44,21 @@ export function SocialNav({
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync nav scroll with selected tab and DOM resizing without moving page scroll.
   useLayoutEffect(() => {
     const node = nav.current;
-    if (!node) return;
+    // The strip (`scroll="auto"`) is the scroller, so the selected tab is revealed inside it.
+    const list = node?.querySelector<HTMLElement>('[role="tablist"]');
+    if (!node || !list) return;
     const reveal = () => {
-      const tab = node.querySelector<HTMLElement>('[aria-selected="true"]');
+      const tab = list.querySelector<HTMLElement>('[aria-selected="true"]');
       if (!tab) return;
-      const bounds = node.getBoundingClientRect();
+      const bounds = list.getBoundingClientRect();
       const selected = tab.getBoundingClientRect();
-      if (selected.left < bounds.left) node.scrollLeft += selected.left - bounds.left;
-      else if (selected.right > bounds.right) node.scrollLeft += selected.right - bounds.right;
+      if (selected.left < bounds.left) list.scrollLeft += selected.left - bounds.left;
+      else if (selected.right > bounds.right) list.scrollLeft += selected.right - bounds.right;
     };
     reveal();
-    const cleanups = [observeResize(node, reveal)];
-    const list = node.querySelector<HTMLElement>('[role="tablist"]');
-    if (list) {
-      cleanups.push(observeResize(list, reveal));
-      for (const tab of list.querySelectorAll<HTMLElement>('[role="tab"]')) {
-        cleanups.push(observeResize(tab, reveal));
-      }
+    const cleanups = [observeResize(node, reveal), observeResize(list, reveal)];
+    for (const tab of list.querySelectorAll<HTMLElement>('[role="tab"]')) {
+      cleanups.push(observeResize(tab, reveal));
     }
     return () => cleanups.forEach((cleanup) => cleanup());
   }, [active]);
@@ -68,6 +66,7 @@ export function SocialNav({
     <nav ref={nav} {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "social-shell-nav")}>
       <TabStrip
         label={t("Social sections")}
+        scroll="auto"
         value={active}
         onValueChange={onSelect}
         items={SOCIAL_SCREEN_IDS.map((screen) => {

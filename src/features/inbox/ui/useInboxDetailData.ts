@@ -256,6 +256,8 @@ export function useInboxDetailData(
     details: detailsQuery.data ?? null,
     loading: detailsQuery.isPending,
     error: detailsQuery.error ? errorMessage(detailsQuery.error) : null,
+    retrying: detailsQuery.isFetching,
+    retry: () => detailsQuery.refetch(),
     prDiff: isPr ? (diffQuery.data ?? null) : null,
     diffLoading: isPr && diffQuery.isPending,
     diffError: isPr && diffQuery.error ? errorMessage(diffQuery.error) : null,

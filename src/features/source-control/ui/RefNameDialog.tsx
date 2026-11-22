@@ -71,7 +71,7 @@ export function RefNameDialog({
         if (!busy) onCancel();
       }}
       footer={
-        <ModalActions>
+        <ModalActions reason={complete ? undefined : t("Fill in every field.")}>
           <Button
             size="sm"
             variant="ghost"
@@ -90,6 +90,7 @@ export function RefNameDialog({
             form={formId}
             loading={busy}
             disabled={!complete || busy}
+            disabledReason={complete ? undefined : t("Fill in every field.")}
           >
             {submitLabel}
           </Button>

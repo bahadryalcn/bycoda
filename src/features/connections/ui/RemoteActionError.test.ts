@@ -44,3 +44,29 @@ it("offers no Details when the raw text is the message itself", async () => {
     cleanup();
   }
 });
+
+it("headlines a titled failure with what happened and keeps a long raw message behind Details", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const raw = `database is locked (code 5)\n${"at store.rs ".repeat(20)}`;
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(RemoteActionError, {
+        error: describeRemoteError(raw),
+        title: "Couldn’t count the saved sessions",
+      }),
+    ),
+  );
+  try {
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain("Couldn’t count the saved sessions");
+    expect(alert.textContent).not.toContain("database is locked");
+    expect(alert.querySelector('button[aria-haspopup="dialog"]')).not.toBeNull();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

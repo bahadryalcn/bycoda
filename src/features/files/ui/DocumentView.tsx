@@ -26,7 +26,7 @@ import {
   type DocumentKind,
   type DocumentProblem,
 } from "../model/documentViewer";
-import { describeDocumentProblem } from "../model/documentProblemText";
+import { documentProblemParts } from "../model/documentProblemText";
 import { DocumentMessage } from "./DocumentMessage";
 import { FileActionError } from "./FileActionError";
 import { FilePreviewSearch } from "./FilePreviewSearch";
@@ -217,19 +217,13 @@ export function DocumentView({
     body = null;
   } else if (state.status === "error") {
     body = (
-      <DocumentMessage title={t("Couldn’t open {p0}", { p0: name })} error>
-        {describeDocumentProblem(state.problem)}
-        {detail}
-        <Button
-          size="sm"
-          variant="ghost"
-          motion="none"
-          type="button"
-          onClick={reload}
-          className="mt-3"
-        >
-          {t("Retry")}
-        </Button>
+      <DocumentMessage
+        title={t("Couldn’t open {p0}", { p0: name })}
+        error
+        detail={documentProblemParts(state.problem).detail}
+        onRetry={reload}
+      >
+        {documentProblemParts(state.problem).reason}
       </DocumentMessage>
     );
   } else if (state.status === "cancelled") {

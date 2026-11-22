@@ -419,6 +419,7 @@ function KeybindingSettingsRow({
   return (
     <Row
       id={keybindingSettingId(row.command)}
+      density="compact"
       label={
         <Text size="inherit" tone={disabled ? "disabled" : "inherit"}>
           {keybindingActionLabel(row.command)}

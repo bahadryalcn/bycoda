@@ -73,11 +73,6 @@
 .appearance-section-body {
   min-inline-size: 0;
 }
-/* Slider value chips share one width so 216°, 0%, 700 ms and 24px line up on every row. */
-.appearance-settings .settings-row-control span.tabular-nums {
-  min-inline-size: 6ch;
-}
-
 /* Mode and theme cards: a sample of the option, its name and a selected frame in the accent
    interaction role. Selection never relies on the sample's own colors. Both grids span the group
    (V3-039) and share one column rhythm: three modes, and palettes in six, three or two columns as
@@ -154,11 +149,8 @@
   background: var(--palette-accent);
 }
 /* Accent: every swatch, the palette default first and the custom picker last, on one row at every
-   density. The row widens the control column only as far as the swatches need, and a narrow group
-   folds them into two even rows of four instead of leaving one swatch alone on a second line. */
-.settings-row:has(.appearance-accent) > .settings-row-control {
-  max-inline-size: none;
-}
+   density (the Row uses controlWidth="fill"), and a narrow group folds them into two even rows of four
+   instead of leaving one swatch alone on a second line. */
 .appearance-accent {
   max-inline-size: 100%;
 }
@@ -179,44 +171,4 @@
     grid-auto-flow: row;
     grid-template-columns: repeat(4, var(--ui-color-swatch-target));
   }
-}
-
-/* Font + size: one pattern for interface-adjacent, monospace and terminal rows. The control column
-   widens just enough for a font control and a compact size select side by side. */
-.settings-row:has(.appearance-font-pair) > .settings-row-control {
-  flex: 0 1 24rem;
-  max-inline-size: 24rem;
-}
-.appearance-font-pair {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  inline-size: 100%;
-  min-inline-size: 0;
-}
-.appearance-font {
-  display: flex;
-  flex: 1 1 0;
-  min-inline-size: 0;
-}
-.appearance-font > :first-child {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-}
-.appearance-size {
-  flex: none;
-  inline-size: 6.25rem;
-}
-.settings-row:not([data-stacked]) > .settings-row-control .appearance-size .bycoda-arc-select {
-  min-inline-size: 0;
-  inline-size: 100%;
-}
-
-/* Section tabs keep full labels; a narrow surface (Preview in app) scrolls them instead of
-   truncating every label. */
-.appearance-settings [role="tablist"] {
-  overflow-x: auto;
-}
-.appearance-settings [role="tablist"] > [role="tab"] {
-  flex: none;
 }

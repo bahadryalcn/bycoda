@@ -167,7 +167,7 @@ export function GitGraphConflictEditor({
       />
     );
   if (!loaded)
-    return <LoadingText className="px-3 py-2">{t("Loading conflict versions")}</LoadingText>;
+    return <LoadingText inset="row">{t("Loading conflict versions")}</LoadingText>;
   if (loaded.disk !== null && hasConflictMarkers(loaded.disk))
     return (
       <MergeConflictEditor
@@ -278,7 +278,7 @@ export function GitGraphConflictEditor({
         >
           <div className="flex min-h-0 flex-1 flex-col">
             {hasConflictMarkers(draft) ? (
-              <InlineMessage tone="warning" live="off" className="px-3 pb-1">
+              <InlineMessage tone="warning" live="off" inset="row">
                 {t("Resolve every conflict marker before staging")}
               </InlineMessage>
             ) : null}
@@ -304,7 +304,7 @@ export function GitGraphConflictEditor({
           </div>
           <EmptyState
             size="inline"
-            className="px-3"
+            inset="row"
             description={t("Choose a whole-file version to resolve this conflict")}
           />
         </>

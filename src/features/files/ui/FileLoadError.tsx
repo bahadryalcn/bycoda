@@ -4,9 +4,9 @@ import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { formatBytes } from "../../../shared/i18n/format";
-import { Folder, RotateCcw } from "../../../shared/ui/icons";
+import { Folder } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
-import { Alert } from "../../../shared/ui/Alert";
+import { DocumentMessage } from "./DocumentMessage";
 import { Progress } from "../../../shared/ui/Progress";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useEffect, useRef, useState } from "react";
@@ -71,47 +71,24 @@ function FileLoadFailure({
   const shownCentrally = useConnectionErrorShownCentrally(message);
   if (shownCentrally) return null;
   return (
-    <div className="grid h-full place-items-center p-6">
-      <Alert tone="danger" className="max-w-md" title={`${t("Couldn’t open ")}${basename(path)}`}>
-        <p>{message}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-1">
-          {retryable ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              onClick={onRetry}
-              className="shrink-0"
-            >
-              <RotateCcw className="icon-xs" strokeWidth={1.75} />
-              {t("Retry")}
-            </Button>
-          ) : null}
-          {local ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              onClick={() => reveal(path)}
-              className="shrink-0"
-            >
-              <Folder className="icon-xs" strokeWidth={1.75} />
-              {t(REVEAL_LABEL)}
-            </Button>
-          ) : (
-            <CopyButton
-              size="sm"
-              variant="ghost"
-              label={t("Copy path")}
-              text={path}
-              resetKeys={[path]}
-            />
-          )}
-        </div>
-      </Alert>
-    </div>
+    <DocumentMessage
+      title={t("Couldn’t open {p0}", { p0: basename(path) })}
+      error
+      detail={message}
+      onRetry={retryable ? onRetry : undefined}
+      action={local ? { label: t(REVEAL_LABEL), onClick: () => reveal(path) } : undefined}
+      extra={
+        local ? undefined : (
+          <CopyButton
+            size="sm"
+            variant="ghost"
+            label={t("Copy path")}
+            text={path}
+            resetKeys={[path]}
+          />
+        )
+      }
+    />
   );
 }
 

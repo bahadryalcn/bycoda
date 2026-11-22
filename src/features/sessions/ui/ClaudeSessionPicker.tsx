@@ -50,13 +50,13 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
     >
       {error ? (
         <InlineError
-          className="px-1 py-3"
+          inset="row"
           retry={{ onRetry: () => setRetry((value) => value + 1) }}
         >
           {error}
         </InlineError>
       ) : sessions === null ? (
-        <LoadingText className="px-1 py-6">{t("Reading…")}</LoadingText>
+        <LoadingText inset="panel">{t("Reading…")}</LoadingText>
       ) : sessions.length === 0 ? (
         <EmptyState
           size="inline"

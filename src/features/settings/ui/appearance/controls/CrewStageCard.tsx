@@ -101,10 +101,12 @@ export function CrewStageCard() {
             }}
           />
         </Row>
-        {/* The stage renders in the theme row's feedback slot while the crew is on; CrewStageCard.css
+        {/* The stage renders in the theme row's feedback slot while the crew is on; the Row (feedbackPosition="start")
             places it above the picker so the group opens with the hero. Off, it is not rendered. */}
         <Row
           id="crew-theme"
+          controlWidth="fill"
+          feedbackPosition="start"
           label={t("Crew theme")}
           info={crewThemeHint(theme)}
           dependsOn={visible}

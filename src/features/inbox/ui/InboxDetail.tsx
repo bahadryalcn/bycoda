@@ -4,6 +4,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { InboxStatusBadge } from "./InboxStatusBadge";
 import { Alert } from "../../../shared/ui/Alert";
+import { InboxLoadError } from "./InboxLoadError";
 import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -16,6 +17,7 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t, useT, useFormat } from "../../../shared/i18n";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useGithubPrChecks } from "../hooks/useGithubPrChecks";
 import { useJiraWorkingProject } from "../hooks/useJiraWorkingProject";
 import { summarizePrChecks } from "../model/githubPrChecks";
@@ -125,6 +127,8 @@ export function InboxDetail({
     details,
     loading,
     error,
+    retrying,
+    retry,
     prDiff,
     diffLoading,
     diffError,
@@ -586,7 +590,9 @@ export function InboxDetail({
                     )}
                   </div>
                 </div>
-                {startError ? <InlineError>{startError}</InlineError> : null}
+                {startError ? (
+                  <InlineError details={startError}>{t("Could not start the session.")}</InlineError>
+                ) : null}
               </header>
               {isPr ? (
                 <div className="flex h-9 items-center">
@@ -631,13 +637,13 @@ export function InboxDetail({
             >
               {isPr && tab === "code" ? (
                 diffLoading && !prDiff ? (
-                  <LoadingText className="justify-center py-10" />
+                  <LoadingText inset="panel" className="justify-center" />
                 ) : diffError && !prDiff ? (
-                  <Alert tone="danger">{diffError}</Alert>
+                  <InboxLoadError title={t("Could not load the code changes.")} error={diffError} />
                 ) : prDiff ? (
                   <>
                     {diffLoading ? <LoadingText /> : null}
-                    {diffError ? <Alert tone="danger">{diffError}</Alert> : null}
+                    {diffError ? <InboxLoadError title={t("Could not load the code changes.")} error={diffError} /> : null}
                     <InboxPrDiff
                       key={inboxItemKey(item)}
                       diff={prDiff}
@@ -705,12 +711,26 @@ export function InboxDetail({
                   }
                 />
               ) : loading && !details ? (
-                <LoadingText className="justify-center py-10" />
+                <LoadingText inset="panel" className="justify-center" />
               ) : error && !details ? (
-                <Alert tone="danger">{error}</Alert>
+                <InboxLoadError
+                  title={t("Could not load this item.")}
+                  error={error}
+                  retrying={retrying}
+                  disabled={false}
+                  onRetry={() => void retry()}
+                />
               ) : (
                 <>
-                  {error ? <Alert tone="danger">{error}</Alert> : null}
+                  {error ? (
+                    <InboxLoadError
+                      title={t("Could not refresh this item.")}
+                      error={error}
+                      retrying={retrying}
+                      disabled={false}
+                      onRetry={() => void retry()}
+                    />
+                  ) : null}
                   {panel ? (
                     <InboxDescriptionSummary
                       body={details?.body ?? ""}
@@ -763,9 +783,7 @@ export function InboxDetail({
                       }}
                     >
                       <p>{t("Comment sent. Could not refresh the conversation.")}</p>
-                      <Text as="p" size="caption" tone="inherit" className="wrap-anywhere">
-                        {postRefreshError}
-                      </Text>
+                      <ErrorDetails detail={postRefreshError} />
                     </Alert>
                   ) : null}
                   <InboxCommentForm

@@ -4218,7 +4218,7 @@ function ConnectedRemoteSession({
     <ModelSourceContext.Provider value={modelSource}>
       <RemoteSessionFrame compact={compactPresentation}>
         {followUpPreparing || sending ? (
-          <LoadingText delay={false} className="shrink-0 px-4 py-2">
+          <LoadingText delay={false} inset="panel" className="shrink-0">
             {t(
               sending
                 ? "Waiting for the host to confirm your request."
@@ -4227,7 +4227,7 @@ function ConnectedRemoteSession({
           </LoadingText>
         ) : null}
         {uploadProgress ? (
-          <LoadingText delay={false} className="shrink-0 px-4 py-2">
+          <LoadingText delay={false} inset="panel" className="shrink-0">
             {t("Uploading attachment: ")}
             {Math.round(
               uploadProgress.size ? (uploadProgress.offset / uploadProgress.size) * 100 : 100,
@@ -4236,7 +4236,7 @@ function ConnectedRemoteSession({
           </LoadingText>
         ) : null}
         {snapshot?.historyLoading ? (
-          <LoadingText className="shrink-0 px-4 py-2">{t("Loading earlier messages…")}</LoadingText>
+          <LoadingText inset="panel" className="shrink-0">{t("Loading earlier messages…")}</LoadingText>
         ) : null}
         <RemoteConnectionNotice
           cwdOrEnvironmentId={owner?.environmentId ?? project.key}

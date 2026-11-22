@@ -28,7 +28,7 @@ it("keeps long errors collapsed, exposes all details and retains retry state", a
     expect(document.querySelector("pre")?.textContent).toBe(error);
     await act(async () => details.click());
     const retry = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Retry"),
+      button.textContent?.includes("Try again"),
     )!;
     await act(async () => retry.click());
     expect(onRetry).toHaveBeenCalledOnce();
@@ -38,6 +38,23 @@ it("keeps long errors collapsed, exposes all details and retains retry state", a
       ),
     );
     expect(retry.disabled).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("never prints a short raw error as title or body", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const error = "Cannot read properties of undefined (reading 'invoke')";
+  try {
+    await act(async () =>
+      root.render(createElement(InboxLoadError, { error, title: "Could not load this item." })),
+    );
+    expect(host.textContent).toContain("Could not load this item.");
+    expect(host.textContent).not.toContain(error);
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

@@ -178,7 +178,7 @@ function SkillList({
         size="inline"
         kind={query.trim() ? "filtered" : "empty"}
         description={query.trim() ? t("No matching commands or skills") : t("No commands yet")}
-        className="px-3 py-2.5"
+        inset="row"
       />
     );
   }

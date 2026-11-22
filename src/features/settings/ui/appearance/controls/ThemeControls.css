@@ -272,10 +272,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Interaction states: the source control needs the full row width for its four options. */
-.settings-row:has(.state-ladder-source) > .settings-row-control {
-  max-inline-size: none;
-}
+/* Interaction states: the source control needs the full row width (Rows use controlWidth="fill"). */
 .state-ladder-source {
   display: flex;
   flex-wrap: wrap;

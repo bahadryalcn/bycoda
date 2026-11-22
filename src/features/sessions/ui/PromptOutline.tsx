@@ -304,7 +304,7 @@ export const PromptOutline = memo(function PromptOutline({
       <DropdownMenu
         anchor={menuAnchor}
         label={menuLabel}
-        width={320}
+        size="lg"
         maxHeight={360}
         density="compact"
         initialActiveId={activeId ?? undefined}

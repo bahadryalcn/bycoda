@@ -1,6 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { sshJumpChain } from "../model/sshEndpointReview";
 import type { ServerRecord, SshEndpoint } from "../model/serverInventory";
@@ -96,10 +97,12 @@ export function ConfigImportChoices({
 
 export function JumpAuthenticationHelp() {
   return (
-    <Text as="p" tone="muted" className="break-words">
-      {t(
-        "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.",
-      )}
-    </Text>
+    <InfoPopover className="shrink-0">
+      <p>
+        {t(
+          "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.",
+        )}
+      </p>
+    </InfoPopover>
   );
 }

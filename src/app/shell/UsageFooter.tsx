@@ -566,7 +566,7 @@ function RunningTerminalChip({
           label={t("Running terminals")}
           side="top"
           align="end"
-          width={192}
+          size="sm"
           items={terminals.map((terminal) => ({
             kind: "item" as const,
             id: terminal.id,

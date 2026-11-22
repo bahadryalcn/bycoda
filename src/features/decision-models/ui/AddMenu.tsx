@@ -89,7 +89,7 @@ export function AddMenu({
           label={t("Add a decision model")}
           items={items}
           align="end"
-          width={372}
+          size="lg"
           onPick={(id) => {
             setAnchor(null);
             onPick(id as AddPath);

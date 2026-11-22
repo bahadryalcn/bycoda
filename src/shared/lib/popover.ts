@@ -182,3 +182,9 @@ export function placePopover(
     maxHeight: Math.min(capped, viewport.height - top - padding),
   };
 }
+
+/** `popupSizeWidth` for the document's current root font size (px), for `minWidth` consumers. */
+export function popupSizeMinWidth(size: PopoverSize): number {
+  const root = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return popupSizeWidth(size, Number.isFinite(root) ? root : 16);
+}

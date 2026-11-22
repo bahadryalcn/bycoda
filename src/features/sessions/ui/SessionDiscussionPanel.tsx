@@ -162,7 +162,7 @@ export function SessionDiscussionPanel({
           {error}
         </InlineError>
       ) : null}
-      {loading ? <LoadingText className="p-3" /> : null}
+      {loading ? <LoadingText inset="row" /> : null}
       <div ref={host} className="flex min-h-0 min-w-0 flex-1 flex-col" />
     </>
   );

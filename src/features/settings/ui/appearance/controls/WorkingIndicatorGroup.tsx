@@ -46,6 +46,7 @@ export function WorkingIndicatorGroup() {
     >
       <Row
         id="working-indicator-color"
+        controlWidth="fill"
         label={t("Working color")}
         description={t("Automatic follows the accent color of your theme.")}
       >

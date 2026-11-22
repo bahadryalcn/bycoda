@@ -344,8 +344,12 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         try {
           await remoteRequest(machine.id, "devices.revokeSelf");
         } catch (reason) {
+          // The sentence is the reason; the raw cause follows a blank line and waits behind Details.
           throw new Error(
-            `Could not revoke access, so ${machine.name} was not removed: ${sanitizeConnectionError(errorText(reason))}. Reconnect and try again, or remove it from this desktop only and revoke it on the host with bycoda-host devices and bycoda-host revoke <device-id>.`,
+            `${t(
+              "{p0} was not removed because access could not be revoked. Reconnect and try again, or remove it from this desktop only and revoke it on the host with bycoda-host devices and bycoda-host revoke <device-id>.",
+              { p0: machine.name },
+            )}\n\n${sanitizeConnectionError(errorText(reason))}`,
           );
         }
       }

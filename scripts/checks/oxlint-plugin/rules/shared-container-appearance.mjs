@@ -10,10 +10,10 @@ const PROPS = {
   Sheet: '`size`, `surface`, `scroll="none"`, `padding="none"`',
   TabList: "`scrollbar` (the tabs own their look)",
   Surface: "`variant`, `frame`, `edge`, `radius`, `padding`, `elevation`, `tone`",
-  EmptyState: "`size`, `kind`",
-  LoadingText: "`size`, `tone`",
-  InlineError: "`tone`",
-  InlineMessage: "`tone`",
+  EmptyState: "`size`, `kind`, `inset`",
+  LoadingText: "`size`, `tone`, `inset`",
+  InlineError: "`inset`, `retry`",
+  InlineMessage: "`tone`, `inset`",
   useHoverCard: "the `width`, `size`, `maxHeight` and `solid` options",
 };
 

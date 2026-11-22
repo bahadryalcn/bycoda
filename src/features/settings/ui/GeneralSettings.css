@@ -4,10 +4,6 @@
   min-inline-size: 0;
 }
 
-/* Version, update state and progress live in one action area; it may use more than the default control width. */
-[data-setting-id="update"] .settings-row-control {
-  max-inline-size: 26rem;
-}
 .general-version {
   font-family: var(--font-mono);
 }

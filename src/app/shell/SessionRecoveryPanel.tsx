@@ -349,7 +349,7 @@ export function SessionRecoveryPanel({
           anchor={menuAnchor}
           label={t("Recovery list maintenance")}
           returnFocusRef={menuAnchor}
-          width={280}
+          size="md"
           items={menuItems}
           onPick={pickMaintenance}
           onClose={() => setMenuOpen(false)}

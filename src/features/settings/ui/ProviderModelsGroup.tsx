@@ -159,6 +159,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
             return (
               <Row
                 key={model.id}
+                density="compact"
                 label={
                   <span className="provider-model-name">
                     <ModelLabel model={model.id} harness={model.harness} name={model.name} />

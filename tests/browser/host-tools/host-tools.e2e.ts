@@ -1124,7 +1124,7 @@ test("finds servers by port and name and retains list scroll across updates and 
     fixture.updateServer();
   });
   await page
-    .getByRole("button", { name: "Retry scan", exact: true })
+    .getByRole("button", { name: "Try again", exact: true })
     .evaluate((button: HTMLButtonElement) => button.click());
   await expect(
     list.getByRole("listitem", { name: "Updated preview server", exact: true }),
@@ -1310,7 +1310,7 @@ test("shared host danger feedback preserves server selection and recovery in bot
         window as unknown as { hostToolFixture: { scanFailure: boolean } }
       ).hostToolFixture.scanFailure = false;
     });
-    await page.getByRole("button", { name: "Retry scan", exact: true }).click();
+    await page.getByRole("button", { name: "Try again", exact: true }).click();
     await expect(error).toHaveCount(0);
     await expect(selected).toHaveAttribute("aria-pressed", "true");
   }

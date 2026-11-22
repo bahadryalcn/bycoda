@@ -100,7 +100,7 @@ export function ProviderAccountMenu({
           anchor={trigger}
           side="top"
           align={variant === "pill" ? "start" : "end"}
-          width={260}
+          size="md"
           label={variant === "pill" ? t("Account") : t("Accounts")}
           data-model-control
           items={accounts.map((account) => {

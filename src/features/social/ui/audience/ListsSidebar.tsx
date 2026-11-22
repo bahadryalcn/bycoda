@@ -208,7 +208,7 @@ export function ListsSidebar({
         <DropdownMenu
           anchor={menu.anchor}
           label={t("Actions for {p0}", { p0: listDisplayName(menuList) })}
-          width={248}
+          size="sm"
           items={menuItems(menuList)}
           onPick={pick}
           onClose={() => setMenu(null)}

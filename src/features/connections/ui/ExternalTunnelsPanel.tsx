@@ -75,7 +75,7 @@ export function TunnelControls({
   const formId = useId();
   const session = useTunnelSession(machine, active);
   const draft = useTunnelDraft(initialLocalUrl);
-  const { canStart, start } = useTunnelStart(session, draft);
+  const { canStart, blockedReason, start } = useTunnelStart(session, draft);
   const { state, action } = session;
   return (
     <Text
@@ -101,6 +101,7 @@ export function TunnelControls({
             variant="primary"
             loading={state.pending && action === "start"}
             disabled={!canStart}
+            disabledReason={blockedReason}
           >
             {t("Start tunnel")}
           </Button>
@@ -135,7 +136,7 @@ function MachineSharing({
   // An open share dialog keeps its computer's status current even if the tab hides.
   const session = useTunnelSession(machine, active || sharing);
   const draft = useTunnelDraft();
-  const { canStart, start } = useTunnelStart(session, draft, onShareClose);
+  const { canStart, blockedReason, start } = useTunnelStart(session, draft, onShareClose);
   const { state, action, overview } = session;
   const count = overview?.tunnels.length ?? 0;
   const phase = state.phase;
@@ -164,7 +165,7 @@ function MachineSharing({
           size="md"
           onClose={onShareClose}
           footer={
-            <ModalActions>
+            <ModalActions reason={blockedReason}>
               <Button variant="ghost" type="button" onClick={onShareClose}>
                 {t("Cancel")}
               </Button>
@@ -174,6 +175,7 @@ function MachineSharing({
                 form={formId}
                 loading={state.pending && action === "start"}
                 disabled={!canStart}
+                disabledReason={blockedReason}
               >
                 {t("Start sharing")}
               </Button>

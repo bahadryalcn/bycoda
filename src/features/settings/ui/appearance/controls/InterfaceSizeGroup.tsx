@@ -63,7 +63,7 @@ export function InterfaceSizeGroup({ appearance: a }: { appearance: AppearanceSe
             <Text
               size="caption"
               tone="primary"
-              className="min-w-[5ch] shrink-0 text-right tabular-nums"
+              className="min-w-[6ch] shrink-0 text-right tabular-nums"
             >
               {percent(shownScale)}
             </Text>

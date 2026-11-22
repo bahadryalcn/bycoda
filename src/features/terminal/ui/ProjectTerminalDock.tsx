@@ -345,7 +345,7 @@ function ProjectTerminalDockComponent({
             variant="tab"
             panels="none"
           >
-            <TabList className="terminal-list" label={t("Terminals")}>
+            <TabList className="terminal-list" inset="sm" label={t("Terminals")}>
               {dock.pane.files.map((file) => (
                 <ActionHost
                   key={file.id}

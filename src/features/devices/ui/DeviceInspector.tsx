@@ -69,8 +69,7 @@ export function DeviceInspector({
               <Button
                 key={value.id}
                 variant="item"
-                selected={selectedNode === value.id}
-                aria-pressed={selectedNode === value.id}
+                pressed={selectedNode === value.id}
                 onClick={() => onSelect(value.id)}
                 onKeyDown={(event) => {
                   if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;

@@ -466,12 +466,12 @@ function AddRemoteProjectForm({
                 <EmptyState
                   size="inline"
                   kind="empty"
-                  className="px-2"
+                  inset="row"
                   description={t("No subfolders")}
                 />
               ) : null}
               {!directory && loading ? (
-                <LoadingText className="px-2 py-1.5">{t("Loading folders…")}</LoadingText>
+                <LoadingText inset="row">{t("Loading folders…")}</LoadingText>
               ) : null}
             </div>
           </Surface>

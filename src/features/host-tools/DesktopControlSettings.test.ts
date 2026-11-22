@@ -160,7 +160,7 @@ it("clears stale status after a failed refresh", async () => {
   await click("Refresh");
   expect(container.textContent).not.toContain("Working");
   expect(container.textContent).not.toContain("Stop computer use");
-  expect(container.textContent).toContain("Status failed");
+  expect(container.textContent).toContain("Desktop control could not complete this.");
 });
 it("reports unsaved options and pending saves to its parent", async () => {
   const report = vi.fn();

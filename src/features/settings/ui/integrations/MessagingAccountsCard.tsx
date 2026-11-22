@@ -187,7 +187,7 @@ export function MessagingAccountsCard({
           </div>
         )}
         {accounts !== null && !empty && target !== "new" ? (
-          <div className="integration-actions">
+          <div className="integration-actions integration-actions-bar">
             <Button
               disabled={saving.length > 0 || removing !== null}
               startIcon={<Plus className="icon-sm" />}
@@ -281,7 +281,7 @@ export function AccountFormActions({
 }) {
   return (
     <>
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "integration-actions")}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "integration-actions integration-actions-bar")}>
         {children}
         <Button
           variant="primary"

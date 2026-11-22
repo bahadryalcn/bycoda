@@ -378,11 +378,11 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           </Text>
           <div className="flex h-[min(340px,50dvh)] min-h-0 shrink flex-col px-3 py-2">
             {loading ? (
-              <LoadingText className="shrink-0 py-2">{t("Loading folders…")}</LoadingText>
+              <LoadingText inset="row" className="shrink-0">{t("Loading folders…")}</LoadingText>
             ) : visibleEntries.length === 0 && !error ? (
               <EmptyState
                 size="inline"
-                className="shrink-0 py-2"
+                inset="row" className="shrink-0"
                 description={t("No subfolders")}
               />
             ) : null}
@@ -485,23 +485,28 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
             </form>
           ) : null}
           {error && !loadShownCentrally ? (
-            <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
-              <RemoteActionError error={error} className="min-w-0 flex-[1_1_12rem]" />
-              {loadFailed ? (
-                <Button
-                  variant="secondary"
-                  motion="none"
-                  type="button"
-                  disabled={busy || loading}
-                  onClick={() =>
-                    directory
-                      ? setRevision((value) => value + 1)
-                      : setHomeRevision((value) => value + 1)
-                  }
-                >
-                  {t("Retry")}
-                </Button>
-              ) : null}
+            <div className="shrink-0 px-3 py-2">
+              <RemoteActionError
+                error={error}
+                title={
+                  loadFailed
+                    ? t("Couldn’t open this folder")
+                    : error.details
+                      ? t("Couldn’t create the folder")
+                      : undefined
+                }
+                action={
+                  loadFailed
+                    ? {
+                        label: t("Try again"),
+                        onClick: () =>
+                          directory
+                            ? setRevision((value) => value + 1)
+                            : setHomeRevision((value) => value + 1),
+                      }
+                    : undefined
+                }
+              />
             </div>
           ) : null}
           <div

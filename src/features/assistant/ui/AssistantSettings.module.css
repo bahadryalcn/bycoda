@@ -27,22 +27,9 @@
   scroll-padding-block: var(--space-3);
   container-type: inline-size;
 }
-/* Each tab holds titled settings groups; the groups own their spacing. `ownRows` marks the tabs
-   built from profile rows; the projects and computer tabs keep their own control sizes. */
+/* Each tab holds titled settings groups; the groups own their spacing. */
 .page[hidden] {
   display: none;
-}
-/* One control column width in every row so selects, fields and segmented choices share a right
-   edge. Hours need room for two selects, a dash and a switch. Below 560px the rows stack. */
-@container (min-width: 560px) {
-  .ownRows :global(.settings-row:not([data-stacked]) > .settings-row-control) {
-    inline-size: 16rem;
-    max-inline-size: 16rem;
-  }
-  .ownRows :global(.settings-row:not([data-stacked]) > .settings-row-control):has([data-hours]) {
-    inline-size: 24rem;
-    max-inline-size: 24rem;
-  }
 }
 .footer {
   flex: none;

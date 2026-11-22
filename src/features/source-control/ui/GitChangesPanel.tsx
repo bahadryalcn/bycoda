@@ -318,7 +318,7 @@ export function GitChangesPanel({
       <EmptyState
         size="inline"
         kind="empty"
-        className="px-3 py-2"
+        inset="row"
         description={t("No project folder")}
       />
     );
@@ -576,12 +576,12 @@ export function GitChangesPanel({
         </div>
       </Text>
       {repository && operation && !detailsOpen ? (
-        <InlineMessage tone="warning" live="off" className="px-2">
+        <InlineMessage tone="warning" live="off" inset="row">
           {operation}
         </InlineMessage>
       ) : null}
       {repository && loadError && !detailsOpen ? (
-        <InlineError className="px-2" details={loadError} />
+        <InlineError inset="row" details={loadError} />
       ) : null}
       {loadError?.includes("dubious ownership") ? (
         <Button

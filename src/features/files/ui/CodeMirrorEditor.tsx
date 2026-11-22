@@ -1264,22 +1264,22 @@ function StandardCodeMirrorEditor({
           onMarkResolved={() => void markResolved()}
         />
         {formatError ? (
-          <InlineError className="shrink-0 px-3 py-1">
+          <InlineError inset="row" className="shrink-0">
             {t(formatError.saved ? "Saved, but formatting failed: " : "Formatting failed: ")}
             {formatError.message}
           </InlineError>
         ) : null}
         {contextError ? (
-          <InlineError className="shrink-0 px-3 py-1">{contextError}</InlineError>
+          <InlineError inset="row" className="shrink-0">{contextError}</InlineError>
         ) : null}
         {languageFailure?.path === path ? (
-          <InlineError text={{ wrap: "anywhere" }} className="shrink-0 px-3 py-1">
+          <InlineError text={{ wrap: "anywhere" }} inset="row" className="shrink-0">
             {t("Syntax highlighting unavailable. Editing is still available.")}{" "}
             {languageFailure.message}
           </InlineError>
         ) : null}
         {blameOn && blameError ? (
-          <InlineError text={{ wrap: "anywhere" }} live="polite" className="shrink-0 px-3 py-1">
+          <InlineError text={{ wrap: "anywhere" }} live="polite" inset="row" className="shrink-0">
             {t("Blame unavailable: {p0}", { p0: blameError })}
           </InlineError>
         ) : null}

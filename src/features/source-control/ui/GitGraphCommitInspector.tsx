@@ -185,7 +185,7 @@ export function GitGraphCommitInspector({
             <EmptyState
               size="inline"
               kind={fileQuery ? "filtered" : "empty"}
-              className="px-3"
+              inset="row"
               description={t(fileQuery ? "No matching files" : "No changed files")}
             />
           ) : null}

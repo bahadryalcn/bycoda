@@ -4,7 +4,8 @@ import { Modal } from "../../../../shared/ui/Modal";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialList } from "../../model/audience";
 import type { SocialClient } from "../../model/socialClient";
-import { useFormFooter, useTouched } from "./formFooter";
+import { useFormFooter } from "../../../../shared/ui/FormFooter";
+import { useTouched } from "./formFooter";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type ListDialogProps = {

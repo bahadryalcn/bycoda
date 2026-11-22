@@ -176,7 +176,7 @@ export function SshGroupSettings({
   };
   return (
     <Modal
-      title={t("SSH group settings")}
+      title={`${t("SSH group settings")} · ${server.name}`}
       onClose={onClose}
       size="md"
       footer={
@@ -224,14 +224,6 @@ export function SshGroupSettings({
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
-        <Text as="p" tone="muted">
-          {t("Target")}: {server.name}
-        </Text>
-        <Text as="p" tone="muted">
-          {t(
-            "Local connection values stay saved. Only checked fields inherit from the selected group.",
-          )}
-        </Text>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <LiveText
           text={notice === "applied" ? t("SSH inheritance updated.") : ""}
@@ -242,6 +234,9 @@ export function SshGroupSettings({
           <div className="min-w-48 flex-1">
             <SearchableSelect
               label={t("SSH group")}
+              description={t(
+                "Local connection values stay saved. Only checked fields inherit from the selected group.",
+              )}
               value={selected || "none"}
               onChange={(value) => change(() => setSelected(value === "none" ? "" : value))}
               disabled={busy || loading}
@@ -402,20 +397,18 @@ export function SshGroupSettings({
             />
             <TextField
               label={t("Default certificate file")}
+              description={t("Use absolute paths or ~/ for group key and certificate references.")}
               value={draft.value.certificateFile}
               disabled={busy}
               onChange={(event) => editDraft({ certificateFile: event.target.value })}
             />
-            <Text as="p" tone="muted">
-              {t("Use absolute paths or ~/ for group key and certificate references.")}
-            </Text>
             <Disclosure size="sm" textSize="caption" tone="muted" summary={t("Remote environment")}>
               <Text as="div" size="caption" tone="muted">
-                <p>
+                <Alert tone="warning">
                   {t(
                     "Literal non-secret values apply only to new interactive SSH terminals. SFTP and port forwarding inherit connection defaults only. Do not put passwords, tokens or private keys here.",
                   )}
-                </p>
+                </Alert>
                 <FieldGroup variant="bare" disabled={busy}>
                   <RadioGroup
                     variant="inline"

@@ -141,7 +141,7 @@ export function MessagesPanel({
         retrying={loading}
       />
     ) : threads.length === 0 && (loading || !loaded) ? (
-      <LoadingText className="justify-center py-10" />
+      <LoadingText inset="panel" className="justify-center" />
     ) : visible.length === 0 ? (
       narrowed ? (
         <EmptyState

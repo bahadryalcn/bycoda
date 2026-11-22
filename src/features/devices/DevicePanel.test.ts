@@ -807,11 +807,11 @@ it("loads devices from an already-running host and offers status retry", async (
       }),
     );
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host unavailable");
-  const retry = button("Retry");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not load devices");
+  const retry = button("Try again");
   retry.focus();
   await act(async () => retry.click());
-  expect(button("Retry")).toBe(retry);
+  expect(button("Try again")).toBe(retry);
   expect(retry.getAttribute("aria-busy")).toBe("true");
   expect(document.activeElement).toBe(retry);
   await act(async () => retry.click());

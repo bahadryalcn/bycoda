@@ -374,6 +374,7 @@ export function DecisionModelsSettings({
             <div className="px-4 py-2.5">
               <ErrorNotice
                 error={model.routingError}
+                title={t("Could not load the routing.")}
                 onRetry={() => void actions.reloadRouting()}
                 retrying={model.isPending("routing-read")}
               />

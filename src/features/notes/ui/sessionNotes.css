@@ -15,7 +15,6 @@
   min-inline-size: 0;
 }
 
-.session-note-document > [role="tablist"],
 .session-note-document .session-note-toolbar {
   flex: none;
   padding-inline: var(--space-3);

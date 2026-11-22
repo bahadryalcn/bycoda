@@ -683,7 +683,7 @@ export function TerminalView({
         onSendSelectedText={onSendToAgent}
       />
       {startupFailure.pending ? (
-        <LoadingText className="shrink-0 px-3 py-2" aria-busy="true" />
+        <LoadingText inset="row" className="shrink-0" aria-busy="true" />
       ) : startupMessage || exitCode !== undefined ? (
         <div className="shrink-0 px-3 py-2">
           <Alert tone={exitCode === 0 ? "info" : "warning"}>

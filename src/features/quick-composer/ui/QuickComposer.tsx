@@ -969,7 +969,7 @@ export function QuickComposer({
                 <EmptyState
                   size="inline"
                   kind="filtered"
-                  className="px-2 py-2"
+                  inset="row"
                   description={t("No matches")}
                 />
               ) : (
@@ -1057,7 +1057,7 @@ export function QuickComposer({
                   <EmptyState
                     size="inline"
                     kind="filtered"
-                    className="px-2 py-2"
+                    inset="row"
                     description={t("No matches")}
                   />
                 ) : (

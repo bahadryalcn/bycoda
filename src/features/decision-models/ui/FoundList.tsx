@@ -62,7 +62,10 @@ export function FoundList({
       ) : null}
       {scanError !== null ? (
         <div className="px-4 py-2.5">
-          <ErrorNotice error={scanError} onRetry={scanning ? undefined : onScan} />
+          <ErrorNotice
+            error={scanError}
+            onRetry={scanning ? undefined : onScan}
+          />
         </div>
       ) : null}
       {items.length > 0 ? (

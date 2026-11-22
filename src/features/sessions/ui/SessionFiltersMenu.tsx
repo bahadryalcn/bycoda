@@ -20,8 +20,6 @@ import {
   useSessionListDisplay,
 } from "../model/sessionListDisplay";
 
-const MENU_WIDTH = 228;
-
 type Props = {
   x: number;
   y: number;
@@ -223,7 +221,7 @@ export function SessionFiltersMenu({
       anchor={{ x, y }}
       label={t("Filter sessions")}
       items={items}
-      width={MENU_WIDTH}
+      size="sm"
       gap={0}
       maxHeight={600}
       closeOnSelect={false}

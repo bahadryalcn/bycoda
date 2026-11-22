@@ -149,7 +149,11 @@ export function ScanSettings({
     <>
       {loadError !== null ? (
         <div className="px-4 py-2.5">
-          <ErrorNotice error={loadError} onRetry={() => setAttempt((value) => value + 1)} />
+          <ErrorNotice
+            title={t("Could not load the scan settings.")}
+            error={loadError}
+            onRetry={() => setAttempt((value) => value + 1)}
+          />
         </div>
       ) : null}
       <Row

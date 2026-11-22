@@ -3,7 +3,6 @@
 "use client";
 
 import type { HTMLAttributes, ReactNode } from "react";
-import { Folder } from "../../icons";
 import { InfoPopover } from "../../InfoPopover";
 import { noticeEnterClass } from "../../Notice";
 import { optionalTextAttributes, type TextRoles } from "../../Text";
@@ -28,6 +27,7 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLElement>, "titl
   descriptionText?: TextRoles;
   /** Rendered action row; the shared wrappers build it from structured actions. */
   action?: ReactNode;
+  /** Optional glyph above the copy; none is drawn unless this is passed. */
   icon?: ReactNode;
   className?: string;
   /** Optional accessible label for the state region. */
@@ -46,7 +46,7 @@ export function EmptyState({
   context = "page",
   ...props
 }: EmptyStateProps) {
-  const glyph = icon === null ? null : (icon ?? <Folder aria-hidden />);
+  const glyph = icon ?? null;
   const hasDescription =
     description !== undefined &&
     description !== null &&

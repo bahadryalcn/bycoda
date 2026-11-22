@@ -80,7 +80,7 @@ export function SessionTaskLinkDialog({
       closeDisabled={busy}
       onClose={onClose}
       footer={
-        <ModalActions>
+        <ModalActions reason={linkedTaskId || taskId ? undefined : t("Choose a task")}>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -98,6 +98,7 @@ export function SessionTaskLinkDialog({
               variant="primary"
               loading={busy}
               disabled={!taskId}
+              disabledReason={taskId ? undefined : t("Choose a task")}
               onClick={() => void run(() => onLink(taskId))}
             >
               {t("Link")}

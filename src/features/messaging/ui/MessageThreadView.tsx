@@ -204,7 +204,7 @@ export function MessageThreadView({
               retrying={loading}
             />
           ) : (
-            <LoadingText className="justify-center py-10">{t("Loading conversation…")}</LoadingText>
+            <LoadingText inset="panel" className="justify-center">{t("Loading conversation…")}</LoadingText>
           )
         ) : (
           <>
@@ -238,7 +238,7 @@ export function MessageThreadView({
               <EmptyState
                 kind="empty"
                 size="inline"
-                className="px-4 py-3"
+                inset="panel"
                 description={t("No messages in this conversation yet.")}
               />
             ) : (

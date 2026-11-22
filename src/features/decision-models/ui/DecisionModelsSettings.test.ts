@@ -1473,7 +1473,7 @@ it("keeps Host routing draft through a failed initial read and retry", async () 
     createElement(DecisionModelsSettings, { client, hostId: "routing-read-retry" }),
   );
   await settleDecisionUi();
-  expect(bodyText()).toContain("This did not work. Try again.");
+  expect(bodyText()).toContain("Could not load the routing.");
   expect(document.querySelector('input[inputmode="decimal"]')).toBeNull();
   clickButton("Try again");
   await settleDecisionUi();

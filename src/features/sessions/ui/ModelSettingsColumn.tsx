@@ -245,7 +245,7 @@ export function ModelSettingsColumn({
           fill
           panels="none"
         >
-          <TabList label={t("Model options")} className="shrink-0 px-2 pt-1.5">
+          <TabList label={t("Model options")} className="shrink-0" inset="sm">
             <Tab value="settings">{t("Settings")}</Tab>
             <Tab value="agents">{t("Agents")}</Tab>
           </TabList>

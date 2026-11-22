@@ -381,7 +381,7 @@ function PrCheckRow({
       className="min-w-0 space-y-3 py-3 pl-10 pr-3 @max-[420px]/checks:pl-3"
     >
       {loading && !details && !error ? (
-        <LoadingText className="px-2 py-1">{t("Loading steps…")}</LoadingText>
+        <LoadingText inset="row">{t("Loading steps…")}</LoadingText>
       ) : null}
       {error ? (
         <Alert tone="danger">
@@ -604,7 +604,7 @@ export function InboxPrChecks({
   );
   if (selection && !selectionValid) setSelection(null);
   if (loading && !checks && !error) {
-    return <LoadingText className="py-5">{t("Loading checks…")}</LoadingText>;
+    return <LoadingText inset="panel">{t("Loading checks…")}</LoadingText>;
   }
   if (!checks && error) {
     return (

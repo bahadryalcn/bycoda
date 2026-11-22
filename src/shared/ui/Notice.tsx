@@ -112,6 +112,24 @@ export function NoticeGlyph({
   );
 }
 
+/**
+ * Inner spacing of a state (EmptyState, LoadingText, InlineError, InlineMessage), on the Surface
+ * padding scale. `none` (default) adds nothing: the surrounding row, panel or form owns the gap.
+ * `row` (8/12) sits a state inside a list row or form; `panel` (12/16) gives it a panel's breathing room.
+ */
+export type StateInset = "none" | "row" | "panel";
+
+const STATE_INSET_CLASS: Record<StateInset, string> = {
+  none: "",
+  row: "px-3 py-2",
+  panel: "px-4 py-3",
+};
+
+/** Tailwind classes for a state's `inset`; empty for `none` or unset. */
+export function stateInsetClass(inset: StateInset | undefined): string {
+  return STATE_INSET_CLASS[inset ?? "none"];
+}
+
 /** Class that plays the one notice enter motion (opacity and a short rise; fade under reduced motion). */
 export const noticeEnterClass = styles.enter;
 

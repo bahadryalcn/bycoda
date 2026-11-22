@@ -169,7 +169,7 @@ export function NotificationRequestCard({
       ) : null}
       {notice.kind === "approval" && decision.feedback ? (
         decision.danger ? (
-          <InlineError className="px-3 pb-2">{decision.feedback}</InlineError>
+          <InlineError inset="row">{decision.feedback}</InlineError>
         ) : (
           <Text role="status" as="div" size="caption" tone="secondary" className="px-3 pb-2">
             {decision.feedback}

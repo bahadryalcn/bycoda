@@ -588,8 +588,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           variant="ghost"
           size="sm"
           iconOnly
-          aria-pressed={follow}
-          selected={follow}
+          pressed={follow}
           tone={follow ? "accent" : "neutral"}
           label={t(follow ? "Follow active conversation" : "Keep this conversation")}
           disabled={pending}

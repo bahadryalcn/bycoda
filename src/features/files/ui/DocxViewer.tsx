@@ -2,7 +2,7 @@ import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { loadDocx } from "../model/docxClient";
-import { describeDocumentProblem } from "../model/documentProblemText";
+import { documentProblemParts } from "../model/documentProblemText";
 import { documentProblem, type DocumentProblem } from "../model/documentViewer";
 import { sanitizeDocumentBody } from "../model/documentHtml";
 import { DocumentMessage } from "./DocumentMessage";
@@ -66,8 +66,12 @@ export default function DocxViewer({ bytes }: { bytes: Uint8Array }) {
   }
   if (state.status === "error") {
     return (
-      <DocumentMessage title={t("Couldn’t read this document")} error>
-        {describeDocumentProblem(state.problem)}
+      <DocumentMessage
+        title={t("Couldn’t read this document")}
+        error
+        detail={documentProblemParts(state.problem).detail}
+      >
+        {documentProblemParts(state.problem).reason}
       </DocumentMessage>
     );
   }

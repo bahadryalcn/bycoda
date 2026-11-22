@@ -1414,11 +1414,11 @@ function TreeChildren({
   return (
     <>
       {error ? (
-        <InlineError className="py-1 pr-2 break-words" style={pad} retry={{ onRetry }}>
+        <InlineError inset="row" className="break-words" style={pad} retry={{ onRetry }}>
           {error}
         </InlineError>
       ) : loading && entries === null ? (
-        <LoadingText className="py-1 pr-2" style={pad}>
+        <LoadingText inset="row" style={pad}>
           {t("Loading…")}
         </LoadingText>
       ) : null}
@@ -1883,7 +1883,7 @@ function NameIssueView({
     <InlineMessage
       id={id}
       tone={error ? "danger" : "warning"}
-      className="min-w-0 break-words pe-2 pb-1 [padding-inline-start:var(--layout-padding-inline-start)]"
+      inset="row" className="min-w-0 break-words ms-(--layout-padding-inline-start)"
       style={{ "--layout-padding-inline-start": nameFieldInset(depth) } as CSSProperties}
     >
       {body}

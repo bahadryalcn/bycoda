@@ -7,8 +7,28 @@
   .list {
     display: flex;
     align-items: center;
-    gap: 1px;
+    gap: 2px;
     min-inline-size: 0;
+  }
+  .list[data-inset="sm"] {
+    padding: var(--space-1);
+  }
+  /* `scroll="wrap"`: tabs flow onto further rows. */
+  .list[data-scroll="wrap"] {
+    flex-wrap: wrap;
+  }
+  /* `scroll="auto"`: tabs keep their width; the strip scrolls along its axis. */
+  .list[data-scroll="auto"] {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+  .list[data-scroll="auto"][aria-orientation="vertical"] {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .list[data-scroll="auto"] > *,
+  .list[data-scroll="auto"] > :not([role="tab"]) > [role="tab"] {
+    flex: none;
   }
   .list[aria-orientation="vertical"] {
     flex-direction: column;

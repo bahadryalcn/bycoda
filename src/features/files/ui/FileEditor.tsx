@@ -1625,7 +1625,7 @@ function SvgPreview({ source, name }: { source: string; name: string }) {
   if (failed)
     return (
       <DocumentMessage title={t("Couldn’t read this document")} error>
-        {name}
+        {t("The file could not be read; it may be corrupt.")}
       </DocumentMessage>
     );
   if (!url) return null;

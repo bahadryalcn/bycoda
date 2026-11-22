@@ -20,15 +20,6 @@
   gap: 12px;
   min-width: 0;
 }
-.fieldRow :global(.settings-row) {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
-.fieldRow :global(.settings-row-control) {
-  max-width: 100%;
-  width: 100%;
-}
 .path {
   display: flex;
   align-items: center;
@@ -39,27 +30,4 @@
 .path > :first-child {
   flex: 1;
   min-width: 0;
-}
-@media (max-width: 600px) {
-  .engine :global(.settings-row) {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-  .engine :global(.settings-row-control) {
-    width: 100%;
-    max-width: 100%;
-    justify-content: flex-start;
-  }
-}
-
-.visualChoice :global(.settings-row) {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
-.visualChoice :global(.settings-row-control) {
-  inline-size: 100%;
-  max-inline-size: 100%;
-  justify-content: flex-start;
 }

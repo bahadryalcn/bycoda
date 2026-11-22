@@ -15,7 +15,6 @@ export function AnonymousUsageSetting() {
     <Row
       id="anonymous-token-totals"
       label={label}
-      descriptionVisible
       description={t(
         "Send daily desktop token totals and estimated API cost with a random installation ID.",
       )}

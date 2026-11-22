@@ -369,7 +369,7 @@ function WorkspaceModePicker({
         open={open}
         anchor={anchor}
         side={popoverSide}
-        width={240}
+        size="sm"
         maxHeight={400}
         onDismiss={dismiss}
         ignore={WORKSPACE_SURFACES}
@@ -430,7 +430,7 @@ function WorkspaceModePicker({
         anchor={worktreeAnchor}
         side="right"
         gap={SUBMENU_GAP}
-        width={300}
+        size="lg"
         maxHeight={320}
         layer={LAYER.submenu}
         role="presentation"
@@ -567,7 +567,7 @@ export function WorktreeBasePicker({
         open={open}
         anchor={anchor}
         side={popoverSide}
-        width={280}
+        size="md"
         minHeight={160}
         maxHeight={280}
         onDismiss={dismiss}

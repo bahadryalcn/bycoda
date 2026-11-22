@@ -16,7 +16,8 @@ import type { SocialClient } from "../../model/socialClient";
 import { PlatformIcon } from "../common/PlatformIcon";
 import { LabeledSelect } from "./LabeledSelect";
 import { uniqueTags } from "./audienceModel";
-import { useFormFooter, useTouched } from "./formFooter";
+import { useFormFooter } from "../../../../shared/ui/FormFooter";
+import { useTouched } from "./formFooter";
 import {
   FIND_PEOPLE_KINDS,
   buildFindPeopleSource,

@@ -87,7 +87,6 @@ export function PrivacyStartupSettings() {
         <Row
           id="anonymous-statistics"
           label={t("Share anonymous usage statistics")}
-          descriptionVisible
           description={statsDisclosure()}
         >
           <Toggle

@@ -379,7 +379,7 @@ export function WorkspacePolicySettings({
     <div
       role="group"
       aria-label={t("Managed workspaces")}
-      className={styles.root}
+      className={`${styles.root} settings-topics`}
       data-testid="workspace-policy-settings"
     >
       {renderHeader ? (

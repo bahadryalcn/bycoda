@@ -3,7 +3,6 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Badge } from "../../../shared/ui/Badge";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { Heading } from "../../../shared/ui/Heading";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { t } from "../../../shared/i18n";
@@ -24,7 +23,8 @@ import {
   type SshEndpoint,
 } from "../model/serverInventory";
 import { sameSshEndpoint } from "../model/sshEndpointReview";
-import { ConfigImportChoices, JumpAuthenticationHelp } from "./SshConfigImportChoices";
+import { ConfigImportChoices } from "./SshConfigImportChoices";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useGenerateSshKey } from "./ServersTerminalWorkspace";
 type PublicKey = {
   hostPatterns?: string;
@@ -148,21 +148,26 @@ export function SshSettings({
   return (
     <Sheet title={t("SSH settings")} onClose={() => onClose()} size="48rem">
       <div className="flex flex-col gap-4">
-        <Text as="p" tone="muted">
-          {t("Local SSH keys and known hosts.")}
-        </Text>
         <Tabs id={panelId} value={securityPanel} onValueChange={setSecurityPanel}>
           <TabList label={t("SSH settings sections")}>
             <Tab value="keys">{t("Keys")}</Tab>
-            <Tab value="hosts">{t("Known hosts")}</Tab>
+            <Tab value="hosts">
+              {t("Known hosts")}
+              {hostInventory.value ? ` (${hosts.length})` : ""}
+            </Tab>
             <Tab value="import">{t("Import SSH config")}</Tab>
           </TabList>
           {error ? <Alert tone="danger">{error}</Alert> : null}
           <TabPanel value="keys" keepMounted>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <Heading size="section" level={3}>
-                {t("Keys")}
-              </Heading>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <InfoPopover className="shrink-0">
+                <p>{t("Private keys stay in OpenSSH or your OS agent.")}</p>
+                <p>
+                  {t(
+                    "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.",
+                  )}
+                </p>
+              </InfoPopover>
               {generateKey ? (
                 <Button
                   disabled={busy}
@@ -221,10 +226,6 @@ export function SshSettings({
                 ))}
               </Text>
             ) : null}
-            <Text as="p" tone="muted" className="mbs-1">
-              {t("Private keys stay in OpenSSH or your OS agent.")}
-            </Text>
-            <JumpAuthenticationHelp />
             {canAssignKey ? (
               <Text wrap="anywhere" as="p" tone="inherit" className="mbs-2">
                 {t("Select a key for")}: {server?.name}
@@ -307,7 +308,6 @@ export function SshSettings({
                     <Button
                       variant="secondary"
                       aria-label={`${t("Assign key")}: ${key.identityFile} (${server?.name})`}
-                      tooltip={`${t("Select a key for")}: ${server?.name}`}
                       aria-pressed={!inheritedIdentity && selectedIdentity === key.identityFile}
                       disabled={
                         busy || (!inheritedIdentity && selectedIdentity === key.identityFile)
@@ -328,10 +328,6 @@ export function SshSettings({
             </div>
           </TabPanel>
           <TabPanel value="hosts" keepMounted className="flex min-w-0 flex-col gap-3">
-            <Heading size="section" level={3}>
-              {t("Known hosts")}
-              {hostInventory.value ? ` (${hosts.length})` : ""}
-            </Heading>
             <SearchInput
               appearance="field"
               aria-label={t("Search known hosts")}
@@ -377,9 +373,6 @@ export function SshSettings({
             ))}
           </TabPanel>
           <TabPanel value="import" keepMounted className="flex flex-col gap-3">
-            <Heading size="section" level={3}>
-              {t("Import SSH config")}
-            </Heading>
             <TextareaField
               label={t("SSH config")}
               value={config}

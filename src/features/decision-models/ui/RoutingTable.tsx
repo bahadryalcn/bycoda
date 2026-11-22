@@ -397,7 +397,7 @@ export function RoutingTable({
       </div>
       {saveError !== null ? (
         <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "px-4 py-2.5")}>
-          <ErrorNotice error={saveError} onRetry={save} />
+          <ErrorNotice title={t("Could not save the routing.")} error={saveError} onRetry={save} />
         </div>
       ) : null}
       <SettingsSaveBar

@@ -22,7 +22,8 @@ import { CrewTaskPicker } from "../../crews/ui/CrewTaskPicker";
 import { preflightTaskDraft, type TaskDraft } from "../model/taskClient";
 import { taskClientErrors } from "../model/taskClientErrors";
 import { t, useLocale } from "../../../shared/i18n";
-import { useState } from "react";
+import { useId, useState } from "react";
+import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SkillPromptField } from "../../skills/ui/SkillPromptField";
@@ -66,6 +67,7 @@ export function TaskForm({
   onSubmit: (mode: "todo" | "queued" | "save", draft: TaskDraft) => void;
 }) {
   useLocale();
+  const formId = useId();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [submitMode, setSubmitMode] = useState<"todo" | "queued" | "save">("todo");
   const [workspaceChecks, patchWorkspaceChecks] = useWorkspaceChecks();
@@ -146,8 +148,17 @@ export function TaskForm({
     ? blockedReason
     : t("Add a description to start this with an agent.");
   const todoReason = blockedReason ?? (todoUnsupported || undefined);
+  // The visible reason beside the primary action; the same text is its disabledReason.
+  const footerReason = draft.id
+    ? canSave
+      ? undefined
+      : (blockedReason ?? t("Add a description to save."))
+    : canTodo
+      ? undefined
+      : todoReason;
   return (
     <form
+      id={formId}
       aria-label={draft.id ? t("Edit task") : t("New task")}
       aria-busy={saving}
       onSubmit={(event) => {
@@ -420,7 +431,8 @@ export function TaskForm({
           </div>
         </FieldGroup>
       </div>
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-form-footer")}>
+      <ModalFooter>
+        <ModalActions reason={saving ? undefined : footerReason}>
         <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
           {t("Cancel")}
         </Button>
@@ -428,6 +440,7 @@ export function TaskForm({
           <Button
             variant="primary"
             type="submit"
+            form={formId}
             loading={saving}
             disabled={!canSave || saving}
             disabledReason={
@@ -455,6 +468,7 @@ export function TaskForm({
             <Button
               variant="primary"
               type="submit"
+              form={formId}
               loading={saving && submitMode === "todo"}
               disabled={!canTodo || saving}
               tooltip={canTodo ? t("Saves it without running.") : undefined}
@@ -464,7 +478,8 @@ export function TaskForm({
             </Button>
           </>
         )}
-      </div>
+        </ModalActions>
+      </ModalFooter>
     </form>
   );
 }

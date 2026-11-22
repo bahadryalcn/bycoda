@@ -13,7 +13,8 @@ import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { LabeledSelect } from "./LabeledSelect";
 import { errorMessage } from "./audienceModel";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
-import { useFormFooter, useTouched } from "./formFooter";
+import { useFormFooter } from "../../../../shared/ui/FormFooter";
+import { useTouched } from "./formFooter";
 import { SequenceStepEditor, newStepDraft, type StepDraft } from "./SequenceStepEditor";
 
 export type SequenceEditorProps = {

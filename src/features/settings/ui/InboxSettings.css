@@ -3,14 +3,6 @@
   min-inline-size: 0;
 }
 
-.inbox-provider-tabs {
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 4px;
-  margin-block-end: 20px;
-}
-
 .inbox-account-fields {
   display: flex;
   flex-wrap: wrap;
@@ -54,9 +46,6 @@
 }
 .inbox-settings .settings-collection-toolbar {
   gap: 6px;
-}
-.inbox-provider-tabs > * {
-  flex-shrink: 0;
 }
 .inbox-account-summary {
   display: flex;

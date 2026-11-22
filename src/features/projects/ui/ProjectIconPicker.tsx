@@ -107,7 +107,7 @@ export function ProjectIconPicker({
           <EmptyState
             size="inline"
             kind="filtered"
-            className="justify-center py-5"
+            inset="panel" className="justify-center"
             description={t("No matching icons")}
           />
         ) : null}

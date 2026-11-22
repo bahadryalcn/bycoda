@@ -100,7 +100,7 @@ export function IntegrationsPage() {
   return (
     <div className="inbox-settings integrations-settings">
       <Tabs value={active} onValueChange={setActive} size="md">
-        <TabList label={t("Integrations")} className="inbox-provider-tabs">
+        <TabList label={t("Integrations")} scroll="wrap" inset="sm">
           {INTEGRATIONS.map((item) => (
             <Tab key={item.id} value={item.id} stableWidth icon={item.icon}>
               {t(item.name)}

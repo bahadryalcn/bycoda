@@ -223,7 +223,7 @@ describe("project folder browser", () => {
     await render();
     expect(button("Add").disabled).toBe(true);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Access denied");
-    await click("Retry");
+    await click("Try again");
     expect(button("Add").disabled).toBe(false);
   });
 
@@ -232,7 +232,7 @@ describe("project folder browser", () => {
     await render();
     expect(button("Add").disabled).toBe(true);
     expect(fs.listDir).not.toHaveBeenCalled();
-    await click("Retry");
+    await click("Try again");
     expect(fs.homeDir).toHaveBeenCalledTimes(2);
     expect(fs.listDir).toHaveBeenCalledWith("C:/Users/me");
     expect(button("Add").disabled).toBe(false);
@@ -259,7 +259,7 @@ describe("project folder browser", () => {
     );
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Already exists");
     expect(onPick).not.toHaveBeenCalled();
-    expect(button("Retry")).toBeUndefined();
+    expect(button("Try again")).toBeUndefined();
     expect(container.querySelector<HTMLInputElement>('[aria-label="New folder name"]')?.value).toBe(
       "Existing",
     );

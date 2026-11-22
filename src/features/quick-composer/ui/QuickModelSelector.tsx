@@ -172,7 +172,7 @@ export function QuickModelSelector({
       {showModels ? (
         <>
           <Tabs value={visibleTab} onValueChange={selectTab} fill panels="none">
-            <TabList label={t("Providers")} className="shrink-0 items-center gap-1">
+            <TabList label={t("Providers")} className="shrink-0">
               {tabs.map((id) => {
                 const title = id === "favorites" ? t("Favorites") : HARNESS_TITLE[id];
                 return (

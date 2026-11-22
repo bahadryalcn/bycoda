@@ -44,6 +44,7 @@ export function StateLadder() {
     >
       <Row
         id="interaction-tint"
+        controlWidth="fill"
         label={t("Interaction color")}
         description={t("The color that hover, selected and pressed surfaces mix in.")}
       >

@@ -184,7 +184,7 @@ export function CheckRepairForm({
       side="bottom"
       align="end"
       gap={6}
-      width={320}
+      size="lg"
       maxHeight={460}
       label={t("Fix checks with AI")}
       onDismiss={() => dismiss()}

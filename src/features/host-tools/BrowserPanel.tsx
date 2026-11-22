@@ -1013,8 +1013,7 @@ function ProjectBrowserPanel({
                 ? t("Browser selections can be attached only on this conversation's project host.")
                 : t("Select element and add to composer")
             }
-            aria-pressed={selecting}
-            selected={selecting}
+            pressed={selecting}
             disabled={
               !canInput || !sessionId || !frame?.navigationId || selecting || !annotationsAllowed
             }
@@ -1744,7 +1743,9 @@ function ProjectBrowserPanel({
             </div>
             {error ? (
               <Text as="div" size="caption" tone="inherit" leading="inherit">
-                <InlineError className="host-browser-target" details={error} />
+                <InlineError className="host-browser-target" details={error}>
+                  {errorSummary}
+                </InlineError>
               </Text>
             ) : null}
             {uncertainDelivery ? (

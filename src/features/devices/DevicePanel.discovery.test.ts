@@ -101,7 +101,7 @@ it("retains the restored target and frame through pending and failed status, the
   await act(async () => reject(new Error("Status unavailable")));
   expect(retained()!.selected).toBe(second.id);
   expect(api.list).not.toHaveBeenCalled();
-  await click("Retry");
+  await click("Try again");
   expect(retained()!.selected).toBe(second.id);
   expect(container.textContent).toContain("Second phone");
   expect(api.claimControl).not.toHaveBeenCalled();

@@ -48,6 +48,12 @@ export function CreateBranchDialog({
     if (error) input.current?.focus();
   }, [error]);
 
+  const blockedReason = !trimmed
+    ? t("Enter a name.")
+    : branches && !trimmedReference
+      ? t("Choose a base branch.")
+      : undefined;
+
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!trimmed || busy || (branches && !trimmedReference)) return;
@@ -64,7 +70,7 @@ export function CreateBranchDialog({
         if (!busy) onCancel();
       }}
       footer={
-        <ModalActions>
+        <ModalActions reason={blockedReason}>
           <Button type="button" disabled={busy} onClick={onCancel} variant="ghost">
             {t("Cancel")}
           </Button>
@@ -72,7 +78,8 @@ export function CreateBranchDialog({
             type="submit"
             form={formId}
             variant="primary"
-            disabled={!trimmed || busy || Boolean(branches && !trimmedReference)}
+            disabled={busy || Boolean(blockedReason)}
+            disabledReason={blockedReason}
             loading={busy}
           >
             {t("Create branch")}

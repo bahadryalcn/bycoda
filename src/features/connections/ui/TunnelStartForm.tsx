@@ -1,5 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
+import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Field } from "../../../shared/ui/Field";
@@ -9,7 +10,6 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Switch } from "../../../shared/ui/Switch";
-import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { RefreshCw } from "../../../shared/ui/icons";
 import type { TunnelProvider, TunnelTarget } from "../../../integrations/external-tunnels";
@@ -44,7 +44,13 @@ export function useTunnelStart(session: TunnelSession, draft: TunnelDraft, onSta
       })
       .catch(() => undefined);
   };
-  return { canStart, start };
+  // Why starting is unavailable, for the footer's visible reason and the button's disabledReason.
+  const blockedReason = canStart
+    ? undefined
+    : ready
+      ? t("Set up the sharing provider first.")
+      : t("Wait for the computer to answer.");
+  return { canStart, blockedReason, start };
 }
 
 /**
@@ -237,22 +243,21 @@ export function TunnelStartForm({
           spellCheck={false}
           fieldClassName="min-w-0 flex-1"
         />
-        <div className="external-tunnel-actions">
-          <Text as="span" size="caption" tone="muted">
-            {target === "host"
-              ? t("Devices still need to pair.")
-              : t("Anyone with the URL can reach it.")}
-          </Text>
-          <InfoPopover label={t("Public access")}>
-            <p>
-              {target === "host"
-                ? t(
-                    "Host access keeps device authentication and pairing. The public URL contains no device credential.",
-                  )
-                : t("Anyone with this URL can reach the dev server. Keep access controls enabled.")}
-            </p>
-          </InfoPopover>
-        </div>
+        {target === "host" ? (
+          <div className="external-tunnel-actions">
+            <InfoPopover label={t("Public access")}>
+              <p>
+                {t(
+                  "Host access keeps device authentication and pairing. The public URL contains no device credential.",
+                )}
+              </p>
+            </InfoPopover>
+          </div>
+        ) : (
+          <Alert tone="warning">
+            {t("Anyone with this URL can reach the dev server. Keep access controls enabled.")}
+          </Alert>
+        )}
         {submit}
       </form>
     </div>

@@ -18,7 +18,7 @@ import {
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { Minus, Plus } from "../../../shared/ui/icons";
 import { PdfRasterBudget, pdfRasterSize } from "../model/pdfRasterBudget";
-import { describeDocumentProblem } from "../model/documentProblemText";
+import { documentProblemParts } from "../model/documentProblemText";
 import {
   documentProblem,
   documentProblemDetail,
@@ -90,8 +90,12 @@ export default function PdfViewer({ bytes }: { bytes: Uint8Array }) {
 
   if (current?.problem)
     return (
-      <DocumentMessage title={t("Couldn’t read this PDF")} error>
-        {describeDocumentProblem(current.problem)}
+      <DocumentMessage
+        title={t("Couldn’t read this PDF")}
+        error
+        detail={documentProblemParts(current.problem).detail}
+      >
+        {documentProblemParts(current.problem).reason}
       </DocumentMessage>
     );
   return (
@@ -580,19 +584,17 @@ function PdfPage({
       <div ref={textRef} className="pdf-text-layer" />
       {error && !errorShownCentrally && (
         <div className="absolute inset-0">
-          <DocumentMessage title={t("Couldn’t render page {p0}", { p0: number })} error>
-            <p>{describeDocumentProblem(error)}</p>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setError(null);
-                setAttempt((value) => value + 1);
-              }}
-            >
-              {t("Retry page {p0}", { p0: number })}
-            </Button>
+          <DocumentMessage
+            title={t("Couldn’t render page {p0}", { p0: number })}
+            error
+            detail={documentProblemParts(error).detail}
+            retryLabel={t("Retry page {p0}", { p0: number })}
+            onRetry={() => {
+              setError(null);
+              setAttempt((value) => value + 1);
+            }}
+          >
+            {documentProblemParts(error).reason}
           </DocumentMessage>
         </div>
       )}

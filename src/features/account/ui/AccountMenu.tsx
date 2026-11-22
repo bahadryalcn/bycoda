@@ -138,7 +138,7 @@ export function AccountMenu({
           items={items}
           side="top"
           align="start"
-          width={248}
+          size="sm"
           onClose={close}
           onPick={(id) => {
             if (presence?.pick(id)) return;

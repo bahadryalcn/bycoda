@@ -1,6 +1,7 @@
 import { errorText } from "../../shared/lib/errors";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { Text } from "../../shared/ui/Text";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
@@ -432,7 +433,7 @@ function ConversationHostTools({
                   label={t("Conversation tool selection")}
                   returnFocusRef={toolMenuTrigger}
                   align="start"
-                  width={240}
+                  size="sm"
                   onClose={() => setToolMenuOpen(false)}
                   onPick={(id) => {
                     selectTab(id as Tab);
@@ -514,7 +515,7 @@ function ConversationHostTools({
               label={t("Panel placement")}
               returnFocusRef={placementTrigger}
               align="end"
-              width={250}
+              size="sm"
               onClose={() => setPlacementOpen(false)}
               onPick={(id) => {
                 if (id === "expand") onExpand?.();
@@ -539,9 +540,19 @@ function ConversationHostTools({
             />
           ) : null}
         </div>
-        {presentationError ? <Alert tone="danger">{presentationError}</Alert> : null}
+        {presentationError ? (
+          <Alert
+            tone="danger"
+            title={t("Could not open the tools.")}
+            extra={<ErrorDetails title={t("Could not open the tools.")} detail={presentationError} />}
+          />
+        ) : null}
         {hostScoped && machinesError && !machinesShownCentrally ? (
-          <Alert tone="danger">{machinesError}</Alert>
+          <Alert
+            tone="danger"
+            title={t("Could not load machines.")}
+            extra={<ErrorDetails title={t("Could not load machines.")} detail={machinesError} />}
+          />
         ) : null}
         {hostScoped && target.kind === "machine" && !selectedMachine && !machinesLoading ? (
           <Alert tone="danger">{t("Selected machine unavailable")}</Alert>

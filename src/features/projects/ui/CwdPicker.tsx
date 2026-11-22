@@ -148,7 +148,7 @@ export function CwdPicker({
           <EmptyState
             size="inline"
             kind="empty"
-            className="px-2.5 py-2"
+            inset="row"
             description={t("No other projects")}
           />
         ),
@@ -236,7 +236,7 @@ export function CwdPicker({
           label={t("Project picker")}
           side={placement === "below" ? "bottom" : "top"}
           align="start"
-          width={MENU_WIDTH}
+          size="md"
           maxHeight={MENU_MAX_HEIGHT}
           items={items}
           search={{ value: query, onChange: setQuery, label: t("Search projects") }}

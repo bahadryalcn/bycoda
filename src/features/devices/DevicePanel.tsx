@@ -33,6 +33,7 @@ import { LoadingText } from "../../shared/ui/LoadingText";
 import { Switch } from "../../shared/ui/Switch";
 import { Button } from "../../shared/ui/Button";
 import { Disclosure } from "../../shared/ui/Disclosure";
+import { FailureState } from "../../shared/ui/FailureState";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { Progress } from "../../shared/ui/Progress";
 import { Popover } from "../../shared/ui/Popover";
@@ -1133,7 +1134,7 @@ function DevicePanelSurface({
       aria-label={t("Devices")}
       aria-busy={busy || loadingDevices}
     >
-      {error && !discoveryShownCentrally && (
+      {error && !discoveryShownCentrally && status && (
         <Disclosure
           {...surfaceAttributes(
             { frame: "danger", edge: "bottom", tone: "danger" },
@@ -1157,19 +1158,26 @@ function DevicePanelSurface({
           </OutputBlock>
         </Disclosure>
       )}
-      {!status && !error && (
-        <LoadingText size="caption" leading="inherit" className="px-4 py-5">
+      {!status && !error && operation !== "status" && (
+        <LoadingText size="caption" leading="inherit" inset="panel">
           {t("Checking device support…")}
         </LoadingText>
       )}
-      {!status && ((error && !discoveryShownCentrally) || operation === "status") && (
-        <Button
-          loading={operation === "status"}
-          disabled={unavailable("status")}
-          onClick={() => void execute("status", api.status, setStatus)}
-        >
-          {t("Retry")}
-        </Button>
+      {!status && (error || operation === "status") && !discoveryShownCentrally && (
+        <FailureState
+          title={
+            readableDeviceError(error ?? "") ??
+            (discoveryError ? t("Could not load devices") : t("Device action failed"))
+          }
+          description={
+            hostLabel
+              ? t("The device service on {p0} did not respond.", { p0: hostLabel })
+              : t("The device service did not respond.")
+          }
+          error={error ?? ""}
+          retrying={operation === "status"}
+          onRetry={unavailable("status") ? undefined : () => execute("status", api.status, setStatus)}
+        />
       )}
       {status && !status.running && (
         <DeviceConnectState
@@ -1710,8 +1718,7 @@ function DevicePanelSurface({
                     tooltipSide="left"
                     label={t("Mark device screen")}
                     tooltipDetails={[t("Pause live view and mark a captured frame.")]}
-                    selected={annotating}
-                    aria-pressed={annotating}
+                    pressed={annotating}
                     disabled={!frame || busy}
                     disabledReason={
                       !frame

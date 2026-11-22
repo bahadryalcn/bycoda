@@ -3989,7 +3989,7 @@ export const Composer = memo(function Composer({
                         label={t("Mode")}
                         side="top"
                         align="start"
-                        width={280}
+                        size="md"
                         onClose={() => setModeOpen(false)}
                         data-composer-mode-menu
                         items={[
@@ -4067,7 +4067,7 @@ export const Composer = memo(function Composer({
                   label={t("Add files or skills")}
                   side="top"
                   align="end"
-                  width={280}
+                  size="md"
                   onClose={() => setPlusOpen(false)}
                   data-composer-plus
                   items={[

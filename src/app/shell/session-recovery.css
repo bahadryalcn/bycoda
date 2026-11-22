@@ -15,13 +15,6 @@
 .recovery-pane > :not(.recovery-body, .recovery-list) {
   flex-shrink: 0;
 }
-.recovery-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  padding: 0.5rem 0.75rem 0;
-  flex-shrink: 0;
-}
 .recovery-toolbar {
   display: flex;
   flex-wrap: wrap;

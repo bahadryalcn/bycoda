@@ -1,5 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ScrollArea, scrollAreaAttributes } from "../../../shared/ui/ScrollArea";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import { useContext, useEffect, useId, useRef, useState } from "react";
@@ -96,9 +97,9 @@ export function PoliciesSettings() {
               ]}
               onChange={setLanguageOverride}
             />
-          </Text>
-          <Text as="p" size="caption" tone="muted" leading="relaxed" className="policy-context">
-            {t("Document language only; your app language and permissions stay unchanged.")}
+            <InfoPopover className="shrink-0">
+              <p>{t("Document language only; your app language and permissions stay unchanged.")}</p>
+            </InfoPopover>
           </Text>
           <TabList className="policy-navigation" label={t("Policy documents")}>
             {POLICIES.map((policy) => (
@@ -130,14 +131,16 @@ export function PoliciesSettings() {
             leading="relaxed"
             className="policy-reader-context"
           >
-            <p>
-              {t(
-                "Documents are bundled for offline reading. Other interface languages use the English text.",
-              )}
-            </p>
-            {turkish && activePolicy.id === "software-license" ? (
-              <p>{t("This license is shown in its original English text.")}</p>
-            ) : null}
+            <InfoPopover className="shrink-0">
+              <p>
+                {t(
+                  "Documents are bundled for offline reading. Other interface languages use the English text.",
+                )}
+              </p>
+              {turkish && activePolicy.id === "software-license" ? (
+                <p>{t("This license is shown in its original English text.")}</p>
+              ) : null}
+            </InfoPopover>
             {headings.length > 1 ? (
               <Select
                 hideLabel

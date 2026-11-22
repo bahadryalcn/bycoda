@@ -62,6 +62,7 @@ export function ScrollbarGroup() {
         <div {...surfaceAttributes({ layout: "settings-rows" }, "interface-scrollbar-controls")}>
           <Row
             id="scrollbar-color"
+            controlWidth="fill"
             label={t("Scrollbar color")}
             description={t("Automatic follows the accent color of your theme.")}
           >

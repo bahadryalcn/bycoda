@@ -22,17 +22,8 @@
   min-inline-size: 0;
   padding-block-start: 12px;
 }
-.provider-cli-section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-inline-size: 0;
-}
 .provider-cli-section[hidden],
 .provider-cli-container[hidden] {
-  display: none;
-}
-[data-setting-id="harness-updates"] > .settings-group-content:empty {
   display: none;
 }
 
@@ -121,28 +112,14 @@
   padding-block-start: 8px;
 }
 
-/* Detail column: header, Status, Accounts, then the selected provider's panel. The column gap is
-   the only space between groups; a group's own leading padding would double it. */
+/* Detail column: header, Status, Accounts, then the selected provider's panel. Groups space
+   themselves through the shared `settings-topics` rhythm. */
 .provider-cli-detail {
   align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
   min-inline-size: 0;
   padding-inline-start: 20px;
 }
-.provider-cli-panel,
-.provider-cli-card {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-inline-size: 0;
-}
-:is(.provider-cli-detail, .provider-cli-panel, .provider-cli-card) > .settings-group {
-  padding-block-start: 0;
-}
-.provider-cli-panel[hidden],
-.provider-cli-card[hidden] {
+.provider-cli-panel[hidden] {
   display: none;
 }
 /* The icon, name and meta share one row and one baseline. */
@@ -188,20 +165,18 @@
   min-inline-size: 0;
 }
 .provider-models-source {
-  padding: 10px 16px;
+  padding: var(--ui-row-inset-block) var(--ui-row-inset-inline);
 }
 .provider-models-source:empty {
   display: none;
 }
 
 /* Accounts: rows share the settings row padding and hairlines. */
-/* Outranks the shared group frame (settings.css, overflow: visible). */
-.settings-group[data-settings-variant][data-settings-layout][data-setting-id="provider-accounts"]
-  > .settings-group-content {
-  overflow: clip;
-}
 .provider-accounts-body[hidden] {
   display: none;
+}
+.provider-accounts-body {
+  overflow: clip;
 }
 .provider-account-row,
 .provider-account-empty {
@@ -209,7 +184,7 @@
   align-items: center;
   gap: 12px;
   min-inline-size: 0;
-  padding: 10px 16px;
+  padding: var(--ui-row-inset-block) var(--ui-row-inset-inline);
 }
 .provider-account-empty {
   margin: 0;

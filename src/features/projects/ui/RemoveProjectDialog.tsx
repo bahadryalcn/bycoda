@@ -6,9 +6,13 @@ import { projectSessionCount } from "../model/projectData";
 import { useProjectConfirmDialog } from "../hooks/useProjectConfirmDialog";
 import { Alert } from "../../../shared/ui/Alert";
 import type { ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { RemoteActionError } from "../../connections/public/RemoteActionError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
+import {
+  describeLocalError,
+  describeRemoteError,
+  type RemoteErrorView,
+} from "../../connections/public/remoteFailure";
 
 type Props = {
   name: string;
@@ -89,12 +93,11 @@ export function RemoveProjectDialog({
     body: (
       <>
         {countError ? (
-          <InlineError
-            details={countError.details}
-            retry={{ onRetry: () => setRevision((value) => value + 1) }}
-          >
-            {countError.message}
-          </InlineError>
+          <RemoteActionError
+            title={t("Couldn’t count the saved sessions")}
+            error={countError}
+            action={{ label: t("Try again"), onClick: () => setRevision((value) => value + 1) }}
+          />
         ) : sessions == null ? (
           <LoadingText>{t("Loading…")}</LoadingText>
         ) : null}
@@ -112,7 +115,9 @@ export function RemoveProjectDialog({
         await onConfirm();
       } catch (reason) {
         setRevision((value) => value + 1);
-        throw reason;
+        throw new Error(describeLocalError(reason, t("Couldn’t delete this project.")), {
+          cause: reason,
+        });
       }
     },
   };

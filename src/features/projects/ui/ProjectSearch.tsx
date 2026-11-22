@@ -260,7 +260,7 @@ function ProjectSearchContent({
   };
 
   if (!cwd || cwd === "~") {
-    return <EmptyState size="inline" className="px-3 py-2" description={t("No project folder")} />;
+    return <EmptyState size="inline" inset="row" description={t("No project folder")} />;
   }
 
   return (
@@ -418,7 +418,7 @@ function ProjectSearchContent({
           </div>
         </div>
       </div>
-      {replaceError ? <InlineError className="px-3 py-1">{replaceError}</InlineError> : null}
+      {replaceError ? <InlineError inset="row">{replaceError}</InlineError> : null}
       {replaceSummary ? (
         <Text size="micro" tone="secondary" className="px-3 py-1">
           {replaceSummary}

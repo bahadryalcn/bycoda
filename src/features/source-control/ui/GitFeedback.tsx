@@ -17,7 +17,7 @@ import { requestWorktreeManagement } from "../model/worktreeManagement";
 
 export function GitLoading({ text }: { text: string }) {
   useLocale();
-  return <LoadingText className="px-3 py-2">{t(text)}</LoadingText>;
+  return <LoadingText inset="row">{t(text)}</LoadingText>;
 }
 
 export function GitCommitGenerationNotice({

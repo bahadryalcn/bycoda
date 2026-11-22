@@ -45,7 +45,7 @@ export function SourcesList({
   }
   if (sources === null) {
     return (
-      <LoadingText delay={false} className="px-4 py-2.5">
+      <LoadingText delay={false} inset="panel">
         {t("Loading…")}
       </LoadingText>
     );

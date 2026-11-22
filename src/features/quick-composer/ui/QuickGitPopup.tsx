@@ -91,7 +91,7 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
         void invoke("quick_git_fit", { id: request.id, height }).catch(() => undefined);
       }}
     >
-      {error ? <InlineError className="px-3 py-2">{error}</InlineError> : null}
+      {error ? <InlineError inset="row">{error}</InlineError> : null}
       {host && request ? (
         <QuickGitPopupPicker key={request.id} request={request} onFinish={finish} />
       ) : null}

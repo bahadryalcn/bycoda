@@ -287,6 +287,7 @@ export function ModelOrderList({
             title={t("No models configured")}
             description={addChoice || !source.probed() ? "" : noProviderReason}
             showDescription={!addChoice}
+            // oxlint-disable-next-line bycoda/shared-container-appearance -- list context pads 12px; this empty state sits inside a padded box and needs none
             className="p-0"
           />
           <div className="flex flex-wrap items-center gap-2">

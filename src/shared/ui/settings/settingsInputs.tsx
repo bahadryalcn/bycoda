@@ -89,7 +89,7 @@ export function Slider({
       <Text
         size="caption"
         tone={disabled ? "disabled" : "primary"}
-        className="min-w-[5ch] shrink-0 text-right tabular-nums"
+        className="min-w-[6ch] shrink-0 text-right tabular-nums"
       >
         {display}
       </Text>

@@ -89,35 +89,6 @@
   display: none;
 }
 
-/* The group inside a panel keeps the shared heading (title, reset) and rows, at panel density:
-   a secondary subheading instead of a section title, no second frame, no row inset or hover. */
-.content :global(.settings-group) {
-  display: block;
-  padding: 0;
-}
-
-.content :global(.settings-group > .settings-group-heading) {
-  padding-block-end: 4px;
-}
-
-.content :global(.settings-group-heading .settings-description) {
-  display: none;
-}
-
-.content
-  :global(.settings-group[data-settings-variant][data-settings-layout] > .settings-group-content) {
-  padding: 0;
-  min-width: 0;
-}
-
-.content :global(.settings-row) {
-  padding: 8px 0;
-}
-
-.content :global(.settings-group-content > .settings-feedback) {
-  padding-inline: 0;
-}
-
 /* Thumbnail for Glass: the strip shows how much of the window reads through. */
 .glassSwatch {
   display: block;

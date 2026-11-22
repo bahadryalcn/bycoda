@@ -2,7 +2,7 @@ import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { TabList, Tab, Tabs } from "../../../shared/ui/Tabs";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useId, useMemo, useState } from "react";
-import { describeDocumentProblem } from "../model/documentProblemText";
+import { documentProblemParts } from "../model/documentProblemText";
 import { documentProblem, type DocumentProblem } from "../model/documentViewer";
 import { loadSpreadsheet } from "../model/spreadsheetClient";
 import type { Spreadsheet } from "../model/spreadsheet";
@@ -57,8 +57,12 @@ export default function SheetViewer({
   }
   if (state.status === "error") {
     return (
-      <DocumentMessage title={t("Couldn’t read this spreadsheet")} error>
-        {describeDocumentProblem(state.problem)}
+      <DocumentMessage
+        title={t("Couldn’t read this spreadsheet")}
+        error
+        detail={documentProblemParts(state.problem).detail}
+      >
+        {documentProblemParts(state.problem).reason}
       </DocumentMessage>
     );
   }
@@ -95,7 +99,9 @@ export default function SheetViewer({
         >
           <TabList
             label={t("Workbook sheets")}
-            className="flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 overflow-x-auto border-t border-(--ui-pane-border) px-2 py-1 text-ui-caption"
+            scroll="auto"
+            inset="sm"
+            className="min-h-(--ui-control-height-compact) shrink-0 border-t border-(--ui-pane-border) text-ui-caption"
           >
             {names.map((name, index) => (
               <Tab key={name} value={String(index)} className="shrink-0">

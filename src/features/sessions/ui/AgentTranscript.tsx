@@ -722,7 +722,7 @@ function AgentTranscriptComponent({
         !pagingError &&
         blocks.length > 0 ? (
           <div className="pointer-events-none sticky inset-bs-0 z-(--layer-pane-sheet) h-0">
-            <LoadingText className="mx-auto w-fit px-4 py-2">
+            <LoadingText inset="panel" className="mx-auto w-fit">
               {t("Loading earlier messages…")}
             </LoadingText>
           </div>

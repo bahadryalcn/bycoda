@@ -1,39 +1,7 @@
 /* Layout only; controls and typography retain their shared owners. */
-.provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control {
-  inline-size: min(28rem, 55%);
-  min-inline-size: 0;
-}
-.provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control > * {
-  max-inline-size: 100%;
-}
 /* Pages scroll in the shared settings scroller only. Never size or clip
    [data-settings-scroller] from a page with :has(): the Providers page stays mounted
    (hidden) beside Usage, so such a rule also locks whichever page is showing. */
-@container provider-page (max-width: 640px) {
-  .provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control {
-    inline-size: min(24rem, 60%);
-  }
-}
-
-.provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control {
-  max-inline-size: min(28rem, 60%);
-}
-.provider-cli-container:has([data-setting-id="agent-clis"])
-  .settings-row-control
-  > .bycoda-arc-select {
-  inline-size: 100%;
-}
-
-/* Outranks the shared group frame (settings.css, align-self: start), which an id selector used to beat. */
-.settings-group[data-settings-variant][data-settings-layout][data-setting-id="enabled-models"]
-  > .settings-group-content {
-  align-self: stretch;
-  inline-size: 100%;
-}
-
-.provider-cli-container:has([data-setting-id="agent-clis"]) .settings-row-control > div {
-  inline-size: 100%;
-}
 .provider-defaults-notes {
   display: flex;
   align-items: center;
@@ -53,10 +21,6 @@
   flex-direction: column;
   align-items: stretch;
   gap: var(--space-2);
-}
-[data-setting-id="enabled-models"] .provider-models-list .settings-row {
-  padding-block: var(--space-1);
-  min-block-size: var(--ui-control-height);
 }
 .provider-defaults-field,
 .provider-defaults-buttons {

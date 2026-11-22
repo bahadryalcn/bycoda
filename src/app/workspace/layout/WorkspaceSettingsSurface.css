@@ -23,11 +23,6 @@
   max-block-size: none;
   margin: 0;
 }
-.bycoda-settings-dialog:has([data-settings-dialog-mode="peek"])
-  .appearance-settings
-  [role="tablist"] {
-  overflow-x: auto;
-}
 .bycoda-settings-dialog-body {
   display: flex;
   flex: 1 1 0;

@@ -21,6 +21,7 @@ import { StatusDot } from "../../shared/ui/StatusDot";
 import { localReferenceForSession } from "../../features/sessions/model/localSessionNavigation";
 import { localSessionLinkFields } from "../../features/sessions/model/localSessionReference";
 import { Alert } from "../../shared/ui/Alert";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { TextField } from "../../shared/ui/TextField";
 import { Modal } from "../../shared/ui/Modal";
 import { Button } from "../../shared/ui/Button";
@@ -772,7 +773,7 @@ function SidebarComponent({
     if (!target.machineId || !target.projectId) {
       toast.show({
         tone: "warning",
-        message: "Connect this project's machine to change its sessions.",
+        message: t("Connect this project's machine to change its sessions."),
       });
       return;
     }
@@ -800,7 +801,7 @@ function SidebarComponent({
     if (!target.machineId || !target.projectId) {
       toast.show({
         tone: "warning",
-        message: "Connect this project's machine to delete its sessions.",
+        message: t("Connect this project's machine to delete its sessions."),
       });
       return;
     }
@@ -2382,7 +2383,7 @@ function SidebarComponent({
       const value = id === "copy-harness-session-id" ? providerSessionId : sessionId;
       if (value) {
         void copyText(value).catch((error) => {
-          setCopyIdFailure({ value, error: String(error) });
+          setCopyIdFailure({ value, error: errorText(error) });
         });
       }
       return;
@@ -4487,9 +4488,12 @@ function SidebarComponent({
       {copyIdFailure ? (
         <Modal title={t("Session ID")} size="sm" onClose={() => setCopyIdFailure(null)}>
           <div className="flex flex-col gap-3">
-            <Alert tone="danger">
-              {t("Could not copy the session ID. Select it below to copy manually, or retry.")}{" "}
-              {copyIdFailure.error}
+            <Alert
+              tone="danger"
+              title={t("Could not copy the session ID")}
+              extra={<ErrorDetails detail={copyIdFailure.error} />}
+            >
+              {t("Select the ID below to copy it manually, or retry.")}
             </Alert>
             <TextField
               label={t("Session ID")}
@@ -4507,7 +4511,7 @@ function SidebarComponent({
                 void copyText(value)
                   .then(
                     () => setCopyIdFailure(null),
-                    (error) => setCopyIdFailure({ value, error: String(error) }),
+                    (error) => setCopyIdFailure({ value, error: errorText(error) }),
                   )
                   .finally(() => setCopyIdRetrying(false));
               }}

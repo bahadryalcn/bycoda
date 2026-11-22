@@ -30,7 +30,7 @@ export function QueueRemovalNotice({
     <InlineMessage
       tone="neutral"
       icon={null}
-      className="px-1 py-1"
+      inset="row"
       data-queue-removal
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={(event) => {

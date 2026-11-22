@@ -68,8 +68,8 @@ function JobDiscussionSource() {
   }, [request, environmentId, projectId, attempt]);
   if (error)
     return (
-      <InlineError retry={{ onRetry: () => setAttempt((value) => value + 1), label: t("Retry") }}>
-        {t(error)}
+      <InlineError details={error} retry={{ onRetry: () => setAttempt((value) => value + 1) }}>
+        {t("The job discussion could not be opened.")}
       </InlineError>
     );
   if (!thread || !room.snapshot || !room.canonicalSnapshot)

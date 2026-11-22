@@ -23,19 +23,10 @@
   }
 }
 .tool-tabs {
-  display: flex;
   flex: 1;
-  min-inline-size: 0;
   block-size: 100%;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
 }
 .tool-tabs button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  gap: 6px;
   white-space: nowrap;
 }
 .tool-window-actions {

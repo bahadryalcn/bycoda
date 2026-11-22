@@ -180,7 +180,7 @@ export function AccountScreen() {
       >
         <div className={styles.layout}>
           <nav className={styles.nav}>
-            <TabList label={t("Account")} items={items} />
+            <TabList label={t("Account")} items={items} scroll={wide ? undefined : "auto"} />
           </nav>
           <div className={styles.panel}>
             <TabPanel value="profile">

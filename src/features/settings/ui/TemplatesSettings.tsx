@@ -336,8 +336,7 @@ export function TemplatesSettings() {
                       variant="item"
                       align="start"
                       fullWidth
-                      selected={row.id === selected?.id}
-                      aria-pressed={row.id === selected?.id}
+                      pressed={row.id === selected?.id}
                       onClick={() => setSelectedId(row.id)}
                     >
                       <span className="template-manager-item">

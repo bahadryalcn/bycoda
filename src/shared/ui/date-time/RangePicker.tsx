@@ -179,8 +179,7 @@ function RangeEditor({
               <Button
                 size="sm"
                 variant="ghost"
-                selected={endpoint === "start"}
-                aria-pressed={endpoint === "start"}
+                pressed={endpoint === "start"}
                 onClick={() => setEndpoint("start")}
               >
                 {t("Start")}
@@ -188,8 +187,7 @@ function RangeEditor({
               <Button
                 size="sm"
                 variant="ghost"
-                selected={endpoint === "end"}
-                aria-pressed={endpoint === "end"}
+                pressed={endpoint === "end"}
                 onClick={() => setEndpoint("end")}
               >
                 {t("End")}

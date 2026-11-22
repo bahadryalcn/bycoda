@@ -80,7 +80,7 @@ export function MemoryEditor({
       fitViewport
       footerStart={error ? <InlineError>{error}</InlineError> : undefined}
       footer={
-        <ModalActions>
+        <ModalActions reason={text.trim() ? undefined : t("Write a memory to save.")}>
           <Button
             startIcon={<X className="icon-sm" />}
             variant="ghost"
@@ -96,6 +96,7 @@ export function MemoryEditor({
             variant="primary"
             loading={pending}
             disabled={!text.trim()}
+            disabledReason={text.trim() ? undefined : t("Write a memory to save.")}
           >
             {t("Save")}
           </Button>

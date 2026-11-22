@@ -62,8 +62,7 @@ export function ServerActivity({
               <Button
                 variant="ghost"
                 iconOnly
-                selected={event.bookmarked}
-                aria-pressed={event.bookmarked}
+                pressed={event.bookmarked}
                 label={t(event.bookmarked ? "Remove bookmark" : "Bookmark")}
                 disabled={pending != null}
                 loading={pending === event.id}

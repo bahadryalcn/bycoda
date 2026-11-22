@@ -56,8 +56,8 @@ it("samples only on request and offers retry after a failed read", async () => {
       samples: [{ ...sample, process: { ...sample.process, cpuPercent: 2.5 } }],
     });
   await act(async () => container.querySelector("button")!.click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Host offline");
-  expect(container.querySelector("button")!.getAttribute("aria-label")).toBe("Retry");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not measure resource usage.");
+  expect(container.querySelector("button")!.getAttribute("aria-label")).toBe("Try again");
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain("Measuring…");
@@ -193,6 +193,6 @@ it("keeps the previous charts visible when refreshing fails", async () => {
   await act(async () => root.render(createElement(DiagnosticsPanel, { cwd: "/repo" })));
   await act(async () => container.querySelector("button")!.click());
   await act(async () => container.querySelector("button")!.click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Host offline");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not measure resource usage.");
   expect(container.querySelector(".resource-value")?.textContent).toBe("5%");
 });

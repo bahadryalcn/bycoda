@@ -4,6 +4,8 @@
    separated by hairline dividers. Roles live in styles/index.css. */
 .settings-collection {
   min-inline-size: 0;
+  /* In a flex control (a stacked Row) a list takes its own line. */
+  flex-basis: 100%;
   overflow: clip;
 }
 

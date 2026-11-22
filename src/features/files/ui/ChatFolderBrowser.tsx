@@ -334,24 +334,24 @@ export function ChatFolderBrowser({
           </Text>
         ) : null}
         {copyProgress ? (
-          <LoadingText className="py-2">
+          <LoadingText inset="row">
             {t("Downloading…")} {copyProgress}
           </LoadingText>
         ) : null}
         {actionError ? (
-          <InlineError className="py-2">
+          <InlineError inset="row">
             {t("Could not open the shared folder: ")}
             {actionError}
           </InlineError>
         ) : null}
         {error ? (
-          <InlineError className="py-3" retry={{ onRetry: () => setReload((value) => value + 1) }}>
+          <InlineError inset="row" retry={{ onRetry: () => setReload((value) => value + 1) }}>
             {error}
           </InlineError>
         ) : !entries ? (
-          <LoadingText className="py-3">{t("Loading folder…")}</LoadingText>
+          <LoadingText inset="row">{t("Loading folder…")}</LoadingText>
         ) : entries.length === 0 ? (
-          <EmptyState size="inline" className="py-3" description={t("This folder is empty.")} />
+          <EmptyState size="inline" inset="row" description={t("This folder is empty.")} />
         ) : (
           <>
             {!listing?.canOpenFiles ? (

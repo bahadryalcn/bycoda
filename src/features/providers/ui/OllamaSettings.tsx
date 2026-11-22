@@ -46,7 +46,6 @@ function OllamaPortRow({
       description={t(
         "The port Ollama listens on at this computer. By default it is taken from OLLAMA_HOST, otherwise 11434.",
       )}
-      descriptionVisible
     >
       <form
         className="flex items-center gap-2"
@@ -70,6 +69,9 @@ function OllamaPortRow({
         <Button
           type="submit"
           disabled={disabled || !validPort(value) || value === port}
+          disabledReason={
+            disabled || invalid ? undefined : value === port ? t("The port has not changed.") : undefined
+          }
           loading={saving}
         >
           {t("Save")}
@@ -295,7 +297,6 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
           description={t(
             "Model names are listed in the Ollama library. Models with tool support work best with OpenCode.",
           )}
-          descriptionVisible
           stacked
           feedback={pull ? <PullState pull={pull} /> : undefined}
         >
@@ -353,7 +354,6 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
       id="ollama-models"
       title={t("Local models (Ollama)")}
       description={t("Run Ollama models on this computer through OpenCode.")}
-      descriptionVisible
       action={
         // Missing and stopped states carry their own Check again / Start action.
         status?.runtime === "running" ? (

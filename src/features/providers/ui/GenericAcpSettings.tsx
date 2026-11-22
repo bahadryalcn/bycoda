@@ -418,7 +418,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           <EmptyState
             size="inline"
             kind="empty"
-            className="px-3 py-2"
+            inset="row"
             descriptionText={{ size: "micro" }}
             description={t("No ACP agents configured. Use Add agent or browse the registry.")}
           />
@@ -627,7 +627,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 )}
               </Text>
               {registryState === "loading" ? (
-                <LoadingText delay={false} className="px-3 py-2">
+                <LoadingText delay={false} inset="row">
                   {t("Loading ACP registry…")}
                 </LoadingText>
               ) : registryState === "error" ? null : registryState === "loaded" &&
@@ -700,7 +700,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 <EmptyState
                   size="inline"
                   kind="empty"
-                  className="px-3 pb-2"
+                  inset="row"
                   descriptionText={{ size: "micro" }}
                   description={t("No ACP registry entries found.")}
                 />

@@ -83,7 +83,7 @@ export function CreateWorktreeDialog({
         if (!busy) onCancel();
       }}
       footer={
-        <ModalActions>
+        <ModalActions reason={name.trim() ? undefined : t("Enter a name.")}>
           <Button variant="ghost" motion="none" type="button" disabled={busy} onClick={onCancel}>
             {t("Cancel")}
           </Button>
@@ -94,6 +94,7 @@ export function CreateWorktreeDialog({
             form={formId}
             loading={busy}
             disabled={busy || !name.trim()}
+            disabledReason={name.trim() ? undefined : t("Enter a name.")}
           >
             {t("Create worktree")}
           </Button>

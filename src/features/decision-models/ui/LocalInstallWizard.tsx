@@ -192,7 +192,11 @@ export function LocalInstallWizard({
         {step === 0 ? (
           <div className="flex min-w-0 flex-col gap-2">
             {loadError !== null ? (
-              <ErrorNotice error={loadError} onRetry={() => setAttempt((value) => value + 1)} />
+              <ErrorNotice
+                title={t("Could not check this computer.")}
+                error={loadError}
+                onRetry={() => setAttempt((value) => value + 1)}
+              />
             ) : null}
             {loaded === null && loadError === null ? (
               <Progress
@@ -221,6 +225,7 @@ export function LocalInstallWizard({
                 {planError !== null ? (
                   <ErrorNotice
                     error={planError}
+                    title={t("Could not prepare the install.")}
                     onRetry={() => setPlanAttempt((value) => value + 1)}
                   />
                 ) : null}

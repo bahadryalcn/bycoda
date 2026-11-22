@@ -121,7 +121,7 @@ export function DictationOptions({
           anchor={trigger}
           label={t("Dictation options")}
           side="top"
-          width={240}
+          size="sm"
           onClose={() => setOpen(false)}
           onPick={pick}
           items={[

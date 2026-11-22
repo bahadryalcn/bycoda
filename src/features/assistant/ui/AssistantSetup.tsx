@@ -407,12 +407,13 @@ export function AssistantSetup({
         {loadError && (
           <InlineError
             className={styles.feedback}
+            details={loadError}
             retry={{ onRetry: () => void refresh(), pending: loading }}
           >
-            {loadError}
+            {t("Could not load the assistant setup.")}
           </InlineError>
         )}
-        {!draft ? (
+        {!draft && !loadError ? (
           <LoadingText delay={false} className={styles.muted}>
             {t("Loading…")}
           </LoadingText>

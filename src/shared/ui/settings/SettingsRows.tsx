@@ -417,6 +417,7 @@ export function Group({
       data-revealed={flash || undefined}
       data-settings-layout={layout}
       data-settings-variant={variant}
+      data-settings-flat={layerEditor || undefined}
       tabIndex={-1}
       aria-labelledby={headingId}
       aria-describedby={hasDescription ? descriptionId : undefined}
@@ -503,6 +504,10 @@ export function Group({
  *   "your choice is preserved" text.
  * - `disabled`: the same dimmed, inert state without the indent (e.g. while an operation runs).
  * - `stacked`: wide controls (fields, editors, lists) sit under the label at full width.
+ * - `controlWidth`: `"wide"` (28rem) for a pair of selects or a short field, `"fill"` for a control that takes all the
+ *   room the label leaves (segmented choice, card strip). Default keeps the 12-18rem right column.
+ * - `density="compact"`: the row inset steps down (`--ui-row-inset-block-compact`) for short rows.
+ * - `feedbackPosition="start"`: the feedback (a preview) sits above the label and control.
  * @group layout
  * @use One setting inside a Group: label and description left, control right.
  * @avoid A row of a data list: CollectionRow. A whole topic: Group. A labelled form field outside settings: Field.
@@ -517,6 +522,9 @@ export function Row({
   feedback,
   controlId,
   stacked = false,
+  controlWidth = "default",
+  density = "default",
+  feedbackPosition = "end",
   descriptionVisible = false,
   info,
   dependsOn,
@@ -536,6 +544,12 @@ export function Row({
   controlId?: string;
   /** Wide controls (text fields, editors, lists) sit under the label at full width. */
   stacked?: boolean;
+  /** Width of the right-hand control column: `wide` 28rem, `fill` the whole remaining width. Ignored when `stacked`. */
+  controlWidth?: "default" | "wide" | "fill";
+  /** `compact` steps the row inset down for short rows (one control, no description). */
+  density?: "default" | "compact";
+  /** `start` places the feedback above the label and control (a preview that opens the row). */
+  feedbackPosition?: "end" | "start";
   /** Show `description` as a muted subline (default `false`: behind the info popover). */
   descriptionVisible?: boolean;
   /** Longer explanation for an information popover beside the label. */
@@ -574,8 +588,12 @@ export function Row({
       id={id ? settingDomId(id) : undefined}
       data-setting-id={id}
       data-settings-part="row"
+      data-settings-flat={layerEditor || undefined}
       data-revealed={flash || undefined}
       data-stacked={stacked || undefined}
+      data-control-width={controlWidth === "default" ? undefined : controlWidth}
+      data-density={density === "default" ? undefined : density}
+      data-feedback-position={feedbackPosition === "end" ? undefined : feedbackPosition}
       data-dependent={dependsOn !== undefined || undefined}
       data-disabled={inactive || undefined}
       tabIndex={-1}

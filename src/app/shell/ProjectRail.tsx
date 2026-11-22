@@ -1583,11 +1583,10 @@ function RemoteProjectSuggestion({
       <Button
         variant="item"
         size="sm"
-        selected={selected}
+        pressed={selected}
         type="button"
         data-remote-project-id={project.projectId}
         data-multi-selected={selected || undefined}
-        aria-pressed={selected}
         tooltip={project.name}
         tooltipDetails={[remoteOnlyProjectHint(project, match)]}
         tooltipSide="right"

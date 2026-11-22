@@ -98,7 +98,7 @@ type DialogProps = {
 
 function Loading() {
   useLocale();
-  return <LoadingText className="px-3 py-2">{t("Loading…")}</LoadingText>;
+  return <LoadingText inset="row">{t("Loading…")}</LoadingText>;
 }
 
 function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
@@ -143,7 +143,7 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
       ) : !commits ? (
         <Loading />
       ) : commits.length === 0 ? (
-        <EmptyState size="inline" className="px-4" description={t("No commits touch this file")} />
+        <EmptyState size="inline" inset="panel" description={t("No commits touch this file")} />
       ) : (
         <ul className="min-h-0 overflow-y-auto p-1.5">
           {commits.map((commit) => (

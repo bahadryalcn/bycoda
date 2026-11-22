@@ -209,7 +209,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         <DropdownMenu
           anchor={trigger}
           align="start"
-          width={320}
+          size="lg"
           label={t("Working sessions")}
           items={menuItems}
           onPick={onSelectAgent}

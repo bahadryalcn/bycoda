@@ -27,7 +27,7 @@ export function InboxConnectMenu({
     <DropdownMenu
       anchor={anchor}
       label={t("Connect an inbox source")}
-      width={220}
+      size="sm"
       items={[
         ...sources.map((source) => ({
           kind: "item" as const,

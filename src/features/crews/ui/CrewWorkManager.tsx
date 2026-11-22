@@ -298,7 +298,7 @@ export function CrewWorkManager({
           </div>
         </div>
         {crew && !savedCrew ? (
-          <InlineMessage tone="neutral" live="off" className="px-4 pb-2">
+          <InlineMessage tone="neutral" live="off" inset="panel">
             {t("This crew was deleted. Its work and conversations are kept.")}
           </InlineMessage>
         ) : null}
@@ -441,7 +441,7 @@ export function CrewWorkManager({
                   </InlineMessage>
                 ) : null}
                 {movedNotice ? (
-                  <InlineMessage tone="neutral" className="pb-2">
+                  <InlineMessage tone="neutral" inset="row">
                     {movedNotice}
                   </InlineMessage>
                 ) : null}

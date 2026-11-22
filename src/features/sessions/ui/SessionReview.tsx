@@ -225,7 +225,7 @@ function SessionReviewContent({
   if (!enabled || busy || (files.length === 0 && !error && recording === "idle")) return null;
   if (recording === "waiting") {
     return (
-      <LoadingText delay={false} className="px-3 py-2">
+      <LoadingText delay={false} inset="row">
         {t("Loading changes…")}
       </LoadingText>
     );

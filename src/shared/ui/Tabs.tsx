@@ -157,6 +157,12 @@ export type TabListProps = Omit<ComponentPropsWithRef<"div">, "role" | "aria-lab
   /** `hidden`: the strip scrolls along its axis (a row sideways, a column vertically) with no
    *  visible bar, for a strip that overflows its row. Unset keeps the surrounding overflow. */
   scrollbar?: "hidden";
+  /** Overflow of the strip. `auto`: tabs keep their width and the strip scrolls along its axis.
+   *  `wrap`: tabs wrap onto further rows. Unset keeps the surrounding overflow. */
+  scroll?: "auto" | "wrap";
+  /** `sm`: the strip carries its own edge padding, for a strip that sits directly in a panel
+   *  (never a caller margin or padding class). Unset: no padding. */
+  inset?: "sm";
 };
 
 /**
@@ -175,6 +181,8 @@ export function TabList({
   label,
   items,
   scrollbar,
+  scroll,
+  inset,
   className,
   children,
   onKeyDown,
@@ -241,6 +249,8 @@ export function TabList({
       data-fill={tabs.fill || undefined}
       data-responsive={tabs.responsive || undefined}
       data-scrollbar={scrollbar}
+      data-scroll={scroll}
+      data-inset={inset}
       className={[styles.list, className].filter(Boolean).join(" ")}
       onKeyDown={handleKeyDown}
     >

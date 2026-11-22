@@ -161,7 +161,7 @@ export function AppearancePage({
             "appearance-generator",
           )}
         >
-          <TabList label={t("Appearance")} scrollbar="hidden" className="appearance-tabs">
+          <TabList label={t("Appearance")} scroll="auto" scrollbar="hidden" className="appearance-tabs">
             {sections.map(({ id, label }) => (
               <Tab key={id} value={id}>
                 {label}

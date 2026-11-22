@@ -21,6 +21,7 @@ import { LAYER } from "../lib/layers";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
 import { OverlayMenuLayer, OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
 import { Button } from "./Button";
+import { InlineMessage } from "./InlineError";
 import { Maximize2, Minimize2 } from "./icons";
 
 export type ModalSize = "sm" | "md" | "lg" | "xl" | "full";
@@ -438,7 +439,7 @@ export function ModalFooter({ children }: { children: ReactNode }) {
  * confirm is filled danger: `variant="primary" tone="danger"`. `inline` is only for a form on a
  * page that is not a dialog.
  * @group overlay
- * @use The Cancel and primary actions of a Modal or Sheet footer.
+ * @use The Cancel and primary actions of a Modal or Sheet footer. A primary that validation can block takes `reason` plus the same text as its `disabledReason`.
  * @avoid Actions at the end of the scrolling body, or a hand-built footer row.
  *
  * ```tsx
@@ -452,12 +453,19 @@ export function ModalFooter({ children }: { children: ReactNode }) {
  */
 export function ModalActions({
   start,
+  reason,
   align = "end",
   inline = false,
   className,
   children,
 }: {
   start?: ReactNode;
+  /**
+   * Why the primary action is blocked, shown at the start edge as visible text (never only a
+   * tooltip). Pass the same string as the primary Button's `disabledReason`; omit it while the
+   * action is available.
+   */
+  reason?: string;
   /** Alignment of the closing actions when there is no `start` group. */
   align?: "start" | "end";
   /** For a form on a page that is not in a Modal: adds the spacing above the row. In a Modal use `footer`. */
@@ -476,9 +484,18 @@ export function ModalActions({
         .filter(Boolean)
         .join(" ")}
     >
-      {start ? <div className="flex min-w-0 flex-wrap items-center gap-2">{start}</div> : null}
+      {start || reason ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {start}
+          {reason ? (
+            <InlineMessage tone="neutral" live="off">
+              {reason}
+            </InlineMessage>
+          ) : null}
+        </div>
+      ) : null}
       <div
-        className={`flex min-w-0 flex-wrap items-center gap-2 ${start || align === "end" ? "ms-auto justify-end" : "justify-start"}`}
+        className={`flex min-w-0 flex-wrap items-center gap-2 ${start || reason || align === "end" ? "ms-auto justify-end" : "justify-start"}`}
       >
         {children}
       </div>

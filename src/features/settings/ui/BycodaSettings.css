@@ -1,10 +1,10 @@
 /* Shared settings frame: one header row, one shared content column, open topics.
    Pages compose Group / Row from src/shared/ui/settings and never reskin them. */
 .bycoda-settings-workbench {
-  /* One column for every page and sub-view (the widest existing state); no page opts into another.
+  /* One column for every page and sub-view (the only place that sets it); no page opts into another.
      Maximized raises it to --settings-column-maximized. Controls keep their natural sizes inside it. */
-  --settings-column: 80rem;
-  --settings-column-maximized: 96rem;
+  --settings-column: 60rem;
+  --settings-column-maximized: 80rem;
   --settings-group-gap: 28px;
   container-type: inline-size;
   container-name: settings-workbench;

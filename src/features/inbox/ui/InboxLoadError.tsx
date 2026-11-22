@@ -1,29 +1,33 @@
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 
+/** Plain title and one Try again; the raw error text only ever sits behind Details. */
 export function InboxLoadError({
   error,
-  retrying,
-  disabled,
+  title,
+  retrying = false,
+  disabled = false,
   onRetry,
 }: {
   error: string;
-  retrying: boolean;
-  disabled: boolean;
-  onRetry: () => void;
+  /** What happened, translated. Defaults to "Could not load." */
+  title?: string;
+  retrying?: boolean;
+  disabled?: boolean;
+  /** Omit when the read cannot be retried from here. */
+  onRetry?: () => void;
 }) {
   const t = useT();
-  const title = t("Could not load.");
-  const short = fitsOneLine(error);
+  const heading = title ?? t("Could not load.");
   return (
     <Alert
       tone="danger"
-      title={title}
-      action={{ label: t("Retry"), pending: retrying, disabled, onClick: onRetry }}
-      extra={short ? undefined : <ErrorDetails title={title} detail={error} />}
-    >
-      {short ? <div className="wrap-anywhere">{error}</div> : null}
-    </Alert>
+      title={heading}
+      action={
+        onRetry ? { label: t("Try again"), pending: retrying, disabled, onClick: onRetry } : undefined
+      }
+      extra={<ErrorDetails title={heading} detail={error} />}
+    />
   );
 }

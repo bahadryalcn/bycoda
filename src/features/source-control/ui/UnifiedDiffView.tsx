@@ -219,7 +219,7 @@ export function UnifiedDiffView({
       <EmptyState
         size="inline"
         kind="empty"
-        className="px-4 py-6"
+        inset="panel"
         description={t("No file changes")}
       />
     );

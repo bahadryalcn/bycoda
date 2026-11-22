@@ -226,7 +226,7 @@ export function WorktreesPage({
             {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
             {loadError && <SettingsFeedback state="error">{loadError}</SettingsFeedback>}
             {!data && !loadError && (
-              <LoadingText delay={false} className="py-2">
+              <LoadingText delay={false} inset="row">
                 {t("Loading worktrees…")}
               </LoadingText>
             )}

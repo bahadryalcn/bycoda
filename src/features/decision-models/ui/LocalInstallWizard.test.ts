@@ -355,7 +355,7 @@ describe("LocalInstallWizard", () => {
       hardwareFailures: 1,
     });
     await renderWizard(client);
-    expect(bodyText()).toContain("This did not work. Try again.");
+    expect(bodyText()).toContain("Could not check this computer.");
     clickButton("Try again");
     await settleDecisionUi();
     expect(mocks.hardware).toHaveBeenCalledTimes(2);

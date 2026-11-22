@@ -24,7 +24,6 @@
 
 .policy-navigation {
   display: grid;
-  gap: 2px;
 }
 
 .policy-link-title {
@@ -33,7 +32,6 @@
   overflow-wrap: anywhere;
 }
 
-.policy-context,
 .policy-reader-context {
   margin: 0;
 }

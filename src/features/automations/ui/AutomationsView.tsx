@@ -1396,7 +1396,7 @@ function AutomationEditor({
             </Text>
           </header>
           {historyAvailable ? (
-            <TabList label={t("Automation view")} className="mt-1">
+            <TabList label={t("Automation view")} inset="sm">
               <Tab value="settings">{t("Settings")}</Tab>
               <Tab value="history">{t("Run history")}</Tab>
             </TabList>
@@ -1650,10 +1650,10 @@ function AutomationEditor({
               <SectionLabel as="h2" className="px-1">
                 {t("Run history")}
               </SectionLabel>
-              {historyLoading ? <LoadingText className="p-3" /> : null}
+              {historyLoading ? <LoadingText inset="row" /> : null}
               {historyError ? (
                 <InlineError
-                  className="mt-2 px-1"
+                  inset="row" className="mt-2"
                   retry={{ onRetry: onRefreshHistory, disabled: historyLoading }}
                 >
                   {historyError}

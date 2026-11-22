@@ -378,9 +378,7 @@ export function AssistantSettings({
       key={id}
       value={id}
       keepMounted
-      className={[settingsStyles.page, id === "access" ? "" : settingsStyles.ownRows]
-        .filter(Boolean)
-        .join(" ")}
+      className={settingsStyles.page}
       data-settings-page={id}
     >
       {children}

@@ -177,13 +177,13 @@ export function GitGraphBranches({
       </div>
       <div className="min-h-0 overflow-y-auto pb-3">
         {error ? (
-          <InlineError className="px-3" details={error} retry={{ onRetry: refresh }} />
+          <InlineError inset="row" details={error} retry={{ onRetry: refresh }} />
         ) : null}
         {loading && !data ? (
-          <LoadingText className="px-3 py-1">{t("Loading branches…")}</LoadingText>
+          <LoadingText inset="row">{t("Loading branches…")}</LoadingText>
         ) : null}
         {data?.detached ? (
-          <InlineMessage tone="warning" live="off" className="px-3 py-1">
+          <InlineMessage tone="warning" live="off" inset="row">
             {t("Detached HEAD")}
           </InlineMessage>
         ) : null}
@@ -256,7 +256,7 @@ export function GitGraphBranches({
           <EmptyState
             size="inline"
             kind={deferredQuery ? "filtered" : "empty"}
-            className="px-3"
+            inset="row"
             description={t("No matching branches")}
           />
         ) : null}

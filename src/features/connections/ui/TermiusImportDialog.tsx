@@ -148,12 +148,19 @@ export function TermiusImportDialog({
         if (!pending.current) onClose();
       }}
       footer={
-        <ModalActions>
+        <ModalActions
+          reason={preview && !outcome && !selected.size ? t("Select at least one entry.") : undefined}
+        >
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             {outcome ? t("Done") : t("Cancel")}
           </Button>
           {preview && !outcome ? (
-            <Button loading={busy} disabled={busy || !selected.size} onClick={() => void apply()}>
+            <Button
+              loading={busy}
+              disabled={busy || !selected.size}
+              disabledReason={selected.size ? undefined : t("Select at least one entry.")}
+              onClick={() => void apply()}
+            >
               {t("Import selected ({p0})", { p0: selected.size })}
             </Button>
           ) : null}

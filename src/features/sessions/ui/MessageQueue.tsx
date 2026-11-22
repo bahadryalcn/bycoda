@@ -853,7 +853,7 @@ export function MessageQueue({
           />
         ))}
         {!delivery && activeFeedback?.error ? (
-          <InlineError className="py-1">{activeFeedback.text}</InlineError>
+          <InlineError inset="row">{activeFeedback.text}</InlineError>
         ) : null}
         {remote ? (
           <InfoPopover>

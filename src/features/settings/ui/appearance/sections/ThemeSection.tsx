@@ -79,6 +79,7 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
         </Row>
         <Row
           id="accent-color"
+          controlWidth="fill"
           label={t("Accent color")}
           modified={!isDefaultAccent(appearance.accentColor)}
           onReset={() => {

@@ -83,8 +83,7 @@
 }
 
 /* The maximize action owns a slot, leaving notes and close controls clickable. */
-[data-pane-can-maximize] [data-session-header],
-[data-pane-can-maximize] > [role="tablist"] {
+[data-pane-can-maximize] [data-session-header] {
   padding-inline-end: 2.5rem;
 }
 [data-pane-can-maximize] [data-surface-pane-id] {

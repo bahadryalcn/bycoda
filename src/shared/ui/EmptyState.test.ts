@@ -57,18 +57,42 @@ it.each(["panel", "list"] as const)(
   },
 );
 
-it("keeps the icon optional: a null icon renders none and an omitted one renders the default", async () => {
-  const none = await mount(createElement(EmptyState, { description: "Empty", icon: null }));
+it("draws a glyph only when one is passed (no default folder)", async () => {
+  const none = await mount(createElement(EmptyState, { description: "Empty" }));
   try {
     expect(none.container.querySelector("svg")).toBeNull();
   } finally {
     none.done();
   }
-  const fallback = await mount(createElement(EmptyState, { description: "Empty" }));
+  const given = await mount(
+    createElement(EmptyState, {
+      description: "Empty",
+      icon: createElement("svg", { "data-testid": "glyph" }),
+    }),
+  );
   try {
-    expect(fallback.container.querySelector("svg")).not.toBeNull();
+    expect(given.container.querySelector("svg")).not.toBeNull();
   } finally {
-    fallback.done();
+    given.done();
+  }
+});
+
+it("maps inset to the Surface padding scale for block and inline states", async () => {
+  for (const size of ["block", "inline"] as const) {
+    const row = await mount(createElement(EmptyState, { size, description: "Empty", inset: "row" }));
+    const panel = await mount(
+      createElement(EmptyState, { size, description: "Empty", inset: "panel" }),
+    );
+    const none = await mount(createElement(EmptyState, { size, description: "Empty" }));
+    try {
+      expect(row.container.firstElementChild?.className).toContain("px-3 py-2");
+      expect(panel.container.firstElementChild?.className).toContain("px-4 py-3");
+      expect(none.container.firstElementChild?.className).not.toMatch(/\bpx-\d/);
+    } finally {
+      row.done();
+      panel.done();
+      none.done();
+    }
   }
 });
 

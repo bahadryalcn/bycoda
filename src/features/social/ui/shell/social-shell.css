@@ -27,11 +27,6 @@
 .social-shell-nav {
   flex: 0 1 auto;
   min-width: 0;
-  overflow-x: auto;
-}
-
-.social-shell-nav > [role="tablist"] {
-  min-inline-size: max-content;
 }
 
 .social-shell-ai {

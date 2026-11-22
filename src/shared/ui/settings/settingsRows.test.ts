@@ -529,3 +529,28 @@ it("preserves dependent state and search reveal on settings rows", async () => {
   expect(controls.hasAttribute("inert")).toBe(true);
   expect(row.textContent).toContain("Enable parent");
 });
+
+it("exposes row layout props as data attributes and omits the defaults", async () => {
+  await act(async () =>
+    root.render(
+      createElement(
+        Group,
+        { title: "Group" },
+        createElement(Row, { label: "Plain" }),
+        createElement(Row, {
+          label: "Tuned",
+          controlWidth: "fill",
+          density: "compact",
+          feedbackPosition: "start",
+        }),
+      ),
+    ),
+  );
+  const [plain, tuned] = [...container.querySelectorAll<HTMLElement>(".settings-row")];
+  expect(plain.dataset.controlWidth).toBeUndefined();
+  expect(plain.dataset.density).toBeUndefined();
+  expect(plain.dataset.feedbackPosition).toBeUndefined();
+  expect(tuned.dataset.controlWidth).toBe("fill");
+  expect(tuned.dataset.density).toBe("compact");
+  expect(tuned.dataset.feedbackPosition).toBe("start");
+});

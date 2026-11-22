@@ -141,7 +141,7 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
       style={state.status === "loading" ? { minHeight: knownHeights.get(image.path) } : undefined}
     >
       {state.status === "loading" ? (
-        <LoadingText delay={false} className="px-4 py-3">
+        <LoadingText delay={false} inset="panel">
           {t("Loading generated image…")}
         </LoadingText>
       ) : state.status === "error" ? (

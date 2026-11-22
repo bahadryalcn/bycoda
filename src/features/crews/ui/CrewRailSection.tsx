@@ -288,7 +288,7 @@ export function CrewRailSection({
             </ActionHost>
           );
         })}
-        {error ? <InlineError className="px-2" details={error} /> : null}
+        {error ? <InlineError inset="row" details={error} /> : null}
       </div>
       {menu?.kind === "crew" && menuCrew ? (
         <DropdownMenu
@@ -296,7 +296,7 @@ export function CrewRailSection({
           label={t("{p0} options", { p0: menuCrew.name })}
           side="right"
           align="start"
-          width={248}
+          size="sm"
           items={crewItems}
           onPick={pickCrew}
           onClose={() => setMenu((current) => (current?.kind === "crew" ? null : current))}

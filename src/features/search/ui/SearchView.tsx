@@ -684,7 +684,7 @@ export function SearchView({
         }
       >
         {!empty && loading && rowCount === 0 ? (
-          <LoadingText delay={false} className="px-2 py-1.5">
+          <LoadingText delay={false} inset="row">
             {t("Searching…")}
           </LoadingText>
         ) : null}
@@ -695,7 +695,7 @@ export function SearchView({
             <EmptyState
               size="inline"
               kind="filtered"
-              className="px-2 py-1.5"
+              inset="row"
               description={t(indexing ? "No indexed matches yet" : "No results")}
             />
             {indexNotice}

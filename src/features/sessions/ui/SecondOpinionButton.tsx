@@ -59,7 +59,6 @@ type Props = {
   renderTrigger?: (props: ExpandingButtonGroupTriggerProps) => ReactNode;
 };
 
-const MENU_WIDTH = 240;
 const SUBMENU_WIDTH = 240;
 const SUBMENU_MAX_HEIGHT = 288;
 
@@ -343,7 +342,7 @@ export function SecondOpinionButton({
           items={menuItems()}
           side="top"
           align="center"
-          width={MENU_WIDTH}
+          size="sm"
           onPick={pickEncoded}
           onClose={() => setOpen(false)}
         />

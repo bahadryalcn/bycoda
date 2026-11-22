@@ -5,7 +5,8 @@ import {
 } from "../../sessions/public/models";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useId, useState } from "react";
+import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
@@ -76,6 +77,7 @@ export function GoalForm({
 }) {
   useLocale();
   let draft = inputDraft;
+  const formId = useId();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [crewValid, setCrewValid] = useState(true);
   const [workspaceChecks, setWorkspaceChecks] = useState<Record<string, WorkspaceChecks>>({});
@@ -110,6 +112,11 @@ export function GoalForm({
     machine != null &&
     target != null &&
     draft.cwds.every((cwd) => backgroundMachineFor(machines, cwd)?.id === targetId);
+  const invalidReason = !draft.title.trim()
+    ? t("Add a title to continue.")
+    : !draft.prompt.trim()
+      ? t("Add a description to continue.")
+      : t("Check the project, machine and working branch.");
   const executionHint =
     draft.isolate === undefined
       ? undefined
@@ -118,6 +125,7 @@ export function GoalForm({
         : t("Each task runs on its own branch and waits for you to merge it.");
   return (
     <form
+      id={formId}
       aria-label={t("New epic")}
       aria-busy={saving}
       onSubmit={(event) => {
@@ -474,14 +482,23 @@ export function GoalForm({
           </div>
         </FieldGroup>
       </div>
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-form-footer")}>
-        <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
-          {t("Cancel")}
-        </Button>
-        <Button variant="primary" type="submit" loading={saving} disabled={!valid || saving}>
-          {t("Plan it")}
-        </Button>
-      </div>
+      <ModalFooter>
+        <ModalActions reason={valid || saving ? undefined : invalidReason}>
+          <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            type="submit"
+            form={formId}
+            loading={saving}
+            disabled={!valid || saving}
+            disabledReason={valid || saving ? undefined : invalidReason}
+          >
+            {t("Plan it")}
+          </Button>
+        </ModalActions>
+      </ModalFooter>
     </form>
   );
 }

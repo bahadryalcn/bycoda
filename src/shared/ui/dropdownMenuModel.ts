@@ -1,4 +1,5 @@
 import type { ReactNode, RefObject } from "react";
+import type { PopoverSize } from "../lib/popover";
 import type { PopoverAnchor } from "./Popover";
 
 export type DropdownMenuAction = {
@@ -61,8 +62,13 @@ export interface DropdownMenuProps {
   side?: "top" | "bottom" | "left" | "right";
   align?: "start" | "center" | "end";
   /**
-   * Minimum width in px; the menu grows with its longest row up to 800px. `"content"` takes the
-   * trigger's width as the minimum.
+   * Minimum width step, the same `sm | md | lg` rem steps as Popover (15.5, 17.5, 20rem); the menu
+   * grows with its longest row up to 800px. Use this instead of a pixel `width`.
+   */
+  size?: PopoverSize;
+  /**
+   * Exception to `size`: `"content"` takes the trigger's width as the minimum, a number is a
+   * minimum in px. Wins over `size`; the default is 228px.
    */
   width?: number | "content";
   gap?: number;
@@ -78,7 +84,14 @@ export interface DropdownMenuProps {
   closeOnSelect?: boolean;
   /** Adds a filter field. The caller filters `items`; the menu only moves the highlight. */
   search?: DropdownMenuSearch;
-  /** Row to focus (or highlight, with `search`) on open. Defaults to the first enabled row. */
+  /**
+   * How the current row is shown. `focus` (default): the row holds DOM focus. `state`: the row is
+   * highlighted by state (`data-highlighted`, `aria-activedescendant` on the menu) and the arrow,
+   * Home, End, Enter and Space keys are taken at the window, so the trigger (a composer) keeps
+   * focus. A search field already implies `state`.
+   */
+  highlight?: "focus" | "state";
+  /** Row to focus (or highlight, with `search` or `highlight="state"`) on open. Defaults to the first enabled row. */
   initialActiveId?: string;
   /** Do not dismiss on a press matching this selector (a control that owns the menu). */
   ignore?: string;

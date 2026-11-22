@@ -181,7 +181,7 @@ export function ModelOrderRow({
         onRemove={onRemove}
       />
       {invalidMessage ? (
-        <InlineMessage tone="warning" className="w-full ps-6">
+        <InlineMessage tone="warning" className="ms-6">
           {invalidMessage}
         </InlineMessage>
       ) : null}

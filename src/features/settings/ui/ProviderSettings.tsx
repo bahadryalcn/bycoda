@@ -378,7 +378,7 @@ export function ProvidersPage({
         panels="shared"
         size="md"
       >
-        <TabList label={t("Models")} className="provider-tabs" scrollbar="hidden">
+        <TabList label={t("Models")} scrollbar="hidden">
           {tabs.map((item) => (
             <Tab key={item.id} value={item.id} disabled={accountBusy && item.id !== tab}>
               {item.label}
@@ -495,11 +495,11 @@ export function ProvidersPage({
               <div
                 {...surfaceAttributes(
                   { frame: "pane", edge: "responsive-start" },
-                  "provider-cli-detail",
+                  "provider-cli-detail settings-topics",
                 )}
               >
                 {/* Overview stays mounted across tabs so CLI path, ACP and sign-in drafts survive. */}
-                <div className="provider-cli-section">
+                <div className="provider-cli-section settings-topics">
                   {activeProvider ? (
                     <>
                       <ProviderDetailHeader
@@ -542,7 +542,7 @@ export function ProvidersPage({
                   {detailProviders.map((harness) => (
                     <div
                       key={harness}
-                      className="provider-cli-panel"
+                      className="provider-cli-panel settings-topics"
                       hidden={activeProvider !== harness}
                     >
                       <ProviderRuntimeGroup

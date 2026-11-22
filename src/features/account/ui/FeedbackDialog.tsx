@@ -172,7 +172,7 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
       minimalHeader
       onClose={close}
       footer={
-        <ModalActions>
+        <ModalActions reason={length === 0 ? t("Write your feedback to send.") : undefined}>
           <Button variant="ghost" onClick={close}>
             {t("Cancel")}
           </Button>
@@ -182,6 +182,7 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
             form="feedback-form"
             loading={busy}
             disabled={length === 0}
+            disabledReason={length === 0 ? t("Write your feedback to send.") : undefined}
           >
             {t("Send")}
           </Button>

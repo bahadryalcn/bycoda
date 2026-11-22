@@ -141,7 +141,7 @@ export function SessionSubagentsMenu({
           label={t("Session subagents")}
           side="top"
           align="end"
-          width={340}
+          size="lg"
           density="comfortable"
           frosted
           items={items}

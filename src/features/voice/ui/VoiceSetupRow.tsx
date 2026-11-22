@@ -166,8 +166,7 @@ export function VoiceSetupRow({
         >
           <div className={styles.locations}>
             {paths.map(([key, label, id]) => (
-              <div className={styles.fieldRow} key={key}>
-                <Row id={id} label={t(label)}>
+              <Row key={key} id={id} label={t(label)} stacked>
                   <div className={styles.path}>
                     <TextField
                       label={t(label)}
@@ -189,7 +188,6 @@ export function VoiceSetupRow({
                     </Button>
                   </div>
                 </Row>
-              </div>
             ))}
             <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.hint}>
               {t("Leave a location empty to find it automatically.")}

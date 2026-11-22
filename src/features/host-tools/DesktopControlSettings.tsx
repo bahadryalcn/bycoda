@@ -499,12 +499,12 @@ export function DesktopControlSettings({
         embedded ? styles.embeddedError : undefined,
       )}
     >
-      <InlineError>
+      <InlineError details={error.includes("target-elevated") ? undefined : error}>
         {error.includes("target-elevated")
           ? t(
               "bycoda cannot control apps running as administrator. Run the target app without elevation.",
             )
-          : error}
+          : t("Desktop control could not complete this.")}
       </InlineError>
     </div>
   );

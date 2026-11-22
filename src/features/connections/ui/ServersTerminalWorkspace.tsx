@@ -377,7 +377,7 @@ export function ServersTerminalWorkspace({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {proxyApproval.dialog}
         <SshRunbookQueue openRequest={reviewQueueRequest} />
-        {closeError ? <InlineError className="px-3 py-1">{closeError}</InlineError> : null}
+        {closeError ? <InlineError inset="row">{closeError}</InlineError> : null}
         <div
           id="servers-inventory-content"
           tabIndex={-1}

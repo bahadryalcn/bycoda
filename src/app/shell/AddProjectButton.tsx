@@ -35,7 +35,7 @@ export function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void })
           anchor={anchor}
           label={t("Open project")}
           align="start"
-          width={290}
+          size="md"
           returnFocusRef={anchor}
           onClose={() => setOpen(false)}
           onPick={(id) => {

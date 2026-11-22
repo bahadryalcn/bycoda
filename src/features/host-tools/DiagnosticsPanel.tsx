@@ -3,6 +3,7 @@ import { Text } from "../../shared/ui/Text";
 import { LiveText } from "../../shared/ui/LiveText";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { Button } from "../../shared/ui/Button";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
@@ -254,7 +255,7 @@ function ProjectDiagnosticsPanel({
           motion="none"
           variant="ghost"
           iconOnly
-          label={error && !shownCentrally ? t("Retry") : t("Sample now")}
+          label={error && !shownCentrally ? t("Try again") : t("Sample now")}
           loading={busy}
           loadingLabel={t("Measuring…")}
           disabled={busy}
@@ -287,7 +288,13 @@ function ProjectDiagnosticsPanel({
           </p>
         </InfoPopover>
       </header>
-      {error && !shownCentrally ? <Alert tone="danger">{error}</Alert> : null}
+      {error && !shownCentrally ? (
+        <Alert
+          tone="danger"
+          title={t("Could not measure resource usage.")}
+          extra={<ErrorDetails title={t("Could not measure resource usage.")} detail={error} />}
+        />
+      ) : null}
       {!sample && !busy && !error ? (
         <EmptyState
           description={t("Take a sample to start the charts.")}

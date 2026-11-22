@@ -119,8 +119,7 @@ function ServerSnippetsForm({
                 <li key={snippet.id}>
                   <Button
                     variant="item"
-                    selected={selected?.id === snippet.id}
-                    aria-pressed={selected?.id === snippet.id}
+                    pressed={selected?.id === snippet.id}
                     onClick={() => {
                       setSelected(snippet);
                       setName(snippet.name);

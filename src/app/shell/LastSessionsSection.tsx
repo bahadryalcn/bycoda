@@ -273,7 +273,7 @@ function CountPicker({
           anchor={anchor}
           label={t("Sessions shown")}
           returnFocusRef={anchor}
-          width={180}
+          size="sm"
           align="end"
           onClose={() => setOpen(false)}
           onPick={(id) => onChange(Number(id) as RecentSessionsPrefs["count"])}

@@ -154,7 +154,6 @@ export function AccountSupport() {
             {t("Send to support")}
           </Button>
         }
-        descriptionVisible
         description={t(
           "Nothing from your sessions, code, logs or file paths is attached automatically. Do not paste passwords, tokens or other secrets.",
         )}

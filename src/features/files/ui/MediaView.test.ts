@@ -72,7 +72,7 @@ it("exposes codec errors and retry instead of a blank player", async () => {
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("could not be played");
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Retry")!
+      .find((button) => button.textContent === "Try again")!
       .click(),
   );
   expect(mocks.prepare).toHaveBeenCalledTimes(2);

@@ -226,6 +226,7 @@ export function ProviderDefaultsForm({
           ) : null}
           {current ? (
             <Row
+              controlWidth="wide"
               label={t("Model")}
               description={
                 inherits
@@ -272,6 +273,7 @@ export function ProviderDefaultsForm({
           )}
           {effort ? (
             <Row
+              controlWidth="wide"
               label={t("Effort")}
               modified={Boolean(scopeDefaults.effort)}
               onReset={() => onSessionDefaultsChange({ ...scopeDefaults, effort: undefined })}
@@ -292,6 +294,7 @@ export function ProviderDefaultsForm({
             </Row>
           ) : null}
           <Row
+            controlWidth="wide"
             label={t("Permissions")}
             modified={Boolean(scopeDefaults.runtimeMode)}
             onReset={() => onSessionDefaultsChange({ ...scopeDefaults, runtimeMode: undefined })}

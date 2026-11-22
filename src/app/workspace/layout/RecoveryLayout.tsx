@@ -31,7 +31,7 @@ export function RecoveryTabs({
 }) {
   return (
     <Tabs value={value} onValueChange={onChange} id={idPrefix}>
-      <TabList label={label} className="recovery-tabs">
+      <TabList label={label} scroll="wrap" inset="sm" className="shrink-0">
         {tabs.map((tab) => (
           <Tab
             key={tab.value}

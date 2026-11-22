@@ -2,13 +2,22 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { optionalTextAttributes, type TextRoles } from "./Text";
 import { useT } from "../i18n";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "./ErrorDetails";
-import { NoticeGlyph, NoticeLink, type NoticeAction, type NoticeTone } from "./Notice";
+import {
+  NoticeGlyph,
+  NoticeLink,
+  stateInsetClass,
+  type NoticeAction,
+  type NoticeTone,
+  type StateInset,
+} from "./Notice";
 import { useConnectionErrorShownCentrally } from "./connectionErrorGate";
 
 export type InlineMessageTone = NoticeTone;
 
 export type InlineMessageProps = Omit<ComponentPropsWithoutRef<"div">, "role" | "children"> & {
   tone?: InlineMessageTone;
+  /** Inner spacing on the Surface padding scale: `none` (default; the row or form owns it), `row` (8/12), `panel` (12/16). */
+  inset?: StateInset;
   /** The message sits on the dark overlay scrim (an image lightbox): copy and glyph use `--ui-overlay-ink`, readable in every theme. */
   overlay?: boolean;
   /** Copy typography; unset preserves hierarchy and semantic ink. */
@@ -43,7 +52,7 @@ const INK: Record<InlineMessageTone, string> = {
 
 /**
  * One-line field, row or form message: neutral caption copy, a toned 14px glyph centred on the first
- * line, and structured `retry`, `action` and `secondaryAction` text links after the copy. `live` picks
+ * line, and structured `retry`, `action` and `secondaryAction` text links after the copy. `inset` sets inner spacing. `live` picks
  * `role="alert"` (danger default), `status` (other tones) or none. `overlay` re-inks copy and glyph for the dark overlay scrim.
  * @group feedback
  * @use A short success, warning, info or neutral note under a field, in a row or in a form.
@@ -52,6 +61,7 @@ const INK: Record<InlineMessageTone, string> = {
  */
 export function InlineMessage({
   tone = "info",
+  inset,
   overlay,
   text,
   live,
@@ -74,6 +84,7 @@ export function InlineMessage({
       className={[
         "flex min-w-0 items-start gap-1.5 font-sans text-ui-caption",
         overlay ? "text-(--ui-overlay-ink)" : INK[tone],
+        stateInsetClass(inset),
         className,
       ]
         .filter(Boolean)

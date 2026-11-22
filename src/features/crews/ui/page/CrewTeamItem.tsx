@@ -138,7 +138,7 @@ export function CrewTeamItem({
         <DropdownMenu
           anchor={trigger}
           label={t("{p0} options", { p0: crew.name })}
-          width={248}
+          size="sm"
           items={crewMenuItems(crew, { single, canOpenCoordinator, deleteSupported })}
           onPick={(id) => onPick(id, single)}
           onClose={() => setMenuOpen(false)}

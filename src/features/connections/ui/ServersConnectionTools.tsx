@@ -131,7 +131,7 @@ export function ServersConnectionTools({
               </Button>
             </div>
           ) : null}
-          <TabList label={t("Server tools")} className="flex-wrap gap-y-1">
+          <TabList label={t("Server tools")} scroll="wrap">
             {panels.map((item) => (
               <Tab key={item.value} value={item.value} className="shrink-0">
                 {item.label}

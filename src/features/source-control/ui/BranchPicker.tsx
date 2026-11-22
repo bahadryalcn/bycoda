@@ -34,6 +34,7 @@ import {
 } from "../../../shared/ui/picker";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
+import { checkoutBlockedFiles } from "../model/checkoutBlockedFiles";
 
 type Props = {
   cwd: string;
@@ -59,8 +60,6 @@ export type CheckoutChoice = {
 };
 
 type Tab = "branches" | "checkouts";
-
-const MENU_WIDTH = 280;
 
 type CreateRow = { kind: "create"; name: string };
 type BranchRow = { kind: "branch"; branch: GitBranchInfo };
@@ -122,6 +121,7 @@ export function BranchPicker({
   const [fetching, setFetching] = useState(false);
   const [checkoutBusy] = useGitPanelState(cwd, "busy");
   const [error, setError] = useState<string | null>(null);
+  const [blockedFiles, setBlockedFiles] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [creatingFrom, setCreatingFrom] = useState(false);
   const [blocked, setBlocked] = useState<PendingSwitch | null>(null);
@@ -247,6 +247,7 @@ export function BranchPicker({
         setBusy(false);
         setBlockedError(null);
         setBlockedBusy(null);
+        setBlockedFiles(checkoutBlockedFiles(message));
         setBlocked(pending);
         return;
       }
@@ -386,6 +387,7 @@ export function BranchPicker({
           creating={blocked.kind === "create"}
           busy={blockedBusy}
           error={blockedError}
+          files={blockedFiles}
           onStash={() => {
             void resolveBlocked("stash", () =>
               gitStash(cwd, `WIP before switching to ${blocked.name}`),
@@ -428,7 +430,7 @@ export function BranchPicker({
           open
           anchor={root}
           side={popoverSide}
-          width={MENU_WIDTH}
+          size="md"
           minHeight={MENU_MIN_HEIGHT}
           maxHeight={MENU_MAX_HEIGHT}
           onDismiss={(reason) => dismiss(reason === "escape")}

@@ -404,12 +404,12 @@ it("keeps the last list and selection visible when refresh fails and allows retr
   await click("Home Mac");
   fixture.error = "database unavailable";
   await render();
-  expect(document.body.querySelector('[role="status"]')?.textContent).toContain(
+  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
     "Showing last loaded data",
   );
   expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
   expect(document.body.querySelector('[aria-label="Server details"]')).toBeTruthy();
-  await click("Retry");
+  await click("Try again");
   expect(fixture.refresh).toHaveBeenCalledOnce();
 });
 
@@ -423,7 +423,7 @@ it("separates initial loading and load failure from an empty successful inventor
   expect(document.body.textContent).not.toContain("No machines connected.");
   Object.assign(fixture, { loading: false, error: "unavailable" });
   await render();
-  expect(document.body.querySelector('[role="status"]')?.textContent).toContain(
+  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
     "Couldn’t load servers",
   );
   expect(document.body.textContent).not.toContain("No machines connected.");

@@ -103,6 +103,7 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
         <ThemePreview appearance={appearance} />
         <Row
           stacked
+          density="compact"
           label={t("Surfaces")}
           description={t("The four steps the tint produces, from the canvas up to a selected row.")}
         >

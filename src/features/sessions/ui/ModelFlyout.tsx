@@ -12,7 +12,6 @@ import { Popover } from "../../../shared/ui/Popover";
 import { ModelExtrasPanel, useModelExtrasSummary } from "./ModelExtras";
 import { ModelBrowser, type ModelBrowserProps } from "./ModelBrowser";
 
-const MODEL_MENU_WIDTH = 310;
 const SUBMENU_OVERLAP = -4;
 const PROVIDER_TAB_SIZE = 32;
 const PROVIDER_TAB_GAP = 4;
@@ -55,7 +54,7 @@ export function ModelFlyout({
       anchor={anchor}
       side={side}
       gap={side === "right" ? SUBMENU_OVERLAP : undefined}
-      width={MODEL_MENU_WIDTH}
+      size="lg"
       maxHeight={menuHeight + 2}
       layer={LAYER.submenu}
       role="dialog"

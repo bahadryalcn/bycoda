@@ -1133,13 +1133,13 @@ describe("model picker", () => {
     // The composer can retain focus after opening its toolbar menu. Recent
     // model navigation still needs to own these keys in that state.
     trigger.focus();
-    expect(grokModel.dataset.active).toBe("true");
+    expect(grokModel.dataset.highlighted).toBe("true");
     await keyDown(trigger, "ArrowUp");
-    expect(claudeModel.dataset.active).toBe("true");
+    expect(claudeModel.dataset.highlighted).toBe("true");
     await keyDown(trigger, "ArrowDown");
-    expect(grokModel.dataset.active).toBe("true");
+    expect(grokModel.dataset.highlighted).toBe("true");
     await keyDown(trigger, "ArrowDown");
-    expect(cursorModel.dataset.active).toBe("true");
+    expect(cursorModel.dataset.highlighted).toBe("true");
 
     await keyDown(trigger, "Enter");
     expect(onChange).toHaveBeenCalledWith("cursor", "cursor:composer-2.5");

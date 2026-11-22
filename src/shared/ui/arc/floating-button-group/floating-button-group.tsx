@@ -402,7 +402,7 @@ export function FloatingButtonGroup({
         motion="none"
         tone={tone}
         loading={loading}
-        selected={pressed}
+        pressed={pressed}
         selectionIndicator={selectionIndicator}
         iconOnly={iconOnly}
         label={name}
@@ -419,7 +419,6 @@ export function FloatingButtonGroup({
         aria-label={name}
         aria-haspopup={trigger?.["aria-haspopup"]}
         aria-expanded={trigger?.["aria-expanded"]}
-        aria-pressed={pressed === undefined ? undefined : pressed}
         aria-disabled={disabled || loading || undefined}
         tabIndex={stop === id ? 0 : -1}
         onPointerMove={(event) => {

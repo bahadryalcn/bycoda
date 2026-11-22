@@ -1085,7 +1085,7 @@ export function JiraBoardView({
           size="inline"
           kind="empty"
           description={t("No Jira boards found")}
-          className="px-3"
+          inset="row"
         />
       ) : null}
       {!loading && board?.kind === "scrum" && configuration?.sprints.length === 0 ? (
@@ -1093,7 +1093,7 @@ export function JiraBoardView({
           size="inline"
           kind="empty"
           description={t("No active or future sprints on this board.")}
-          className="px-3"
+          inset="row"
         />
       ) : null}
       {mode === "kanban" ? (
@@ -1138,7 +1138,7 @@ export function JiraBoardView({
                     size="inline"
                     kind="empty"
                     description={t("No statuses mapped to this column.")}
-                    className="px-1"
+                    inset="row"
                   />
                 ) : null}
                 {issueList(group, issues, column)}
@@ -1152,7 +1152,7 @@ export function JiraBoardView({
                     size="inline"
                     kind={search.trim() || group.token ? "filtered" : "empty"}
                     description={search.trim() ? t("No matches") : t("No issues")}
-                    className="px-1"
+                    inset="row"
                   />
                 ) : null}
               </section>
@@ -1264,7 +1264,7 @@ export function JiraBoardView({
                           size="inline"
                           kind={search.trim() || group.token ? "filtered" : "empty"}
                           description={search.trim() ? t("No matches") : t("Drop issues here")}
-                          className="px-1"
+                          inset="row"
                         />
                       ) : null}
                     </div>

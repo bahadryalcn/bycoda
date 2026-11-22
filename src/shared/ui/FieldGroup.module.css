@@ -16,7 +16,7 @@
   padding: 0;
   border: 0;
 }
-/* Same role as the Field label, so a group title and a field label always match. */
+/* Group title role: one weight step above the Field label (a label names one control, a legend a set). */
 .legend {
   float: none;
   display: flex;
@@ -25,8 +25,8 @@
   padding: 0;
   margin-block-end: var(--space-2);
   color: var(--foreground);
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
+  font-size: var(--ui-font-secondary);
+  font-weight: var(--ui-weight-group-title);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }

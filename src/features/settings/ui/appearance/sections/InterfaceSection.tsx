@@ -12,7 +12,7 @@ export function InterfaceSection({ appearance }: { appearance: AppearanceSetting
   useLocale();
   return (
     <AppearanceSection id="reading" title={t("Interface")}>
-      <div className="interface-grid">
+      <div className="settings-topics">
         <InterfaceSizeGroup appearance={appearance} />
         <InterfaceReadabilityGroup appearance={appearance} />
         <ChatMessageAppearanceGroup appearance={appearance} />

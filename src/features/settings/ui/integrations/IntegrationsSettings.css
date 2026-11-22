@@ -44,21 +44,13 @@
   min-inline-size: 0;
 }
 /* Save/cancel sit directly in the group frame; align them with the rows above. */
-.settings-group-content > .integration-actions {
-  padding: 10px 16px;
+.integration-actions-bar {
+  padding: var(--ui-row-inset-block) var(--ui-row-inset-inline);
 }
-/* A stacked row lays its control out as a wrapping flex row: lists, code and actions each take a
-   full line instead of sitting beside one another. */
-.integrations-settings
-  .settings-row-control
-  > :is(.settings-collection, .integration-actions, .integration-code) {
+/* Inside a stacked row (a wrapping flex control) actions and code take a full line. */
+.integration-actions,
+.integration-code {
   flex-basis: 100%;
-}
-
-/* Nine providers do not fit one strip in a narrow window; wrap so the selected tab stays visible. */
-.integrations-settings .inbox-provider-tabs {
-  flex-wrap: wrap;
-  overflow-x: visible;
 }
 
 .integration-device {

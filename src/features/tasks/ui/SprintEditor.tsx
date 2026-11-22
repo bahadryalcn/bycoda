@@ -66,7 +66,13 @@ export function SprintEditor({
       fitViewport
       closeDisabled={busy}
       footer={
-        <ModalActions>
+        <ModalActions
+          reason={
+            !name.trim() || !selected.length
+              ? t("Enter a sprint name and choose at least one project.")
+              : undefined
+          }
+        >
           <Button variant="ghost" type="button" disabled={busy} onClick={onClose}>
             {t("Cancel")}
           </Button>

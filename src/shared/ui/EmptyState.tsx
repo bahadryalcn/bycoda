@@ -3,7 +3,14 @@ import {
   EmptyState as ArcEmptyState,
   type EmptyStateProps as ArcEmptyStateProps,
 } from "./arc/empty-state/empty-state";
-import { NoticeButton, NoticeGlyph, NoticeLink, type NoticeAction } from "./Notice";
+import {
+  NoticeButton,
+  NoticeGlyph,
+  NoticeLink,
+  stateInsetClass,
+  type NoticeAction,
+  type StateInset,
+} from "./Notice";
 import { optionalTextAttributes } from "./Text";
 import { Search } from "./icons";
 import { useT } from "../i18n";
@@ -27,6 +34,11 @@ export type SharedEmptyStateProps = Omit<ArcEmptyStateProps, "action" | "help"> 
    * unless `icon` is passed, no motion. Replaces a bare `<p>No …</p>`.
    */
   size?: "block" | "inline";
+  /**
+   * Inner spacing on the Surface padding scale: `none` (default; the container owns it, the block
+   * keeps its `context` padding), `row` (8/12, inside a list row or form), `panel` (12/16).
+   */
+  inset?: StateInset;
   /** Distinguishes no data from a filter with no match for assistive tech and styling. */
   kind?: EmptyStateKind;
   /** The one next step, rendered by the component (secondary button in a block, text link inline). */
@@ -84,6 +96,7 @@ function useSteps({
 /** The compact row: caption copy and link-style recovery on one line, wrapping when narrow. */
 function InlineEmptyState({
   className,
+  inset,
   kind,
   steps,
   extra,
@@ -116,6 +129,7 @@ function InlineEmptyState({
       data-size="inline"
       className={[
         "flex min-w-0 items-start gap-1.5 text-ui-caption text-(--ui-text-secondary)",
+        stateInsetClass(inset),
         className,
       ]
         .filter(Boolean)
@@ -141,7 +155,8 @@ function InlineEmptyState({
  * Block (page, panel or list `context`) or inline caption row explaining why nothing is shown:
  * title, one sentence and the next step (`action`, `secondaryAction`, `onReset` for a filter,
  * `onRetry`). A titled state keeps its sentence behind the info affordance unless `showDescription`
- * (or a `filtered` kind) says it states scope or consequence. `kind` sets the glyph and live role.
+ * (or a `filtered` kind) says it states scope or consequence. `kind` sets the glyph and live role; no
+ * glyph is drawn unless `icon` is passed (a filtered state gets the search glyph). `inset` sets inner spacing.
  * @group feedback
  * @use A list, panel or picker with no data or no filter matches. `size="inline"` replaces a bare "No ..." paragraph.
  * @avoid Loading: LoadingText or Skeleton. Unavailable or failed region: FailureState. Inline failure: InlineError. A one-line field or row message: InlineMessage. Boxed notice with a title: Alert. Never a Button in `action`.
@@ -151,6 +166,7 @@ function InlineEmptyState({
 export function EmptyState({
   className,
   size = "block",
+  inset,
   kind,
   action,
   secondaryAction,
@@ -181,6 +197,7 @@ export function EmptyState({
       <InlineEmptyState
         {...props}
         className={className}
+        inset={inset}
         kind={kind}
         steps={steps}
         extra={extra}
@@ -215,7 +232,7 @@ export function EmptyState({
       role={role ?? impliedRole(kind)}
       action={actions}
       data-kind={kind}
-      className={["bycoda-arc", className].filter(Boolean).join(" ")}
+      className={["bycoda-arc", stateInsetClass(inset), className].filter(Boolean).join(" ")}
     />
   );
 }

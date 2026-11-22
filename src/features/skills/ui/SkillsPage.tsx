@@ -1141,7 +1141,7 @@ export function SkillsPage({
               ) : null}
               {machines.length ? (
                 <Tabs value={detailTab} onValueChange={setDetailTab} panels="none">
-                  <TabList label={t("Skill details")} className={styles.detailTabs}>
+                  <TabList label={t("Skill details")} inset="sm">
                     <Tab value="document">SKILL.md</Tab>
                     <Tab value="machines">{t("Machines")}</Tab>
                   </TabList>

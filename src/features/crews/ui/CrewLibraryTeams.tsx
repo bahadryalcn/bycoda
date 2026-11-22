@@ -97,7 +97,7 @@ export function CrewMemberTeamMenu({
         <DropdownMenu
           anchor={trigger}
           label={t("Teams of {p0}", { p0: agent.name })}
-          width={260}
+          size="md"
           items={[
             {
               kind: "group",
@@ -182,7 +182,7 @@ export function CrewBulkTeamAdd({
         <DropdownMenu
           anchor={trigger}
           label={t("Add to team")}
-          width={260}
+          size="md"
           items={definitions.map((team) => teamItem("add", team, undefined))}
           onPick={(id) => {
             const team = definitions.find((item) => `add:${item.id}` === id);

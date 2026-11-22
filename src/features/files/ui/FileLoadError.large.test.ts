@@ -58,7 +58,7 @@ it("pages a too-large remote file read-only instead of showing an error", async 
   expect(view.host.textContent).toContain("first page");
   expect(view.host.textContent).toContain("Read-only preview, too large to edit");
   expect(view.buttons()).toContain("Next");
-  expect(view.buttons()).not.toContain("Retry");
+  expect(view.buttons()).not.toContain("Try again");
   await view.unmount();
 });
 
@@ -67,11 +67,11 @@ it("offers Retry after a sustained transport failure while reading a page", asyn
   readTextFileSlice.mockRejectedValue(new Error("connection reset"));
   const view = await mount(REMOTE, TOO_LARGE);
   await act(async () => {});
-  expect(view.buttons()).not.toContain("Retry");
+  expect(view.buttons()).not.toContain("Try again");
   await act(async () => vi.advanceTimersByTimeAsync(2_000));
   expect(readTextFileSlice).toHaveBeenCalledTimes(2);
   await act(async () => vi.advanceTimersByTimeAsync(1_000));
-  expect(view.buttons()).toContain("Retry");
+  expect(view.buttons()).toContain("Try again");
   expect(view.host.textContent).toContain("Waiting for the connection");
   await view.unmount();
 });
@@ -81,7 +81,7 @@ it("hides the useless Retry when the machine cannot serve paged reads", async ()
   readTextFileSlice.mockRejectedValue(new Error("outdated host"));
   const view = await mount(REMOTE, TOO_LARGE);
   await vi.waitFor(() => expect(view.host.textContent).toContain("outdated host"));
-  expect(view.buttons()).not.toContain("Retry");
+  expect(view.buttons()).not.toContain("Try again");
   expect(view.buttons()).toContain("Copy path");
   await view.unmount();
 });

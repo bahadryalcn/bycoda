@@ -777,8 +777,7 @@ function ScopedRuntimeLogsPanel({
             variant="ghost"
             iconOnly
             type="button"
-            aria-pressed={follow}
-            selected={follow}
+            pressed={follow}
             onClick={() => setFollow(!follow)}
             label={t("Follow latest")}
           >

@@ -28,16 +28,8 @@
   gap: 0.75rem;
 }
 
-.theme-detail-preview > .settings-row {
-  padding: 0;
-}
-
 .theme-detail-preview .tone-ramp {
   max-inline-size: none;
-}
-
-.theme-detail-preview .settings-row-control {
-  inline-size: 100%;
 }
 
 .theme-detail-preview .theme-preview {

@@ -103,7 +103,6 @@ type Props = {
   appearanceItems?: Pick<TabGroupMenuExtraItem, "id" | "label" | "icon" | "disabled" | "danger">[];
 };
 
-const MENU_WIDTH = 260;
 const APPEARANCE_WIDTH = 296;
 
 type MenuItem = {
@@ -454,7 +453,7 @@ export function TabGroupMenu({
       side="right"
       align="start"
       gap={0}
-      width={MENU_WIDTH}
+      size="md"
       label={ariaLabel}
       items={items}
       // Standard actions are closed by the caller; extras close unless onExtraPick vetoes.

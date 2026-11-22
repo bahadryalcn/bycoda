@@ -1,11 +1,10 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import type { BoardGoal } from "../model/goalClient";
 import type { GoalSettings } from "../model/hostGoals";
@@ -32,6 +31,7 @@ function GoalSettingsForm({
   onError: (reason: unknown) => void;
 }) {
   useLocale();
+  const formId = useId();
   const [settings, setSettings] = useState<GoalSettings>(() => ({
     budget: goal.budget,
     autoMerge: Boolean(goal.autoMerge),
@@ -51,6 +51,7 @@ function GoalSettingsForm({
       as="form"
       size="secondary"
       tone="inherit"
+      id={formId}
       aria-label={t("Edit epic settings")}
       className="task-form"
       onSubmit={(event) => {
@@ -128,14 +129,23 @@ function GoalSettingsForm({
           </Alert>
         ) : null}
       </div>
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-form-footer")}>
-        <Button variant="ghost" disabled={saving} onClick={onCancel}>
-          {t("Cancel")}
-        </Button>
-        <Button variant="primary" type="submit" loading={saving} disabled={!valid}>
-          {t("Save")}
-        </Button>
-      </div>
+      <ModalFooter>
+        <ModalActions reason={valid ? undefined : t("Enter a run limit between 0 and 10080 minutes.")}>
+          <Button variant="ghost" disabled={saving} onClick={onCancel}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            type="submit"
+            form={formId}
+            loading={saving}
+            disabled={!valid}
+            disabledReason={valid ? undefined : t("Enter a run limit between 0 and 10080 minutes.")}
+          >
+            {t("Save")}
+          </Button>
+        </ModalActions>
+      </ModalFooter>
     </Text>
   );
 }

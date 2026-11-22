@@ -504,8 +504,7 @@ export function GitGraphWorkspace({
               variant="item"
               motion="none"
               type="button"
-              aria-pressed={!commit}
-              selected={false}
+              pressed={!commit}
               onClick={() => onCommit(null)}
               {...surfaceAttributes(
                 { radius: "none" },

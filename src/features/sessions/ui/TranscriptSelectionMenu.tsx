@@ -473,7 +473,7 @@ export function TranscriptSelectionMenu({
         />
         {items.map(({ id }) =>
           errors[id] ? (
-            <InlineError key={id} className="px-2 py-1">
+            <InlineError key={id} inset="row">
               {id === "notes" ? t("Could not save note. ") : t("Could not complete this action. ")}
               {errors[id]}
             </InlineError>

@@ -41,10 +41,10 @@ export function GitCommitBlameView({
         />
       ) : null}
       {resource.loading && !resource.data ? (
-        <LoadingText className="px-3 py-2">{t("Loading…")}</LoadingText>
+        <LoadingText inset="row">{t("Loading…")}</LoadingText>
       ) : null}
       {!sha ? (
-        <EmptyState size="inline" className="px-3" description={t("No commits yet")} />
+        <EmptyState size="inline" inset="row" description={t("No commits yet")} />
       ) : null}
       <Text
         as="div"

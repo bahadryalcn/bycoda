@@ -4,6 +4,8 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails, errorHeadline, fitsOneLine } from "../../../shared/ui/ErrorDetails";
+import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { WandSparkles, X } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState } from "react";
@@ -18,6 +20,8 @@ type Props = {
   creating?: boolean;
   busy: Busy;
   error?: string | null;
+  /** Files git says the switch would overwrite; empty when it named none. */
+  files?: readonly string[];
   onStash: () => void;
   onCommit: (message: string) => void;
   onCancel: () => void;
@@ -29,6 +33,7 @@ export function SwitchBranchDialog({
   creating = false,
   busy,
   error,
+  files = [],
   onStash,
   onCommit,
   onCancel,
@@ -139,6 +144,26 @@ export function SwitchBranchDialog({
       }
     >
       <div aria-busy={Boolean(busy) || generating} className="flex flex-col gap-3">
+        {files.length > 0 ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            <Text size="caption" tone="secondary">
+              {t("Files in the way")}
+            </Text>
+            <Text
+              as="div"
+              size="micro"
+              tone="muted"
+              leading="tight"
+              className="max-h-32 overflow-y-auto"
+            >
+              {files.map((file) => (
+                <p key={file} className="font-mono break-all">
+                  {file}
+                </p>
+              ))}
+            </Text>
+          </div>
+        ) : null}
         <div className="flex min-w-0 flex-col gap-1">
           <TextareaField
             hideLabel
@@ -184,8 +209,20 @@ export function SwitchBranchDialog({
           </div>
         </div>
 
-        {generateError ? <Alert tone="danger">{generateError}</Alert> : null}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {generateError ? (
+          <Alert tone="danger" title={t("Couldn’t generate a commit message")}>
+            {generateError}
+          </Alert>
+        ) : null}
+        {error ? (
+          <Alert
+            tone="danger"
+            title={t("Couldn’t switch to “{p0}”", { p0: branch })}
+            extra={fitsOneLine(error) ? undefined : <ErrorDetails detail={error} />}
+          >
+            {fitsOneLine(error) ? error : errorHeadline(error)}
+          </Alert>
+        ) : null}
       </div>
     </Modal>
   );

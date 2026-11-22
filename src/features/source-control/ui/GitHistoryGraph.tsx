@@ -295,7 +295,7 @@ export function GitHistoryGraph({
         <EmptyState
           size="inline"
           kind="empty"
-          className="px-3"
+          inset="row"
           description={t("No project folder")}
         />
       ) : commits.length === 0 ? (
@@ -305,7 +305,7 @@ export function GitHistoryGraph({
           <EmptyState
             size="inline"
             kind="empty"
-            className="px-3"
+            inset="row"
             description={t("No commits yet")}
           />
         )
@@ -313,7 +313,7 @@ export function GitHistoryGraph({
         <EmptyState
           size="inline"
           kind="filtered"
-          className="px-3"
+          inset="row"
           description={
             <>
               {t("No matching commits in the ")}

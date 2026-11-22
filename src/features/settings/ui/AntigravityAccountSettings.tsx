@@ -4,6 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { RevealedSetting, SettingsFeedback } from "../../../shared/ui/settings";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useContext, useRef, useState, useSyncExternalStore } from "react";
@@ -68,11 +69,47 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       tone="secondary"
       className={`space-y-3 ${embedded ? "" : "px-4 py-4"}`}
     >
-      <p>
-        {available
-          ? t("Antigravity is installed.")
-          : t("Install Antigravity CLI on the computer running your sessions.")}
-      </p>
+      <div className="flex items-center gap-1">
+        <p>
+          {available
+            ? t("Antigravity is installed.")
+            : t("Install Antigravity CLI on the computer running your sessions.")}
+        </p>
+        <InfoPopover className="shrink-0" width={360}>
+          <p>
+            {t("Run ")}
+            <Code tone="primary" className="select-text">
+              {"agy"}
+            </Code>
+            {t(
+              " in a terminal on that computer and complete Google sign-in in your browser. Then check again here. Installation and model discovery do not confirm account sign-in.",
+            )}
+          </p>
+          <p>
+            {PRODUCT_IDENTITY.displayName}
+            {t(
+              " uses the shared Antigravity CLI account on this computer. Separate named Antigravity accounts cannot currently be added here. To change the shared account, run ",
+            )}
+            <Code>{"/logout"}</Code>
+            {t(
+              " inside agy and complete sign-in again. This affects other Antigravity sessions on the same computer.",
+            )}
+          </p>
+          <p>
+            {t("For a Gemini API key, set ")}
+            <Code>{"modelProvider"}</Code>
+            {t(" to")} <Code>{"gemini"}</Code>
+            {t(" in")} <Code>{"~/.gemini/antigravity-cli/settings.json"}</Code>
+            {t(" and provide")} <Code>{"GEMINI_API_KEY"}</Code>
+            {t(" in the CLI environment.")}
+          </p>
+          <p>
+            {t(
+              "Gemini CLI remains available for enterprise Gemini Code Assist licenses and supported API keys. Existing Gemini sessions and CLI paths are preserved.",
+            )}
+          </p>
+        </InfoPopover>
+      </div>
       {!available && (
         <>
           <p>{t("Windows (PowerShell)")}</p>
@@ -85,38 +122,6 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
           </Code>
         </>
       )}
-      <p>
-        {t("Run ")}
-        <Code tone="primary" className="select-text">
-          {"agy"}
-        </Code>
-        {t(
-          " in a terminal on that computer and complete Google sign-in in your browser. Then check again here. Installation and model discovery do not confirm account sign-in.",
-        )}
-      </p>
-      <p>
-        {PRODUCT_IDENTITY.displayName}
-        {t(
-          " uses the shared Antigravity CLI account on this computer. Separate named Antigravity accounts cannot currently be added here. To change the shared account, run ",
-        )}
-        <Code>{"/logout"}</Code>
-        {t(
-          " inside agy and complete sign-in again. This affects other Antigravity sessions on the same computer.",
-        )}
-      </p>
-      <p>
-        {t("For a Gemini API key, set ")}
-        <Code>{"modelProvider"}</Code>
-        {t(" to")} <Code>{"gemini"}</Code>
-        {t(" in")} <Code>{"~/.gemini/antigravity-cli/settings.json"}</Code>
-        {t(" and provide")} <Code>{"GEMINI_API_KEY"}</Code>
-        {t(" in the CLI environment.")}
-      </p>
-      <p>
-        {t(
-          "Gemini CLI remains available for enterprise Gemini Code Assist licenses and supported API keys. Existing Gemini sessions and CLI paths are preserved.",
-        )}
-      </p>
       <Button className="shrink-0" loading={checking} onClick={() => void checkInstallation()}>
         {checking ? t("Checking…") : t("Check installation and models")}
       </Button>

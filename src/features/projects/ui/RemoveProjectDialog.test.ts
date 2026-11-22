@@ -145,6 +145,9 @@ it("blocks deletion when the conversation count failed and offers a read retry",
       Array.from(document.querySelectorAll("button")).find((item) => item.textContent === label)!;
     expect(button("Delete").disabled).toBe(true);
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t count the saved sessions",
+    );
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "Cannot read conversations",
     );
     await act(async () => button("Try again").click());

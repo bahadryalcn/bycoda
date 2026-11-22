@@ -317,9 +317,11 @@ export function AssistantView(props: AssistantViewProps) {
               </Button>
             </div>
           )}
-        {readError && (
+        {/* Without a snapshot the failure panel below owns the message and the one Try again. */}
+        {readError && snapshot && (
           <InlineError
             className={shell.notice}
+            details={readError}
             retry={{
               onRetry: () => {
                 void refresh();
@@ -329,12 +331,16 @@ export function AssistantView(props: AssistantViewProps) {
               pending: loading,
             }}
           >
-            {readError}
+            {t("Could not refresh the assistant room.")}
           </InlineError>
         )}
-        {projectReadError && !sameReadError && (
-          <InlineError className={shell.notice} retry={{ onRetry: () => void readProjects() }}>
-            {t(projectReadError)}
+        {projectReadError && !sameReadError && snapshot && (
+          <InlineError
+            className={shell.notice}
+            details={projectReadError}
+            retry={{ onRetry: () => void readProjects() }}
+          >
+            {t("Could not load the project list.")}
           </InlineError>
         )}
         {error?.key.startsWith("navigation:") && (
@@ -349,7 +355,13 @@ export function AssistantView(props: AssistantViewProps) {
             <FailureState
               context="panel"
               className={shell.empty}
+              title={t("Could not open the assistant room")}
               description={t("Connect to the local Host to open this room.")}
+              error={readError || undefined}
+              onRetry={() => {
+                void refresh();
+                if (projectReadError) void readProjects();
+              }}
             />
           )
         ) : !snapshot.profile.setupComplete ? (

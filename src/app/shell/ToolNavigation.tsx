@@ -233,7 +233,7 @@ export function ToolNavigation() {
           navigation.onSelect(tool);
         }}
       >
-        <TabList className="tool-tabs" label={t("Workspace tools")}>
+        <TabList className="tool-tabs" scroll="auto" label={t("Workspace tools")}>
           {tools.map((tool) => {
             const Icon = icons[tool];
             return (

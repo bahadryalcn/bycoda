@@ -1,20 +1,16 @@
-import { MenuRow } from "../../../shared/ui/MenuRow";
 import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { TogglePill } from "./ModelExtras";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { usePointerMovement } from "../../../shared/ui/picker/usePointerMovement";
 import { Button } from "../../../shared/ui/Button";
 import { SelectTrigger } from "../../../shared/ui/Select";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { formatShortcutWith, usePlatform } from "../../../shared/ui/shortcut";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { clampActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Check, Gauge, Zap } from "../../../shared/ui/icons";
 import {
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -55,7 +51,8 @@ import { delegationNextValue, isDelegationSetting } from "../model/crossDelegati
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
 import { ModelPanel } from "./ModelPanel";
-import { Popover, popupListClassName } from "../../../shared/ui/Popover";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import type { DropdownMenuItem } from "../../../shared/ui/dropdownMenuModel";
 import { COMPOSER_PICKER_SELECTOR } from "../model/composerPickerSelector";
 import { keybindingPressed } from "../../settings/public/settings";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
@@ -155,8 +152,7 @@ type Props = {
   onSettingsChange: (settings: Record<string, string>) => void;
   onClose?: () => void;
 };
-type RecentMenu = { models: AccountModelChoice[] };
-const MENU_WIDTH = 250;
+type RecentMenu = { models: AccountModelChoice[]; initialId?: string };
 /** Keyboard chord on the model button that opens the recent-models quick switch. */
 const RECENT_MODELS_SHORTCUT = "alt+down";
 /** Account the provider tab `target` runs on: the one picked while browsing, else the current one, else its default. */
@@ -241,8 +237,6 @@ export function ModelPicker({
   const [activeModelKey, setActiveModelKey] = useState<string | null>(null);
   const [seenOpenRequest, setSeenOpenRequest] = useState(0);
   const [recentMenu, setRecentMenu] = useState<RecentMenu | null>(null);
-  const [recentActive, setRecentActive] = useState(0);
-  const recentPointerMoved = usePointerMovement();
   // Account picked per provider tab while browsing; the current provider starts on its account.
   const [tabAccounts, setTabAccounts] = useState<Partial<Record<HarnessId, string>>>({});
   const [accountListOpen, setAccountListOpen] = useState(false);
@@ -253,7 +247,6 @@ export function ModelPicker({
   useLayoutEffect(() => {
     favoritesRef.current = favorites;
   }, [favorites]);
-  const recentMenuId = useId();
   const ownButton = useRef<HTMLButtonElement>(null);
   const button = externalTrigger?.anchor ?? ownButton;
   const search = useRef<HTMLInputElement>(null);
@@ -503,14 +496,6 @@ export function ModelPicker({
     );
   }, [recentMenu, pickerHarnesses, source, catalogVersion]);
   const recentOpen = recentMenu != null && recentModels.length > 0;
-  // The keyboard highlight rests on rows the harness can serve; unavailable rows stay visible but disabled.
-  const recentClamped = clampActiveIndex(recentActive, recentModels.length);
-  const recentEnabledIndices = recentModels.flatMap((item, index) =>
-    source.available(item.harness) ? [index] : [],
-  );
-  const recentIndex = recentEnabledIndices.includes(recentClamped)
-    ? recentClamped
-    : recentEnabledIndices[0];
 
   const visibleModels = useMemo(
     () =>
@@ -620,8 +605,10 @@ export function ModelPicker({
     if (!models.length) return;
     const selectedIndex = models.findIndex((item) => modelChoiceKey(item) === currentChoiceKey);
     setOpen(false);
-    setRecentActive(selectedIndex >= 0 ? selectedIndex : 0);
-    setRecentMenu({ models });
+    setRecentMenu({
+      models,
+      initialId: selectedIndex >= 0 ? modelChoiceKey(models[selectedIndex]!) : undefined,
+    });
   };
 
   // A bumped request opens the picker from outside (also on mount).
@@ -756,33 +743,6 @@ export function ModelPicker({
     if (visibleTab === current.harness && !inheritSelected && id !== currentAccountId)
       onChange(current.harness, current.id, id);
   };
-
-  useEffect(() => {
-    if (!recentOpen) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.isComposing) return;
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        event.stopPropagation();
-        const direction = event.key === "ArrowDown" ? 1 : -1;
-        const enabled = recentModels.flatMap((item, index) =>
-          source.available(item.harness) ? [index] : [],
-        );
-        if (!enabled.length) return;
-        const position = recentIndex === undefined ? -1 : enabled.indexOf(recentIndex);
-        setRecentActive(enabled[(position + direction + enabled.length) % enabled.length]!);
-        return;
-      }
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      event.stopPropagation();
-      const item = recentIndex === undefined ? undefined : recentModels[recentIndex];
-      if (item) pickModel(item);
-    };
-
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [recentIndex, recentOpen, recentModels, pickerHarnesses, catalogVersion, source, onChange]);
 
   const pickInherit = () => {
     if (!inherit) return;
@@ -1093,66 +1053,58 @@ export function ModelPicker({
       ) : null}
 
       {recentOpen ? (
-        // ui-drift-ignore: popover-menu -- bespoke model quick-switch menu: own aria-activedescendant keys while composer focus stays put
-        <Popover
+        <DropdownMenu
           anchor={button}
+          label={t("Recently used models")}
           side="top"
-          minWidth={MENU_WIDTH}
-          autoFocus
-          onDismiss={() => setRecentMenu(null)}
-          role="menu"
-          aria-label={t("Recently used models")}
-          aria-activedescendant={
-            recentIndex === undefined ? undefined : `${recentMenuId}-${recentIndex}`
-          }
-          tabIndex={-1}
-          onContextMenu={(event) => event.preventDefault()}
-          data-model-picker
-          className={popupListClassName}
-        >
-          {recentIndex === undefined ? (
-            <LiveText
-              className="px-2 py-1"
-              size="caption"
-              tone="secondary"
-              text={t("No available provider models found. Check Providers and try again.")}
-            />
-          ) : null}
-          {recentModels.map((item, index) => {
-            const selected = modelChoiceKey(item) === currentChoiceKey;
-            const highlighted = index === recentIndex;
-            const disabled = !source.available(item.harness);
-            return (
-              <MenuRow
-                data-active={highlighted || undefined}
-                key={modelChoiceKey(item)}
-                id={`${recentMenuId}-${index}`}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected}
-                disabled={disabled}
-                onMouseDown={(event) => event.preventDefault()}
-                onPointerMove={(event) => {
-                  if (recentPointerMoved(event) && !disabled) setRecentActive(index);
-                }}
-                onClick={() => pickModel(item)}
-              >
-                <HarnessIcon harness={item.harness} className="size-4 shrink-0" />
-
-                <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                  {item.name}
-                </Text>
-
-                <Text size="caption" tone="secondary">
-                  {HARNESS_TITLE[item.harness]}
-                  {item.provider ? ` · ${item.provider.name}` : ""}
-                </Text>
-
-                {selected ? <Check className="icon-sm shrink-0" tone="secondary" /> : null}
-              </MenuRow>
-            );
-          })}
-        </Popover>
+          align="start"
+          size="sm"
+          highlight="state"
+          initialActiveId={recentMenu?.initialId}
+          items={[
+            ...recentModels.map(
+              (item): DropdownMenuItem => ({
+                kind: "item",
+                id: modelChoiceKey(item),
+                label: item.name,
+                icon: <HarnessIcon harness={item.harness} className="size-4 shrink-0" />,
+                trailing: (
+                  <Text size="caption" tone="secondary">
+                    {HARNESS_TITLE[item.harness]}
+                    {item.provider ? ` · ${item.provider.name}` : ""}
+                  </Text>
+                ),
+                checked: modelChoiceKey(item) === currentChoiceKey,
+                selectionRole: "radio",
+                disabled: !source.available(item.harness),
+              }),
+            ),
+            ...(recentModels.some((item) => source.available(item.harness))
+              ? []
+              : [
+                  {
+                    kind: "content",
+                    id: "empty",
+                    node: (
+                      <LiveText
+                        className="px-2 py-1"
+                        size="caption"
+                        tone="secondary"
+                        text={t(
+                          "No available provider models found. Check Providers and try again.",
+                        )}
+                      />
+                    ),
+                  } satisfies DropdownMenuItem,
+                ]),
+          ]}
+          onPick={(id) => {
+            const item = recentModels.find((model) => modelChoiceKey(model) === id);
+            if (item) pickModel(item);
+          }}
+          onClose={() => setRecentMenu(null)}
+          data-model-picker=""
+        />
       ) : null}
     </>
   );

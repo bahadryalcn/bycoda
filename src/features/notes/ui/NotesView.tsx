@@ -836,8 +836,7 @@ export function NotesView({
             variant="ghost"
             size="sm"
             label={t("Select notes")}
-            selected={selectionMode}
-            aria-pressed={selectionMode}
+            pressed={selectionMode}
             disabled={bulkDeleting}
             onClick={() => {
               setSelectionMode((current) => !current);

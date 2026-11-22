@@ -253,7 +253,7 @@ export function SearchableProjectPicker({
           anchor={pickerRef}
           side="bottom"
           align="start"
-          width={286}
+          size="md"
           maxHeight={380}
           label={t("Project picker")}
           onDismiss={closePicker}

@@ -71,7 +71,7 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
       onClose={onClose}
     >
       {saveError ? (
-        <InlineError className="px-3 pt-2">
+        <InlineError inset="row">
           {t("Could not save project changes. Try again.")}
         </InlineError>
       ) : null}

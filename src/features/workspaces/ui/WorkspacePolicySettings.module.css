@@ -1,18 +1,6 @@
 /* The policy editor adapts to the room the settings page gives it, not to the window. */
 .root {
   container: workspace-policy / inline-size;
-  display: flex;
-  flex-direction: column;
-  min-inline-size: 0;
-  gap: 16px;
-}
-
-.root :global(.settings-group) {
-  padding-block-start: 0;
-}
-
-.root :global(.settings-advanced-content) > :global(.settings-group) {
-  padding-block-start: 12px;
 }
 
 .storage {

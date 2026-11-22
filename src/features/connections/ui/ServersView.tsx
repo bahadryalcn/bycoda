@@ -14,8 +14,8 @@ import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { errorText } from "../../../shared/lib/errors";
 import { copyWithFeedback, machineAddress } from "./serverActionFeedback";
 import { t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
-import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
+import { RemoteActionError } from "./RemoteActionError";
+import { describeRemoteError } from "../model/remoteFailure";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -164,6 +164,8 @@ export function ServersView({
   }>();
   const [deleting, setDeleting] = useState<string>();
   const [actionError, setActionError] = useState("");
+  // The retry belongs to the failure that produced it; any other failure text shows no Retry.
+  const [actionRetry, setActionRetry] = useState<{ text: string; retry: () => void }>();
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [bulkTargets, setBulkTargets] = useState<ServerRecord[]>();
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -280,7 +282,9 @@ export function ServersView({
     try {
       await work();
     } catch (reason) {
-      setActionError(errorText(reason));
+      const text = errorText(reason);
+      setActionError(text);
+      setActionRetry({ text, retry: () => void runAction(work) });
     }
   };
   const menuItems = (server: ServerRecord): ContextMenuItem[] => [
@@ -583,26 +587,32 @@ export function ServersView({
       </div>
       {error ? (
         <div className="px-3 py-2">
-          <Alert tone="warning" action={{ label: t("Retry"), pending: loading, onClick: refresh }}>
-            {loaded
-              ? t("Couldn’t refresh servers. Showing last loaded data.")
-              : t("Couldn’t load servers.")}
-          </Alert>
+          <RemoteActionError
+            title={
+              loaded
+                ? t("Couldn’t refresh servers. Showing last loaded data.")
+                : t("Couldn’t load servers.")
+            }
+            error={describeRemoteError(error)}
+            action={{ label: t("Try again"), pending: loading, onClick: refresh }}
+          />
         </div>
       ) : null}
       {actionError ? (
         <div className="px-3 pt-2">
-          {fitsOneLine(actionError) ? (
-            <Alert tone="danger">{actionError}</Alert>
-          ) : (
-            <Alert tone="danger" extra={<ErrorDetails detail={actionError} />}>
-              {t("The action failed. Check the details and retry.")}
-            </Alert>
-          )}
+          <RemoteActionError
+            title={t("Couldn’t complete the action")}
+            error={describeRemoteError(actionError)}
+            action={
+              actionRetry?.text === actionError
+                ? { label: t("Try again"), onClick: actionRetry.retry }
+                : undefined
+            }
+          />
         </div>
       ) : null}
       {loading && !loaded ? (
-        <LoadingText className="px-3 py-2">{t("Loading servers…")}</LoadingText>
+        <LoadingText inset="row">{t("Loading servers…")}</LoadingText>
       ) : null}
       {groups.length > 0 ? (
         <div
@@ -611,8 +621,7 @@ export function ServersView({
         >
           <Button
             variant="ghost"
-            selected={!group}
-            aria-pressed={!group}
+            pressed={!group}
             onClick={() => setGroup("")}
           >
             {t("All")}{" "}
@@ -624,8 +633,7 @@ export function ServersView({
             <Button
               key={name}
               variant="ghost"
-              selected={group === name}
-              aria-pressed={group === name}
+              pressed={group === name}
               onClick={() => setGroup(group === name ? "" : name)}
             >
               {name}

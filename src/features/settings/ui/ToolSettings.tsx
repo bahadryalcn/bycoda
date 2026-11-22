@@ -42,7 +42,7 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
   return (
     <ActiveToolSettingsTab.Provider value={tab}>
       <Tabs value={tab} onValueChange={setTab}>
-        <TabList label={t("Conversation tools")} className="flex-wrap">
+        <TabList label={t("Conversation tools")} scroll="wrap">
           <Tab value="browser" className="shrink-0">
             {t("Browser")}
           </Tab>

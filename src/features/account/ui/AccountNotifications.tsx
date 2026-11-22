@@ -167,7 +167,6 @@ export function AccountNotifications() {
   return (
     <Group
       title={t("Notifications")}
-      descriptionVisible
       description={t(
         "Sign-ins from a new device always notify you, so they cannot be switched off.",
       )}

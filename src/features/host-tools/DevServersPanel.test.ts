@@ -245,7 +245,7 @@ it("reveals a failed process request and restores the row after a failed stop", 
   await mount();
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(new Error("Process identity changed"));
   await act(async () => (await menuItem("Process details")).click());
-  expect(document.activeElement?.textContent).toBe("Process identity changed");
+  expect(document.activeElement?.textContent).toContain("The server action failed.");
   expect(document.activeElement?.tagName).toBe("DIV");
   expect(document.activeElement?.getAttribute("role")).toBe("alert");
   expect(document.activeElement?.classList.contains("bycoda-arc")).toBe(true);
@@ -253,7 +253,7 @@ it("reveals a failed process request and restores the row after a failed stop", 
   await act(async () => (await menuItem("Stop")).click());
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(new Error("Host disconnected"));
   await act(async () => button("Confirm graceful stop").click());
-  expect(document.activeElement?.textContent).toBe("Host disconnected");
+  expect(document.activeElement?.textContent).toContain("The server action failed.");
   expect(container.querySelector(".dev-server-row")?.textContent).toContain("Running");
   expect(button("Confirm graceful stop").disabled).toBe(false);
 });
@@ -283,13 +283,13 @@ it("distinguishes an empty successful scan from a failed scan", async () => {
     error: "Permission denied",
   });
   await act(async () => button("Refresh").click());
-  expect(container.textContent).toContain("Scan failed");
+  expect(container.textContent).toContain("Could not refresh servers.");
   expect(container.textContent).not.toContain("No servers found");
   await openDetails();
   expect(document.body.textContent).toContain("Permission denied");
 });
 
-it("keeps the polled server count out of the live region and announces only scan failures", async () => {
+it("keeps the polled server count out of the live region and leaves scan failures to the alert", async () => {
   await mount();
   const announced = () =>
     container.querySelector<HTMLElement>("[role='status'].sr-only")?.textContent;
@@ -302,7 +302,7 @@ it("keeps the polled server count out of the live region and announces only scan
     error: "Permission denied",
   });
   await act(async () => button("Refresh").click());
-  expect(announced()).toBe("Scan failed");
+  expect(container.querySelector("[role='alert']")?.textContent).toContain("Could not refresh servers.");
 });
 
 it("shows affected ports before graceful stop and requires a separate explicit force choice", async () => {
@@ -493,7 +493,7 @@ it("preserves the last successful rows and scroll position when a background sca
   await openDetails();
   expect(document.body.textContent).toContain("Host disconnected");
   expect(button("Open in preview").disabled).toBe(false);
-  await act(async () => button("Retry scan").click());
+  await act(async () => button("Try again").click());
   expect(container.textContent).not.toContain("Host disconnected");
   expect(container.querySelector(".dev-server-row")).toBe(row);
 });
@@ -578,7 +578,7 @@ it("backs off after failures and pauses after three failed scans until explicit 
   expect(container.textContent).toContain("Paused");
   await act(async () => vi.advanceTimersByTimeAsync(600_000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(4);
-  await act(async () => button("Retry scan").click());
+  await act(async () => button("Try again").click());
   expect(hostFeatureRequest).toHaveBeenCalledTimes(5);
   expect(button("Pause automatic refresh")).toBeDefined();
   await act(async () => vi.advanceTimersByTimeAsync(15_000));

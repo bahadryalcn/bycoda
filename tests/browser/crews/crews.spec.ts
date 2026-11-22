@@ -177,7 +177,7 @@ for (const theme of ["light", "dark"] as const)
       const task = page.getByRole("dialog", { name: "New task", exact: true });
       await expect(task.getByRole("textbox", { name: "Task title", exact: true })).toBeVisible();
       await expect(task.locator(".task-form-body")).toHaveCSS("padding-left", "16px");
-      await expect(task.locator(".task-form-footer")).toHaveCSS("justify-content", "flex-end");
+      await expect(task.locator("[data-modal-actions]")).toBeVisible();
       await capture("task");
       await task
         .locator("summary")

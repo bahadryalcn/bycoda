@@ -678,6 +678,7 @@ function PaneTreeComponent({
             (pane) => pane.id === leaf.id || pane.tabIds?.includes(leaf.id),
           );
           const hidden = leaf.hidden || Boolean(maximum && groupSelected?.id !== maximum.id);
+          const canMaximize = (inSplit || maximum) && !hidden;
           const rect = maximum ? { x: 0, y: 0, w: 1, h: 1 } : leaf.rect;
           const onPaneDragStart = startPaneDrag;
           return (
@@ -702,7 +703,7 @@ function PaneTreeComponent({
                 if (event.key === "Tab" && session) onSessionInteraction?.(session.id);
               }}
               onInputCapture={() => session && onSessionInteraction?.(session.id)}
-              data-pane-can-maximize={(inSplit || maximum) && !hidden ? "true" : undefined}
+              data-pane-can-maximize={canMaximize ? "true" : undefined}
               className={`absolute ${hidden ? "hidden" : "flex"} min-h-0 min-w-0 flex-col overflow-hidden ${dragging ? "opacity-40" : ""}`}
               // The new pane focuses its composer or editor while it is still
               // offscreen, and focus scrolls this clip box to reveal it, which
@@ -719,9 +720,10 @@ function PaneTreeComponent({
                 <Tabs value={leaf.id} onValueChange={onFocus} panels="none">
                   <TabList
                     label={t("Pane sessions")}
+                    scroll="auto"
                     {...surfaceAttributes(
                       { frame: "pane", edge: "bottom" },
-                      "flex shrink-0 overflow-x-auto",
+                      `shrink-0${canMaximize ? " pe-10" : ""}`,
                     )}
                   >
                     {leaf.tabIds.map((id) => (

@@ -117,7 +117,7 @@ function AssignmentModel({
             <EmptyState
               size="inline"
               kind="filtered"
-              className="px-2 py-3"
+              inset="row"
               description={t("No matching models")}
             />
           ),
@@ -156,7 +156,7 @@ function AssignmentModel({
           label={t("Assignment models")}
           side="bottom"
           align="start"
-          width={260}
+          size="md"
           maxHeight={320}
           items={items}
           initialActiveId={selected ? choiceId(selected) : undefined}

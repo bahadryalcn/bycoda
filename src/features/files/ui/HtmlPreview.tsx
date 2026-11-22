@@ -1,4 +1,5 @@
-import { InlineError } from "../../../shared/ui/InlineError";
+import { DocumentMessage } from "./DocumentMessage";
+import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -80,7 +81,7 @@ export function HtmlPreview({
         close(requestToken);
         if (!cancelled) {
           opening.current = false;
-          setState({ error: String(error) });
+          setState({ error: errorText(error) });
         }
       });
     return () => {
@@ -131,7 +132,7 @@ export function HtmlPreview({
         </OutputBlock>
       ) : null}
       {state.error && !sourceVisible ? (
-        <InlineError className="p-6">{state.error}</InlineError>
+        <DocumentMessage title={t("Couldn’t preview this file")} error detail={state.error} />
       ) : state.url ? (
         <iframe
           ref={frameRef}

@@ -915,7 +915,7 @@ export function InboxView({
           />
         ) : sourceError && visibleItems.length === 0 ? null : loading &&
           visibleItems.length === 0 ? (
-          <LoadingText className="justify-center py-10" />
+          <LoadingText inset="panel" className="justify-center" />
         ) : visibleItems.length === 0 &&
           !(source === "jira" && collection.jiraContinuation.hasMore) ? (
           !pullRequestsOnly &&

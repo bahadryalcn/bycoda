@@ -79,7 +79,7 @@ export function MessagesFilterMenu({
       anchor={anchor}
       returnFocusRef={anchor}
       label={t("Filter messages")}
-      width={260}
+      size="md"
       items={items}
       onClose={onClose}
       onPick={(id) => {

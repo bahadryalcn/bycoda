@@ -1,6 +1,7 @@
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
@@ -26,6 +27,9 @@ export function RemoveMachineDialog({
   onCancel: () => void;
   onConfirm: (revoke: boolean) => void;
 }) {
+  // A failure is "reason" + blank line + "cause": the reason is the body, the cause waits behind Details.
+  const [reason, ...rest] = error.split("\n\n");
+  const cause = rest.join("\n\n").trim();
   return (
     <Modal
       onClose={() => {
@@ -98,7 +102,15 @@ export function RemoveMachineDialog({
             )}
           </p>
         </div>
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? (
+          <Alert
+            tone="danger"
+            title={t("Couldn’t remove {p0}", { p0: machine.name })}
+            extra={cause ? <ErrorDetails detail={cause} /> : undefined}
+          >
+            {reason}
+          </Alert>
+        ) : null}
       </Text>
     </Modal>
   );

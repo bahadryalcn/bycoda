@@ -433,6 +433,7 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
     <>
       <Row
         id="update"
+        controlWidth="wide"
         label={
           <span className="flex min-w-0 flex-wrap items-baseline gap-2">
             {t("Version")}
