@@ -43,7 +43,8 @@ const percent = (range: { min: number; max: number }, floor = 0, cap = 1) =>
 
 /** Limits a generated theme keeps tighter than the sliders, so no theme makes the app unreadable. */
 export const THEME_SUGGESTION_GUARDS = {
-  contrastMin: 100,
+  // Generated themes keep pane borders visible: contrast also scales the stroke ink (7% * contrast).
+  contrastMin: 115,
   paneOpacityMin: 0.7,
   uiScaleMin: 0.8,
   uiScaleMax: 1.5,

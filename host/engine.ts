@@ -2791,9 +2791,10 @@ export class HostEngine {
                 ...value,
                 session: {
                   ...value.session,
-                  title: !value.session.title && !value.session.blocks.length
-                    ? titleFromPrompt(command.text, value.session.harness, attachments)
-                    : value.session.title,
+                  title:
+                    !value.session.title && !value.session.blocks.length
+                      ? titleFromPrompt(command.text, value.session.harness, attachments)
+                      : value.session.title,
                   blocks: [
                     ...value.session.blocks,
                     {

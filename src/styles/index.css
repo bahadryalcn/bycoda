@@ -738,12 +738,11 @@ html.theme-light {
   /* Merge conflict sides are tinted regions, not edge stripes. */
   --ui-conflict-current-marker: color-mix(in oklab, var(--color-conflict-ours) 22%, transparent);
   --ui-conflict-incoming-marker: color-mix(in oklab, var(--color-conflict-theirs) 22%, transparent);
-  /* Pane hairline: about 14% ink on the dark ground, at least 1.3:1 against a black canvas so a
-     1px edge survives Retina downscaling and translucent panes (paneBorderContrast.test.ts pins
-     the multiplier). 8% measured 1.08:1 and the panes read as one block. */
+  /* Hairline uses about 8% ink on the dark ground. */
   --ui-pane-border: color-mix(
     in oklab,
-    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 2 * var(--ui-stroke-boost, 1)),
+    var(--color-content)
+      calc(var(--appearance-stroke-strength, 7%) * 1.15 * var(--ui-stroke-boost, 1)),
     var(--ui-layer-base)
   );
   /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
@@ -1076,7 +1075,7 @@ html.theme-light {
   /* Borders are ink over the ground, so they are always darker than it. */
   --ui-pane-border: color-mix(
     in oklab,
-    var(--color-content) calc(12% * var(--appearance-layer-strength, 1)),
+    var(--color-content) calc(9% * var(--appearance-layer-strength, 1)),
     var(--ui-layer-base)
   );
   --ui-control-border: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));

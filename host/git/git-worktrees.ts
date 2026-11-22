@@ -269,7 +269,9 @@ async function build(text: string): Promise<HostWorktrees> {
         (info) => info.isDirectory(),
         () => false,
       );
-      const path = present ? await canonicalWorkspacePath(tree.path).catch(() => undefined) : undefined;
+      const path = present
+        ? await canonicalWorkspacePath(tree.path).catch(() => undefined)
+        : undefined;
       return { ...tree, path: path ?? tree.path, missing: path === undefined };
     }),
   );

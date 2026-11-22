@@ -5125,7 +5125,9 @@ describe("headless session ownership", () => {
   it("exposes an empty placeholder for fresh sessions without changing the read contract", async () => {
     const { store, project, id } = await setup();
     expect((await store.session(id)).session.title).toBe("");
-    expect((await store.summaries(project.id)).find((session) => session.id === id)?.title).toBe("");
+    expect((await store.summaries(project.id)).find((session) => session.id === id)?.title).toBe(
+      "",
+    );
   });
 
   it.each(["draft", "send"] as const)(
