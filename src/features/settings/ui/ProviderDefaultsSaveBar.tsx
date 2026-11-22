@@ -1,6 +1,5 @@
 import { Badge } from "../../../shared/ui/Badge";
 import "./ProviderDefaults.css";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { selectedTargetValues, type DefaultsDraft } from "../model/providerDefaultsDraft";
 import { prepareDefaultsDraft } from "../model/providerDefaultsSupport";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
@@ -27,7 +26,6 @@ import {
   type DefaultsTarget,
 } from "../model/providerDefaultsDraft";
 import { ProjectScopeIcon } from "./ProjectScopeIcon";
-import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SettingsSaveBar, type PendingChange } from "../../../shared/ui/settings";
@@ -152,13 +150,11 @@ export function ProviderDefaultsSaveBar({
   draft,
   activeProvider,
   providers = [],
-  onDraftChange,
 }: {
   selection?: string;
   draft?: DefaultsDraft;
   activeProvider?: HarnessId;
   providers?: HarnessId[];
-  onDraftChange?: (draft: DefaultsDraft) => void;
   target: DefaultsTarget;
   options: ReturnType<typeof useDefaultsTargets>["options"];
   /** Every unsaved field across providers and accounts. */
@@ -229,34 +225,6 @@ export function ProviderDefaultsSaveBar({
                   </Text>
                 ) : null}
               </InfoPopover>
-            </div>
-          ) : null}
-          {draft && onDraftChange && (pending > 0 || draft.providerScope === "all") ? (
-            <div className="provider-defaults-field">
-              <Text size="caption" tone="muted">
-                {t("Apply to")}
-              </Text>
-              <SegmentedControl
-                label={t("Provider scope")}
-                value={draft.providerScope ?? "this"}
-                options={[
-                  {
-                    value: "this",
-                    label: activeProvider ? HARNESS_TITLE[activeProvider] : t("This provider"),
-                    icon: activeProvider ? (
-                      <HarnessIcon harness={activeProvider} className="icon-sm" />
-                    ) : undefined,
-                  },
-                  {
-                    value: "all",
-                    label: t("All providers"),
-                    icon: <LayoutGrid className="icon-sm" />,
-                  },
-                ]}
-                onValueChange={(value) =>
-                  onDraftChange({ ...draft, providerScope: value === "all" ? "all" : undefined })
-                }
-              />
             </div>
           ) : null}
         </>

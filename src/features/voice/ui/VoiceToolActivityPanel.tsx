@@ -6,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Divider } from "../../../shared/ui/Divider";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Heading } from "../../../shared/ui/Heading";
 import { Wrench } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
@@ -112,7 +113,7 @@ export function VoiceToolActivityPanel({
           <ul className={styles.list}>
             {entries.map((entry) => {
               const live = entry.state === "running" || entry.state === "waiting-owner";
-              // Details stay visible text so keyboard and screen-reader users reach the request id.
+              // The technical ids sit in the row's Details disclosure; the stop button's name keeps them so each action stays unique.
               const details = [entry.name, entry.target, entry.requestId]
                 .filter(Boolean)
                 .join(" · ");
@@ -146,9 +147,16 @@ export function VoiceToolActivityPanel({
                     >
                       {t(STATUS[entry.state])}
                     </Text>
-                    <Text as="div" size="caption" tone="muted" wrap="anywhere">
-                      {details}
-                    </Text>
+                    {entry.target ? (
+                      <Text as="div" size="caption" tone="muted" wrap="anywhere">
+                        {entry.target}
+                      </Text>
+                    ) : null}
+                    <Disclosure variant="plain" size="sm" summary={t("Details")}>
+                      <Text as="div" size="caption" tone="muted" wrap="anywhere">
+                        {[entry.name, entry.requestId].filter(Boolean).join(" · ")}
+                      </Text>
+                    </Disclosure>
                   </div>
                   <Text size="caption" tone="muted" className={styles.time}>
                     {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}

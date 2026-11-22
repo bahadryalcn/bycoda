@@ -31,13 +31,10 @@ export const COLUMN_LABELS: Record<TaskColumn, string> = {
   blocked: "Needs attention",
 };
 
-const COLUMN_EMPTY: Record<TaskColumn, string> = {
+/** Only the lanes a person fills or reads say they are empty; the count in the header covers the rest. */
+const COLUMN_EMPTY: Partial<Record<TaskColumn, string>> = {
   todo: "Nothing to do yet",
-  queued: "Nothing waiting",
-  running: "Nothing running",
-  review: "Nothing to review",
   done: "Nothing done yet",
-  blocked: "Nothing blocked",
 };
 const COLUMN_TONES: Partial<Record<TaskColumn, BadgeTone>> = {
   queued: "info",
@@ -90,6 +87,7 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
   onOpen: (key: string) => void;
 }) {
   const dropActive = useTaskBoardDrag(drag, (state) => state.dropColumn === status);
+  const emptyNote = COLUMN_EMPTY[status];
   const [limit, setLimit] = useState(COLUMN_WINDOW);
   const list = useRef<HTMLUListElement>(null);
   // Written by focus events, read only while sizing the window.
@@ -199,7 +197,7 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
             <CollectionFooter standalone hasMore onLoadMore={loadMore} />
           </li>
         ) : null}
-        {column.length === 0 && showEmptyNote ? (
+        {column.length === 0 && showEmptyNote && emptyNote ? (
           <li>
             <Text
               as="p"
@@ -208,7 +206,7 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
               leading="inherit"
               className="task-column-empty"
             >
-              {t(COLUMN_EMPTY[status])}
+              {t(emptyNote)}
             </Text>
           </li>
         ) : null}

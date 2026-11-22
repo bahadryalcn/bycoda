@@ -1,4 +1,4 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Button } from "../../../shared/ui/Button";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useCallback, useMemo } from "react";
@@ -17,11 +17,14 @@ export function GitCommitBlameView({
   sha,
   relative,
   text,
+  openCommit,
 }: {
   cwd: string;
   sha: string | undefined;
   relative: string;
   text: string;
+  /** Jump to a commit in the graph; `has` is false for commits the graph has not loaded. */
+  openCommit?: { has: (sha: string) => boolean; open: (sha: string) => void };
 }) {
   useLocale();
   const read = useCallback(() => gitBlame(cwd, relative, sha), [cwd, relative, sha]);
@@ -67,34 +70,40 @@ export function GitCommitBlameView({
                 "flex whitespace-pre",
               )}
             >
-              <Tooltip
-                label={first ? entry.summary : undefined}
-                details={
-                  first ? [`${entry.shortSha} · ${formatAbsoluteTime(entry.timestamp)}`] : []
-                }
-                asChild
+              <Text
+                as="div"
+                size="micro"
+                tone="secondary"
+                {...surfaceAttributes(
+                  { variant: "canvas" },
+                  "sticky left-0 flex w-72 shrink-0 items-baseline px-1 font-sans",
+                )}
               >
-                <Text
-                  as="div"
-                  size="micro"
-                  tone="secondary"
-                  tabIndex={first ? 0 : undefined}
-                  {...surfaceAttributes(
-                    { variant: "canvas" },
-                    "sticky left-0 flex w-64 shrink-0 items-baseline gap-2 px-2 font-sans",
-                  )}
-                >
-                  {first ? (
-                    <>
-                      <span className="shrink-0 font-mono">{entry.shortSha}</span>
-                      <span className="min-w-0 flex-1 truncate">{entry.author}</span>
-                      <span className="shrink-0 tabular-nums">
-                        {formatRelativeTime(entry.timestamp, now)}
-                      </span>
-                    </>
-                  ) : null}
-                </Text>
-              </Tooltip>
+                {first ? (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    motion="none"
+                    align="start"
+                    truncate
+                    className="min-w-0 flex-1"
+                    disabled={!openCommit?.has(entry.sha)}
+                    disabledReason={t("This commit isn’t loaded in the history yet")}
+                    onClick={() => openCommit?.open(entry.sha)}
+                    tooltip={entry.summary}
+                    tooltipWhen="overflow"
+                    tooltipDetails={[
+                      `${entry.author} · ${entry.shortSha} · ${formatAbsoluteTime(entry.timestamp)}`,
+                    ]}
+                  >
+                    <span className="shrink-0 font-mono">{entry.shortSha}</span>
+                    <span className="min-w-0 flex-1 truncate">{entry.summary}</span>
+                    <span className="shrink-0 tabular-nums">
+                      {formatRelativeTime(entry.timestamp, now)}
+                    </span>
+                  </Button>
+                ) : null}
+              </Text>
               <Text
                 size="inherit"
                 tone="muted"

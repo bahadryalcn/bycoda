@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { confirmDiscardFile, confirmNative } from "./gitConfirmation";
+import { confirmDiscardFile, confirmGitAction } from "./gitConfirmation";
 
 const mocks = vi.hoisted(() => ({ confirmInApp: vi.fn() }));
 vi.mock("../../../shared/model/appConfirm", () => ({ confirmInApp: mocks.confirmInApp }));
@@ -27,23 +27,26 @@ describe("confirmDiscardFile", () => {
   });
 });
 
-describe("confirmNative compatibility", () => {
-  it("turns one sentence into a question title and an effect", async () => {
-    await confirmNative("Discard changes in 3 selected files? This cannot be undone.", "Discard");
+describe("confirmGitAction", () => {
+  it("words Cancel with the Git translator so the dialog speaks one language", async () => {
+    await confirmGitAction({ title: "Delete tag?", message: "v1", confirmLabel: "Delete tag" });
     expect(mocks.confirmInApp).toHaveBeenLastCalledWith({
-      title: "Discard changes in 3 selected files?",
-      message: "This cannot be undone.",
-      confirmLabel: "Discard",
+      title: "Delete tag?",
+      message: "v1",
+      confirmLabel: "Delete tag",
+      cancelLabel: "Cancel",
       tone: "danger",
     });
   });
-  it("keeps a bare question as the message and derives the title from the action", async () => {
-    await confirmNative("Trust this path?", "Trust this repository");
-    expect(mocks.confirmInApp).toHaveBeenLastCalledWith({
-      title: "Trust this repository?",
-      message: "Trust this path?",
-      confirmLabel: "Trust this repository",
-      tone: "normal",
+  it("lets a caller override the Cancel wording", async () => {
+    await confirmGitAction({
+      title: "T?",
+      message: "m",
+      confirmLabel: "Go",
+      cancelLabel: "Not now",
     });
+    expect(mocks.confirmInApp).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cancelLabel: "Not now" }),
+    );
   });
 });

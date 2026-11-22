@@ -142,7 +142,9 @@ export function ContinuousUsageTable({
     <>
       <div className="usage-section-heading">
         <Text as="span" leading="inherit" className="usage-muted">
-          {rows.length.toLocaleString(getLocale())} {t("records")}
+          {rows.length === 1
+            ? t("1 record")
+            : t("{p0} records", { p0: rows.length.toLocaleString(getLocale()) })}
         </Text>
         <Button
           variant="ghost"

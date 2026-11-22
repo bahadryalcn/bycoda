@@ -349,11 +349,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   {budget.metric === "accountPercent" && reading.resetsAt != null ? (
                     <>
                       {` · ${formatResetCountdown(reading.resetsAt - now)} · `}
-                      <Timestamp
-                        value={reading.resetsAt}
-                        format="datetime-seconds"
-                        tooltip={false}
-                      />
+                      <Timestamp value={reading.resetsAt} format="auto" tooltip={false} />
                     </>
                   ) : null}
                 </Text>

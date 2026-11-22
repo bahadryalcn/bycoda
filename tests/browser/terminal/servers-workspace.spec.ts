@@ -208,10 +208,6 @@ for (const theme of ["light", "dark"]) {
       await page.screenshot({ path: `${folder}/connection-${theme}-${width}.png` });
       await details.getByRole("button", { name: "Files", exact: true }).click();
       const files = page.getByRole("dialog", { name: "SFTP files", exact: true });
-      await expect(
-        files.getByText("Open a directory to browse files.", { exact: true }),
-      ).toBeVisible();
-      await files.getByRole("button", { name: "Open", exact: true }).click();
       await files.getByRole("textbox", { name: "Search remote files", exact: true }).fill("README");
       await expect(files.getByText("README.md", { exact: true })).toBeVisible();
       await expect(files.getByRole("button", { name: "deployments", exact: true })).toHaveCount(0);

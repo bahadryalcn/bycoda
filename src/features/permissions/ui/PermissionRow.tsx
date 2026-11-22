@@ -31,9 +31,12 @@ import styles from "./PermissionRow.module.css";
 export function PermissionRow({
   id,
   helperState,
+  recheck = true,
 }: {
   id: PermissionId;
   helperState?: PermissionState;
+  /** `false` when the page offers one "Check again" for every row. */
+  recheck?: boolean;
 }) {
   const {
     entries: [entry],
@@ -84,7 +87,7 @@ export function PermissionRow({
         </span>
         {!ready && (
           <span className={styles.actions}>
-            {failed && (
+            {failed && recheck && (
               <Button loading={loading} onClick={() => void refresh()}>
                 {t("Check again")}
               </Button>

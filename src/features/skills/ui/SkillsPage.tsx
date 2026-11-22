@@ -51,7 +51,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ChevronLeft, RefreshCw, X } from "../../../shared/ui/icons";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { confirmNative } from "../../source-control/model/gitConfirmation";
+import { confirmInApp } from "../../../shared/model/appConfirm";
 import { canTransferSkill, SkillExistsError, transferSkill } from "../model/transferSkill";
 import { useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
 import { MarkdownSource } from "../../sessions/ui/AgentMarkdown";
@@ -719,13 +719,15 @@ export function SkillsPage({
         await transferSkill({ ...move, overwrite: false });
       } catch (err) {
         if (!(err instanceof SkillExistsError)) throw err;
-        const replace = await confirmNative(
-          t("A skill named {p0} already exists on {p1}. Replace it?", {
+        const replace = await confirmInApp({
+          title: t("Replace skill?"),
+          message: t("A skill named {p0} already exists on {p1}. Its folder will be replaced.", {
             p0: err.skillName,
             p1: targetName,
           }),
-          "Replace",
-        );
+          confirmLabel: t("Replace"),
+          tone: "danger",
+        });
         if (!replace) return;
         await transferSkill({ ...move, overwrite: true });
       }
@@ -757,17 +759,18 @@ export function SkillsPage({
     setActionResult("");
     setActionError(null);
     try {
-      const confirmed = await confirmNative(
-        t(
-          "Delete {p0} from {p1}? Its entire folder and supporting files will be permanently deleted. This cannot be undone.\n\n{p2}",
-          {
-            p0: skill.name,
-            p1: machine?.name ?? t("this computer"),
-            p2: skill.path,
-          },
+      const confirmed = await confirmInApp({
+        title: t("Delete {p0} from {p1}?", {
+          p0: skill.name,
+          p1: machine?.name ?? t("this computer"),
+        }),
+        message: t(
+          "Its entire folder and supporting files will be permanently deleted. This cannot be undone.\n\n{p0}",
+          { p0: skill.path },
         ),
-        "Delete",
-      );
+        confirmLabel: t("Delete"),
+        tone: "danger",
+      });
       if (!confirmed) return;
       await deleteSkill(skill.path, machine?.cwd ?? (remoteProject ? "" : cwd));
       // Read current preferences because a switch may have changed while awaiting confirmation.
@@ -1041,7 +1044,12 @@ export function SkillsPage({
             ) : null)}
         </SkillList>
       </section>
-      {advancedOpen ? <SkillAdvancedDialog onClose={() => setAdvancedOpen(false)} /> : null}
+      {advancedOpen ? (
+        <SkillAdvancedDialog
+          cwd={remoteProject ? "" : cwd}
+          onClose={() => setAdvancedOpen(false)}
+        />
+      ) : null}
       <div className={styles.workspace}>
         {groupView.view === "groups" && openGroup ? (
           <SkillGroupEditor

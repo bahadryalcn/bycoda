@@ -766,7 +766,10 @@ it("restores unsaved automation work after returning to the tool without sharing
   await act(async () => root.unmount());
   root = createRoot(container);
   await show("remote://other-machine/work/controls");
-  expect(container.querySelector('[aria-label="Automation name"]')).toBeNull();
+  // The default view is the selected automation's detail; the other scope's draft stays out of it.
+  expect(
+    container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')?.value,
+  ).not.toBe("Unsaved owner draft");
   expect(invoke.mock.calls.some(([command]) => command === "automations_upsert")).toBe(false);
 });
 

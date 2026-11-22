@@ -431,7 +431,7 @@ describe("model picker", () => {
     expect(items).toHaveLength(1);
     expect(items[0].textContent).toContain("Grok 4.6");
   });
-  it("lists Claude Opus 5.5 after Opus 5 in the built-in Claude catalog", async () => {
+  it("lists Claude Opus 5.5 before Opus 5: newest version first within the provider", async () => {
     await act(async () =>
       root.render(
         createElement(ModelPicker, {
@@ -452,7 +452,7 @@ describe("model picker", () => {
       (option) => option.textContent,
     );
     expect(options).toContain("Claude Opus 5.5");
-    expect(options.indexOf("Claude Opus 5.5")).toBe(options.indexOf("Claude Opus 5") + 1);
+    expect(options.indexOf("Claude Opus 5.5")).toBeLessThan(options.indexOf("Claude Opus 5"));
   });
 
   it("keeps the effort summary next to the model when settings are in Extras", async () => {

@@ -49,9 +49,11 @@ export function ConversationHeader({
         <Text as="strong" size="title" tone="inherit" weight="medium" leading="inherit" truncate>
           {snapshot.profile.name}
         </Text>
-        <Badge key={threadId} size="xs" className={styles.threadChip}>
-          {threadLabel}
-        </Badge>
+        {threadLabel && (
+          <Badge key={threadId} size="xs" className={styles.threadChip}>
+            {threadLabel}
+          </Badge>
+        )}
         <div className={styles.summaryStatus}>
           {(summaryRefreshing || summaryLabel || summaryFailed) && (
             <>

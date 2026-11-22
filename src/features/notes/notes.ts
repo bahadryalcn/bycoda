@@ -300,7 +300,10 @@ export async function resolveNoteImagePath(asset: string, parent?: NoteInputWork
   }
 }
 
-export async function upsertNote(note: NoteUpsert, parent?: NoteInputWork): Promise<Note> {
+export async function upsertNote(input: NoteUpsert, parent?: NoteInputWork): Promise<Note> {
+  // The first heading names the note, so the stored name and the text never differ.
+  const heading = noteHeading(input.body ?? "");
+  const note = heading ? { ...input, title: heading } : input;
   const titleError = noteTitleError(note.title ?? "");
   if (titleError) throw new Error(titleError);
   const work = requireNoteWork("notes-upsert", parent);
@@ -491,6 +494,39 @@ export function rankNoteFiles(
     score: row.score,
     positions: row.positions,
   }));
+}
+
+const HEADING_LINE = /^ {0,3}#[ \t]+(.+?)[ \t]*#*[ \t]*$/;
+
+/** Line index and text of the first level-one heading outside code fences. */
+function firstHeading(body: string): { index: number; lines: string[]; title: string } | undefined {
+  const lines = body.split("\n");
+  let inFence = false;
+  for (const [index, line] of lines.entries()) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const match = line.match(HEADING_LINE);
+    const title = match ? unwrapMarkdown(match[1]).slice(0, MAX_TITLE) : "";
+    if (title) return { index, lines, title };
+  }
+  return undefined;
+}
+
+/** A note's name is its first level-one heading; without one the stored name stands. */
+export function noteHeading(body: string): string | undefined {
+  return firstHeading(body)?.title;
+}
+
+/** Writes a new name into the first level-one heading; a body without one is unchanged. */
+export function withNoteHeading(body: string, title: string): string {
+  const found = firstHeading(body);
+  if (!found) return body;
+  const lines = [...found.lines];
+  lines[found.index] = `# ${title.trim()}`;
+  return lines.join("\n");
 }
 
 /** First markdown heading, or the first non-empty prose line. */

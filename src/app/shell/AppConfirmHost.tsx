@@ -81,6 +81,7 @@ export function AppConfirmHost() {
           title: request.title,
           message: <span className="whitespace-pre-line">{request.message}</span>,
           confirmLabel: request.confirmLabel,
+          cancelLabel: request.cancelLabel,
           danger: request.tone === "danger",
           body: request.body,
           onConfirm: request.onConfirm,

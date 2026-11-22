@@ -16,6 +16,8 @@ import { openExternal } from "../../../platform/tauri/openExternal";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { RECOMMENDED_SKILLS, type RecommendedSkill } from "../model/recommendedSkills";
+import { Popover } from "../../../shared/ui/Popover";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import type { SkillMachine as Machine } from "../model/skillLibrary";
 import {
@@ -112,6 +114,8 @@ export function RecommendedSkills({
   const [busy, setBusy] = useState<string | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const pending = useRef(false);
+  const targetAnchor = useRef<HTMLButtonElement>(null);
+  const [targetOpen, setTargetOpen] = useState(false);
   const [linkError, setLinkError] = useState("");
   const selectedMachine = machines.find((machine) => machine.environmentId === machineId);
   const targetCwd =
@@ -133,6 +137,7 @@ export function RecommendedSkills({
         ? installedOn(skill, here)
         : !installedOn(skill, here) || !!attempts[`${targetKey}:${skill.id}`]),
   );
+  const progressLabel = checkingStatus ? t("Checking…") : t("Installing…");
   const elsewhere = (skill: RecommendedSkill) =>
     [{ environmentId: "local", name: t("This computer") }, ...machines]
       .filter(
@@ -188,59 +193,90 @@ export function RecommendedSkills({
       onClose={onClose}
     >
       <div className={styles.catalog}>
-        <Text as="p" size="secondary" leading="relaxed" className={styles.intro}>
-          {t(
-            "Ranked by general usefulness. Download directly from the author's repository; bycoda does not redistribute skill files.",
-          )}
-        </Text>
         <div className={styles.controls}>
-          <Select
-            label={t("Computer")}
-            value={machineId}
-            disabled={!!busy}
-            options={[
-              { value: "local", label: t("This computer") },
-              ...machines.map((machine) => ({ value: machine.environmentId, label: machine.name })),
-            ]}
-            onValueChange={setMachineId}
-          />
-          <Select
-            label={t("Installation scope")}
-            value={scope}
-            disabled={!!busy}
-            options={[
-              { value: "user", label: t("Global · all projects") },
-              { value: "project", label: t("This project"), disabled: !targetCwd },
-            ]}
-            onValueChange={(value) => setScope(value as "user" | "project")}
-          />
-          <div className={styles.provider}>
-            <Text size="secondary" tone="primary" weight="medium" leading="inherit">
-              {t("Provider")}
-            </Text>
-            <SearchableSelect
-              hideLabel
-              label={t("Provider")}
-              value={provider}
+          <Button
+            ref={targetAnchor}
+            variant="secondary"
+            aria-haspopup="dialog"
+            aria-expanded={targetOpen}
+            onClick={() => setTargetOpen((open) => !open)}
+          >
+            {t("Install to…")}
+          </Button>
+          <Text size="secondary" tone="secondary" leading="inherit" truncate className="min-w-0">
+            {[
+              selectedMachine?.name ?? t("This computer"),
+              scope === "user" ? t("Global · all projects") : t("This project"),
+              provider === "all"
+                ? t("All providers")
+                : (PROVIDERS.find(([value]) => value === provider)?.[1] ?? provider),
+            ].join(" · ")}
+          </Text>
+          <InfoPopover width={360}>
+            <p>
+              {t(
+                "Ranked by general usefulness. Download directly from the author's repository; bycoda does not redistribute skill files.",
+              )}
+            </p>
+            <p>
+              {t(
+                "Existing skills are never replaced. Provider permissions and disabled-skill settings still apply. Extra tools or accounts may be required by the author.",
+              )}
+            </p>
+            <p>{t(SKILLS_CLI_REQUIREMENTS)}</p>
+          </InfoPopover>
+        </div>
+        {targetOpen ? (
+          <Popover
+            anchor={targetAnchor}
+            kind="dialog"
+            variant="panel"
+            width={320}
+            aria-label={t("Install to…")}
+            onDismiss={() => setTargetOpen(false)}
+            className="flex flex-col gap-3"
+          >
+            <Select
+              label={t("Computer")}
+              value={machineId}
               disabled={!!busy}
               options={[
-                { value: "all", label: t("All providers") },
-                ...PROVIDERS.map(([value, label]) => ({ value, label })),
+                { value: "local", label: t("This computer") },
+                ...machines.map((machine) => ({
+                  value: machine.environmentId,
+                  label: machine.name,
+                })),
               ]}
-              onChange={(value) => setProvider(value as SkillInstallRequest["provider"])}
+              onValueChange={setMachineId}
             />
-          </div>
-        </div>
-        <div className={styles.notes}>
-          <Text as="p" size="secondary" leading="relaxed" className={styles.note}>
-            {t(
-              "Existing skills are never replaced. Provider permissions and disabled-skill settings still apply. Extra tools or accounts may be required by the author.",
-            )}
-          </Text>
-          <Text as="p" size="secondary" leading="relaxed" className={styles.note}>
-            {t(SKILLS_CLI_REQUIREMENTS)}
-          </Text>
-        </div>
+            <Select
+              label={t("Installation scope")}
+              value={scope}
+              disabled={!!busy}
+              options={[
+                { value: "user", label: t("Global · all projects") },
+                { value: "project", label: t("This project"), disabled: !targetCwd },
+              ]}
+              onValueChange={(value) => setScope(value as "user" | "project")}
+            />
+            <div className={styles.provider}>
+              <Text size="secondary" tone="primary" weight="medium" leading="inherit">
+                {t("Provider")}
+              </Text>
+              <SearchableSelect
+                hideLabel
+                label={t("Provider")}
+                value={provider}
+                disabled={!!busy}
+                options={[
+                  { value: "all", label: t("All providers") },
+                  ...PROVIDERS.map(([value, label]) => ({ value, label })),
+                ]}
+                onChange={(value) => setProvider(value as SkillInstallRequest["provider"])}
+              />
+            </div>
+          </Popover>
+        ) : null}
         {missingMachine ? (
           <InlineError>{t("The selected computer is no longer connected.")}</InlineError>
         ) : null}
@@ -347,20 +383,10 @@ export function RecommendedSkills({
                   >
                     {skill.repository.replace("https://github.com/", "")}
                   </Button>
-                  {result?.status === "installed" ? (
-                    <InlineMessage tone="success">
-                      {t("Installed")}
-                      {result.path ? (
-                        <Text
-                          size="caption"
-                          tone="inherit"
-                          leading="inherit"
-                          className={styles.path}
-                        >
-                          {result.path}
-                        </Text>
-                      ) : null}
-                    </InlineMessage>
+                  {result?.status === "installed" && result.path ? (
+                    <Text size="caption" tone="secondary" leading="inherit" className={styles.path}>
+                      {result.path}
+                    </Text>
                   ) : null}
                   {result?.error ? (
                     result.status === "unknown" ? (
@@ -393,7 +419,7 @@ export function RecommendedSkills({
                 <Button
                   variant={unresolved ? "secondary" : "primary"}
                   loading={busy === skill.id}
-                  loadingLabel={checkingStatus ? t("Checking…") : t("Installing…")}
+                  loadingLabel={progressLabel}
                   disabled={
                     !!busy ||
                     missingMachine ||
@@ -415,9 +441,7 @@ export function RecommendedSkills({
                   }}
                 >
                   {busy === skill.id
-                    ? checkingStatus
-                      ? t("Checking…")
-                      : t("Installing…")
+                    ? progressLabel
                     : present
                       ? t("Installed")
                       : unresolved

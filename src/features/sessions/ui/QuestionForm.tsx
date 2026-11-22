@@ -342,6 +342,11 @@ function QuestionFormContent({
   const heading = question.header?.trim() || prompt.title?.trim();
   // Providers may repeat the entire question as their header.
   const title = heading && heading !== question.prompt.trim() ? heading : undefined;
+  const unansweredReason = !question.options?.length
+    ? t("Type an answer to continue")
+    : question.multiSelect
+      ? t("Choose at least one option to continue")
+      : t("Choose an option to continue");
   const {
     uncertain,
     capacityMessage,
@@ -444,7 +449,7 @@ function QuestionFormContent({
               size="caption"
               tone="secondary"
               leading="inherit"
-              text={`${index + 1} / ${total}`}
+              text={t("Question {p0} of {p1}", { p0: index + 1, p1: total })}
             />
           ) : null}
         </Text>
@@ -593,7 +598,7 @@ function QuestionFormContent({
               size="sm"
               type="submit"
               disabled={!ready || held}
-              disabledReason={!ready && !held ? t("Answer the question to continue") : undefined}
+              disabledReason={!ready && !held ? unansweredReason : undefined}
               loading={sending && !dismissing}
               loadingLabel={pendingLabel}
               startIcon={last || held ? <SubmitIcon /> : undefined}

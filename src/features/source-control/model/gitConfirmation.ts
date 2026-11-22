@@ -11,29 +11,13 @@ export type GitConfirmation = {
   confirmLabel: string;
   /** `danger` (default) for anything that loses work or rewrites history. */
   tone?: "danger" | "normal";
+  /** Cancel wording; defaults to the Git-language "Cancel" so title and buttons share one language. */
+  cancelLabel?: string;
 };
 
 /** One Git confirmation in the shared in-app dialog: Cancel is secondary, the action is explicit. */
 export function confirmGitAction(confirmation: GitConfirmation): Promise<boolean> {
-  return confirmInApp({ tone: "danger", ...confirmation });
-}
-
-const DESTRUCTIVE_LABEL = /delete|discard|remove|drop|reset|replace|amend|abort|undo|force|accept/i;
-
-/**
- * Older call sites hand over one sentence ("Discard changes in a.ts? This cannot be undone.") and an
- * optional button label. The question becomes the title and the rest the effect; prefer `confirmGitAction`
- * with an explicit title when writing new code.
- */
-export function confirmNative(message: string, okLabel?: string): Promise<boolean> {
-  const split = /^(.+?\?)\s+([\s\S]+)$/.exec(message.trim());
-  const title = split ? split[1] : okLabel ? t("{p0}?", { p0: okLabel }) : t("Are you sure?");
-  return confirmGitAction({
-    title,
-    message: split ? split[2] : message,
-    confirmLabel: okLabel ?? t("Continue"),
-    tone: okLabel && !DESTRUCTIVE_LABEL.test(okLabel) ? "normal" : "danger",
-  });
+  return confirmInApp({ tone: "danger", cancelLabel: t("Cancel"), ...confirmation });
 }
 
 export function confirmDiscardFile(file: GitChangedFile): Promise<boolean> {

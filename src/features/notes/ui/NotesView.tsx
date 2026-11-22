@@ -68,7 +68,9 @@ import {
   loadLibraryNoteSummaries,
   NOTES_CHANGED_EVENT,
   noteSourceProject,
+  noteHeading,
   noteTitle,
+  withNoteHeading,
   peekLibraryNoteSummaries,
   peekNoteDetail,
   summarizeNote,
@@ -747,7 +749,7 @@ export function NotesView({
         ...stored,
         ...edits,
         body,
-        title: (edits.title ?? stored.title).trim() || noteTitle(body),
+        title: noteHeading(body) ?? ((edits.title ?? stored.title).trim() || noteTitle(body)),
       };
       if (!body.trim()) throw new Error(t("This note has no content to add to chat."));
       onAddToChat(note);
@@ -1649,9 +1651,10 @@ function NoteEditor({
   const inputOwner = draftInputOwner(draftState);
   const preparing = useNotePreparing(inputOwner);
   useNoteExternal(inputOwner, note);
-  const title = edits.title ?? note.title;
-  const titleError = noteTitleError(title);
   const body = edits.body ?? note.body;
+  // The first level-one heading is the note's name; the title field mirrors it.
+  const title = noteHeading(body) ?? edits.title ?? note.title;
+  const titleError = noteTitleError(title);
   const tags = edits.tags ?? note.tags;
   // Keep only an unsaved choice locally so completed moves survive reopening.
   const [projectChange, setProjectChange] = useState<{ path: string } | null>(
@@ -1764,8 +1767,9 @@ function NoteEditor({
     const nextBody = changes.body ?? current.body;
     const titleFocused = document.activeElement === titleFieldRef.current;
     const nextTitle =
-      (changes.title ?? current.title).trim() ||
-      (titleFocused ? current.title : noteTitle(nextBody));
+      noteHeading(nextBody) ??
+      ((changes.title ?? current.title).trim() ||
+        (titleFocused ? current.title : noteTitle(nextBody)));
     if (noteTitleError(nextTitle)) return current;
     const nextTags = changes.tags ?? current.tags;
     const nextProject = projectChangeRef.current;
@@ -2047,7 +2051,9 @@ function NoteEditor({
                   (key) => key !== "title",
                 );
                 finalizeRef.current = null;
-                editNote({ title: value });
+                // Renaming a note with a heading rewrites that heading, so both stay equal.
+                const renamed = value.trim() ? withNoteHeading(body, value) : body;
+                editNote(renamed === body ? { title: value } : { title: value, body: renamed });
                 scheduleSave();
               }}
               onBlur={commitTitle}
@@ -2074,9 +2080,6 @@ function NoteEditor({
                   })}
                 />
               )}
-              <Text size="caption" tone="muted" leading="inherit" className="note-detail-words">
-                <NoteWordCount body={body} />
-              </Text>
               <NoteChatAction
                 projectCwd={sourceCwd ?? activeCwd}
                 recents={recents}
@@ -2350,6 +2353,9 @@ function NoteEditor({
             </div>
           </TabPanel>
         </Tabs>
+        <Text as="div" size="caption" tone="muted" leading="inherit" className="note-detail-words">
+          <NoteWordCount body={body} />
+        </Text>
       </SurfaceSelection>
     </div>
   );

@@ -4,7 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
@@ -172,6 +172,9 @@ function SkillList({
     onActive(index);
   };
 
+  // The source badge only tells rows apart when more than one source is listed.
+  const showSource = new Set(skills.map((skill) => skillScopeLabel(skill))).size > 1;
+
   if (skills.length === 0) {
     return (
       <EmptyState
@@ -189,7 +192,7 @@ function SkillList({
       id={listId}
       label={t("Commands and skills")}
       onMouseMove={onListMouseMove}
-      className={`${compact ? "max-h-48" : "max-h-[min(240px,40vh)]"} overflow-y-auto overscroll-none px-1 py-1`}
+      className={`${compact ? "max-h-48" : "max-h-[min(240px,40vh)]"} min-h-0 overflow-y-auto overscroll-none px-1 py-1`}
     >
       {skills.map((skill, index) => {
         const highlighted = index === active;
@@ -229,11 +232,13 @@ function SkillList({
                   {prefix}
                   {skill.invocation}
                 </Text>
-                <Text size="caption" tone="secondary" className="shrink-0">
-                  {isSkillGroupPickerItem(skill)
-                    ? t("{p0} skills", { p0: skill.memberCount })
-                    : skillScopeLabel(skill)}
-                </Text>
+                {showSource || isSkillGroupPickerItem(skill) ? (
+                  <Text size="caption" tone="secondary" className="shrink-0">
+                    {isSkillGroupPickerItem(skill)
+                      ? t("{p0} skills", { p0: skill.memberCount })
+                      : skillScopeLabel(skill)}
+                  </Text>
+                ) : null}
               </span>
               {!compact && skill.description ? (
                 <ClampText as="span" lines={2} expandable={false} size="caption" tone="secondary">
@@ -376,28 +381,21 @@ export function CreateSkillForm({
           {t("Preparing session checkpoint. Your draft is kept.")}
         </Text>
       ) : null}
-      <RadioGroup
-        compact
+      <SegmentedControl
         label={t("Scope")}
         value={scope}
-        disabled={busy || parentClosed}
         onValueChange={(value) => {
-          if (parentInput.canMutate()) setScope(value as "project" | "user");
+          if (busy || parentClosed || !parentInput.canMutate()) return;
+          setScope(value as "project" | "user");
         }}
         options={[
           {
             value: "project",
             label: t("Project"),
-            description: project
-              ? ".agents/skills"
-              : t("Open a local project to enable project scope."),
+            tooltip: project ? undefined : t("Open a local project to enable project scope."),
             disabled: !project,
           },
-          {
-            value: "user",
-            label: t("Personal"),
-            description: "~/.agents/skills",
-          },
+          { value: "user", label: t("Personal") },
         ]}
       />
       {error ? <Alert tone="danger">{error}</Alert> : null}

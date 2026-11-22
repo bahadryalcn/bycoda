@@ -213,7 +213,7 @@ export function JiraCommentEditor({
       <InboxCommentPreview
         draftIdentity={draftIdentity}
         value={value}
-        toolbar={(mode) => (
+        toolbar={() => (
           <ButtonGroup
             surface="transparent"
             className="self-start flex-wrap"
@@ -227,7 +227,7 @@ export function JiraCommentEditor({
                 size="sm"
                 iconOnly
                 label={t(label)}
-                disabled={locked || mode === "preview"}
+                disabled={locked}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => run(command)}
               >

@@ -374,6 +374,9 @@ visible. Connection actions and tabs stay together while scrolling. Switching
 tabs preserves unfinished drafts. Long SSH key paths wrap below the key chooser.
 SSH settings, server editing, Termius import and SFTP open in side sheets with their
 existing explicit save, import, connection and transfer approvals.
+Opening the SFTP sheet lists the server's home directory automatically; the remote
+directory field navigates on Enter and a refresh button reloads it. Downloads, uploads
+and recovery actions still ask for their own approval.
 Server names are optional; an empty name uses the SSH address. Refreshing SSH keys
 preserves the selected path, while a failed refresh clears outdated key metadata.
 Known-host searches show an empty-result message with a reset action.

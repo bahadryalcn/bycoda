@@ -175,8 +175,12 @@
   max-inline-size: 12rem;
 }
 
+/* Status bar under the editor: the word count sits at the end, away from the title actions. */
 .note-detail-words {
-  padding-inline: 4px;
+  flex: none;
+  text-align: end;
+  padding-inline: clamp(16px, 2.5cqi, 40px);
+  padding-block: 2px;
   font-variant-numeric: tabular-nums;
 }
 

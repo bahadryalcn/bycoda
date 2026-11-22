@@ -2,6 +2,7 @@
 import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { act, createElement, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { EditorView } from "@codemirror/view";
@@ -99,8 +100,12 @@ async function openPreview(label: string) {
   return target;
 }
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const inClient = (node: ReturnType<typeof createElement>) =>
+  createElement(QueryClientProvider, { client: queryClient }, node);
+
 async function render() {
-  await act(async () => root.render(createElement(SkillsPage, { cwd: "D:/repo" })));
+  await act(async () => root.render(inClient(createElement(SkillsPage, { cwd: "D:/repo" }))));
 }
 
 it("keeps Advanced controls outside the single skill scroller", async () => {
@@ -111,7 +116,12 @@ it("keeps Advanced controls outside the single skill scroller", async () => {
   expect(scroller.textContent).not.toContain("Skill folders");
   await chooseFromMenu("More", "Skill folders");
   const dialog = document.querySelector('[role="dialog"]')!;
-  expect(dialog.textContent).toContain("Disabled skills stay on disk.");
+  expect(dialog.textContent).toContain("D:/repo/.agents/skills");
+  expect(dialog.textContent).not.toContain("Disabled skills stay on disk.");
+  await act(async () =>
+    dialog.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Disabled skills stay on disk.");
   expect(scroller.contains(dialog)).toBe(false);
   expect(button("Personal guide")).toBeDefined();
 });
@@ -120,10 +130,12 @@ it("reveals skill folders from Settings search and keeps manual dismissal", asyn
   const reveal = async (id: string | null, revealRequest = 0) => {
     await act(async () =>
       root.render(
-        createElement(
-          RevealedSetting.Provider,
-          { value: id },
-          createElement(SkillsPage, { cwd: "D:/repo", revealRequest }),
+        inClient(
+          createElement(
+            RevealedSetting.Provider,
+            { value: id },
+            createElement(SkillsPage, { cwd: "D:/repo", revealRequest }),
+          ),
         ),
       ),
     );
@@ -366,7 +378,10 @@ describe("Settings skill preview", () => {
     await click("Delete Project guide");
     expect(ask).toHaveBeenCalledWith(
       expect.stringContaining("entire folder"),
-      expect.objectContaining({ okLabel: "Delete" }),
+      expect.objectContaining({
+        title: "Delete Project guide from this computer?",
+        okLabel: "Delete",
+      }),
     );
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "skill_delete")).toBe(
       false,
@@ -1031,6 +1046,28 @@ describe("Skills on connected machines", () => {
       files: [{ path: "SKILL.md", data: b64("# Mac notes") }],
       overwrite: false,
     });
+  });
+
+  it("asks before replacing an existing skill, wording the whole dialog in the interface language", async () => {
+    connect([machine("mac", "Mac mini")], (_env, command) =>
+      command === "list_skills"
+        ? macSkills
+        : { name: "notes", files: [{ path: "SKILL.md", data: b64("# Mac notes") }] },
+    );
+    const connected = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "skill_import" && !(args as { overwrite: boolean }).overwrite)
+        throw new Error("SKILL_EXISTS:notes");
+      return connected(command, args);
+    });
+    await renderLocalProject();
+    await click("Copy mac-notes to This computer");
+    await act(async () => {});
+
+    expect(ask).toHaveBeenCalledWith(
+      expect.stringContaining("notes"),
+      expect.objectContaining({ title: "Replace skill?", okLabel: "Replace" }),
+    );
   });
 
   it("explains an outdated host in its own alert only", async () => {

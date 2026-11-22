@@ -4,6 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { t } from "../../../shared/i18n";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -100,9 +101,11 @@ export function ApiProviderDialog({
   return (
     <Modal
       title={t("API provider")}
-      description={t(
-        "Add a provider with your own key. The address and contract come from the catalog.",
-      )}
+      toolbar={
+        <InfoPopover>
+          {t("Add a provider with your own key. The address and contract come from the catalog.")}
+        </InfoPopover>
+      }
       size="md"
       onClose={close.requestClose}
       footer={

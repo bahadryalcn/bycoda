@@ -149,7 +149,6 @@ export function LocalDictationModels({
       <Row
         id="dictation-local-models"
         label={t("Local transcription models")}
-        descriptionVisible
         description={t("Models stay on this computer.")}
         feedback={
           error || job.state === "error" ? (

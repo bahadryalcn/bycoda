@@ -18,6 +18,7 @@ import {
   type EmailDraft,
   type EmailKind,
 } from "./emailAccountForm";
+import { AddAccountKind } from "./AddAccountKind";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -25,6 +26,8 @@ export type EmailAccountDialogProps = {
   client: SocialClient;
   onClose(): void;
   onCreated(accountId: string): void;
+  /** Shows the account-kind switch and returns to the social account form. Omit when opened on its own. */
+  onSwitchToAccount?(): void;
 };
 
 function kindText(kind: EmailKind): string {
@@ -53,7 +56,12 @@ const EMPTY: EmailDraft = {
  * Adds a sending email account. The secret goes to the Host's vault and is never shown again; the
  * unsubscribe link is required because every outbound email carries it.
  */
-export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountDialogProps) {
+export function EmailAccountDialog({
+  client,
+  onClose,
+  onCreated,
+  onSwitchToAccount,
+}: EmailAccountDialogProps) {
   const formId = useId();
   const [draft, setDraft] = useState<EmailDraft>(EMPTY);
   const { error, is, write } = useAccountWrite(
@@ -104,6 +112,9 @@ export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountD
           if (!gate.disabled) submit();
         }}
       >
+        {onSwitchToAccount ? (
+          <AddAccountKind kind="email" disabled={is("email")} onChange={onSwitchToAccount} />
+        ) : null}
         <Select
           label={t("Email provider")}
           value={draft.kind}

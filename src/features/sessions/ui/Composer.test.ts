@@ -2221,8 +2221,8 @@ describe("Composer question focus", () => {
       root.render(createElement(Composer, { ...props, workspaceMode: "current" })),
     );
     const textarea = document.querySelector("textarea")!;
-    const workspace = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Workspace Current checkout"]',
+    const workspace = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (entry) => entry.textContent === "Current checkout",
     )!;
     expect(document.querySelector('[aria-label="Branch main"]')).not.toBeNull();
     await act(async () => workspace.click());

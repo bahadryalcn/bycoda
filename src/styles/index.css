@@ -3454,6 +3454,16 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   font-size: 18px;
 }
 
+/* A policy document never out-ranks the page title: its title is the page-title size, its sections the body size. */
+.policy-document [data-streamdown="heading-1"] {
+  font-size: var(--ui-font-title);
+  line-height: var(--ui-leading-title);
+}
+.policy-document [data-streamdown="heading-2"] {
+  font-size: var(--ui-font-body);
+  line-height: var(--ui-leading-body);
+}
+
 .whats-new-md.agent-markdown [data-streamdown="heading-3"] {
   margin-top: 1.15rem;
   margin-bottom: 0.35rem;

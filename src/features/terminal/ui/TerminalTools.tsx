@@ -15,8 +15,7 @@ import { Switch } from "../../../shared/ui/Switch";
 import { Select } from "../../../shared/ui/Select";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Popover } from "../../../shared/ui/Popover";
-import { MenuRow } from "../../../shared/ui/MenuRow";
-import { Divider } from "../../../shared/ui/Divider";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
   ChevronDown,
@@ -443,6 +442,87 @@ export function TerminalTools({
       ) : null}
     </div>
   );
+  const hasToolRows =
+    !!remoteShell ||
+    (!toolbarTarget && !!onSaveCommand) ||
+    !!onSendSelectedText ||
+    !!onSavedCommands ||
+    !!onEnableShellIntegration ||
+    !!onStartupReview;
+  const menuItems: DropdownMenuItem[] = [
+    ...(terminal
+      ? ([
+          { kind: "item", id: "scroll", label: t("Scroll to bottom") },
+          { kind: "item", id: "clear", label: t("Clear terminal"), disabled: alternate },
+        ] satisfies DropdownMenuItem[])
+      : []),
+    ...(fontSize !== undefined
+      ? ([
+          ...(terminal ? [{ kind: "sep" } as const] : []),
+          {
+            kind: "content",
+            id: "font",
+            node: (
+              <div className={styles.fontRow} role="group" aria-label={t("Terminal font size")}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("Decrease terminal text size")}
+                  disabled={!onFontSizeChange || fontSize <= 8}
+                  onClick={() => onFontSizeChange?.(fontSize - 1)}
+                >
+                  <Minus className="icon-sm" />
+                </Button>
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className={styles.fontValue}
+                  role="status"
+                  aria-label={t("Terminal font size")}
+                >
+                  {fontSize}px
+                </Text>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("Increase terminal text size")}
+                  disabled={!onFontSizeChange || fontSize >= 40}
+                  onClick={() => onFontSizeChange?.(fontSize + 1)}
+                >
+                  <Plus className="icon-sm" />
+                </Button>
+                {onResetFontSize ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    label={t("Reset text size")}
+                    disabled={savedFontSize === undefined || fontSize === savedFontSize}
+                    onClick={() => {
+                      onResetFontSize();
+                      terminal?.focus();
+                    }}
+                  >
+                    {t("Reset")}
+                  </Button>
+                ) : null}
+              </div>
+            ),
+          },
+        ] satisfies DropdownMenuItem[])
+      : []),
+    ...(hasToolRows
+      ? ([
+          ...(terminal || fontSize !== undefined ? [{ kind: "sep" } as const] : []),
+          { kind: "content", id: "tools", node: renderControls(false) },
+          ...(toolbarTarget && onEnableShellIntegration
+            ? [{ kind: "item", id: "about", label: t("About shell suggestions") } as const]
+            : []),
+        ] satisfies DropdownMenuItem[])
+      : []),
+  ];
   const overlayAppearance = actionContentAttributes(
     { phase: "hover-overlay", hidden: typing, open: mode === "search" || menuOpen || helpOpen },
     styles.overlay,
@@ -517,132 +597,33 @@ export function TerminalTools({
             iconOnly
             label={t("Terminal pane actions")}
             aria-expanded={menuOpen}
-            aria-haspopup="dialog"
+            aria-haspopup="menu"
+            data-terminal-pane-menu-trigger=""
             disabled={!terminal && !onSavedCommands}
             onClick={() => setMenuOpen(!menuOpen)}
           >
             <MoreHorizontal className="icon-sm" />
           </Button>
           {menuOpen ? (
-            <Popover
+            <DropdownMenu
               anchor={menuAnchor}
-              align="end"
-              width={320}
-              solid
-              kind="dialog"
-              aria-label={t("Terminal pane actions")}
-              variant="compact"
-              onDismiss={() => {
-                setMenuOpen(false);
-                if (toolbarTarget) setHelpOpen(false);
+              returnFocusRef={menuAnchor}
+              label={t("Terminal pane actions")}
+              size="lg"
+              density="compact"
+              ignore="[data-terminal-pane-menu-trigger]"
+              items={menuItems}
+              onClose={() => setMenuOpen(false)}
+              onPick={(id) => {
+                if (id === "scroll") terminal?.scrollToBottom();
+                else if (id === "clear") terminal?.clear();
+                else if (id === "about") {
+                  setHelpOpen(true);
+                  return;
+                }
+                terminal?.focus();
               }}
-            >
-              <div>
-                {terminal ? (
-                  <>
-                    <MenuRow
-                      type="button"
-                      onClick={() => {
-                        terminal.scrollToBottom();
-                        setMenuOpen(false);
-                        terminal.focus();
-                      }}
-                    >
-                      {t("Scroll to bottom")}
-                    </MenuRow>
-                    <MenuRow
-                      type="button"
-                      disabled={alternate}
-                      onClick={() => {
-                        terminal.clear();
-                        setMenuOpen(false);
-                        terminal.focus();
-                      }}
-                    >
-                      {t("Clear terminal")}
-                    </MenuRow>
-                  </>
-                ) : null}
-                {fontSize !== undefined ? (
-                  <>
-                    {terminal ? <Divider className="my-1" /> : null}
-                    <div
-                      className={styles.fontRow}
-                      role="group"
-                      aria-label={t("Terminal font size")}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        iconOnly
-                        label={t("Decrease terminal text size")}
-                        disabled={!onFontSizeChange || fontSize <= 8}
-                        onClick={() => onFontSizeChange?.(fontSize - 1)}
-                      >
-                        <Minus className="icon-sm" />
-                      </Button>
-                      <Text
-                        size="caption"
-                        tone="secondary"
-                        leading="inherit"
-                        className={styles.fontValue}
-                        role="status"
-                        aria-label={t("Terminal font size")}
-                      >
-                        {fontSize}px
-                      </Text>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        iconOnly
-                        label={t("Increase terminal text size")}
-                        disabled={!onFontSizeChange || fontSize >= 40}
-                        onClick={() => onFontSizeChange?.(fontSize + 1)}
-                      >
-                        <Plus className="icon-sm" />
-                      </Button>
-                      {onResetFontSize ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          label={t("Reset text size")}
-                          disabled={savedFontSize === undefined || fontSize === savedFontSize}
-                          onClick={() => {
-                            onResetFontSize();
-                            setMenuOpen(false);
-                            terminal?.focus();
-                          }}
-                        >
-                          {t("Reset")}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </>
-                ) : null}
-                {remoteShell ||
-                (!toolbarTarget && onSaveCommand) ||
-                onSendSelectedText ||
-                onSavedCommands ||
-                onEnableShellIntegration ||
-                onStartupReview ? (
-                  <div>
-                    {terminal || fontSize !== undefined ? <Divider className="my-1" /> : null}
-                    {renderControls(false)}
-                    {toolbarTarget && onEnableShellIntegration ? (
-                      <MenuRow
-                        ref={helpAnchor}
-                        type="button"
-                        aria-expanded={helpOpen}
-                        aria-haspopup="dialog"
-                        onClick={() => setHelpOpen(!helpOpen)}
-                      >
-                        {t("About shell suggestions")}
-                      </MenuRow>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </Popover>
+            />
           ) : null}
         </>
       ) : null}
@@ -669,7 +650,7 @@ export function TerminalTools({
       )}
       {onEnableShellIntegration && helpOpen ? (
         <Popover
-          anchor={helpAnchor}
+          anchor={toolbarTarget ? menuAnchor : helpAnchor}
           align="end"
           kind="dialog"
           aria-label={t("About shell suggestions")}

@@ -372,6 +372,13 @@ html.theme-light .project-sigil {
     grid-template-columns: repeat(auto-fit, minmax(28px, 1fr));
   }
 }
+/* A rail too narrow for one row splits the tools into two even rows (set by RailToolGroup)
+   instead of leaving a single orphan icon on the second row. */
+@container rail (140px < width < 220px) {
+  .bycoda-rail-tools:not(.bycoda-rail-tools--footer) > [data-button-group="joined"] {
+    grid-template-columns: repeat(var(--rail-tool-columns, 4), 1fr);
+  }
+}
 /* Activity has its own space below the project ledger. */
 .bycoda-rail-status {
   border-block-start: 1px solid var(--ui-pane-border);

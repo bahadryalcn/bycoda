@@ -1043,7 +1043,7 @@ export function UsageOverview({
               </div>
               <div className="usage-overview-main">
                 <Contribution
-                  title={t("Usage breakdown")}
+                  title={t(names[dimension])}
                   rows={matchedRows}
                   metric={metric}
                   colors={colors}

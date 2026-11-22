@@ -119,9 +119,9 @@ export function VoiceConversationStyle({
           onChange={(allowBargeIn) => change({ allowBargeIn })}
         />
       </Row>
-      <Row id="voice-remove-fillers" label={t("Remove filler words")}>
+      <Row id="voice-remove-fillers" label={t("Remove filler words in replies")}>
         <Toggle
-          label={t("Remove filler words")}
+          label={t("Remove filler words in replies")}
           on={settings.removeFillers === true}
           onChange={(removeFillers) => change({ removeFillers })}
         />
@@ -141,7 +141,6 @@ export function VoiceConversationStyle({
         <Row
           id="voice-idle-sleep"
           label={t("Sleep voice when I'm idle")}
-          descriptionVisible
           description={t(
             "Closes the microphone while idle. Returning leaves it off until you press Talk.",
           )}
@@ -165,7 +164,6 @@ export function VoiceConversationStyle({
         <Row
           id="voice-return-call"
           label={t("Call me when I return")}
-          descriptionVisible
           description={t(
             "When you come back, the assistant speaks first and the microphone opens briefly. If you don't answer, it closes and you are notified.",
           )}

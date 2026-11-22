@@ -70,7 +70,7 @@ it("does not verify a provider after its settings changed while the check was pe
       }),
   );
   const valid = await render("provider");
-  await click("Check connection");
+  await click("Check Local");
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), mode: "openai" }));
   valid.mockClear();
   await act(async () => finish({ ready: true, missing: [] }));
@@ -81,7 +81,7 @@ it("shows an actual successful check and invalidates it when the chosen provider
   const valid = await render("provider");
   expect(runtime.inspect).not.toHaveBeenCalled();
   expect(runtime.secret).not.toHaveBeenCalled();
-  await click("Check connection");
+  await click("Check Local");
   expect(container.querySelector('[role="status"]')?.textContent).toBe("Ready");
   expect(valid).toHaveBeenLastCalledWith(true);
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), mode: "openai" }));
@@ -93,12 +93,12 @@ it("keeps a failed provider check retryable without opening the microphone", asy
     .mockRejectedValueOnce(new Error("Fixture connection unavailable"))
     .mockResolvedValueOnce({ ready: true, missing: [] });
   const valid = await render("provider");
-  await click("Check connection");
+  await click("Check Local");
   expect(container.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
     "Fixture connection unavailable",
   );
   expect(valid).not.toHaveBeenCalledWith(true);
-  await click("Check connection");
+  await click("Check Local");
   expect(valid).toHaveBeenLastCalledWith(true);
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(runtime.construct).not.toHaveBeenCalled();
@@ -108,9 +108,9 @@ it("does not retain a successful indication when an explicit recheck fails", asy
     .mockResolvedValueOnce({ ready: true, missing: [] })
     .mockRejectedValueOnce(new Error("Fixture connection lost"));
   const valid = await render("provider");
-  await click("Check connection");
+  await click("Check Local");
   expect(valid).toHaveBeenLastCalledWith(true);
-  await click("Check connection");
+  await click("Check Local");
   expect(container.querySelector('[role="status"]')?.textContent).toBe("");
   expect(valid).toHaveBeenLastCalledWith(false);
   expect(container.querySelector('[role="alert"]')?.textContent?.trim()).toBe(

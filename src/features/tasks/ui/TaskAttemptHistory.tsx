@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Timeline } from "../../../shared/ui/Timeline";
 import { firstSentence } from "../model/taskStatusLine";
 import { ClampedMarkdown } from "./TaskStatusLine";
@@ -43,14 +44,19 @@ export function TaskAttemptHistory({
     <section aria-label={t("Attempt history")} className="grid min-w-0 gap-2">
       {task.attemptHistory?.length ? (
         <>
-          <SectionLabel as="h3" count={task.attemptHistory.length}>
+          <SectionLabel
+            as="h3"
+            count={task.attemptHistory.length}
+            actions={
+              <InfoPopover label={t("About attempt outcomes")}>
+                {t(
+                  "Worker summaries describe what the agent reported. The review below records verification.",
+                )}
+              </InfoPopover>
+            }
+          >
             {t("Attempt outcomes")}
           </SectionLabel>
-          <Text as="p" size="micro" tone="muted">
-            {t(
-              "Worker summaries describe what the agent reported. The review below records verification.",
-            )}
-          </Text>
           <Timeline
             label={t("Attempt outcomes")}
             events={task.attemptHistory.map((entry) => ({

@@ -43,6 +43,7 @@ import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useReportApprovalCardOnScreen } from "./approvalCardVisibility";
+import { approvalTitle } from "./approvalPresentation";
 import { approvalDetail } from "../model/approvalDetail";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 import type { ApprovalDecision } from "../../../integrations/harness";
@@ -975,7 +976,7 @@ function BycodaCallRow({
   const hasError = state === "rejected" && hasResult;
   const command = `${PRODUCT_IDENTITY.displayName} app ${call.action}`;
   const verb = pendingApproval
-    ? t("Needs approval")
+    ? approvalTitle(block, t)
     : state === "pending"
       ? t("Running")
       : t("Ran");
@@ -1340,7 +1341,8 @@ function ConnectedApprovalControls({
   return (
     <Surface ref={cardRef} as="div" variant="card" padding="sm" className="mt-1.5 min-w-0">
       <ApprovalRequest
-        title={t("Needs approval")}
+        title={approvalTitle(block, t)}
+        context={[context.session.cwd, t("This request only")]}
         detail={approvalDetail(block)}
         details={
           hasToolInspection(block)

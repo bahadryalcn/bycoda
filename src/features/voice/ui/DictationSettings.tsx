@@ -254,11 +254,11 @@ export function DictationSettings({
             </Row>
             <Row
               id="dictation-remove-fillers"
-              label={t("Remove filler words")}
+              label={t("Remove filler words in dictation")}
               description={t("Remove hesitation sounds such as um and uh from dictated text.")}
             >
               <Toggle
-                label={t("Remove filler words")}
+                label={t("Remove filler words in dictation")}
                 on={settings.dictationRemoveFillers}
                 onChange={(dictationRemoveFillers) => change({ dictationRemoveFillers })}
               />

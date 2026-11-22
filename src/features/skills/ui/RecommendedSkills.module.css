@@ -4,15 +4,14 @@
   gap: 1rem;
   min-inline-size: 0;
 }
-.intro,
 .note {
   margin: 0;
 }
 .controls {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  align-items: end;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-inline-size: 0;
 }
 .provider {
   display: flex;
@@ -33,9 +32,6 @@
 }
 .row[data-installed] .content {
   opacity: 0.65;
-}
-.notes .note + .note {
-  margin-block-start: 0.5rem;
 }
 .content {
   flex: 1;
@@ -76,9 +72,6 @@
   flex-wrap: wrap;
 }
 @media (max-width: 640px) {
-  .controls {
-    grid-template-columns: 1fr;
-  }
   .row {
     gap: 0.5rem;
   }

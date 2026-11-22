@@ -2,6 +2,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { useT } from "../../../shared/i18n";
 import { Text } from "../../../shared/ui/Text";
+import { Button } from "../../../shared/ui/Button";
 import { Server, StickyNote } from "../../../shared/ui/icons";
 import type { RankedFile } from "../../files";
 import { isNoteMentionPath } from "../../notes";
@@ -59,6 +60,16 @@ export function FileMentionPicker({
     workItemsFailure?.error.failure === "rate-limited" && !!workItemsFailure.error.retryAt,
   );
   const includesMentions = includeWorkItems || workItemsScoped || includeServers || serversScoped;
+  // Without a query the list reads as the project tree: root files first, then folders, then
+  // notes. Headers only appear when the ranking really keeps each band together.
+  const treeRank = (file: RankedFile) =>
+    isNoteMentionPath(file.path) ? 2 : file.relative.includes("/") ? 1 : 0;
+  const treeGroups =
+    !includesMentions &&
+    !query.trim() &&
+    files.every((file, index) => index === 0 || treeRank(files[index - 1]) <= treeRank(file));
+  // A search that finds nothing offers a rescan, since the index may simply be stale.
+  const showRescan = !includesMentions && files.length === 0 && !!query.trim() && !!onRetry;
   const list = usePickerList({
     options: files.map((file) => {
       const crew = crewMentionOf(file);
@@ -109,7 +120,9 @@ export function FileMentionPicker({
               : t("Crews")
             : server && !server.hint
               ? t("Servers")
-              : undefined,
+              : treeGroups
+                ? [t("Project root"), t("Folders"), t("Notes")][treeRank(file)]
+                : undefined,
         meta: workItem ? (
           workItemMentionMeta(workItem, t("Unassigned"))
         ) : server ? (
@@ -182,12 +195,32 @@ export function FileMentionPicker({
         listHeight="standard"
         className="overflow-y-auto overscroll-none"
       />
-      {indexNotice && !loading ? (
-        <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
-          {indexNotice === "incomplete"
-            ? t("File index is incomplete; some files may not appear.")
-            : t("File index completeness is unknown; some files may not appear.")}
-        </Text>
+      {(indexNotice || showRescan) && !loading && !failed ? (
+        <div
+          className="flex items-start justify-between gap-2 px-3 py-2"
+          data-mention-index-notice=""
+        >
+          <Text as="p" size="caption" tone="secondary" className="min-w-0 break-words">
+            {indexNotice === "incomplete"
+              ? t("File index is incomplete; some files may not appear.")
+              : indexNotice === "unknown"
+                ? t("File index completeness is unknown; some files may not appear.")
+                : t("Not finding it? Rescan the project files.")}
+          </Text>
+          {onRetry ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              className="shrink-0"
+              // Keep focus in the composer while the action is pressed.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={onRetry}
+            >
+              {t("Rescan files")}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </Surface>
   );

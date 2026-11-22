@@ -229,23 +229,19 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           {recovery.loaded ? t("Refresh reports") : t("Check reports")}
         </Button>
       </div>
-      <Text as="div" size="caption" tone="secondary" className="recovery-status">
-        {recovery.loaded ? (
-          <>
-            <span>
-              {t("Loaded: {p0} · Needs recovery: {p1}", {
-                p0: recovery.records.length,
-                p1: heldCount,
-              })}
-            </span>
-            {rows.length !== scoped.length ? (
-              <LiveText text={t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })} />
-            ) : null}
-          </>
-        ) : (
-          <span>{t("Reports are not loaded yet.")}</span>
-        )}
-      </Text>
+      {recovery.loaded ? (
+        <Text as="div" size="caption" tone="secondary" className="recovery-status">
+          <span>
+            {t("Loaded: {p0} · Needs recovery: {p1}", {
+              p0: recovery.records.length,
+              p1: heldCount,
+            })}
+          </span>
+          {rows.length !== scoped.length ? (
+            <LiveText text={t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })} />
+          ) : null}
+        </Text>
+      ) : null}
       <div className="recovery-body">
         {rows.length ? (
           <ContinuousList

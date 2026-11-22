@@ -257,27 +257,15 @@ it("selects a draft workspace without opening the creation dialog", async () => 
     ),
   );
 
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[aria-label="Workspace Current checkout"]')!
-      .click(),
-  );
+  await act(async () => button("Current checkout").click());
   await act(async () => button("New worktree").click());
 
   expect(onModeChange).toHaveBeenCalledWith("worktree", "main");
   expect(document.querySelector('[aria-label="Create worktree"]')).toBeNull();
-  // The shortcut shows as key caps after the tooltip title.
-  expect(
-    await tooltipText(
-      container.querySelector<HTMLElement>('[aria-label="Workspace Current checkout"]')!,
-    ),
-  ).toBe(`Workspace: Current checkout${WORKSPACE_MODE_SHORTCUT.replaceAll("+", "")}`);
-
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[aria-label="Workspace Current checkout"]')!
-      .click(),
+  expect(await tooltipText(button("Current checkout"))).toBe(
+    `Workspace${WORKSPACE_MODE_SHORTCUT.replaceAll("+", "")}`,
   );
+  await act(async () => button("Current checkout").click());
   const settings = document.querySelector<HTMLButtonElement>(
     '[aria-label="Open worktree settings"]',
   )!;
@@ -303,16 +291,10 @@ it("selects an existing worktree from the draft workspace menu", async () => {
     ),
   );
 
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[aria-label="Workspace Current checkout"]')!
-      .click(),
-  );
+  await act(async () => button("Current checkout").click());
   const existingWorktree = button("Existing worktree…");
   expect(existingWorktree).not.toBeNull();
-  await act(async () =>
-    existingWorktree.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })),
-  );
+  await act(async () => existingWorktree.click());
 
   expect(document.querySelector('[aria-label="Existing worktrees"]')).not.toBeNull();
   // The row is a role="option", so only aria-controls links it to the open flyout.

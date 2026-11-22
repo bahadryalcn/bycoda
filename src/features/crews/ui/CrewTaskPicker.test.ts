@@ -47,7 +47,7 @@ it("collapses to one quiet line with an info control when the host has no Crews 
   expect(view.container.querySelector("button[aria-label='Crews unavailable']")).not.toBeNull();
   expect(view.container.querySelector("[role='alert']")).toBeNull();
   expect(
-    view.container.querySelector("button[aria-haspopup='dialog'][aria-label^='Worker:']"),
+    view.container.querySelector("button[aria-haspopup='dialog'][aria-label^='Crew:']"),
   ).toBeNull();
   await view.unmount();
 });
@@ -57,7 +57,7 @@ it("keeps the crew picker when the host supports Crews", async () => {
   const view = await render({});
   expect(view.container.querySelector("[data-crew-task-unsupported]")).toBeNull();
   expect(
-    view.container.querySelector("button[aria-haspopup='dialog'][aria-label^='Worker:']"),
+    view.container.querySelector("button[aria-haspopup='dialog'][aria-label^='Crew:']"),
   ).not.toBeNull();
   expect(view.container.textContent).toContain("Agent");
   await view.unmount();

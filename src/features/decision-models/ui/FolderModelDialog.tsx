@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -199,9 +200,13 @@ export function FolderModelDialog({
   return (
     <Modal
       title={t("Add from folder")}
-      description={t(
-        "Choose the folder containing your model. The app finds the model and runtime for you.",
-      )}
+      toolbar={
+        <InfoPopover>
+          {t(
+            "Choose the folder containing your model. The app finds the model and runtime for you.",
+          )}
+        </InfoPopover>
+      }
       size="md"
       onClose={close.requestClose}
       footer={

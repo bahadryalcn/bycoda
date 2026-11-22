@@ -366,109 +366,115 @@ export function InboxDetail({
                 <Heading size="page" lines={3} className="break-words">
                   {item.title}
                 </Heading>
-                {panel || githubWorkspace ? null : identityRow}
-                <Text
-                  as="div"
-                  size="caption"
-                  tone="secondary"
-                  className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+                {/* Identity and people share one wrapping line instead of two stacked rows. */}
+                <div
+                  className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
+                  data-inbox-detail-meta
                 >
-                  {authorName ? (
-                    <span className="inline-flex min-w-0 items-center gap-1.5">
-                      <Text size="inherit" tone="muted">
-                        {jira ? t("Reporter") : t("Author")}
-                      </Text>
-                      <InboxPerson
-                        name={authorName}
-                        avatarUrl={inboxPersonAvatarUrl(
-                          item.provider,
-                          authorName,
-                          details?.authorAvatarUrl,
+                  {panel || githubWorkspace ? null : identityRow}
+                  <Text
+                    as="div"
+                    size="caption"
+                    tone="secondary"
+                    className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+                  >
+                    {authorName ? (
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <Text size="inherit" tone="muted">
+                          {jira ? t("Reporter") : t("Author")}
+                        </Text>
+                        <InboxPerson
+                          name={authorName}
+                          avatarUrl={inboxPersonAvatarUrl(
+                            item.provider,
+                            authorName,
+                            details?.authorAvatarUrl,
+                          )}
+                          size="sm"
+                        />
+                      </span>
+                    ) : null}
+                    {showAssignment ? (
+                      <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                        <Text size="inherit" tone="muted">
+                          {t("Assignee")}
+                        </Text>
+                        {extraAssignees.length > 0 ? (
+                          <span className="flex min-w-0 flex-wrap items-center gap-2">
+                            {extraAssignees.map((person) => (
+                              <InboxPerson
+                                key={person.login}
+                                name={person.login}
+                                avatarUrl={inboxPersonAvatarUrl(
+                                  item.provider,
+                                  person.login,
+                                  person.avatarUrl,
+                                )}
+                                size="sm"
+                              />
+                            ))}
+                          </span>
+                        ) : (
+                          <span>{t("Unassigned")}</span>
                         )}
-                        size="sm"
-                      />
-                    </span>
-                  ) : null}
-                  {showAssignment ? (
-                    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                      <Text size="inherit" tone="muted">
-                        {t("Assignee")}
-                      </Text>
-                      {extraAssignees.length > 0 ? (
-                        <span className="flex min-w-0 flex-wrap items-center gap-2">
-                          {extraAssignees.map((person) => (
-                            <InboxPerson
-                              key={person.login}
-                              name={person.login}
-                              avatarUrl={inboxPersonAvatarUrl(
-                                item.provider,
-                                person.login,
-                                person.avatarUrl,
-                              )}
-                              size="sm"
-                            />
-                          ))}
-                        </span>
-                      ) : (
-                        <span>{t("Unassigned")}</span>
-                      )}
-                    </span>
-                  ) : null}
-                  {item.createdAt && hasInboxRelativeTime(item.createdAt) ? (
-                    <>
-                      {githubWorkspace ? null : <span aria-hidden>·</span>}
-                      <Timestamp
-                        value={Date.parse(item.createdAt)}
-                        format="relative"
-                        prefix={t("Created")}
-                      />
-                    </>
-                  ) : null}
-                  {hasInboxRelativeTime(item.updatedAt) ? (
-                    <>
-                      {githubWorkspace ? null : <span aria-hidden>·</span>}
-                      <span>
-                        {t("Updated ")}
-                        <InboxRelativeTime at={item.updatedAt} />
                       </span>
-                    </>
-                  ) : null}
-                  {baseRef && headRef ? (
-                    <>
-                      {githubWorkspace ? null : <span aria-hidden>·</span>}
-                      <span className="inline-flex min-w-0 items-center gap-1">
-                        <GitCompare className="icon-xs shrink-0" strokeWidth={1.75} />
-                        <span className="min-w-0 wrap-anywhere">
-                          {baseRef} ← {headRef}
+                    ) : null}
+                    {item.createdAt && hasInboxRelativeTime(item.createdAt) ? (
+                      <>
+                        {githubWorkspace ? null : <span aria-hidden>·</span>}
+                        <Timestamp
+                          value={Date.parse(item.createdAt)}
+                          format="relative"
+                          prefix={t("Created")}
+                        />
+                      </>
+                    ) : null}
+                    {hasInboxRelativeTime(item.updatedAt) ? (
+                      <>
+                        {githubWorkspace ? null : <span aria-hidden>·</span>}
+                        <span>
+                          {t("Updated ")}
+                          <InboxRelativeTime at={item.updatedAt} />
                         </span>
-                        <CopyBranchNameButton branch={headRef} />
-                      </span>
-                    </>
-                  ) : null}
-                  {reviewLabel ? (
-                    <Badge
-                      tone={
-                        reviewDecision.toUpperCase() === "APPROVED"
-                          ? "success"
-                          : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
-                            ? "danger"
-                            : reviewDecision.toUpperCase() === "REVIEW_REQUIRED"
-                              ? "warning"
-                              : "neutral"
-                      }
-                    >
-                      {t(reviewLabel)}
-                    </Badge>
-                  ) : null}
-                  {githubWorkspace ? null : (
-                    <BadgeList
-                      label={t("Labels")}
-                      rows={1}
-                      items={inboxLabelItems(item.labels)}
-                      className="min-w-0 max-w-full"
-                    />
-                  )}
-                </Text>
+                      </>
+                    ) : null}
+                    {baseRef && headRef ? (
+                      <>
+                        {githubWorkspace ? null : <span aria-hidden>·</span>}
+                        <span className="inline-flex min-w-0 items-center gap-1">
+                          <GitCompare className="icon-xs shrink-0" strokeWidth={1.75} />
+                          <span className="min-w-0 wrap-anywhere">
+                            {baseRef} ← {headRef}
+                          </span>
+                          <CopyBranchNameButton branch={headRef} />
+                        </span>
+                      </>
+                    ) : null}
+                    {reviewLabel ? (
+                      <Badge
+                        tone={
+                          reviewDecision.toUpperCase() === "APPROVED"
+                            ? "success"
+                            : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
+                              ? "danger"
+                              : reviewDecision.toUpperCase() === "REVIEW_REQUIRED"
+                                ? "warning"
+                                : "neutral"
+                        }
+                      >
+                        {t(reviewLabel)}
+                      </Badge>
+                    ) : null}
+                    {githubWorkspace ? null : (
+                      <BadgeList
+                        label={t("Labels")}
+                        rows={1}
+                        items={inboxLabelItems(item.labels)}
+                        className="min-w-0 max-w-full"
+                      />
+                    )}
+                  </Text>
+                </div>
                 {githubWorkspace ? (
                   <BadgeList label={t("Labels")} rows={2} items={inboxLabelItems(item.labels)} />
                 ) : null}

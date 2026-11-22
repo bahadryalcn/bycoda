@@ -287,7 +287,7 @@ function ProjectTerminalDockComponent({
         actions={
           <>
             <IconButton
-              label={t("New Terminal ({p0}`)", { p0: MOD })}
+              label={t("New terminal ({p0}`)", { p0: MOD })}
               onClick={() => {
                 onAddTerminal();
               }}
@@ -489,7 +489,6 @@ function ProjectTerminalDockComponent({
               label: t("Close others"),
               disabled: dock.pane.files.length < 2,
             },
-            { kind: "item", id: "close-all", label: t("Close all terminals") },
           ]}
           onPick={(id) => {
             if (!isVisible()) return;
@@ -504,7 +503,6 @@ function ProjectTerminalDockComponent({
             }
             if (id === "close") onCloseTerminal(terminalMenu.id);
             if (id === "close-others") onCloseTerminals(terminalMenu.id);
-            if (id === "close-all") onCloseTerminals();
             setTerminalMenu(null);
           }}
           onClose={() => setTerminalMenu(null)}
@@ -524,12 +522,6 @@ function ProjectTerminalDockComponent({
               label: `${profile.name}${profile.id === defaultProfile ? ` (${t("Default")})` : ""}`,
               checked: profile.id === defaultProfile,
             })),
-            ...(onSplitTerminal
-              ? [
-                  { kind: "sep" as const },
-                  { kind: "item" as const, id: "split", label: t("Split") },
-                ]
-              : []),
             ...(profiles?.error
               ? [
                   {
@@ -567,7 +559,6 @@ function ProjectTerminalDockComponent({
             setProfileMenu(null);
             if (id === "retry-profiles") profiles?.retry();
             else if (id === "default") onSelectDefaultProfile?.();
-            else if (id === "split") splitTerminal(dock.pane.activeFileId);
             else if (id.startsWith("profile:")) {
               onAddTerminalWithProfile?.(id.slice("profile:".length));
             }
@@ -596,18 +587,6 @@ function ProjectTerminalDockComponent({
               })),
             },
             { kind: "sep" },
-            {
-              kind: "item",
-              id: "close",
-              label: t("Close active terminal"),
-              icon: <X className="icon-sm" />,
-            },
-            {
-              kind: "item",
-              id: "close-others",
-              label: t("Close others"),
-              disabled: dock.pane.files.length < 2,
-            },
             { kind: "item", id: "close-all", label: t("Close all terminals"), danger: true },
             { kind: "sep" },
             {
@@ -622,8 +601,6 @@ function ProjectTerminalDockComponent({
             if (id === "top" || id === "bottom" || id === "left" || id === "right") {
               onSideChange(id);
             }
-            if (id === "close") onCloseTerminal(dock.pane.activeFileId);
-            if (id === "close-others") onCloseTerminals(dock.pane.activeFileId);
             if (id === "close-all") onCloseTerminals();
             if (id === "hide") onHide();
             setMenu(null);

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Button } from "../../shared/ui/Button";
 import { ButtonGroup, ButtonGroupSelection } from "../../shared/ui/ButtonGroup";
 import { StatusDot } from "../../shared/ui/StatusDot";
@@ -20,7 +20,13 @@ export type RailTool = {
 /** Workspace tools as one joined group of icon buttons that wraps into rows on a narrow rail (bycoda.css); each name lives in its tooltip. */
 export function RailToolGroup({ label, tools }: { label: string; tools: readonly RailTool[] }) {
   return (
-    <ButtonGroup aria-label={label} surface="navigation" selection="plate" className="w-full">
+    <ButtonGroup
+      aria-label={label}
+      surface="navigation"
+      selection="plate"
+      className="w-full"
+      style={{ "--rail-tool-columns": Math.ceil(tools.length / 2) } as CSSProperties}
+    >
       {tools.map((tool) => (
         <Button
           key={tool.id}

@@ -33,7 +33,7 @@ import {
   findConflictBlocks,
   resolveConflictMarkers,
 } from "../model/conflictMarkers";
-import { applyTextRoles, stepConflict } from "./mergeResultActions";
+import { applyChoiceButton, applyTextRoles, stepConflict } from "./mergeResultActions";
 import { ConflictScrollSync } from "./conflictScrollSync";
 import { useConflictProvenance, type ConflictProvenance } from "./useConflictProvenance";
 import {
@@ -676,7 +676,7 @@ class SourceChoiceWidget extends WidgetType {
     );
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "conflict-inline-choice";
+    applyChoiceButton(button);
     button.dataset.mergeChoice = String(this.id);
     const controls = this.controls();
     button.disabled = !controls || !!controls.disabled;

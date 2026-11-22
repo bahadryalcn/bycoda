@@ -27,9 +27,17 @@ vi.mock("../../../shared/ui/Modal", () => ({
 import { ServerFiles } from "./ServerFiles";
 afterEach(() => {
   vi.clearAllMocks();
+  // Queued one-shot results from a test must not leak into the next one.
+  native.invoke.mockReset();
+  approval.request.mockReset();
   vi.unstubAllGlobals();
 });
 
+const initialEntries = [
+  { name: "folder", kind: "directory" },
+  { name: "file.txt", kind: "file" },
+  { name: "link", kind: "symlink" },
+];
 async function setup(
   recoveries?: unknown[],
   endpoint?: import("../model/serverInventory").SshEndpoint,
@@ -45,7 +53,12 @@ async function setup(
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  if (recoveries) native.invoke.mockResolvedValueOnce(recoveries);
+  // Opening the page lists the home directory; answer by command, not by call order.
+  if (!native.invoke.getMockImplementation())
+    native.invoke.mockImplementation(async (command: string) =>
+      command === "ssh_sftp_recoveries" ? (recoveries ?? []) : initialEntries,
+    );
+  else if (recoveries) native.invoke.mockResolvedValueOnce(recoveries);
   await act(async () =>
     root.render(
       createElement(ServerFiles, { connectionId: "canonical-server", endpoint, onClose: vi.fn() }),
@@ -94,14 +107,18 @@ it("unsubscribes an SFTP listener whose registration finishes after unmount", as
   expect(release).toHaveBeenCalledOnce();
 });
 
-it("opens only on explicit action and keeps symlinks without download/follow controls", async () => {
+it("lists the home directory on open without an Open button and keeps symlinks without download/follow controls", async () => {
   const context = await setup();
   try {
-    expect(native.invoke).toHaveBeenCalledExactlyOnceWith("ssh_sftp_recoveries", {
+    expect(native.invoke).toHaveBeenCalledWith("ssh_sftp_recoveries", {
       connectionId: "canonical-server",
     });
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_resume", expect.anything());
-    await context.list();
+    expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_download", expect.anything());
+    expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_upload", expect.anything());
+    expect(
+      Array.from(context.host.querySelectorAll("button")).some((el) => el.textContent === "Open"),
+    ).toBe(false);
     expect(native.invoke).toHaveBeenCalledWith(
       "ssh_sftp_list",
       expect.objectContaining({ connectionId: "canonical-server", path: "." }),
@@ -289,11 +306,6 @@ it("cancels a pending proxy approval without starting the late directory request
   );
   const context = await setup([], proxyEndpoint);
   try {
-    await act(async () =>
-      context.host
-        .querySelector("form")!
-        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
-    );
     native.invoke.mockResolvedValueOnce(undefined);
     await act(async () => context.button("Cancel").click());
     await act(async () => approve("late-ticket"));
@@ -346,8 +358,8 @@ it("binds explicit SFTP list/download/upload to one approved operation and cance
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
     );
   try {
-    expect(approval.request).not.toHaveBeenCalled();
-    await submit();
+    // Opening the page asks for the list approval; a refusal makes no remote call.
+    expect(approval.request).toHaveBeenCalledTimes(1);
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_list", expect.anything());
     await submit();
     expect(approval.request).toHaveBeenLastCalledWith({
@@ -405,7 +417,6 @@ it("binds explicit SFTP list/download/upload to one approved operation and cance
 });
 it("binds recovery resume/discard authorization to the exact recovery and overwrite decision", async () => {
   approval.request.mockResolvedValue("recovery-ticket");
-  native.invoke.mockResolvedValue([]);
   const context = await setup(
     [
       {
@@ -419,7 +430,11 @@ it("binds recovery resume/discard authorization to the exact recovery and overwr
     proxyEndpoint,
   );
   try {
-    expect(approval.request).not.toHaveBeenCalled();
+    expect(approval.request).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: expect.objectContaining({ kind: "sftpResume" }),
+      }),
+    );
     await act(async () => context.button("Review resume").click());
     await act(async () =>
       context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
@@ -445,6 +460,7 @@ it("binds recovery resume/discard authorization to the exact recovery and overwr
   } finally {
     await context.cleanup();
   }
+  native.invoke.mockReset();
   const second = await setup(
     [
       {

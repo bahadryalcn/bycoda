@@ -590,7 +590,9 @@ function CommandDetails({
               >
                 {loadState === "failed"
                   ? t("Retry")
-                  : `${t("Load full output (")}${Math.max(1, Math.ceil(remote.bytes / 1024))}${t(" KB)")}`}
+                  : t("Load full output ({p0} KB)", {
+                      p0: Math.max(1, Math.ceil(remote.bytes / 1024)),
+                    })}
               </Button>
             ) : null}
             {loadState === "loading" ? (
@@ -898,8 +900,7 @@ function SubagentTrail({
             }}
             className="self-start"
           >
-            {t("Show earlier steps (")}
-            {hidden})
+            {t("Show earlier steps ({p0})", { p0: hidden })}
           </Button>
         ) : null}
         {visible.map((step) => (

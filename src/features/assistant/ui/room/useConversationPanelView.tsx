@@ -205,7 +205,7 @@ export function useConversationPanelView(
   const threadLabel = currentThread?.projectId
     ? (projects.find((project) => (project.id ?? project.path) === currentThread.projectId)?.name ??
       currentThread.projectId)
-    : t("Global");
+    : "";
 
   return {
     searchResults,

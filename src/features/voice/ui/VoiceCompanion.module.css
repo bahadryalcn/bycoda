@@ -4,6 +4,11 @@
   bottom: 36px;
   z-index: var(--layer-pane-sheet);
 }
+/* The floating corner launcher would cover the first settings rows (a provider Segmented, a
+   speaker Select) while a settings page is open; the shortcut and the sidebar dock still start voice. */
+:global(:root:has([data-setting-id])) .launcher {
+  display: none;
+}
 /* Sidebar footer dock beside Settings (voiceLauncherSlot.tsx). Empty while the companion is
    open; it stays rendered so the dock can tell a visible footer from a hidden copy. */
 .launcherSlot {

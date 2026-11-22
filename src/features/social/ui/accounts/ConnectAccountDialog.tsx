@@ -24,6 +24,7 @@ import {
   hostConnection,
   type ConnectionMethod,
 } from "./connectOptions";
+import { AddAccountKind } from "./AddAccountKind";
 import { EmailAccountDialog } from "./EmailAccountDialog";
 import { SignupAccountDialog } from "./SignupAccountDialog";
 import { canCreateAccount } from "./signupModel";
@@ -91,7 +92,14 @@ export function ConnectAccountDialog({
   const { error, is, write } = useAccountWrite(t("The account could not be added. Try again."));
 
   if (kind === "email")
-    return <EmailAccountDialog client={client} onClose={onClose} onCreated={onCreated} />;
+    return (
+      <EmailAccountDialog
+        client={client}
+        onClose={onClose}
+        onCreated={onCreated}
+        onSwitchToAccount={() => setKind("account")}
+      />
+    );
 
   if (kind === "signup")
     return (
@@ -101,7 +109,7 @@ export function ConnectAccountDialog({
         accountType={accountType}
         initialName={name}
         projectIds={picked}
-        onClose={() => setKind("account")}
+        onClose={onClose}
         onCreated={onCreated}
       />
     );
@@ -170,6 +178,7 @@ export function ConnectAccountDialog({
           if (!gate.disabled) submit();
         }}
       >
+        <AddAccountKind kind="account" disabled={is("create")} onChange={() => setKind("email")} />
         <Select
           label={t("Platform")}
           value={platform}
@@ -225,9 +234,6 @@ export function ConnectAccountDialog({
             {t("Create a new {p0} account instead", { p0: SOCIAL_PLATFORM_NAMES[platform] })}
           </Button>
         ) : null}
-        <Button variant="link" size="sm" onClick={() => setKind("email")}>
-          {t("Add an email account instead")}
-        </Button>
         {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>

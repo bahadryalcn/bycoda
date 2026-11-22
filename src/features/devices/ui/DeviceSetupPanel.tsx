@@ -131,7 +131,7 @@ export function DeviceSetupPanel({
           tone="danger"
           title={t("Device host reported an error")}
           action={{
-            label: t("Refresh status"),
+            label: t("Retry"),
             pending: refresh.loading,
             disabled: refresh.disabled,
             onClick: refresh.onClick,

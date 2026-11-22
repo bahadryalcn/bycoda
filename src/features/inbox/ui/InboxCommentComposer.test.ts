@@ -93,8 +93,14 @@ it("switches source, split and preview without losing the draft or submitting", 
     await act(async () => tab.click());
     expect(tab.getAttribute("aria-selected")).toBe("true");
   };
-  expect(container.querySelector("[data-comment-preview]")?.textContent).toBe("**preview draft**");
+  // One writing surface by default; the toolbar belongs to it, the empty preview has no text.
+  expect(container.querySelector("[data-comment-preview]")).toBeNull();
+  expect(container.textContent).not.toContain("No preview");
+  expect(
+    container.querySelector('[role="group"][aria-label="Markdown formatting"]'),
+  ).not.toBeNull();
   await select("Preview");
+  expect(container.querySelector('[role="group"][aria-label="Markdown formatting"]')).toBeNull();
   expect(editor.closest("[hidden]")).not.toBeNull();
   expect(container.querySelector("[data-comment-preview]")?.textContent).toBe("**preview draft**");
   await select("Source");

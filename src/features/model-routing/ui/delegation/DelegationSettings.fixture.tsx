@@ -49,7 +49,7 @@ vi.mock("../../../../shared/ui/DropdownMenu", () => ({
     items: { id: string; label: string }[];
     onPick: (id: string) => void;
   }) => (
-    <div role="menu">
+    <div data-menu-mock>
       {items.map((item) => (
         <button key={item.id} onClick={() => onPick(item.id)}>
           {item.label}
@@ -158,11 +158,9 @@ it("adds a provider override, then stores Off explicitly in it", () => {
   const draft = draftWith({ entries: [entry("codex"), entry("claude", "work")] });
   const onChange = render(draft);
   click("Add override");
-  expect([...container.querySelectorAll("[role=menu] button")].map((b) => b.textContent)).toEqual([
-    "Codex",
-    "Claude Code",
-    "Claude Code · Work",
-  ]);
+  expect(
+    [...container.querySelectorAll("[data-menu-mock] button")].map((b) => b.textContent),
+  ).toEqual(["Codex", "Claude Code", "Claude Code · Work"]);
   click("Codex");
   expect(onChange).not.toHaveBeenCalled();
   click("Add setting");

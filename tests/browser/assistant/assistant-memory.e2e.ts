@@ -59,7 +59,7 @@ for (const theme of ["light", "dark"])
       await capture(page, `memory-edit-${theme}-${width}`);
       await editor.getByRole("button", { name: "Save", exact: true }).click();
       await expect(row(page, edited)).toContainText("Everywhere");
-      const toggle = row(page, edited).getByRole("switch", { name: "Enable memory", exact: true });
+      const toggle = row(page, edited).getByRole("switch", { name: "Active", exact: true });
       await toggle.focus();
       await page.keyboard.press("Space");
       await expect(toggle).not.toBeChecked();
@@ -71,7 +71,6 @@ for (const theme of ["light", "dark"])
       await search.fill("no saved memory matches this query");
       await expect(page.getByText(edited, { exact: true })).toHaveCount(0);
       await expect(page.getByText("No results", { exact: true })).toBeVisible();
-      await expect(page.getByText("Rules 1/40", { exact: true })).toBeVisible();
       await capture(page, `memory-search-empty-${theme}-${width}`);
       await search.fill("");
       await row(page, edited).getByRole("button", { name: "Delete memory", exact: true }).click();
@@ -83,7 +82,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       await expect(row(page, edited)).toBeVisible();
       await expect(
-        row(page, edited).getByRole("switch", { name: "Enable memory", exact: true }),
+        row(page, edited).getByRole("switch", { name: "Active", exact: true }),
       ).not.toBeChecked();
       await capture(page, `memory-restored-${theme}-${width}`);
     });

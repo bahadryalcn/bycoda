@@ -190,27 +190,30 @@ export function OnboardingWorkspace() {
             />
           ))}
         </div>
-        <SwitchRow
-          label={t("Prevent sleep while agents work")}
-          checked={keepAwake}
-          onChange={(next) => {
-            void savePower(next).catch(console.error);
-          }}
-          disabled={powerPending}
-        />
-        {powerFailed !== null ? (
-          <SettingsFeedback
-            state="error"
-            action={{
-              label: t("Retry"),
-              onClick: () => {
-                void savePower(powerFailed).catch(console.error);
-              },
+        {/* A system preference, not a workspace tool: its own section, apart from the feature cards. */}
+        <Section title={t("System")}>
+          <SwitchRow
+            label={t("Prevent sleep while agents work")}
+            checked={keepAwake}
+            onChange={(next) => {
+              void savePower(next).catch(console.error);
             }}
-          >
-            {t("Could not save changes")}
-          </SettingsFeedback>
-        ) : null}
+            disabled={powerPending}
+          />
+          {powerFailed !== null ? (
+            <SettingsFeedback
+              state="error"
+              action={{
+                label: t("Retry"),
+                onClick: () => {
+                  void savePower(powerFailed).catch(console.error);
+                },
+              }}
+            >
+              {t("Could not save changes")}
+            </SettingsFeedback>
+          ) : null}
+        </Section>
       </div>
     </>
   );

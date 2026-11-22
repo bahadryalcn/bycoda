@@ -7,6 +7,7 @@ import { toLocalDateTime } from "../../../../shared/ui/DateTimePicker";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
+import { Stepper } from "../../../../shared/ui/Stepper";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { usePollingRefresh } from "../../hooks/usePollingRefresh";
@@ -178,7 +179,7 @@ export function SignupAccountDialog({
           reason={live ? gateReason(advanceGate) : canStart ? gateReason(startGate) : undefined}
         >
           <Button variant="ghost" disabled={busy} onClick={leave}>
-            {live ? t("Stop signup") : t("Close")}
+            {live ? t("Stop signup") : t("Cancel")}
           </Button>
           {canStart ? (
             <Button
@@ -219,6 +220,15 @@ export function SignupAccountDialog({
           if (canStart && !startGate.disabled) start();
         }}
       >
+        <Stepper
+          label={t("Sign-up steps")}
+          current={workflow?.status === "window_closed" ? 2 : live ? 1 : 0}
+          steps={[
+            { id: "name", label: t("Name") },
+            { id: "window", label: t("Sign-up window") },
+            { id: "sign-in", label: t("Sign in") },
+          ]}
+        />
         {!workflow && !existingAccountId ? (
           <TextField
             label={t("Name")}

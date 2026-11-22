@@ -1,9 +1,7 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
-import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
-import { Checkbox } from "../../../../shared/ui/Checkbox";
-
+import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Group, Row } from "../../../../shared/ui/settings";
 import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import type { SocialSnapshot } from "../../model/social";
@@ -19,19 +17,15 @@ export type SendingSettingsProps = {
 };
 
 /**
- * Sending on this computer: turn approved sends on, or stop all sending. Every button that cannot
- * act says why, because the Host is the only place that can change these flags.
+ * Sending on this computer: turn approved sends on, or stop all sending. Enabling asks the owner
+ * for an explicit confirmation in a dialog; every button that cannot act says why, because the
+ * Host is the only place that can change these flags.
  */
 export function SendingSettings({ client, snapshot, hostOnline, onChanged }: SendingSettingsProps) {
-  const [confirmed, setConfirmed] = useState(false);
+  const { confirm, dialog } = useConfirm();
   const { error, is, write } = useAccountWrite(t("Sending could not be changed. Try again."));
   const offline = hostOnline ? undefined : t("Connect to this computer to change sending.");
-  const enableGate: ActionGate = offline
-    ? { disabled: true, disabledReason: offline }
-    : !confirmed
-      ? { disabled: true, disabledReason: t("Tick the box above to allow sending.") }
-      : { disabled: false };
-  const stopGate: ActionGate = offline
+  const gate: ActionGate = offline
     ? { disabled: true, disabledReason: offline }
     : { disabled: false };
   const status = snapshot.stopped ? "paused" : snapshot.sendingEnabled ? "on" : "off";
@@ -41,6 +35,18 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
     : snapshot.sendingEnabled
       ? "success"
       : "neutral";
+
+  const enable = () =>
+    void confirm({
+      title: t("Enable approved sends?"),
+      message: t("Content I approve and active rules may send from my real accounts."),
+      confirmLabel: t("Enable approved sends"),
+      danger: false,
+      onConfirm: async () => {
+        await client.request("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+        onChanged();
+      },
+    }).catch(() => undefined);
 
   return (
     <Group
@@ -62,39 +68,15 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
       feedback={error ? <InlineError>{error}</InlineError> : null}
     >
       {!snapshot.sendingEnabled ? (
-        <Row label={t("Enable approved sends")} stacked>
-          <div className="social-field-row">
-            <Checkbox
-              checked={confirmed}
-              disabled={is("sending.enable") || !!offline}
-              onChange={(event) => setConfirmed(event.target.checked)}
-              label={t("Content I approve and active rules may send from my real accounts.")}
-              size="secondary"
-              leading="inherit"
-              className="social-check"
-            />
-            <DisabledReason
-              variant="primary"
-              size="sm"
-              loading={is("sending.enable")}
-              onClick={() =>
-                void write("sending.enable", () =>
-                  client.request("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" }),
-                )
-                  .then((result) => result !== undefined && onChanged())
-                  .catch(() => undefined)
-              }
-              {...gateProps(enableGate)}
-            >
-              {t("Enable approved sends")}
-            </DisabledReason>
-          </div>
+        <Row label={t("Approved sends")}>
+          <DisabledReason variant="primary" size="sm" onClick={enable} {...gateProps(gate)}>
+            {t("Enable")}
+          </DisabledReason>
         </Row>
       ) : null}
       <Row
-        label={snapshot.stopped ? t("Resume sending") : t("Stop all sending")}
-        descriptionVisible
-        description={snapshot.stopped ? t("Pending jobs are kept") : undefined}
+        label={t("All sending")}
+        info={snapshot.stopped ? t("Pending jobs are kept") : undefined}
       >
         <DisabledReason
           variant="secondary"
@@ -108,11 +90,12 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
               .then((result) => result !== undefined && onChanged())
               .catch(() => undefined)
           }
-          {...gateProps(stopGate)}
+          {...gateProps(gate)}
         >
-          {snapshot.stopped ? t("Resume sending") : t("Stop all sending")}
+          {snapshot.stopped ? t("Resume") : t("Stop")}
         </DisabledReason>
       </Row>
+      {dialog}
     </Group>
   );
 }

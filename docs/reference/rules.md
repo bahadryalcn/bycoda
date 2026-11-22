@@ -59,7 +59,7 @@ fall. Suppress one line only, always with a reason.
 - `bycoda/compiler-stays-on` (`src/**`)
   - `"use no memo"` hides code the React Compiler cannot prove safe instead of fixing it. Remove the directive and fix the cause the `[react-compiler]` build warning names (a mutation after render, a ref read in render, state read outside React). The build guard already opts out functions that read state the compiler cannot see. If the opt-out must stay, put `// oxlint-disable-next-line bycoda/compiler-stays-on -- <what the compiler gets wrong here>` on the line above.
 - `bycoda/dialog-single-translator` (`src/**/*.{ts,tsx}`)
-  - A dialog worded with the Git translator (`i18n/git`) keeps the shared default Cancel, which follows the interface language, so title and button end up in different languages. Pass `cancelLabel: t("Cancel")` from the same translator, or word the whole dialog with one translator; confirmGitAction/confirmNative callers outside the Git feature must use the interface translator for every string, so give them their own confirmInApp call.
+  - A dialog worded with the Git translator (`i18n/git`) keeps the shared default Cancel, which follows the interface language, so title and button end up in different languages. Pass `cancelLabel: t("Cancel")` from the same translator, or word the whole dialog with one translator; confirmGitAction callers outside the Git feature must use the interface translator for every string, so give them their own confirmInApp call.
 - `bycoda/disabled-needs-reason` (`src/**/*.tsx`)
   - Explain why this Button is disabled through disabledReason and show the reason beside the control so it stays visible.
 - `bycoda/effect-names-its-sync` (`src/**`)

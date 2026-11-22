@@ -40,6 +40,19 @@ async function click(text: string) {
   expect(button, text).toBeTruthy();
   await act(async () => button.click());
 }
+/** A saved term's Edit and Remove live in one actions menu. */
+async function rowAction(name: string, row = 0) {
+  const trigger = [...container.querySelectorAll<HTMLButtonElement>("button")].filter((button) =>
+    button.getAttribute("aria-label")?.startsWith("Actions for "),
+  )[row];
+  expect(trigger, "term actions").toBeTruthy();
+  await act(async () => trigger.click());
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (node) => node.textContent?.trim() === name,
+  );
+  expect(item, name).toBeTruthy();
+  await act(async () => item!.click());
+}
 async function input(label: string, value: string) {
   const field =
     container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`) ??
@@ -74,14 +87,14 @@ it("edits existing aliases and project scope without widening scope or removing 
     ],
   });
   await render();
-  await click("Edit");
+  await rowAction("Edit");
   await input("Preferred spelling", "HL7 FHIR");
   await click("Save term");
   expect(loadVoiceSettings().dictationDictionary).toEqual([
     { term: "HL7 FHIR", aliases: ["fire"], projectId },
     { term: "Bycoda", aliases: ["by coda"] },
   ]);
-  await click("Remove");
+  await rowAction("Remove");
   expect(loadVoiceSettings().dictationDictionary).toEqual([
     { term: "Bycoda", aliases: ["by coda"] },
   ]);
@@ -96,11 +109,7 @@ it("keeps the draft and refuses to overwrite a shifted entry after a concurrent 
     ],
   });
   await render();
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .filter((button) => button.textContent === "Edit")[1]
-      .click(),
-  );
+  await rowAction("Edit", 1);
   await input("Preferred spelling", "Bycoda Workspace");
   await act(async () =>
     saveVoiceSettings({
@@ -153,7 +162,7 @@ it("retains existing aliases, scope and conflict baseline across navigation; Can
     dictationDictionary: [{ term: "FHIR", aliases: ["fire"], projectId: "old/project" }],
   });
   await render();
-  await click("Edit");
+  await rowAction("Edit");
   await input("Preferred spelling", "HL7 FHIR");
   await act(async () => root!.render(null));
   saveVoiceSettings({
@@ -192,10 +201,10 @@ it("reports failed removal beside saved terms and preserves entry until retry", 
   vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
     throw new Error("QuotaExceededError");
   });
-  await click("Remove");
+  await rowAction("Remove");
   expect(loadVoiceSettings().dictationDictionary[0].term).toBe("Kept");
   expect(container.textContent).toContain("could not be removed");
-  await click("Remove");
+  await rowAction("Remove");
   expect(loadVoiceSettings().dictationDictionary).toEqual([]);
 });
 
@@ -247,7 +256,7 @@ it("lets an entry keep its own spelling when edited without a duplicate elsewher
     ],
   });
   await render();
-  await click("Edit");
+  await rowAction("Edit");
   expect(container.textContent).not.toContain("This term is already saved in this scope.");
   await click("Save term");
   expect(loadVoiceSettings().dictationDictionary).toEqual([
@@ -268,7 +277,9 @@ it("keeps legacy duplicates in different scopes as separate rows", async () => {
   await render();
   expect(container.querySelectorAll("[data-collection-key]")).toHaveLength(2);
   expect(
-    [...container.querySelectorAll("button")].filter((button) => button.textContent === "Edit"),
+    [...container.querySelectorAll("button")].filter((button) =>
+      button.getAttribute("aria-label")?.startsWith("Actions for "),
+    ),
   ).toHaveLength(2);
 });
 

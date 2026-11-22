@@ -671,6 +671,7 @@ const MemoMenuBar = memo(function MenuBar({
             motion="none"
             key={key}
             type="button"
+            // oxlint-disable-next-line bycoda/menu-uses-dropdown -- the desktop menu bar is a real role=menubar whose titles must be menuitems; its dropdowns use ContextMenu
             role="menuitem"
             data-menubar-key={key}
             tabIndex={tabStop === key ? 0 : -1}

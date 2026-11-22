@@ -52,7 +52,7 @@ export function GitPickerTrigger({
           {t("Worktree")}
         </Badge>
       )}
-      <ChevronDown className="icon-xs shrink-0" tone="muted" />
+      {props.disabled ? null : <ChevronDown className="icon-xs shrink-0" tone="muted" />}
     </Button>
   );
 }

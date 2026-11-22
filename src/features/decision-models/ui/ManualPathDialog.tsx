@@ -1,6 +1,7 @@
 import { useDecisionTarget } from "./DecisionTarget";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -149,15 +150,17 @@ export function ManualPathDialog({
   return (
     <Modal
       title={t("Add from a file or address")}
-      description={
-        target
-          ? t(
-              "Use a model file on Host {p1}, or the address of a service that is already running.",
-              { p1: target },
-            )
-          : t(
-              "Use a model file on this computer, or the address of a service that is already running.",
-            )
+      toolbar={
+        <InfoPopover>
+          {target
+            ? t(
+                "Use a model file on Host {p1}, or the address of a service that is already running.",
+                { p1: target },
+              )
+            : t(
+                "Use a model file on this computer, or the address of a service that is already running.",
+              )}
+        </InfoPopover>
       }
       size="md"
       onClose={close.requestClose}

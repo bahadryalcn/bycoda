@@ -108,7 +108,7 @@ it("keeps common chrome compact and selects another tool without starting resour
   );
   expect(container.querySelectorAll(".host-tools-topbar")).toHaveLength(1);
   expect(toolChooser().textContent).toContain("Resource usage");
-  expect(container.textContent).toContain("No samples yet");
+  expect(container.textContent).toContain("Take a sample to start the charts.");
   expect(
     vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "resources.read"),
   ).toBe(false);

@@ -3,6 +3,9 @@ import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Timestamp } from "../../../shared/ui/Timestamp";
+import { InlineTextAction } from "../../../shared/ui/ActionHost";
+import { Text } from "../../../shared/ui/Text";
+import { canTakeOverBlockedTask, taskRequiresInstructions } from "../model/taskRules";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { bulkTaskKey } from "../model/taskBulkActions";
 import type { BoardTask } from "../model/taskClient";
@@ -39,6 +42,16 @@ export function taskListUpdatedAt(task: Pick<BoardTask, "updatedAt">): number | 
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
+function sameDay(a: number, b: number): boolean {
+  const first = new Date(a);
+  const second = new Date(b);
+  return (
+    first.getFullYear() === second.getFullYear() &&
+    first.getMonth() === second.getMonth() &&
+    first.getDate() === second.getDate()
+  );
+}
+
 export function TaskList({
   tasks,
   selection,
@@ -46,11 +59,14 @@ export function TaskList({
   activeKey,
   onToggle,
   onOpen,
+  onRetry,
   disabled,
   planningLabel,
   stateKey = "task-list",
 }: {
   stateKey?: string;
+  /** Re-queues a blocked task from its row; rows that need instructions or a takeover only open. */
+  onRetry?: (task: BoardTask) => void;
   tasks: readonly BoardTask[];
   selection: boolean;
   selected: ReadonlySet<string>;
@@ -65,17 +81,36 @@ export function TaskList({
   // The machine name only tells rows apart when the list spans several machines.
   const showMachine = new Set(tasks.map((task) => task.machineId)).size > 1;
   const activeTask = tasks.find((task) => `${task.machineId}:${task.id}` === activeKey);
+  // Failures lead the list in one group so the ones that need a decision are not scattered.
+  const failed = tasks.filter((task) => taskStatusLine(task).tone === "danger");
+  const ordered = failed.length
+    ? [...failed, ...tasks.filter((task) => !failed.includes(task))]
+    : tasks;
   return (
     <div className="grid content-start">
       <ContinuousList
-        items={tasks}
+        items={ordered}
         itemKey={bulkTaskKey}
         stateKey={stateKey}
         requiredKey={activeTask ? bulkTaskKey(activeTask) : null}
         label={t("Tasks")}
         estimateSize={36}
-        renderItem={(task) => {
+        renderItem={(task, index) => {
           const status = taskStatusLine(task);
+          const groupHeading =
+            failed.length === 0
+              ? null
+              : index === 0
+                ? t("Failed · {p0}", { p0: failed.length })
+                : index === failed.length && failed.length < ordered.length
+                  ? t("Other · {p0}", { p0: ordered.length - failed.length })
+                  : null;
+          const previousAt = index > 0 ? taskListUpdatedAt(ordered[index - 1]) : null;
+          const retry =
+            onRetry &&
+            task.status === "blocked" &&
+            !taskRequiresInstructions(task) &&
+            !canTakeOverBlockedTask(task);
           const description = taskListDescription(
             task.prompt,
             Boolean(task.crewRunId || task.crewDefinitionId),
@@ -90,7 +125,7 @@ export function TaskList({
           const isActive = activeKey === `${task.machineId}:${task.id}`;
           // A failure's reason belongs on the row, not only in the hover hint.
           const failure = status.tone === "danger" ? status.detail : "";
-          const secondary = [
+          const detail = [
             failure,
             projectDisplayName(task.cwd),
             showMachine ? task.machineName : "",
@@ -100,47 +135,87 @@ export function TaskList({
           ]
             .filter(Boolean)
             .join(" · ");
+          // The state sits next to the title; the reason follows it on the same line.
+          const secondary = (
+            <>
+              <Tooltip label={task.error ?? task.mergeError ?? status.detail ?? status.label}>
+                <StatusText tone={statusTextTone(status)} data-task-status={status.kind}>
+                  {status.label}
+                </StatusText>
+              </Tooltip>
+              {detail ? ` · ${detail}` : ""}
+            </>
+          );
           return (
-            <CollectionRow
-              key={key}
-              className="task-management-row"
-              selected={selected.has(key) || isActive}
-              data-selected={selected.has(key) || undefined}
-              data-active={isActive || undefined}
-              before={
-                selection ? (
-                  <Checkbox
-                    className="task-row-select"
-                    label={
-                      <span className="sr-only">{t("Select task: {p0}", { p0: task.title })}</span>
-                    }
-                    disabled={disabled}
-                    checked={selected.has(key)}
-                    onChange={(event) => onToggle(task, event.currentTarget.checked)}
-                  />
-                ) : undefined
-              }
-              leading={
-                task.harness ? (
-                  <HarnessIcon harness={task.harness} className="icon-sm" />
-                ) : undefined
-              }
-              title={task.title}
-              secondary={secondary || undefined}
-              trailing={
-                <>
-                  <AssistantTaskBadge task={task} />
-                  <Tooltip label={task.error ?? task.mergeError ?? status.detail ?? status.label}>
-                    <StatusText tone={statusTextTone(status)} data-task-status={status.kind}>
-                      {status.label}
-                    </StatusText>
-                  </Tooltip>
-                  {updatedAt ? <Timestamp value={updatedAt} size="micro" tone="muted" /> : null}
-                </>
-              }
-              primary={{ "aria-current": isActive ? "true" : undefined, "aria-label": task.title }}
-              onOpen={() => onOpen(task)}
-            />
+            <>
+              {groupHeading ? (
+                <Text
+                  as="div"
+                  size="caption"
+                  tone="muted"
+                  weight="medium"
+                  className="px-2 pt-2 pb-1"
+                  data-task-group={index === 0 ? "failed" : "other"}
+                >
+                  {groupHeading}
+                </Text>
+              ) : null}
+              <CollectionRow
+                key={key}
+                className="task-management-row"
+                selected={selected.has(key) || isActive}
+                data-selected={selected.has(key) || undefined}
+                data-active={isActive || undefined}
+                before={
+                  selection ? (
+                    <Checkbox
+                      className="task-row-select"
+                      label={
+                        <span className="sr-only">
+                          {t("Select task: {p0}", { p0: task.title })}
+                        </span>
+                      }
+                      disabled={disabled}
+                      checked={selected.has(key)}
+                      onChange={(event) => onToggle(task, event.currentTarget.checked)}
+                    />
+                  ) : undefined
+                }
+                leading={
+                  task.harness ? (
+                    <HarnessIcon harness={task.harness} className="icon-sm" />
+                  ) : undefined
+                }
+                title={task.title}
+                secondary={secondary}
+                trailing={
+                  <>
+                    <AssistantTaskBadge task={task} />
+                    {updatedAt ? (
+                      <Timestamp
+                        value={updatedAt}
+                        // Rows of one day share the date; only the first of a day names it.
+                        format={previousAt && sameDay(previousAt, updatedAt) ? "time" : "auto"}
+                        size="micro"
+                        tone="muted"
+                      />
+                    ) : null}
+                  </>
+                }
+                action={
+                  retry ? (
+                    <InlineTextAction onClick={() => onRetry(task)} disabled={disabled}>
+                      {t("Retry")}
+                    </InlineTextAction>
+                  ) : undefined
+                }
+                primary={{
+                  "aria-current": isActive ? "true" : undefined,
+                  "aria-label": task.title,
+                }}
+                onOpen={() => onOpen(task)}
+              />
+            </>
           );
         }}
       />

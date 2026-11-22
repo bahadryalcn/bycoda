@@ -34,6 +34,18 @@ export function scopeDescription(scope: Scope): string {
         );
 }
 
+/** The one server name an `mcpServers` block carries; the host rejects a different typed Name. */
+export function serverNameInJson(config: string): string | null {
+  try {
+    const servers = (JSON.parse(config) as { mcpServers?: unknown } | null)?.mcpServers;
+    if (!servers || typeof servers !== "object" || Array.isArray(servers)) return null;
+    const names = Object.keys(servers);
+    return names.length === 1 ? names[0] : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ProviderIcon({ provider }: { provider: Provider }) {
   useLocale();
   return (
@@ -93,6 +105,7 @@ export function AddServerModal({
   const [error, setError] = useState("");
   const adding = useRef(false);
   const formId = useId();
+  const nameInJson = serverNameInJson(config);
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -111,7 +124,7 @@ export function AddServerModal({
           cwd,
           provider,
           scope,
-          name: name.trim(),
+          name: nameInJson ? "" : name.trim(),
           config,
         });
         written = true;
@@ -195,11 +208,15 @@ export function AddServerModal({
         )}
         <TextField
           label={t("Name")}
-          value={name}
-          disabled={busy || added}
+          description={
+            nameInJson
+              ? t("The name comes from the JSON configuration.")
+              : t("Needed when the JSON is a bare server object without an mcpServers entry.")
+          }
+          value={nameInJson ?? name}
+          disabled={busy || added || nameInJson !== null}
           pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
           onChange={(event) => setName(event.target.value)}
-
           placeholder={t("my-server")}
         />
 

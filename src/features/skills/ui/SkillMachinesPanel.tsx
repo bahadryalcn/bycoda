@@ -5,6 +5,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
+import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Switch } from "../../../shared/ui/Switch";
 import type { DiscoveredSkill } from "../../../platform/tauri/fs";
 import { canTransferSkill } from "../model/transferSkill";
@@ -60,18 +61,22 @@ export function SkillMachinesPanel({
         const entry = copy ? { skill: copy, machine: list.machine } : null;
         const here = id === shownOn;
         const saving = entry ? policyTarget === JSON.stringify([id, copy?.path]) : false;
-        const status =
+        const loadError = list.skills === null ? list.error : undefined;
+        const status: { tone: StatusTextTone; label: string } =
           list.skills === null
-            ? (list.error ?? t("Loading skills…"))
+            ? loadError
+              ? { tone: "failed", label: loadError }
+              : { tone: "running", label: t("Loading skills…") }
             : !entry
-              ? list.truncated
-                ? t("Not in the listed skills")
-                : t("Not installed")
+              ? {
+                  tone: "idle",
+                  label: list.truncated ? t("Not in the listed skills") : t("Not installed"),
+                }
               : !list.policyKnown
-                ? t("Installed")
+                ? { tone: "done", label: t("Installed") }
                 : isOff(entry)
-                  ? t("Installed, off")
-                  : t("Installed, enabled");
+                  ? { tone: "idle", label: t("Installed, off") }
+                  : { tone: "done", label: t("Installed, enabled") };
         return (
           <li key={id} className={styles.machineRow} data-current={here || undefined}>
             <Text
@@ -84,16 +89,9 @@ export function SkillMachinesPanel({
               <Text size="inherit" tone="inherit" weight="medium">
                 {name}
               </Text>
-              <Text
-                as="span"
-                size="caption"
-                tone={list.skills === null && !!list.error ? "danger" : "secondary"}
-                leading="inherit"
-                className={styles.machineStatus}
-                data-error={(list.skills === null && !!list.error) || undefined}
-              >
-                {status}
-              </Text>
+              <StatusText tone={status.tone} className={styles.machineStatus}>
+                {status.label}
+              </StatusText>
             </Text>
             <div className={styles.machineActions}>
               {saving ? <Spinner size="xs" label={t("Saving…")} /> : null}

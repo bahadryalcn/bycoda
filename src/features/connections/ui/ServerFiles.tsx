@@ -90,26 +90,6 @@ export function ServerFiles({
     });
   };
 
-  useEffect(() => {
-    mounted.current = true;
-    void loadSftpRecoveries(connectionId)
-      .then((records) => {
-        if (mounted.current) setRecoveries(records);
-      })
-      .catch((reason) => {
-        if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
-      });
-    const listener = subscribeSftpProgress((event) => {
-      if (mounted.current && event.operationId === operation.current) setProgress(event);
-    });
-    void listener.catch(() => undefined);
-    return () => {
-      mounted.current = false;
-      void listener.then((unlisten) => unlisten()).catch(() => undefined);
-      if (operation.current) void cancelSftp(operation.current).catch(() => undefined);
-    };
-  }, [connectionId]);
-
   const act = async (callback: (operationId: string) => Promise<void>) => {
     if (operation.current) return;
     const id = crypto.randomUUID();
@@ -146,6 +126,31 @@ export function ServerFiles({
       setLoaded(true);
       setFileSearch("");
     });
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the SFTP progress listener and the pending native operation in step with this page while mounted; opening the page for a server is also the request to list its home directory once
+  useEffect(() => {
+    mounted.current = true;
+    void loadSftpRecoveries(connectionId)
+      .then((records) => {
+        if (mounted.current) setRecoveries(records);
+      })
+      .catch((reason) => {
+        if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
+      });
+    const listener = subscribeSftpProgress((event) => {
+      if (mounted.current && event.operationId === operation.current) setProgress(event);
+    });
+    void listener.catch(() => undefined);
+    void load(".");
+    return () => {
+      mounted.current = false;
+      void listener.then((unlisten) => unlisten()).catch(() => undefined);
+      if (operation.current) void cancelSftp(operation.current).catch(() => undefined);
+      // A replayed mount (StrictMode) must be able to start its own listing.
+      operation.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reason: load is recreated each render; only a different server restarts the listing
+  }, [connectionId]);
   const close = () => {
     cancel();
     onClose();
@@ -193,9 +198,15 @@ export function ServerFiles({
               disabled={busy}
               fieldClassName="min-w-0 flex-1"
             />
-            <Button type="submit" loading={busy}>
-              {loaded ? <RefreshCw className="icon-sm" /> : null}
-              {t(loaded ? "Refresh" : "Open")}
+            <Button
+              type="submit"
+              variant="ghost"
+              size="sm"
+              iconOnly
+              loading={busy}
+              label={t("Refresh")}
+            >
+              <RefreshCw className="icon-sm" />
             </Button>
             <Button
               disabled={busy || !loaded || !!upload}
@@ -431,9 +442,7 @@ export function ServerFiles({
               value={fileSearch}
               onChange={(event) => setFileSearch(event.target.value)}
             />
-          ) : (
-            <EmptyState size="inline" description={t("Open a directory to browse files.")} />
-          )}
+          ) : null}
           <div className="max-h-[55dvh] min-h-0 overflow-auto" aria-label={t("Remote files")}>
             {visibleEntries.map((entry) => (
               <Text

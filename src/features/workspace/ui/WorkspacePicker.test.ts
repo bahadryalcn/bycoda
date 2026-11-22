@@ -145,3 +145,28 @@ it("links the actual listbox while Existing worktree is open", async () => {
   expect(flyout?.textContent).not.toContain("abcdef12");
   expect(change).not.toHaveBeenCalled();
 });
+
+it("opens Existing worktree only on click, never on hover", async () => {
+  await act(async () =>
+    root.render(
+      createElement(WorkspacePicker, {
+        cwd: "/work/project",
+        mode: "current",
+        base: "main",
+        initialPicker: "workspace",
+        onModeChange: change,
+        onBaseChange: vi.fn(),
+        onSelectWorktree: vi.fn(async () => {}),
+      }),
+    ),
+  );
+  const row = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Existing worktree…",
+  )!;
+  await act(async () => {
+    row.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+  });
+  expect(row.hasAttribute("aria-controls")).toBe(false);
+  await act(async () => row.click());
+  expect(row.hasAttribute("aria-controls")).toBe(true);
+});

@@ -647,7 +647,11 @@ it("chooses the conversation mode; cloud modes hide the local reply voice and pr
   expect(document.querySelector('[data-setting-id="voice-engine"]')).not.toBeNull();
   await act(async () => radio("Grok Voice").click());
   expect(loadVoiceSettings().mode).toBe("grok");
-  expect(container.textContent).toContain("Voice runs on Grok Voice.");
+  expect(container.textContent).not.toContain("Voice runs on Grok Voice.");
+  await act(async () =>
+    container.querySelector<HTMLElement>('button[aria-label="Voice provider: Help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Voice runs on Grok Voice.");
   expect(document.querySelector('[data-setting-id="voice-engine"]')).toBeNull();
   expect(document.querySelector('[data-setting-id="voice-device"]')).toBeNull();
   await act(async () => radio("OpenAI Realtime").click());

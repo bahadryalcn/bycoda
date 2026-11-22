@@ -96,32 +96,38 @@ it("keeps group apply details available when the draft is clean", async () => {
   }
 });
 
-it("shows the provider scope only while changes are pending", async () => {
+it("puts the provider scope in the scope row above the fields, not in the save bar", async () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const render = (pending: number, providerScope?: "all") =>
-    act(async () =>
+  try {
+    await act(async () =>
       root.render(
         createElement(ProviderDefaultsSaveBar, {
           target: { kind: "global" },
           options: [],
-          changes: changesOf(pending),
+          changes: changesOf(1),
           saveState: { state: "idle" },
           onSave: vi.fn(),
           onDiscard: vi.fn(),
           activeProvider: "codex",
-          draft: { providers: {}, accounts: {}, ...(providerScope ? { providerScope } : {}) },
+          draft: { providers: {}, accounts: {} },
+        }),
+      ),
+    );
+    expect(container.textContent).not.toContain("Apply to");
+    await act(async () =>
+      root.render(
+        createElement(ProviderDefaultsScopeRow, {
+          target: { kind: "global" },
+          options: [],
+          onTargetChange: vi.fn(),
+          activeProvider: "codex",
+          draft: { providers: {}, accounts: {} },
           onDraftChange: vi.fn(),
         }),
       ),
     );
-  try {
-    await render(0);
-    expect(container.textContent).not.toContain("Apply to");
-    await render(1);
-    expect(container.textContent).toContain("Apply to");
-    await render(0, "all");
     expect(container.textContent).toContain("Apply to");
   } finally {
     await act(async () => root.unmount());

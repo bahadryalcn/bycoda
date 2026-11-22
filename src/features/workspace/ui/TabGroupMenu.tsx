@@ -469,7 +469,6 @@ function MenuRow({
     <SharedMenuRow
       destructive={item.danger}
       type="button"
-      role="menuitem"
       disabled={item.disabled}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onPick}

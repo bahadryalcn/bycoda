@@ -2,6 +2,7 @@ import { useDecisionTarget } from "./DecisionTarget";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { PasswordField } from "../../../shared/ui/PasswordField";
@@ -87,7 +88,7 @@ export function CustomEndpointDialog({
   return (
     <Modal
       title={t("Custom endpoint")}
-      description={t("Connect a service at an address you choose.")}
+      toolbar={<InfoPopover>{t("Connect a service at an address you choose.")}</InfoPopover>}
       size="md"
       onClose={close.requestClose}
       footer={
@@ -154,7 +155,6 @@ export function CustomEndpointDialog({
           disabled={locked}
           onChange={(event) => setAuthHeader(event.target.value)}
         />
-        <InlineMessage tone="neutral">{t("Field mapping is not available yet.")}</InlineMessage>
         {flow.phase === "testing" ? (
           <InlineMessage tone="info">{t("Testing the connection…")}</InlineMessage>
         ) : null}

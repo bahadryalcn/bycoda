@@ -180,3 +180,21 @@ it("keeps a question answerable and says so when the answer cannot be delivered"
   expect(host.textContent).toContain("Answer was not sent. Your answer is kept; try again.");
   vi.mocked(emitTo).mockResolvedValue(undefined);
 });
+
+it("keeps the compact pill to the microphone, a labelled End and one More menu", async () => {
+  const { saveVoiceSettings, loadVoiceSettings } = await import("../model/voiceSettings");
+  saveVoiceSettings({ ...loadVoiceSettings(), compact: true });
+  await act(async () => root.render(createElement(VoiceOverlayWindow, { owner: "main" })));
+  await show({ visualState: "listening", name: "Arif", title: "Voice companion" });
+  const header = host.querySelector("header")!;
+  const names = [...header.querySelectorAll("button")].map(
+    (button) => button.getAttribute("aria-label") ?? button.textContent?.trim(),
+  );
+  expect(names).toEqual([
+    "Move voice window",
+    "Mute microphone",
+    "Disconnect voice",
+    "More voice options",
+  ]);
+  expect(header.textContent).toContain("End call");
+});

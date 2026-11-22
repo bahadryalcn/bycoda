@@ -157,3 +157,20 @@ describe("AccessPicker unavailable modes", () => {
     expect(document.querySelector("[data-access-picker]")).toBeNull();
   });
 });
+
+describe("AccessPicker compact trigger", () => {
+  function trigger(value: RuntimeMode) {
+    act(() =>
+      root.render(createElement(AccessPicker, { value, iconOnly: true, onChange: () => {} })),
+    );
+    return container.querySelector<HTMLButtonElement>("[data-access-picker-trigger]")!;
+  }
+
+  it("stays icon-only for the default mode", () => {
+    expect(trigger("supervised").hasAttribute("data-access-picker-compact")).toBe(true);
+  });
+
+  it("names a changed mode instead of showing a bare icon", () => {
+    expect(trigger("full-access").hasAttribute("data-access-picker-compact")).toBe(false);
+  });
+});

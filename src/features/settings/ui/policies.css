@@ -76,3 +76,7 @@
     padding: 16px 0 0;
   }
 }
+
+.policy-document {
+  max-inline-size: min(72ch, 46rem);
+}

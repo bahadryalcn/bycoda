@@ -4325,11 +4325,11 @@ export const Composer = memo(function Composer({
             onPointerDown={focusFromComposerSpace}
             role="group"
             aria-label={t("Chat workspace")}
-            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-1 pt-1.5"
+            className="flex min-w-0 flex-nowrap items-center gap-x-3 gap-y-1 overflow-hidden px-2 pb-1 pt-1.5"
           >
             <div
               data-composer-workspace-controls
-              className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-x-3 gap-y-1"
+              className="flex min-w-0 flex-1 flex-nowrap items-center justify-start gap-x-3 gap-y-1"
             >
               {projectContextPicker}
               {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (

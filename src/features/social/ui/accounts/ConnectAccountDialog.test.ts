@@ -205,7 +205,10 @@ it("closes without creating when the owner cancels", async () => {
 it("switches to the email account form from the same dialog", async () => {
   const { client } = fakeClient();
   render(client);
-  await act(async () => button("Add an email account instead")?.click());
+  const emailOption = [...element.querySelectorAll<HTMLElement>('[role="radio"]')].find(
+    (node) => node.textContent?.trim() === "Email account",
+  );
+  await act(async () => emailOption?.click());
   expect(element.querySelector('[data-testid="email-dialog"]')).not.toBeNull();
 });
 

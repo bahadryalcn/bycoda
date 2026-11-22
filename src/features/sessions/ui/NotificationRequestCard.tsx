@@ -15,6 +15,7 @@ import { HarnessIcon } from "./HarnessIcon";
 import { NotificationProjectLabel, NotificationTime } from "./NotificationHistoryItem";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { bycodaToolCall } from "../model/bycodaToolCall";
+import { approvalTitle } from "./approvalPresentation";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 
 /**
@@ -145,7 +146,8 @@ export function NotificationRequestCard({
       {notice.kind === "approval" ? (
         <div className="px-3 pb-2">
           <ApprovalRequest
-            title={t("Needs approval")}
+            title={approvalTitle(block, t)}
+            context={[session.cwd, t("This request only")]}
             detail={detail}
             details={
               block && hasToolInspection(block)

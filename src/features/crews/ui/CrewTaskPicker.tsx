@@ -67,7 +67,7 @@ export function CrewTaskPicker({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <SearchableSelect
-        label={t("Worker")}
+        label={t("Crew")}
         value={value ?? ""}
         disabled={disabled}
         options={[

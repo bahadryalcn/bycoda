@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Text } from "../../../shared/ui/Text";
 import { lastUserTurnStartIndex, userBlockRecall } from "../model/editLastTurn";
 import { executionUserIndex } from "../model/executionTurn";
 import { lastHandoffBlock } from "../model/handoff";
@@ -8,8 +9,19 @@ import { isSessionErrorBlock } from "../model/sessionIssue";
 import { sessionErrorPresentation } from "../model/sessionErrorPresentation";
 import type { Attachment, ComposerTurnOptions, Session } from "../model/session";
 
-/** Retry only the latest submitted user turn with a provider error. */
-export function failedTurnRetry(session: Session) {
+type RetryBlock = "not-sent" | "unsupported" | "attachments-missing";
+
+function evaluateFailedTurn(session: Session):
+  | {
+      retry: {
+        text: string;
+        attachments: Attachment[];
+        errorId: string;
+        intent?: ComposerTurnOptions["intent"];
+      };
+    }
+  | { blocked: RetryBlock }
+  | null {
   const handoff = lastHandoffBlock(session.blocks)?.handoff;
   const retryingSwitch = handoff?.status === "failed" || handoff?.status === "cancelled";
   if (
@@ -42,20 +54,13 @@ export function failedTurnRetry(session: Session) {
       (block) =>
         block.role === "user" && !block.draft && !block.internal && !block.questionAnswers?.length,
     );
-  if (
-    sent[0] !== user ||
-    sent.some(
-      (block) => block.remoteContent || block.secondOpinion || block.noteCard || block.ciContext,
-    )
-  )
-    return null;
   const output = session.blocks.slice(start + 1);
   const error = [...output].reverse().find(isSessionErrorBlock);
+  if (!error) return null;
+  // Admission failed before the new user block existed. Its input belongs to
+  // the composer/queue; retrying the last transcript user would replay an older request.
+  if (/^Message not sent:/i.test(error.text.trim())) return { blocked: "not-sent" };
   if (
-    !error ||
-    // Admission failed before the new user block existed. Its input belongs to
-    // the composer/queue; retrying the last transcript user would replay an older request.
-    /^Message not sent:/i.test(error.text.trim()) ||
     sessionErrorPresentation(error.text).usageLimit ||
     output.some(
       (block) => block.streaming || block.internal || (block.approval && !block.approval.decided),
@@ -69,15 +74,33 @@ export function failedTurnRetry(session: Session) {
   ) {
     return null;
   }
+  if (
+    sent[0] !== user ||
+    sent.some(
+      (block) => block.remoteContent || block.secondOpinion || block.noteCard || block.ciContext,
+    )
+  )
+    return { blocked: "unsupported" };
   const recalls = sent.flatMap((block) => userBlockRecall(block) ?? []);
   const attachments = recalls.flatMap((recall) => recall.attachments);
-  if (!recalls.length || attachments.some((attachment) => attachment.missing)) return null;
+  if (!recalls.length) return { blocked: "unsupported" };
+  if (attachments.some((attachment) => attachment.missing)) {
+    return { blocked: "attachments-missing" };
+  }
   return {
-    text: recalls.map((recall) => recall.text).join("\n\n"),
-    attachments,
-    errorId: error.id,
-    intent: user.intent,
+    retry: {
+      text: recalls.map((recall) => recall.text).join("\n\n"),
+      attachments,
+      errorId: error.id,
+      intent: user.intent,
+    },
   };
+}
+
+/** Retry only the latest submitted user turn with a provider error. */
+export function failedTurnRetry(session: Session) {
+  const result = evaluateFailedTurn(session);
+  return result && "retry" in result ? result.retry : null;
 }
 
 type RetrySubmit = (
@@ -122,8 +145,25 @@ export function RetryFailedTurn({
   const t = useT();
   const [submitted, setSubmitted] = useState<string | null>(null);
   const submitting = useRef<string | null>(null);
-  const retry = failedTurnRetry(session);
-  if (!retry || blocked) return null;
+  const result = evaluateFailedTurn(session);
+  if (!result || blocked) return null;
+  if ("blocked" in result) {
+    // No retry exists: say why and what to do next instead of showing nothing.
+    return (
+      <div className="px-4 py-1" data-retry-unavailable={result.blocked}>
+        <Text as="p" size="caption" tone="secondary">
+          {result.blocked === "not-sent"
+            ? t("This message was not sent. It is still in the composer: send it again.")
+            : result.blocked === "attachments-missing"
+              ? t(
+                  "Attached files are no longer available. Edit the message, re-attach them and send it again.",
+                )
+              : t("This message cannot be retried automatically. Edit it and send it again.")}
+        </Text>
+      </div>
+    );
+  }
+  const retry = result.retry;
   const key = `${session.id}:${retry.errorId}`;
   const release = () => {
     if (submitting.current === key) submitting.current = null;

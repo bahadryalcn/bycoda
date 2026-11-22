@@ -239,8 +239,8 @@ for (const theme of ["light", "dark"])
       await next();
       await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
       expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
-      await dialog.getByRole("radio", { name: "On this computer", exact: true }).click();
-      await dialog.getByRole("button", { name: "Check connection", exact: true }).click();
+      await dialog.getByRole("radio", { name: "Local", exact: true }).click();
+      await dialog.getByRole("button", { name: "Check Local", exact: true }).click();
       await expect(dialog.getByRole("status").filter({ hasText: "Ready" }).first()).toBeVisible();
       await capture(1);
       await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
@@ -2043,7 +2043,7 @@ for (const theme of ["light", "dark"])
       for (const [name, text] of [
         ["draft", "Fixture draft unavailable"],
         ["trash", "Recently deleted"],
-        ["folders", "Fixture folders unavailable"],
+        ["folders", "The folder list could not be read."],
       ]) {
         await page.goto(
           `/tests/browser/assistant/assistant-room.html?theme=${theme}&${name}-state-fixture`,

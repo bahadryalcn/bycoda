@@ -188,5 +188,16 @@ it("keeps a webview denial out of OS settings even when browser permission says 
   await click("Check microphone access");
   expect(element.textContent).toContain("Webview blocked");
   expect(button("Review access")).toBeUndefined();
-  expect(button("Check microphone access")).toBeDefined();
+  expect(button("Check again")).toBeDefined();
+});
+
+it("manages the microphone in one row and keeps raw failure text behind Details", async () => {
+  mock.capture.mockRejectedValue(new Error("NotReadableError: device busy"));
+  await render();
+  expect(element.querySelectorAll('[data-setting-id^="permission-"]').length).toBe(0);
+  await click("Check microphone access");
+  expect(element.textContent).toContain("The microphone check failed.");
+  expect(element.textContent).not.toContain("NotReadableError");
+  expect(button("Details")).toBeDefined();
+  expect(button("Check again")).toBeDefined();
 });

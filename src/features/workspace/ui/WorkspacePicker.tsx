@@ -1,7 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Button } from "../../../shared/ui/Button";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
@@ -23,7 +21,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
@@ -42,7 +39,6 @@ import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcu
 export const WORKSPACE_MODE_SHORTCUT = `${MOD}${SHIFT}G`;
 const WORKSPACE_SURFACES = "[data-workspace-picker],[data-existing-worktrees-submenu]";
 const SUBMENU_GAP = 4;
-const HOVER_CLOSE_MS = 100;
 
 export function isWorkspaceModeShortcut(event: {
   code: string;
@@ -113,6 +109,9 @@ export function WorkspacePicker({
         cwd={cwd}
         mode={mode}
         enabled={enabled && !!resolvedBase}
+        disabledReason={
+          enabled && !settled ? t("Loading branches…") : t("This folder is not a Git repository")
+        }
         onChange={(next) => onModeChange(next, next === "worktree" ? effectiveBase : undefined)}
         onSelectWorktree={onSelectWorktree}
         onOpenSettings={onOpenSettings}
@@ -167,6 +166,7 @@ function WorkspaceModePicker({
   cwd,
   mode,
   enabled,
+  disabledReason,
   onChange,
   onSelectWorktree,
   onOpenSettings,
@@ -178,6 +178,7 @@ function WorkspaceModePicker({
   cwd: string;
   mode: WorkspaceMode;
   enabled: boolean;
+  disabledReason: string;
   onChange: (mode: WorkspaceMode) => void;
   onSelectWorktree?: (tree: Worktree) => Promise<void>;
   onOpenSettings?: () => void;
@@ -202,7 +203,6 @@ function WorkspaceModePicker({
   const existingRowId = `${listId}-option-${encodeURIComponent("existing")}`;
   const flyoutListId = `${listId}-worktrees`;
   const [flyoutFocus, setFlyoutFocus] = useState(false);
-  const closeWorktreeTimer = useRef<number | null>(null);
   const { data, error: loadError } = useProjectWorktrees(
     cwd,
     enabled && open && worktreeMenu && !!onSelectWorktree,
@@ -216,20 +216,8 @@ function WorkspaceModePicker({
     setBusyPath(undefined);
     setPickError(undefined);
   }
-  useEffect(
-    () => () => {
-      if (closeWorktreeTimer.current != null) {
-        window.clearTimeout(closeWorktreeTimer.current);
-      }
-    },
-    [],
-  );
 
   const dismiss = () => {
-    if (closeWorktreeTimer.current != null) {
-      window.clearTimeout(closeWorktreeTimer.current);
-      closeWorktreeTimer.current = null;
-    }
     setOpen(false);
     setWorktreeMenu(false);
     setBusyPath(undefined);
@@ -248,37 +236,19 @@ function WorkspaceModePicker({
       setBusyPath(undefined);
     }
   };
-  /** `focus` moves focus into the flyout (keyboard, click); hover leaves it where it is. */
-  const openWorktreeMenu = (focus = false) => {
-    if (closeWorktreeTimer.current != null) {
-      window.clearTimeout(closeWorktreeTimer.current);
-      closeWorktreeTimer.current = null;
-    }
+  // The flyout opens on click, Enter or ArrowRight only (never on hover) and takes focus.
+  const openWorktreeMenu = () => {
     worktreeAnchor.current = document.getElementById(existingRowId);
-    setFlyoutFocus(focus);
+    setFlyoutFocus(true);
     setWorktreeMenu(true);
   };
   const closeWorktreeMenu = () => {
-    if (closeWorktreeTimer.current != null) {
-      window.clearTimeout(closeWorktreeTimer.current);
-      closeWorktreeTimer.current = null;
-    }
     setWorktreeMenu(false);
     setPickError(undefined);
   };
   const closeWorktreeMenuAndFocusList = () => {
     closeWorktreeMenu();
     document.getElementById(listId)?.focus({ preventScroll: true });
-  };
-  const scheduleCloseWorktreeMenu = () => {
-    if (closeWorktreeTimer.current != null) {
-      window.clearTimeout(closeWorktreeTimer.current);
-    }
-    closeWorktreeTimer.current = window.setTimeout(() => {
-      closeWorktreeTimer.current = null;
-      setWorktreeMenu(false);
-      setPickError(undefined);
-    }, HOVER_CLOSE_MS);
   };
   const label = mode === "worktree" ? t("New worktree") : t("Current checkout");
   const shortcut = useKeybindingShortcut("Composer: Toggle Workspace");
@@ -300,7 +270,7 @@ function WorkspaceModePicker({
             title: t("Existing worktree…"),
             icon: <FolderTree className="icon-md" />,
             trailing: <ChevronRight aria-hidden className="icon-sm" strokeWidth={1.75} />,
-            onAction: () => openWorktreeMenu(true),
+            onAction: openWorktreeMenu,
             popup: { listId: flyoutListId, expanded: worktreeMenu },
           },
         ]
@@ -313,13 +283,6 @@ function WorkspaceModePicker({
     icon: busyPath === tree.path ? <Spinner size="md" /> : <FolderTree className="icon-md" />,
   }));
 
-  const onListMouseOver = (event: ReactMouseEvent<HTMLElement>) => {
-    if (!onSelectWorktree || !(event.target instanceof Element)) return;
-    const row = event.target.closest<HTMLElement>('[role="option"]');
-    if (!row) return;
-    if (row.id === existingRowId) openWorktreeMenu(false);
-    else closeWorktreeMenu();
-  };
   const onListKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (!onSelectWorktree) return;
     if (
@@ -328,7 +291,7 @@ function WorkspaceModePicker({
       event.target.getAttribute("aria-activedescendant") === existingRowId
     ) {
       event.preventDefault();
-      openWorktreeMenu(true);
+      openWorktreeMenu();
     } else if (event.key === "ArrowLeft" && worktreeMenu) {
       event.preventDefault();
       closeWorktreeMenu();
@@ -343,7 +306,8 @@ function WorkspaceModePicker({
           motion="none"
           type="button"
           disabled={!enabled}
-          tooltip={t("Workspace: {p0}", { p0: label })}
+          disabledReason={disabledReason}
+          tooltip={t("Workspace")}
           shortcut={shortcut}
           aria-label={t("Workspace {p0}", { p0: label })}
           aria-keyshortcuts={shortcutTokens ?? undefined}
@@ -375,16 +339,6 @@ function WorkspaceModePicker({
         ignore={WORKSPACE_SURFACES}
         label={t("Workspace")}
         data-workspace-picker=""
-        header={
-          <div className="px-3">
-            <SectionLabel
-              as="div"
-              actions={shortcut ? <ShortcutKbd size="xs">{shortcut}</ShortcutKbd> : undefined}
-            >
-              {t("Workspace")}
-            </SectionLabel>
-          </div>
-        }
         footer={
           onOpenSettings ? (
             <PickerFooter align="start">
@@ -394,7 +348,6 @@ function WorkspaceModePicker({
                 type="button"
                 aria-label={t("Open worktree settings")}
                 onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={closeWorktreeMenu}
                 onClick={() => {
                   setOpen(false);
                   onOpenSettings();
@@ -407,12 +360,7 @@ function WorkspaceModePicker({
           ) : null
         }
       >
-        <div
-          className="flex min-h-0 flex-1 flex-col"
-          onMouseOver={onListMouseOver}
-          onMouseLeave={onSelectWorktree ? scheduleCloseWorktreeMenu : undefined}
-          onKeyDown={onListKeyDown}
-        >
+        <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onListKeyDown}>
           <PickerList
             id={listId}
             label={t("Workspace")}
@@ -444,8 +392,6 @@ function WorkspaceModePicker({
       >
         <div
           className="flex min-h-0 flex-1 flex-col"
-          onMouseEnter={() => openWorktreeMenu(false)}
-          onMouseLeave={scheduleCloseWorktreeMenu}
           onKeyDown={(event) => {
             if (event.key === "ArrowLeft") {
               event.preventDefault();

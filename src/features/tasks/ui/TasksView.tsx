@@ -1092,6 +1092,7 @@ function TasksContent({
                   })
                 }
                 onOpen={(task) => openCard(`${task.machineId}:${task.id}`)}
+                onRetry={(task) => onMove(task, "queued")}
               />
             ) : (
               emptyTasks

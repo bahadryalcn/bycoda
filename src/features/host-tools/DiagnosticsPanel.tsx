@@ -264,7 +264,7 @@ function ProjectDiagnosticsPanel({
           <RefreshCw className="icon-sm" aria-hidden />
         </Button>
         <Text size="caption" tone="secondary" leading="inherit" className="resource-sample-status">
-          {busy ? t("Measuring…") : sample ? time(sample.at) : t("No samples yet")}
+          {busy ? t("Measuring…") : sample ? time(sample.at) : null}
         </Text>
         {/* Sample timestamps change on every measurement; only the start of a measurement is announced. */}
         <LiveText className="sr-only" text={busy ? t("Measuring…") : ""} />

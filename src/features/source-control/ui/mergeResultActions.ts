@@ -1,6 +1,7 @@
 import { Facet, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, keymap } from "@codemirror/view";
 import { t } from "../../../shared/i18n/git";
+import { nativeButtonPresentation } from "../../../shared/ui/Button";
 import { textAttributes, type TextRoles } from "../../../shared/ui/Text";
 import {
   mergeResolution,
@@ -19,6 +20,16 @@ export function applyTextRoles(element: HTMLElement, roles: TextRoles, className
   element.className = classes;
   for (const [name, value] of Object.entries(attributes))
     if (value !== undefined) element.setAttribute(name, String(value));
+}
+
+/** Gives a drawn conflict button the shared Button look (secondary, compact) plus the choice hooks. */
+export function applyChoiceButton(element: HTMLButtonElement) {
+  const { className, ...attributes } = nativeButtonPresentation({
+    variant: "secondary",
+    size: "xs",
+  });
+  element.className = `${className} conflict-inline-choice`;
+  for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
 }
 
 /** Mirrors the React busy/disabled gate so drawn widgets update with it. */
@@ -107,7 +118,7 @@ class RegionActions extends WidgetType {
     const button = (choice: MergeChoice, text: string, title: string, pressed?: boolean) => {
       const item = document.createElement("button");
       item.type = "button";
-      item.className = "conflict-inline-choice";
+      applyChoiceButton(item);
       item.textContent = t(text);
       item.title = t(title);
       if (pressed !== undefined) item.setAttribute("aria-pressed", String(pressed));

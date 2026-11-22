@@ -16,6 +16,7 @@ import { VoiceCompanionSettings } from "./VoiceCompanionSettings";
 import { VoiceWakeRows } from "./VoiceWakeSettings";
 import { useVoiceSetup, type VoiceSetup } from "./useVoiceSetup";
 import { speakerEngine, speakerOptions } from "../model/voiceSpeakers";
+import { voiceProviderLabel, voiceProviderOptions } from "../model/voiceProviders";
 import {
   useVoiceSettings,
   type VoiceMode,
@@ -117,25 +118,21 @@ function VoiceEngine({
         id="voice-mode"
         label={t("Voice provider")}
         stacked
-        descriptionVisible
-        description={
-          local
-            ? t("Speech is recognized on this computer; the session's provider writes replies.")
-            : t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
-                p1: settings.mode === "grok" ? "Grok Voice" : "OpenAI Realtime",
-              })
+        info={
+          <InfoPopover label={`${t("Voice provider")}: ${t("Help")}`}>
+            {local
+              ? t("Speech is recognized on this computer; the session's provider writes replies.")
+              : t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
+                  p1: voiceProviderLabel(settings.mode),
+                })}
+          </InfoPopover>
         }
         disabled={installing}
       >
         <Segmented
           label={t("Voice provider")}
           value={settings.mode}
-          options={[
-            { value: "local", label: t("Local") },
-            // Signed in through Grok Build and Codex; no separate API key.
-            { value: "grok", label: "Grok Voice" },
-            { value: "openai", label: "OpenAI Realtime" },
-          ]}
+          options={voiceProviderOptions()}
           onChange={(mode) => change({ mode: mode as VoiceMode })}
         />
       </Row>

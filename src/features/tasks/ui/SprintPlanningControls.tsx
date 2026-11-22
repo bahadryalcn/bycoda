@@ -146,6 +146,9 @@ export function SprintPlanningControls({
           onClick={() => void run()}
           loading={busy}
           disabled={disabled || !board.supported || !tasks.length || (!target && points === "keep")}
+          disabledReason={
+            board.supported ? undefined : t("Reconnect or update the selected planning Host.")
+          }
         >
           {tasks.length > 1 ? t("Apply to {p0} tasks", { p0: tasks.length }) : t("Save planning")}
         </Button>
@@ -179,17 +182,6 @@ export function SprintPlanningControls({
               {row.title}: {row.error}
             </li>
           ))}
-        </Text>
-      ) : null}
-      {!board.supported ? (
-        <Text
-          as="p"
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className="task-planning-note"
-        >
-          {t("Reconnect or update the selected planning Host.")}
         </Text>
       ) : null}
     </Text>

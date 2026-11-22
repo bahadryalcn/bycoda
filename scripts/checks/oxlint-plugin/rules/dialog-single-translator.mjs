@@ -2,7 +2,7 @@ import { defineRule } from "../define-rule.mjs";
 
 const GIT_I18N = /(^|\/)i18n\/git$/;
 const ANY_I18N = /(^|\/)i18n(\/(index|core))?$/;
-const GIT_CONFIRMS = new Set(["confirmNative", "confirmGitAction"]);
+const GIT_CONFIRMS = new Set(["confirmGitAction"]);
 
 const importsT = (node) =>
   node.specifiers.some(
@@ -18,13 +18,13 @@ const hasCancelLabel = (object) =>
 /**
  * One dialog speaks one language. The Git language is its own preference (`i18n/git`) while the shared
  * Cancel default follows the interface language, so a Git-worded dialog can show "Cancel" in another
- * language. `confirmGitAction`/`confirmNative` word their dialog in the Git language, so their callers
+ * language. `confirmGitAction` words its dialog in the Git language, so their callers
  * must not word the text with the interface translator either.
  */
 export default defineRule({
   files: ["src/**/*.{ts,tsx}"],
   message:
-    "A dialog worded with the Git translator (`i18n/git`) keeps the shared default Cancel, which follows the interface language, so title and button end up in different languages. Pass `cancelLabel: t(\"Cancel\")` from the same translator, or word the whole dialog with one translator; confirmGitAction/confirmNative callers outside the Git feature must use the interface translator for every string, so give them their own confirmInApp call.",
+    'A dialog worded with the Git translator (`i18n/git`) keeps the shared default Cancel, which follows the interface language, so title and button end up in different languages. Pass `cancelLabel: t("Cancel")` from the same translator, or word the whole dialog with one translator; confirmGitAction callers outside the Git feature must use the interface translator for every string, so give them their own confirmInApp call.',
   create: (_context, report) => {
     let gitT = false;
     let interfaceT = false;

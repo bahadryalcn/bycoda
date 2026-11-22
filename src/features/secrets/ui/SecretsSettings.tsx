@@ -116,7 +116,7 @@ function OwnerSecretsInventory({ hostId, scope }: { hostId: string; scope: Setti
                 .join(" · ")}
             >
               <Text size="caption" tone="muted">
-                {formatArchiveDate(secret.createdAt)}
+                {t("Saved {p0}", { p0: formatArchiveDate(secret.createdAt) })}
               </Text>
               <Button
                 size="sm"

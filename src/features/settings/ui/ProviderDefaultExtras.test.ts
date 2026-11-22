@@ -544,3 +544,44 @@ it("reads the inherited auto-compact segment as Default (On), not a second On", 
   container.remove();
   vi.unstubAllGlobals();
 });
+
+it("moves an unavailable inherited advisor into a badge instead of the select label", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const advisor = encodeAdvisor({ harness: "claude", model: "claude:opus" })!;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  act(() =>
+    root.render(
+      createElement(ProviderDefaultExtras, {
+        extras: [
+          {
+            id: "crossAdvisor",
+            label: "Advisor",
+            kind: "select",
+            value: "",
+            options: [
+              { value: "", label: "Off" },
+              { value: advisor, label: "Unavailable: Claude Code · Opus" },
+            ],
+          },
+        ],
+        harness: "claude",
+        scopeDefaults: {},
+        projectScope: true,
+        inheritedDefaults: { extras: { crossAdvisor: advisor } },
+        resetLabel: "Use Bycoda defaults",
+        onSessionDefaultsChange: vi.fn(),
+      }),
+    ),
+  );
+  const select = container.querySelector<HTMLButtonElement>(
+    '[aria-label^="Claude Code default Advisor"]',
+  )!;
+  expect(select.textContent).toContain("Bycoda defaults (Claude Code · Opus)");
+  expect(select.textContent).not.toContain("Unavailable");
+  expect(container.textContent).toContain("Unavailable");
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});

@@ -10,7 +10,13 @@ export { FileSection } from "./FileSection";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useOwnedTimeout } from "../../../shared/hooks/useOwnedTimeout";
 import { t, useLocale, useT } from "../../../shared/i18n/git";
-import { amendPushedCopy, discardSelectedCopy, discardUnstagedCopy } from "./gitConfirmCopy";
+import {
+  amendPushedCopy,
+  defaultBranchCopy,
+  discardSelectedCopy,
+  discardUnstagedCopy,
+  trustRepositoryCopy,
+} from "./gitConfirmCopy";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
@@ -122,7 +128,7 @@ import {
   withGitBackgroundFetch,
 } from "../model/gitPanelState";
 import { useLegacyConflictStatus } from "../hooks/useLegacyConflictStatus";
-import { confirmNative, confirmDiscardFile } from "../model/gitConfirmation";
+import { confirmGitAction, confirmDiscardFile } from "../model/gitConfirmation";
 import { invalidateGitIndex } from "../model/gitIndexStore";
 
 import { GitCommitGenerationNotice, GitFeedback } from "./GitFeedback";
@@ -584,15 +590,7 @@ export function GitChangesPanel({
           size="sm"
           disabled={!enabled || !!busy}
           onClick={async () => {
-            if (
-              !(await confirmNative(
-                t("Trust Git repository at {p0}? This adds only this path to Git safe.directory.", {
-                  p0: cwd,
-                }),
-                t("Trust this repository"),
-              ))
-            )
-              return;
+            if (!(await confirmGitAction(trustRepositoryCopy(cwd)))) return;
             setBusy("trust");
             try {
               await gitTrustRepository(cwd);
@@ -904,11 +902,7 @@ function ChangedFiles({
     return withGitPanelRuntime(cwd, async () => {
       if (!onDefault || !index?.branch) return true;
       const branch = index.branch;
-      return confirmNative(
-        kind === "pr"
-          ? t('Create a pull request from default branch "{p0}"?', { p0: branch })
-          : t('Push to default branch "{p0}"?', { p0: branch }),
-      );
+      return confirmGitAction(defaultBranchCopy(kind, branch));
     });
   };
 
@@ -973,7 +967,7 @@ function ChangedFiles({
       const queue = fileActions.current;
       if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
       if (action === "discard") {
-        const ok = await confirmNative(...discardSelectedCopy(selectedFiles.length));
+        const ok = await confirmGitAction(discardSelectedCopy(selectedFiles.length));
         if (!ok || (gitPanelRuntime(cwd).state.busy && queue.size === 0)) return;
       }
       if (queue.size === 0) setGitFeedback(cwd, null);
@@ -1025,8 +1019,8 @@ function ChangedFiles({
         if (n === 0) return;
         const only = targets[0];
         const untrackedOnly = n === 1 && only?.status === "untracked";
-        const ok = await confirmNative(
-          ...discardUnstagedCopy(n, only && basename(only.relative), untrackedOnly),
+        const ok = await confirmGitAction(
+          discardUnstagedCopy(n, only && basename(only.relative), untrackedOnly),
         );
         if (!ok) return;
       }
@@ -1106,7 +1100,7 @@ function ChangedFiles({
   const confirmAmend = async (amending: boolean) => {
     return withGitPanelRuntime(cwd, async () => {
       if (!amending || !index?.headPushed) return true;
-      return confirmNative(...amendPushedCopy());
+      return confirmGitAction(amendPushedCopy());
     });
   };
 

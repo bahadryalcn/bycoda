@@ -290,6 +290,9 @@ export function ModelsPage({
           selection={targetChoice}
           target={target}
           options={targetOptions}
+          draft={draft}
+          onDraftChange={setDraft}
+          activeProvider={activeProvider ?? undefined}
           onTargetChange={(value) => {
             if (value === targetChoice) return;
             leave.guard(() => {
@@ -331,7 +334,6 @@ export function ModelsPage({
             providers={orderedHarnesses.filter(
               (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
             )}
-            onDraftChange={setDraft}
             target={target}
             options={targetOptions}
             changes={changes}

@@ -536,6 +536,13 @@ export function GitHistoryGraph({
               onCommitMode={setCommitMode}
               onCommit={(commit) => void selectFullCommit(commit)}
               onDirty={setResolutionDirty}
+              openCommit={{
+                has: (sha) => rowBySha.has(sha),
+                open: (sha) => {
+                  const target = commits.find((candidate) => candidate.sha === sha);
+                  if (target) void selectFullCommit(target);
+                },
+              }}
               onBranch={(commit) => {
                 setNamingError(null);
                 setNaming({ kind: "branch", commit });

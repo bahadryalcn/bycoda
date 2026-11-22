@@ -187,7 +187,7 @@ it("keeps update recovery available when the owner changes language while the er
 it("shows the resolved current default and sends without managed admission", async () => {
   host.defaultMode = "current";
   await draw();
-  expect(button("Workspace Current checkout")).toBeDefined();
+  expect(button("Current checkout")).toBeDefined();
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(button("Send")?.disabled).toBe(false);
   await act(async () => button("Send")!.click());

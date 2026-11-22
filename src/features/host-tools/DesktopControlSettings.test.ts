@@ -162,6 +162,59 @@ it("clears stale status after a failed refresh", async () => {
   expect(container.textContent).not.toContain("Stop computer use");
   expect(container.textContent).toContain("Desktop control could not complete this.");
 });
+async function flush() {
+  await act(async () => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  });
+}
+const configures = () => mock.request.mock.calls.filter(([input]) => input.op === "configure");
+it("turns computer use off at once, without the Save button", async () => {
+  const on = { ...config, enabled: true, binaryPath: "/verified/helper.exe", version: 5 };
+  mock.request.mockImplementation(async (input) =>
+    input.op === "configure"
+      ? { ...state, configuration: { ...on, enabled: false, version: 6 } }
+      : { ...state, configuration: on },
+  );
+  mock.helper.mockResolvedValue({ phase: "ready", helper });
+  await render();
+  await flush();
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  await flush();
+  expect(configures()).toHaveLength(1);
+  expect(configures()[0][0]).toMatchObject({
+    expectedVersion: 5,
+    configuration: { enabled: false },
+  });
+  expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+});
+it("turns computer use on at once when the verified helper is already applied", async () => {
+  mock.request.mockImplementation(async (input) =>
+    input.op === "configure"
+      ? { ...state, configuration: { ...config, enabled: true, version: 1 } }
+      : { ...state, configuration: { ...config, binaryPath: "/verified/helper.exe" } },
+  );
+  mock.helper.mockResolvedValue({ phase: "ready", helper });
+  await render();
+  await flush();
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  await flush();
+  expect(configures()).toHaveLength(1);
+  expect(configures()[0][0]).toMatchObject({ configuration: { enabled: true } });
+});
+it("puts the switch back and says why when the immediate change is refused", async () => {
+  const on = { ...config, enabled: true, binaryPath: "/verified/helper.exe", version: 5 };
+  mock.request.mockImplementation(async (input) => {
+    if (input.op === "configure") throw new Error("refused");
+    return { ...state, configuration: on };
+  });
+  mock.helper.mockResolvedValue({ phase: "ready", helper });
+  await render();
+  await flush();
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  await flush();
+  expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+});
 it("reports unsaved options and pending saves to its parent", async () => {
   const report = vi.fn();
   await act(async () =>
@@ -331,11 +384,6 @@ it("refreshes status without overwriting an unsaved enable choice or adopting an
     mock.request.mock.calls.filter(([input]) => input.op === "configure").at(-1)?.[0],
   ).toMatchObject({ expectedVersion: 0, configuration: { enabled: true } });
 });
-async function flush() {
-  await act(async () => {
-    for (let i = 0; i < 5; i++) await Promise.resolve();
-  });
-}
 it("prepares a missing helper once when computer use is switched on, and never enables control", async () => {
   await render();
   expect(helperPrepares()).toBe(0);

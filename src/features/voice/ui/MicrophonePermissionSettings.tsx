@@ -1,11 +1,11 @@
 import { errorText } from "../../../shared/lib/errors";
-import { PermissionRow } from "../../permissions";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
-import { AdvancedSettings, Row } from "../../../shared/ui/settings";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { Row } from "../../../shared/ui/settings";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import {
   isMicrophoneBlocked,
@@ -96,10 +96,12 @@ export function MicrophonePermissionSettings() {
   const blocked =
     error !== webviewMicrophoneBlockedMessage() &&
     (permission === "denied" || isMicrophoneBlocked(error));
+  // Known refusals are plain sentences; any other failure keeps its raw text behind Details.
+  const rawError = error && !blocked && error !== webviewMicrophoneBlockedMessage() ? error : "";
   const message =
     requestPending && !busy
       ? t("Finish or dismiss the microphone permission prompt to check again.")
-      : error ||
+      : (rawError ? t("The microphone check failed.") : error) ||
         (blocked
           ? microphoneBlockedMessage()
           : permission === "granted"
@@ -136,8 +138,9 @@ export function MicrophonePermissionSettings() {
           loading={busy}
           disabled={requestPending}
         >
-          {t("Check microphone access")}
+          {permission === "granted" || error ? t("Check again") : t("Check microphone access")}
         </Button>
+        {rawError ? <ErrorDetails title={message} detail={rawError} /> : null}
         {busy ? (
           <Button
             onClick={() => {
@@ -151,9 +154,6 @@ export function MicrophonePermissionSettings() {
         ) : null}
         <MicrophoneRecoveryAction message={blocked ? microphoneBlockedMessage() : error} />
       </Row>
-      <AdvancedSettings title={t("Permissions")} settingIds={["permission-microphone"]} keepMounted>
-        <PermissionRow id="microphone" />
-      </AdvancedSettings>
     </>
   );
 }

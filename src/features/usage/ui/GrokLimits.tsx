@@ -74,11 +74,7 @@ export function GrokLimits({ refresh }: { refresh: number }) {
                       <>
                         {formatResetCountdown(window.resetsAt - now)}
                         <br />
-                        <Timestamp
-                          value={window.resetsAt}
-                          format="datetime-seconds"
-                          tooltip={false}
-                        />
+                        <Timestamp value={window.resetsAt} format="auto" tooltip={false} />
                       </>
                     )}
                   </Text>

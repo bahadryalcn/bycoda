@@ -26,7 +26,8 @@ import {
 import { useCallback } from "react";
 import { useGitResource } from "../hooks/useGitResource";
 import { deleteLocalBranch } from "../model/deleteBranch";
-import { confirmNative } from "../model/gitConfirmation";
+import { confirmGitAction } from "../model/gitConfirmation";
+import { deleteRemoteBranchCopy } from "./gitConfirmCopy";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
 
 import { RefNameDialog } from "./RefNameDialog";
@@ -91,12 +92,7 @@ export function GitGraphBranches({
       return;
     }
     if (id === "delete-remote" && branch.remote) {
-      if (
-        await confirmNative(
-          t("Delete {p0} from the remote for everyone?", { p0: ref }),
-          t("Delete"),
-        )
-      )
+      if (await confirmGitAction(deleteRemoteBranchCopy(ref)))
         await run("Deleting remote branch…", () =>
           gitDeleteRemoteBranch(cwd, branch.remote!, branch.name),
         );

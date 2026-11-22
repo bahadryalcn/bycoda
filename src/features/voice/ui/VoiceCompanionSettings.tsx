@@ -47,7 +47,6 @@ export function VoiceCompanionSettings({
       <Row
         id="voice-memory"
         label={t("Memory")}
-        descriptionVisible
         description={t("Keeps short notes about you between conversations on this computer.")}
       >
         <Button onClick={() => openAssistant("memory")}>

@@ -104,7 +104,7 @@ describe("ProviderSignInDialog", () => {
     );
 
     const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain("Authentication required");
+    expect(dialog?.textContent).toContain("Grok Build sign-in required");
     expect(dialog?.textContent).toContain("Sign in to Grok Build");
     expect(dialog?.querySelector(".size-9")).not.toBeNull();
 

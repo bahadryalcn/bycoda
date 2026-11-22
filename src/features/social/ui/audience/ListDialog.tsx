@@ -64,6 +64,7 @@ export function ListDialog({ client, list: existing, onClose, onSaved }: ListDia
       onClose={() => {
         if (!saving) onClose();
       }}
+      size="lg"
       {...footer}
     >
       <TextField

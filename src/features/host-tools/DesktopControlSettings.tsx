@@ -75,6 +75,7 @@ export function DesktopControlSettings({
   const [helperReady, setHelperReady] = useState(false);
   const generation = useRef(0);
   const stoppingRef = useRef(false);
+  const switchOnWhenReady = useRef(false);
   async function emergencyStop() {
     if (stoppingRef.current) return;
     stoppingRef.current = true;
@@ -175,7 +176,7 @@ export function DesktopControlSettings({
   });
   async function perform(
     op: "configure" | "stop" | "resume" | "status",
-    options: { rethrow?: boolean } = {},
+    options: { rethrow?: boolean; switchOnly?: boolean; enabled?: boolean } = {},
   ) {
     if (pending || stoppingRef.current) {
       if (options.rethrow) throw new Error(t("Computer controls are still saving. Try again."));
@@ -187,18 +188,21 @@ export function DesktopControlSettings({
     setSaveConfirmed(false);
     if (op === "status") setStatus(undefined);
     try {
+      // The switch persists on its own: only the switch and the helper it needs come from the draft,
+      // so other unsaved options stay unsaved and the saved version is the one checked.
+      const base = options.switchOnly && saved ? saved : draft;
       const result =
-        op === "configure" && draft
+        op === "configure" && draft && base
           ? await desktopControlRequest({
               op,
-              expectedVersion: draft.version,
+              expectedVersion: base.version,
               configuration: {
-                enabled: draft.enabled,
+                enabled: options.enabled ?? draft.enabled,
                 binaryPath: draft.binaryPath,
                 binarySha256: draft.binarySha256,
-                allowedApps: draft.allowedApps,
-                allowPhysicalInput: draft.allowPhysicalInput,
-                permissionMode: draft.permissionMode,
+                allowedApps: base.allowedApps,
+                allowPhysicalInput: base.allowPhysicalInput,
+                permissionMode: base.permissionMode,
                 // Older Hosts return no driver and reject an unknown field.
                 ...(draft.driver ? { driver: draft.driver } : {}),
               },
@@ -211,13 +215,13 @@ export function DesktopControlSettings({
           throw new Error(t("Computer controls changed while saving. Review them and save again."));
         return;
       }
-      if (op === "configure" && result.configuration) setSaveConfirmed(true);
+      if (op === "configure" && result.configuration && !options.switchOnly) setSaveConfirmed(true);
       if (result.configuration && op !== "status") setSaved(result.configuration);
       if (result.configuration)
         setDraft((current) =>
-          op === "configure" || !current
+          (op === "configure" && !options.switchOnly) || !current
             ? result.configuration
-            : op === "resume" || op === "stop"
+            : options.switchOnly || op === "resume" || op === "stop"
               ? {
                   ...current,
                   version: result.configuration!.version,
@@ -231,6 +235,9 @@ export function DesktopControlSettings({
     } catch (cause) {
       if (captured === generation.current) {
         setStatus(undefined);
+        // A refused switch goes back to what the Host still has.
+        if (options.switchOnly)
+          setDraft((current) => current && { ...current, enabled: saved?.enabled ?? false });
         if (options.rethrow) throw cause;
         setError(errorText(cause));
       } else if (options.rethrow) {
@@ -240,6 +247,14 @@ export function DesktopControlSettings({
       setPending(false);
     }
   }
+  // Applies the switch once the verified helper is selected, so the switch persists without the Save button.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Starts the owner's pending switch-on once its helper is applied.
+  useEffect(() => {
+    if (!switchOnWhenReady.current || pending || !draft?.enabled || saved?.enabled) return;
+    if (!helperReady || !draft.binaryPath) return;
+    switchOnWhenReady.current = false;
+    void perform("configure", { switchOnly: true, enabled: true });
+  });
   useEffect(() => {
     if (!saveRef) return;
     saveRef.current = () => perform("configure", { rethrow: true });
@@ -398,7 +413,16 @@ export function DesktopControlSettings({
                 label={t("Enable computer use")}
                 on={draft.enabled}
                 disabled={pending}
-                onChange={(enabled) => setDraft({ ...draft, enabled })}
+                onChange={(enabled) => {
+                  setDraft({ ...draft, enabled });
+                  // Off applies at once. On waits for the verified helper (below), so it never
+                  // enables control without one.
+                  if (enabled) switchOnWhenReady.current = true;
+                  else {
+                    switchOnWhenReady.current = false;
+                    void perform("configure", { switchOnly: true, enabled });
+                  }
+                }}
               />
             )}
           </Row>

@@ -139,9 +139,9 @@ describe("SegmentFilterFields", () => {
     expect(latest).toEqual({ tags: ["vip"] });
   });
 
-  it("summarises the chosen conditions in one line and says when there are none", () => {
+  it("summarises the chosen conditions in one line and shows nothing when there are none", () => {
     host.render(createElement(Harness));
-    expect(document.body.textContent).toContain("No conditions yet.");
+    expect(document.body.textContent).not.toContain("People who match all of");
     act(() => checkbox("X").click());
     act(() => chip("Replied").click());
     expect(document.body.textContent).toContain(

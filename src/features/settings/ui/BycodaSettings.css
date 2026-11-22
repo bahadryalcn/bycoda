@@ -119,7 +119,7 @@
   overflow: hidden;
 }
 
-@container settings-workbench (max-width: 760px) {
+@container settings-workbench (max-width: 880px) {
   .bycoda-settings-breadcrumb {
     display: none;
   }
@@ -189,7 +189,7 @@
   margin-inline: auto;
   padding: 8px 32px 48px;
 }
-@container settings-workbench (max-width: 760px) {
+@container settings-workbench (max-width: 880px) {
   .settings-page-bar,
   .bycoda-settings-form {
     --settings-page-bar-padding-start: 12px;

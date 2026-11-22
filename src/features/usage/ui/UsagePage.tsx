@@ -293,11 +293,7 @@ function AccountLimits({
                       <>
                         <ResetCountdown resetsAt={window.resetsAt} />
                         <br />
-                        <Timestamp
-                          value={window.resetsAt}
-                          format="datetime-seconds"
-                          tooltip={false}
-                        />
+                        <Timestamp value={window.resetsAt} format="auto" tooltip={false} />
                       </>
                     )}
                   </Text>

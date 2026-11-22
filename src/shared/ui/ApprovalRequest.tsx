@@ -4,6 +4,7 @@ import { Disclosure } from "./Disclosure";
 import { Heading } from "./Heading";
 import { NoticeGlyph, type NoticeAction } from "./Notice";
 import { OutputBlock } from "./OutputBlock";
+import { Text } from "./Text";
 
 export type ApprovalRequestProps = {
   title: string;
@@ -11,6 +12,8 @@ export type ApprovalRequestProps = {
   detail: string;
   allow: NoticeAction;
   deny: NoticeAction;
+  /** Where and how far the decision reaches, e.g. working directory and "this request only". */
+  context?: readonly string[];
   /** Persistent consent or review actions remain secondary. */
   actions?: readonly NoticeAction[];
   details?: { label: string; content: ReactNode; defaultOpen?: boolean };
@@ -25,7 +28,7 @@ export type ApprovalRequestProps = {
  * @use Tool, permission or owner requests requiring an explicit Allow/Deny decision.
  * @avoid Informational warning without a decision: Alert. OS readiness/setup rows: Row. Destructive confirmation: ConfirmDialog. Questions: forms.
  * @example
- * <ApprovalRequest title={t("Needs approval")} detail={command}
+ * <ApprovalRequest title={t("Allow {p0}?", { p0: toolName })} detail={command} context={[cwd, t("This request only")]}
  *   allow={{ label: t("Allow"), onClick: allow }} deny={{ label: t("Deny"), onClick: deny }} />
  */
 export function ApprovalRequest({
@@ -33,6 +36,7 @@ export function ApprovalRequest({
   detail,
   allow,
   deny,
+  context,
   actions,
   details,
 }: ApprovalRequestProps) {
@@ -64,6 +68,11 @@ export function ApprovalRequest({
           ))}
         </div>
       </div>
+      {context?.length ? (
+        <Text as="div" size="caption" tone="secondary" truncate>
+          {context.join(" · ")}
+        </Text>
+      ) : null}
       <OutputBlock frame="filled" scroll className="max-h-48 min-w-0">
         {detail}
       </OutputBlock>

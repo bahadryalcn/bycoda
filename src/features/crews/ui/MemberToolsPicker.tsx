@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
 import { t, useLocale } from "../../../shared/i18n";
 import { Heading } from "../../../shared/ui/Heading";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import {
@@ -88,9 +89,16 @@ export function MemberToolsPicker({
   ];
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <Heading size="section" level={3}>
-        {t("Tools")}
-      </Heading>
+      <div className="flex min-w-0 items-center gap-1">
+        <Heading size="section" level={3}>
+          {t("Tools")}
+        </Heading>
+        <InfoPopover label={t("Tool profile")} className="shrink-0">
+          <Text as="p" size="secondary">
+            {profileText(choice).description}
+          </Text>
+        </InfoPopover>
+      </div>
       <RadioGroup
         label={t("Tool profile")}
         variant="inline"
@@ -101,9 +109,6 @@ export function MemberToolsPicker({
         }))}
         onValueChange={(next) => set(crewToolProfileFor(next as CrewToolProfileChoice, value))}
       />
-      <Text as="p" size="secondary" tone="muted">
-        {profileText(choice).description}
-      </Text>
       {custom ? (
         <div className="flex min-w-0 flex-col gap-2">
           {value && value.preset !== "custom" ? (

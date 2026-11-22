@@ -151,3 +151,41 @@ it("shows a failure's reason on the row and names machines only when several are
   expect(container.textContent).toContain("Workstation");
   expect(container.textContent).toContain("Laptop");
 });
+
+it("groups failures first under one heading and retries a failed task from its row", async () => {
+  const base = {
+    prompt: "Do it",
+    machineId: "a",
+    machineName: "Workstation",
+    cwd: "/project",
+  } as const;
+  const fine = { ...base, id: "fine", title: "Fine task", status: "todo" } as BoardTask;
+  const failed = {
+    ...base,
+    id: "failed",
+    title: "Broken task",
+    status: "blocked",
+    error: "Checks failed.",
+  } as BoardTask;
+  const onRetry = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(TaskList, {
+        tasks: [fine, failed],
+        selection: false,
+        selected: new Set<string>(),
+        onOpen: vi.fn(),
+        onToggle: vi.fn(),
+        onRetry,
+      }),
+    ),
+  );
+  const rows = [...container.querySelectorAll(".task-management-row")];
+  expect(rows[0].textContent).toContain("Broken task");
+  expect(rows[1].textContent).toContain("Fine task");
+  expect(container.querySelector('[data-task-group="failed"]')?.textContent).toBe("Failed · 1");
+  expect(container.querySelector('[data-task-group="other"]')?.textContent).toBe("Other · 1");
+  const retry = [...rows[0].querySelectorAll("button")].find((b) => b.textContent === "Retry")!;
+  await act(async () => retry.click());
+  expect(onRetry).toHaveBeenCalledWith(failed);
+});

@@ -39,6 +39,7 @@ import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionE
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { InlineTextAction } from "../../../shared/ui/ActionHost";
 import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
@@ -63,8 +64,10 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type Dispatch,
   type ElementType,
   type FormEvent,
+  type SetStateAction,
   type ReactNode,
 } from "react";
 import { loadModelControls, subscribeModelControls } from "../../settings/model/settings";
@@ -275,7 +278,12 @@ function AutomationsContent({
   const filterButton = useRef<HTMLButtonElement>(null);
   const deferredQuery = useDeferredValue(query);
   const [draft, setDraft] = useRetainedState<AutomationDraft | null>(`${viewStateKey}:draft`, null);
-  const [pickerOpen, setPickerOpen] = useState(() => draft == null);
+  // Until the owner opens or closes the picker, the default view is the selected automation's
+  // detail; the picker is the default only while there is nothing to select.
+  const [pickerChoice, setPickerChoice] = useState<boolean | null>(null);
+  const pickerOpen = pickerChoice ?? (draft == null && automations.length === 0);
+  const setPickerOpen: Dispatch<SetStateAction<boolean>> = (next) =>
+    setPickerChoice(typeof next === "function" ? next(pickerOpen) : next);
   const [groupLabels] = useState(loadTabGroupLabels);
 
   useEffect(
@@ -659,6 +667,7 @@ function AutomationsContent({
                           setCompactListOpen(false);
                         }}
                         onToggle={(enabled) => void onToggle(automation, enabled)}
+                        onRetry={() => void onRun(automation)}
                       />
                     </li>
                   ))}
@@ -831,6 +840,7 @@ function AutomationCard({
   labels,
   onSelect,
   onToggle,
+  onRetry,
   pending,
   disabled,
 }: {
@@ -839,6 +849,8 @@ function AutomationCard({
   labels: Record<string, string>;
   onSelect: () => void;
   onToggle: (enabled: boolean) => void;
+  /** Runs the automation again after a failed run. */
+  onRetry: () => void;
   pending: boolean;
   disabled: boolean;
 }) {
@@ -891,6 +903,13 @@ function AutomationCard({
       }
       title={automation.name}
       secondary={secondary}
+      action={
+        automation.lastRunStatus === "failed" ? (
+          <InlineTextAction disabled={disabled || pending} onClick={onRetry}>
+            {t("Retry")}
+          </InlineTextAction>
+        ) : undefined
+      }
       trailing={
         automation.host?.needsInput ? (
           <StatusText tone="needs-you">{t("Needs input")}</StatusText>
@@ -949,6 +968,7 @@ function AutomationPicker({
           </Heading>
           <Button
             type="button"
+            size="sm"
             onClick={onBlank}
             startIcon={<Plus className="icon-sm" strokeWidth={1.75} />}
           >
@@ -957,6 +977,7 @@ function AutomationPicker({
           {onAssistant ? (
             <Button
               type="button"
+              size="sm"
               onClick={onAssistant}
               aria-haspopup="dialog"
               startIcon={<Sparkles className="icon-sm" strokeWidth={1.75} />}

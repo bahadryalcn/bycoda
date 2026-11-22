@@ -200,7 +200,7 @@ export function TaskSessionSheet({
             key={block.id}
           >
             <SectionLabel as="h3" className="task-session-heading">
-              {t(block.role === "user" ? "You" : "Assistant")}
+              {t(block.role === "user" ? "Task prompt" : "Agent")}
             </SectionLabel>
             <AgentMarkdown text={block.text} />
           </section>

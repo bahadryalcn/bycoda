@@ -34,7 +34,9 @@ export function GitGraphCommitInspector({
   disabled = false,
   mode = "changes",
   onMode,
+  openCommit,
 }: {
+  openCommit?: { has: (sha: string) => boolean; open: (sha: string) => void };
   cwd: string;
   commit: GitHistoryCommit;
   onBranch: () => void;
@@ -280,6 +282,7 @@ export function GitGraphCommitInspector({
             sha={deleted ? commit.parents[0] : commit.sha}
             relative={relative}
             text={deleted ? diff.data.original : diff.data.current}
+            openCommit={openCommit}
           />
         ) : (
           <UnifiedDiffView files={models} />

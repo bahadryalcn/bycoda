@@ -175,6 +175,9 @@
   min-inline-size: 0;
 }
 .machineStatus {
+  /* A load failure can be a long sentence; the shared status word otherwise stays on one line. */
+  flex: initial;
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 .machineActions {
@@ -318,4 +321,24 @@
   .closeAction {
     display: none;
   }
+}
+.folders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.foldersHeader,
+.folderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.folderText {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+.folderPath {
+  overflow-wrap: anywhere;
 }

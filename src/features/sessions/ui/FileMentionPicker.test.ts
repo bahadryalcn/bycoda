@@ -141,3 +141,50 @@ it("says the file index is incomplete instead of a bare no-match result", () => 
   render("incomplete", true);
   expect(host.textContent).not.toContain("File index");
 });
+
+const row = (relative: string) => ({
+  path: `/repo/${relative}`,
+  relative,
+  name: relative.split("/").pop()!,
+  score: 0,
+  positions: [],
+});
+
+it("groups an empty query into project root and folders", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  act(() =>
+    root.render(
+      createElement(FileMentionPicker, {
+        files: [row("README.md"), row("src/app.ts")],
+        query: "",
+        active: 0,
+        onActive: vi.fn(),
+        onPick: vi.fn(),
+      }),
+    ),
+  );
+  expect(host.textContent).toContain("Project root");
+  expect(host.textContent).toContain("Folders");
+});
+
+it("offers a rescan when a search finds nothing and when the index is incomplete", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const onRetry = vi.fn();
+  act(() =>
+    root.render(
+      createElement(FileMentionPicker, {
+        files: [],
+        query: "zzz",
+        active: 0,
+        indexNotice: "incomplete",
+        onRetry,
+        onActive: vi.fn(),
+        onPick: vi.fn(),
+      }),
+    ),
+  );
+  const rescan = [...host.querySelectorAll("button")].find((b) => b.textContent === "Rescan files");
+  expect(rescan).toBeDefined();
+  act(() => rescan!.click());
+  expect(onRetry).toHaveBeenCalledOnce();
+});

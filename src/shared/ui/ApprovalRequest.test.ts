@@ -67,3 +67,7 @@ it("preserves caller-owned pending and disabled state and details disclosure", (
   expect(allow).not.toHaveBeenCalled();
   expect(deny).not.toHaveBeenCalled();
 });
+it("shows where and how far the decision reaches above the request", () => {
+  const { host } = mount({ context: ["/repo", "This request only"] });
+  expect(host.textContent).toContain("/repo · This request only");
+});

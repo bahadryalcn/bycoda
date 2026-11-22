@@ -14,6 +14,8 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { SkeletonBar } from "../../../shared/ui/Skeleton";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tab } from "../../../shared/ui/Tabs";
@@ -274,7 +276,7 @@ function PrCheckRow({
       <span className="grid h-7 w-5 shrink-0 place-items-center">
         <MarkGlyph mark={mark} size="md" />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
+      <span className="flex min-w-0 max-w-md flex-1 flex-col">
         <span className="flex min-w-0 items-baseline gap-2.5">
           <Text
             data-check-name
@@ -315,7 +317,7 @@ function PrCheckRow({
     </>
   );
   const className =
-    "flex w-full min-w-0 flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-left";
+    "flex w-full min-w-0 max-w-lg flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-left";
   const statusCell = (
     <span className="min-w-14 shrink-0 text-left whitespace-nowrap">
       {repairItem ? (
@@ -538,7 +540,7 @@ function PrCheckRow({
               variant="item"
               fullWidth
               motion="none"
-              className="w-full min-w-0 flex-1 text-left"
+              className="w-full min-w-0 max-w-lg flex-1 text-left"
               type="button"
               aria-label={title}
               onClick={() => openUrlSafely(url)}
@@ -550,8 +552,11 @@ function PrCheckRow({
           )}
           {statusCell}
           {durationCell}
-          {fixButton}
-          <span className="size-7 shrink-0" aria-hidden="true" />
+          {/* The name column is capped so status and time stay beside it; the actions take the rest. */}
+          <span className="ms-auto flex shrink-0 items-center gap-2">
+            {fixButton}
+            <span className="size-7 shrink-0" aria-hidden="true" />
+          </span>
           {linkButton}
         </ActionHost>
       )}
@@ -605,7 +610,17 @@ export function InboxPrChecks({
   );
   if (selection && !selectionValid) setSelection(null);
   if (loading && !checks && !error) {
-    return <LoadingText inset="panel">{t("Loading checks…")}</LoadingText>;
+    return (
+      <SurfaceLoading title={t("Loading checks…")}>
+        {[0, 1, 2].map((index) => (
+          <div key={index} className="flex items-center gap-2.5 px-2 py-1.5">
+            <SkeletonBar shape="square" width="1rem" height="1rem" index={index} />
+            <SkeletonBar width="40%" index={index} />
+            <SkeletonBar shape="pill" width="3.5rem" height="1rem" index={index} />
+          </div>
+        ))}
+      </SurfaceLoading>
+    );
   }
   if (!checks && error) {
     return (

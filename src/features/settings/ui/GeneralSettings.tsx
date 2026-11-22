@@ -317,7 +317,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         </Row>
         <Row
           id="send-feedback"
-          label={t("Send feedback")}
+          label={t("Share an idea or report a problem")}
           info={t(
             "Nothing from your sessions, code, logs or file paths is attached automatically. Do not paste passwords, tokens or other secrets.",
           )}

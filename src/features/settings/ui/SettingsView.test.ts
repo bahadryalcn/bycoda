@@ -1734,7 +1734,9 @@ describe("settings pages", () => {
       );
     }
     if (section === "skills") {
-      vi.mocked(invoke).mockResolvedValue([]);
+      vi.mocked(invoke).mockImplementation(async (command) =>
+        command === "home_dir" ? "C:/Users/test" : [],
+      );
     }
     if (section === "providers") {
       vi.mocked(invoke).mockImplementation(async (command, args) => {

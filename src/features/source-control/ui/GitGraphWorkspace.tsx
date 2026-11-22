@@ -42,7 +42,8 @@ import { useGitResource } from "../hooks/useGitResource";
 import { setGitFeedback, useGitPanelState, withGitOperation } from "../model/gitPanelState";
 import { invalidateGitIndex } from "../model/gitIndexStore";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
-import { confirmNative } from "../model/gitConfirmation";
+import { confirmGitAction } from "../model/gitConfirmation";
+import { discardConflictCopy } from "./gitConfirmCopy";
 import { GitGraphBranches } from "./GitGraphBranches";
 import { GitGraphCommitInspector } from "./GitGraphCommitInspector";
 import { GitGraphConflictEditor } from "./GitGraphConflictEditor";
@@ -61,6 +62,8 @@ type Props = {
   onCommit: (commit: GitHistoryCommit | null) => void;
   onDirty: (dirty: boolean) => void;
   onBranch: (commit: GitHistoryCommit) => void;
+  /** Lets blame jump to a commit by hash; absent when the graph cannot resolve one. */
+  openCommit?: { has: (sha: string) => boolean; open: (sha: string) => void };
   graph: ReactNode;
 };
 const ACTION = "shrink-0";
@@ -174,6 +177,7 @@ export function GitGraphWorkspace({
   onCommit,
   onBranch,
   onDirty,
+  openCommit,
   graph,
 }: Props) {
   useLocale();
@@ -265,8 +269,7 @@ export function GitGraphWorkspace({
   const run = async (label: string, action: () => Promise<unknown>) => {
     if (!supported || busy) return false;
     if (dirty && label !== "Saving conflict resolution…" && label !== "Resolving conflict…") {
-      if (!(await confirmNative(t("Discard the unsaved conflict resolution?"), t("Discard"))))
-        return false;
+      if (!(await confirmGitAction(discardConflictCopy()))) return false;
       dirtyChanged(false);
       setConflict(null);
     }
@@ -293,8 +296,7 @@ export function GitGraphWorkspace({
       changed();
     }
   };
-  const leaveEditor = async () =>
-    !dirty || (await confirmNative(t("Discard the unsaved conflict resolution?"), t("Discard")));
+  const leaveEditor = async () => !dirty || (await confirmGitAction(discardConflictCopy()));
   const openFile = async (path: string, kind: GitFileDiffKind) => {
     if (!(await leaveEditor())) return;
     setConflict(null);
@@ -552,6 +554,7 @@ export function GitGraphWorkspace({
               mode={commitMode}
               onMode={onCommitMode}
               onBranch={() => onBranch(commit)}
+              openCommit={openCommit}
               onClose={() => onCommit(null)}
             />
           ) : (

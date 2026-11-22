@@ -3,6 +3,7 @@ import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { PromptField } from "../../../shared/ui/PromptField";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -436,40 +437,13 @@ function QueueEditContent({
     Array.from(event.dataTransfer?.types ?? []).includes("Files");
 
   return (
-    <Modal
-      title={t("Edit queued message")}
-      size="md"
-      fitViewport
-      onClose={requestClose}
-      footer={
-        confirmingDiscard ? (
-          <div className="min-w-0 flex-1">
-            <Alert tone="warning">
-              <span className="mr-auto">{t("Discard your changes?")}</span>
-              <Button
-                variant="ghost"
-                type="button"
-                onClick={() => {
-                  parentChanged();
-                  setConfirmingDiscard(false);
-                }}
-              >
-                {t("Keep editing")}
-              </Button>
-              <Button
-                variant="secondary"
-                tone="danger"
-                type="button"
-                onClick={() => {
-                  parentChanged();
-                  onCancel();
-                }}
-              >
-                {t("Discard")}
-              </Button>
-            </Alert>
-          </div>
-        ) : (
+    <>
+      <Modal
+        title={t("Edit queued message")}
+        size="md"
+        fitViewport
+        onClose={requestClose}
+        footer={
           <ModalActions
             reason={saveReason}
             start={
@@ -500,118 +474,137 @@ function QueueEditContent({
               {t("Save")}
             </Button>
           </ModalActions>
-        )
-      }
-    >
-      <div
-        className="flex flex-col gap-3"
-        onDragOver={(event) => {
-          if (!hasFiles(event)) return;
-          event.preventDefault();
-          const block = !canAttach
-            ? "unsupported"
-            : !parentChanged.canMutate()
-              ? "unavailable"
-              : null;
-          event.dataTransfer.dropEffect = block ? "none" : "copy";
-          dropFeedback.show(
-            dropBox.current,
-            attachmentDropVerdict(
-              droppedFileCount(event.dataTransfer),
-              draftRef.current.attachments.length,
-              block,
-            ),
-            event,
-          );
-        }}
-        onDragLeave={(event) => {
-          const next = event.relatedTarget as Node | null;
-          if (next && event.currentTarget.contains(next)) return;
-          dropFeedback.hide();
-        }}
-        onDrop={(event) => {
-          dropFeedback.hide();
-          if (!parentChanged.canMutate()) {
-            event.preventDefault();
-            return;
-          }
-          if (!hasFiles(event)) return;
-          event.preventDefault();
-          if (!canAttach) return;
-          const files = [...event.dataTransfer.files];
-          void attachBlobs(files);
-        }}
+        }
       >
-        {/* One field frame like the composer: attachments on top, the attach action below. */}
-        <PromptField
-          ref={field}
-          label={t("Queued message text")}
-          readOnly={parentClosed}
-          value={draft.text}
-          overlay={
-            <ComposerHighlight
-              text={draft.text}
-              mode={null}
-              names={references?.names ?? new Set()}
-              skillParts={references?.skillParts ?? ((text) => [{ text }])}
-              mentions={references?.mentions ?? new Map()}
-              mcpTags={references?.mcpTags ?? []}
-              {...references}
-              attachments={draft.attachments}
-              citations={0}
-              field={field}
-            />
-          }
-          minRows={5}
-          maxRows={14}
-          spellCheck={false}
-          placeholder={t("Message")}
-          onChange={(event) =>
-            change(event.target.value, event.target.selectionStart ?? event.target.value.length)
-          }
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          frameProps={{ ref: dropBox }}
-          header={
-            draft.attachments.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
-                {draft.attachments.map((file, index) => (
-                  <AttachmentChip
-                    key={file.id}
-                    attachment={file}
-                    token={tokens[index]}
-                    onRemove={() => remove(file.id)}
-                  />
-                ))}
-              </div>
-            ) : null
-          }
-          toolbarLeading={
-            canAttach ? (
-              <Button
-                iconOnly
-                label={t("Add files or images")}
-                variant="ghost"
-                type="button"
-                aria-label={t("Add files or images")}
-                disabled={parentClosed}
-                onClick={() => void collect(pickAttachments)}
-              >
-                <FilePlus className="icon-sm" />
-              </Button>
-            ) : undefined
-          }
+        <div
+          className="flex flex-col gap-3"
+          onDragOver={(event) => {
+            if (!hasFiles(event)) return;
+            event.preventDefault();
+            const block = !canAttach
+              ? "unsupported"
+              : !parentChanged.canMutate()
+                ? "unavailable"
+                : null;
+            event.dataTransfer.dropEffect = block ? "none" : "copy";
+            dropFeedback.show(
+              dropBox.current,
+              attachmentDropVerdict(
+                droppedFileCount(event.dataTransfer),
+                draftRef.current.attachments.length,
+                block,
+              ),
+              event,
+            );
+          }}
+          onDragLeave={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (next && event.currentTarget.contains(next)) return;
+            dropFeedback.hide();
+          }}
+          onDrop={(event) => {
+            dropFeedback.hide();
+            if (!parentChanged.canMutate()) {
+              event.preventDefault();
+              return;
+            }
+            if (!hasFiles(event)) return;
+            event.preventDefault();
+            if (!canAttach) return;
+            const files = [...event.dataTransfer.files];
+            void attachBlobs(files);
+          }}
+        >
+          {/* One field frame like the composer: attachments on top, the attach action below. */}
+          <PromptField
+            ref={field}
+            label={t("Queued message text")}
+            readOnly={parentClosed}
+            value={draft.text}
+            overlay={
+              <ComposerHighlight
+                text={draft.text}
+                mode={null}
+                names={references?.names ?? new Set()}
+                skillParts={references?.skillParts ?? ((text) => [{ text }])}
+                mentions={references?.mentions ?? new Map()}
+                mcpTags={references?.mcpTags ?? []}
+                {...references}
+                attachments={draft.attachments}
+                citations={0}
+                field={field}
+              />
+            }
+            minRows={5}
+            maxRows={14}
+            spellCheck={false}
+            placeholder={t("Message")}
+            onChange={(event) =>
+              change(event.target.value, event.target.selectionStart ?? event.target.value.length)
+            }
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            frameProps={{ ref: dropBox }}
+            header={
+              draft.attachments.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+                  {draft.attachments.map((file, index) => (
+                    <AttachmentChip
+                      key={file.id}
+                      attachment={file}
+                      token={tokens[index]}
+                      onRemove={() => remove(file.id)}
+                    />
+                  ))}
+                </div>
+              ) : null
+            }
+            toolbarLeading={
+              canAttach ? (
+                <Button
+                  iconOnly
+                  label={t("Add files or images")}
+                  variant="ghost"
+                  type="button"
+                  aria-label={t("Add files or images")}
+                  disabled={parentClosed}
+                  onClick={() => void collect(pickAttachments)}
+                >
+                  <FilePlus className="icon-sm" />
+                </Button>
+              ) : undefined
+            }
+          />
+
+          {loadingAttachments > 0 ? <LoadingText delay={false}>{t("Loading…")}</LoadingText> : null}
+
+          {draft.attachments.some((file) => file.missing) ? (
+            <Text as="p" size="micro" tone="warning">
+              {t("Missing files are dropped from the message when you save.")}
+            </Text>
+          ) : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+        </div>
+      </Modal>
+      {confirmingDiscard ? (
+        <ConfirmDialog
+          request={{
+            title: t("Discard your changes?"),
+            message: t("Your edits to this queued message are lost."),
+            confirmLabel: t("Discard"),
+            cancelLabel: t("Keep editing"),
+            onConfirm: () => {
+              parentChanged();
+              onCancel();
+            },
+            onCancel: () => {
+              parentChanged();
+              setConfirmingDiscard(false);
+            },
+          }}
+          onSettle={() => {}}
         />
-
-        {loadingAttachments > 0 ? <LoadingText delay={false}>{t("Loading…")}</LoadingText> : null}
-
-        {draft.attachments.some((file) => file.missing) ? (
-          <Text as="p" size="micro" tone="warning">
-            {t("Missing files are dropped from the message when you save.")}
-          </Text>
-        ) : null}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-      </div>
-    </Modal>
+      ) : null}
+    </>
   );
 }

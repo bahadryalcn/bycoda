@@ -305,3 +305,26 @@ it("retries the prompt together with the messages sent while it ran", () => {
   });
   expect(retry?.attachments.map((file) => file.id)).toEqual(["image", "notes"]);
 });
+
+it("says why a failed turn cannot be retried instead of showing nothing", () => {
+  const missing = {
+    ...chat(),
+    blocks: [
+      {
+        ...blocks[0],
+        attachments: blocks[0].attachments!.map((file) => ({ ...file, missing: true })),
+      },
+      blocks[1],
+    ],
+  };
+  act(() => root.render(createElement(RetryFailedTurn, { session: missing, onSubmit: vi.fn() })));
+  expect(host.querySelector("button")).toBeNull();
+  expect(host.querySelector('[data-retry-unavailable="attachments-missing"]')).not.toBeNull();
+
+  const notSent = {
+    ...chat(),
+    blocks: [blocks[0], { ...blocks[1], text: "Message not sent: Host is unreachable." }],
+  };
+  act(() => root.render(createElement(RetryFailedTurn, { session: notSent, onSubmit: vi.fn() })));
+  expect(host.querySelector('[data-retry-unavailable="not-sent"]')).not.toBeNull();
+});

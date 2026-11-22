@@ -8,6 +8,7 @@ import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { FileField } from "../../../../shared/ui/FileField";
 import { Heading } from "../../../../shared/ui/Heading";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { useFormFooter } from "../../../../shared/ui/FormFooter";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { SOCIAL_PLATFORM_NAMES, type SocialAccount } from "../../model/social";
 import type { SocialList } from "../../model/audience";
@@ -166,6 +167,15 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
     }
   }
 
+  const formFooter = useFormFooter({
+    saving: importing,
+    error,
+    blockedReason: reason,
+    saveLabel: ready ? t("Import {p0} people", { p0: formatNumber(ready) }) : t("Import people"),
+    onSave: () => void runImport().catch(() => undefined),
+    onCancel: onClose,
+  });
+
   return (
     <Modal
       title={t("Import people")}
@@ -176,24 +186,16 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
         if (!importing) onClose();
       }}
       size="lg"
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
       footer={
-        <ModalActions reason={result || error ? undefined : reason}>
-          <Button variant="ghost" disabled={importing} onClick={onClose}>
-            {result ? t("Done") : t("Cancel")}
-          </Button>
-          {!result ? (
-            <Button
-              variant="primary"
-              loading={importing}
-              disabled={Boolean(reason)}
-              disabledReason={reason}
-              onClick={() => void runImport().catch(() => undefined)}
-            >
-              {ready ? t("Import {p0} people", { p0: formatNumber(ready) }) : t("Import people")}
+        result ? (
+          <ModalActions>
+            <Button variant="ghost" onClick={onClose}>
+              {t("Done")}
             </Button>
-          ) : null}
-        </ModalActions>
+          </ModalActions>
+        ) : (
+          formFooter.footer
+        )
       }
     >
       <div className="audience-stack">

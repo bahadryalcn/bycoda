@@ -17,7 +17,8 @@ export default defineRule({
     const popovers = [];
     return {
       JSXElement(node) {
-        if (elementName(node.openingElement) === "Popover") popovers.push({ node, reported: false });
+        if (elementName(node.openingElement) === "Popover")
+          popovers.push({ node, reported: false });
       },
       "JSXElement:exit"(node) {
         if (popovers.at(-1)?.node === node) popovers.pop();

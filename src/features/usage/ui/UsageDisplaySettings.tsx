@@ -1,6 +1,6 @@
 import { actionHostAttributes } from "../../../shared/ui/ActionHost";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { saveShowRemainingUsage, useShowRemainingUsage } from "../../settings/model/displayPrefs";
@@ -12,10 +12,7 @@ export function UsageDisplaySettings() {
   const showRemainingUsage = useShowRemainingUsage();
   const appearance = surfaceAttributes({ radius: "none" }, "usage-display-toggle");
   return (
-    <Tooltip
-      label={t("Fill usage meters with what is left in each limit instead of what has been used.")}
-      asChild
-    >
+    <div className="flex items-center gap-1">
       <Text
         as="div"
         size="caption"
@@ -36,6 +33,11 @@ export function UsageDisplaySettings() {
           onChange={saveShowRemainingUsage}
         />
       </Text>
-    </Tooltip>
+      <InfoPopover label={t("About remaining usage")}>
+        <p>
+          {t("Fill usage meters with what is left in each limit instead of what has been used.")}
+        </p>
+      </InfoPopover>
+    </div>
   );
 }

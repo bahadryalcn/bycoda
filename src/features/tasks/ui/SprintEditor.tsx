@@ -9,7 +9,6 @@ import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { Text } from "../../../shared/ui/Text";
 import type { RemoteMachine } from "../../connections";
 import {
   sprintProjectKey,
@@ -147,6 +146,7 @@ export function SprintEditor({
         <SearchableSelect
           multiple
           label={t("Projects")}
+          placeholder={t("Choose projects")}
           description={t("A sprint can include projects from different servers.")}
           value={selected}
           onChange={setSelected}
@@ -159,18 +159,15 @@ export function SprintEditor({
           disabled={busy}
         />
         <div className="sprint-form-section">
-          <Text size="caption" tone="secondary">
-            {t("Dates are optional.")}
-          </Text>
           <div className="sprint-form-grid">
             <DatePicker
-              label={t("Start date")}
+              label={t("Start date (optional)")}
               value={startsAt}
               onChange={setStartsAt}
               disabled={busy}
             />
             <DatePicker
-              label={t("End date")}
+              label={t("End date (optional)")}
               value={endsAt}
               min={startsAt || undefined}
               onChange={setEndsAt}

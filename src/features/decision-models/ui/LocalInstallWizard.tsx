@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { formatBytes } from "../../../shared/i18n/format";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -154,10 +155,12 @@ export function LocalInstallWizard({
   return (
     <Modal
       title={target ? t("Install on Host {p1}", { p1: target }) : t("Install on this computer")}
-      description={
-        target
-          ? t("A local model runs on Host {p1} and needs no key.", { p1: target })
-          : t("A local model runs on this computer and needs no key.")
+      toolbar={
+        <InfoPopover>
+          {target
+            ? t("A local model runs on Host {p1} and needs no key.", { p1: target })
+            : t("A local model runs on this computer and needs no key.")}
+        </InfoPopover>
       }
       size="lg"
       height="tall"

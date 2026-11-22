@@ -59,7 +59,9 @@ import {
   loadNoteSummaries,
   linkNoteToSession,
   NOTES_CHANGED_EVENT,
+  noteHeading,
   noteTitle,
+  withNoteHeading,
   peekNoteSummaries,
   summarizeNote,
   requestAddNoteToChat,
@@ -655,10 +657,11 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     value: string;
     publication?: NativeInputPublication;
   }>(() => ({ value: restored?.title ?? note.title }));
-  const title = titleState.value;
   const setTitle = (value: string, parent?: NoteInputWork) =>
     setTitleState({ value, publication: inputOwner.publishControl("title", value, parent) });
   const [body, setBody] = useState(restored?.body ?? note.body);
+  // The first level-one heading is the note's name; the title field mirrors it.
+  const title = noteHeading(body) ?? titleState.value;
   const [saveError, setSaveErrorState] = useState<string | null>(restored.error ?? null);
   const setSaveError = (error: string | null) => {
     restored.error = error;
@@ -754,7 +757,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
       const typed = restored.title.trim();
       // An untouched placeholder title follows the first line, as on the Notes screen.
       const nextTitle =
-        typed && (typed !== "Untitled" || titleTouched.current) ? typed : noteTitle(nextBody);
+        noteHeading(nextBody) ??
+        (typed && (typed !== "Untitled" || titleTouched.current) ? typed : noteTitle(nextBody));
       const finalizeSlug =
         !!current.slugPending && finalizeRequested.current && !!typed && typed !== "Untitled";
       if (
@@ -988,11 +992,23 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
             try {
               const previous = titleRef.current;
               titleTouched.current = true;
+              const previousBody = bodyRef.current;
               titleRef.current = next;
               setTitle(next, work);
+              // Renaming a note with a heading rewrites that heading, so both stay equal.
+              const renamed = next.trim() ? withNoteHeading(previousBody, next) : previousBody;
+              if (renamed !== previousBody) {
+                bodyRef.current = renamed;
+                setBody(renamed);
+              }
               retainDraft();
               await saveNow(true, work);
-              if (savedRef.current.title !== (next.trim() || noteTitle(bodyRef.current))) {
+              if (
+                savedRef.current.title !==
+                (noteHeading(bodyRef.current) ?? (next.trim() || noteTitle(bodyRef.current)))
+              ) {
+                bodyRef.current = previousBody;
+                setBody(previousBody);
                 titleRef.current = previous;
                 setTitle(previous, work);
                 throw new Error(t("Could not save note"));

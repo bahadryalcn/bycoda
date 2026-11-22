@@ -5,6 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/settings";
 import { t } from "../../../shared/i18n";
+import { voiceProviderLabel, voiceProviderOptions } from "../model/voiceProviders";
 import { errorText } from "../../../shared/lib/errors";
 import {
   loadVoiceSettings,
@@ -237,16 +238,12 @@ export function VoiceSetupSteps({
             onValueChange={(mode) =>
               saveVoiceSettings({ ...loadVoiceSettings(), mode: mode as typeof settings.mode })
             }
-            options={[
-              { value: "openai", label: "OpenAI" },
-              { value: "grok", label: "Grok (xAI)" },
-              { value: "local", label: t("On this computer") },
-            ]}
+            options={voiceProviderOptions()}
             label={t("Voice provider")}
           />
           <div className={styles.actions}>
             <Button onClick={() => void check()} loading={busy}>
-              {t("Check connection")}
+              {t("Check {p0}", { p0: voiceProviderLabel(settings.mode) })}
             </Button>
             <LiveText
               size="caption"

@@ -142,11 +142,11 @@ export function SegmentFilterFields({
   const extra = detailCount(value);
   return (
     <div className="audience-stack">
-      <Text as="p" tone="secondary" className="audience-muted">
-        {summary.length
-          ? t("People who match all of: {p0}.", { p0: summary.join("; ") })
-          : t("No conditions yet. Pick at least one below.")}
-      </Text>
+      {summary.length ? (
+        <Text as="p" tone="secondary" className="audience-muted">
+          {t("People who match all of: {p0}.", { p0: summary.join("; ") })}
+        </Text>
+      ) : null}
       <CheckGroup<SocialPlatform>
         legend={t("Accounts on")}
         disabled={disabled}

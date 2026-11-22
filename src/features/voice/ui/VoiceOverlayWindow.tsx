@@ -8,7 +8,6 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import {
-  Maximize2,
   Minimize2,
   Mic,
   MicOff,
@@ -43,6 +42,7 @@ import {
   type VoiceOverlaySide,
 } from "../model/voiceSidePanel";
 import { VoiceTurnControl } from "./VoiceTurnControl";
+import { VoiceOverlayMoreMenu } from "./VoiceOverlayMoreMenu";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { VoiceCore } from "./companion/VoiceCore";
 import { VoiceChatTranscript } from "./companion/VoiceChatTranscript";
@@ -265,7 +265,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
     send("dock");
     showApp();
   }
-  const sizeLabel = t(compact ? "Expand voice companion" : "Compact voice companion");
+  const sizeLabel = t("Compact voice companion");
 
   // Questions and job review open in a panel beside the companion when the screen has room.
   const questions = (
@@ -405,23 +405,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               </OverflowTooltip>
             )}
           </Text>
-          {compact && status === "live" && (
-            <VoiceTurnControl
-              compact
-              menuSurface="native"
-              onMenuError={menuFailed}
-              manual={state?.manualTurnEnd === true}
-              muted={muted}
-              onManualChange={changeTurnMode}
-              onFinish={() => send("finishTurn")}
-            />
-          )}
-          {compact && status !== "idle" && (
-            <Button iconOnly label={t("Disconnect voice")} onClick={() => send("disconnect")}>
-              <PhoneOff className="icon-sm" />
-            </Button>
-          )}
-          {compact && speakerButton}
           {compact && (
             <Button
               iconOnly
@@ -449,17 +432,45 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               }}
             />
           )}
-          <Button
-            iconOnly
-            label={sizeLabel}
-            aria-expanded={!compact}
-            onClick={() => setCompact(!compact)}
-          >
-            {compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
-          </Button>
-          <Button iconOnly label={backLabel} onClick={returnToApp}>
-            <AppWindow className="icon-sm" />
-          </Button>
+          {compact && status !== "idle" && (
+            <Button
+              tone="danger"
+              aria-label={t("Disconnect voice")}
+              startIcon={<PhoneOff className="icon-sm" />}
+              onClick={() => send("disconnect")}
+            >
+              {t("End call")}
+            </Button>
+          )}
+          {compact ? (
+            <VoiceOverlayMoreMenu
+              live={status === "live"}
+              manual={state?.manualTurnEnd === true}
+              muted={muted}
+              speakerMuted={speakerMuted}
+              disabled={!state}
+              onManualChange={changeTurnMode}
+              onFinish={() => send("finishTurn")}
+              onToggleSpeaker={() => send("toggleSpeaker")}
+              onExpand={() => setCompact(false)}
+              onReturn={returnToApp}
+              onError={menuFailed}
+            />
+          ) : (
+            <>
+              <Button
+                iconOnly
+                label={sizeLabel}
+                aria-expanded={!compact}
+                onClick={() => setCompact(!compact)}
+              >
+                <Minimize2 className="icon-sm" />
+              </Button>
+              <Button iconOnly label={backLabel} onClick={returnToApp}>
+                <AppWindow className="icon-sm" />
+              </Button>
+            </>
+          )}
         </header>
         <LiveText
           {...surfaceAttributes({ frame: "none" }, "sr-only")}

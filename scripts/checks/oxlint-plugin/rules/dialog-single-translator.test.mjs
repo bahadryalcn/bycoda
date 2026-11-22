@@ -17,7 +17,11 @@ const call = (name, ...properties) => ({
 
 function run(filename, imports, calls) {
   const reports = [];
-  const visitors = rule.create({ cwd: "/repo", filename, report: ({ node }) => reports.push(node) });
+  const visitors = rule.create({
+    cwd: "/repo",
+    filename,
+    report: ({ node }) => reports.push(node),
+  });
   if (!Object.keys(visitors).length) return reports;
   for (const node of imports) visitors.ImportDeclaration(node);
   for (const node of calls) visitors.CallExpression(node);
@@ -26,18 +30,28 @@ function run(filename, imports, calls) {
 
 test("dialog-single-translator rejects a Git-translated confirmInApp without cancelLabel", () => {
   const bad = call("confirmInApp", prop("title"));
-  const reports = run("/repo/src/features/source-control/model/x.ts", [importT("../../../shared/i18n/git")], [bad]);
+  const reports = run(
+    "/repo/src/features/source-control/model/x.ts",
+    [importT("../../../shared/i18n/git")],
+    [bad],
+  );
   assert.deepEqual(reports, [bad]);
 });
 
 test("dialog-single-translator accepts cancelLabel and non-Git translators", () => {
   const git = [importT("../../../shared/i18n/git")];
   assert.deepEqual(
-    run("/repo/src/features/a/x.ts", git, [call("confirmInApp", prop("title"), prop("cancelLabel"))]),
+    run("/repo/src/features/a/x.ts", git, [
+      call("confirmInApp", prop("title"), prop("cancelLabel")),
+    ]),
     [],
   );
   assert.deepEqual(
-    run("/repo/src/features/a/x.ts", [importT("../../../shared/i18n")], [call("confirmInApp", prop("title"))]),
+    run(
+      "/repo/src/features/a/x.ts",
+      [importT("../../../shared/i18n")],
+      [call("confirmInApp", prop("title"))],
+    ),
     [],
   );
 });

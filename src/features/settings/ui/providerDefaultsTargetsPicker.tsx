@@ -10,12 +10,15 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Globe } from "../../../shared/ui/icons";
+import { Globe, LayoutGrid } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
 import { Group, Row } from "../../../shared/ui/settings";
+import { HarnessIcon } from "../../sessions/public/HarnessIcon";
+import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 import {
   selectedTargetValues,
   targetValue,
+  type DefaultsDraft,
   type DefaultsTarget,
 } from "../model/providerDefaultsDraft";
 import type { SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
@@ -207,11 +210,18 @@ export function ProviderDefaultsScopeRow({
   target,
   options,
   onTargetChange,
+  draft,
+  onDraftChange,
+  activeProvider,
 }: {
   selection?: string;
   target: DefaultsTarget;
   options: SearchableSelectOption[];
   onTargetChange: (value: string) => void;
+  /** With these, the row also says whether the edits apply to one provider or to all. */
+  draft?: DefaultsDraft;
+  onDraftChange?: (draft: DefaultsDraft) => void;
+  activeProvider?: HarnessId;
 }) {
   const values = selectedTargetValues(
     selection ?? targetValue(target),
@@ -227,6 +237,31 @@ export function ProviderDefaultsScopeRow({
           onChange={(next) => onTargetChange(JSON.stringify(next))}
         />
       </Row>
+      {draft && onDraftChange ? (
+        <Row label={t("Apply to")}>
+          <SegmentedControl
+            label={t("Provider scope")}
+            value={draft.providerScope ?? "this"}
+            options={[
+              {
+                value: "this",
+                label: activeProvider ? HARNESS_TITLE[activeProvider] : t("This provider"),
+                icon: activeProvider ? (
+                  <HarnessIcon harness={activeProvider} className="icon-sm" />
+                ) : undefined,
+              },
+              {
+                value: "all",
+                label: t("All providers"),
+                icon: <LayoutGrid className="icon-sm" />,
+              },
+            ]}
+            onValueChange={(value) =>
+              onDraftChange({ ...draft, providerScope: value === "all" ? "all" : undefined })
+            }
+          />
+        </Row>
+      ) : null}
     </Group>
   );
 }

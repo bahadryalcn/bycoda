@@ -85,6 +85,7 @@ const defaults: Deps = {
         t("External Git or filesystem changes cannot be locked by this review."),
       ].join("\n"),
       confirmLabel: t("Remove worktree"),
+      cancelLabel: t("Cancel"),
       tone: "danger",
       reveal: true,
     }),

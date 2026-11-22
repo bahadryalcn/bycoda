@@ -43,7 +43,11 @@ export function InlineVisual({ snapshot }: { snapshot: InlineVisualValue }) {
   if (resolved.state === "ready") return <InlineVisualFrame valid={resolved.source} />;
   if (resolved.state === "error")
     return (
-      <InlineError retry={{ onRetry: resolved.retry }}>{t("Preview unavailable")}</InlineError>
+      <InlineError retry={{ onRetry: resolved.retry }}>
+        {snapshot.title
+          ? t("Preview unavailable: {p0}", { p0: snapshot.title })
+          : t("Preview unavailable")}
+      </InlineError>
     );
   return (
     <Surface

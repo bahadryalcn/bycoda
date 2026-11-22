@@ -35,6 +35,8 @@ export function ProviderSignInDialog({
   const error =
     state === "error" ? providerAccountErrorTextWith(current?.error, "signIn", t) : null;
 
+  const signInTitle = t("{p0} sign-in required", { p0: HARNESS_TITLE[harness] });
+
   const signIn = () => {
     setAttempt({ key: ownerKey, state: "running", error: null });
     void loginHarness(harness, accountId).then(
@@ -52,7 +54,7 @@ export function ProviderSignInDialog({
     <Modal
       padding="none"
       onClose={onClose}
-      title={t("Authentication required")}
+      title={signInTitle}
       description={t("Sign in to continue using {p0}.", { p0: HARNESS_TITLE[harness] })}
       size="sm"
       minimalHeader
@@ -66,6 +68,7 @@ export function ProviderSignInDialog({
         onComplete={onClose}
         completeActionLabel={t("Continue")}
         completeDescription={completeDescription}
+        idleTitle={signInTitle}
         autoFocus
       />
     </Modal>

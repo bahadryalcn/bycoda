@@ -10,7 +10,7 @@ import {
   CROSS_SUBAGENTS_KEY,
 } from "../../../shared/model/host-contracts/delegation";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Field } from "../../../shared/ui/Field";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TextField } from "../../../shared/ui/TextField";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -259,8 +259,7 @@ export function TaskForm({
                 ) : null}
               </Text>
             </div>
-            <section className="task-form-description">
-              <SectionLabel>{t("Description")}</SectionLabel>
+            <Field label={t("Description")} className="task-form-description">
               <SkillPromptField
                 value={draft.prompt}
                 harness={draft.harness}
@@ -271,7 +270,7 @@ export function TaskForm({
                 surface="raised"
                 frameProps={{ "data-task-prompt": "" }}
               />
-            </section>
+            </Field>
             <CrewTaskPicker
               cwd={draft.cwd}
               machineId={targetId}
@@ -474,7 +473,7 @@ export function TaskForm({
                 tooltip={canTodo ? t("Saves it without running.") : undefined}
                 disabledReason={canTodo || saving ? undefined : todoReason}
               >
-                {t("Add to To do")}
+                {t("Add to to-do")}
               </Button>
             </>
           )}

@@ -551,13 +551,13 @@ describe("DecisionModelsSettings found on this computer", () => {
 
 describe("DecisionModelsSettings add paths", () => {
   it.each([
-    ["Add from a file or address", "Use a model file on this computer"],
+    ["Add from a file or address", "Add from a file or address"],
 
-    ["Install on this computer", "A local model runs on this computer"],
+    ["Install on this computer", "Install on this computer"],
 
     ["API provider", "No providers are listed yet."],
 
-    ["Custom endpoint", "Connect a service at an address you choose."],
+    ["Custom endpoint", "Key header name (optional)"],
   ])("opens the %s dialog from the Add menu", async (menuLabel, marker) => {
     await renderSettings({});
 

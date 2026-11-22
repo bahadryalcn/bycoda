@@ -46,6 +46,30 @@ export function menuSettingsAtRevision(
   return menuSettings(input);
 }
 
+/** The first number in a model name ("Opus 4.8", "GPT-5.2 Codex"), compared part by part. */
+function nameVersion(name: string): number[] | undefined {
+  const match = /\d+(?:\.\d+)*/.exec(name);
+  return match ? match[0].split(".").map(Number) : undefined;
+}
+
+/**
+ * A provider's list reads newest version first; unversioned entries (Auto, Default) lead and
+ * equal versions keep the catalog order, so the one rule is predictable to scan.
+ */
+export function newestFirst<T extends { name: string }>(models: T[]): T[] {
+  return models
+    .map((item, index) => ({ item, index, version: nameVersion(item.name) }))
+    .sort((a, b) => {
+      if (!a.version || !b.version) return a.version ? 1 : b.version ? -1 : a.index - b.index;
+      for (let i = 0; i < Math.max(a.version.length, b.version.length); i++) {
+        const diff = (b.version[i] ?? 0) - (a.version[i] ?? 0);
+        if (diff) return diff;
+      }
+      return a.index - b.index;
+    })
+    .map(({ item }) => item);
+}
+
 export function visibleModelsAtSnapshot(
   {
     source,
@@ -81,9 +105,11 @@ export function visibleModelsAtSnapshot(
               harnesses.includes(item.harness) &&
               modelEnabledAtRevision(source, item.id, _catalogVersion),
           )
-      : source
-          .modelsFor(tab)
-          .filter((item) => modelEnabledAtRevision(source, item.id, _catalogVersion));
+      : newestFirst(
+          source
+            .modelsFor(tab)
+            .filter((item) => modelEnabledAtRevision(source, item.id, _catalogVersion)),
+        );
   // The panel lists each model once; the beside-picker flyout has one row per account.
   const choices = hideSettings
     ? accountModelChoices(pool, accountChoices, source.accounts)
