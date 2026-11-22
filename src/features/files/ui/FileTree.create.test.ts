@@ -429,7 +429,7 @@ describe("Explorer create availability", () => {
       await act(async () => vi.advanceTimersByTimeAsync(3_000));
       expect(
         container.querySelector('[data-machine-unavailable="offline"]')?.textContent,
-      ).toContain("isn’t available");
+      ).toContain("isn’t reachable");
       expect(reads).not.toHaveBeenCalled();
 
       // The machine answers again: the tree mounts and loads.
