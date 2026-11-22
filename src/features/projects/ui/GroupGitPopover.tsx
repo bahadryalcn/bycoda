@@ -7,7 +7,7 @@ import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { gitDiffIndex } from "../../../platform/tauri/fs";
 import { basename } from "../../../platform/tauri/fs";
-import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
+import { Popover, popupListClassName, type PopoverAnchor } from "../../../shared/ui/Popover";
 import { applyProjectDiffStats } from "../../source-control/public/useProjectDiffStats";
 import { summarizeGroupGit } from "../model/groupGit";
 import { isLocalProject } from "../model/recents";
@@ -106,7 +106,7 @@ export function GroupGitPopover({
       kind="dialog"
       aria-label={t("{p0} git overview", { p0: name })}
       onDismiss={onDismiss}
-      className="overflow-y-auto p-1"
+      className={popupListClassName}
     >
       <Text as="p" size="caption" tone="muted" className="px-2.5 pb-1 pt-1.5">
         {summary.known}

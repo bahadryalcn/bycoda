@@ -2,6 +2,10 @@
 // Query: bg=image|none, opacity=0.05..0.65 (chat background session opacity), blur=0..40,
 // theme=dark|light, density=compact|comfortable|touch, userOpacity, assistantOpacity (0..100),
 // queue=0 hides the host-wait notice, question=0 hides the question form, jump=0 hides Jump to latest.
+// Reading surface (k12 §5.1/§4.2): surface=reply|column|off, surfaceOpacity (0..100; assistantOpacity
+// is its alias), surfaceBlur (px), bodyInk (80..100), chromeInk (50..100), contrast=75|100|150,
+// cards=inset|outline|solid, actions=always|hover. scene=interleaved shows the interleaved turns
+// instead of the default ones; streaming=1 makes the last block a streaming reply of a busy session.
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -66,9 +70,33 @@ applyAppearancePreferences(
     controlDensity: (q.get("density") as "compact" | "comfortable" | "touch") ?? "compact",
     ...(q.has("userOpacity") ? { userMessageOpacity: num("userOpacity", 42) } : {}),
     ...(q.has("assistantOpacity") ? { assistantMessageOpacity: num("assistantOpacity", 26) } : {}),
+    ...(q.has("contrast") ? { contrast: num("contrast", 100) } : {}),
   }),
 );
 const root = document.documentElement;
+// Reading-surface parameters (k12 §5.1 attribute names). Written after the preferences above so
+// they win; `surfaceOpacity` falls back to the older `assistantOpacity` alias.
+const surfaceValue = (key: string) => (q.has(key) ? q.get(key)! : null);
+const transcriptSurface = surfaceValue("surface");
+if (transcriptSurface === "reply" || transcriptSurface === "column" || transcriptSurface === "off")
+  root.setAttribute("data-transcript-surface", transcriptSurface);
+const transcriptCards = surfaceValue("cards");
+if (transcriptCards === "inset" || transcriptCards === "outline" || transcriptCards === "solid")
+  root.setAttribute("data-transcript-cards", transcriptCards);
+const transcriptActions = surfaceValue("actions");
+if (transcriptActions === "always" || transcriptActions === "hover")
+  root.setAttribute("data-transcript-actions", transcriptActions);
+if (q.has("surfaceOpacity") || q.has("assistantOpacity"))
+  root.style.setProperty(
+    "--appearance-transcript-surface-opacity",
+    `${q.has("surfaceOpacity") ? num("surfaceOpacity", 45) : num("assistantOpacity", 26)}%`,
+  );
+if (q.has("surfaceBlur"))
+  root.style.setProperty("--appearance-transcript-surface-blur", `${num("surfaceBlur", 0)}px`);
+if (q.has("bodyInk"))
+  root.style.setProperty("--appearance-transcript-body-ink", `${num("bodyInk", 92)}%`);
+if (q.has("chromeInk"))
+  root.style.setProperty("--appearance-transcript-chrome-ink", `${num("chromeInk", 76)}%`);
 if (q.get("bg") === "image") {
   // A dark, patterned wallpaper like the owner's: deep indigo ground, soft glows, a fine lattice.
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200">
@@ -271,6 +299,98 @@ const blocks: Block[] = [
   },
 ];
 
+// scene=interleaved: turns whose replies are broken by commands, interjections, subagents and file
+// changes, plus the row states k12 §6.1 lists. The default scene above is unchanged.
+const interleavedBlocks: Block[] = [
+  {
+    id: "iu1",
+    role: "user",
+    text: "Fix the flicker and show me every state of the reading surface.",
+    startedAt: now - minutes(9),
+    durationMs: minutes(8),
+    turnModel,
+  },
+  { id: "ia1", role: "assistant", text: "I will check the setup first, then the suites." },
+  shell("ic1", "bun run check", "completed", undefined, "ok: 14 steps"),
+  shell("ic2", "git diff --stat", "completed"),
+  { id: "ia2", role: "assistant", text: "The checks pass, but one row still paints its own fill." },
+  {
+    id: "ij1",
+    role: "system",
+    text: "Keep the Copy action reachable on every reply.",
+    interjection: { customType: "advisor", severity: "blocker" },
+  },
+  { id: "ithink", role: "reasoning", text: "Comparing the paragraph surface with the column." },
+  {
+    id: "iread-done",
+    role: "tool",
+    text: "Read src/styles/transcript-surface.css",
+    tool: { kind: "read", status: "completed", detail: "42 lines" },
+  },
+  {
+    id: "iread-open",
+    role: "tool",
+    text: "Read src/styles/index.css",
+    tool: { kind: "read", status: "completed" },
+  },
+  shell("ibycoda", "bycoda conversation agents list", "completed", "2 agents"),
+  { id: "ia3", role: "assistant", text: "Two agents are idle; I will hand the audit to them." },
+  {
+    id: "iagent-empty",
+    role: "tool",
+    text: "Check contrast",
+    tool: { callId: "spawn-3", kind: "agent", status: "in_progress" },
+    agentRun: {
+      name: "Contrast check",
+      model: "claude:sonnet-5-5",
+      startedAt: now - minutes(2),
+      steps: [],
+    },
+  },
+  {
+    id: "iagent-steps",
+    role: "tool",
+    text: "Measure reply bodies",
+    tool: { callId: "spawn-4", kind: "agent", status: "completed" },
+    agentRun: {
+      name: "Measure reply bodies",
+      model: "claude:sonnet-5-5",
+      prompt: "Measure the reply body ink at 80 and 100",
+      startedAt: now - minutes(6),
+      endedAt: now - minutes(5),
+      steps: Array.from({ length: 3 }, (_, index) => readStep(index + 40)),
+    },
+  },
+  { id: "ia4", role: "assistant", text: "Both reports are in; the body ink holds at 92." },
+  {
+    id: "ifile",
+    role: "tool",
+    text: "Edit src/styles/bycoda.css",
+    tool: { kind: "edit", status: "completed" },
+  },
+  { id: "ia5", role: "assistant", text: longReply },
+  // Work only: a turn whose reply is a single command and a read, with no text.
+  { id: "iu2", role: "user", text: "Only run the check.", startedAt: now - minutes(5), turnModel },
+  shell("iw1", "pnpm check:changed", "completed", "ok"),
+  {
+    id: "iread-plain",
+    role: "tool",
+    text: "Read src/features/sessions/ui/AgentTranscript.tsx",
+    tool: { kind: "read", status: "completed" },
+  },
+  // No reply: the user turn ends without any assistant block.
+  { id: "iu3", role: "user", text: "Stop here.", startedAt: now - minutes(4), turnModel },
+  {
+    id: "istatus",
+    role: "system",
+    text: "Checking the Host queue.",
+    statusKey: "scenario-status",
+    statusRunningSince: now - minutes(2),
+  },
+  { id: "iu4", role: "user", text: "Keep going.", startedAt: now - minutes(1), turnModel },
+  { id: "ia6", role: "assistant", text: "Writing the final summary." },
+];
+
 const child = (index: number, title: string, patch: Partial<Session>, tools: Block[]): Session => ({
   ...newSession("claude", "/fixture"),
   id: `scenario-child-${index}`,
@@ -298,6 +418,13 @@ const child = (index: number, title: string, patch: Partial<Session>, tools: Blo
   ...patch,
 });
 
+// streaming=1 marks the last block as the streaming reply of a busy session.
+const streaming = q.get("streaming") === "1";
+const sceneBlocks = (q.get("scene") === "interleaved" ? interleavedBlocks : blocks).map(
+  (block, index, all) =>
+    streaming && index === all.length - 1 ? { ...block, streaming: true } : block,
+);
+
 const toolBlocks = (prefix: string, count: number, failed: number): Block[] =>
   Array.from({ length: count }, (_, index) => ({
     id: `${prefix}-${index}`,
@@ -314,8 +441,8 @@ const initial: Session = {
   ...newSession("claude", "/fixture", modelId),
   id: sessionId,
   title: "Transcript scenario",
-  blocks,
-  busy: false,
+  blocks: sceneBlocks,
+  busy: streaming,
   context: { used: 64000, window: 200000 },
   ...(q.get("question") === "0"
     ? {}

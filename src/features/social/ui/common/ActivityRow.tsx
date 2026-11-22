@@ -126,6 +126,17 @@ export function ActivityRow({
           ) : null}
         </div>
       </ActionHost>
+      {undo?.blockedReason ? (
+        <Text
+          as="div"
+          size="caption"
+          tone="muted"
+          leading="inherit"
+          className="social-activity-details"
+        >
+          {undo.blockedReason}
+        </Text>
+      ) : null}
       {details ? (
         <Text
           as="div"

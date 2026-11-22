@@ -10,7 +10,6 @@ import { Eye } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
 import type { WorktreeManagementRequest } from "../../../features/source-control/model/worktreeManagement";
 import { SettingsView } from "../surfaces/lazySurfaces";
-import "./WorkspaceSettingsSurface.css";
 import { NavigationBoundary } from "../../shell/NavigationBoundary";
 import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
 import { SettingsLoadingSurface } from "../../../features/settings/ui/SettingsLoadingSurface";
@@ -201,19 +200,15 @@ function WorkspaceSettingsSurfaceComponent({
           padding="none"
           title={t("Settings")}
           minimalHeader
-          size="lg"
+          size="settings"
+          maximized={maximized && !peeking}
           scroll="none"
-          className="bycoda-settings-dialog"
           placement={peeking ? "end" : "center"}
-          panelStyle={peeking ? { inlineSize: "min(380px, 100vw)" } : undefined}
           backdrop={!peeking}
           onEscape={peeking ? exitPeek : undefined}
           onClose={closeSettings}
         >
-          <div
-            className="bycoda-settings-dialog-body"
-            data-settings-dialog-mode={peeking ? "peek" : maximized ? "maximized" : "standard"}
-          >
+          <div className="flex min-h-0 min-w-0 flex-1">
             {/* Loading and failure stay inside the dialog; the window chrome is not repeated and the
                 known section title stays visible while the view loads. */}
             <RecoveryBoundary onBack={onCloseSettings}>

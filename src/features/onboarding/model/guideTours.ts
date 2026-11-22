@@ -71,7 +71,7 @@ const CHAT_STEPS = [
   {
     title: "Keep essential shortcuts nearby",
     description:
-      "These are your current shortcuts, including custom bindings. Change or disable them in Settings → Keybindings. You can reopen this guide from View or Settings → General.",
+      "These are your current shortcuts, including custom bindings. Change or disable them in Settings → Shortcuts. You can reopen this guide from View or Settings → General.",
     tips: ["Queue and Stop shortcuts apply in the message box; close suggestion menus first."],
     shortcuts: [
       "App: Search",

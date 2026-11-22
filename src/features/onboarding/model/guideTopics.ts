@@ -597,7 +597,7 @@ export function guideTopics(): GuideTopic[] {
         {
           id: "settings.keys",
           title: t("Change shortcuts"),
-          text: t("Change or disable any shortcut in Settings → Keybindings."),
+          text: t("Change or disable any shortcut in Settings → Shortcuts."),
         },
         {
           id: "settings.usage",

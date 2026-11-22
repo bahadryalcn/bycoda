@@ -80,7 +80,7 @@ function AssignmentsFixture({ machineId, supported }: { machineId: string; suppo
   const routing = useModelRouting(machineId, supported);
   const [draft, setDraft] = useState<OrderDraft>();
   const [failed, setFailed] = useState(false);
-  if (!supported) return <p>Model routing is not available on this Host.</p>;
+  if (!supported) return <p>Background work is not available on this Host.</p>;
   if (!routing.state) return null;
   const current = draft ?? orderDraft(routing.state, NO_LIMITS);
   async function save() {

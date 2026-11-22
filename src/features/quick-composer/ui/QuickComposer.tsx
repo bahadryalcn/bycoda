@@ -6,7 +6,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
+import { SplitButton } from "../../../shared/ui/SplitButton";
 import { IS_MAC, MOD } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
@@ -54,7 +54,7 @@ import {
   type RuntimeMode,
   harnessSupportsAttachments,
 } from "../../sessions/model/session";
-import { Popover } from "../../../shared/ui/Popover";
+import { Popover, popupListClassName } from "../../../shared/ui/Popover";
 import { AttachmentChip } from "../../sessions/ui/AttachmentChip";
 import { ComposerHighlight } from "../../sessions/ui/ComposerHighlight";
 import { useComposerSkills } from "../../sessions/ui/useComposerSkills";
@@ -661,6 +661,30 @@ export function QuickComposer({
         <X className="icon-xs" />
       </Button>
       <div className="flex shrink-0 items-center gap-2 px-5 pt-3 pr-9">
+        <Button
+          selected={picker === "project"}
+          variant="ghost"
+          motion="none"
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => openPicker("project")}
+          disabled={projects.length === 0}
+          tooltip={t("Project")}
+          shortcut="mod+p"
+          expanded={picker === "project"}
+          className="flex min-w-0 max-w-[40%] items-center gap-1.5"
+        >
+          {cwd ? (
+            <QuickProjectIcon
+              projectPath={cwd}
+              appearance={projectAppearance}
+              className="size-3 shrink-0"
+            />
+          ) : null}
+          <Text size="inherit" tone="inherit" truncate>
+            {cwd ? projectDisplayName(cwd) : t("No project")}
+          </Text>
+        </Button>
         <QuickWorkspaceControls
           key={cwd}
           value={workspace}
@@ -674,30 +698,6 @@ export function QuickComposer({
           onOpenChange={onGitOpenChange}
           onClose={focusPrompt}
         />
-        <Button
-          selected={picker === "project"}
-          variant="ghost"
-          motion="none"
-          type="button"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => openPicker("project")}
-          disabled={projects.length === 0}
-          tooltip={t("Project")}
-          shortcut="mod+p"
-          expanded={picker === "project"}
-          className={`ml-auto flex min-w-0 max-w-[40%] items-center gap-1.5 `}
-        >
-          {cwd ? (
-            <QuickProjectIcon
-              projectPath={cwd}
-              appearance={projectAppearance}
-              className="size-3 shrink-0"
-            />
-          ) : null}
-          <Text size="inherit" tone="inherit" truncate>
-            {cwd ? projectDisplayName(cwd) : t("No project")}
-          </Text>
-        </Button>
       </div>
       {attachments.files.length ? (
         <div
@@ -882,32 +882,27 @@ export function QuickComposer({
           </Button>
         ) : null}
         <Text size="micro" tone="secondary" className="ml-auto flex shrink-0 items-center gap-3">
-          {attachments.loading ? (
-            <LoadingText>{t("Adding attachment…")}</LoadingText>
-          ) : (
-            <>
-              <span className="max-[600px]:hidden">
-                <Kbd>↵</Kbd>
-                {t(" start")}
-              </span>
-              <span className="max-[600px]:hidden">
-                <Kbd>{`${MOD}↵`}</Kbd>
-                {t(" start and open")}
-              </span>
-            </>
-          )}
-          <Button
+          {attachments.loading ? <LoadingText>{t("Adding attachment…")}</LoadingText> : null}
+          <SplitButton
             variant="primary"
             tone="accent"
             motion="none"
             type="button"
+            label={leadingMode?.name === DRAFT_COMMAND.name ? t("Save draft") : t("Start")}
+            shortcut="Enter"
+            menuLabel={t("More ways to start")}
             onClick={() => void submit(false)}
             disabled={!canSubmit}
             loading={busy}
-            className=""
-          >
-            {leadingMode?.name === DRAFT_COMMAND.name ? t("Save draft") : t("Start")}
-          </Button>
+            actions={[
+              {
+                id: "start-open",
+                label: t("Start and open"),
+                description: `${MOD}↵`,
+                onSelect: () => void submit(true),
+              },
+            ]}
+          />
         </Text>
       </div>
 
@@ -921,7 +916,7 @@ export function QuickComposer({
           autoFocus
           tabIndex={-1}
           onDismiss={closePicker}
-          className="p-1"
+          className={popupListClassName}
         >
           <Button
             variant="ghost"
@@ -1106,9 +1101,4 @@ function CommandLabel({ name }: { name: string }) {
       {name.charAt(0).toLocaleUpperCase(locale) + name.slice(1)}
     </span>
   );
-}
-
-function Kbd({ children }: { children: string }) {
-  useLocale();
-  return <ShortcutKbd size="xs">{children}</ShortcutKbd>;
 }

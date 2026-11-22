@@ -665,6 +665,7 @@ function ScopedRuntimeLogsPanel({
             anchor={filterTrigger}
             kind="dialog"
             aria-label={t("Log filters")}
+            variant="panel"
             side="bottom"
             align="start"
             width={360}
@@ -856,6 +857,7 @@ function ScopedRuntimeLogsPanel({
           width={380}
           solid
           onDismiss={() => setMonitorsOpen(false)}
+          variant="panel"
           className="runtime-logs-monitors-popover"
         >
           <section className="runtime-logs-monitor-setup" aria-label={t("Capture website logs")}>

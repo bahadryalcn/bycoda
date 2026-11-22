@@ -26,13 +26,8 @@
 .needs-human-reason {
 }
 
-.needs-human-platform,
-.needs-human-note {
+.needs-human-platform {
   margin: 0;
-}
-
-.needs-human-note {
-  padding: 0.5rem 0.75rem;
 }
 
 .needs-human-actions {

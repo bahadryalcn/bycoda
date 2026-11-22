@@ -107,6 +107,11 @@ export function TaskDeliveryDialog({
   onSave: () => void;
 }) {
   const t = useT();
+  const blockedReason = busy
+    ? t("Wait for the checks to finish.")
+    : !valid
+      ? t("Check the delivery target.")
+      : undefined;
   return (
     <Modal
       title={t("Choose delivery target")}
@@ -115,7 +120,7 @@ export function TaskDeliveryDialog({
         if (!acting) onClose();
       }}
       footer={
-        <ModalActions>
+        <ModalActions reason={blockedReason}>
           <Button variant="ghost" type="button" disabled={acting} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -123,7 +128,8 @@ export function TaskDeliveryDialog({
             variant="primary"
             type="button"
             loading={acting}
-            disabled={acting || busy || !valid}
+            disabled={acting || !!blockedReason}
+            disabledReason={blockedReason}
             onClick={onSave}
           >
             {t("Save delivery target")}

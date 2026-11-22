@@ -61,7 +61,8 @@ export function InfoPopover({
           autoFocus
           flow="scroll"
           onDismiss={() => setOpen(false)}
-          className="flex flex-col gap-2 p-3 text-ui-secondary text-(--ui-text-secondary)"
+          variant="panel"
+          className="flex flex-col gap-2 text-ui-secondary text-(--ui-text-secondary)"
         >
           {children}
         </Popover>

@@ -32,7 +32,6 @@ it("keeps the shared modal focus boundary while peeking and restores the toggle 
     await act(async () => toggle.click());
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
     expect(document.querySelector(".modal-backdrop")).toBeNull();
-    expect(document.querySelector('[data-settings-dialog-mode="peek"]')).not.toBeNull();
     expect(document.querySelector('[data-modal-placement="end"]')).not.toBeNull();
     await act(async () => outside.focus());
     expect(document.querySelector('[role="dialog"]')?.contains(document.activeElement)).toBe(true);

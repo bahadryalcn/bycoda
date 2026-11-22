@@ -173,6 +173,7 @@ export function PasswordPromptDialog({
             type="submit"
             form={formId}
             disabled={busy || cooldown.remainingMs > 0}
+            disabledReason={busy ? undefined : (cooldownMessage(cooldown.remainingMs) ?? undefined)}
             variant="primary"
             tone={danger ? "danger" : "neutral"}
             loading={busy}

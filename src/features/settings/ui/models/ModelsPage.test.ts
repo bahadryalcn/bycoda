@@ -123,7 +123,7 @@ describe("model defaults scope inheritance", () => {
     });
     await render("work");
     await vi.waitFor(() => expect(container.textContent).toContain("RPC_AUTHORIZATION"));
-    expect(container.textContent).not.toContain("Model routing is not available on this Host.");
+    expect(container.textContent).not.toContain("Background work is not available on this Host.");
     expect(container.textContent?.match(/RPC_AUTHORIZATION/g)).toHaveLength(1);
     expect(
       [...container.querySelectorAll("button")].filter((node) => node.textContent === "Retry"),
@@ -135,7 +135,7 @@ describe("model defaults scope inheritance", () => {
     vi.mocked(machineCapabilities).mockRejectedValue(new Error("synthetic probe failure"));
     await render("work");
     await vi.waitFor(() => expect(container.textContent).toContain("synthetic probe failure"));
-    expect(container.textContent).not.toContain("Model routing is not available on this Host.");
+    expect(container.textContent).not.toContain("Background work is not available on this Host.");
     expect(container.querySelector('[data-testid="model-order"]')).toBeNull();
   });
 

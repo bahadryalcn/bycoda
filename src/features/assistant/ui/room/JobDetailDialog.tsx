@@ -40,7 +40,7 @@ export function JobDetailDialog() {
       context={t("Job details")}
       onClose={() => setDetail(null)}
       side="end"
-      size="min(440px, 100vw)"
+      size="sm"
       headerBelow={
         <div className={styles.sheetStatus}>
           <Badge tone={jobStatusTone(openJob)} size="sm">

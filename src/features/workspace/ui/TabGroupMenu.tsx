@@ -18,7 +18,7 @@ import {
   X,
   type IconComponent,
 } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { normalizeHex } from "../../../shared/lib/colorUtils";
 import { projectKey } from "../../../shared/lib/paths";
 import { clearProjectLogo, pickAndSetProjectLogo } from "../../projects/model/projectLogos";
@@ -193,23 +193,11 @@ export function TabGroupMenu({
     if (onExtraPick?.(id) !== false) onClose();
   };
   const nameCaption = nameLabel ?? t("Group name");
-  const input = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(label);
   const [customPickerOpen, setCustomPickerOpen] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const logoOperation = useRef(false);
-
-  useEffect(() => {
-    const focusName = () => {
-      input.current?.focus();
-      input.current?.select();
-    };
-    focusName();
-    // The menu moves focus to its first row once placed; the name field takes it back after that.
-    const frame = requestAnimationFrame(focusName);
-    return () => cancelAnimationFrame(frame);
-  }, []);
 
   const trimmedName = name.trim();
   const nameError = validateName && trimmedName !== label.trim() ? validateName(trimmedName) : null;
@@ -234,7 +222,7 @@ export function TabGroupMenu({
             loading={logoBusy}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
-              if (logoOperation.current || !commitName()) return;
+              if (logoOperation.current) return;
               logoOperation.current = true;
               setLogoBusy(true);
               setLogoError(null);
@@ -401,11 +389,10 @@ export function TabGroupMenu({
             fieldClassName="mb-2 min-w-0 flex-1"
             label={nameCaption}
             startAdornment={<Pencil className="icon-sm" strokeWidth={1.75} />}
-            ref={input}
             value={name}
             disabled={logoBusy}
             onChange={(e) => setName(e.target.value)}
-            onBlur={() => void commitName()}
+            // Only Enter saves; closing the menu or Escape discards the typed name.
             onKeyDown={(e) => {
               if (e.key !== "Enter" || isImeComposition(e.nativeEvent)) return;
               e.preventDefault();

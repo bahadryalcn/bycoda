@@ -32,6 +32,14 @@ export type TerminalFontSource = (typeof TERMINAL_FONT_SOURCES)[number];
 export const CANVAS_BACKGROUNDS = ["pure", "tinted"] as const;
 export type CanvasBackground = (typeof CANVAS_BACKGROUNDS)[number];
 export const CANVAS_BACKGROUND_DEFAULT: CanvasBackground = "pure";
+/** Reading surface behind assistant replies: a column of the reply, the whole column, or none. */
+export const TRANSCRIPT_SURFACES = ["reply", "column", "off"] as const;
+export type TranscriptSurface = (typeof TRANSCRIPT_SURFACES)[number];
+export const TRANSCRIPT_CARDS = ["inset", "outline", "solid"] as const;
+export type TranscriptCards = (typeof TRANSCRIPT_CARDS)[number];
+/** "hover" reveals the message actions on hover or focus; the latest turn always shows them. */
+export const TRANSCRIPT_ACTIONS = ["always", "hover"] as const;
+export type TranscriptActions = (typeof TRANSCRIPT_ACTIONS)[number];
 export const APPEARANCE_DEFAULTS = {
   interfaceFont: "System",
   codeFont: "System",
@@ -50,7 +58,13 @@ export const APPEARANCE_DEFAULTS = {
   controlDensity: "compact",
   chatWidth: "comfortable",
   userMessageOpacity: 42,
-  assistantMessageOpacity: 26,
+  transcriptSurface: "reply",
+  transcriptSurfaceOpacity: 45,
+  transcriptSurfaceBlur: 0,
+  transcriptBodyInk: 92,
+  transcriptChromeInk: 76,
+  transcriptCards: "inset",
+  transcriptActions: "always",
   messageColor: "theme",
   wordWrap: false,
   wheelZoom: true,
@@ -80,7 +94,17 @@ export type AppearancePreferences = {
   controlDensity: "compact" | "comfortable" | "touch";
   chatWidth: "comfortable" | "wide" | "full";
   userMessageOpacity: number;
-  assistantMessageOpacity: number;
+  /** Percent (0-100) of the reading surface fill behind assistant replies. */
+  transcriptSurface: TranscriptSurface;
+  transcriptSurfaceOpacity: number;
+  /** Blur of the reading surface in px (0-24); applies only over a background image. */
+  transcriptSurfaceBlur: number;
+  /** Percent (80-100) of the reply text ink, scaled by Contrast. */
+  transcriptBodyInk: number;
+  /** Percent (50-100) of the tool and action ink, relative to the reply text ink. */
+  transcriptChromeInk: number;
+  transcriptCards: TranscriptCards;
+  transcriptActions: TranscriptActions;
   messageColor: "theme" | "neutral";
   wordWrap: boolean;
   /** Ctrl+wheel outside self-zooming viewers changes the interface scale. */
@@ -93,9 +117,31 @@ function bounded(value: unknown, fallback: number, min: number, max: number) {
     ? Math.min(max, Math.max(min, Math.round(value)))
     : fallback;
 }
+function oneOf<T extends string>(options: readonly T[], value: unknown, fallback: T): T {
+  return options.find((option) => option === value) ?? fallback;
+}
+/**
+ * The assistant opacity this record used to store becomes the reading surface. A stored 0 meant
+ * "no fill", which is the `off` surface; any other value is the surface opacity. Transcript fields
+ * already stored always win over the leftover value.
+ */
+function transcriptFieldsFromLegacy(
+  value: Partial<AppearancePreferences> & { assistantMessageOpacity?: unknown },
+): Partial<AppearancePreferences> {
+  const legacy = value.assistantMessageOpacity;
+  if (
+    value.transcriptSurfaceOpacity !== undefined ||
+    typeof legacy !== "number" ||
+    !Number.isFinite(legacy)
+  )
+    return {};
+  if (legacy > 0) return { transcriptSurfaceOpacity: legacy };
+  return value.transcriptSurface === undefined ? { transcriptSurface: "off" } : {};
+}
 export function normalizeAppearancePreferences(
-  value: Partial<AppearancePreferences>,
+  input: Partial<AppearancePreferences> & { assistantMessageOpacity?: unknown },
 ): AppearancePreferences {
+  const value = { ...input, ...transcriptFieldsFromLegacy(input) };
   return {
     interfaceFont: normalizeFontId(INTERFACE_FONT_CATALOG, value.interfaceFont),
     codeFont: normalizeFontId(CODE_FONT_CATALOG, value.codeFont),
@@ -170,12 +216,18 @@ export function normalizeAppearancePreferences(
       0,
       100,
     ),
-    assistantMessageOpacity: bounded(
-      value.assistantMessageOpacity,
-      APPEARANCE_DEFAULTS.assistantMessageOpacity,
+    transcriptSurface: oneOf(TRANSCRIPT_SURFACES, value.transcriptSurface, "reply"),
+    transcriptSurfaceOpacity: bounded(
+      value.transcriptSurfaceOpacity,
+      APPEARANCE_DEFAULTS.transcriptSurfaceOpacity,
       0,
       100,
     ),
+    transcriptSurfaceBlur: bounded(value.transcriptSurfaceBlur, 0, 0, 24),
+    transcriptBodyInk: bounded(value.transcriptBodyInk, 92, 80, 100),
+    transcriptChromeInk: bounded(value.transcriptChromeInk, 76, 50, 100),
+    transcriptCards: oneOf(TRANSCRIPT_CARDS, value.transcriptCards, "inset"),
+    transcriptActions: oneOf(TRANSCRIPT_ACTIONS, value.transcriptActions, "always"),
     messageColor: value.messageColor === "neutral" ? "neutral" : "theme",
     wordWrap: value.wordWrap === true,
     wheelZoom: value.wheelZoom !== false,
@@ -237,12 +289,21 @@ export function applyAppearancePreferences(value: AppearancePreferences) {
   root.dataset.accentReadability = value.accentReadability;
   root.dataset.chatMessageColor = value.messageColor;
   root.toggleAttribute("data-chat-user-surface-off", value.userMessageOpacity === 0);
-  root.toggleAttribute("data-chat-assistant-surface-off", value.assistantMessageOpacity === 0);
   root.style.setProperty("--appearance-user-message-opacity", `${value.userMessageOpacity}%`);
+  root.dataset.transcriptSurface = value.transcriptSurface;
+  root.dataset.transcriptCards = value.transcriptCards;
+  root.dataset.transcriptActions = value.transcriptActions;
+  // The backdrop layer only exists while a blur is asked for (blur 0 opens none).
+  root.toggleAttribute("data-transcript-blur", value.transcriptSurfaceBlur > 0);
   root.style.setProperty(
-    "--appearance-assistant-message-opacity",
-    `${value.assistantMessageOpacity}%`,
+    "--appearance-transcript-surface-opacity",
+    `${value.transcriptSurfaceOpacity}%`,
   );
+  root.style.setProperty("--appearance-transcript-surface-blur", `${value.transcriptSurfaceBlur}px`);
+  root.style.setProperty("--appearance-transcript-body-ink", `${value.transcriptBodyInk}%`);
+  root.style.setProperty("--appearance-transcript-chrome-ink", `${value.transcriptChromeInk}%`);
+  // Unitless multiplier the transcript ink reads; Contrast 100 leaves it at 1.
+  root.style.setProperty("--appearance-contrast-scale", String(value.contrast / 100));
   // The chosen tone; appearance.ts resolves the effective `data-canvas-background` from it.
   root.dataset.canvasBackgroundPreference = value.canvasBackground;
   const terminalFont = terminalFontFamily(value);

@@ -43,7 +43,10 @@ const button = (text: string) =>
 it("explains why a model is needed and blocks saving until one is chosen", () => {
   const onSave = render();
   expect(element.textContent).toContain("Choose an AI model");
-  expect(element.textContent).toContain("AI needs a model before it can plan or write reports.");
+  act(() => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
+  expect(document.body.textContent).toContain(
+    "AI needs a model before it can plan or write reports.",
+  );
   expect(button("Use this model")?.disabled).toBe(true);
   expect(element.textContent).toContain("Choose a model first.");
   act(() => button("Use this model")?.click());

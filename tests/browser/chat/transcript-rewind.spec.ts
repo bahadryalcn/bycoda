@@ -361,7 +361,7 @@ for (const width of [1280, 800])
       await message.getByRole("button", { name: "Edit from here", exact: true }).click();
       const preview = page.getByRole("dialog", { name: "Edit from here?", exact: true });
       await expect(preview).toBeVisible();
-      await preview.getByRole("button", { name: "Revert and keep changes", exact: true }).click();
+      await preview.getByRole("button", { name: "Edit from here", exact: true }).click();
       await expect(message).toHaveCount(0);
       await expect(page.locator("textarea")).toHaveValue("Remove this later change.");
       const methods = await page.evaluate(() =>
@@ -454,8 +454,9 @@ for (const width of [1280, 800])
       const message = page.locator('[data-prompt-anchor="second"]');
       await message.getByRole("button", { name: "Edit from here", exact: true }).click();
       const preview = page.getByRole("dialog", { name: "Edit from here?", exact: true });
-      await expect(preview).toContainText("Session files: 1");
-      await preview.getByRole("button", { name: "Revert files too", exact: true }).click();
+      await preview.getByRole("switch", { name: "Also revert file changes" }).click();
+      await expect(preview).toContainText("Files to revert: 1");
+      await preview.getByRole("button", { name: "Edit from here", exact: true }).click();
       await expect(message).toHaveCount(0);
       await expect(page.locator("textarea")).toHaveValue("Remove this later change.");
       const calls = await page.evaluate(() => (window as any).rewindFixtureCalls);
@@ -475,7 +476,7 @@ test("conversation-only rewind does not require provider retirement", async ({ p
   await message.getByRole("button", { name: "Edit from here", exact: true }).click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Revert and keep changes", exact: true })
+    .getByRole("button", { name: "Edit from here", exact: true })
     .click();
   await expect(message).toHaveCount(0);
   const methods = await page.evaluate(() =>
@@ -493,10 +494,9 @@ test("older Host permits conversation rewind while disabling only file revert", 
   const message = page.locator('[data-prompt-anchor="second"]');
   await message.getByRole("button", { name: "Edit from here", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Edit from here?", exact: true });
-  const files = dialog.getByRole("button", { name: "Revert files too", exact: true });
-  await expect(files).toBeDisabled();
-  await expect(files).toHaveAttribute("aria-description", /Update bycoda Host/);
-  await dialog.getByRole("button", { name: "Revert and keep changes", exact: true }).click();
+  await expect(dialog.getByRole("switch", { name: "Also revert file changes" })).toBeDisabled();
+  await expect(dialog).toContainText(/Update bycoda Host/);
+  await dialog.getByRole("button", { name: "Edit from here", exact: true }).click();
   await expect(message).toHaveCount(0);
   await expect(page.locator("textarea")).toHaveValue("Remove this later change.");
   const methods = await page.evaluate(() =>

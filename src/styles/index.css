@@ -5,6 +5,7 @@
 @import "./theme-transition.css";
 @import "./surface-motion.css";
 @import "./surface-roles.css";
+@import "./transcript-surface.css";
 @import "./working-row.css";
 @import "./inbox-avatar.css";
 
@@ -504,8 +505,6 @@ html.theme-light {
   --ui-elevation-floating:
     0 8px 24px color-mix(in oklab, var(--color-scrim) 32%, transparent),
     0 1px 3px color-mix(in oklab, var(--color-scrim) 24%, transparent);
-  /* The pane owns the backdrop; growing history must not paint over it. */
-  --ui-transcript-surface: transparent;
   --ui-text-on-active: var(--palette-oklch_0_29_0_066_243);
   --ui-text-secondary: color-mix(
     in srgb,
@@ -1516,17 +1515,6 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
   background-color: var(--ui-chat-pane-canvas);
 }
 
-:is(html, [data-chat-message-preview]) {
-  --ui-chat-message-color: var(--ui-tint-base);
-}
-:is(html, [data-chat-message-preview])[data-chat-message-color="neutral"] {
-  --ui-chat-message-color: var(--palette-canvasPureDark);
-}
-html.theme-light[data-chat-message-color="neutral"],
-html.theme-light [data-chat-message-preview][data-chat-message-color="neutral"] {
-  --ui-chat-message-color: var(--palette-canvasPureLight);
-}
-
 /* The composer and floating chat surfaces share one glass treatment. Streaming
    uses the opaque fallback so each new frame does not re-sample the backdrop. */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
@@ -1909,18 +1897,9 @@ html.chat-background-layer-off .gradient-blur-background-strong {
   display: block;
 }
 
-.transcript-content {
-  background: var(--ui-transcript-surface);
-}
-
 /* The Jump to latest pill must not cover the last row. */
 [data-jump-pill] .transcript-content {
   padding-block-end: 4rem;
-}
-
-/* Neutral reading surface: the accent never paints message bodies. */
-html.has-user-accent .user-message-bubble {
-  background: var(--ui-message-bubble);
 }
 
 /*
@@ -3182,9 +3161,9 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 .agent-markdown [data-streamdown="table-wrapper"] {
   gap: 0;
   padding: 0;
-  border-color: var(--color-stroke);
+  border-color: var(--ui-markdown-box-border, var(--color-stroke));
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface-panel);
+  background: var(--ui-markdown-box-surface, var(--ui-surface-panel));
 }
 
 .agent-markdown [data-streamdown="code-block"] {
@@ -3237,7 +3216,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 
 .agent-markdown .markdown-code-shell [data-streamdown="code-block"] {
   margin-block: 0;
-  background: var(--ui-surface-panel);
+  background: var(--ui-markdown-box-surface, var(--ui-surface-panel));
 }
 
 .agent-markdown .markdown-code-copy {
@@ -3655,7 +3634,7 @@ html:not(.theme-light) .markdown-code-token {
 
 .agent-markdown p,
 .agent-markdown li {
-  color: color-mix(in srgb, var(--color-content) 78%, transparent);
+  color: var(--transcript-ink-body);
 }
 
 /* AgentMarkdown passes dir="auto", so every block sits in its own
@@ -3692,7 +3671,7 @@ html:not(.theme-light) .markdown-code-token {
 /* Emphasis colour comes from one custom property per Markdown root; contexts
    (reasoning, zen-fold prose) override the property, not the emphasis rules. */
 .agent-markdown {
-  --md-emphasis-color: var(--color-content);
+  --md-emphasis-color: var(--transcript-ink-emphasis);
 }
 
 .agent-markdown p strong,
@@ -3707,11 +3686,11 @@ html:not(.theme-light) .markdown-code-token {
 
 .agent-reasoning.agent-markdown p,
 .agent-reasoning.agent-markdown li {
-  color: var(--ui-text-muted);
+  color: var(--transcript-ink-chrome);
 }
 
 .agent-reasoning.agent-markdown {
-  --md-emphasis-color: var(--ui-text-secondary);
+  --md-emphasis-color: var(--transcript-ink-body);
 }
 
 .agent-markdown .mermaid-block svg {
@@ -4120,20 +4099,16 @@ html:not(.theme-light) .markdown-code-token {
 
 /*
  * Settled tool calls are chrome around the answer: their commands and paths
- * rest dim and come up to full ink while the row is hovered or focused.
- * Outside a tool row the summary keeps full ink.
+ * rest in the chrome ink and come up to the body ink (never emphasis, never bolder)
+ * while the row is hovered or focused.
  */
-:root {
-  --transcript-tool-ink: var(--color-content);
-}
-
 .transcript-tool-row {
-  --transcript-tool-ink: var(--ui-text-muted);
+  --transcript-tool-ink: var(--transcript-ink-chrome);
 }
 
 .transcript-tool-row:hover,
 .transcript-tool-row:focus-within {
-  --transcript-tool-ink: var(--color-content);
+  --transcript-tool-ink: var(--transcript-ink-chrome-active);
 }
 
 /*
@@ -4701,10 +4676,6 @@ html.theme-light .btw-burst {
   .btw-burst {
     display: none;
   }
-}
-
-.btw-sheet {
-  top: clamp(2.5rem, 18%, 12rem);
 }
 
 /* The selected project mascot turns banked resets into a tiny status scene. */

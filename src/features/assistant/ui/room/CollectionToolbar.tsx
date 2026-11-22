@@ -182,6 +182,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
           kind="dialog"
           flow="scroll"
           aria-label={t("Filter")}
+          variant="panel"
         >
           <div className={toolbar.panel}>
             <div className={toolbar.fields}>

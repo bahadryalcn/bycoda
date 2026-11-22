@@ -58,7 +58,7 @@ export function WhatsNewDialog({ version, onClose }: Props) {
       title={t("What's new")}
       description={`${name} ${version}${date ? ` · ${date}` : ""}`}
       size="md"
-      className="h-[min(72vh,640px)]"
+      height="tall"
     >
       {hasHighlights ? (
         <div className="flex items-center justify-between gap-3 px-5 pt-4">

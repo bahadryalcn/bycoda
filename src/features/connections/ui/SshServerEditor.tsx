@@ -164,7 +164,7 @@ export function SshServerEditor({
       onClose={() => {
         if (!savingLock.current) onClose();
       }}
-      size="40rem"
+      size="md"
       footer={
         <ModalActions>
           <Button variant="ghost" disabled={saving} onClick={onClose}>

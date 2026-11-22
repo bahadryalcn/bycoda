@@ -79,7 +79,7 @@ export function withProjectlessKey(keys: Iterable<string>): Set<string> {
 /** Row counts the header offers. The last one is "All recent". */
 export const RECENT_SESSION_COUNTS = [3, 5, 10, 20, 50] as const;
 export type RecentSessionCount = (typeof RECENT_SESSION_COUNTS)[number];
-export const DEFAULT_RECENT_SESSION_COUNT: RecentSessionCount = 10;
+export const DEFAULT_RECENT_SESSION_COUNT: RecentSessionCount = 3;
 /** Rows returned by the recent-session store query. */
 export const RECENT_SESSION_FETCH_LIMIT = 100;
 

@@ -4,7 +4,7 @@ import { Progress } from "../../../shared/ui/Progress";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { basename, gitFetch, gitRemotes, notifyGitChanged } from "../../../platform/tauri/fs";
-import { Popover } from "../../../shared/ui/Popover";
+import { Popover, popupListClassName } from "../../../shared/ui/Popover";
 import { GIT_ACTIONS, requireRemoteSupport } from "../../connections/public/remoteCapabilities";
 import { fetchAllProjects, type FetchAllResult } from "../model/groupGit";
 
@@ -72,7 +72,7 @@ export function GroupFetchPopover({
       aria-label={t("Fetch all in {p0}", { p0: name })}
       aria-live="polite"
       onDismiss={onClose}
-      className="overflow-y-auto p-1"
+      className={popupListClassName}
     >
       <Text as="p" size="caption" tone="muted" className="px-2.5 pb-1 pt-1.5">
         {paths.length === 0

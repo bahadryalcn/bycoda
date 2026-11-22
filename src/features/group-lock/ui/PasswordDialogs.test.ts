@@ -274,7 +274,7 @@ it("drops the cool-down notice when it expires and keeps a plain wrong-password 
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "Too many wrong passwords",
     );
-    expect(submitButton().disabled).toBe(true);
+    expect(submitButton().getAttribute("aria-disabled") === "true").toBe(true);
     await act(async () => {
       vi.advanceTimersByTime(2600);
     });
@@ -327,9 +327,11 @@ it.each(["prompt", "change"] as const)(
       expect(time()).toBe("Too many wrong passwords. Try again in 25 seconds.");
       expect(live()).toBe("Too many wrong passwords. Try again later.");
       expect(document.querySelectorAll('[role="alert"], [role="status"]')).toHaveLength(1);
-      expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
-        true,
-      );
+      expect(
+        document
+          .querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.getAttribute("aria-disabled"),
+      ).toBe("true");
     } finally {
       vi.mocked(lockCooldownMs).mockReturnValue(0);
       vi.useRealTimers();

@@ -278,3 +278,8 @@ export function optionLabels(label: string): string[] {
 export function selectedLabel(label: string): string {
   return fieldByLabel(label).textContent?.trim() ?? "";
 }
+
+/** A primary that explains why it is blocked (`disabledReason`) stays focusable and is `aria-disabled`, not natively disabled. */
+export function isBlocked(button: HTMLButtonElement | undefined): boolean {
+  return !!button && (button.disabled || button.getAttribute("aria-disabled") === "true");
+}

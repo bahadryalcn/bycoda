@@ -77,7 +77,7 @@ export function VoiceWakeRows({
       <Row
         id="voice-wake"
         label={t("Wake and sleep phrases")}
-        descriptionVisible
+        descriptionVisible={!settings.enabled}
         description={
           settings.enabled
             ? t(

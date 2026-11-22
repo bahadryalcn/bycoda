@@ -1,9 +1,4 @@
 /* Hallmark: Bycoda settings, with the existing canvas and room controls. */
-/* Keep the workspace behind the floating frame and the settings on one readable column. */
-.dialog {
-  max-inline-size: 48rem;
-  block-size: min(44rem, calc(100dvh - 32px));
-}
 .form {
   display: flex;
   flex-direction: column;

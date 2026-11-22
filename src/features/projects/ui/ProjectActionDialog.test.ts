@@ -168,7 +168,7 @@ it("explains missing fields and saves a preset with a recorded shortcut and brow
       [...document.querySelectorAll<HTMLButtonElement>("button")].find(
         (value) => value.textContent === text,
       )!;
-    expect(button("Save action").disabled).toBe(true);
+    expect(button("Save action").getAttribute("aria-disabled") === "true").toBe(true);
     expect(document.body.textContent).toContain("Enter a name for this action.");
     await act(async () => button("Dev server").click());
     expect(document.querySelector<HTMLInputElement>('[type="checkbox"]')!.checked).toBe(true);

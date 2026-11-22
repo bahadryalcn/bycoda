@@ -138,7 +138,6 @@
   display: grid;
   gap: 12px;
   inline-size: min(20rem, calc(100vw - 2rem));
-  padding: 12px;
 }
 .popover p {
   margin: 0;

@@ -57,7 +57,8 @@ export function ModelFlyout({
       size="lg"
       maxHeight={menuHeight + 2}
       layer={LAYER.submenu}
-      role="dialog"
+      kind="dialog"
+      autoFocus={false}
       aria-label={t("Models")}
       onDismiss={(reason) => {
         // Escape steps back from Extras before it closes the picker.

@@ -138,9 +138,9 @@ export function ToolDiffPreview({
           ref={surface}
           anchor={trigger}
           id={id}
-          role="dialog"
+          kind="dialog"
+          autoFocus={false}
           aria-label={`${description}: ${label}`}
-          tabIndex={-1}
           width={460}
           maxHeight={280}
           className="overflow-auto overscroll-contain"

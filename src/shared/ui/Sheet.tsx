@@ -32,11 +32,19 @@ import {
   overlayContainsTarget,
   useOverlay,
 } from "./overlay";
+import { Button } from "./Button";
+import { X } from "./icons";
+import { PaneHeader } from "./PaneHeader";
 import { PanelHeader } from "./PanelHeader";
 import { Sash } from "./Sash";
 import styles from "./Sheet.module.css";
 
 export type SheetSide = "end" | "bottom";
+
+/** Named widths of an end sheet: a narrow detail, a form, a wide form, a workbench list. */
+export type SheetSize = "sm" | "md" | "lg" | "xl";
+
+const SIZE: Record<SheetSize, string> = { sm: "380px", md: "40rem", lg: "48rem", xl: "56rem" };
 
 export type SheetResize = {
   /** Smallest and largest width in px. */
@@ -76,16 +84,27 @@ export type SheetProps = {
   context?: ReactNode;
   /** Header actions before the close button (28px ghost icon Buttons). */
   headerActions?: ReactNode;
-  /** Non-modal only: replaces the PanelHeader (a tab strip). `title` still names the sheet. */
+  /**
+   * Non-modal only: replaces the default header (a pane's own PaneHeader with identity and
+   * actions). `false` shows no header. `title` still names the sheet. A tab strip is `tabs`.
+   */
   header?: ReactNode;
+  /**
+   * Non-modal only: a tab strip (`Tabs` with a `TabList`) in the one header row, before
+   * `headerActions` and the close action. Replaces the title, which stays the accessible name.
+   */
+  tabs?: ReactNode;
   /** Content under the header that does not scroll (a state line, filters). */
   headerBelow?: ReactNode;
   closeLabel?: string;
   /** Actions kept visible below the content. */
   footer?: ReactNode;
   children: ReactNode;
-  /** Width of an end sheet or height of a bottom sheet (px or a CSS length). */
-  size?: number | string;
+  /**
+   * Width of an end sheet: `sm` (380px), `md` (40rem), `lg` (48rem), `xl` (56rem). A bottom sheet
+   * takes its height as px or a CSS length. A `resizable` sheet starts at its `defaultSize`.
+   */
+  size?: SheetSize | number | string;
   /** Non-modal end sheets: a drag/arrow-key resize edge (shared Sash) on the inner border. */
   resizable?: SheetResize;
   /** A non-modal container end sheet can fill its pane and restore its previous width. */
@@ -133,7 +152,12 @@ function assign<T>(ref: Ref<T> | undefined, value: T | null) {
   else if (ref) (ref as { current: T | null }).current = value;
 }
 
-const cssSize = (value: number | string) => (typeof value === "number" ? `${value}px` : value);
+const cssSize = (value: number | string) =>
+  typeof value === "number"
+    ? `${value}px`
+    : value in SIZE
+      ? SIZE[value as SheetSize]
+      : value;
 
 /**
  * Container sheets stay off the overlay stack, so they return focus themselves: the control that
@@ -248,6 +272,7 @@ function NonModalSheet({
   context,
   headerActions,
   header,
+  tabs,
   headerBelow,
   closeLabel,
   footer,
@@ -340,6 +365,22 @@ function NonModalSheet({
   }, [open, initialFocus]);
 
   const end = side === "end";
+  // Without a tab strip or a caller header, the title row names the sheet.
+  const titled = header === undefined && tabs == null;
+  const closeText = closeLabel ?? t("Close");
+  const closeAction = (
+    <Button
+      type="button"
+      iconOnly
+      size="sm"
+      label={closeText}
+      tooltip={closeText}
+      variant="ghost"
+      onClick={onClose}
+    >
+      <X className="size-3.5" strokeWidth={1.75} />
+    </Button>
+  );
   const fillsPane = end && !viewport && expanded;
   const sized = width !== undefined ? width : size;
   const sizeStyle: CSSProperties = fillsPane
@@ -389,8 +430,8 @@ function NonModalSheet({
         assign(ref, node);
       }}
       role={role}
-      aria-labelledby={header ? undefined : titleId}
-      aria-label={header ? title : undefined}
+      aria-labelledby={titled ? titleId : undefined}
+      aria-label={titled ? undefined : title}
       tabIndex={-1}
       data-sheet-side={side}
       data-sheet-motion={motion}
@@ -466,7 +507,31 @@ function NonModalSheet({
           .filter(Boolean)
           .join(" ")}
       >
-        {header ?? (
+        {header !== undefined ? (
+          header
+        ) : tabs != null ? (
+          <PaneHeader
+            actions={
+              <>
+                {headerActions}
+                {closeAction}
+              </>
+            }
+          >
+            {tabs}
+          </PaneHeader>
+        ) : fill === "canvas" ? (
+          <PaneHeader
+            title={title}
+            titleId={titleId}
+            actions={
+              <>
+                {headerActions}
+                {closeAction}
+              </>
+            }
+          />
+        ) : (
           <PanelHeader
             className={DIALOG_HEADER_CLASS_NAME}
             title={title}
@@ -475,7 +540,7 @@ function NonModalSheet({
             description={description}
             actions={headerActions}
             onClose={onClose}
-            closeLabel={closeLabel ?? t("Close")}
+            closeLabel={closeText}
           />
         )}
         {headerBelow ? <div className="shrink-0 px-4 pb-2">{headerBelow}</div> : null}

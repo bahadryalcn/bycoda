@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Sequence } from "../../model/outreach";
 import { BulkDialog, type BulkDialogProps } from "./BulkDialogs";
@@ -193,6 +193,7 @@ describe("BulkDialog sequence", () => {
     });
     renderDialog(mock, { action: "sequence" });
     await flush();
+    act(() => document.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
     expect(bodyText()).toContain("so the selected people are added to that list");
     pickOption("Sequence", "Spring follow-up");
     clickButton("Add to sequence");

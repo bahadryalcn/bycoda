@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
@@ -39,12 +40,14 @@ export function AiSetupCard({ busy, onSave }: AiSetupCardProps) {
         <Sparkles className="icon-sm" strokeWidth={1.75} aria-hidden />
       </Text>
       <div className="command-setup-text">
-        <Heading size="section">{t("Choose an AI model")}</Heading>
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="command-muted">
-          {t(
-            "AI needs a model before it can plan or write reports. You can change it later in Accounts.",
-          )}
-        </Text>
+        <div className="flex items-center gap-1">
+          <Heading size="section">{t("Choose an AI model")}</Heading>
+          <InfoPopover className="shrink-0">
+            {t(
+              "AI needs a model before it can plan or write reports. You can change it later in Accounts.",
+            )}
+          </InfoPopover>
+        </div>
       </div>
       <div className="command-setup-picker">
         <SocialModelSource model={choice.model} values={choice.modelSettings ?? {}}>

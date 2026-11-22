@@ -79,7 +79,7 @@ it("shows separate changes, staged and unpushed counts and preserves sessions wh
 it("does not treat a status failure as zero changes or allow deletion", async () => {
   vi.mocked(gitDiffIndex).mockRejectedValue(new Error("Status unavailable"));
   await render();
-  expect(remove().disabled).toBe(true);
+  expect(remove().getAttribute("aria-disabled") === "true").toBe(true);
   expect(document.querySelector("dl")).toBeNull();
   await act(async () =>
     [...document.querySelectorAll("button")]
@@ -98,7 +98,7 @@ it.each([{ locked: true }, { isMain: true }, { branch: null }])(
       defaultRoot: "/trees",
     });
     await render();
-    expect(remove().disabled).toBe(true);
+    expect(remove().getAttribute("aria-disabled") === "true").toBe(true);
     expect(onRemove).not.toHaveBeenCalled();
   },
 );

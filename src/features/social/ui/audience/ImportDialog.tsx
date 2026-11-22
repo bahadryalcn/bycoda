@@ -1,4 +1,5 @@
 import { Text } from "../../../../shared/ui/Text";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { AudienceReportList } from "./AudienceReportList";
 import { useMemo, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
@@ -206,9 +207,7 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
           }
         />
         {reading ? (
-          <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
-            {t("Reading the file…")}
-          </Text>
+          <LoadingText>{t("Reading the file…")}</LoadingText>
         ) : null}
         {fileError ? <InlineError>{fileError}</InlineError> : null}
 

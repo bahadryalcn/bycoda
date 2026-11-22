@@ -846,7 +846,6 @@ describe("settings search", () => {
       "Main pane glass",
       // Linux has no window glass setting.
       ...(IS_LINUX ? [] : ["Window glass"]),
-      "AI reply opacity",
       "Blur radius",
       "Main pane opacity",
       "Sidebar opacity",

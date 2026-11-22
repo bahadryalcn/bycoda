@@ -22,7 +22,6 @@ it("keeps readable chat and editor text on the semantic text tokens, not content
   const selectors = [
     '.agent-markdown [data-streamdown="code-block-body"] code > span::before',
     ".agent-markdown .markdown-code-copy",
-    ".agent-reasoning.agent-markdown p,\n.agent-reasoning.agent-markdown li",
     ".inbox-comment-md.agent-markdown blockquote",
     '.whats-new-md.agent-markdown [data-streamdown="heading-3"]',
     '.text[data-tone="muted"]',
@@ -34,7 +33,8 @@ it("keeps readable chat and editor text on the semantic text tokens, not content
     const body = css.slice(start, css.indexOf("}", start));
     expect(body, selector).toMatch(/(?:^|\n)\s*color: var\(--ui-text-(?:secondary|muted)\);/);
   }
+  // Reasoning text is a transcript ink role: chrome ink, body-ink emphasis (transcriptSurface.test.ts).
   expect(css).toMatch(
-    /\.agent-reasoning\.agent-markdown \{\s*--md-emphasis-color: var\(--ui-text-secondary\);/,
+    /\.agent-reasoning\.agent-markdown p,\s*\.agent-reasoning\.agent-markdown li \{\s*color: var\(--transcript-ink-chrome\);/,
   );
 });

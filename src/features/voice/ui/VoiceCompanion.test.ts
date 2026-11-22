@@ -3050,11 +3050,11 @@ it("keeps mic and speaker names stable while aria-pressed carries mute state", a
   expect(container.querySelector('[aria-label="Unmute speaker"]')).toBeNull();
 });
 
-it("gives Stop speaking a skip glyph, not the pause glyph beside the mic toggle", async () => {
+it("gives Stop speaking a hand glyph, never the skip or pause glyph beside the mic toggle", async () => {
   await setup();
   const silence = container.querySelector<HTMLButtonElement>('button[aria-label="Stop speaking"]')!;
-  expect(silence.querySelector("svg")?.getAttribute("class")).toContain("lucide-skip-forward");
-  expect(silence.querySelector("svg")?.getAttribute("class")).not.toContain("lucide-pause");
+  expect(silence.querySelector("svg")?.getAttribute("class")).toContain("lucide-hand");
+  expect(silence.querySelector("svg")?.getAttribute("class")).not.toContain("lucide-skip-forward");
   mock.silence.mockClear();
   await click("Stop speaking");
   expect(mock.silence).toHaveBeenCalledOnce();

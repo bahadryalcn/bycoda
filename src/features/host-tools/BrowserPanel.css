@@ -286,7 +286,6 @@
 .host-browser-selection-popover {
   display: grid;
   gap: var(--space-3);
-  padding: 12px;
   overflow-y: auto;
 }
 

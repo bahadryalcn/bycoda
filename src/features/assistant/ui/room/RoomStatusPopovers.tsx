@@ -31,6 +31,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
           kind="dialog"
           flow="scroll"
           aria-label={t("Assistant status")}
+          variant="panel"
         >
           <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
             <AssistantPresenceStatus

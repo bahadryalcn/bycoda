@@ -152,7 +152,7 @@ export function ServerFiles({
 
   return (
     <>
-      <Sheet title={t("SFTP files")} onClose={close} size="56rem">
+      <Sheet title={t("SFTP files")} onClose={close} size="xl">
         <div className="flex min-h-0 flex-col gap-3">
           {serverName ? (
             <Text as="p" tone="muted" truncate>

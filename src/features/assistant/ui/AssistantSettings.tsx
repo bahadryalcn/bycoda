@@ -395,7 +395,7 @@ export function AssistantSettings({
       }}
       closeDisabled={busy}
       size="lg"
-      className={settingsStyles.dialog}
+      height="tall"
       scroll="none"
       fitViewport
     >

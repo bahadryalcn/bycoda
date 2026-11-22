@@ -14,6 +14,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { BarChart, DonutChart, type BarChartDatum } from "../../../shared/ui/Charts";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -44,11 +45,24 @@ const updatedLabel = (at: number, figuresAt: number) =>
       : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
   );
 
-function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
+function Stat({
+  label,
+  value,
+  hint,
+  info,
+}: {
+  label: string;
+  value: ReactNode;
+  /** Status line under the value. */
+  hint?: ReactNode;
+  /** Detail behind an info icon beside the label. */
+  info?: ReactNode;
+}) {
   return (
     <Surface variant="page" padding="md" className={styles.stat}>
-      <Text size="caption" tone="secondary" leading="inherit">
+      <Text size="caption" tone="secondary" leading="inherit" className="flex items-center gap-1">
         {label}
+        {info ? <InfoPopover label={label}>{info}</InfoPopover> : null}
       </Text>
       <Text
         as="strong"
@@ -92,16 +106,15 @@ export function TodayView() {
     <Stat
       label={t("Active time")}
       value={activeMinutes == null ? "—" : formatActiveMinutes(activeMinutes)}
-      hint={
+      info={
         activity
           ? t("This month {p0} · This year {p1}", {
               p0: formatActiveMinutes(activity.month),
               p1: formatActiveMinutes(activity.year),
             })
-          : activityFailed
-            ? t("Active time is unavailable right now.")
-            : null
+          : null
       }
+      hint={!activity && activityFailed ? t("Active time is unavailable right now.") : null}
     />
   );
   const empty =
@@ -152,8 +165,8 @@ export function TodayView() {
               kind="empty"
               description={
                 loadedPeriod === "today"
-                  ? t("No agent activity recorded today. Start a session to see it here.")
-                  : t("No agent activity recorded this week. Start a session to see it here.")
+                  ? t("No agent activity recorded today.")
+                  : t("No agent activity recorded this week.")
               }
             />
           )}
@@ -172,7 +185,7 @@ export function TodayView() {
             <Stat
               label={t("Cost")}
               value={cost(data.totals)}
-              hint={t("API-equivalent, not billed")}
+              info={t("API-equivalent, not billed")}
             />
           </div>
           <ActivitySources overview={overview} />
@@ -210,7 +223,7 @@ function TodayCharts({ data, activity }: { data: TodayData; activity: BarChartDa
       data.days.map((day) => ({
         key: day.key,
         label: formatDate(new Date(day.start), { weekday: "long", month: "short", day: "numeric" }),
-        axisLabel: formatDate(new Date(day.start), { weekday: "narrow" }),
+        axisLabel: formatDate(new Date(day.start), { weekday: "short" }),
         value: runMinutes(day.runMs),
       })),
     [data.days],

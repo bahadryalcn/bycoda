@@ -136,7 +136,10 @@ it("keeps desktop control off by default and offers no computer until it is allo
   await mount(client);
   expect(desktopSwitch().getAttribute("aria-checked")).toBe("false");
   expect(element.textContent).not.toContain("Choose a computer");
-  expect(element.textContent).toContain(
+  await act(async () =>
+    element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain(
     "Desktop control runs only when you're away and on another computer.",
   );
 });

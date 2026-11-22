@@ -33,7 +33,6 @@
 .editor {
   display: grid;
   gap: 0.75rem;
-  padding: 0.75rem;
 }
 .quote {
   margin: 0;

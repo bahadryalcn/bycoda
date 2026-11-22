@@ -136,7 +136,7 @@ export function AccountsScreen({
         />
       ) : null}
       {selected && snapshot ? (
-        <Sheet title={selected.name} size="42rem" onClose={() => setSelectedId(undefined)}>
+        <Sheet title={selected.name} size="md" onClose={() => setSelectedId(undefined)}>
           <AccountDetail
             key={selected.id}
             client={client}

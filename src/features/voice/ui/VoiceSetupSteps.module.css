@@ -11,10 +11,6 @@
   gap: 8px;
 }
 
-.hint {
-  margin: 0;
-}
-
 .level {
   flex: 1;
   min-inline-size: 80px;

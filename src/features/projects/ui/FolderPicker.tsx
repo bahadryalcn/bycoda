@@ -279,7 +279,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           <div
             {...surfaceAttributes(
               { frame: "pane", edge: "bottom" },
-              "flex shrink-0 items-center gap-2 p-3 pe-12",
+              "flex shrink-0 items-center gap-2 p-3 pe-(--modal-close-clearance)",
             )}
           >
             <Button

@@ -7,7 +7,7 @@ import { pathKey, prettyCwd, isEqualOrInside } from "../../../shared/lib/paths";
 import { gitDiffIndex, type GitDiffIndex } from "../../../platform/tauri/fs";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmConsequences } from "../../../shared/ui/ConfirmDialog";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { listWorktrees, type Worktree, type RemoveWorktree } from "../model/worktrees";
@@ -85,6 +85,10 @@ export function QuickDeleteWorktreeDialog({
       ? t("Create a branch before deleting this detached worktree")
       : undefined;
   const ready = !!tree && !blocked && (!!index || tree.missing);
+  const blockedReason = busy
+    ? undefined
+    : (blocked ??
+      (trees && !tree && !request.deletePath ? t("Select a worktree to delete.") : undefined));
   const remove = async () => {
     if (!tree || !ready || busy) return;
     setBusy(true);
@@ -108,7 +112,7 @@ export function QuickDeleteWorktreeDialog({
         if (!busy) onClose();
       }}
       footer={
-        <ModalActions>
+        <ModalActions reason={blockedReason}>
           <Button variant="ghost" data-delete-worktree-cancel="" disabled={busy} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -117,6 +121,7 @@ export function QuickDeleteWorktreeDialog({
             tone="danger"
             loading={busy}
             disabled={!ready || !!error}
+            disabledReason={blockedReason}
             onClick={() => void remove()}
           >
             {t("Delete worktree")}
@@ -179,11 +184,6 @@ export function QuickDeleteWorktreeDialog({
               { key: "branch", tone: "neutral", content: t("The branch is kept.") },
             ]}
           />
-        ) : null}
-        {blocked ? (
-          <InlineMessage tone="warning" live="assertive">
-            {blocked}
-          </InlineMessage>
         ) : null}
         {error ? (
           <GitFeedback

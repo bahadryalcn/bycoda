@@ -1,11 +1,10 @@
-import { actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Text } from "../../../shared/ui/Text";
 import { ModelLabel } from "./ModelLabel";
-import { motionAttributes } from "../../../shared/ui/Motion";
 import { createContext, useContext, useEffect } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
 import { Check, ExternalLink, Square } from "../../../shared/ui/icons";
 import { crewMemberOf, delegationParentOf } from "../model/delegatedAgents";
@@ -241,18 +240,14 @@ function SubagentPanel({
           size="body"
           weight="medium"
           truncate
-          tone={state === "rejected" ? "danger" : "secondary"}
-          {...motionAttributes({ transition: "colors", duration: "standard" })}
-          {...actionContentAttributes(
-            { phase: "always", interactionTone: state === "rejected" ? undefined : "neutral" },
-            nameClass,
-          )}
+          tone={state === "rejected" ? "danger" : "inherit"}
+          className={nameClass}
         >
           {name}
         </Text>
       )}
       {(subtitle ?? model) ? (
-        <Text size="caption" tone="muted" truncate className="max-w-[40%] shrink-0">
+        <Text size="caption" tone="inherit" truncate className="max-w-[40%] shrink-0">
           {subtitle ?? <ModelLabel model={block.agentRun?.model ?? ""} name={model} size="xs" />}
         </Text>
       ) : null}
@@ -276,139 +271,133 @@ function SubagentPanel({
       className="max-w-[55%] shrink-0"
     />
   );
-
-  const stopButton = delegated?.onStop ? (
-    <>
-      {delegated.stopFailed ? (
+  const summary = (
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+      {marks}
+      {label}
+      {stateLine}
+      {delegated?.onStop && delegated.stopFailed ? (
         <Text as="span" size="caption" tone="danger" className="shrink-0">
           {t("Stop failed. Retry")}
         </Text>
       ) : null}
-      <Button
-        motion="none"
-        iconOnly
-        variant="ghost"
-        type="button"
-        label={
-          delegated.stopping
-            ? t("Stopping {p0}…", { p0: name })
-            : delegated.stopFailed
-              ? t("Could not stop. Retry")
-              : t("Stop {p0}", { p0: name })
-        }
-        disabled={delegated.stopping}
-        onClick={delegated.onStop}
-        className="shrink-0"
-      >
-        <Square className="icon-xs" strokeWidth={1.75} aria-hidden />
-      </Button>
-    </>
-  ) : null;
+    </span>
+  );
 
-  // A run can report its first step late (or never). Its prompt and status
-  // remain inspectable in the panel even before the trail arrives.
+  const stopButton = delegated?.onStop ? (
+    <Button
+      motion="none"
+      iconOnly
+      variant="ghost"
+      type="button"
+      label={
+        delegated.stopping
+          ? t("Stopping {p0}…", { p0: name })
+          : delegated.stopFailed
+            ? t("Could not stop. Retry")
+            : t("Stop {p0}", { p0: name })
+      }
+      disabled={delegated.stopping}
+      onClick={delegated.onStop}
+      className="shrink-0"
+    >
+      <Square className="icon-xs" strokeWidth={1.75} aria-hidden />
+    </Button>
+  ) : null;
+  const panelButton = (
+    <Button
+      motion="none"
+      iconOnly
+      label={t("Open {p0} in its own panel", { p0: name })}
+      variant="ghost"
+      type="button"
+      tooltip={t("Open in panel")}
+      onClick={openPanel}
+      className="shrink-0"
+    >
+      <ExternalLink className="icon-sm" aria-hidden />
+    </Button>
+  );
+  const actions = (
+    <>
+      {panelButton}
+      {stopButton}
+    </>
+  );
+
+  // A run can report its first step late (or never). Nothing opens under the row, so it has no
+  // chevron and the row itself does nothing; its prompt and status stay in the panel button.
   if (steps.length === 0 && !report) {
     return (
       <div className="flex min-w-0 flex-col">
-        <div className="-mx-1.5 flex min-w-0 items-center gap-0.5">
-          <Button
-            motion="none"
-            variant="item"
-            type="button"
-            aria-label={t("Open {p0} in its own panel", { p0: name })}
-            onClick={openPanel}
-            className="min-w-0 flex-1"
-          >
-            {marks}
-            {label}
-            {stateLine}
-            <span className="icon-sm shrink-0" />
-          </Button>
-          {stopButton}
-        </div>
+        <Disclosure
+          variant="step"
+          collapsible={false}
+          summaryLabel={name}
+          summary={summary}
+          summaryActions={actions}
+        />
       </div>
     );
   }
 
   return (
     <div className="flex min-w-0 flex-col">
-      <div className="-mx-1.5 flex min-w-0 items-center gap-0.5">
-        <Button
-          motion="none"
-          className="min-w-0 flex-1 text-left"
-          variant="item"
-          type="button"
-          selected={open}
-          expanded={open}
-          aria-label={
-            open ? t("Hide {p0}'s work", { p0: name }) : t("Show {p0}'s work", { p0: name })
-          }
-          onClick={onToggle}
-          // An open row keeps the wash it lit up under the cursor, so the panel
-          // below reads as hanging off it rather than off the transcript.
-        >
-          {marks}
-          {label}
-          {stateLine}
-        </Button>
-        <Button
-          motion="none"
-          iconOnly
-          label={t("Open {p0} in its own panel", { p0: name })}
-          variant="ghost"
-          type="button"
-          aria-label={t("Open {p0} in its own panel", { p0: name })}
-          tooltip={t("Open in panel")}
-          onClick={openPanel}
-          className="shrink-0"
-        >
-          <ExternalLink className="icon-sm" aria-hidden />
-        </Button>
-        {stopButton}
-      </div>
-      <div className="zen-phase-body" data-open={open}>
-        {open ? (
-          /*
-           * No scroll window of its own. Each phase inside already keeps the
-           * group the run is working in to a short pinned window; wrapping a
-           * second window around them nests one 17.5rem scroller inside
-           * another, and the inner one can never reach its own last row.
-           */
-          <div className="flex min-w-0 flex-col pb-1">
-            <ActivityPhases
-              blocks={stepBlocks}
-              cwd={cwd}
-              done={!active}
-              padded={false}
-              onOpenFile={onOpenFile}
-              onOpenDiff={onOpenDiff}
-            />
-            <SubagentReport
-              block={block}
-              cwd={cwd}
-              onOpenFile={onOpenFile}
-              heading="h4"
-              className="mt-2 ps-5"
-            />
-            {delegated?.onRetry || delegated?.resultReceived ? (
-              <div className="mt-2 flex min-w-0 flex-col items-start gap-1.5 ps-5">
-                {delegated.onRetry ? <SubagentRetryButton onRetry={delegated.onRetry} /> : null}
-                {delegated.resultReceived ? (
-                  <Text
-                    size="caption"
-                    tone="muted"
-                    className="flex items-center gap-1"
-                    data-delegation-result-received
-                  >
-                    <Check className="icon-xs" aria-hidden />
-                    {t("Result received by the main agent")}
-                  </Text>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+      <Disclosure
+        variant="step"
+        chevron="end"
+        open={open}
+        onOpenChange={onToggle}
+        summaryLabel={
+          open ? t("Hide {p0}'s work", { p0: name }) : t("Show {p0}'s work", { p0: name })
+        }
+        summary={summary}
+        summaryActions={actions}
+      >
+        <div className="zen-phase-body" data-open={open}>
+          {open ? (
+            /*
+             * No scroll window of its own. Each phase inside already keeps the
+             * group the run is working in to a short pinned window; wrapping a
+             * second window around them nests one 17.5rem scroller inside
+             * another, and the inner one can never reach its own last row.
+             */
+            <div className="flex min-w-0 flex-col pb-1">
+              <ActivityPhases
+                blocks={stepBlocks}
+                cwd={cwd}
+                done={!active}
+                padded={false}
+                onOpenFile={onOpenFile}
+                onOpenDiff={onOpenDiff}
+              />
+              <SubagentReport
+                block={block}
+                cwd={cwd}
+                onOpenFile={onOpenFile}
+                heading="h4"
+                className="mt-2 ps-5"
+              />
+              {delegated?.onRetry || delegated?.resultReceived ? (
+                <div className="mt-2 flex min-w-0 flex-col items-start gap-1.5 ps-5">
+                  {delegated.onRetry ? <SubagentRetryButton onRetry={delegated.onRetry} /> : null}
+                  {delegated.resultReceived ? (
+                    <Text
+                      size="caption"
+                      tone="muted"
+                      className="flex items-center gap-1"
+                      data-delegation-result-received
+                    >
+                      <Check className="icon-xs" aria-hidden />
+                      {t("Result received by the main agent")}
+                    </Text>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </Disclosure>
     </div>
   );
 }

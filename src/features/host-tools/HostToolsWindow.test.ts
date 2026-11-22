@@ -464,3 +464,25 @@ it("acknowledges duplicate uncertain transfer without overwriting newer destinat
     "destination edit",
   );
 });
+it("lets the owner cancel the return wait with Escape and keeps the tools", async () => {
+  let release!: () => void;
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  transport.acknowledge.mockImplementationOnce(() => barrier);
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Return to conversation"]')!.click(),
+  );
+  await vi.waitFor(() => expect(transport.acknowledge).toHaveBeenCalled());
+  expect(document.querySelector('[role="dialog"][aria-modal="true"]')).not.toBeNull();
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  await act(async () => {
+    release();
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("Return cancelled."));
+  expect(transport.hide).not.toHaveBeenCalled();
+  expect(active()).not.toBeNull();
+  expect(document.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull();
+});

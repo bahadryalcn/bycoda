@@ -728,8 +728,8 @@ describe("AgentTranscript collapsed work", () => {
     // it — not one flat dump of every step it took.
     expect(markup).toContain("Reading the diff first.");
     expect(markup).toContain("Show the steps for Reading the diff first.");
-    // An open row holds its wash, so the panel reads as hanging off it.
-    expect(markup).toContain('data-button-selected="true"');
+    // The row itself carries the open state; it keeps no wash once open.
+    expect(markup).toContain('aria-expanded="true"');
     // The panel opens straight onto its phases. A scroll window of its own
     // here would nest one 17.5rem scroller inside the window each phase
     // already keeps, and the inner one could never reach its last row.

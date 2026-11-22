@@ -200,7 +200,8 @@ it("locks every permission while the Host is offline", () => {
 
 it("states that access does not approve a send", () => {
   render(vi.fn());
-  expect(element.textContent).toContain(
+  act(() => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
+  expect(document.body.textContent).toContain(
     "Access applies only to this account and can be revoked here. Sending still requires the autonomy level below.",
   );
 });

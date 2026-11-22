@@ -100,6 +100,7 @@ export function Badge({
       }}
       className={[
         "bycoda-arc",
+        styles.ink,
         size === "xs" && styles.xs,
         shape === "icon" && styles.iconShape,
         leading && styles.leading,

@@ -1,4 +1,5 @@
-import { InlineError } from "../../../../shared/ui/InlineError";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useCallback, useEffect, useState } from "react";
@@ -172,9 +173,9 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
       ))}
       {proposal ? (
         <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}>
-          <Text as="p" tone="muted" leading="snug" className="social-card-description">
+          <InfoPopover className="self-end shrink-0">
             {t("AI suggests these narrower rules. Nothing changes until you edit a rule.")}
-          </Text>
+          </InfoPopover>
           {proposal.proposals.length ? (
             <ul>
               {proposal.proposals.map((item) => (
@@ -187,9 +188,9 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
             <EmptyState size="inline" description={t("No rule needs narrowing.")} />
           )}
           {proposal.notes.map((note) => (
-            <Text key={note} as="p" tone="muted" leading="snug" className="social-muted">
+            <InlineMessage key={note} tone="info" live="off">
               {note}
-            </Text>
+            </InlineMessage>
           ))}
         </div>
       ) : null}

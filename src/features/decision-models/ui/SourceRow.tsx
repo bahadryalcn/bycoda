@@ -132,9 +132,9 @@ export function SourceRow({
   };
   const details = [
     source.local?.modelPath
-      ? t("Local file")
+      ? t("Model file")
       : source.kind === "local"
-        ? t("Local service")
+        ? t("Running service")
         : sourceKindLabel(source.kind),
     source.local?.modelPath ??
       source.endpoint ??

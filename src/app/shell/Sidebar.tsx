@@ -2971,6 +2971,7 @@ function SidebarComponent({
   const renderSessionCard = (session: SessionSummary, inPinnedSection = false) => (
     <SessionCard
       session={session}
+      hideProjectName={sameProjectPath(session.cwd, cwd)}
       renameEditor={
         renamingSessionId === session.id && onRenameSession ? (
           <SessionRenameRow
@@ -5617,6 +5618,7 @@ const YIELD_WIDTH = [
 
 const SessionCard = memo(function SessionCard({
   showProjectAppearance = false,
+  hideProjectName = false,
   session,
   isActive,
   isSelected,
@@ -5655,6 +5657,8 @@ const SessionCard = memo(function SessionCard({
   titleFeedback,
 }: {
   showProjectAppearance?: boolean;
+  /** The list already belongs to this project, so the row leaves its name out. */
+  hideProjectName?: boolean;
   session: SessionSummary;
   isActive: boolean;
   isSelected: boolean;
@@ -6550,7 +6554,7 @@ const SessionCard = memo(function SessionCard({
               {pinAction("col-start-1 row-start-1")}
             </span>
             <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-              <SessionSearchText text={project.name} />
+              {hideProjectName ? null : <SessionSearchText text={project.name} />}
             </Text>
             {rowCommands}
             <span className="flex shrink-0 items-center gap-1.5">

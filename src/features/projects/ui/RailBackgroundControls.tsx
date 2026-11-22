@@ -54,9 +54,10 @@ function ColorSwatchButton({
           align="start"
           aria-label={label}
           width={232}
+          variant="panel"
           onDismiss={() => setOpen(false)}
         >
-          <div className="p-3">
+          <div>
             <ColorPickerPopover value={value} onChange={onChange} />
           </div>
         </Popover>

@@ -400,7 +400,7 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
             toast.show({
               tone: "warning",
               title: t("The session was deleted. Its worktree was kept."),
-              message: t("{p0}\n\nYou can manage it in Settings → Worktrees.", {
+              message: t("{p0}\n\nYou can manage it in Settings → Workspace.", {
                 p0: String(error),
               }),
             });

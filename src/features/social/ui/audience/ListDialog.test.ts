@@ -6,6 +6,7 @@ import {
   asClient,
   bodyText,
   buttonByText,
+  isBlocked,
   clientMock,
   clickButton,
   deferred,
@@ -38,10 +39,10 @@ describe("ListDialog", () => {
   it("keeps Create disabled with the reason until the list has a name", async () => {
     renderDialog(clientMock());
     await flush();
-    expect(buttonByText("Create list")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Create list"))).toBe(true);
     expect(bodyText()).toContain("Enter a name for the list.");
     setFieldValue(fieldByLabel("List name"), "   ");
-    expect(buttonByText("Create list")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Create list"))).toBe(true);
   });
 
   it("saves a static list with the trimmed name, reports it and closes", async () => {

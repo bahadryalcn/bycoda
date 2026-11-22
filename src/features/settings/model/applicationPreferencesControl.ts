@@ -1,5 +1,11 @@
 import { applyThemePreference, loadThemePreference, saveThemePreference } from "./appearance";
-import { loadAppearancePreferences, saveAppearancePreferences } from "./appearancePreferences";
+import {
+  loadAppearancePreferences,
+  saveAppearancePreferences,
+  TRANSCRIPT_ACTIONS,
+  TRANSCRIPT_CARDS,
+  TRANSCRIPT_SURFACES,
+} from "./appearancePreferences";
 import {
   getLanguagePreference,
   setLanguagePreference,
@@ -21,14 +27,50 @@ const voiceFields = [
   "engine",
   "device",
 ] as const;
+/**
+ * Remote names of the transcript reading surface. Each maps to its stored field and its legal
+ * values; `chatMessages.assistantMessageOpacity` is the older alias of `surfaceOpacity`.
+ */
+const transcriptFields = {
+  surface: { field: "transcriptSurface", options: TRANSCRIPT_SURFACES },
+  surfaceOpacity: { field: "transcriptSurfaceOpacity", min: 0, max: 100 },
+  surfaceBlur: { field: "transcriptSurfaceBlur", min: 0, max: 24 },
+  bodyInk: { field: "transcriptBodyInk", min: 80, max: 100 },
+  chromeInk: { field: "transcriptChromeInk", min: 50, max: 100 },
+  cards: { field: "transcriptCards", options: TRANSCRIPT_CARDS },
+  actions: { field: "transcriptActions", options: TRANSCRIPT_ACTIONS },
+} as const;
 export function applicationPreferencesSnapshot() {
   const voice = loadVoiceSettings();
-  const { controlDensity, userMessageOpacity, assistantMessageOpacity, messageColor } =
-    loadAppearancePreferences();
+  const {
+    controlDensity,
+    userMessageOpacity,
+    transcriptSurface,
+    transcriptSurfaceOpacity,
+    transcriptSurfaceBlur,
+    transcriptBodyInk,
+    transcriptChromeInk,
+    transcriptCards,
+    transcriptActions,
+    messageColor,
+  } = loadAppearancePreferences();
   return {
     theme: loadThemePreference(),
     density: controlDensity,
-    chatMessages: { userMessageOpacity, assistantMessageOpacity, messageColor },
+    chatMessages: {
+      userMessageOpacity,
+      assistantMessageOpacity: transcriptSurfaceOpacity,
+      messageColor,
+    },
+    transcript: {
+      surface: transcriptSurface,
+      surfaceOpacity: transcriptSurfaceOpacity,
+      surfaceBlur: transcriptSurfaceBlur,
+      bodyInk: transcriptBodyInk,
+      chromeInk: transcriptChromeInk,
+      cards: transcriptCards,
+      actions: transcriptActions,
+    },
     language: getLanguagePreference(),
     voice: Object.fromEntries(voiceFields.map((key) => [key, voice[key] ?? null])),
   };
@@ -69,7 +111,33 @@ export async function applyApplicationPreference(
       throw new Error("Invalid chat message appearance field or value.");
     }
     const before = loadAppearancePreferences();
-    saveAppearancePreferences({ ...before, ...Object.fromEntries(edits) }, before);
+    const fields = edits.map(([key, value]) => [
+      key === "assistantMessageOpacity" ? "transcriptSurfaceOpacity" : key,
+      value,
+    ]);
+    saveAppearancePreferences({ ...before, ...Object.fromEntries(fields) }, before);
+  } else if (change.kind === "transcript") {
+    if (!change.value || typeof change.value !== "object" || Array.isArray(change.value))
+      throw new Error("Invalid transcript appearance.");
+    const edits = Object.entries(change.value);
+    if (!edits.length) throw new Error("Supply at least one transcript appearance field.");
+    const fields: Record<string, unknown> = {};
+    for (const [key, value] of edits) {
+      if (!Object.prototype.hasOwnProperty.call(transcriptFields, key))
+        throw new Error("Invalid transcript appearance field or value.");
+      const rule = transcriptFields[key as keyof typeof transcriptFields];
+      const valid =
+        "options" in rule
+          ? (rule.options as readonly unknown[]).includes(value)
+          : typeof value === "number" &&
+            Number.isInteger(value) &&
+            value >= rule.min &&
+            value <= rule.max;
+      if (!valid) throw new Error("Invalid transcript appearance field or value.");
+      fields[rule.field] = value;
+    }
+    const before = loadAppearancePreferences();
+    saveAppearancePreferences({ ...before, ...fields }, before);
   } else if (change.kind === "language") {
     if (!isLanguagePreference(change.value)) throw new Error("Invalid language.");
     await setLanguagePreference(change.value, valid);

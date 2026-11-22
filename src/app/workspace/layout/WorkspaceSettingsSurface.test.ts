@@ -29,13 +29,20 @@ vi.mock("../../../features/source-control/ui/QuickDeleteWorktreeDialog", () => (
 vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({
     children,
-    className,
+    size,
+    maximized,
     title,
   }: {
     children: React.ReactNode;
-    className?: string;
+    size?: string;
+    maximized?: boolean;
     title?: string;
-  }) => createElement("div", { "data-modal": title, className }, children),
+  }) =>
+    createElement(
+      "div",
+      { "data-modal": title, "data-size": size, "data-maximized": String(maximized) },
+      children,
+    ),
 }));
 vi.mock("../../../shared/i18n/git", () => ({ t: (key: string) => key, useLocale: () => "en" }));
 vi.mock("../surfaces/lazySurfaces", () => ({
@@ -127,9 +134,9 @@ it("shows Settings in the shared Modal with maximize and no duplicate window chr
     createElement(WorkspaceSettingsSurface, settingsProps("dialog")),
   );
   expect(html).toContain('data-modal="Settings"');
-  expect(html).toContain("bycoda-settings-dialog");
   // Every page shares one dialog geometry; only maximize changes it.
-  expect(html).toContain('data-settings-dialog-mode="standard"');
+  expect(html).toContain('data-size="settings"');
+  expect(html).toContain('data-maximized="false"');
   const shown = view.mock.calls[0][0] as Record<string, unknown>;
   expect(shown.embedded).toBe(true);
   expect(shown.maximized).toBe(false);

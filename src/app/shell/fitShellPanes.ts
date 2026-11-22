@@ -9,6 +9,13 @@ import { MAIN_PANE_MIN_WIDTH } from "./sidePaneWidth";
 /** Width of the compact project rail (`w-14` in `Sidebar.tsx`). */
 const COMPACT_RAIL_WIDTH = 56;
 
+/**
+ * Main column the conversation keeps while the full rail and the session list are both open.
+ * Narrower windows show the session list beside the compact rail instead of squeezing the
+ * conversation between two narrow columns.
+ */
+const BOTH_PANES_MAIN_WIDTH = 560;
+
 export interface ShellPaneState {
   rail: boolean;
   sidebar: boolean;
@@ -27,7 +34,8 @@ export interface FittedShellPanes extends ShellPaneState {
  */
 export function fitShellPanes(viewport: number, stored: ShellPaneState): FittedShellPanes {
   const room = viewport - MAIN_PANE_MIN_WIDTH;
-  const bothFit = room >= PROJECT_RAIL_WIDTH_MIN + SESSION_SIDEBAR_WIDTH_MIN;
+  const bothFit =
+    viewport - BOTH_PANES_MAIN_WIDTH >= PROJECT_RAIL_WIDTH_MIN + SESSION_SIDEBAR_WIDTH_MIN;
   const rail = stored.rail && (stored.sidebar ? bothFit : room >= PROJECT_RAIL_WIDTH_MIN);
   const sidebarRoom = rail ? bothFit : room >= COMPACT_RAIL_WIDTH + SESSION_SIDEBAR_WIDTH_MIN;
   const sidebar = stored.sidebar && sidebarRoom;

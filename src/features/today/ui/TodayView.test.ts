@@ -50,7 +50,7 @@ import { TodayView } from "./TodayView";
 it("explains an empty day beside the active-time stat when the read succeeded", () => {
   read.failed = false;
   const markup = renderToStaticMarkup(createElement(TodayView));
-  expect(markup).toContain("No agent activity recorded today. Start a session to see it here.");
+  expect(markup).toContain("No agent activity recorded today.");
   expect(markup).toContain("Active time");
   expect(markup).toContain("42");
   expect(markup).not.toContain("Some usage could not be read");

@@ -454,7 +454,7 @@ it.each([false, true])(
     expect(container.textContent).not.toContain("CLI needed");
     await choose("Tunnel provider", "ngrok");
     expect(container.textContent).not.toContain("needs a valid authtoken");
-    expect(button("Start sharing").disabled).toBe(true);
+    expect(button("Start sharing").getAttribute("aria-disabled")).toBe("true");
     if (failed) expect(container.textContent).toContain("could not be reached");
   },
 );

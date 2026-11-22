@@ -168,7 +168,6 @@
   transform: scaleX(-1);
 }
 .device-panel-popover {
-  padding: 12px;
   max-inline-size: calc(100% - 16px);
   overflow-y: auto;
 }

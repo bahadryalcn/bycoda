@@ -110,6 +110,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const returning = useRef(false);
+  const returnAbort = useRef<AbortController | null>(null);
   const windowLifetime = useRef(0);
   const [availableWindows, setAvailableWindows] = useState<ReadonlySet<string> | null>(null);
   const windowLabel = useRef("");
@@ -436,6 +437,11 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
     if (!currentPane?.composerWindow || returning.current) return;
     returning.current = true;
     const lifetime = windowLifetime.current;
+    const abort = new AbortController();
+    returnAbort.current = abort;
+    const assertNotCancelled = () => {
+      if (abort.signal.aborted) throw new Error(t("Return cancelled."));
+    };
     setPending(true);
     setError("");
     try {
@@ -478,6 +484,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           tab: operation.session.onlyTab ?? operation.session.initialTab ?? "devices",
           machine: operation.session.initialMachine ?? "project",
         }),
+        abort.signal,
       );
       const [{ focusSessionWindow }, { remoteSessionOwnershipKey }, { getCurrentWebviewWindow }] =
         await withTimeout(
@@ -489,6 +496,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           RETURN_PRESENTATION_MS,
           t("Return to conversation"),
         );
+      assertNotCancelled();
       const ownershipId = currentPane.cwd.startsWith("remote://")
         ? remoteSessionOwnershipKey(currentPane.cwd, currentPane.sessionId)
         : (currentPane.composerSessionId ?? currentPane.sessionId);
@@ -497,6 +505,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         RETURN_PRESENTATION_MS,
         t("Return to conversation"),
       );
+      assertNotCancelled();
       if (windowLifetime.current !== lifetime) return;
       // Compare synchronously after the last focus/import await; hashing here would reopen the edit race.
       assertToolsReturnUnchanged(
@@ -523,6 +532,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       setError(toolsTransferError(cause));
     } finally {
       returning.current = false;
+      returnAbort.current = null;
       setPending(false);
     }
   };
@@ -662,7 +672,16 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         ) : null}
       </div>
       {pending ? (
-        <Modal title={t("Return to conversation")} closeDisabled onClose={() => {}}>
+        <Modal
+          title={t("Return to conversation")}
+          size="sm"
+          onClose={() => returnAbort.current?.abort()}
+          footer={
+            <Button variant="secondary" onClick={() => returnAbort.current?.abort()}>
+              {t("Cancel")}
+            </Button>
+          }
+        >
           <LoadingText delay={false} />
         </Modal>
       ) : null}

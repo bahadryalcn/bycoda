@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -317,9 +317,9 @@ export function VoiceSetupSteps({
             ]}
             onChange={(microphoneId) => saveVoiceSettings({ ...loadVoiceSettings(), microphoneId })}
           />
-          <Text as="p" size="inherit" tone="secondary" leading="normal" className={styles.hint}>
+          <InfoPopover className="self-start shrink-0">
             {t("Start the microphone test, then say one sentence.")}
-          </Text>
+          </InfoPopover>
           <div className={styles.actions}>
             <Button onClick={() => void testMicrophone()} loading={busy}>
               {t("Test microphone")}

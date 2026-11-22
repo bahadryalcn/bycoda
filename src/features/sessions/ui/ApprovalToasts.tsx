@@ -357,13 +357,12 @@ export function ApprovalToasts({
           modal={false}
           anchor="viewport"
           side="end"
-          size="420px"
+          size="sm"
           inset={{ top: 40, bottom: 32 }}
           layer={LAYER.toast}
           ignore={trigger}
           title={t("Notifications")}
           closeLabel={t("Close")}
-          className="notification-sheet"
           initialFocus="button"
           scroll="none"
           onClose={closePanel}

@@ -657,6 +657,7 @@ export function UsageOverview({
           width={350}
           kind="dialog"
           aria-label={t("Custom date and time")}
+          variant="panel"
           onDismiss={() => setOpenDateRange(false)}
         >
           <div className="usage-filter-panel">
@@ -682,6 +683,7 @@ export function UsageOverview({
           width={350}
           kind="dialog"
           aria-label={t("Filters")}
+          variant="panel"
           onDismiss={() => setOpenFilters(false)}
         >
           <div className="usage-filter-panel">

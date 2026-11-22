@@ -1,4 +1,5 @@
-import { InlineError } from "../../../../../shared/ui/InlineError";
+import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
+import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
@@ -6,7 +7,6 @@ import { Button } from "../../../../../shared/ui/Button";
 import { Heading } from "../../../../../shared/ui/Heading";
 
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
-import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { DisabledReason, gateProps, type ActionGate } from "../../common/DisabledReason";
 import type { XProfilePatch, XProfileState } from "../../../model/socialBrowser";
@@ -93,10 +93,12 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("X profile")}
     >
-      <Heading size="item">{t("X profile and following")}</Heading>
-      <Text as="p" tone="muted" leading="snug" className="social-muted">
-        {t("Public profile fields of {p1}.", { p1: accountName })}
-      </Text>
+      <div className="social-card-head">
+        <Heading size="item">{t("X profile and following")}</Heading>
+        <InfoPopover className="shrink-0">
+          {t("Public profile fields of {p0}.", { p0: accountName })}
+        </InfoPopover>
+      </div>
       <Button
         variant="secondary"
         size="sm"
@@ -159,11 +161,11 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
         </DisabledReason>
       </div>
       {followed ? (
-        <Text as="p" tone="muted" leading="snug" className="social-muted">
+        <InlineMessage tone="info" live="off">
           {followed.following
-            ? t("Following @{p1}", { p1: followed.handle })
-            : t("Not following @{p1}", { p1: followed.handle })}
-        </Text>
+            ? t("Following @{p0}", { p0: followed.handle })
+            : t("Not following @{p0}", { p0: followed.handle })}
+        </InlineMessage>
       ) : null}
       {error ? (
         <InlineError retry={{ onRetry: read, label: t("Read profile") }}>{error}</InlineError>

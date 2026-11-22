@@ -7,13 +7,12 @@ import {
   Plus,
   FolderOpen,
   File,
-  Server,
   Download,
   KeyRound,
   Globe,
 } from "../../../shared/ui/icons";
 /** The four ways to add a source; the dialogs for each live beside this menu. */
-export type AddPath = "folder" | "manual" | "local" | "api" | "custom" | "service";
+export type AddPath = "folder" | "manual" | "local" | "api" | "custom";
 /** One primary action; the four paths sit in this menu. */
 export function AddMenu({
   onPick,
@@ -36,8 +35,8 @@ export function AddMenu({
       kind: "item",
       id: "manual",
       icon: <File aria-hidden="true" />,
-      label: t("Local file path"),
-      description: t("Connect a model file and its runtime."),
+      label: t("Add from a file or address"),
+      description: t("Connect a model file, or the address of a running service."),
     },
     {
       kind: "item",
@@ -45,15 +44,6 @@ export function AddMenu({
       icon: <Download aria-hidden="true" />,
       label: target ? t("Install on Host {p1}", { p1: target }) : t("Install on this computer"),
       description: t("Download a model that runs locally."),
-    },
-    {
-      kind: "item",
-      id: "service",
-      icon: <Server aria-hidden="true" />,
-      label: t("Local service"),
-      description: target
-        ? t("Connect a running service on Host {p1}.", { p1: target })
-        : t("Connect a running service on this computer."),
     },
     {
       kind: "item",

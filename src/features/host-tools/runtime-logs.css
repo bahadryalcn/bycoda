@@ -482,12 +482,7 @@
 .runtime-logs-filter-content {
   display: grid;
   gap: 12px;
-  padding: 12px;
   min-inline-size: 0;
-}
-
-.runtime-logs-monitors-popover {
-  padding: 12px;
 }
 
 .runtime-logs-monitors-popover .runtime-logs-monitor-setup {

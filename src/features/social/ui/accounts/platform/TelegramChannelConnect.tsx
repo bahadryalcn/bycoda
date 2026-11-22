@@ -1,10 +1,10 @@
-import { InlineError } from "../../../../../shared/ui/InlineError";
+import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
+import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 
-import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import type { SocialAccount, SocialTelegramChannelReview } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
@@ -109,11 +109,11 @@ export function TelegramChannelConnect({
 
   return (
     <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}>
-      <Text as="p" tone="muted" leading="snug" className="social-muted">
+      <InfoPopover className="self-end shrink-0" width={360}>
         {t(
           "Create the Telegram channel with your existing account and add the configured bot as an administrator with permission to post. Connecting here does not change those permissions.",
         )}
-      </Text>
+      </InfoPopover>
       <TextField
         label={t("Telegram channel ID or public username")}
         value={target}
@@ -144,11 +144,11 @@ export function TelegramChannelConnect({
           <p>
             {t("Bot")}: {review.botName} ({review.botId})
           </p>
-          <Text as="p" tone="muted" leading="snug" className="social-muted">
+          <InlineMessage tone="info" live="off">
             {t(
               "This connection publishes to the reviewed channel. Private messages and channel monitoring stay separate.",
             )}
-          </Text>
+          </InlineMessage>
           <Button
             variant="primary"
             size="sm"

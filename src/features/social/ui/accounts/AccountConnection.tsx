@@ -1,4 +1,5 @@
-import { InlineError } from "../../../../shared/ui/InlineError";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
@@ -137,14 +138,16 @@ export function AccountConnection({
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Connection")}
     >
-      <Heading size="item">{t("Connection")}</Heading>
-      <Text as="p" tone="muted" leading="snug" className="social-muted">
-        {!account.connected
-          ? t("Connection needed")
-          : onThisComputer
-            ? t("This account is connected on the selected computer.")
-            : t("This account is connected on another computer.")}
-      </Text>
+      <div className="social-card-head">
+        <Heading size="item">{t("Connection")}</Heading>
+        {account.connected ? (
+          <InfoPopover className="shrink-0">
+            {onThisComputer
+              ? t("This account is connected on the selected computer.")
+              : t("This account is connected on another computer.")}
+          </InfoPopover>
+        ) : null}
+      </div>
       <CapabilityList capabilities={capabilities} grouped />
       {usesBrowser ? (
         <div className="social-field-row">
@@ -175,11 +178,11 @@ export function AccountConnection({
             {t("Check connection")}
           </Button>
           {browser?.status === "waiting" ? (
-            <Text as="p" tone="muted">
+            <InlineMessage tone="info" live="off">
               {t(
                 "Close the dedicated sign-in window after signing in so the connection can be verified.",
               )}
-            </Text>
+            </InlineMessage>
           ) : null}
           {browser?.status === "waiting" || browser?.status === "checking" ? (
             <Button
@@ -193,9 +196,9 @@ export function AccountConnection({
             </Button>
           ) : null}
           {browser?.source === "existing-chrome" ? (
-            <Text as="p" tone="muted">
+            <InlineMessage tone="info" live="off">
               {t("Uses your existing Chrome session.")}
-            </Text>
+            </InlineMessage>
           ) : null}
           {browser ? (
             <Text as="span" tone="muted" leading="snug" className="social-muted">
@@ -235,9 +238,9 @@ export function AccountConnection({
             </FieldGroup>
           </Disclosure>
           {!requestedOperations.length ? (
-            <Text as="p" size="caption" tone="secondary">
+            <InlineMessage tone="warning" live="off">
               {t("Choose at least one permission.")}
-            </Text>
+            </InlineMessage>
           ) : null}
           <div className="social-field-row">
             {isOrganization ? (

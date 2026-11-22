@@ -83,7 +83,7 @@ it("reopens a saved Cursor placeholder as a named, expandable subagent with a st
       ),
     );
     const button = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show Review ACP routing\'s work"]',
+      'summary[aria-label="Show Review ACP routing\'s work"]',
     );
     expect(button).not.toBeNull();
     // The run's state line carries the step count; the model sits beside the name in the row.

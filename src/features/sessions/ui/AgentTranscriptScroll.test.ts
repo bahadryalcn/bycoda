@@ -82,7 +82,7 @@ describe("subagent scrolling", () => {
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
     const button = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show Auth review\'s work"]',
+      'summary[aria-label="Show Auth review\'s work"]',
     );
     expect(button).not.toBeNull();
     act(() => button!.click());

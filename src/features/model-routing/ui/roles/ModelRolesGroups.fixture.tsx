@@ -256,7 +256,7 @@ it("resolves Default and opens Models without changing form choice", async () =>
 });
 it.each([
   ["notConfigured", "Uses the item's own model."],
-  ["noEligibleEntry", "Runs wait for an eligible model."],
+  ["noEligibleEntry", "No eligible model right now."],
 ])("shows nonblocking %s resolution", async (reason, wording) => {
   mocks.resolve.mockResolvedValue({ ok: false, reason, skipped: [] });
   await render(field({ value: { kind: "default" } }));

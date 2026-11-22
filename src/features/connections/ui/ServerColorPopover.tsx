@@ -43,7 +43,7 @@ export function ServerColorPopover({
   const shownCustom = draft ?? customColor;
   const fallback = normalizeHex(TAB_GROUP_COLORS[0]);
   return (
-    <div className="flex flex-col gap-3 p-3">
+    <div className="flex flex-col gap-3">
       <ColorSwatchRow
         colors={TAB_GROUP_COLORS}
         colorIndex={colorIndex}

@@ -531,12 +531,13 @@ export function TerminalTools({
               solid
               kind="dialog"
               aria-label={t("Terminal pane actions")}
+              variant="compact"
               onDismiss={() => {
                 setMenuOpen(false);
                 if (toolbarTarget) setHelpOpen(false);
               }}
             >
-              <div className={styles.menuBody}>
+              <div>
                 {terminal ? (
                   <>
                     <MenuRow
@@ -672,10 +673,11 @@ export function TerminalTools({
           align="end"
           kind="dialog"
           aria-label={t("About shell suggestions")}
+          variant="panel"
           width={340}
           onDismiss={() => setHelpOpen(false)}
         >
-          <Text as="div" size="caption" tone="muted" className="p-3">
+          <Text as="div" size="caption" tone="muted">
             <p className="mbs-2">
               {t(
                 "Windows PowerShell suggestions require PowerShell 7+ and PSReadLine 2.4+. A new session starts with -NoProfile; custom profile key bindings and history settings are not loaded.",

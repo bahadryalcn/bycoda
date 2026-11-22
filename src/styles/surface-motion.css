@@ -97,6 +97,6 @@
 
 /* Logical end is the left edge in right-to-left layouts. */
 :dir(rtl) [data-modal-placement="end"],
-:dir(rtl) .notification-sheet {
+:dir(rtl) [data-sheet-side="end"] {
   --motion-sheet-distance: -16px;
 }

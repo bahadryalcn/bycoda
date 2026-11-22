@@ -9,7 +9,7 @@ import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Plus, RefreshCw, X } from "../../../shared/ui/icons";
+import { Plus, RefreshCw, X } from "../../../shared/ui/icons";
 
 import { Composer } from "./Composer";
 import {
@@ -90,6 +90,8 @@ function tabHarnessFor(
   );
 }
 
+/** The panel rises from the pane bottom and leaves the pane top (clamped 18%) visible. */
+const BTW_SHEET_SIZE = "calc(100% - clamp(2.5rem, 18%, 12rem))";
 const NO_MESSAGES: BtwMessage[] = [];
 const NO_BLOCKS: Block[] = [];
 
@@ -525,17 +527,25 @@ export function BtwSheet({
       scroll="none"
       title={t("By-the-way conversations")}
       escapeScope="[data-session-drop]"
-      className="btw-sheet"
+      size={BTW_SHEET_SIZE}
       bodyClassName="font-sans"
       bodyText={{ size: "body" }}
       onClose={btw.close}
-      header={
-        <div
-          {...surfaceAttributes(
-            { frame: "pane", edge: "bottom" },
-            "flex h-11 shrink-0 items-center gap-1  border-(--ui-tone-neutral-border) pr-2 pl-2.5",
-          )}
-        >
+      closeLabel={t("Back to the conversation")}
+      headerActions={
+        btw.canStartDraft ? (
+          <Button
+            iconOnly
+            label={t("New side question")}
+            variant="ghost"
+            type="button"
+            onClick={btw.startDraft}
+          >
+            <Plus className="icon-sm" strokeWidth={1.75} />
+          </Button>
+        ) : null
+      }
+      tabs={
           <Tabs value={activeTabId ?? ""} onValueChange={btw.selectTab} panels="none">
             <TabList
               label={t("Side questions")}
@@ -561,7 +571,7 @@ export function BtwSheet({
                       </Text>
                     </Tab>
                     <InlineAction
-                      className="mr-1 shrink-0"
+                      className="me-1 shrink-0"
                       tabIndex={selected ? 0 : -1}
                       label={
                         tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
@@ -577,30 +587,6 @@ export function BtwSheet({
               })}
             </TabList>
           </Tabs>
-          {btw.canStartDraft ? (
-            <Button
-              iconOnly
-              label={t("New side question")}
-              variant="ghost"
-              type="button"
-              onClick={btw.startDraft}
-              className="shrink-0"
-            >
-              <Plus className="icon-sm" strokeWidth={1.75} />
-            </Button>
-          ) : null}
-          <Button
-            iconOnly
-            label={t("Back to the conversation")}
-            variant="ghost"
-            type="button"
-            shortcut="Esc"
-            onClick={btw.close}
-            className="shrink-0"
-          >
-            <ChevronDown className="icon-md" strokeWidth={1.75} />
-          </Button>
-        </div>
       }
     >
       <div className="min-h-0 flex-1">

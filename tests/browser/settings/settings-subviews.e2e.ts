@@ -430,7 +430,7 @@ for (const theme of ["light", "dark"])
       ).toBeVisible();
       const helperModels = chat.locator("#setting-helper-models");
       await expect(helperModels).toContainText("Translation, reprompt and title models");
-      await expect(helperModels).toContainText("Model set in Work > Assignments.");
+      await expect(helperModels).toContainText("Model set in Settings → Models → Background work.");
       await expect(
         helperModels.getByRole("button", { name: "Manage models", exact: true }),
       ).toBeVisible();

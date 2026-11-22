@@ -48,8 +48,8 @@ describe("tool error disclosure", () => {
 
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
 
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Show error details for"]',
+    const trigger = container.querySelector<HTMLElement>(
+      'summary[aria-label^="Show error details for"]',
     );
     expect(trigger).not.toBeNull();
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
@@ -58,7 +58,7 @@ describe("tool error disclosure", () => {
     expect(container.textContent).not.toContain("\u001b");
     expect(container.textContent).not.toContain("Server.setupListenHandle");
 
-    const failedRow = container.querySelector<HTMLElement>('[aria-label^="Failed tool call:"]');
+    const failedRow = trigger;
     const message = Array.from(failedRow?.querySelectorAll("span") ?? []).find((element) =>
       element.textContent?.includes("npm run dev"),
     );
@@ -93,8 +93,8 @@ describe("Bycoda CLI disclosure", () => {
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
 
     const row = container.querySelector<HTMLElement>('[data-bycoda-tool-call="notes.list"]');
-    const trigger = row?.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show output for bycoda: List notes"]',
+    const trigger = row?.querySelector<HTMLElement>(
+      'summary[aria-label="Show output for bycoda: List notes"]',
     );
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     expect(row?.querySelector("pre")).toBeNull();
@@ -124,8 +124,8 @@ describe("Bycoda CLI disclosure", () => {
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
 
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show error details for bycoda: List notes"]',
+    const trigger = container.querySelector<HTMLElement>(
+      'summary[aria-label="Show error details for bycoda: List notes"]',
     );
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     const count = () => (container.textContent ?? "").split("Connection refused").length - 1;
@@ -156,7 +156,7 @@ describe("tool output inspection", () => {
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
     act(() =>
       container
-        .querySelector<HTMLButtonElement>('button[aria-label^="Show error details for"]')!
+        .querySelector<HTMLElement>('summary[aria-label^="Show error details for"]')!
         .click(),
     );
     const sections = Array.from(container.querySelectorAll("[data-tool-inspection] section"));
@@ -178,9 +178,7 @@ describe("tool output inspection", () => {
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
     expect(container.querySelector("[data-tool-inspection]")).toBeNull();
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Show output for"]',
-    );
+    const trigger = container.querySelector<HTMLElement>('summary[aria-label^="Show output for"]');
     expect(trigger).not.toBeNull();
     act(() => trigger?.click());
     expect(container.querySelector("[data-tool-inspection]")?.textContent).toContain(
@@ -216,9 +214,7 @@ describe("tool output inspection", () => {
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true, onOpenFile })));
     expect(container.textContent).not.toContain("last-line-marker");
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Show changes for"]',
-    );
+    const trigger = container.querySelector<HTMLElement>('summary[aria-label^="Show changes for"]');
     act(() => trigger?.click());
     expect(container.querySelector("[data-tool-inspection]")?.textContent).toContain(
       "last-line-marker",

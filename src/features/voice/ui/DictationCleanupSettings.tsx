@@ -43,7 +43,6 @@ export function DictationCleanupSettings({
       <Row
         id="dictation-cleanup"
         label={t("Clean up dictated text")}
-        descriptionVisible
         description={t(
           "Sends dictated text and your instructions to Codex for cleanup. Surrounding drafts are not sent.",
         )}

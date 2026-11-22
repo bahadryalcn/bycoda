@@ -1,0 +1,99 @@
+/* Frame and sticky placement only; every reading rule comes from styles/transcript-surface.css,
+   keyed on [data-transcript-preview], so the preview cannot drift from the transcript. */
+.dock {
+  position: sticky;
+  inset-block-start: calc(
+    var(--settings-page-bar-height, 0px) + var(--appearance-generator-height, 0px)
+  );
+  z-index: 1;
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-popup);
+  background: var(--ui-chat-pane-canvas);
+  color: var(--transcript-ink-body);
+}
+
+.art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+}
+
+.sample {
+  background-image:
+    radial-gradient(
+      circle at 20% 25%,
+      color-mix(in srgb, var(--color-accent) 70%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 80% 70%,
+      color-mix(in srgb, var(--color-content) 45%, transparent),
+      transparent 50%
+    ),
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--color-content) 25%, transparent) 0 6px,
+      transparent 6px 12px
+    );
+}
+
+.scene {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.bubble {
+  justify-self: end;
+  padding: var(--space-1-5) var(--space-3);
+  max-inline-size: 70%;
+}
+
+.reply {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.reply p {
+  margin: 0;
+}
+
+.code {
+  margin: 0;
+  padding: var(--space-1-5) var(--space-2);
+  border: 1px solid var(--transcript-inset-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--transcript-card-fill);
+  color: var(--transcript-ink-body);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  overflow: hidden;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-1-5);
+  border-radius: var(--ui-radius-control);
+  background: var(--transcript-card-fill);
+  font-family: var(--font-mono);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--transcript-ink-chrome);
+}

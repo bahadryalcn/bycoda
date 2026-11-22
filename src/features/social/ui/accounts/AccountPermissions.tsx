@@ -4,7 +4,8 @@ import { useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
-import { Text } from "../../../../shared/ui/Text";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
@@ -91,11 +92,11 @@ export function AccountPermissions({
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Who can use this account")}
     >
-      <Text as="p" tone="muted" leading="snug" className="social-card-description">
+      <InfoPopover className="self-end shrink-0">
         {t(
           "Access applies only to this account and can be revoked here. Sending still requires the autonomy level below.",
         )}
-      </Text>
+      </InfoPopover>
       {account.assistantGrantPending ? (
         <InlineError>
           {t(
@@ -194,9 +195,10 @@ export function AccountPermissions({
           </Button>
         </form>
       ) : (
-        <Text as="p" tone="muted" leading="snug" className="social-muted">
-          {t("Create a project first to give this account project access.")}
-        </Text>
+        <EmptyState
+          size="inline"
+          description={t("Create a project first to give this account project access.")}
+        />
       )}
       {projectWrite.error ? <InlineError>{projectWrite.error}</InlineError> : null}
     </section>

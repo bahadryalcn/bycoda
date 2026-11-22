@@ -81,7 +81,8 @@ export function ErrorDetails({
           flow="scroll"
           solid
           onDismiss={close}
-          className="flex flex-col gap-2 p-3"
+          variant="panel"
+          className="flex flex-col gap-2"
         >
           <div className="flex flex-wrap items-center justify-between gap-x-2">
             <Text size="secondary" tone="primary" weight="medium">

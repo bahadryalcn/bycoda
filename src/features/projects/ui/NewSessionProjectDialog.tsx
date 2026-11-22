@@ -66,14 +66,6 @@ export function NewSessionProjectDialog({
   );
   const options = filterPickerOptions(
     [
-      {
-        value: NO_PROJECT_CWD,
-        title: t("No project"),
-        description: t("Runs in your default folder for sessions without a project"),
-        group: t("Without a project"),
-        icon: <Chatting className="icon-sm" />,
-        disabled: busy,
-      },
       ...projects.map(({ path }) => {
         const key = projectKey(path);
         const seed = projectName(path);
@@ -81,7 +73,7 @@ export function NewSessionProjectDialog({
         return {
           value: path,
           title: projectDisplayNameFrom(path, labels),
-          description: `${t(isRemoteProjectPath(path) ? "Remote" : "Local")} · ${path}`,
+          description: isRemoteProjectPath(path) ? `${t("Remote")} · ${path}` : path,
           group: t("Projects"),
           icon: logo ? (
             <ProjectLogoIcon path={logo} className="icon-sm rounded-sm" imageClassName="icon-sm" />
@@ -96,6 +88,14 @@ export function NewSessionProjectDialog({
           disabled: busy,
         };
       }),
+      {
+        value: NO_PROJECT_CWD,
+        title: t("No project"),
+        description: t("Runs in your default folder for sessions without a project"),
+        group: t("Without a project"),
+        icon: <Chatting className="icon-sm" />,
+        disabled: busy,
+      },
     ],
     query,
   );

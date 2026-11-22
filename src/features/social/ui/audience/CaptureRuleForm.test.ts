@@ -11,6 +11,7 @@ import {
   asClient,
   bodyText,
   buttonByText,
+  isBlocked,
   clickButton,
   clientMock,
   fieldByLabel,
@@ -70,7 +71,7 @@ describe("CaptureRuleForm requirements", () => {
   it("names the next missing piece in the order name, source, list", async () => {
     renderForm(clientMock(), { accounts: [] });
     await flush();
-    expect(buttonByText("Save rule")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(true);
     expect(bodyText()).toContain("Enter a name for the rule.");
 
     setFieldValue(fieldByLabel("Rule name"), "Launch");
@@ -81,10 +82,10 @@ describe("CaptureRuleForm requirements", () => {
     renderForm(clientMock());
     await flush();
     setFieldValue(fieldByLabel("Rule name"), "Launch");
-    expect(buttonByText("Save rule")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(true);
     expect(bodyText()).toContain("Choose the list the people are added to.");
     pickOption("List", "Buyers");
-    expect(buttonByText("Save rule")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(false);
   });
 
   it("offers only static lists as the target", async () => {
@@ -101,10 +102,10 @@ describe("CaptureRuleForm requirements", () => {
     await fillRequired();
     pickOption("Where to look", "Keyword search");
     await flush();
-    expect(buttonByText("Save rule")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(true);
     expect(bodyText()).toContain("Enter a keyword or hashtag.");
     setFieldValue(fieldByLabel("Keyword or hashtag"), "pricing");
-    expect(buttonByText("Save rule")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(false);
   });
 
   it("refuses a minimum follower count that is not a whole number", async () => {
@@ -112,10 +113,10 @@ describe("CaptureRuleForm requirements", () => {
     await flush();
     await fillRequired();
     setFieldValue(fieldByLabel("Minimum followers (optional)"), "1.5");
-    expect(buttonByText("Save rule")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(true);
     expect(bodyText()).toContain("Enter a whole number of followers.");
     setFieldValue(fieldByLabel("Minimum followers (optional)"), "");
-    expect(buttonByText("Save rule")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(false);
   });
 });
 
@@ -126,7 +127,7 @@ describe("CaptureRuleForm actions", () => {
     await fillRequired();
     pickOption("Next step", "Add a tag");
     await flush();
-    expect(buttonByText("Save rule")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(true);
     expect(bodyText()).toContain("Enter the tag to add.");
   });
 
@@ -136,10 +137,10 @@ describe("CaptureRuleForm actions", () => {
     await fillRequired();
     pickOption("Next step", "Start a sequence");
     await flush();
-    expect(buttonByText("Save rule")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(true);
     expect(bodyText()).toContain("Choose a sequence.");
     pickOption("Sequence", "Welcome");
-    expect(buttonByText("Save rule")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(false);
   });
 });
 
@@ -227,7 +228,7 @@ describe("CaptureRuleForm save", () => {
     expect(bodyText()).toContain("Too many rules.");
     expect(props.onSaved).not.toHaveBeenCalled();
     expect(props.onClose).not.toHaveBeenCalled();
-    expect(buttonByText("Save rule")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save rule"))).toBe(false);
   });
 });
 

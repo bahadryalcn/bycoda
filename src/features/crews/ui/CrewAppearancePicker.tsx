@@ -66,9 +66,10 @@ export function CrewAppearancePicker({
           onDismiss={() => setOpen(false)}
           kind="dialog"
           aria-label={t("Crew icon and color")}
+          variant="compact"
           className="bycoda-arc overflow-y-auto overscroll-contain"
         >
-          <div className="flex flex-col gap-2 p-2">
+          <div className="flex flex-col gap-2">
             <div className="flex flex-wrap gap-[calc(var(--space-1)/2)]">
               <RadioGroup
                 variant="tiles"

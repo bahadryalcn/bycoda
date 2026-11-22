@@ -29,6 +29,12 @@ vi.mock("../../sessions/model/models", () => ({
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
 import { RevealedSetting } from "../../../shared/ui/settings";
 
+/** Opens the info popover and returns the page text, popover content included. */
+function helpText() {
+  act(() => [...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Help"]')].at(-1)!.click());
+  return document.body.textContent ?? "";
+}
+
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -69,11 +75,11 @@ it("opens shared-account setup from Accounts without offering unsupported named 
     details.dispatchEvent(new Event("toggle"));
   });
   expect(details.open).toBe(true);
-  const panel = details;
-  expect(panel.textContent).toContain(
+  const popoverText = helpText();
+  expect(popoverText).toContain(
     "bycoda uses the shared Antigravity CLI account on this computer",
   );
-  expect(panel.textContent).toContain("/logout");
+  expect(popoverText).toContain("/logout");
   expect(container.textContent).not.toContain("Add account");
   act(() => {
     details.open = false;
@@ -89,8 +95,9 @@ it("shows both native installers and the real agy authentication instructions", 
   expect(container.textContent).toContain(
     "curl -fsSL https://antigravity.google/cli/install.sh | bash",
   );
-  expect(container.textContent).toContain("GEMINI_API_KEY");
-  expect(container.textContent).toContain("enterprise Gemini Code Assist");
+  const popoverText = helpText();
+  expect(popoverText).toContain("GEMINI_API_KEY");
+  expect(popoverText).toContain("enterprise Gemini Code Assist");
   expect(container.textContent).not.toContain("npm install");
 });
 

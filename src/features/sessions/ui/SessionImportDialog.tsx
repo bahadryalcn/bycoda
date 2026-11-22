@@ -352,6 +352,8 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
     });
   };
 
+  const importReason = counts.toImport === 0 ? t("Select a session to import.") : undefined;
+
   return (
     <Modal
       title={t("Import Claude Code and Codex sessions")}
@@ -364,7 +366,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
       onClose={running ? () => undefined : onClose}
       footer={
         report && run.status === "idle" ? (
-          <ModalActions>
+          <ModalActions reason={importReason}>
             <Button variant="ghost" type="button" onClick={onClose}>
               {t("Close")}
             </Button>
@@ -373,6 +375,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               type="button"
               stableWidth
               disabled={counts.toImport === 0}
+              disabledReason={importReason}
               onClick={() => void start()}
             >
               {t("Import")} {counts.toImport > 0 ? counts.toImport.toLocaleString(locale) : ""}

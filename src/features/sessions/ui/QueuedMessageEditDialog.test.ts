@@ -96,7 +96,7 @@ describe("QueuedMessageEditDialog", () => {
     await act(async () =>
       document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
     );
-    expect(button("Save").disabled).toBe(true);
+    expect(button("Save").getAttribute("aria-disabled") === "true").toBe(true);
     await act(async () => root.render(null));
     await act(async () =>
       finish([{ ...message.attachments[0], id: "late", previewUrl: "blob:late" }]),
@@ -122,7 +122,7 @@ describe("QueuedMessageEditDialog", () => {
       add.click();
       add.click();
     });
-    expect(button("Save").disabled).toBe(true);
+    expect(button("Save").getAttribute("aria-disabled") === "true").toBe(true);
     await act(async () => {
       finishes[0]([{ ...message.attachments[0], id: "first", name: "one.png" }]);
       finishes[1]([{ ...message.attachments[0], id: "second", name: "two.png" }]);
@@ -206,7 +206,7 @@ describe("QueuedMessageEditDialog", () => {
       message: { id: "q1", text: "hi", attachments: [] },
     });
     await typeInto(field, "  ");
-    expect((button("Save") as HTMLButtonElement).disabled).toBe(true);
+    expect(button("Save").getAttribute("aria-disabled") === "true").toBe(true);
     act(() => button("Remove from queue").click());
     expect(onRemove).toHaveBeenCalled();
     expect(onSave).not.toHaveBeenCalled();

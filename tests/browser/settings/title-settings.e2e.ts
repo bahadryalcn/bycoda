@@ -12,7 +12,7 @@ for (const theme of ["light", "dark"])
       await expect(
         page
           .getByRole("dialog", { name: "Help" })
-          .getByText("Model set in Work > Assignments.", { exact: true }),
+          .getByText("Model set in Settings → Models → Background work.", { exact: true }),
       ).toBeVisible();
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: "Manage models", exact: true }).click();
@@ -90,7 +90,7 @@ test("unsupported Host never reads or mutates routing", async ({ page }) => {
   await page.goto("/settings/title-settings.html?unsupported");
   await page.getByRole("button", { name: "Manage models", exact: true }).click();
   await expect(
-    page.getByText("Model routing is not available on this Host.", {
+    page.getByText("Background work is not available on this Host.", {
       exact: true,
     }),
   ).toBeVisible();

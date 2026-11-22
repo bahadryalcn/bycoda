@@ -380,6 +380,7 @@ export function TranscriptSelectionMenu({
         aria-label={t("Add citation")}
         flow="scroll"
         onDismiss={closeComment}
+        variant="panel"
         className={styles.comment}
         data-citation-comment
       >
@@ -458,7 +459,7 @@ export function TranscriptSelectionMenu({
         if (reason === "escape") window.getSelection()?.removeAllRanges();
         onDismiss();
       }}
-      className={styles.menu}
+      variant="compact"
       data-selection-menu
     >
       {/* Popover paints the glass. The rail owns scrolling on short viewports. */}

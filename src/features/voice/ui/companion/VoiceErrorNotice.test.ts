@@ -65,3 +65,24 @@ it.each(["mac", "win", "linux", "browser"] as const)(
     expect(onDismiss).toHaveBeenCalledOnce();
   },
 );
+
+it("keeps raw transport text behind Details and offers Reconnect as the one primary action", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  element = document.createElement("div");
+  document.body.append(element);
+  root = createRoot(element);
+  const onDismiss = vi.fn();
+  const onReconnect = vi.fn();
+  const error = "Realtime connection closed unexpectedly";
+  await act(async () =>
+    root!.render(createElement(VoiceErrorNotice, { error, onDismiss, onReconnect })),
+  );
+  expect(element.textContent).not.toContain(error);
+  expect(element.textContent).toContain("Voice needs attention");
+  const buttons = [...element.querySelectorAll("button")];
+  expect(buttons.some((button) => button.textContent?.startsWith("Details"))).toBe(true);
+  const reconnect = buttons.find((button) => button.textContent === "Reconnect")!;
+  await act(async () => reconnect.click());
+  expect(onDismiss).toHaveBeenCalledOnce();
+  expect(onReconnect).toHaveBeenCalledOnce();
+});

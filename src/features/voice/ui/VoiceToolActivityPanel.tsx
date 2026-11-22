@@ -95,6 +95,7 @@ export function VoiceToolActivityPanel({
           anchor={anchor}
           kind="dialog"
           aria-label={t("Voice actions")}
+          variant="panel"
           width={340}
           flow="scroll"
           tabIndex={0}

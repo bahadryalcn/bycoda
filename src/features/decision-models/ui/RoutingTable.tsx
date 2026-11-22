@@ -402,7 +402,7 @@ export function RoutingTable({
       ) : null}
       <SettingsSaveBar
         id={`decision-routing:${identity}`}
-        title={t("Routing")}
+        title={t("Task routing")}
         changes={pendingChanges}
         pending={busy || retainedPending}
         saved={saved && saveError === null}

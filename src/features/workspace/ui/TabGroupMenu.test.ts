@@ -247,3 +247,29 @@ it("names the field after its target and badges an item's icon with a status", (
   expect(item.textContent).toContain("Studio Mac · Not connected");
   expect(item.querySelector('[role="img"][aria-label="Not connected"]')).not.toBeNull();
 });
+
+it("does not take focus on open and saves a typed name only on Enter", () => {
+  const onRename = vi.fn();
+  renderMenu(vi.fn(), { onRename, nameLabel: "Project name" });
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="Project name"]')!;
+  expect(document.activeElement).not.toBe(input);
+
+  act(() => input.focus());
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Renamed");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => input.blur());
+  expect(onRename).not.toHaveBeenCalled();
+
+  act(() => input.focus());
+  act(() => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(onRename).not.toHaveBeenCalled();
+
+  act(() => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  expect(onRename).toHaveBeenCalledWith("private", "Renamed");
+});

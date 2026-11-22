@@ -545,6 +545,7 @@ function AgentMore({ label, children }: { label: string; children: ReactNode }) 
           align="end"
           minWidth={220}
           onDismiss={() => setOpen(false)}
+          variant="compact"
           className="onboarding-agent-menu"
         >
           {children}

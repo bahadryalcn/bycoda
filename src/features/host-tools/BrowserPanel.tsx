@@ -1554,6 +1554,7 @@ function ProjectBrowserPanel({
           data-dialog-popover
           autoFocus
           solid
+          variant="panel"
           className="host-browser-selection-popover bycoda-arc"
           onDismiss={() => setSelectionOpen(false)}
         >

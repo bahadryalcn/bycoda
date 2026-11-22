@@ -3967,7 +3967,6 @@ export const Composer = memo(function Composer({
                       variant="ghost"
                       iconOnly
                       label={t("Mode")}
-                      tooltip={t("Mode")}
                       selected={modeOpen}
                       aria-haspopup="menu"
                       aria-expanded={modeOpen}
@@ -4045,7 +4044,6 @@ export const Composer = memo(function Composer({
                 variant="ghost"
                 iconOnly
                 label={t("Add files or skills")}
-                tooltip={t("Add files or skills")}
                 data-usage-guide="composer-plus"
                 selected={plusOpen}
                 aria-haspopup="menu"

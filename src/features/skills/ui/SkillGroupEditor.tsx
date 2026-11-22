@@ -111,7 +111,7 @@ export function SkillGroupEditor({
           label={t("Filter skills to add")}
           hideLabel
           value={query}
-          placeholder={t("Search {p0} skills", { p0: entries.length })}
+          placeholder={t("Search skills")}
           spellCheck={false}
           autoComplete="off"
           onChange={(event) => {

@@ -228,7 +228,10 @@ it("asks AI to narrow only this account's rules and only proposes, never changin
     projectId: "p1",
     ruleIds: ["r1"],
   });
-  expect(element.textContent).toContain(
+  await act(async () =>
+    element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain(
     "AI suggests these narrower rules. Nothing changes until you edit a rule.",
   );
   expect(element.textContent).toContain("Pricing replies");

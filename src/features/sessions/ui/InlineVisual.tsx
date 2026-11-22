@@ -209,7 +209,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
           modal={false}
           side="end"
           title={valid.title}
-          header={<></>}
+          header={false}
           scroll="none"
           dismissOnOutside={false}
           resizable={{
@@ -229,7 +229,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
           size="full"
           scroll="none"
           toolbar={<div ref={setExpandedToolbar} />}
-          className="h-[calc(100dvh-32px)]"
+          height="fill"
           onClose={() => go("inline")}
         >
           <div ref={setExpandedSlot} className="h-full min-h-0" />

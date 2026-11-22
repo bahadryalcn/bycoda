@@ -115,7 +115,7 @@ function TranscriptVideoPreview({
       size="xl"
       fitViewport
       expandable
-      className="h-[min(760px,85dvh)]"
+      height="tall"
       toolbar={
         <MediaToolbarButton
           label={t("Open in new tab")}

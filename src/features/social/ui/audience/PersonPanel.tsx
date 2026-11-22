@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
@@ -118,7 +119,7 @@ export function PersonPanel({
       onClose={onClose}
       title={person?.name ?? t("Person")}
       description={person ? sourceLabel(person.source) : undefined}
-      size="380px"
+      size="sm"
     >
       {loading && !detail ? (
         <LoadingText delay={false} className="audience-muted">
@@ -246,14 +247,16 @@ export function PersonPanel({
             {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "audience-panel-section")}
             aria-labelledby="person-consent-heading"
           >
-            <SectionLabel labelId="person-consent-heading">
-              {t("Commercial messages (Turkey)")}
-            </SectionLabel>
-            <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
-              {t(
-                "Approval in the Turkish commercial message system (IYS) for messages to people in Turkey.",
-              )}
-            </Text>
+            <div className="audience-row">
+              <SectionLabel labelId="person-consent-heading">
+                {t("Commercial messages (Turkey)")}
+              </SectionLabel>
+              <InfoPopover className="shrink-0">
+                {t(
+                  "Approval in the Turkish commercial message system (IYS) for messages to people in Turkey.",
+                )}
+              </InfoPopover>
+            </div>
             <LabeledSelect
               label={t("IYS status")}
               value={person.commercialConsent?.iys ?? "unknown"}

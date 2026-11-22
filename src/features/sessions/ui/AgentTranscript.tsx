@@ -674,7 +674,7 @@ function AgentTranscriptComponent({
             <div
               {...surfaceAttributes(
                 { variant: "floating", frame: "card", radius: "card", elevation: "floating" },
-                "pointer-events-auto absolute inset-bs-2 inset-ie-3 flex flex-wrap items-center justify-end gap-1 p-1 font-sans text-ui-caption text-(--ui-text-secondary)",
+                "pointer-events-auto absolute inset-bs-2 inset-ie-3 flex flex-wrap items-center justify-end gap-1 p-1 font-sans text-ui-caption text-(--transcript-ink-chrome)",
               )}
             >
               <span className="px-1">{t("After applying: ↑ original, ↓ translation.")}</span>
@@ -1099,6 +1099,11 @@ const Turn = memo(function Turn({
   const [itemCache] = useState(() => new TranscriptTurnCache());
   const [rowCache] = useState(() => new TranscriptRowCache());
   const items = itemCache.turnItems(turn, settled);
+  // The leading user blocks are the turn's prompt; the reply surface starts after them.
+  const firstReplyAt = items.findIndex(
+    (item) => !(item.type === "block" && item.block.role === "user" && !item.block.interjection),
+  );
+  const promptCount = firstReplyAt === -1 ? items.length : firstReplyAt;
   // Earlier activity groups have already been followed by prose or
   // more work. Only the last one can still be the live group.
   const foldedAt = lastActivityIndex(items);
@@ -1174,7 +1179,7 @@ const Turn = memo(function Turn({
       />
     ) : item.type === "activity" ? (
       itemIndex === initialThinkingAt ? (
-        <InitialThinking key={item.blocks[0].id} live={visible && !settled} />
+        <InitialThinking key={item.blocks[0].id} live={visible && !settled} embedded />
       ) : (
         <ActivityPhases
           key={item.blocks[0].id}
@@ -1202,6 +1207,8 @@ const Turn = memo(function Turn({
           block={item.block}
           revealOnMount={allowMountReveal && isLastTurn && !seenOutput.has(item.block.id)}
           layout={transcriptLayout}
+          // The reply surface owns the gutter; only the turn's own prompt rows draw their own.
+          embedded={itemIndex >= promptCount}
           visible={item.block.role === "user" ? visible : undefined}
           // Prose reads the same wherever it lands: under the fold
           // line at the top of the turn, or under the work it follows.
@@ -1295,7 +1302,7 @@ const Turn = memo(function Turn({
         index === initialThinkingAt,
         !visible || settled || index < foldedAt || (answering && !workStillRunning),
         allowMountReveal && isLastTurn && item.type === "block" && !seenOutput.has(item.block.id),
-        transcriptLayout, items[index - 1]?.type, index === foldLineAt && showFoldLine,
+        transcriptLayout, items[index - 1]?.type, index === foldLineAt && showFoldLine, index >= promptCount,
         busy, planHarness, planModel, planModelSettings, editableUserBlockId, editingLastTurn,
         onApproval, onSaveNote, onSendDraft, onEditDraft, onRemoveDraft, onOpenFile, onOpenDiff,
         onOpenPlan, onBuildPlan, onLoadRemoteBlock, onEditLastTurn, canRewindMessage, onRewindMessage,
@@ -1353,16 +1360,20 @@ const Turn = memo(function Turn({
   });
   if (foldLineAt >= items.length) virtualRows.push(lineRow);
   rowCache.retain([...virtualRows, ...workRows]);
-  return (
-    <div
-      key={turn[0].id}
-      data-transcript-turn={turnId}
-      className={`transcript-turn flex min-w-0 flex-col${
-        isLastTurn ? " transcript-turn-live" : ""
-      }${anchorPrompt && userBlock ? " transcript-turn-anchor" : ""}`}
-    >
+  // The turn's own prompt rows stay outside the reply surface; everything after them is the reply.
+  const promptIds = new Set(items.slice(0, promptCount).map(turnItemKey));
+  const promptRows = virtualRows.filter((row) => promptIds.has(row.id));
+  const replyRows = virtualRows.filter((row) => !promptIds.has(row.id));
+  const hasReply =
+    replyRows.some((row) => row.id !== lineRow.id || showFoldLine) ||
+    !!(activityPhase && activityLabel) ||
+    !!latestTurnAccessory ||
+    (durationMs != null && settled) ||
+    (settled && proposals.some((block) => block.orchestration?.status !== "planning"));
+  const replyContent = (
+    <>
       <RunHarness.Provider value={turnHarness}>
-        <TranscriptVirtualRows rows={virtualRows} listId={`turn:${turnId}:items`} />
+        <TranscriptVirtualRows rows={replyRows} listId={`turn:${turnId}:items`} />
       </RunHarness.Provider>
       {activityPhase && activityLabel ? (
         <OriginTurnActivityLine
@@ -1383,7 +1394,7 @@ const Turn = memo(function Turn({
               id: block.id,
               blockIds: [block.id],
               render: () => (
-                <div className="px-4 pt-1 pb-2" data-orchestration-result>
+                <div className="pt-1 pb-2" data-orchestration-result>
                   <OrchestrationPreview block={block} busy={busy} />
                 </div>
               ),
@@ -1408,6 +1419,20 @@ const Turn = memo(function Turn({
           onHandoff={onHandoff ? (target) => onHandoff(target, turn) : undefined}
         />
       ) : null}
+    </>
+  );
+  return (
+    <div
+      key={turn[0].id}
+      data-transcript-turn={turnId}
+      className={`transcript-turn flex min-w-0 flex-col${
+        isLastTurn ? " transcript-turn-live" : ""
+      }${anchorPrompt && userBlock ? " transcript-turn-anchor" : ""}`}
+    >
+      {promptRows.length > 0 ? (
+        <TranscriptVirtualRows rows={promptRows} listId={`turn:${turnId}:prompt`} />
+      ) : null}
+      {hasReply ? <div data-transcript-reply>{replyContent}</div> : null}
     </div>
   );
 }, sameTurn);
@@ -1436,7 +1461,7 @@ function InitialThinking({ live, embedded = false }: { live: boolean; embedded?:
   const t = useT();
   return (
     <div
-      className={`min-w-0 pt-3 pb-1 font-sans text-ui-body text-(--ui-text-secondary) ${embedded ? "" : "px-4"}`}
+      className={`min-w-0 pt-3 pb-1 font-sans text-ui-body text-(--transcript-ink-chrome) ${embedded ? "" : "px-4"}`}
     >
       {live ? <WorkingIndicator>{t("Thinking…")}</WorkingIndicator> : t("Thinking…")}
     </div>
@@ -1471,7 +1496,7 @@ function LiveFoldTitle({
   if (!paused && background && isBackgroundOnly(true, background, backgroundAgents)) {
     return (
       <Tooltip label={background.join("\n")} asChild>
-        <span className="min-w-0 truncate font-sans text-ui-body text-(--ui-text-secondary)">
+        <span className="min-w-0 truncate font-sans text-ui-body text-(--transcript-ink-chrome)">
           {background.length === 1
             ? t("Finished · 1 command running in background")
             : t("Finished · {p0} commands running in background", { p0: background.length })}
@@ -1631,12 +1656,13 @@ function TurnDuration({
   const hasOutput = hasTurnCopyText(turn);
   const getText = useCallback(() => turnCopyText(turn), [turn]);
   const dot = (
-    <span aria-hidden className="size-0.75 shrink-0 rounded-full bg-(--ui-tone-neutral-border)" />
+    <span aria-hidden className="size-0.75 shrink-0 rounded-full border-[3px] border-(--ui-tone-neutral-border)" />
   );
   return (
     <div
       aria-label={label}
-      className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2.5 px-4 pt-1 pb-3 font-sans text-ui-body text-(--ui-text-secondary)"
+      data-transcript-actions-row
+      className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2.5 pt-1 pb-3 font-sans text-ui-body text-(--transcript-ink-chrome)"
     >
       <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
         {hasOutput ? null : turn.some(
@@ -1717,7 +1743,7 @@ function TurnDuration({
       {completedAt != null ? (
         <span className="flex shrink-0 items-center gap-2.5">
           {labelHidden ? null : dot}
-          <Timestamp value={completedAt} className="shrink-0 text-(--ui-text-secondary)" />
+          <Timestamp value={completedAt} className="shrink-0 text-(--transcript-ink-chrome)" />
         </span>
       ) : null}
     </div>
@@ -1817,7 +1843,7 @@ function TurnMetricsBadge({
         >
           <div className="text-ui-caption leading-4 text-(--ui-tone-neutral-fg)">{headline}</div>
           {detail ? (
-            <div className="text-ui-micro leading-4 text-(--ui-text-secondary)">{detail}</div>
+            <div className="text-ui-micro leading-4 text-(--transcript-ink-chrome)">{detail}</div>
           ) : null}
         </Popover>
       ) : null}
@@ -2068,7 +2094,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
             <div key={index} className="flex min-w-0 flex-col gap-1.5">
               <section
                 aria-label={t("AI question")}
-                className="flex min-w-0 max-w-[min(100%,36rem)] items-start gap-2 text-(--ui-text-secondary)"
+                className="flex min-w-0 max-w-[min(100%,36rem)] items-start gap-2 text-(--transcript-ink-body)"
               >
                 <MessageSquare aria-hidden="true" className="mt-0.5 icon-sm shrink-0" />
                 <p className="min-w-0 whitespace-pre-wrap break-words text-ui-caption leading-relaxed">
@@ -2215,7 +2241,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
     return (
       <div
         role={isSessionErrorBlock(block) ? "alert" : undefined}
-        className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : isSessionErrorBlock(block) ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : isSessionErrorBlock(block) ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-body)"}`}
       >
         <OutputBlock face="sans" size="inherit" tone="inherit">
           {text}
@@ -2229,8 +2255,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   return (
     <div
       data-selectable-agent-response={block.streaming ? undefined : block.id}
-      data-chat-message-surface={embedded ? undefined : "assistant"}
-      className={`min-w-0 pb-1 text-(--ui-tone-neutral-fg) ${embedded ? "" : "px-4"} ${underLine ? "pt-1" : "pt-3"}`}
+      className={`min-w-0 pb-1 text-(--transcript-ink-body) ${embedded ? "" : "px-4"} ${underLine ? "pt-1" : "pt-3"}`}
     >
       <AgentMarkdown
         text={block.text}
@@ -2266,7 +2291,7 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
       >
         <div className="flex min-w-0 items-start gap-2 px-3 py-1.5">
           <ChatRun
-            className="mt-1 icon-xs shrink-0 text-(--ui-text-secondary)"
+            className="mt-1 icon-xs shrink-0 text-(--transcript-ink-chrome)"
             strokeWidth={1.75}
             aria-hidden
           />
@@ -2431,7 +2456,7 @@ function UserMessageBlock({
       {block.startedAt != null ? (
         <Timestamp
           value={block.startedAt}
-          className="ms-1 whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--ui-text-muted)"
+          className="ms-1 whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--transcript-ink-chrome)"
         />
       ) : null}
     </>
@@ -2472,7 +2497,7 @@ function UserMessageBlock({
           data-chat-message-surface={block.draft ? undefined : "user"}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 bg-(--ui-message-bubble) px-3 py-2 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
+          className={`user-message-bubble relative min-w-0 px-3 py-2 font-sans text-(--transcript-ink-body) transition-[background-color] duration-200 ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
         >
           <ChatCitationList citations={citations} text={text} />
           {block.turnOutcome === "stopped" ? (
@@ -2705,7 +2730,7 @@ function WorkFoldLine({
       {harness ? (
         <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
       ) : (
-        <ChatWork className="icon-sm shrink-0 text-(--ui-text-secondary)" />
+        <ChatWork className="icon-sm shrink-0" />
       )}
     </span>
   );
@@ -2713,49 +2738,42 @@ function WorkFoldLine({
   // which is now bare. Same face as the settled line, so settling never
   // swaps the font under the reader. The model rides along as a quiet tag.
   const label = (
-    <span className="flex min-w-0 flex-1 items-baseline gap-2">
-      {live ? (
-        <span className="flex min-w-0 font-sans text-ui-body">{title}</span>
-      ) : (
-        <span className="min-w-0 truncate font-sans text-ui-body text-(--ui-text-secondary)">
-          {title}
-        </span>
-      )}
-      {meta ? (
-        <span className="shrink-0 font-sans text-ui-caption text-(--ui-text-muted)">{meta}</span>
-      ) : null}
-    </span>
+    <>
+      {icon}
+      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+        {live ? (
+          <span className="flex min-w-0 font-sans text-ui-body">{title}</span>
+        ) : (
+          <span className="min-w-0 truncate font-sans text-ui-body">{title}</span>
+        )}
+        {meta ? <span className="shrink-0 font-sans text-ui-caption">{meta}</span> : null}
+      </span>
+    </>
   );
 
-  // The same full-width line as an activity group header, so the whole row is
-  // the target and nothing draws a selected box around a status line.
+  // The same step row as an activity group header: the whole row is the trigger, the chevron
+  // is always there while the work can open, and nothing draws a selected box around it.
   return (
-    <div className={`transcript-fold-line min-w-0 px-2.5${open ? " zen-fold-drop" : ""}`}>
+    <div className={`transcript-fold-line min-w-0${open ? " zen-fold-drop" : ""}`}>
       {expandable ? (
-        <Button
-          motion="none"
-          variant="ghost"
-          type="button"
-          fullWidth
-          align="start"
-          weight="regular"
-          expanded={open}
+        <Disclosure
+          variant="step"
           chevron="end"
-          aria-label={open ? t("Hide the work") : t("Show the work")}
+          open={open}
+          onOpenChange={(next) => {
+            if (next !== open) onToggle();
+          }}
+          summaryLabel={open ? t("Hide the work") : t("Show the work")}
           aria-live={live ? "polite" : undefined}
-          onClick={onToggle}
-        >
-          {icon}
-          {label}
-        </Button>
+          summary={label}
+        />
       ) : (
-        <div
-          className="flex min-h-7 w-full min-w-0 items-center gap-1.5 px-1.5"
+        <Disclosure
+          variant="step"
+          collapsible={false}
           role={live ? "status" : undefined}
-        >
-          {icon}
-          {label}
-        </div>
+          summary={label}
+        />
       )}
     </div>
   );

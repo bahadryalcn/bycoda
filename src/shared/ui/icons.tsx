@@ -146,6 +146,8 @@ import {
   Dices as LucideDices,
   Sparkles as LucideSparkles,
   SkipForward as LucideSkipForward,
+  Hand as LucideHand,
+  PhoneOff as LucidePhoneOff,
   Square as LucideSquare,
   Columns2 as LucideSplitSquare,
   SquarePlus as LucideSquarePlus,
@@ -521,6 +523,8 @@ export const Dices = wrap(LucideDices, "Dices");
 export const Sparkles = wrap(LucideSparkles, "Sparkles");
 export const Square = wrap(LucideSquare, "Square");
 export const SkipForward = wrap(LucideSkipForward, "SkipForward");
+export const Hand = wrap(LucideHand, "Hand");
+export const PhoneOff = wrap(LucidePhoneOff, "PhoneOff");
 export const SplitSquare = wrap(LucideSplitSquare, "SplitSquare");
 export const SquarePlus = wrap(LucideSquarePlus, "SquarePlus");
 export const Star = wrap(LucideStar, "Star");

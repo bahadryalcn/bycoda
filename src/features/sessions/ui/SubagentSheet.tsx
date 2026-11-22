@@ -21,7 +21,7 @@ import {
 import {
   ArrowDown,
   ArrowLeft,
-  CornerDownRight,
+  Crosshair,
   Maximize2,
   Minimize2,
   Square,
@@ -263,12 +263,10 @@ export function SubagentSheet({
               onClick={() => {
                 setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
               }}
-              tooltip={
-                command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
-              }
+              tooltip={command ? undefined : t("Scroll to this agent in the transcript")}
               className="shrink-0"
             >
-              <CornerDownRight className="icon-sm" aria-hidden />
+              <Crosshair className="icon-sm" aria-hidden />
             </Button>
           ) : null}
         </>

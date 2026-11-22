@@ -3,6 +3,7 @@ import { Activity, act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { Sheet } from "./Sheet";
+import { renderToStaticMarkup } from "react-dom/server";
 import { Modal } from "./Modal";
 
 it("leaves Escape in another pane alone and closes only the focused pane", () => {
@@ -378,6 +379,71 @@ it.each([
     const body = document.getElementById("child")!.parentElement!;
     expect(body.classList.contains("px-4")).toBe(padded);
     expect(body.classList.contains("pb-4")).toBe(padded);
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("resolves named sizes and leaves CSS lengths alone", () => {
+  const width = (size: string) => {
+    const html = renderToStaticMarkup(
+      createElement(Sheet, {
+        modal: false,
+        anchor: "container",
+        title: "Panel",
+        onClose: () => undefined,
+        size,
+        children: "x",
+      }),
+    );
+    return html.match(/inline-size:min\(([^,]+),/)?.[1];
+  };
+  expect(width("sm")).toBe("380px");
+  expect(width("md")).toBe("40rem");
+  expect(width("lg")).toBe("48rem");
+  expect(width("xl")).toBe("56rem");
+  expect(width("37rem")).toBe("37rem");
+});
+
+it("shows a tab strip in the shared pane header, and no header for header={false}", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(Sheet, {
+            modal: false,
+            anchor: "container",
+            title: "Tabbed",
+            tabs: createElement("div", { id: "strip" }, "tabs"),
+            closeLabel: "Back",
+            onClose: () => undefined,
+            children: "x",
+          }),
+          createElement(Sheet, {
+            modal: false,
+            anchor: "container",
+            title: "Bare",
+            header: false,
+            onClose: () => undefined,
+            children: "y",
+          }),
+        ),
+      ),
+    );
+    const sections = [...document.querySelectorAll("section")];
+    expect(sections[0].getAttribute("aria-label")).toBe("Tabbed");
+    expect(sections[0].querySelector("[data-pane-header-body] #strip")).not.toBeNull();
+    expect(sections[0].querySelector('button[aria-label="Back"]')).not.toBeNull();
+    expect(sections[1].getAttribute("aria-label")).toBe("Bare");
+    expect(sections[1].querySelector("header, [data-pane-header-body]")).toBeNull();
   } finally {
     act(() => root.unmount());
     host.remove();

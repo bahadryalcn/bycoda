@@ -39,6 +39,11 @@
 .status {
   flex: none;
 }
+/* Inside an assistant reply a neutral badge reads the chrome ink role, so counters and chips stay
+   below the body text. Outside a reply the token is unset and the Arc tone ink applies. */
+:global([data-transcript-reply]) .ink.ink[data-tone="neutral"] {
+  color: var(--transcript-ink-chrome, var(--ui-tone-neutral-fg));
+}
 /* An explicit `leading` wins over the size's own line height, in every variant. */
 .leading.leading.leading[data-leading="none"] {
   line-height: 1;

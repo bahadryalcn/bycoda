@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { useEffect, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -172,11 +172,11 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
               ]}
               onChange={setSequenceId}
             />
-            <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
+            <InfoPopover className="self-end shrink-0">
               {t(
                 "The sequence runs for its own list, so the selected people are added to that list.",
               )}
-            </Text>
+            </InfoPopover>
           </>
         ) : null}
         {result ? (

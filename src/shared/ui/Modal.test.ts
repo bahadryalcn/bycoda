@@ -128,3 +128,33 @@ describe("ModalPanel", () => {
     expect(body({ scroll: "none", padding: "md" })).toContain("px-4 pt-2 pb-4");
   });
 });
+
+describe("ModalPanel geometry variants", () => {
+  const props = { title: "Panel", onClose: vi.fn(), children: "Body" };
+  const render = (extra: object) =>
+    renderToStaticMarkup(createElement(ModalPanel, { ...props, ...extra }));
+
+  it("maps height to one working height per name", () => {
+    expect(render({})).not.toContain(" h-[");
+    expect(render({ height: "tall" })).toContain("h-[min(760px,85dvh)]");
+    expect(render({ height: "fill" })).toContain("h-[calc(100dvh-32px)]");
+  });
+
+  it("gives Settings one geometry, the shared frame and a narrow end-edge peek", () => {
+    const standard = render({ size: "settings" });
+    expect(standard).toContain("w-[min(88rem,calc(100vw-24px))]");
+    expect(standard).toContain("h-[min(60rem,calc(100dvh-32px))]");
+    expect(standard).toContain("--modal-frame-color:var(--ui-dialog-frame)");
+    const maximized = render({ size: "settings", maximized: true });
+    expect(maximized).toContain("w-[calc(100vw-24px)]");
+    expect(maximized).toContain("h-[calc(100dvh-32px)]");
+    expect(render({ size: "settings", placement: "end" })).toContain("w-[min(380px,100vw)]");
+  });
+
+  it("places the minimal-header close button on the logical end edge", () => {
+    const markup = render({ minimalHeader: true });
+    expect(markup).toContain("inset-e-(--modal-close-inset)");
+    expect(markup).not.toContain("right-3");
+    expect(markup).toContain("--modal-close-clearance");
+  });
+});

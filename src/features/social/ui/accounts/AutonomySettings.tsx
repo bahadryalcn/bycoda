@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
@@ -226,9 +227,10 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Autonomy")}
     >
-      <Text as="p" tone="muted" leading="snug" className="social-card-description">
-        {t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}
-      </Text>
+      <InfoPopover className="self-end shrink-0">
+        <p>{t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}</p>
+        <p>{t("Leave a daily limit blank to use the default.")}</p>
+      </InfoPopover>
       <div className="social-autonomy-row social-autonomy-header" aria-hidden>
         <Text as="span" size="caption" tone="muted">
           {t("Action")}
@@ -271,9 +273,6 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
           />
         </div>
       ))}
-      <Text as="p" tone="muted" leading="snug" className="social-muted">
-        {t("Leave a daily limit blank to use the default.")}
-      </Text>
       <Switch
         label={t("Act only during working hours")}
         checked={draft.hours.enabled}

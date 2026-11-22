@@ -5,7 +5,7 @@ import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Select } from "../../../../shared/ui/Select";
-import { Text } from "../../../../shared/ui/Text";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import type { SocialClient } from "../../model/socialClient";
 import type { SocialChromeTab } from "../../model/socialBrowser";
 import { useAccountWrite } from "./useAccountWrite";
@@ -51,16 +51,18 @@ export function ChromeSessionConnect({
   return (
     <Disclosure summary={t("Use existing Chrome session")} variant="row" size="sm">
       <div className="social-card">
-        <Text as="p" tone="muted">
-          {t(
-            "Use accounts already signed in to Chrome on this computer. Saved passwords are not imported.",
-          )}
-        </Text>
-        <Text as="p" tone="muted">
-          {t(
-            "In Chrome 144 or newer, open chrome://inspect/#remote-debugging, enable remote debugging, and approve Chrome's connection dialog.",
-          )}
-        </Text>
+        <InfoPopover className="self-end shrink-0" width={360}>
+          <p>
+            {t(
+              "Use accounts already signed in to Chrome on this computer. Saved passwords are not imported.",
+            )}
+          </p>
+          <p>
+            {t(
+              "In Chrome 144 or newer, open chrome://inspect/#remote-debugging, enable remote debugging, and approve Chrome's connection dialog.",
+            )}
+          </p>
+        </InfoPopover>
         <Checkbox
           label={t("Allow access to my Chrome profile")}
           description={t(

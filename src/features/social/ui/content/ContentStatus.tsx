@@ -16,7 +16,7 @@ const TONES: Record<ContentState, BadgeTone> = {
   delivery: "warning",
   cancelled: "neutral",
   draft: "neutral",
-  paused: "neutral",
+  paused: "warning",
 };
 
 export function contentStateTone(state: ContentState): BadgeTone {

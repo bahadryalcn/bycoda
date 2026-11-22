@@ -4,6 +4,8 @@
 .external-tunnel-credentials,
 .external-tunnel-form,
 .external-tunnels-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 

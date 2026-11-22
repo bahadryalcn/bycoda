@@ -144,6 +144,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
             type="submit"
             form={formId}
             disabled={busy || cooldown.remainingMs > 0}
+            disabledReason={busy ? undefined : (cooldownMessage(cooldown.remainingMs) ?? undefined)}
             variant="primary"
             loading={busy}
           >

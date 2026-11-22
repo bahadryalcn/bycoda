@@ -237,7 +237,7 @@ export function TaskSessionSheet({
 function operationalRoleLabel(role: string): string {
   switch (role) {
     case "reasoning":
-      return "Reasoning";
+      return t("Reasoning");
     case "tool":
       return "Tool";
     case "approval":

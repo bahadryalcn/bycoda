@@ -74,11 +74,12 @@ export function SourceOrderPicker({
           anchor={anchor}
           kind="dialog"
           aria-label={label}
+          variant="panel"
           width={400}
           flow="scroll"
           onDismiss={() => setAnchor(null)}
         >
-          <div className="flex flex-col gap-2 p-3">
+          <div className="flex flex-col gap-2">
             <TextField
               label={t("Search sources")}
               hideLabel

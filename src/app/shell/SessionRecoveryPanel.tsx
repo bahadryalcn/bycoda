@@ -7,6 +7,7 @@ import { RecoveryStatusBadge } from "../../features/workspace/ui/RecoveryStatusB
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
+import { SplitButton } from "../../shared/ui/SplitButton";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import {
@@ -18,7 +19,6 @@ import { useLocale, useT } from "../../shared/i18n";
 import { Modal } from "../../shared/ui/Modal";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../shared/ui/EmptyState";
-import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { InlineError } from "../../shared/ui/InlineError";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
@@ -358,6 +358,16 @@ export function SessionRecoveryPanel({
     </>
   ) : null;
   const primaryOpensSelected = selectedIds.length > 0;
+  // The primary action opens exactly what the owner sees: the selection, else the filtered list.
+  const primaryIds = primaryOpensSelected
+    ? selectedIds
+    : shown.map((row) => row.stub.id);
+  const primaryAction = primaryOpensSelected ? "open-selected" : "open-shown";
+  const primaryLabel = primaryOpensSelected
+    ? `${t("Open selected")} (${selectedIds.length})`
+    : hiddenCount > 0
+      ? `${t("Open shown")} (${shown.length})`
+      : `${t("Open all")} (${rows.length})`;
   const listError = error && errorArea === "list" ? error : "";
   const openError = error && errorArea === "open" ? error : "";
   const content = (
@@ -455,7 +465,6 @@ export function SessionRecoveryPanel({
                     </Text>
                     <Text as="div" size="caption" tone="muted" className="break-words">
                       <p>{`${projectDisplayNameFrom(stub.cwd, projectLabels)} · ${machine}`}</p>
-                      <p className="select-text [overflow-wrap:anywhere]">{stub.cwd}</p>
                       <p>
                         {HARNESS_TITLE[stub.harness]} · {modelDisplayName(stub.model, stub.harness)}
                       </p>
@@ -576,67 +585,51 @@ export function SessionRecoveryPanel({
           </Alert>
         ) : null}
         <div className="recovery-actions">
-          <Button
-            variant="secondary"
-            size="sm"
-            motion="none"
-            disabled={pending || !rows.length}
-            loading={pendingAction === "restore"}
-            onClick={() =>
-              void open(
-                rows.map((row) => row.stub.id),
-                true,
-                "restore",
-              )
-            }
-          >
-            {t("Restore chat layout")}
-          </Button>
-          <InfoPopover className="shrink-0">
-            <p>
-              {hiddenCount > 0
-                ? t("Open all opens all {p0} recovered sessions, including {p1} not shown here.", {
-                    p0: rows.length,
-                    p1: hiddenCount,
-                  })
-                : t("Open all opens all {p0} recovered sessions.", { p0: rows.length })}
-            </p>
-            <p>
-              {t(
-                "Opening tabs does not restart work. Restore chat layout also brings back your earlier chat splits.",
-              )}
-            </p>
-          </InfoPopover>
           {showToolbar ? null : maintenanceControl}
           <span className="recovery-actions-end flex flex-wrap items-center gap-2">
-            {primaryOpensSelected ? (
-              <Button
-                variant="primary"
-                size="sm"
-                motion="none"
-                disabled={pending}
-                loading={pendingAction === "open-selected"}
-                onClick={() => void open(selectedIds)}
-              >
-                {t("Open selected")} ({selectedIds.length})
-              </Button>
-            ) : null}
-            <Button
-              variant={primaryOpensSelected ? "secondary" : "primary"}
+            <SplitButton
+              variant="primary"
               size="sm"
               motion="none"
-              disabled={pending || !rows.length}
-              loading={pendingAction === "open-all"}
-              onClick={() =>
-                void open(
-                  rows.map((row) => row.stub.id),
-                  false,
-                  "open-all",
-                )
+              label={primaryLabel}
+              menuLabel={t("More ways to open")}
+              disabled={pending || !primaryIds.length}
+              loading={
+                pendingAction === primaryAction ||
+                pendingAction === "open-all" ||
+                pendingAction === "restore"
               }
-            >
-              {t("Open all")} ({rows.length})
-            </Button>
+              onClick={() => void open(primaryIds, false, primaryAction)}
+              actions={[
+                ...(primaryIds.length !== rows.length
+                  ? [
+                      {
+                        id: "open-all",
+                        label: `${t("Open all")} (${rows.length})`,
+                        onSelect: () =>
+                          void open(
+                            rows.map((row) => row.stub.id),
+                            false,
+                            "open-all",
+                          ),
+                      },
+                    ]
+                  : []),
+                {
+                  id: "restore",
+                  label: t("Restore chat layout"),
+                  description: t("Opens all {p0} and brings back your earlier chat splits.", {
+                    p0: rows.length,
+                  }),
+                  onSelect: () =>
+                    void open(
+                      rows.map((row) => row.stub.id),
+                      true,
+                      "restore",
+                    ),
+                },
+              ]}
+            />
           </span>
         </div>
       </div>

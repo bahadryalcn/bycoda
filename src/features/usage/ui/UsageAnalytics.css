@@ -55,7 +55,6 @@
 .usage-filter-panel {
   display: grid;
   gap: 12px;
-  padding: 16px;
 }
 /* Key numbers are the first read: open tiles separated by space, no rules. */
 .usage-details-disclosure {

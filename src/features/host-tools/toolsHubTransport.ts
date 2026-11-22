@@ -94,12 +94,17 @@ export async function waitToolsAcknowledgement(
   kind: "ready" | "mounted" | "reattached",
   send: () => Promise<void>,
   expected?: () => { window?: string; session?: ToolsSession; tab?: ToolsTab; machine?: string },
+  signal?: AbortSignal,
 ) {
   let finished = false;
   let release: (() => void) | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) return reject(new Error(t("Return cancelled.")));
+      signal?.addEventListener("abort", () => reject(new Error(t("Return cancelled."))), {
+        once: true,
+      });
       timer = setTimeout(
         () => reject(new Error(t("Tools transfer not acknowledged. Original workspace retained."))),
         10000,

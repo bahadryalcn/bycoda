@@ -43,6 +43,12 @@ function render(platform: SocialAccount["platform"], patch: Partial<PlatformFiel
 
 const text = () => element.textContent ?? "";
 
+/** Opens the info popover and returns the page text, popover content included. */
+function helpText() {
+  act(() => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
+  return document.body.textContent ?? "";
+}
+
 function setValue(field: HTMLInputElement | HTMLSelectElement, value: string) {
   const proto =
     field instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
@@ -84,9 +90,9 @@ afterEach(() => {
 describe("platforms without options", () => {
   it("shows the media rule for X and Instagram and nothing for other platforms", () => {
     render("x");
-    expect(text()).toContain("X posts take either up to four images or one video.");
+    expect(helpText()).toContain("X posts take either up to four images or one video.");
     render("instagram");
-    expect(text()).toContain("Attach either one video or up to four images.");
+    expect(helpText()).toContain("Attach either one video or up to four images.");
     render("linkedin");
     expect(element.textContent).toBe("");
   });

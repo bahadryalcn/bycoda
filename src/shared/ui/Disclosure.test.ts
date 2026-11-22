@@ -155,3 +155,35 @@ it("applies body dividers without remounting a draft when disclosure closes", as
   expect(input.value).toBe("Unsaved");
   expect(view.details().hasAttribute("bodyDividers")).toBe(false);
 });
+
+it("step: the chevron stays visible in the chrome ink and an open row keeps no wash", () => {
+  const css = readFileSync(join(__dirname, "Disclosure.module.css"), "utf8");
+  expect(css).toContain("--transcript-ink-chrome");
+  expect(css).not.toMatch(/\[open\][^{]*\{[^}]*background/);
+});
+
+it("step: summaryActions clicks never toggle and the whole summary toggles", async () => {
+  const onAction = vi.fn();
+  const { details } = await mount({
+    variant: "step",
+    summaryActions: createElement("button", { type: "button", onClick: onAction }, "Stop"),
+  });
+  const summary = details().querySelector("summary") as HTMLElement;
+  await act(async () => summary.querySelector("button")?.click());
+  expect(onAction).toHaveBeenCalledTimes(1);
+  expect(details().open).toBe(false);
+});
+
+it("collapsible={false} renders a static row without summary or chevron", async () => {
+  const { host } = await mount({
+    variant: "step",
+    collapsible: false,
+    summary: "Ran ls",
+    role: "status",
+  } as Partial<DisclosureProps>);
+  expect(host.querySelector("details")).toBeNull();
+  expect(host.querySelector("summary")).toBeNull();
+  const row = host.querySelector('[role="status"]');
+  expect(row?.textContent).toContain("Ran ls");
+  expect(row?.querySelector("svg")).toBeNull();
+});

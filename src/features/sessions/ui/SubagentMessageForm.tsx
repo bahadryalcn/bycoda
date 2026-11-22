@@ -111,6 +111,7 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
       <TextareaField
         className={styles.message}
         label={t("Message for {p0}", { p0: name })}
+        placeholder={t("Tell {p0} what you need…", { p0: name })}
         rows={2}
         value={relay.draft}
         aria-keyshortcuts="Control+Enter Meta+Enter"
@@ -168,7 +169,13 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
             {t("Open session")}
           </Button>
         ) : null}
-        <Button type="submit" variant="primary" disabled={!canSend} shortcut="Mod+Enter">
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={!canSend}
+          disabledReason={relay.blockedReason ? undefined : t("Write a message first")}
+          shortcut="Mod+Enter"
+        >
           {direct ? t("Send") : t("Relay via main agent")}
         </Button>
       </div>

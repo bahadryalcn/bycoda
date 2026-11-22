@@ -469,7 +469,7 @@ test("saved chat message appearance reaches the real transcript", async ({ page 
       "bycoda.appearancePreferences.v1",
       JSON.stringify({
         userMessageOpacity: 100,
-        assistantMessageOpacity: 0,
+        transcriptSurface: "off",
         messageColor: "neutral",
       }),
     );
@@ -477,12 +477,12 @@ test("saved chat message appearance reaches the real transcript", async ({ page 
   await page.goto(url());
   const root = page.locator("html");
   const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
-  const reply = page.locator('[data-selectable-agent-response="reply-39"]');
+  const reply = page.locator('[data-transcript-reply]:has([data-selectable-agent-response="reply-39"])');
   await expect(root).toHaveAttribute("data-chat-message-color", "neutral");
-  await expect(root).toHaveAttribute("data-chat-assistant-surface-off", "");
+  await expect(root).toHaveAttribute("data-transcript-surface", "off");
   await expect(reply).toHaveCSS("backdrop-filter", "none");
   await expect(message).toHaveCSS("background-color", await expectedMessageFill(message, 100));
-  await expect(reply).toHaveCSS("background-color", await expectedMessageFill(reply, 0));
+  await expect(reply).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 });
 
 for (const light of [true, false])

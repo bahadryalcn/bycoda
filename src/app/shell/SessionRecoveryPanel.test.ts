@@ -116,6 +116,18 @@ async function click(label: string) {
   });
 }
 
+async function chooseMore(label: string) {
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>('button[aria-label="More ways to open"]')!.click();
+  });
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((row) =>
+    row.textContent?.startsWith(label),
+  )!;
+  await act(async () => {
+    item.click();
+  });
+}
+
 async function maintain(label: string) {
   await act(async () => {
     container
@@ -214,7 +226,7 @@ describe("session recovery navigation", () => {
   it("opens every project without a list count limit and restores layout separately", async () => {
     await click("Open all");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], false);
-    await click("Restore chat layout");
+    await chooseMore("Restore chat layout");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], true);
   });
   it("opens only selected conversations", async () => {
@@ -244,7 +256,7 @@ describe("session recovery navigation", () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
   });
-  it("shows unfinished work by default while Open all includes completed sessions", async () => {
+  it("shows unfinished work by default while Open all in the menu includes completed sessions", async () => {
     const interrupted = markTurnInterrupted({ ...sessions[0], busy: false });
     const finished = {
       ...sessions[1],
@@ -255,7 +267,10 @@ describe("session recovery navigation", () => {
     expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
     expect(container.querySelector("ul")?.textContent).toContain("Interrupted");
     expect(container.querySelector("ul")?.textContent).not.toContain("beta");
-    await click("Open all");
+    expect(container.textContent).toContain("Open shown (1)");
+    await click("Open shown");
+    expect(onOpen).toHaveBeenLastCalledWith(["alpha"], false);
+    await chooseMore("Open all");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], false);
     await click("All sessions");
     expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
@@ -281,7 +296,7 @@ describe("session recovery navigation", () => {
     render([], crowdedRecovery, [{ ...failed, id: "crowd-0" }, ...crowdedSessions.slice(1)]);
     searchFor("crowd-0");
     expect(container.querySelectorAll("ul > li")).toHaveLength(1);
-    await click("Restore chat layout");
+    await chooseMore("Restore chat layout");
     expect(onOpen).toHaveBeenLastCalledWith(
       crowdedSessions.map((item) => item.id),
       true,
@@ -382,21 +397,14 @@ describe("session recovery navigation", () => {
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual(["Clear recovery list (2)"]);
     expect(rows[0].getAttribute("aria-description")).toContain("history is kept");
   });
-  it("states the Open all scope in the info popover, including entries hidden by the filter", async () => {
-    const info = async () => {
-      await act(async () => {
-        container.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click();
-      });
-      return document.body.textContent ?? "";
-    };
-    expect(container.textContent).not.toContain("Open all opens all");
-    expect(await info()).toContain("Open all opens all 2 recovered sessions.");
-    expect(await info()).not.toContain("Open all opens all");
+  it("labels the primary action with what the filter shows, not everything", async () => {
+    expect(container.textContent).toContain("Open all (2)");
     const finished = [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }];
     render([], recovery, [{ ...sessions[0], busy: false, blocks: finished }, sessions[1]]);
-    expect(await info()).toContain(
-      "Open all opens all 2 recovered sessions, including 1 not shown here.",
-    );
+    expect(container.textContent).toContain("Open shown (1)");
+    expect(container.textContent).not.toContain("Open all (2)");
+    await chooseMore("Open all (2)");
+    expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], false);
   });
   it("hides the filter when it would not separate anything and defaults to every entry", async () => {
     const finished = {

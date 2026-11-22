@@ -94,7 +94,7 @@ export function AccentColorPicker({
           width={248}
           flow="scroll"
           onDismiss={() => setOpen(false)}
-          className="px-2 pb-2"
+          variant="compact"
         >
           <ColorPickerPopover value={value ?? ACCENT_COLOR_PRESETS[0]} onChange={onChange} />
         </Popover>

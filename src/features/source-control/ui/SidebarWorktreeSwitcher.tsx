@@ -302,8 +302,7 @@ export function SidebarWorktreeSwitcher({
                 tooltipWhen="overflow"
               >
                 <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                  {t("Create worktree ")}
-                  {createName}
+                  {t("Create worktree {p0}", { p0: createName })}
                 </Text>
               </Button>
             </div>

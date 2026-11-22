@@ -48,7 +48,7 @@ export function ModelOrderSettings({ machineId, supported }: ModelOrderSettingsP
   if (!supported || !machineId)
     return (
       <SettingsFeedback state="error">
-        {t("Model routing is not available on this Host.")}
+        {t("Background work is not available on this Host.")}
       </SettingsFeedback>
     );
   return <OrderSettingsLoader key={machineId} machineId={machineId} />;

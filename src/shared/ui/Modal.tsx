@@ -24,7 +24,10 @@ import { Button } from "./Button";
 import { InlineMessage } from "./InlineError";
 import { Maximize2, Minimize2 } from "./icons";
 
-export type ModalSize = "sm" | "md" | "lg" | "xl" | "full";
+export type ModalSize = "sm" | "md" | "lg" | "xl" | "full" | "settings";
+
+/** `auto` fits the content; `tall` is a fixed working height; `fill` takes the window minus the margins. */
+export type ModalHeight = "auto" | "tall" | "fill";
 
 const WIDTH: Record<ModalSize, string> = {
   sm: "w-[min(420px,calc(100vw-24px))]",
@@ -33,7 +36,21 @@ const WIDTH: Record<ModalSize, string> = {
   /** Wide workbench views (a full graph, a large table) that are not the whole window. */
   xl: "w-[min(1100px,calc(100vw-48px))]",
   full: "w-[calc(100vw-24px)]",
+  settings: "w-[min(88rem,calc(100vw-24px))]",
 };
+
+const HEIGHT: Record<ModalHeight, string> = {
+  auto: "",
+  tall: "h-[min(760px,85dvh)]",
+  fill: "h-[calc(100dvh-32px)]",
+};
+
+/** Settings keeps one geometry for every page; only `maximized` and the end-edge peek change it. */
+const SETTINGS_HEIGHT = "h-[min(60rem,calc(100dvh-32px))]";
+const SETTINGS_FRAME = "[--modal-frame-color:var(--ui-dialog-frame)]";
+const SETTINGS_PEEK_WIDTH = "w-[min(380px,100vw)]";
+/** The `minimalHeader` close button's inset from the corner, and the room content leaves for it. */
+const MINIMAL_CLOSE_VARS = "[--modal-close-inset:0.75rem] [--modal-close-clearance:2.75rem]";
 
 /** Dialog chrome is shared by centered, native-window and non-modal sheet surfaces. */
 export const DIALOG_HEADER_CLASS_NAME = "px-4 pt-2 pb-1";
@@ -53,6 +70,7 @@ const TOP: Record<ModalSize, string> = {
   lg: "top-[8%]",
   xl: "top-[6%]",
   full: "inset-bs-4",
+  settings: "top-[8%]",
 };
 
 /**
@@ -92,14 +110,26 @@ type Props = {
   description?: string;
   /** Optional line above the title naming what the dialog acts on (project, file, session). */
   context?: ReactNode;
+  /**
+   * Width. `settings` is the one geometry of the settings windows (88rem x 60rem, the shared
+   * frame color); with `placement="end"` it is the narrow peek panel.
+   */
   size?: ModalSize;
-  /** Keeps the accessible title while letting focused content own the visual hierarchy. */
+  /** `auto` (default) fits the content; `tall` a fixed working height; `fill` nearly the window height. */
+  height?: ModalHeight;
+  /** Fills the window (minus margins) without the Full screen button; the owner toggles it. */
+  maximized?: boolean;
+  /**
+   * Keeps the accessible title while letting focused content own the visual hierarchy. The close
+   * button floats at the inline-end corner; content that runs under it pads with
+   * `pe-(--modal-close-clearance)` and aligns to `--modal-close-inset`.
+   */
   minimalHeader?: boolean;
-  /** Extra classes on the panel (fixed height, etc). */
+  /** Extra classes on the panel; size and height come from `size` and `height`. */
   className?: string;
   /** `workspace-panel` gives workspace dialogs an opaque canvas shared by header and body. */
   surface?: "floating" | "workspace-panel";
-  /** Keep taller dialogs inside the viewport, scrolling their content. */
+  /** Keep taller dialogs inside the viewport, scrolling their content. Off: a top-anchored palette capped at 80% of the window. */
   fitViewport?: boolean;
   /**
    * Side detail surface with the same overlay, focus and native popup owner. `bottom` is a
@@ -167,7 +197,9 @@ export function ModalPanel({
   title,
   description,
   context,
-  size = "md",
+  size: requestedSize = "md",
+  height = "auto",
+  maximized = false,
   minimalHeader = false,
   className,
   surface,
@@ -241,6 +273,13 @@ export function ModalPanel({
   const sheet = placement === "end";
   const bottom = placement === "bottom";
   const workspacePanel = surface === "workspace-panel";
+  const size = maximized ? "full" : requestedSize;
+  const settings = requestedSize === "settings";
+  const heightClass = maximized
+    ? HEIGHT.fill
+    : settings && height === "auto"
+      ? SETTINGS_HEIGHT
+      : HEIGHT[height];
   const expandLabel = t(expanded ? "Restore window" : "Full screen");
   const headerActions =
     toolbar || expandable ? (
@@ -278,7 +317,7 @@ export function ModalPanel({
                 : expanded
                   ? "relative z-[1] h-full w-full"
                   : sheet
-                    ? "relative z-[1] ms-auto h-full w-[min(880px,100vw)]"
+                    ? `relative z-[1] ms-auto h-full ${settings ? SETTINGS_PEEK_WIDTH : "w-[min(880px,100vw)]"}`
                     : bottom
                       ? "relative z-[1] mx-auto w-full max-w-4xl"
                       : fitViewport
@@ -304,14 +343,16 @@ export function ModalPanel({
               onMouseDown={(event) => event.stopPropagation()}
               {...surfaceAttributes(
                 { variant: workspacePanel ? undefined : surface },
-                `relative isolate flex flex-col overflow-hidden border-[color:var(--modal-frame-color,var(--ui-pane-border))] shadow-(--ui-elevation-floating) ${workspacePanel ? "bg-(--ui-surface-panel)" : ""} ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`,
+                `relative isolate flex flex-col overflow-hidden border-[color:var(--modal-frame-color,var(--ui-pane-border))] shadow-(--ui-elevation-floating) ${workspacePanel ? "bg-(--ui-surface-panel)" : ""} ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${heightClass} ${fitViewport ? "max-h-[calc(100dvh-32px)]" : "max-h-[80dvh]"}`} ${settings ? SETTINGS_FRAME : ""} ${minimalHeader ? MINIMAL_CLOSE_VARS : ""} ${className ?? ""}`,
               )}
             >
               {workspacePanel ? null : <GlassBackdrop />}
               <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
                 <PanelHeader
                   className={
-                    minimalHeader ? "absolute top-3 right-3 z-[2]" : DIALOG_HEADER_CLASS_NAME
+                    minimalHeader
+                      ? "absolute top-(--modal-close-inset) inset-e-(--modal-close-inset) z-[2]"
+                      : DIALOG_HEADER_CLASS_NAME
                   }
                   title={title}
                   titleId={titleId}

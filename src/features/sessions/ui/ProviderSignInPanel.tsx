@@ -3,6 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 import { useT } from "../../../shared/i18n";
 import type { HarnessId } from "../model/session";
 import { HARNESS_TITLE } from "../model/session";
@@ -69,11 +70,11 @@ export function ProviderSignInPanel({
           ? t("Signed in to {p0}", { p0: title })
           : (idleTitle ?? t("Authentication required"))}
       </Heading>
-      <Text as="p" size="micro" tone="secondary" className="mt-1 max-w-56">
-        {complete
-          ? (completeDescription ?? t("You can retry your last message now."))
-          : t("Sign in to continue using {p0}.", { p0: title })}
-      </Text>
+      {complete ? (
+        <Text as="p" size="micro" tone="secondary" className="mt-1 max-w-56">
+          {completeDescription ?? t("You can retry your last message now.")}
+        </Text>
+      ) : null}
       <Button
         reserveLabels={[t("Waiting for browser…")]}
         variant="primary"
@@ -82,6 +83,7 @@ export function ProviderSignInPanel({
         className="mt-4"
         disabled={state === "running" || (complete && !onComplete)}
         loading={state === "running"}
+        loadingLabel={t("Waiting for browser…")}
         startIcon={complete ? <Check className="icon-sm" aria-hidden /> : undefined}
         onClick={complete && onComplete ? onComplete : onSignIn}
       >
@@ -134,9 +136,9 @@ export function ProviderSignInPanel({
         </div>
       ) : null}
       {state === "error" && error ? (
-        <Text as="p" size="caption" tone="danger" className="mt-2.5 max-w-60" role="status">
+        <Alert tone="danger" className="mt-2.5 max-w-60">
           {error}
-        </Text>
+        </Alert>
       ) : null}
     </div>
   );

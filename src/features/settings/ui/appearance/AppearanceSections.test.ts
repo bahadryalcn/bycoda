@@ -13,6 +13,10 @@ vi.mock("./sections/BackgroundSection", () => ({
   BackgroundSection: () =>
     createElement("div", { id: "setting-chat-background" }, "Background setting"),
 }));
+vi.mock("./sections/ChatSection", () => ({
+  ChatSection: ({ onOpenBackground }: { onOpenBackground: () => void }) =>
+    createElement("button", { id: "setting-transcript-surface", onClick: onOpenBackground }, "Chat setting"),
+}));
 vi.mock("./sections/InterfaceSection", () => ({
   InterfaceSection: () =>
     createElement("div", { id: "setting-interface-scale" }, "Interface setting"),
@@ -60,9 +64,9 @@ afterEach(() => {
   container.remove();
 });
 
-it("renders five sections and keeps hidden controls mounted across tab switches", () => {
+it("renders six sections and keeps hidden controls mounted across tab switches", () => {
   render();
-  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(5);
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(6);
   act(() => tab("Typography").click());
   const input = container.querySelector<HTMLButtonElement>("#setting-terminal-font")!;
   act(() => input.click());
@@ -84,4 +88,11 @@ it("switches to a search target in a hidden section", () => {
       ?.closest('[role="tabpanel"]')
       ?.hasAttribute("hidden"),
   ).toBe(false);
+});
+
+it("shows the Background tab from the Chat tab's backdrop link", () => {
+  render();
+  act(() => tab("Chat").click());
+  act(() => container.querySelector<HTMLButtonElement>("#setting-transcript-surface")!.click());
+  expect(tab("Background").getAttribute("aria-selected")).toBe("true");
 });

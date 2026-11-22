@@ -473,9 +473,10 @@ export function ServersView({
                   width={280}
                   kind="dialog"
                   aria-label={t("Server filters")}
+                  variant="panel"
                   onDismiss={() => setFiltersOpen(false)}
                 >
-                  <div className="flex flex-col gap-3 p-3">
+                  <div className="flex flex-col gap-3">
                     <SearchableSelect
                       hideLabel
                       label={t("Tags")}
@@ -942,6 +943,7 @@ export function ServersView({
           width={248}
           kind="dialog"
           aria-label={t("Server color")}
+          variant="panel"
           onDismiss={() => setColorTarget(undefined)}
         >
           <ServerColorPopover
@@ -991,11 +993,12 @@ export function ServersView({
           width={280}
           kind="dialog"
           aria-label={t("Delete {p0}?", { p0: deleteTarget.server.name })}
+          variant="panel"
           onDismiss={() => {
             if (!deleting) setDeleteTarget(undefined);
           }}
         >
-          <Text as="div" size="body" tone="inherit" className="flex flex-col gap-3 p-3">
+          <Text as="div" size="body" tone="inherit" className="flex flex-col gap-3">
             <Text as="p" size="inherit" tone="inherit" weight="medium">
               {t("Delete {p0}?", { p0: deleteTarget.server.name })}
             </Text>

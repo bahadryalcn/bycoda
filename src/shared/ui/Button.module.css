@@ -407,6 +407,16 @@
   ) {
   color: var(--text-secondary);
 }
+/* Inside an assistant reply a neutral quiet button reads the chrome ink role. */
+:global([data-transcript-reply])
+  .control[data-button-tone="neutral"]:is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ):not([data-button-selected], :hover) {
+  color: var(--transcript-ink-chrome, var(--text-secondary));
+}
 .control[data-button-selected][data-button-tone="neutral"] {
   background: var(--ui-surface-selected);
   color: var(--foreground);

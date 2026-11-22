@@ -9,6 +9,7 @@ import {
   asClient,
   bodyText,
   buttonByText,
+  isBlocked,
   clickButton,
   clientMock,
   fieldByLabel,
@@ -251,7 +252,7 @@ describe("AudienceScreen editing a segment", () => {
       for (const box of document.querySelectorAll<HTMLInputElement>("input[type=checkbox]"))
         if (box.checked) box.click();
     });
-    expect(buttonByText("Save segment")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save segment"))).toBe(true);
     expect(bodyText()).toContain("Add at least one condition.");
     expect(mock.lists.save).not.toHaveBeenCalled();
   });

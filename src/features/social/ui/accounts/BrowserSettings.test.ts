@@ -48,7 +48,8 @@ it("starts with the window hidden and no desktop control", async () => {
   await act(async () => undefined);
   expect(get).toHaveBeenCalledWith("a1");
   expect(element.textContent).toContain("Hidden (recommended)");
-  expect(element.textContent).toContain(
+  act(() => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
+  expect(document.body.textContent).toContain(
     "Desktop control runs only when you're away and on another computer.",
   );
   expect(button("Save browser settings")?.disabled).toBe(true);

@@ -146,7 +146,7 @@ export function SshSettings({
     }
   };
   return (
-    <Sheet title={t("SSH settings")} onClose={() => onClose()} size="48rem">
+    <Sheet title={t("SSH settings")} onClose={() => onClose()} size="lg">
       <div className="flex flex-col gap-4">
         <Tabs id={panelId} value={securityPanel} onValueChange={setSecurityPanel}>
           <TabList label={t("SSH settings sections")}>

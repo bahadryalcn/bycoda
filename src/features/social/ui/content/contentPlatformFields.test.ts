@@ -40,6 +40,12 @@ function props(
   return { account: account(platform), value: {}, media: [], disabled: false, onChange, ...patch };
 }
 
+/** Opens the info popover and returns the page text, popover content included. */
+function helpText() {
+  act(() => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
+  return document.body.textContent ?? "";
+}
+
 function render(node: ReactNode) {
   act(() => root.render(node));
 }
@@ -100,7 +106,7 @@ describe("MetaFields", () => {
   it("shows only the attachment hint for Instagram", () => {
     render(createElement(MetaFields, props("instagram")));
     expect(element.querySelector("select")).toBeNull();
-    expect(element.textContent).toContain("Attach either one video or up to four images.");
+    expect(helpText()).toContain("Attach either one video or up to four images.");
   });
 
   it("defaults Facebook to a page post and offers the explicit Reel choice", () => {
@@ -310,7 +316,7 @@ describe("RedditFields", () => {
 describe("XFields and PlatformFields", () => {
   it("explains the X media rule", () => {
     render(createElement(XFields));
-    expect(element.textContent).toContain("X posts take either up to four images or one video.");
+    expect(helpText()).toContain("X posts take either up to four images or one video.");
   });
 
   it("shows the Reel fields only for a Facebook account set to Reel", () => {
@@ -333,7 +339,7 @@ describe("XFields and PlatformFields", () => {
 
   it("picks the field set that matches the account platform", () => {
     render(createElement(PlatformFields, props("x")));
-    expect(element.textContent).toContain("X posts take either up to four images or one video.");
+    expect(helpText()).toContain("X posts take either up to four images or one video.");
     render(createElement(PlatformFields, props("tiktok", { creator })));
     expect(element.textContent).toContain("TikTok");
     expect(element.querySelector('select[aria-label="Who can see this video"]')).not.toBeNull();

@@ -81,7 +81,7 @@ it("blocks duplicate picks while pending and keeps errors retryable", async () =
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it("lists No project first, picks the ~ sentinel and filters it with the search", async () => {
+it("lists projects before No project, picks the ~ sentinel and filters it with the search", async () => {
   const onPick = vi.fn();
   const onClose = vi.fn();
   await act(async () =>
@@ -94,9 +94,10 @@ it("lists No project first, picks the ~ sentinel and filters it with the search"
     ),
   );
   const options = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')];
-  expect(options()[0]?.textContent).toContain("No project");
+  expect(options()[0]?.textContent).toContain("current");
+  expect(options()[1]?.textContent).toContain("No project");
   expect(document.body.textContent).not.toContain("No projects yet");
-  await act(async () => options()[0]!.click());
+  await act(async () => options()[1]!.click());
   expect(onPick).toHaveBeenCalledExactlyOnceWith("~");
   expect(onClose).toHaveBeenCalledOnce();
 });

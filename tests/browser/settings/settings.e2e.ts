@@ -2,24 +2,24 @@ import { test, expect, type Page } from "@playwright/test";
 
 for (const theme of ["dark", "light"])
   for (const width of [1280, 800]) {
-    test(`chat message appearance controls ${theme} ${width}`, async ({ page }) => {
+    test(`transcript view appearance controls ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(
         `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en`,
       );
       await page.getByRole("button", { name: "Search settings", exact: true }).click();
       const search = page.getByRole("combobox", { name: "Search settings", exact: true });
-      await search.fill("AI reply opacity");
-      await expect(page.getByRole("option").first()).toContainText("AI reply opacity");
+      await search.fill("Surface opacity");
+      await expect(page.getByRole("option").first()).toContainText("Surface opacity");
       await search.press("Enter");
       const user = page.getByRole("slider", { name: "Your message opacity" });
-      const reply = page.getByRole("slider", { name: "AI reply opacity" });
-      const preview = page.locator("[data-chat-message-preview]");
+      const reply = page.getByRole("slider", { name: "Surface opacity" });
+      const preview = page.locator("[data-transcript-preview]");
       const neutral = page
         .locator('[data-setting-id="chat-message-color"]')
         .getByRole("radio", { name: "Neutral", exact: true });
       await expect(user).toHaveAttribute("aria-valuenow", "42");
-      await expect(reply).toHaveAttribute("aria-valuenow", "26");
+      await expect(reply).toHaveAttribute("aria-valuenow", "45");
       await preview.scrollIntoViewIfNeeded();
       if (process.env.CHAT_MESSAGE_APPEARANCE_CAPTURE) {
         const directory = "temp/verification/chat-message-appearance";
@@ -30,10 +30,12 @@ for (const theme of ["dark", "light"])
       await reply.press("Home");
       await neutral.click();
       await expect(page.locator("html")).toHaveAttribute("data-chat-message-color", "neutral");
+      await expect(preview).toHaveAttribute("data-chat-message-color", "neutral");
+      await expect(preview).toHaveAttribute("data-transcript-surface", "reply");
       await expect(reply).toHaveAttribute("aria-valuenow", "0");
       await expect(user).toHaveAttribute("aria-valuenow", "100");
       await page.reload();
-      await page.getByRole("tab", { name: "Interface", exact: true }).click();
+      await page.getByRole("tab", { name: "Chat", exact: true }).click();
       await expect(user).toHaveAttribute("aria-valuenow", "100");
       await expect(reply).toHaveAttribute("aria-valuenow", "0");
       await expect(neutral).toBeChecked();

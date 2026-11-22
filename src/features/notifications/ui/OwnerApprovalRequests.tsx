@@ -201,7 +201,7 @@ function InboxApprovalDialog({
       minimalHeader
       onClose={onClose}
     >
-      <div className="me-6">
+      <div className="me-(--modal-close-clearance)">
         <ApprovalRequest
           title={request.title}
           detail={request.message}

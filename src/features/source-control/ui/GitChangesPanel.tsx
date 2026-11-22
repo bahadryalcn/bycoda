@@ -1504,7 +1504,7 @@ function ChangedFiles({
             if (reason === "escape") filterAnchor.focus({ preventScroll: true });
             setFilterAnchor(null);
           }}
-          className="p-3"
+          variant="panel"
         >
           <SearchInput
             type="search"

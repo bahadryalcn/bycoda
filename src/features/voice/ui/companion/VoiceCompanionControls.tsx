@@ -3,8 +3,8 @@ import {
   MessageSquare,
   Mic,
   MicOff,
-  SkipForward,
-  Square,
+  Hand,
+  PhoneOff,
   Volume2,
   VolumeX,
   X,
@@ -96,15 +96,15 @@ export function VoiceCompanionControls({
         </Button>
         {status !== "idle" && (
           <Button
-            iconOnly
-            shape="pill"
-            size="lg"
-            tone="danger"
-            label={t("Disconnect voice")}
-            onClick={onClose}
-          >
-            <Square className="icon-sm" />
-          </Button>
+          shape="pill"
+          size="lg"
+          tone="danger"
+          aria-label={t("Disconnect voice")}
+          startIcon={<PhoneOff className="icon-sm" />}
+          onClick={onClose}
+        >
+          {t("Disconnect")}
+        </Button>
         )}
       </div>
     );
@@ -136,7 +136,7 @@ export function VoiceCompanionControls({
           {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
         </Button>
         <Button iconOnly shape="pill" size="lg" label={t("Stop speaking")} onClick={onSilence}>
-          <SkipForward className="icon-sm" />
+          <Hand className="icon-sm" />
         </Button>
         <Button
           iconOnly
@@ -149,14 +149,14 @@ export function VoiceCompanionControls({
           {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
         </Button>
         <Button
-          iconOnly
           shape="pill"
           size="lg"
           tone="danger"
-          label={t("Disconnect voice")}
+          aria-label={t("Disconnect voice")}
+          startIcon={<PhoneOff className="icon-sm" />}
           onClick={onClose}
         >
-          <Square className="icon-sm" />
+          {t("Disconnect")}
         </Button>
       </div>
     </div>

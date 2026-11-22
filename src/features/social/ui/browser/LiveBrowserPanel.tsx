@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { useLiveBrowserView, type LiveBrowserViewStatus } from "../../hooks/useLiveBrowserView";
@@ -73,9 +74,13 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
         </Button>
       </header>
       <div className="flex flex-wrap items-center gap-2">
-        <Text as="p" tone={status === "error" ? "danger" : "secondary"}>
-          {message[status]}
-        </Text>
+        {status === "live" ? (
+          <InfoPopover className="shrink-0">{message.live}</InfoPopover>
+        ) : (
+          <Text as="p" tone={status === "error" ? "danger" : "secondary"}>
+            {message[status]}
+          </Text>
+        )}
         {status === "error" ? (
           <Button type="button" variant="secondary" size="sm" onClick={retry}>
             {t("Retry")}

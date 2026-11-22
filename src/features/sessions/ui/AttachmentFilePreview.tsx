@@ -249,8 +249,7 @@ export function AttachmentFilePreview({
       onClose={onClose}
       size="lg"
       fitViewport
-      surface="floating"
-      className={fitContent ? "" : "h-[min(760px,85dvh)]"}
+      height={fitContent ? "auto" : "tall"}
     >
       <div className={fitContent ? "min-h-0" : "h-full min-h-0"}>
         {mediaKind(attachment.name) ? (

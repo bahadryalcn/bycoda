@@ -33,10 +33,8 @@ export function DelegationNoticeRow({ block }: { block: Block }) {
       {sections.map((section, index) => (
         <Disclosure
           key={`${section.runId}:${index}`}
-          variant="plain"
-          size="sm"
-          textSize="caption"
-          tone="secondary"
+          variant="step"
+          chevron="end"
           summary={
             <span className="flex min-w-0 items-center gap-2">
               <Text size="inherit" tone="inherit" truncate className="min-w-0">

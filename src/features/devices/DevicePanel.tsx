@@ -1908,6 +1908,7 @@ function DevicePanelSurface({
               setHoveredNode("");
             }
           }}
+          variant="panel"
           className="device-panel-popover bycoda-arc"
           kind="dialog"
           aria-label={surfaceTitle}

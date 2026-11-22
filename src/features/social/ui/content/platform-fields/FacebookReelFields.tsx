@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
-import { Text } from "../../../../../shared/ui/Text";
+import { InlineMessage } from "../../../../../shared/ui/InlineError";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../../shared/ui/NumberField";
@@ -23,12 +23,12 @@ export function FacebookReelFields({ value, media, disabled, onChange }: Platfor
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
       disabled={disabled}
     >
-      <Text as="p" size="caption" tone="muted" leading="inherit" className="content-platform-note">
+      <InlineMessage tone="info" live="off">
         {probe?.durationSeconds
           ? t("Video length {p0} seconds.", { p0: Math.round(probe.durationSeconds) })
           : t("Attach one 9:16 video to continue.")}
         {probe?.width && probe.height ? ` · ${probe.width} × ${probe.height}` : ""}
-      </Text>
+      </InlineMessage>
       <NumberField
         label={t("Video frame rate (fps)")}
         min={REEL_MIN_FPS}

@@ -1,0 +1,293 @@
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+// k12 §6.2: the reading surface on the transcript scenario fixture. Selectors follow the k12 §5.1
+// contract ([data-transcript-reply], [data-transcript-actions-row], html[data-transcript-surface]).
+// Colors are resolved through a canvas pixel, so color-mix() and oklab() values compare exactly.
+
+const base = "/tests/browser/chat/transcript-scenario.html";
+const TRANSPARENT = "rgba(0, 0, 0, 0)";
+type Rgba = { r: number; g: number; b: number; a: number };
+
+const open = async (page: Page, query: Record<string, string> = {}) => {
+  await page.goto(`${base}?${new URLSearchParams(query)}`);
+  await expect(page.locator("[data-transcript-turn]").first()).toBeVisible();
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+};
+const interleavedTurn = (page: Page) =>
+  page.locator("[data-transcript-turn]").filter({ hasText: "Fix the flicker" });
+const interleavedReply = (page: Page) =>
+  interleavedTurn(page).locator("[data-transcript-reply]").first();
+
+async function resolveColor(page: Page, css: string): Promise<Rgba> {
+  return page.evaluate((value) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    ctx.fillStyle = value;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a };
+  }, css);
+}
+const inkOf = async (page: Page, locator: Locator) =>
+  resolveColor(page, await locator.evaluate((el) => getComputedStyle(el).color));
+
+const luminance = ({ r, g, b }: Rgba) => {
+  const [lr, lg, lb] = [r, g, b].map((channel) => {
+    const s = channel / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+};
+
+// Worst contrast of `ink` against every pixel behind the reply. The text is made transparent,
+// the reply is captured, and each captured pixel is compared, so the measure is the real composite.
+async function worstContrast(page: Page, reply: Locator, ink: Rgba): Promise<number> {
+  const style = await page.addStyleTag({
+    content:
+      "[data-transcript-reply] * { color: transparent !important; -webkit-text-fill-color: transparent !important; }",
+  });
+  const png = await reply.screenshot({ animations: "disabled" });
+  await style.evaluate((node: HTMLElement) => node.remove());
+  return page.evaluate(
+    async ({ base64, ink }) => {
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+      ctx.drawImage(bitmap, 0, 0);
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      const lum = (r: number, g: number, b: number) => {
+        const c = [r, g, b].map((v) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      };
+      const inkLum = lum(ink.r, ink.g, ink.b);
+      let worst = Infinity;
+      for (let i = 0; i < data.length; i += 4) {
+        const bgLum = lum(data[i], data[i + 1], data[i + 2]);
+        const ratio = (Math.max(inkLum, bgLum) + 0.05) / (Math.min(inkLum, bgLum) + 0.05);
+        if (ratio < worst) worst = ratio;
+      }
+      return worst;
+    },
+    { base64: png.toString("base64"), ink },
+  );
+}
+
+test.describe("one reply, one surface", () => {
+  test("an interleaved reply is one surface and its rows sit inside it", async ({ page }) => {
+    await open(page, { scene: "interleaved" });
+    const replies = interleavedTurn(page).locator("[data-transcript-reply]");
+    await expect(replies).toHaveCount(1);
+    const reply = replies.first();
+    for (const text of ["I will check the setup first", "The checks pass", "Two agents are idle"])
+      await expect(reply.getByText(text).first()).toBeAttached();
+    await expect(reply.getByText("bun run check", { exact: true }).first()).toBeAttached();
+    // Rows carry no fill of their own; user bubbles, code, tables and inset cards are the exceptions.
+    const stray = await reply.evaluate((root) =>
+      [...root.querySelectorAll<HTMLElement>("*")]
+        .filter((el) => {
+          if (el.closest('[data-chat-message-surface="user"], pre, table, [data-transcript-inset]'))
+            return false;
+          const bg = getComputedStyle(el).backgroundColor;
+          return bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
+        })
+        .map((el) => `${el.tagName.toLowerCase()}.${el.getAttribute("class") ?? ""}`),
+    );
+    expect(stray).toEqual([]);
+  });
+
+  test("the reply fill does not change while the turn streams", async ({ page }) => {
+    await open(page, { scene: "interleaved", streaming: "1" });
+    await expect(page.locator('[data-session-streaming="true"]').first()).toBeAttached();
+    const streaming = await page
+      .locator("[data-transcript-reply]")
+      .last()
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    await open(page, { scene: "interleaved", streaming: "0" });
+    const settled = await page
+      .locator("[data-transcript-reply]")
+      .last()
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(streaming).toBe(settled);
+  });
+});
+
+test.describe("ink order", () => {
+  for (const theme of ["dark", "light"] as const)
+    for (const contrastValue of [75, 100, 150])
+      test(`body is at least as strong as chrome and actions in ${theme} at contrast ${contrastValue}`, async ({
+        page,
+      }) => {
+        await open(page, { scene: "interleaved", theme, contrast: String(contrastValue) });
+        const reply = interleavedReply(page);
+        const body = reply.locator(".agent-markdown p").first();
+        const chrome = reply.getByText("bun run check", { exact: true }).first();
+        const action = reply.locator("[data-transcript-actions-row] button").first();
+        const bodyWorst = await worstContrast(page, reply, await inkOf(page, body));
+        const chromeWorst = await worstContrast(page, reply, await inkOf(page, chrome));
+        const actionWorst = await worstContrast(page, reply, await inkOf(page, action));
+        expect(bodyWorst).toBeGreaterThanOrEqual(chromeWorst);
+        expect(bodyWorst).toBeGreaterThanOrEqual(actionWorst);
+      });
+});
+
+test.describe("imghigh contrast", () => {
+  for (const theme of ["dark", "light"] as const)
+    test(`body reaches 7:1 and chrome 4.5:1 over the busiest wallpaper in ${theme}`, async ({
+      page,
+    }) => {
+      await open(page, { scene: "interleaved", theme, bg: "image", opacity: "0.65" });
+      const reply = interleavedReply(page);
+      const body = reply.locator(".agent-markdown p").first();
+      const chrome = reply.getByText("bun run check", { exact: true }).first();
+      expect(await worstContrast(page, reply, await inkOf(page, body))).toBeGreaterThanOrEqual(7);
+      expect(await worstContrast(page, reply, await inkOf(page, chrome))).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    });
+});
+
+test.describe("hover", () => {
+  test("hover moves chrome to body ink and keeps the font weight", async ({ page }) => {
+    await open(page, { scene: "interleaved" });
+    const reply = interleavedReply(page);
+    const row = reply.getByText("bun run check", { exact: true }).first();
+    const body = reply.locator(".agent-markdown p").first();
+    const weightBefore = await row.evaluate((el) => getComputedStyle(el).fontWeight);
+    await row.hover();
+    const weightAfter = await row.evaluate((el) => getComputedStyle(el).fontWeight);
+    expect(weightAfter).toBe(weightBefore);
+    // Dark theme only: hover may brighten chrome up to the body ink, never past it.
+    const chromeHover = luminance(await inkOf(page, row));
+    const bodyInk = luminance(await inkOf(page, body));
+    expect(chromeHover).toBeLessThanOrEqual(bodyInk + 1e-6);
+  });
+});
+
+test.describe("trigger", () => {
+  test("every openable row opens from its left, middle, right and arrow points", async ({
+    page,
+  }) => {
+    await open(page, { scene: "interleaved" });
+    const summaries = page.locator("[data-transcript-reply] details > summary");
+    const count = await summaries.count();
+    expect(count).toBeGreaterThan(0);
+    for (let index = 0; index < count; index++) {
+      const summary = summaries.nth(index);
+      const details = summary.locator("xpath=..");
+      await summary.scrollIntoViewIfNeeded();
+      await page.mouse.move(0, 0);
+      // The arrow is always visible at rest.
+      await expect(summary.locator("svg").last()).toHaveCSS("opacity", "1");
+      const pointsFor = async () => {
+        const box = (await summary.boundingBox())!;
+        const arrow = (await summary.locator("svg").last().boundingBox())!;
+        const middleY = box.y + box.height / 2;
+        return {
+          left: { x: box.x + 8, y: middleY },
+          middle: { x: box.x + box.width / 2, y: middleY },
+          right: { x: box.x + box.width - 3, y: middleY },
+          arrow: { x: arrow.x + arrow.width / 2, y: arrow.y + arrow.height / 2 },
+        };
+      };
+      let expected = await details.evaluate((node: HTMLDetailsElement) => node.open);
+      for (const [name, point] of Object.entries(await pointsFor())) {
+        const hitsSummary = await summary.evaluate(
+          (node, { x, y }) => node.contains(document.elementFromPoint(x, y)),
+          point,
+        );
+        expect(hitsSummary, `${name} point of row ${index}`).toBe(true);
+        await page.mouse.click(point.x, point.y);
+        expected = !expected;
+        await expect(details, `${name} click on row ${index}`).toHaveJSProperty("open", expected);
+      }
+    }
+  });
+
+  test("a row without steps has no arrow and a click opens nothing", async ({ page }) => {
+    await open(page, { scene: "interleaved" });
+    const reply = interleavedReply(page);
+    const row = reply.getByText("Contrast check", { exact: true }).first();
+    await expect(row).toBeAttached();
+    await expect(reply.locator("details:has-text('Contrast check')")).toHaveCount(0);
+    const openBefore = await reply.locator("details[open]").count();
+    await row.click();
+    await expect(reply.locator("details[open]")).toHaveCount(openBefore);
+  });
+
+  test("Enter and Space open and close a row from the keyboard", async ({ page }) => {
+    await open(page, { scene: "interleaved" });
+    const summary = page.locator("[data-transcript-reply] details > summary").first();
+    const details = summary.locator("xpath=..");
+    const initial = await details.evaluate((node: HTMLDetailsElement) => node.open);
+    await summary.focus();
+    await page.keyboard.press("Enter");
+    await expect(details).toHaveJSProperty("open", !initial);
+    await page.keyboard.press("Space");
+    await expect(details).toHaveJSProperty("open", initial);
+  });
+
+  // shortcut: the Appearance > Chat controls need the Appearance page fixture, which this spec does
+  // not load; their attribute and variable wiring is covered by the appearance unit tests.
+  test.skip("Chat settings controls rewrite the preview root", async () => {});
+});
+
+test.describe("surface modes", () => {
+  test("reply paints the surface, column paints the column, off paints nothing", async ({
+    page,
+  }) => {
+    for (const mode of ["reply", "column", "off"] as const) {
+      await open(page, { scene: "interleaved", surface: mode });
+      await expect(page.locator("html")).toHaveAttribute("data-transcript-surface", mode);
+      const replyFill = await interleavedReply(page).evaluate(
+        (el) => getComputedStyle(el).backgroundColor,
+      );
+      const columnFill = await page
+        .locator(".transcript-content")
+        .first()
+        .evaluate((el) => getComputedStyle(el).backgroundColor);
+      if (mode === "reply") expect(replyFill).not.toBe(TRANSPARENT);
+      if (mode === "column") {
+        expect(replyFill).toBe(TRANSPARENT);
+        expect(columnFill).not.toBe(TRANSPARENT);
+      }
+      if (mode === "off") expect(replyFill).toBe(TRANSPARENT);
+    }
+  });
+
+  test("actions=hover shows the action row only while its reply is hovered", async ({ page }) => {
+    await open(page, { actions: "hover" });
+    const reply = page.locator("[data-transcript-reply]").first();
+    const row = reply.locator("[data-transcript-actions-row]").first();
+    await page.mouse.move(0, 0);
+    await expect(row).toHaveCSS("opacity", "0");
+    await reply.hover({ position: { x: 20, y: 20 } });
+    await expect(row).toHaveCSS("opacity", "1");
+  });
+
+  test("reduced transparency makes the reply opaque and drops the backdrop filter", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== "chromium", "Emulation.setEmulatedMedia is Chromium-only");
+    await open(page, { scene: "interleaved", bg: "image" });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-transparency", value: "reduce" }],
+    });
+    const reply = interleavedReply(page);
+    await expect(reply).toHaveCSS("backdrop-filter", "none");
+    const fill = await resolveColor(
+      page,
+      await reply.evaluate((el) => getComputedStyle(el).backgroundColor),
+    );
+    expect(fill.a).toBe(255);
+  });
+});

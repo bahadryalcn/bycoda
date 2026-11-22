@@ -868,6 +868,39 @@ test("typography and radius-size also read rem lengths in CSS and arbitrary clas
   );
 });
 
+test("transcript-base-ink owns the --transcript-ink-* and --transcript-surface-* definitions", () => {
+  const ink = (file, text) => rulesOf(file, text).includes("transcript-base-ink");
+  const roles = ".a { --transcript-ink-body: var(--ui-text-secondary); }";
+  assert.ok(ink("src/features/sessions/ui/Transcript.css", roles));
+  assert.ok(ink("src/styles/index.css", `${indexCss}
+:root { --transcript-surface-fill: red; }`));
+  assert.ok(!ink("src/styles/transcript-surface.css", `:root { --transcript-ink-body: red; }`));
+});
+
+test("transcript-assistant-surface and transcript-reply-fill guard the transcript surface", () => {
+  const file = "src/features/sessions/ui/AgentTranscriptActivity.tsx";
+  const rules = (text, name = file) => rulesOf(name, text);
+  assert.ok(
+    rules('<div data-chat-message-surface="assistant">x</div>').includes(
+      "transcript-assistant-surface",
+    ),
+  );
+  assert.ok(!rules('<div data-chat-message-surface="user">x</div>').includes("transcript-assistant-surface"));
+  assert.ok(rules('<div className="p-2 bg-(--ui-surface)">x</div>').includes("transcript-reply-fill"));
+  assert.ok(rules('<div className="backdrop-blur-sm">x</div>').includes("transcript-reply-fill"));
+  assert.ok(
+    !rules('<div data-transcript-reply className="bg-(--ui-surface)">x</div>').includes(
+      "transcript-reply-fill",
+    ),
+  );
+  assert.ok(!rules('<div className="bg-transparent">x</div>').includes("transcript-reply-fill"));
+  assert.ok(
+    !rules('<div className="bg-(--ui-surface)">x</div>', "src/features/chat/ui/X.tsx").includes(
+      "transcript-reply-fill",
+    ),
+  );
+});
+
 test("transcript-base-ink flags content-base text color in transcript CSS only", () => {
   const sessions = "src/features/sessions/ui/Transcript.css";
   const ink = (file, text) => rulesOf(file, text).includes("transcript-base-ink");

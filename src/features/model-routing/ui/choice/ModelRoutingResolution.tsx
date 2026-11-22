@@ -4,6 +4,7 @@ import type {
   ModelRoutingRole,
   ModelRoutingTarget,
 } from "../../../../shared/model/host-contracts/model-routing";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { Text } from "../../../../shared/ui/Text";
 import { ModelLabel } from "../../../sessions/public/ModelLabel";
 import { useModelRoutingPreview } from "../../model/useModelRoutingPreview";
@@ -47,7 +48,12 @@ export function ModelRoutingResolution({
       ) : result.reason === "notConfigured" ? (
         t("No model order configured. Uses the item's own model.")
       ) : (
-        t("No eligible model right now. Runs wait for an eligible model.")
+        <span className="inline-flex items-center gap-1">
+          {t("No eligible model right now.")}
+          <InfoPopover label={t("What happens now")}>
+            {t("Runs wait for an eligible model.")}
+          </InfoPopover>
+        </span>
       )}
     </Text>
   );

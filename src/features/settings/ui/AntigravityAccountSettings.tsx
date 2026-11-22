@@ -7,7 +7,7 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useContext, useRef, useState, useSyncExternalStore } from "react";
+import { useContext, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   getHarnessAvailabilitySnapshot,
   isHarnessAvailable,
@@ -18,6 +18,16 @@ import { discoverAntigravityModels } from "../../../integrations/harness/provide
 import { setHarnessModels } from "../../sessions/public/models";
 import { Group } from "../../../shared/ui/settings";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
+
+const SLOT_PASSTHROUGH = { p0: "{p0}", p1: "{p1}", p2: "{p2}", p3: "{p3}" };
+
+/** Fills `{pN}` slots of an already translated sentence with nodes, keeping word order per locale. */
+function withSlots(sentence: string, slots: ReactNode[]): ReactNode[] {
+  return sentence.split(/(\{p\d\})/).map((part) => {
+    const slot = /^\{p(\d)\}$/.exec(part);
+    return slot ? (slots[Number(slot[1])] ?? part) : part || null;
+  });
+}
 
 export function AntigravityAccountSettings({ embedded = false }: { embedded?: boolean }) {
   useLocale();
@@ -77,31 +87,40 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
         </p>
         <InfoPopover className="shrink-0" width={360}>
           <p>
-            {t("Run ")}
-            <Code tone="primary" className="select-text">
-              {"agy"}
-            </Code>
-            {t(
-              " in a terminal on that computer and complete Google sign-in in your browser. Then check again here. Installation and model discovery do not confirm account sign-in.",
+            {withSlots(
+              t(
+                "Run {p0} in a terminal on that computer and complete Google sign-in in your browser. Then check again here. Installation and model discovery do not confirm account sign-in.",
+                SLOT_PASSTHROUGH,
+              ),
+              [
+                <Code key="agy" tone="primary" className="select-text">
+                  {"agy"}
+                </Code>,
+              ],
             )}
           </p>
           <p>
-            {PRODUCT_IDENTITY.displayName}
-            {t(
-              " uses the shared Antigravity CLI account on this computer. Separate named Antigravity accounts cannot currently be added here. To change the shared account, run ",
-            )}
-            <Code>{"/logout"}</Code>
-            {t(
-              " inside agy and complete sign-in again. This affects other Antigravity sessions on the same computer.",
+            {withSlots(
+              t(
+                "{p0} uses the shared Antigravity CLI account on this computer. Separate named Antigravity accounts cannot currently be added here. To change the shared account, run {p1} inside agy and complete sign-in again. This affects other Antigravity sessions on the same computer.",
+                SLOT_PASSTHROUGH,
+              ),
+              [PRODUCT_IDENTITY.displayName, <Code key="logout">{"/logout"}</Code>],
             )}
           </p>
           <p>
-            {t("For a Gemini API key, set ")}
-            <Code>{"modelProvider"}</Code>
-            {t(" to")} <Code>{"gemini"}</Code>
-            {t(" in")} <Code>{"~/.gemini/antigravity-cli/settings.json"}</Code>
-            {t(" and provide")} <Code>{"GEMINI_API_KEY"}</Code>
-            {t(" in the CLI environment.")}
+            {withSlots(
+              t(
+                "For a Gemini API key, set {p0} to {p1} in {p2} and provide {p3} in the CLI environment.",
+                SLOT_PASSTHROUGH,
+              ),
+              [
+                <Code key="provider">{"modelProvider"}</Code>,
+                <Code key="gemini">{"gemini"}</Code>,
+                <Code key="settings">{"~/.gemini/antigravity-cli/settings.json"}</Code>,
+                <Code key="key">{"GEMINI_API_KEY"}</Code>,
+              ],
+            )}
           </p>
           <p>
             {t(

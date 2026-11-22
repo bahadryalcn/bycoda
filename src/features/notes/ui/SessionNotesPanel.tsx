@@ -412,6 +412,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           kind="dialog"
           aria-label={t("Switch note")}
           onDismiss={() => setListOpen(false)}
+          variant="compact"
           className="session-note-picker"
         >
           <SearchInput

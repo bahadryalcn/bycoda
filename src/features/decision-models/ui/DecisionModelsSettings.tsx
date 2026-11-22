@@ -35,7 +35,7 @@ type BatchTestFailure = { name: string; detail?: string };
 
 type Dialog =
   | { kind: "folder"; modelPath?: string }
-  | { kind: "manual"; prefill?: ManualPrefill; initialMode?: "endpoint" }
+  | { kind: "manual"; prefill?: ManualPrefill }
   | { kind: "custom"; prefill?: CustomPrefill }
   | { kind: "api"; preselectId?: string }
   | { kind: "local" }
@@ -108,7 +108,6 @@ export function DecisionModelsSettings({
   const pick = (path: AddPath) => {
     setTopError(null);
     if (path === "folder") setDialog({ kind: "folder" });
-    else if (path === "service") setDialog({ kind: "manual", initialMode: "endpoint" });
     else if (path === "manual") setDialog({ kind: "manual" });
     else if (path === "local") setDialog({ kind: "local" });
     else if (path === "api") setDialog({ kind: "api" });
@@ -349,7 +348,7 @@ export function DecisionModelsSettings({
             scanning={model.scanning}
           />
         </Disclosure>
-        <Group title={t("Decision routing")}>
+        <Group title={t("Task routing")}>
           {!model.routingLoaded && model.routingError === null ? (
             <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
           ) : null}
@@ -393,7 +392,6 @@ export function DecisionModelsSettings({
         {dialog?.kind === "manual" ? (
           <ManualPathDialog
             prefill={dialog.prefill}
-            initialMode={dialog.initialMode}
             onAdd={(input) => actions.addSource(input)}
             onTest={(id) => actions.testSource(id)}
             onClose={closeDialog}

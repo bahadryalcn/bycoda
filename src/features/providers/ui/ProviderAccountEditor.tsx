@@ -32,7 +32,6 @@ export function ProviderAccountDialog(props: ComponentProps<typeof ProviderAccou
   return (
     <Modal
       size="sm"
-      surface="floating"
       title={t(props.editor.adding ? "Add account" : "Edit account")}
       initialFocus='input[type="text"]'
       onClose={props.onCancel}
@@ -76,8 +75,10 @@ export function ProviderAccountEditor({
       ? t("An account with this name already exists")
       : undefined;
   const incomplete = Boolean(error) || !editor.kind;
+  const blockedReason = error ?? (!editor.kind ? t("Choose Personal or Work.") : undefined);
+  const reason = working ? undefined : blockedReason;
   const actions = (
-    <ModalActions>
+    <ModalActions reason={reason}>
       <Button variant="ghost" disabled={working && !adding} onClick={onCancel}>
         {t("Cancel")}
       </Button>
@@ -88,6 +89,7 @@ export function ProviderAccountEditor({
         tone="accent"
         loading={working}
         disabled={working || incomplete}
+        disabledReason={reason}
         reserveLabels={adding ? [t("Waiting for browser…"), t("Sign in and add")] : undefined}
       >
         {adding ? (working ? t("Waiting for browser…") : t("Sign in and add")) : t("Save")}

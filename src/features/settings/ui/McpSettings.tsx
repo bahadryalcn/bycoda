@@ -408,6 +408,7 @@ function McpConnections({
           anchor={filterAnchor}
           kind="dialog"
           aria-label={t("Filter MCP servers")}
+          variant="panel"
           width={360}
           onDismiss={() => setFiltersOpen(false)}
         >

@@ -43,17 +43,12 @@ export function ProjectNameConflictDialog({
     <Modal
       size="sm"
       title={t("Rename project")}
-      description={`${t('A project named "')}${name}${t('" already exists. Give this one a different name.')}`}
+      description={t("A project named “{p0}” already exists. Give this one a different name.", { p0: name })}
       onClose={onCancel}
       footer={
         <ModalActions>
-          <Button
-            type="button"
-            onClick={onCancel}
-            tooltip={t('Keep "{p0}"', { p0: suggested })}
-            variant="ghost"
-          >
-            {t("Cancel")}
+          <Button type="button" onClick={onCancel} variant="ghost">
+            {t("Keep “{p0}”", { p0: suggested })}
           </Button>
           <Button type="submit" form={formId} variant="primary">
             {t("Rename")}
@@ -69,16 +64,14 @@ export function ProjectNameConflictDialog({
           setError(problem);
           if (!problem) onConfirm(value.trim());
         }}
-        className="flex flex-col gap-3 px-4 pt-2 pb-4"
+        className="flex flex-col gap-3 pt-2 pb-4"
       >
         <Text wrap="anywhere" as="p" size="micro" tone="muted" leading="tight">
           {path}
         </Text>
         <TextField
           label={t("Project name")}
-          hideLabel
           ref={input}
-          aria-label={t("Project name")}
           aria-invalid={error ? true : undefined}
           value={value}
           spellCheck={false}

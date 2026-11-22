@@ -44,7 +44,7 @@ been updated still installs, but shows no progress and cannot cancel.
 then structured LLM sources. It is a routing policy, not a bundled model. With no
 connected source, decision-model requests are unavailable.
 
-Decision routing uses one table, with customized tasks first. Its compact view shows
+Task routing uses one table, with customized tasks first. Its compact view shows
 existing custom routes; expand it to edit all tasks, their source order and
 confidence thresholds. Existing routes stay in place until you save. Clear a
 task's source selection to return it to Automatic. Selected source names appear

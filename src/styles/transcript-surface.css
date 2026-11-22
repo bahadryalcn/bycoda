@@ -1,0 +1,192 @@
+/* Transcript reading surface and ink roles: the single source for --transcript-surface-*,
+   --transcript-ink-* and the reply wrapper paint. Every selector is rooted at
+   :is(html, [data-transcript-preview]) so the Appearance preview runs these exact rules.
+   Nested roots (preview inside html) decide through inherited custom properties, never through
+   ancestor attribute selectors, so the nearest root always wins. */
+
+:is(html, [data-transcript-preview]) {
+  /* One left edge for plain text, row labels, cards and the actions row. */
+  --transcript-gutter: var(--space-4);
+
+  /* Material. messageColor = theme paints the pane ground, so the surface vanishes without art. */
+  --transcript-surface-color: var(--ui-chat-pane-canvas);
+  --transcript-surface-fill: color-mix(
+    in oklab,
+    var(--transcript-surface-color) var(--appearance-transcript-surface-opacity, 45%),
+    transparent
+  );
+  --transcript-surface-filter: none;
+  --transcript-inset-fill: color-mix(
+    in srgb,
+    var(--color-content) calc(5% * var(--appearance-layer-strength, 1)),
+    transparent
+  );
+  --transcript-inset-border: color-mix(in srgb, var(--color-content) 10%, transparent);
+
+  /* Ink roles: emphasis >= body >= chrome. Chrome is a share of body, so the order cannot invert. */
+  --transcript-ink-emphasis: var(--color-content);
+  --transcript-ink-body: color-mix(
+    in srgb,
+    var(--color-content)
+      min(
+        100%,
+        calc(
+          var(--appearance-transcript-body-ink, 92%) * var(--appearance-contrast-scale, 1) *
+            var(--ui-secondary-boost, 1)
+        )
+      ),
+    var(--ui-tint-base)
+  );
+  --transcript-ink-chrome: color-mix(
+    in srgb,
+    var(--transcript-ink-body) var(--appearance-transcript-chrome-ink, 76%),
+    var(--ui-tint-base)
+  );
+  --transcript-ink-chrome-active: var(--transcript-ink-body);
+  --transcript-tool-ink: var(--transcript-ink-chrome);
+
+  /* Resolved per scope mode below; consumers read only these. */
+  --transcript-reply-fill: var(--transcript-surface-fill);
+  --transcript-reply-filter: var(--transcript-surface-filter);
+  --transcript-reply-pad-block: var(--space-2);
+  --transcript-column-fill: transparent;
+  --transcript-card-fill: var(--transcript-inset-fill);
+  --transcript-user-fill: color-mix(
+    in oklab,
+    var(--transcript-surface-color) var(--appearance-user-message-opacity, 42%),
+    transparent
+  );
+  /* Kept as the alias older consumers read (user bubble, tests). */
+  --ui-chat-message-color: var(--transcript-surface-color);
+}
+
+:is(html, [data-transcript-preview])[data-chat-message-color="neutral"] {
+  --transcript-surface-color: var(--palette-canvasPureDark);
+}
+html.theme-light :is(html, [data-transcript-preview])[data-chat-message-color="neutral"],
+html.theme-light[data-chat-message-color="neutral"] {
+  --transcript-surface-color: var(--palette-canvasPureLight);
+}
+
+/* Backdrop blur only exists while art or native glass sits behind the pane. */
+:is(html:is(.has-chat-background, .has-native-glass), [data-transcript-preview]) {
+  --transcript-surface-filter: blur(var(--appearance-transcript-surface-blur, 0px));
+}
+html[data-performance-no-blur] {
+  --transcript-surface-filter: none;
+}
+
+/* Scope modes. */
+:is(html, [data-transcript-preview])[data-transcript-surface="column"] {
+  --transcript-reply-fill: transparent;
+  --transcript-reply-filter: none;
+  --transcript-reply-pad-block: 0px;
+  --transcript-column-fill: var(--transcript-surface-fill);
+}
+:is(html, [data-transcript-preview])[data-transcript-surface="off"] {
+  --transcript-reply-fill: transparent;
+  --transcript-reply-filter: none;
+  --transcript-reply-pad-block: 0px;
+}
+
+/* Cards, code and tables: one inset step inside the surface. */
+:is(html, [data-transcript-preview])[data-transcript-cards="outline"] {
+  --transcript-card-fill: transparent;
+}
+:is(html, [data-transcript-preview])[data-transcript-cards="solid"] {
+  --transcript-card-fill: var(--ui-surface);
+}
+/* With no surface behind them the inset fill carries its own legibility. */
+:is(html, [data-transcript-preview])[data-transcript-surface="off"]:not(
+    [data-transcript-cards="outline"],
+    [data-transcript-cards="solid"]
+  ) {
+  --transcript-card-fill: color-mix(in oklab, var(--transcript-surface-color) 72%, transparent);
+}
+:is(html, [data-transcript-preview])[data-chat-user-surface-off] {
+  --transcript-user-fill: transparent;
+}
+
+/* The reply wrapper: one surface per assistant answer. */
+[data-transcript-reply] {
+  padding-block: var(--transcript-reply-pad-block);
+  padding-inline: var(--transcript-gutter);
+  border-radius: var(--ui-radius-popup);
+  background: var(--transcript-reply-fill);
+  -webkit-backdrop-filter: var(--transcript-reply-filter);
+  backdrop-filter: var(--transcript-reply-filter);
+  color: var(--transcript-ink-body);
+}
+
+/* The live turn skips the filter while it streams so each frame does not re-sample the
+   backdrop; the fill never changes, so the tone does not jump. */
+[data-session-streaming="true"] .transcript-turn-live [data-transcript-reply] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.transcript-content {
+  background: var(--transcript-column-fill);
+}
+
+/* Cards inside the surface take the card fill and the hairline frame. */
+:is([data-transcript-reply], .transcript-content) {
+  --ui-card-surface: var(--transcript-card-fill);
+  --ui-card-border: var(--transcript-inset-border);
+  --ui-markdown-box-surface: var(--transcript-card-fill);
+  --ui-markdown-box-border: var(--transcript-inset-border);
+}
+
+/* The user's bubble sits beside the reply surface with the same colour source. */
+:is(.chat-pane-background, [data-transcript-preview]) [data-chat-message-surface="user"] {
+  border-radius: var(--ui-radius-popup);
+  background: var(--transcript-user-fill);
+  -webkit-backdrop-filter: var(--transcript-surface-filter);
+  backdrop-filter: var(--transcript-surface-filter);
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  :is(html, [data-transcript-preview]) {
+    --transcript-surface-fill: var(--transcript-surface-color);
+    --transcript-surface-filter: none;
+    --transcript-inset-fill: var(--ui-surface);
+    --transcript-inset-border: var(--ui-pane-border);
+    --transcript-user-fill: var(--transcript-surface-color);
+  }
+  /* Nobody who asked for less transparency gets bare text over artwork. */
+  :is(html, [data-transcript-preview])[data-transcript-surface="off"] {
+    --transcript-reply-fill: var(--transcript-surface-color);
+    --transcript-reply-pad-block: var(--space-2);
+  }
+  :is(html, [data-transcript-preview])[data-transcript-surface="off"]:not(
+      [data-transcript-cards="outline"],
+      [data-transcript-cards="solid"]
+    ) {
+    --transcript-card-fill: var(--ui-surface);
+  }
+  :is(html, [data-transcript-preview])[data-chat-user-surface-off] {
+    --transcript-user-fill: transparent;
+  }
+}
+
+/* Blur 0 opens no backdrop layer: the filter exists only while a blur is asked for. */
+:is(html, [data-transcript-preview]):not([data-transcript-blur]) {
+  --transcript-surface-filter: none;
+}
+
+/* Message actions: "hover" shows the row on reply hover or focus; the live turn, keyboard focus
+   and touch (no hover) always show it. "hidden" is not offered, so Copy stays reachable. */
+@media (hover: hover) {
+  :is(html, [data-transcript-preview])[data-transcript-actions="hover"]
+    [data-transcript-actions-row] {
+    opacity: 0;
+    transition: opacity var(--ui-motion-fast, 120ms) ease;
+  }
+  :is(html, [data-transcript-preview])[data-transcript-actions="hover"]
+    :is([data-transcript-reply]:hover, [data-transcript-reply]:focus-within, .transcript-turn-live)
+    [data-transcript-actions-row],
+  :is(html, [data-transcript-preview])[data-transcript-actions="hover"]
+    [data-transcript-actions-row]:focus-within {
+    opacity: 1;
+  }
+}

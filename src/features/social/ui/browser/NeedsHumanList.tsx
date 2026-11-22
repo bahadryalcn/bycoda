@@ -5,7 +5,7 @@ import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
-import { InlineError } from "../../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { usePollingRefresh } from "../../hooks/usePollingRefresh";
 import { SOCIAL_PLATFORM_NAMES } from "../../model/social";
 import type { NeedsHumanItem } from "../../model/socialActions";
@@ -109,9 +109,9 @@ export function NeedsHumanList({
   return (
     <div className="needs-human">
       {failed ? (
-        <Text as="p" size="caption" tone="muted" leading="inherit" className="needs-human-note">
+        <InlineMessage tone="warning" live="off">
           {t("Waiting items could not be refreshed.")}
-        </Text>
+        </InlineMessage>
       ) : null}
       {doneFailed ? <InlineError>{t("Could not mark this as done.")}</InlineError> : null}
       <ul className="needs-human-list">

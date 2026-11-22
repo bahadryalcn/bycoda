@@ -143,7 +143,7 @@ export function TermiusImportDialog({
   return (
     <Sheet
       title={t("Import from Termius")}
-      size="48rem"
+      size="lg"
       onClose={() => {
         if (!pending.current) onClose();
       }}

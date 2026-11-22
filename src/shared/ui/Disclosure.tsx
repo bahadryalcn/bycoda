@@ -36,8 +36,13 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   onOpenChange?: (open: boolean) => void;
   /**
    * `plain` inline text-level, `row` list-row height, `card` framed like `Surface variant="card"`,
-   * `step` one 24px line for a transcript step: the whole row toggles, the label may lead with an
-   * icon, the body opens below. Mount the body only while `open` to keep long lists cheap.
+   * `step` one transcript line (28px, follows density): the whole row toggles (icon, label, gaps,
+   * chevron), the chevron is always visible in the chrome ink and turns when open, hover washes the
+   * row but an open row keeps no wash, the body opens below. Keep the label on the gutter: the row
+   * overhangs it by its own negative margin, so callers add no `-mx`/`px`. Put at most two icon
+   * buttons in `summaryActions` (open in panel, stop); they act alone and never toggle. Use
+   * `chevron="end"` and `collapsible={false}` for a row with nothing to open. Mount the body only
+   * while `open` to keep long lists cheap.
    */
   variant?: "plain" | "row" | "card" | "step";
   /** Accessible name for the summary row when the visible label is truncated or an icon. */
@@ -52,6 +57,12 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   leading?: TextRoles["leading"];
   /** Side of the summary row that carries the chevron. */
   chevron?: "start" | "end";
+  /**
+   * `false` renders the same row geometry as a static `div`: no chevron, no toggle, no body.
+   * For a row with nothing to open (a tool step without a result, a live status line); `role` and
+   * `aria-live` pass through. `open`, `name`, `ref` and `bodyDividers` are ignored.
+   */
+  collapsible?: boolean;
   /** Shared `name` makes sibling disclosures exclusive (native accordion). */
   name?: string;
   children?: ReactNode;
@@ -88,6 +99,7 @@ export function Disclosure({
   weight,
   leading,
   chevron = "start",
+  collapsible = true,
   name,
   className,
   children,
@@ -128,6 +140,44 @@ export function Disclosure({
     </span>
   );
 
+  const labelNode = (
+    <span
+      {...optionalTextAttributes(
+        { size: textSize ?? (weight ? "inherit" : undefined), tone, weight, leading },
+        styles.label,
+      )}
+    >
+      {summary}
+    </span>
+  );
+  const countNode = hasCount ? (
+    <Badge variant="count" size="xs" label={countLabel} className={styles.count}>
+      {count}
+    </Badge>
+  ) : null;
+  const actionsNode =
+    summaryActions != null ? (
+      <span className={styles.actions} data-no-drag="" data-disclosure-actions="">
+        {summaryActions}
+      </span>
+    ) : null;
+
+  if (!collapsible) {
+    return (
+      <div
+        {...(props as ComponentPropsWithRef<"div">)}
+        aria-label={summaryLabel}
+        data-variant={variant}
+        data-size={size}
+        className={[styles.static, className].filter(Boolean).join(" ")}
+      >
+        {labelNode}
+        {countNode}
+        {actionsNode}
+      </div>
+    );
+  }
+
   return (
     <details
       {...props}
@@ -158,24 +208,9 @@ export function Disclosure({
         aria-controls={controlled ? bodyId : undefined}
       >
         {chevron === "start" ? mark : null}
-        <span
-          {...optionalTextAttributes(
-            { size: textSize ?? (weight ? "inherit" : undefined), tone, weight, leading },
-            styles.label,
-          )}
-        >
-          {summary}
-        </span>
-        {hasCount ? (
-          <Badge variant="count" size="xs" label={countLabel} className={styles.count}>
-            {count}
-          </Badge>
-        ) : null}
-        {summaryActions != null ? (
-          <span className={styles.actions} data-no-drag="" data-disclosure-actions="">
-            {summaryActions}
-          </span>
-        ) : null}
+        {labelNode}
+        {countNode}
+        {actionsNode}
         {chevron === "end" ? mark : null}
       </summary>
       <div id={bodyId} {...surfaceAttributes({ dividers: bodyDividers }, styles.body)}>

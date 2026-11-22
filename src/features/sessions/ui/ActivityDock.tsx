@@ -291,6 +291,68 @@ function DockBody({
     </Button>
   ) : null;
 
+  const summary = (
+    <span className="activity-dock-summary">
+      <DockMark state={dock.state} />
+      <Text
+        as="span"
+        size="inherit"
+        tone={
+          dock.state === "needs-input" ? "warning" : dock.state === "done" ? "success" : "secondary"
+        }
+        truncate
+      >
+        {label}
+      </Text>
+      {clock ? <DockClock startedAt={clockOrigin} /> : null}
+      {/* Inside the summary: a narrow dock gives the summary a full row, and the
+            walker must stay on it instead of wrapping below the label. */}
+      {dock.state === "working" || dock.state === "waiting" ? (
+        <span
+          data-pacing-track="reserved"
+          className="pointer-events-none relative ms-auto -me-1 block h-8 w-20 shrink-0 overflow-clip"
+        >
+          <PacingUncle visible={visible} />
+        </span>
+      ) : null}
+    </span>
+  );
+  // The whole header is the trigger: state, clock and counts open the list together.
+  const toggle = (
+    // oxlint-disable-next-line bycoda/transcript-row-trigger -- the dock header is composer chrome, not a transcript row
+    <Button
+      variant="ghost"
+      type="button"
+      expanded={open}
+      opens="up"
+      controlHeight="auto"
+      padding={{ block: "xs" }}
+      aria-controls={listId}
+      data-dock-toggle=""
+      label={`${label}. ${t(
+        open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
+        { p0: counts.map(({ text }) => text).join(" · ") },
+      )}`}
+      tooltip={open ? t("Hide background work") : t("Show background work")}
+      onClick={() => setExpanded(!open)}
+      className="max-w-full min-w-0 flex-1 justify-between"
+    >
+      {summary}
+      {/* The provider marks name who runs the work; the counts say how it stands.
+        "Background work" stays in the accessible label only. */}
+      <span className="flex min-w-0 shrink-0 items-center gap-2">
+        <ProviderStack agents={listed} fallback={harness} />
+        <span className="flex min-w-0 flex-wrap items-center gap-x-1">
+          {counts.map(({ text, tone }, index) => (
+            <Text key={text} size="inherit" tone={tone ?? "inherit"}>
+              {index ? `· ${text}` : text}
+            </Text>
+          ))}
+        </span>
+      </span>
+    </Button>
+  );
+
   return (
     <Text
       as="section"
@@ -312,69 +374,9 @@ function DockBody({
       />
       <Text as="div" size="inherit" tone="secondary" className="relative" data-activity-status-row>
         <div className="relative flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
-          <div className="activity-dock-summary">
-            <DockMark state={dock.state} />
-            <Text
-              as="span"
-              size="inherit"
-              tone={
-                dock.state === "needs-input"
-                  ? "warning"
-                  : dock.state === "done"
-                    ? "success"
-                    : "secondary"
-              }
-              truncate
-            >
-              {label}
-            </Text>
-            {clock ? <DockClock startedAt={clockOrigin} /> : null}
-            {/* Inside the summary: a narrow dock gives the summary a full row, and the
-                walker must stay on it instead of wrapping below the label. */}
-            {dock.state === "working" || dock.state === "waiting" ? (
-              <div
-                data-pacing-track="reserved"
-                className="pointer-events-none relative ms-auto -me-1 h-8 w-20 shrink-0 overflow-clip"
-              >
-                <PacingUncle visible={visible} />
-              </div>
-            ) : null}
-          </div>
+          {hasAgents ? toggle : summary}
           {dock.state === "needs-input" ? <DockApprovalActions blocks={blocks} /> : null}
-          {!hasAgents ? (
-            stopAllButton
-          ) : (
-            <Button
-              variant="ghost"
-              type="button"
-              expanded={open}
-              opens="up"
-              controlHeight="auto"
-              padding={{ block: "xs" }}
-              aria-controls={listId}
-              data-dock-toggle=""
-              label={t(
-                open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
-                { p0: counts.map(({ text }) => text).join(" · ") },
-              )}
-              tooltip={open ? t("Hide background work") : t("Show background work")}
-              onClick={() => setExpanded(!open)}
-              className="max-w-full min-w-0"
-            >
-              {/* The provider marks name who runs the work; the counts say how it stands.
-                  "Background work" stays in the accessible label only. */}
-              <span className="flex min-w-0 items-center gap-2">
-                <ProviderStack agents={listed} fallback={harness} />
-                <span className="flex min-w-0 flex-wrap items-center gap-x-1">
-                  {counts.map(({ text, tone }, index) => (
-                    <Text key={text} size="inherit" tone={tone ?? "inherit"}>
-                      {index ? `· ${text}` : text}
-                    </Text>
-                  ))}
-                </span>
-              </span>
-            </Button>
-          )}
+          {!hasAgents ? stopAllButton : null}
           {goalControl}
         </div>
       </Text>

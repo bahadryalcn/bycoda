@@ -10,7 +10,6 @@
   flex: 1;
   min-width: 0;
 }
-.hint,
 .detail {
   margin: 0;
   overflow-wrap: anywhere;

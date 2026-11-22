@@ -551,9 +551,7 @@ describe("DecisionModelsSettings found on this computer", () => {
 
 describe("DecisionModelsSettings add paths", () => {
   it.each([
-    ["Local file path", "Use a model file on this computer"],
-
-    ["Local service", "Running address"],
+    ["Add from a file or address", "Use a model file on this computer"],
 
     ["Install on this computer", "A local model runs on this computer"],
 

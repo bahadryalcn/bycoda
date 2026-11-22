@@ -6,6 +6,7 @@ import { RevealedSetting, settingDomId, SettingsFeedback } from "../../../shared
 import type { AppearanceSettings } from "./useAppearanceSettings";
 import { ThemeSection } from "./appearance/sections/ThemeSection";
 import { BackgroundSection } from "./appearance/sections/BackgroundSection";
+import { ChatSection } from "./appearance/sections/ChatSection";
 import { InterfaceSection } from "./appearance/sections/InterfaceSection";
 import { TypographySection } from "./appearance/sections/TypographySection";
 import { MotionSection } from "./appearance/sections/MotionSection";
@@ -21,7 +22,7 @@ import "./AppearanceSettings.css";
 export { AccentColorPicker, ACCENT_COLOR_PRESETS } from "./appearance/controls/AccentColorPicker";
 export { ChatBackgroundCard } from "./appearance/sections/BackgroundSection";
 
-type Section = "theme" | "background" | "interface" | "typography" | "motion";
+type Section = "theme" | "background" | "chat" | "interface" | "typography" | "motion";
 let selectedSection: Section = "theme";
 
 /** The appearance tab whose panel holds the revealed setting, once that row is in the DOM. */
@@ -103,12 +104,29 @@ export function AppearancePage({
     }
     setRenderAll(false);
   }, [renderAll, revealed]);
+  // Chat links to the artwork controls instead of copying them; the Background tab mounts on the
+  // next render, so the jump to its chat-background group waits for that commit.
+  const [backgroundJump, setBackgroundJump] = useState(0);
+  const showBackground = () => {
+    select("background");
+    setBackgroundJump((count) => count + 1);
+  };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- scrolls the chat-background group into view once the Background tab has rendered it
+  useLayoutEffect(() => {
+    if (!backgroundJump) return;
+    document.getElementById(settingDomId("chat-background"))?.scrollIntoView({ block: "start" });
+  }, [backgroundJump]);
   const sections = [
     { id: "theme", label: t("Theme"), content: <ThemeSection appearance={appearance} /> },
     {
       id: "background",
       label: t("Background"),
       content: <BackgroundSection appearance={appearance} />,
+    },
+    {
+      id: "chat",
+      label: t("Chat"),
+      content: <ChatSection appearance={appearance} onOpenBackground={showBackground} />,
     },
     {
       id: "interface",

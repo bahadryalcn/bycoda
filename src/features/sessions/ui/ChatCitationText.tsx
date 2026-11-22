@@ -163,6 +163,7 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
           side="top"
           align="end"
           width={360}
+          variant="panel"
           onDismiss={() => setAnchor(null)}
         >
           <div className={styles.details}>

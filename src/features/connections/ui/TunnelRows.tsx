@@ -227,6 +227,17 @@ function TunnelRow({
             {t("Stop tunnel")}
           </Button>
         ) : null}
+        {tunnel.state === "error" && !tunnel.canStop ? (
+          <Button
+            stableWidth
+            type="button"
+            className="shrink-0"
+            disabled={state.pending}
+            onClick={() => void controller.refresh(true)}
+          >
+            {t("Check again")}
+          </Button>
+        ) : null}
       </div>
     </article>
   );

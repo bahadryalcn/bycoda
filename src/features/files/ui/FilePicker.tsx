@@ -369,7 +369,6 @@ export function FilePicker({
       context={looksLikeProject(cwd) ? projectDisplayNameFrom(cwd, projectLabels) : undefined}
       size="md"
       fitViewport={false}
-      className="max-h-[80dvh]"
       motion="none"
       onClose={onClose}
     >

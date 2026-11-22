@@ -146,8 +146,8 @@ export default function OnboardingDialog({
       padding="none"
       title={t("Welcome to {p0}", { p0: PRODUCT_IDENTITY.displayName })}
       size="lg"
+      height="tall"
       minimalHeader
-      className="onboarding-panel"
       bodyText={{ size: "secondary", leading: "inherit" }}
       onClose={busy ? () => undefined : onFinish}
     >

@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { useEffect, useState } from "react";
@@ -139,17 +140,19 @@ export function BrowserSettings({
           {live ? t("Close live view") : t("Open live view")}
         </Button>
       </div>
-      <Switch
-        label={t("Allow desktop control")}
-        checked={draft.desktopControl.allowed}
-        disabled={disabled || is("browser")}
-        onCheckedChange={(allowed) =>
-          setDraft({ ...draft, desktopControl: { ...draft.desktopControl, allowed } })
-        }
-      />
-      <Text as="p" tone="muted" leading="snug" className="social-card-description">
-        {t("Desktop control runs only when you're away and on another computer.")}
-      </Text>
+      <div className="social-card-head">
+        <Switch
+          label={t("Allow desktop control")}
+          checked={draft.desktopControl.allowed}
+          disabled={disabled || is("browser")}
+          onCheckedChange={(allowed) =>
+            setDraft({ ...draft, desktopControl: { ...draft.desktopControl, allowed } })
+          }
+        />
+        <InfoPopover className="shrink-0">
+          {t("Desktop control runs only when you're away and on another computer.")}
+        </InfoPopover>
+      </div>
       {draft.desktopControl.allowed ? (
         <Select
           label={t("Computer for desktop control")}

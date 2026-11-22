@@ -39,6 +39,12 @@ function clientWith(frame: (accountId: string) => Promise<BrowserViewFrame | nul
   return { client, browserViewFrame, browserViewInput };
 }
 
+/** Opens the info popover and returns the page text, popover content included. */
+async function helpText() {
+  await act(async () => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
+  return document.body.textContent ?? "";
+}
+
 async function settle() {
   await act(async () => {
     for (let i = 0; i < 8; i++) await Promise.resolve();
@@ -98,7 +104,7 @@ it("says it is connecting until the first frame arrives, then that the view is l
   expect(element.textContent).toContain("Connecting to the browser window…");
   await act(async () => release(FRAME));
   await settle();
-  expect(element.textContent).toContain("Live. Click the page to interact.");
+  expect(await helpText()).toContain("Live. Click the page to interact.");
   expect(element.querySelector("img")).not.toBeNull();
 });
 
@@ -124,7 +130,7 @@ it("shows an unavailable message when frames fail and recovers when the Host ans
   // The first failure doubles the wait, so the next read comes after 1400 ms.
   await advance(1_400);
   expect(browserViewFrame.mock.calls.length).toBeGreaterThanOrEqual(2);
-  expect(element.textContent).toContain("Live. Click the page to interact.");
+  expect(await helpText()).toContain("Live. Click the page to interact.");
   expect(button("Retry")).toBeUndefined();
 });
 
@@ -140,7 +146,7 @@ it("offers Retry next to the error, which reads again at once", async () => {
   await act(async () => button("Retry").click());
   await settle();
   expect(browserViewFrame.mock.calls.length).toBe(calls + 1);
-  expect(element.textContent).toContain("Live. Click the page to interact.");
+  expect(await helpText()).toContain("Live. Click the page to interact.");
 });
 
 it("stops requesting frames when the panel unmounts", async () => {

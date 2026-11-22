@@ -34,7 +34,6 @@
 .session-note-picker {
   display: flex;
   flex-direction: column;
-  padding: 6px;
   gap: 6px;
 }
 

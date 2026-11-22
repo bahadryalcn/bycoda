@@ -896,9 +896,7 @@ export function SkillsPage({
       hideLabel
       value={query}
       onChange={(event) => setQuery(event.target.value)}
-      placeholder={
-        skills === null ? t("Search skills") : t("Search {p0} skills", { p0: entries.length })
-      }
+      placeholder={t("Search skills")}
       aria-label={t("Filter skills")}
       spellCheck={false}
       autoComplete="off"

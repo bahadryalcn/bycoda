@@ -9,6 +9,7 @@ import {
   asClient,
   bodyText,
   buttonByText,
+  isBlocked,
   clickButton,
   clientMock,
   deferred,
@@ -81,7 +82,7 @@ function saved(mock: ClientMock): Record<string, unknown> {
 describe("SequenceEditor requirements", () => {
   it("names the first missing piece in the order name, list, steps, step content, pacing", async () => {
     await renderEditor(clientMock());
-    expect(buttonByText("Save sequence")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
     expect(bodyText()).toContain("Enter a name for the sequence.");
 
     setFieldValue(fieldByLabel("Sequence name"), "Spring");
@@ -91,10 +92,10 @@ describe("SequenceEditor requirements", () => {
     expect(bodyText()).toContain(STEP_REASON);
 
     setFieldValue(fieldByLabel("Message"), "Hello");
-    expect(buttonByText("Save sequence")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(false);
 
     setFieldValue(fieldByLabel("Most messages per hour"), "0");
-    expect(buttonByText("Save sequence")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
     expect(bodyText()).toContain(PACING_REASON);
   });
 
@@ -121,20 +122,20 @@ describe("SequenceEditor requirements", () => {
       const field = fieldByLabel(label);
       const before = field.value;
       setFieldValue(field, value);
-      expect(buttonByText("Save sequence")?.disabled).toBe(true);
+      expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
       expect(bodyText()).toContain(PACING_REASON);
       setFieldValue(field, before);
-      expect(buttonByText("Save sequence")?.disabled).toBe(false);
+      expect(isBlocked(buttonByText("Save sequence"))).toBe(false);
     }
     setFieldValue(fieldByLabel("Warm-up days"), "0");
-    expect(buttonByText("Save sequence")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(false);
   });
 
   it("refuses a negative wait before a step", async () => {
     await renderEditor(clientMock());
     fillMinimum();
     setFieldValue(fieldByLabel("Wait before this step (hours)"), "-1");
-    expect(buttonByText("Save sequence")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
     expect(bodyText()).toContain(STEP_REASON);
   });
 });
@@ -189,7 +190,7 @@ describe("SequenceEditor save", () => {
     clickButton("Add step");
     clickButton("Add step");
     expect(bodyText()).toContain("Step 3");
-    expect(buttonByText("Save sequence")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
     expect(bodyText()).toContain(STEP_REASON);
 
     const messages = Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea"));
@@ -209,7 +210,7 @@ describe("SequenceEditor save", () => {
     await renderEditor(clientMock());
     fillMinimum();
     act(() => buttonsNamed("Remove step")[0]!.click());
-    expect(buttonByText("Save sequence")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
     expect(bodyText()).toContain("Add at least one step.");
 
     for (let count = 0; count < 10; count += 1) {
@@ -261,7 +262,7 @@ describe("SequenceEditor save", () => {
     expect(props.onSaved).not.toHaveBeenCalled();
     expect(props.onClose).not.toHaveBeenCalled();
     expect(fieldByLabel("Message").value).toBe("  Hello again  ");
-    expect(buttonByText("Save sequence")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(false);
   });
 
   it("does not save twice while the first request is running", async () => {
@@ -288,11 +289,11 @@ describe("SequenceEditor email steps", () => {
     pickOption("Channel", "Email");
     await flush();
 
-    expect(buttonByText("Save sequence")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
     expect(bodyText()).toContain(STEP_REASON);
     expect(optionLabels("Send from")).toContain("Ops <ops@example.test>");
     pickOption("Send from", "Ops <ops@example.test>");
-    expect(buttonByText("Save sequence")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(false);
     expect(bodyText()).not.toContain("Email steps need an unsubscribe link.");
 
     clickButton("Save sequence");
@@ -318,7 +319,7 @@ describe("SequenceEditor email steps", () => {
     pickOption("Send from", "Ops no link <ops@example.test>");
     await flush();
 
-    expect(buttonByText("Save sequence")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Save sequence"))).toBe(true);
     expect(bodyText()).toContain(
       "Email steps need an unsubscribe link. Add one to this email account first.",
     );

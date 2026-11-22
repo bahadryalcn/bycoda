@@ -229,44 +229,6 @@ html [data-composer-box][data-ui-focus-group],
   backdrop-filter: var(--ui-chat-glass-filter, none);
 }
 
-:is(.chat-pane-background, [data-chat-message-preview]) [data-chat-message-surface="user"] {
-  --chat-message-opacity: var(--appearance-user-message-opacity, 42%);
-}
-:is(.chat-pane-background, [data-chat-message-preview]) [data-chat-message-surface="assistant"] {
-  --chat-message-opacity: var(--appearance-assistant-message-opacity, 26%);
-}
-.chat-pane-background [data-chat-message-surface="assistant"] {
-  margin-inline: var(--space-2);
-  padding-inline: var(--space-2);
-}
-[data-chat-message-preview] {
-  border-radius: var(--ui-radius-popup);
-  background: color-mix(in oklab, var(--ui-chat-pane-canvas) 82%, var(--color-content));
-}
-:is(.chat-pane-background, [data-chat-message-preview]) [data-chat-message-surface],
-.chat-pane-background .user-message-bubble[data-chat-message-surface] {
-  border-radius: var(--ui-radius-popup);
-  background: color-mix(
-    in oklab,
-    var(--ui-chat-message-color) var(--chat-message-opacity),
-    transparent
-  );
-}
-html:not([data-chat-user-surface-off]) .chat-pane-background [data-chat-message-surface="user"],
-html:not([data-chat-assistant-surface-off])
-  .chat-pane-background
-  [data-chat-message-surface="assistant"] {
-  -webkit-backdrop-filter: var(--ui-chat-glass-filter, none);
-  backdrop-filter: var(--ui-chat-glass-filter, none);
-}
-@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  html:not([data-chat-user-surface-off]) .chat-pane-background [data-chat-message-surface="user"],
-  html:not([data-chat-assistant-surface-off])
-    .chat-pane-background
-    [data-chat-message-surface="assistant"] {
-    background: var(--ui-chat-message-color);
-  }
-}
 /* Operation boundaries retain their meaning independently of ordinary focus. */
 html [data-composer-box][data-composer-editing] {
   border-color: var(--ui-tone-accent-border);

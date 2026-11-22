@@ -4,7 +4,7 @@ import { ShortcutKeys } from "../../../shared/ui/ShortcutKbd";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useRef } from "react";
 import { MessageSquarePlus } from "../../../shared/ui/icons";
-import { Popover } from "../../../shared/ui/Popover";
+import { Popover, popupListClassName } from "../../../shared/ui/Popover";
 import { formatEditorSelectionReference, type EditorCodeSelection } from "../model/editorSelection";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
 
@@ -47,7 +47,7 @@ export function EditorSelectionMenu({
       onDismiss={onDismiss}
       role="toolbar"
       aria-label={t("Selected code actions")}
-      className="p-1"
+      className={popupListClassName}
     >
       <Button
         size="sm"

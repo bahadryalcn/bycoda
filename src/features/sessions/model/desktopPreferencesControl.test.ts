@@ -138,7 +138,7 @@ it("reads and patches chat appearance only through a current, approved review", 
     })) as DesktopPreferencesStatus;
   expect(original.application.chatMessages).toEqual({
     userMessageOpacity: 42,
-    assistantMessageOpacity: 26,
+    assistantMessageOpacity: 45,
     messageColor: "theme",
   });
   expect((await patch("denied", { assistantMessageOpacity: 70 })).state).toBe("failed");
@@ -155,6 +155,7 @@ it("reads and patches chat appearance only through a current, approved review", 
     assistantMessageOpacity: 70,
     messageColor: "neutral",
   });
+  expect(result.snapshot?.application.transcript.surfaceOpacity).toBe(70);
   expect((await patch("stale", { userMessageOpacity: 40 })).state).toBe("failed");
 });
 it("reads cached metadata only, explicitly reads a reviewed body, and uses canonical template mutations", async () => {

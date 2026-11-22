@@ -33,7 +33,6 @@
 .filterPanel {
   display: grid;
   gap: 12px;
-  padding: 12px;
 }
 .list {
   max-block-size: min(60dvh, 38rem);

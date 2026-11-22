@@ -61,7 +61,7 @@ function ColorStop({
           width={248}
           flow="scroll"
           onDismiss={() => setOpen(false)}
-          className="px-2 pb-2"
+          variant="compact"
         >
           <ColorPickerPopover value={color} onChange={onChange} />
         </Popover>

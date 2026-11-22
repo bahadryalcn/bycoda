@@ -132,6 +132,7 @@ export function ComposerCitations({
           width={340}
           kind="dialog"
           aria-label={t("Edit citation comment")}
+          variant="panel"
           onDismiss={() => setEditing(null)}
           flow="scroll"
         >

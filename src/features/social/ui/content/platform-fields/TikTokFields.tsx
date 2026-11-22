@@ -1,5 +1,6 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
+import { InlineMessage } from "../../../../../shared/ui/InlineError";
 import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
@@ -47,15 +48,9 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
         </LoadingText>
       ) : null}
       {duration ? (
-        <Text
-          as="p"
-          size="caption"
-          tone="muted"
-          leading="inherit"
-          className="content-platform-note"
-        >
+        <InlineMessage tone="info" live="off">
           {t("Video length {p0} seconds.", { p0: Math.round(duration) })}
-        </Text>
+        </InlineMessage>
       ) : null}
       <NativeSelect
         aria-label={t("Who can see this video")}

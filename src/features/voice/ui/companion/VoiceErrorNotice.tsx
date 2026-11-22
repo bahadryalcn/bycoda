@@ -1,7 +1,9 @@
 import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
 import { TriangleAlert } from "../../../../shared/ui/icons";
+import { isMicrophoneBlocked } from "../../model/microphoneAccess";
 import { isVoiceSetupError, VoiceRecoveryAction } from "../MicrophoneRecoveryAction";
 
 /** Errors whose text is already the owner's next step; every other error is a technical detail. */
@@ -54,9 +56,22 @@ export function VoiceErrorMark({ error, onShow }: { error: string; onShow?: () =
   );
 }
 
-/** The error message with its recovery action and Dismiss, always visible while the error stands. */
-export function VoiceErrorNotice({ error, onDismiss }: { error: string; onDismiss: () => void }) {
+/**
+ * The error headline with its recovery action, always visible while the error stands. Raw
+ * transport text sits behind Details. With `onReconnect` (the call is down and can start again)
+ * Reconnect is the one primary action and Dismiss is quiet; otherwise Dismiss is the only button.
+ */
+export function VoiceErrorNotice({
+  error,
+  onDismiss,
+  onReconnect,
+}: {
+  error: string;
+  onDismiss: () => void;
+  onReconnect?: () => void;
+}) {
   const title = voiceErrorTitle(error);
+  const reconnect = onReconnect && !isVoiceSetupError(error) && !isActionableVoiceError(error);
   return (
     <Text as="div" size="caption" tone="inherit" className="flex flex-col gap-2">
       {title === error ? null : (
@@ -64,16 +79,34 @@ export function VoiceErrorNotice({ error, onDismiss }: { error: string; onDismis
           {title}
         </Text>
       )}
-      {!isVoiceSetupError(error) ? (
-        <Text as="p" size="inherit" tone="secondary" className="break-words select-text">
-          {error}
-        </Text>
+      {!isVoiceSetupError(error) && title !== error ? (
+        isMicrophoneBlocked(error) ? (
+          // The owner's next step is in the sentence itself: no raw detail to hide.
+          <Text as="p" size="inherit" tone="secondary" className="break-words select-text">
+            {error}
+          </Text>
+        ) : (
+          <div>
+            <ErrorDetails title={title} detail={error} />
+          </div>
+        )
       ) : null}
       <VoiceRecoveryAction message={error} />
-      <div className="flex justify-end">
-        <Button variant="primary" onClick={onDismiss}>
+      <div className="flex justify-end gap-2">
+        <Button variant={reconnect ? "ghost" : "primary"} onClick={onDismiss}>
           {t("Dismiss")}
         </Button>
+        {reconnect ? (
+          <Button
+            variant="primary"
+            onClick={() => {
+              onDismiss();
+              onReconnect();
+            }}
+          >
+            {t("Reconnect")}
+          </Button>
+        ) : null}
       </div>
     </Text>
   );

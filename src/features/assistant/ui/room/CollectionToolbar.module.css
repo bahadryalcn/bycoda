@@ -3,7 +3,6 @@
   display: grid;
   gap: 12px;
   inline-size: min(20rem, calc(100vw - 32px));
-  padding: 12px;
 }
 .fields {
   display: grid;

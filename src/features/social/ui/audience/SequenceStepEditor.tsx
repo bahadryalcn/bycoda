@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
@@ -156,15 +156,9 @@ export function SequenceStepEditor({
           </div>
         ))}
         {isEmail && selectedEmail && !selectedEmail.unsubscribeUrl ? (
-          <Text
-            as="p"
-            size="secondary"
-            tone="warning"
-            leading="inherit"
-            className="audience-warning"
-          >
+          <InlineMessage tone="warning" live="off">
             {t("Email steps need an unsubscribe link. Add one to this email account first.")}
-          </Text>
+          </InlineMessage>
         ) : null}
         <div className="audience-row audience-between">
           <span className="audience-row">

@@ -13,7 +13,6 @@ import { projectActionPresetIO } from "../model/projectActionCatalog";
 import { RemoteActionError } from "../../connections/public/RemoteActionError";
 import type { RemoteErrorView } from "../../connections/public/remoteFailure";
 import { Field } from "../../../shared/ui/Field";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Check, CodeBlock, Globe, Play, Terminal, Wrench } from "../../../shared/ui/icons";
 import { prettyCwd } from "../../../shared/lib/paths";
@@ -150,11 +149,17 @@ export function ProjectActionDialog({
         ) : undefined
       }
       footer={
-        <ModalActions>
+        <ModalActions reason={missing || undefined}>
           <Button type="button" variant="secondary" onClick={onClose}>
             {t(editing ? "Cancel" : "Close")}
           </Button>
-          <Button type="submit" form={formId} disabled={Boolean(missing)} variant="primary">
+          <Button
+            type="submit"
+            form={formId}
+            disabled={Boolean(missing)}
+            disabledReason={missing || undefined}
+            variant="primary"
+          >
             {t("Save action")}
           </Button>
         </ModalActions>
@@ -356,11 +361,6 @@ export function ProjectActionDialog({
             ) : null}
           </div>
           {error ? <RemoteActionError error={error} /> : null}
-          {missing ? (
-            <Text as="p" size="caption" tone="muted">
-              <LiveText text={missing} />
-            </Text>
-          ) : null}
         </div>
       </form>
     </Modal>

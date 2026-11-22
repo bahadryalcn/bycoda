@@ -20,8 +20,8 @@
 }
 /* Dialogs, including the peek panel, share the sticky page bar's opaque ground. */
 .bycoda-settings-workbench[data-settings-embedded] {
-  /* Match the compact Modal header's 12px inset and reserve its close target. */
-  --settings-page-bar-top-inset: 12px;
+  /* Match the Modal header inset of the floating close target. */
+  --settings-page-bar-top-inset: var(--modal-close-inset, 12px);
   --ui-workspace-canvas: var(--color-background-base);
   --ui-workspace-panel: var(--color-background-base);
 }

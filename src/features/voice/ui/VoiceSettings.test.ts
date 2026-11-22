@@ -267,7 +267,16 @@ async function click(text: string) {
   await act(async () => button!.click());
 }
 async function openLocate() {
-  await click("Locate existing");
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>('button[aria-label="More voice setup actions"]')!
+      .click(),
+  );
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (element) => element.textContent?.includes("Locate existing"),
+  );
+  expect(item).toBeDefined();
+  await act(async () => item!.click());
 }
 it("does not check or install until enabled; shows only the next actions for missing setup", async () => {
   await setup(false);
@@ -312,7 +321,7 @@ it("finds an existing installation without using or clearing saved paths until i
   saveVoiceSettings({ ...loadVoiceSettings(), python: "old-python", whisperPath: "old-model" });
   await setup();
   await advance();
-  await click("Locate existing");
+  await openLocate();
 
   backend.inspect.mockResolvedValueOnce({ ready: false, missing: ["Whisper model"] });
   await click("Automatic detection");

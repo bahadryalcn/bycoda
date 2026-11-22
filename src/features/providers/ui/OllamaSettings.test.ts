@@ -180,7 +180,7 @@ it("saves a custom port and returns to the default", async () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
   expect(input.value).toBe("11434");
-  expect(button("Save")?.disabled).toBe(true);
+  expect(button("Save")?.getAttribute("aria-disabled") === "true").toBe(true);
   await type("70000");
   expect(container.textContent).toContain("Enter a port from 1 to 65535.");
   expect(button("Save")?.disabled).toBe(true);

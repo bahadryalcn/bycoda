@@ -271,7 +271,8 @@ it("starts nothing while the Host is offline", () => {
 
 it("says on which computer the account is connected", () => {
   render(fakeClient(), { account: account({ connected: true }), onThisComputer: false });
-  expect(element.textContent).toContain("This account is connected on another computer.");
+  act(() => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
+  expect(document.body.textContent).toContain("This account is connected on another computer.");
 });
 
 it("shows OAuth waiting feedback and refreshes only after a verified connection", async () => {
@@ -289,7 +290,7 @@ it("shows OAuth waiting feedback and refreshes only after a verified connection"
 it("does not claim a disconnected account is connected on another computer", () => {
   render(fakeClient(), { onThisComputer: false });
   expect(element.textContent).not.toContain("This account is connected on another computer.");
-  expect(element.textContent).toContain("Connection needed");
+  expect(element.querySelector('button[aria-label="Help"]')).toBeNull();
 });
 
 it("offers one connection flow and no capability-row shortcut around organization validation", async () => {

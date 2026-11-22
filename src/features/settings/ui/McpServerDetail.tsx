@@ -95,7 +95,7 @@ export function McpServerDetail({
     <>
       <Sheet
         side="end"
-        size="40rem"
+        size="md"
         title={entry.name}
         description={[transport.toUpperCase(), stale ? t("Unavailable") : statusLabel(status)]
           .filter(Boolean)

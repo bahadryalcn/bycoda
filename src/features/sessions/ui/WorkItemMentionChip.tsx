@@ -60,7 +60,14 @@ export function WorkItemMentionCard({
   }, [token, cwd, lookup.done]);
   const item = lookup.item;
   return (
-    <Popover anchor={anchor} side="top" align="start" width={340} onDismiss={onDismiss}>
+    <Popover
+      anchor={anchor}
+      side="top"
+      align="start"
+      width={340}
+      variant="panel"
+      onDismiss={onDismiss}
+    >
       <div className={styles.card}>
         <div className={styles.heading}>
           {mention ? (

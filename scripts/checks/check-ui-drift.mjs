@@ -41,6 +41,8 @@ export const ruleScopes = {
   "hover-only-reveal": "TSX in src/features, src/shared (excluding tests)",
   "nested-surface": "TSX in src/app, src/features, src/shared (excluding tests)",
   "tooltip-repeats-label": "TSX in src/app, src/features, src/shared (excluding tests)",
+  "transcript-assistant-surface": "TSX in src/features/sessions/ui (excluding tests)",
+  "transcript-reply-fill": "TSX in src/features/sessions/ui (excluding tests)",
 };
 
 export const rules = {
@@ -68,7 +70,11 @@ export const rules = {
   "specificity-doubling":
     "doubled class selector (.x.x) used to win the cascade; fix the source order or the owning rule instead",
   "transcript-base-ink":
-    "transcript text color taken from var(--color-content) (or a color-mix of it); use a --ui-text-* role (later a --transcript-ink-* role) so the reading surface owns its ink",
+    "transcript text color taken from var(--color-content) (or a color-mix of it), or a --transcript-ink-* / --transcript-surface-* token defined outside transcript-surface.css; use a --transcript-ink-* role (body, chrome, chrome-active, emphasis) so the reading surface owns its ink, and define the roles only in transcript-surface.css",
+  "transcript-assistant-surface":
+    'assistant reading surface marked with data-chat-message-surface="assistant"; mark it with data-transcript-reply (the user bubble keeps data-chat-message-surface="user")',
+  "transcript-reply-fill":
+    "background fill or backdrop filter on a transcript element that is not the data-transcript-reply surface; the reply surface owns the fill, so the chrome around it stays transparent",
   "icon-size-class": "size-3/3.5/4/5 on a shared icon component (use icon-* sizes)",
   "icon-numeric-size": "numeric size={n} prop",
   "icon-stroke-width": "strokeWidth other than 1.75 or 2",
@@ -720,8 +726,9 @@ export function scanFile(file, text, definitions) {
         if (/cubic-bezier\(/.test(value) || (motionProperty && /(?<![\w.])\d+ms\b/.test(value)))
           add("motion-literal", valueOffset);
       }
-      if ((scope === "app" || scope === "styles") && !isTokenBlock(selectors))
-        if (transcriptBaseInk(file, declaration)) add("transcript-base-ink", valueOffset);
+      if (scope === "app" || scope === "styles")
+        if (transcriptBaseInk(file, declaration, isTokenBlock(selectors)))
+          add("transcript-base-ink", valueOffset);
       if (appearance && !isTokenBlock(selectors)) {
         const rule = appearanceRuleOfDeclaration(declaration);
         if (rule && !isBespokePart(file, rule, { selectors, text: `${property}:${value}` }))
@@ -775,6 +782,18 @@ export function scanFile(file, text, definitions) {
   for (const match of source.matchAll(tw(String.raw`opacity-(?:30|40|50|60)` + end))) {
     if (/disabled/.test(match[1]) || /(?<![\w-])disabled(?![\w-])/.test(context(match.index)))
       add("disabled-opacity", match.index);
+  }
+
+  // Transcript reading surface: the assistant reply is data-transcript-reply, and only that
+  // element fills or blurs; the chrome around it stays transparent.
+  if (/^src\/features\/sessions\/ui\//.test(file)) {
+    for (const match of source.matchAll(/data-chat-message-surface=["']assistant["']/g))
+      add("transcript-assistant-surface", match.index);
+    for (const match of source.matchAll(
+      /(?<![\w-])(?:[\w:-]*:)?(?:backdrop-(?:blur|filter)|bg-(?!transparent|none)[\w[(/.%-]*)/g,
+    ))
+      if (!/data-transcript-reply/.test(context(match.index)))
+        add("transcript-reply-fill", match.index);
   }
 
   const icons = sharedIconNames(source);

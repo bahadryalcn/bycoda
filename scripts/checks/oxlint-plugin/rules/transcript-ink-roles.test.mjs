@@ -26,6 +26,7 @@ function run(file, nodes) {
 }
 
 const ui = "src/features/sessions/ui/AgentTranscriptActivity.tsx";
+const other = "src/features/sessions/ui/SessionHeader.tsx";
 
 test("transcript-ink-roles reports every full-ink text color spelling", () => {
   for (const cls of [
@@ -36,8 +37,8 @@ test("transcript-ink-roles reports every full-ink text color spelling", () => {
     "text-[color:var(--color-content)]",
     "hover:text-(--color-content)",
   ]) {
-    const nodes = [lit(cls)];
-    assert.equal(run(ui, nodes).length, 1, cls);
+    assert.equal(run(other, [lit(cls)]).length, 1, cls);
+    assert.equal(run(ui, [lit(cls)]).length, 1, cls);
   }
   assert.equal(run(ui, [tpl("px-1 text-(--color-content) ")]).length, 1);
   assert.equal(run(ui, [prop("color", lit("var(--color-content)"))]).length, 1);
@@ -49,10 +50,31 @@ test("transcript-ink-roles reports every full-ink text color spelling", () => {
   assert.equal(run(ui, [prop("color", templateStyle)]).length, 1);
 });
 
-test("transcript-ink-roles accepts the chrome roles and other properties", () => {
+test("transcript-ink-roles reports global chrome ink only in transcript files", () => {
   for (const cls of [
     "text-(--ui-text-secondary)",
     "text-(--ui-text-muted)",
+    "hover:text-(--ui-text-muted)",
+    "text-[var(--ui-text-secondary)]",
+  ]) {
+    assert.equal(run(ui, [lit(cls)]).length, 1, cls);
+    for (const file of [
+      "src/features/sessions/ui/SubagentCards.tsx",
+      "src/features/sessions/ui/SubagentAnatomy.tsx",
+      "src/features/sessions/ui/SessionReview.tsx",
+      "src/features/sessions/ui/TranscriptMessageActions.tsx",
+    ])
+      assert.equal(run(file, [lit(cls)]).length, 1, `${file} ${cls}`);
+    assert.equal(run(other, [lit(cls)]).length, 0, cls);
+  }
+});
+
+test("transcript-ink-roles accepts the transcript ink roles and other properties", () => {
+  for (const cls of [
+    "text-(--transcript-ink-chrome)",
+    "text-(--transcript-ink-chrome-active)",
+    "text-(--transcript-ink-body)",
+    "text-(--transcript-ink-emphasis)",
     "text-content-strong",
     "bg-(--color-content)",
     "border-(--color-content)",
@@ -60,7 +82,7 @@ test("transcript-ink-roles accepts the chrome roles and other properties", () =>
   ]) {
     assert.equal(run(ui, [lit(cls)]).length, 0, cls);
   }
-  assert.equal(run(ui, [prop("color", lit("var(--ui-text-secondary)"))]).length, 0);
+  assert.equal(run(ui, [prop("color", lit("var(--transcript-ink-chrome)"))]).length, 0);
   assert.equal(run(ui, [prop("background", lit("var(--color-content)"))]).length, 0);
   assert.equal(run(ui, [prop("color", { type: "Identifier", name: "x" })]).length, 0);
 });

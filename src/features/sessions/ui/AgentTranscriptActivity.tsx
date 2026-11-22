@@ -39,7 +39,6 @@ import { SubagentRow } from "./SubagentCards";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
@@ -80,7 +79,6 @@ import {
 } from "../model/transcriptActivity";
 import { bycodaToolCall, bycodaWorkSummary, type BycodaToolCall } from "../model/bycodaToolCall";
 import { NEAR_BOTTOM_PX } from "./transcriptScroll";
-import { useClampOverflow } from "./useClampOverflow";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
 /*
  * Tool calls often land in a burst. Each arrival waits for the one before it
@@ -292,7 +290,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   ) : (
     // Dimmed to sit with the icons: the work is chrome around the answer, and
     // only the answer reads at full strength.
-    <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
+    <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--transcript-ink-chrome)">
       {title}
     </span>
   );
@@ -529,7 +527,7 @@ export function ActivityPhaseIcon({
 }) {
   useLocale();
   const props = {
-    className: `size-3.5 shrink-0 text-(--ui-text-secondary) ${className}`,
+    className: `size-3.5 shrink-0 text-(--transcript-ink-chrome) ${className}`,
     strokeWidth: 1.75,
   };
   if (kind === "edit") return <ChatEdit {...props} />;
@@ -614,13 +612,13 @@ function ActivityStatusRow({ block }: { block: Block }) {
       {running ? <Spinner size="xs" className="shrink-0" /> : null}
       <OverflowTooltip label={block.text.trim()}>
         <span
-          className={`min-w-0 flex-1 truncate font-sans text-ui-body ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+          className={`min-w-0 flex-1 truncate font-sans text-ui-body ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
         >
           {block.text.trim()}
         </span>
       </OverflowTooltip>
       {elapsed ? (
-        <span className="shrink-0 text-ui-micro text-(--ui-text-secondary) tabular-nums">
+        <span className="shrink-0 text-ui-micro text-(--transcript-ink-chrome) tabular-nums">
           {elapsed}
         </span>
       ) : null}
@@ -645,12 +643,12 @@ function ActivityInterjectionRow({ block }: { block: Block }) {
   const summary = proseSummary(block.text);
   const label = (
     <span className="min-w-0 flex-1 truncate font-sans text-ui-body">
-      <span className="text-(--ui-text-secondary)">{chrome.label}</span>
+      <span className="text-(--transcript-ink-chrome)">{chrome.label}</span>
       {chrome.severityText ? (
         <span className={`text-ui-micro ${chrome.severityClass}`}> {chrome.severityText}</span>
       ) : null}
       {summary ? (
-        <span className="text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
+        <span className="text-(--transcript-ink-chrome)">
           {" · "}
           {summary}
         </span>
@@ -712,7 +710,7 @@ export function ActivityThinkingRow({
   const text = open ? t("Thinking…") : proseSummary(block.text) || t("Thinking…");
   // While reasoning streams in, the line itself carries the shared sweep.
   const icon = bare ? null : (
-    <ChatNote className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+    <ChatNote className="icon-sm shrink-0 text-(--transcript-ink-chrome)" strokeWidth={1.75} />
   );
   const label = block.streaming ? (
     <WorkingIndicator
@@ -724,7 +722,7 @@ export function ActivityThinkingRow({
       {text}
     </WorkingIndicator>
   ) : (
-    <span className="min-w-0 flex-1 truncate font-sans text-ui-body font-normal text-(--ui-text-secondary)">
+    <span className="min-w-0 flex-1 truncate font-sans text-ui-body font-normal text-(--transcript-ink-chrome)">
       {text}
     </span>
   );
@@ -790,7 +788,7 @@ function ActivityNoteRow({
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityNoteRow:${block.id}`, false);
   const text = proseSummary(block.text);
   const icon = bare ? null : (
-    <ChatNote className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+    <ChatNote className="icon-sm shrink-0 text-(--transcript-ink-chrome)" strokeWidth={1.75} />
   );
 
   if (!expandable) {
@@ -800,7 +798,7 @@ function ActivityNoteRow({
         className="flex min-w-0 items-center gap-1.5 py-1"
       >
         {icon}
-        <span className="line-clamp-2 min-w-0 flex-1 font-sans text-ui-body font-normal text-(--ui-text-secondary)">
+        <span className="line-clamp-2 min-w-0 flex-1 font-sans text-ui-body font-normal text-(--transcript-ink-chrome)">
           {text}
         </span>
       </div>
@@ -817,7 +815,7 @@ function ActivityNoteRow({
       summary={
         <>
           {icon}
-          <span className="line-clamp-2 min-w-0 flex-1 text-left font-sans text-ui-body font-normal text-(--ui-text-secondary)">
+          <span className="line-clamp-2 min-w-0 flex-1 text-left font-sans text-ui-body font-normal text-(--transcript-ink-chrome)">
             {text}
           </span>
         </>
@@ -883,62 +881,54 @@ function ActivityToolRow({
     />
   );
 
+  const rowContent = (
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+      {bare ? null : <ActivityToolIcon state={state} live={live} />}
+      {summary}
+      {pending ? null : <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />}
+      {hasResult && block.tool?.preview?.kind === "write" && !errorDetail ? (
+        <span className="shrink-0 text-ui-micro text-(--transcript-ink-chrome)">
+          {t("Changes")}
+        </span>
+      ) : null}
+    </span>
+  );
+
   // Every row shares one height and inset, so the trail keeps a single rhythm
   // whether or not a row can open.
   return (
     <div className="transcript-tool-row flex min-w-0 flex-col">
       {hasResult ? (
-        <ActionHost
-          aria-label={
-            errorDetail
-              ? t("Failed tool call: {p0}", { p0: label })
-              : t("Tool call: {p0}", { p0: label })
-          }
-          controlMinHeight="compact"
-          padding={{ inline: "xs", block: "xxs" }}
-          className="-mx-1 min-w-0 gap-1.5"
+        <Disclosure
+          variant="step"
+          chevron="end"
+          open={errorOpen}
+          onOpenChange={setErrorOpen}
+          summaryLabel={t(
+            errorOpen
+              ? errorDetail
+                ? "Hide error details for {p2}"
+                : "Hide output for {p2}"
+              : errorDetail
+                ? "Show error details for {p2}"
+                : inspectionLabel,
+            { p2: label },
+          )}
+          summary={rowContent}
         >
-          {bare ? null : <ActivityToolIcon state={state} live={live} />}
-          <div
-            className="flex min-w-0 flex-1 cursor-pointer"
-            onClick={() => setErrorOpen((value) => !value)}
-          >
-            {summary}
-          </div>
-          <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />
-          {block.tool?.preview?.kind === "write" && !errorDetail ? (
-            <span className="shrink-0 text-ui-micro text-(--ui-text-secondary)">
-              {t("Changes")}
-            </span>
+          {errorOpen ? (
+            <div className={`min-w-0 py-1 ${bare ? "" : "pl-5"}`}>
+              <ToolInspectionPanel block={block} />
+            </div>
           ) : null}
-          {/* Quiet until the row is hovered or focused, open, or failed: the row
-              itself also toggles, and keyboard focus always reveals the action. */}
-          <InlineAction
-            motion="none"
-            reveal={errorDetail ? "always" : "interaction"}
-            expanded={errorOpen}
-            label={t(
-              errorOpen
-                ? errorDetail
-                  ? "Hide error details for {p2}"
-                  : "Hide output for {p2}"
-                : errorDetail
-                  ? "Show error details for {p2}"
-                  : inspectionLabel,
-              { p2: label },
-            )}
-            onClick={() => setErrorOpen((value) => !value)}
-          />
-        </ActionHost>
+        </Disclosure>
       ) : (
-        <div
-          aria-label={t("Tool call: {p0}", { p0: label })}
-          className="-mx-1 flex min-h-7 min-w-0 items-center gap-1.5 px-1 py-0.5"
-        >
-          {bare ? null : <ActivityToolIcon state={state} live={live} />}
-          {summary}
-          {pending ? null : <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />}
-        </div>
+        <Disclosure
+          variant="step"
+          collapsible={false}
+          summaryLabel={t("Tool call: {p0}", { p0: label })}
+          summary={rowContent}
+        />
       )}
       {pending ? <ApprovalControls block={block} onApproval={onApproval} /> : null}
       {errorDetail ? (
@@ -947,11 +937,6 @@ function ActivityToolRow({
         >
           {errorSummaryLine(errorDetail)}
         </p>
-      ) : null}
-      {errorOpen && hasResult ? (
-        <div className={`min-w-0 py-1 ${bare ? "" : "pl-5"}`}>
-          <ToolInspectionPanel block={block} />
-        </div>
       ) : null}
     </div>
   );
@@ -995,20 +980,20 @@ function BycodaCallRow({
       ? t("Running")
       : t("Ran");
   const summary = (
-    <>
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
       {live && state === "pending" && !pendingApproval ? (
         <WorkingIndicator className="shrink-0 font-sans" text={{ size: "body" }} glyph={false}>
           {verb}
         </WorkingIndicator>
       ) : (
         <span
-          className={`shrink-0 font-sans text-ui-body ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+          className={`shrink-0 font-sans text-ui-body ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
         >
           {verb}
         </span>
       )}
       <span
-        className={`flex min-w-0 max-w-full items-center gap-1 rounded px-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--color-content)"}`}
+        className={`flex min-w-0 max-w-full items-center gap-1 rounded px-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
       >
         <BycodaMark className="size-3.5" />
         <OverflowTooltip label={command}>
@@ -1016,18 +1001,17 @@ function BycodaCallRow({
         </OverflowTooltip>
       </span>
       <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />
-    </>
+    </span>
   );
   return (
     <div data-bycoda-tool-call={call.action} className="min-w-0">
       {hasResult ? (
-        <Button
-          motion="none"
-          fullWidth
-          variant="item"
-          type="button"
-          expanded={errorOpen}
-          aria-label={t(
+        <Disclosure
+          variant="step"
+          chevron="end"
+          open={errorOpen}
+          onOpenChange={setErrorOpen}
+          summaryLabel={t(
             hasError
               ? errorOpen
                 ? "Hide error details for {p1}: {p2}"
@@ -1037,20 +1021,18 @@ function BycodaCallRow({
                 : "Show output for {p1}: {p2}",
             { p1: PRODUCT_IDENTITY.displayName, p2: call.label },
           )}
-          onClick={() => setErrorOpen((value) => !value)}
-          className="w-full min-w-0 text-left"
+          summary={summary}
         >
-          {summary}
-        </Button>
+          {errorOpen ? <ToolInspectionPanel block={block} /> : null}
+        </Disclosure>
       ) : (
-        <div className="flex min-w-0 items-center gap-1.5 py-1">{summary}</div>
+        <Disclosure variant="step" collapsible={false} summary={summary} />
       )}
       {hasError && block.tool?.detail?.trim() ? (
         <p className="m-0 line-clamp-2 min-w-0 break-words py-1 pl-5 text-ui-caption text-(--ui-tone-danger-fg)">
           {errorSummaryLine(block.tool.detail)}
         </p>
       ) : null}
-      {errorOpen && hasResult ? <ToolInspectionPanel block={block} /> : null}
       <ApprovalControls block={block} onApproval={onApproval} />
     </div>
   );
@@ -1066,7 +1048,9 @@ function ActivityToolIcon({ state, live = false }: { state: ToolCallState; live?
     );
   }
 
-  return <ChatNote className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />;
+  return (
+    <ChatNote className="icon-sm shrink-0 text-(--transcript-ink-chrome)" strokeWidth={1.75} />
+  );
 }
 
 /** Failure stays marked. Running and success do not get a trailing icon. */
@@ -1081,7 +1065,7 @@ function ToolCallStatusIcon({
   // A call cut short on purpose settles as accepted, so mark it instead of reading as done.
   if (stopped && state !== "rejected") {
     return (
-      <span className="shrink-0 font-sans text-ui-micro text-(--ui-text-secondary)">
+      <span className="shrink-0 font-sans text-ui-micro text-(--transcript-ink-chrome)">
         {t("Stopped")}
       </span>
     );
@@ -1207,7 +1191,9 @@ function ToolCallSummary({
           {action && target ? (
             <>
               {t(action)}{" "}
-              <span className="font-mono text-ui-secondary text-(--color-content)">{target}</span>
+              <span className="font-mono text-ui-secondary text-(--transcript-ink-chrome)">
+                {target}
+              </span>
             </>
           ) : (
             <>
@@ -1240,7 +1226,7 @@ function ToolCallSummary({
     preview?.kind === "write" &&
     previewMatchesFile &&
     (preview.contentOnly || preview.lines?.some((line) => line.kind !== "context"));
-  const actionTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)";
+  const actionTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)";
   // Settled work rests dim and brightens with its row (see .transcript-tool-row).
   const targetTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-tool-ink)";
 
@@ -1327,7 +1313,7 @@ function ApprovalControls({
 function ApprovalContextUnavailable() {
   const t = useT();
   return (
-    <span className="text-ui-caption text-(--ui-text-secondary)">
+    <span className="text-ui-caption text-(--transcript-ink-chrome)">
       {t("Open this request in its conversation to respond.")}
     </span>
   );
@@ -1378,7 +1364,7 @@ function ConnectedApprovalControls({
         decision.danger ? (
           <InlineError>{decision.feedback}</InlineError>
         ) : (
-          <div role="status" className="mt-1.5 text-ui-caption text-(--ui-text-secondary)">
+          <div role="status" className="mt-1.5 text-ui-caption text-(--transcript-ink-chrome)">
             {decision.feedback}
           </div>
         )
@@ -1414,7 +1400,7 @@ export function HandoffDivider({ block }: { block: Block }) {
   return (
     <div className="px-4 py-5">
       <div className="flex items-center gap-3">
-        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
+        <div className="min-w-4 flex-1 border-t border-(--color-stroke)" />
         <div
           role={terminal ? "status" : "separator"}
           aria-label={
@@ -1424,7 +1410,7 @@ export function HandoffDivider({ block }: { block: Block }) {
                 ? `${t("Handoff")} · ${label}`
                 : t("Continued with {p0}", { p0: label })
           }
-          className={`flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption ${failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+          className={`flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption ${failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
         >
           {preparing ? (
             <>
@@ -1442,7 +1428,7 @@ export function HandoffDivider({ block }: { block: Block }) {
             </>
           )}
         </div>
-        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
+        <div className="min-w-4 flex-1 border-t border-(--color-stroke)" />
       </div>
     </div>
   );
@@ -1476,21 +1462,19 @@ function interjectionChrome(
       ? "text-(--ui-tone-danger-fg)"
       : meta.severity === "concern"
         ? "text-(--ui-tone-warning-fg)"
-        : "text-(--ui-text-secondary)";
+        : "text-(--transcript-ink-chrome)";
   return { label, severityText, severityClass };
 }
 
 /** The advisory body under an interjection, wherever the note is surfaced. */
 const INTERJECTION_BODY =
-  "min-w-0 whitespace-pre-wrap break-words font-sans text-ui-secondary leading-5 text-(--ui-text-secondary)";
+  "min-w-0 whitespace-pre-wrap break-words font-sans text-ui-secondary leading-5 text-(--transcript-ink-chrome)";
 
 /** A mid-turn interjection, e.g. OMP advisor notes: a labeled boundary with
  * a collapsible advisory body below it. */
 export function InterjectionDivider({ block }: { block: Block }) {
   const t = useT();
   const [expanded, setExpanded] = useRetainedDisclosure<boolean>(`interjection:${block.id}`, false);
-  const textRef = useRef<HTMLPreElement>(null);
-  const overflows = useClampOverflow(textRef, Boolean(block.text), expanded, block.text);
 
   const meta = block.interjection;
   if (!meta) return null;
@@ -1498,36 +1482,43 @@ export function InterjectionDivider({ block }: { block: Block }) {
   return (
     <div className="px-4 py-4">
       <div className="flex items-center gap-3">
-        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
+        <div className="min-w-4 flex-1 border-t border-(--color-stroke)" />
         <div
           role="separator"
           aria-label={t("Interjection: {p0}", { p0: label })}
-          className="flex items-center gap-2 px-1.5 font-sans text-ui-caption text-(--ui-text-secondary)"
+          className="flex items-center gap-2 px-1.5 font-sans text-ui-caption text-(--transcript-ink-chrome)"
         >
           <span>{label}</span>
           {severityText ? (
             <span className={`text-ui-micro ${severityClass}`}>{severityText}</span>
           ) : null}
         </div>
-        <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
+        <div className="min-w-4 flex-1 border-t border-(--color-stroke)" />
       </div>
       {block.text ? (
-        <div className="mt-2 px-2">
-          <pre ref={textRef} className={`${INTERJECTION_BODY} ${expanded ? "" : "line-clamp-2"}`}>
-            {block.text}
-          </pre>
-          {overflows ? (
-            <Button
-              motion="none"
-              variant="ghost"
-              type="button"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((value) => !value)}
-              className="mt-1"
-            >
-              {expanded ? t("Show less") : t("Show more")}
-            </Button>
-          ) : null}
+        <div className="mt-2">
+          <Disclosure
+            variant="step"
+            chevron="end"
+            open={expanded}
+            onOpenChange={setExpanded}
+            summaryLabel={
+              expanded
+                ? t("Hide the {p0} note", { p0: label })
+                : `${label}: ${proseSummary(block.text)}`
+            }
+            summary={
+              <span className="min-w-0 flex-1 truncate font-sans text-ui-caption">
+                {proseSummary(block.text)}
+              </span>
+            }
+          >
+            {expanded ? (
+              <div className="min-w-0 pb-2">
+                <pre className={INTERJECTION_BODY}>{block.text}</pre>
+              </div>
+            ) : null}
+          </Disclosure>
         </div>
       ) : null}
     </div>

@@ -3,7 +3,6 @@ import { InterfaceBehaviorGroup } from "../controls/InterfaceBehaviorGroup";
 import { InterfaceReadabilityGroup } from "../controls/InterfaceReadabilityGroup";
 import { InterfaceSizeGroup } from "../controls/InterfaceSizeGroup";
 import { ScrollbarGroup } from "../controls/ScrollbarGroup";
-import { ChatMessageAppearanceGroup } from "../controls/ChatMessageAppearanceGroup";
 import "../controls/InterfaceSections.css";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "../../useAppearanceSettings";
 
@@ -15,7 +14,6 @@ export function InterfaceSection({ appearance }: { appearance: AppearanceSetting
       <div className="settings-topics">
         <InterfaceSizeGroup appearance={appearance} />
         <InterfaceReadabilityGroup appearance={appearance} />
-        <ChatMessageAppearanceGroup appearance={appearance} />
         <InterfaceBehaviorGroup appearance={appearance} />
         <ScrollbarGroup />
       </div>

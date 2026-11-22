@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
-import { Text } from "../../../../../shared/ui/Text";
+import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NativeSelect } from "../../../../../shared/ui/Select";
@@ -11,9 +11,9 @@ export function MetaFields({ account, value, disabled, onChange }: PlatformField
   const name = SOCIAL_PLATFORM_NAMES[account.platform];
   if (account.platform !== "facebook")
     return (
-      <Text as="p" size="caption" tone="muted" leading="inherit" className="content-platform-note">
+      <InfoPopover className="self-start shrink-0">
         {t("Attach either one video or up to four images.")}
-      </Text>
+      </InfoPopover>
     );
   const target = value.facebook?.target ?? "feed";
   return (

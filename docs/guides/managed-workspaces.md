@@ -241,11 +241,11 @@ exit leaves the transfer blocked with a retryable reason. Older Hosts keep the
 previous immediate-release behavior.
 
 Every completed user message offers **Edit from here** in its message actions.
-Confirm **Revert and keep changes** to rewind chat to before that exact message
-and return its prompt and attachments to the composer without sending them.
-Files stay as they are.
+Confirm the dialog to rewind chat to before that exact message and return its
+prompt and attachments to the composer without sending them. Files stay as they
+are.
 
-Choose **Revert files too** to also restore this session's recorded edits from
+Turn on **Also revert file changes** to also restore this session's recorded edits from
 the selected message onward. Created files are removed. Files changed by another
 writer are skipped and listed in a notice. Earlier Git commits and the index are
 preserved; restored contents appear as working-copy changes. This bounded file

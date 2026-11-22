@@ -180,6 +180,13 @@ function QueueEditContent({
   const empty = isQueuedEditEmpty(message, draft);
   const dirty = hasQueuedEditChanges(message, draft);
   const tokens = attachmentDraftTokens(draft.attachments);
+  const saveReason = parentClosed
+    ? t("Preparing session checkpoint. Your draft is kept.")
+    : loadingAttachments > 0
+      ? t("Wait for the files to load.")
+      : empty
+        ? t("Write a message or keep an attachment.")
+        : undefined;
 
   useEffect(() => {
     const el = field.current;
@@ -464,6 +471,7 @@ function QueueEditContent({
           </div>
         ) : (
           <ModalActions
+            reason={saveReason}
             start={
               empty ? (
                 <Button
@@ -484,7 +492,8 @@ function QueueEditContent({
             <Button
               variant="primary"
               type="button"
-              disabled={parentClosed || empty || loadingAttachments > 0}
+              disabled={!!saveReason}
+              disabledReason={saveReason}
               onClick={save}
               shortcut="Mod+Enter"
             >
@@ -602,10 +611,6 @@ function QueueEditContent({
           </Text>
         ) : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
-
-        {parentClosed ? (
-          <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
-        ) : null}
       </div>
     </Modal>
   );

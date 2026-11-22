@@ -2,7 +2,7 @@ import { defineRule } from "../define-rule.mjs";
 
 /** Props each shared container already offers for its appearance, quoted in the message. */
 const PROPS = {
-  Popover: "`size`, `solid`, `kind`",
+  Popover: "`variant` (panel, compact, preview), `size`, `solid`, `kind`",
   PickerPopover: "`width`, `maxHeight`",
   DropdownMenu: "its own props (the menu owns frame and rows)",
   ContextMenu: "its own props (the menu owns frame and rows)",

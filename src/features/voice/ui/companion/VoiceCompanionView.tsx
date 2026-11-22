@@ -252,7 +252,13 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
             />
             {p.sessionPicker}
             {chatShown ? <VoiceChatTranscript turns={p.chatTurns} /> : null}
-            {p.error ? <VoiceErrorNotice error={p.error} onDismiss={p.onDismissError} /> : null}
+            {p.error ? (
+              <VoiceErrorNotice
+                error={p.error}
+                onDismiss={p.onDismissError}
+                onReconnect={canTalk ? p.onStart : undefined}
+              />
+            ) : null}
             <LiveText
               mode="assertive"
               {...surfaceAttributes({ frame: "none" }, "sr-only")}

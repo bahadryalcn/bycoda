@@ -11,6 +11,7 @@ import { Button } from "../../../shared/ui/Button";
 import { PreviewSelectionMenu } from "./PreviewSelection";
 import { HtmlPreviewSecurityActions } from "./HtmlPreviewSecurityActions";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 /** A separate protocol and opaque sandbox keep generated scripts out of the app. */
 export function HtmlPreview({
@@ -92,6 +93,12 @@ export function HtmlPreview({
   }, [path, source, active, reload]);
 
   if (!active) return null;
+  const reloadPreview = () => {
+    if (opening.current) return;
+    opening.current = true;
+    setState({});
+    setReload((value) => value + 1);
+  };
   const header = (
     <div
       className={
@@ -112,12 +119,7 @@ export function HtmlPreview({
           ? { iconOnly: true as const, label: t("Reload preview") }
           : { iconOnly: false as const })}
         loading={!state.url && !state.error}
-        onClick={() => {
-          if (opening.current) return;
-          opening.current = true;
-          setState({});
-          setReload((value) => value + 1);
-        }}
+        onClick={reloadPreview}
       >
         {compact ? <RefreshCw className="icon-sm" /> : t("Reload preview")}
       </Button>
@@ -132,7 +134,18 @@ export function HtmlPreview({
         </OutputBlock>
       ) : null}
       {state.error && !sourceVisible ? (
-        <DocumentMessage title={t("Couldn’t preview this file")} error detail={state.error} />
+        compact ? (
+          // An embedded card has no room for a full message page: one line, retry beside it.
+          <InlineError
+            inset="row"
+            details={state.error}
+            retry={{ onRetry: reloadPreview }}
+          >
+            {t("Couldn’t preview this file")}
+          </InlineError>
+        ) : (
+          <DocumentMessage title={t("Couldn’t preview this file")} error detail={state.error} />
+        )
       ) : state.url ? (
         <iframe
           ref={frameRef}

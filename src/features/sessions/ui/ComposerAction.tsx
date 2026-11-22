@@ -64,8 +64,8 @@ export function ComposerAction({
             {onQueue ? (
               <Button
                 motion="none"
-                iconOnly
-                label={t("Queue message")}
+                aria-label={t("Queue message")}
+                startIcon={<ListEnd className="icon-sm" strokeWidth={1.75} />}
                 tooltip={t("Queue message for when this turn finishes")}
                 shortcut={queueShortcut}
                 data-usage-guide="queue-button"
@@ -74,7 +74,7 @@ export function ComposerAction({
                 disabled={submitting === "send"}
                 onClick={onQueue}
               >
-                <ListEnd className="icon-sm" strokeWidth={1.75} />
+                {t("Queue")}
               </Button>
             ) : null}
             <Button
@@ -124,8 +124,8 @@ export function ComposerAction({
       {onQueue && hasValue ? (
         <Button
           motion="none"
-          iconOnly
-          label={t("Queue message")}
+          aria-label={t("Queue message")}
+          startIcon={<ListEnd className="icon-sm" strokeWidth={1.75} />}
           tooltip={t("Queue message for when the subagents finish")}
           shortcut={queueShortcut}
           data-usage-guide="queue-button"
@@ -134,7 +134,7 @@ export function ComposerAction({
           disabled={submitting === "send"}
           onClick={onQueue}
         >
-          <ListEnd className="icon-sm" strokeWidth={1.75} />
+          {t("Queue")}
         </Button>
       ) : null}
       <Button

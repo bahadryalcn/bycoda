@@ -133,21 +133,24 @@ describe("applyAppearanceSnapshot", () => {
     const captured = captureAppearanceSnapshot();
     expect(captured.preferences).toMatchObject({
       userMessageOpacity: 42,
-      assistantMessageOpacity: 26,
+      transcriptSurface: "reply",
+      transcriptSurfaceOpacity: 45,
       messageColor: "theme",
     });
     applyAppearanceSnapshot(appearance, {
       preferences: {
         ...APPEARANCE_DEFAULTS,
         userMessageOpacity: 80,
-        assistantMessageOpacity: 0,
+        transcriptSurface: "off",
+        transcriptSurfaceOpacity: 0,
         messageColor: "neutral",
       },
     });
     expect(fns.onPreferences).toHaveBeenCalledWith(
       expect.objectContaining({
         userMessageOpacity: 80,
-        assistantMessageOpacity: 0,
+        transcriptSurface: "off",
+        transcriptSurfaceOpacity: 0,
         messageColor: "neutral",
       }),
     );

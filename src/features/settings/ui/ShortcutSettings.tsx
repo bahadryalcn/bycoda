@@ -639,6 +639,7 @@ export function KeybindingsPage() {
             kind="dialog"
             aria-label={t("Filters")}
             width={280}
+            variant="panel"
             flow="scroll"
             onDismiss={() => setFiltersOpen(false)}
           >

@@ -351,6 +351,7 @@ function withTabMoveItems(
 
 function TitleTabItem({
   tab,
+  showProject,
   active,
   closable,
   canDrag,
@@ -367,6 +368,8 @@ function TitleTabItem({
   closable: boolean;
   canDrag: boolean;
   sortable: SortableApi;
+  /** Tabs of more than one project are open, so each tab names its own. */
+  showProject?: boolean;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onPinFile?: (fileId: string) => void;
@@ -375,7 +378,9 @@ function TitleTabItem({
   itemRef?: (el: HTMLDivElement | null) => void;
 }) {
   const t = useT();
-  const { headline, meta, tooltip } = buildTabCopy(tab, t("New session"), t);
+  const copy = buildTabCopy(tab, t("New session"), t);
+  const { headline, tooltip } = copy;
+  const meta = [showProject ? tab.project.trim() : "", copy.meta].filter(Boolean).join(" · ");
   const fileIcon = tab.files[0];
   const accessibleTooltip = [
     tooltip,
@@ -1023,6 +1028,7 @@ function TitleBarComponent({
   const setActiveTabNode = (node: HTMLDivElement | null) => {
     activeTabRef.current = node;
   };
+  const projectsMixed = new Set(tabs.map((tab) => tab.project.trim())).size > 1;
   const canDrag = tabs.length > 1 || Boolean(onMoveToNewWindow);
 
   const activeTab = tabs.find((t) => t.id === activeId);
@@ -1345,6 +1351,7 @@ function TitleBarComponent({
                   ) : null}
                   <TitleTabItem
                     tab={tab}
+                    showProject={projectsMixed}
                     active={!entry.closing && tab.id === activeId}
                     closable={!entry.closing && titleTabClosable(tab, tabs.length)}
                     canDrag={!entry.closing && canDrag}

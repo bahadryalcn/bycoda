@@ -370,8 +370,11 @@ const baseContentInk = /var\(\s*--color-content(?![\w-])/;
  * directly or through color-mix(). Transcript CSS is src/features/sessions/ui/**, and the
  * .agent-markdown, [data-chat-message-surface] and .transcript-* rules in the shared stylesheets.
  */
-export function transcriptBaseInk(file, { property, value, selectors }) {
-  if (property !== "color" || !baseContentInk.test(value)) return false;
+export function transcriptBaseInk(file, { property, value, selectors }, tokenBlock = false) {
+  // The transcript ink and surface roles are defined once, in transcript-surface.css.
+  if (/^--transcript-(?:ink|surface)-/.test(property))
+    return !file.endsWith("/transcript-surface.css");
+  if (tokenBlock || property !== "color" || !baseContentInk.test(value)) return false;
   if (file.startsWith("src/features/sessions/ui/")) return true;
   return (
     (file === "src/styles/index.css" || file === "src/styles/bycoda.css") &&
