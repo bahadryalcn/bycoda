@@ -242,15 +242,20 @@ export function ComposerSkillReference({
       kind="dialog"
       side="top"
       align="start"
+      size="lg"
+      appearance="composer"
       aria-label={label}
       onDismiss={close}
-      className="max-w-80 space-y-2 p-3"
+      className="flex flex-col gap-3 p-3"
     >
-      <Text as="p" size="secondary" weight="medium">
-        {label}
-      </Text>
+      <div className="flex shrink-0 items-center gap-2">
+        <SkillIcon className="icon-sm shrink-0" aria-hidden />
+        <Text as="p" size="body" tone="primary" weight="medium" wrap="anywhere">
+          {label}
+        </Text>
+      </div>
       {group ? (
-        <ul className="flex flex-col gap-1">
+        <ul className="m-0 flex min-h-0 flex-col gap-1 overflow-y-auto">
           {group.members.map((member) => (
             <li key={member} className="flex items-center gap-1.5">
               <SkillIcon className="icon-xs shrink-0" aria-hidden />
@@ -261,13 +266,22 @@ export function ComposerSkillReference({
           ))}
         </ul>
       ) : (
-        <Text as="p" size="caption" tone="secondary">
+        <Text
+          as="p"
+          size="secondary"
+          tone="secondary"
+          leading="relaxed"
+          wrap="anywhere"
+          className="min-h-0 overflow-y-auto overscroll-contain"
+        >
           {skill?.description || t("No description")}
         </Text>
       )}
       {path && onOpenFile ? (
         <Button
-          variant="link"
+          variant="secondary"
+          size="sm"
+          className="shrink-0 self-end"
           onClick={() => {
             close();
             onOpenFile(path);

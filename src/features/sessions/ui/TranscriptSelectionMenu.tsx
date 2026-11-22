@@ -33,6 +33,7 @@ import {
 
 type Props = {
   selection: TranscriptSelection | null;
+  onCopy?: () => Promise<void>;
   onAddToChat?: (text: string) => void | Promise<void>;
   addToChatLabel?: string;
   onAddToNotes?: (text: string) => void | Promise<void>;
@@ -136,6 +137,7 @@ function useSelectionOperationRunner(
 
 export function TranscriptSelectionMenu({
   selection: liveSelection,
+  onCopy,
   onAddToChat,
   addToChatLabel,
   onAddToNotes,
@@ -302,7 +304,7 @@ export function TranscriptSelectionMenu({
       void run(
         "copy",
         async () => {
-          await copyMessage(selection.text);
+          await (onCopy ? onCopy() : copyMessage(selection.text));
           setCopied(selectionKey);
         },
         false,

@@ -490,6 +490,46 @@ it("turns a send whose sender is gone into an unconfirmed hold that the sender c
   expect(accepted.messages.map((row) => row.id)).toEqual(["b"]);
   expect(await queues.finish("chat", claimed.claim!.token, true)).toEqual(accepted);
 });
+it("keeps an explicitly edited queued steer after late delivery proof", async () => {
+  const { queues } = leased();
+  const owned = await enqueue(queues, "desktop:a");
+  const claimed = await queues.claim("chat", "a", "desktop:a", owned.revision, true);
+  const token = claimed.claim!.token;
+  await queues.settleSteer("chat", token, "unknown");
+  const held = await queues.get("chat");
+  const edited = await queues.change("chat", held, {
+    ...held,
+    messages: held.messages.map((row) =>
+      row.id === "a" ? { ...row, text: "edited", deliveryUnknown: undefined } : row,
+    ),
+  });
+  await queues.settleSteer("chat", token, "delivered");
+  expect(await queues.get("chat")).toEqual(edited);
+});
+it.each(["delivered", "not_delivered"] as const)(
+  "holds an ambiguous steer once and reconciles late %s proof only for its claim",
+  async (outcome) => {
+    const { queues } = leased();
+    const owned = await enqueue(queues, "desktop:a");
+    const claimed = await queues.claim("chat", "a", "desktop:a", owned.revision, true);
+    const token = claimed.claim!.token;
+    await queues.settleSteer("chat", token, "unknown");
+    const held = await queues.get("chat");
+    expect(held.status).toBe("paused");
+    expect(held.messages[0]).toMatchObject({ id: "a", deliveryUnknown: true });
+    expect(await queues.sendable("chat")).toBe(false);
+    await queues.settleSteer("chat", "different-claim", "delivered");
+    expect(await queues.get("chat")).toEqual(held);
+    await queues.settleSteer("chat", token, outcome);
+    const reconciled = await queues.get("chat");
+    expect(reconciled.messages.map((row) => row.id)).toEqual(
+      outcome === "delivered" ? ["b"] : ["a", "b"],
+    );
+    expect(reconciled.messages[0].deliveryUnknown).toBeUndefined();
+    await queues.settleSteer("chat", token, outcome);
+    expect(await queues.get("chat")).toEqual(reconciled);
+  },
+);
 it("migrates rows owned by a permanent consumer: unleased, and the wait on a dead owner becomes a pause", async () => {
   clock.at = 1000000;
   const { db } = leased();

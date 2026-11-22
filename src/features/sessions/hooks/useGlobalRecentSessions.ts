@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   finalizeRecentSessionPages,
@@ -70,7 +70,7 @@ export function useGlobalRecentSessions(
 } {
   const [stored, setStored] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ cause: unknown } | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const loaded = useRef(false);
   const running = useRef<Promise<void> | null>(null);
@@ -112,8 +112,8 @@ export function useGlobalRecentSessions(
   const publishStored = useStableCallback((next: SessionSummary[]) => {
     if (!sameRecentRows(stored, next)) setStored(next);
   });
-  const publishError = useStableCallback((next: string | null) => {
-    if (error !== next) setError(next);
+  const clearFailure = useStableCallback(() => {
+    if (failure) setFailure(null);
   });
   const publishLoading = useStableCallback((next: boolean) => {
     if (loading !== next) setLoading(next);
@@ -203,7 +203,7 @@ export function useGlobalRecentSessions(
                 } while (cursor);
                 if (!cancelled) {
                   publishStored(finalizeRecentSessionPages(collected, since));
-                  publishError(null);
+                  clearFailure();
                   loaded.current = true;
                 }
                 return;
@@ -211,10 +211,9 @@ export function useGlobalRecentSessions(
                 if (cancelled) return;
                 if (String(reason).includes("RECENT_SESSIONS_CHANGED")) {
                   if (attempt < 2) continue;
-                  publishError(t("Recent sessions changed while loading. Retry shortly."));
+                  setFailure({ cause: t("Recent sessions changed while loading. Retry shortly.") });
                 } else {
-                  const message = presentRemoteError(reason);
-                  if (message) publishError(message);
+                  setFailure({ cause: reason });
                 }
                 return;
               }
@@ -230,8 +229,7 @@ export function useGlobalRecentSessions(
         };
         void start().catch((reason: unknown) => {
           if (!cancelled) {
-            const message = presentRemoteError(reason);
-            if (message) publishError(message);
+            setFailure({ cause: reason });
             publishLoading(false);
           }
         });
@@ -247,12 +245,17 @@ export function useGlobalRecentSessions(
       cancelRun();
       refreshRun.current = null;
     };
-  }, [enabled, historyKey, publishStored, publishError, publishLoading]);
+  }, [enabled, historyKey, publishStored, clearFailure, publishLoading]);
   const remoteHistoryLimited = useMemo(
     () => [...allowedProjectKeys].some((key) => isRemoteProjectPath(key) && !freshKeys.has(key)),
     [allowedProjectKeys, freshKeys],
   );
-  const visibleLoading = enabled && loading;
+  const { visibleError, pending } = useGracedFailure({
+    error: enabled ? failure?.cause : undefined,
+    retry: refresh,
+  });
+  const visibleLoading = enabled && (loading || pending);
+  const error = visibleError ?? null;
   return useMemo(
     () => ({ rows, loading: visibleLoading, error, remoteHistoryLimited, refresh }),
     [rows, visibleLoading, error, remoteHistoryLimited, refresh],

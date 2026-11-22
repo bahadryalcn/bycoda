@@ -303,6 +303,26 @@ it("holds the original clipboard image through a failed spill and retries only t
   expect(result.draft.attachments).toMatchObject([{ path: "/fixture/image.png" }]);
 });
 
+it("restores a Bycoda message with its image inside the pasted text", async () => {
+  await draw();
+  await type("Before after");
+  const field = container.querySelector("textarea")!;
+  field.setSelectionRange(7, 7);
+  const html =
+    '<div><pre data-bycoda-reference-text="See [Image: Attachment; ref=clipboard-0] here ">See here </pre>' +
+    '<img data-bycoda-file="shot.png" src="data:image/png;base64,YWJj"></div>';
+  await act(async () => {
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", {
+      value: { getData: (type: string) => (type === "text/html" ? html : "See here ") },
+    });
+    field.dispatchEvent(paste);
+  });
+  const { draft } = await close().captureAndFlush();
+  expect(draft.prompt).toMatch(/^Before See \[Image[^\]]+\] here after$/);
+  expect(draft.attachments).toMatchObject([{ name: "shot.png" }]);
+});
+
 it("retains a successful screenshot selection across inspection failure without recapturing or deleting it", async () => {
   await draw();
   let attempts = 0;

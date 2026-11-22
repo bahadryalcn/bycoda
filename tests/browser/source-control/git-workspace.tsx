@@ -1,5 +1,7 @@
 import { GitConflictImages } from "../../../src/features/source-control/ui/GitConflictImages";
 import { createRoot } from "react-dom/client";
+import { BranchPicker } from "../../../src/features/source-control/ui/BranchPicker";
+import { GitCommitBlameView } from "../../../src/features/source-control/ui/GitCommitBlameView";
 import { GitHistoryGraph } from "../../../src/features/source-control/ui/GitHistoryGraph";
 import { GitGraphWorkspace } from "../../../src/features/source-control/ui/GitGraphWorkspace";
 import { WorkspaceSourceControl } from "../../../src/features/source-control/ui/WorkspaceSourceControl";
@@ -23,6 +25,26 @@ const allRepositories = checkouts && new URLSearchParams(location.search).has("a
 const diffUsability = new URLSearchParams(location.search).has("diff-usability");
 const actionFeedback = new URLSearchParams(location.search).has("action-feedback");
 const commitTransition = new URLSearchParams(location.search).has("commit-transition");
+const dirtySwitch = new URLSearchParams(location.search).has("dirty-switch");
+const blameLong = new URLSearchParams(location.search).has("blame-long");
+const blameAuthors = [
+  "Bahar Kaya-Yıldırım (contractor, platform infrastructure)",
+  "Deniz Yılmaz",
+  "Maximilian von Hohenzollern-Sigmaringen",
+];
+const blameSummaries = [
+  "Rework the workspace navigation controller so keyboard focus survives remounts of the sidebar",
+  "Fix typo",
+  "Revert “Improve workspace navigation” because it broke split panes on narrow windows",
+];
+const blameLongLines = [
+  "export function navigateWorkspace(target: WorkspaceTarget, options: NavigationOptions = {}) {",
+  '  const current = readCurrentWorkspaceSelection(options.scope ?? "project", options.fallback);',
+  '  if (!current) return openFirstAvailableWorkspace(target, { reason: "no-selection", preserveFocus: true });',
+  '  return focusWorkspaceRegion(current, target, { restore: options.restoreFocus ?? true, source: "keyboard" });',
+  "}",
+  "",
+];
 const pendingActions = new Map<string, () => void>();
 const diffRepository = "/fixture/engineering/long-repository-name-for-working-tree-review";
 const diffRelative =
@@ -221,6 +243,18 @@ Object.assign(window, {
       }
       if (command === "git_commit_files") return [file("src/workspace.tsx"), file("src/theme.css")];
       if (command === "git_commit_message") return "Workspace change 39\n\nFull commit body.\n";
+      if (command === "git_blame" && blameLong)
+        return blameLongLines.map((text, index) => {
+          const group = Math.floor(index / 2);
+          return {
+            line: index + 1,
+            sha: sha(900 + group),
+            shortSha: sha(900 + group).slice(-7),
+            author: blameAuthors[group],
+            timestamp: 1791567000 - group * 86400,
+            summary: blameSummaries[group],
+          };
+        });
       if (command === "git_blame")
         return [
           {
@@ -259,6 +293,11 @@ Object.assign(window, {
             timestamp: 1791566500,
           },
         ];
+      // ?dirty-switch: git refuses the checkout because local changes would be overwritten.
+      if (command === "git_checkout" && dirtySwitch)
+        throw new Error(
+          "error: Your local changes to the following files would be overwritten by checkout:\n\tsrc/workspace.tsx\nPlease commit your changes or stash them before you switch branches.",
+        );
       if (command === "git_checkout") {
         branches = branches.map((b) => ({
           ...b,
@@ -381,7 +420,20 @@ const renderFixture = () =>
             : "w-80 border-r border-stroke"
         }
       >
-        {new URLSearchParams(location.search).has("image-conflict") ? (
+        {dirtySwitch ? (
+          <div style={{ padding: 12 }}>
+            <BranchPicker cwd="/fixture" branch="main" initialOpen enabled />
+          </div>
+        ) : blameLong ? (
+          <div style={{ display: "flex", height: "100%", width: "100vw" }}>
+            <GitCommitBlameView
+              cwd="/fixture"
+              sha={sha(40)}
+              relative="src/workspace.tsx"
+              text={blameLongLines.join("\n")}
+            />
+          </div>
+        ) : new URLSearchParams(location.search).has("image-conflict") ? (
           <div style={{ display: "flex", height: "100%" }}>
             <GitConflictImages
               sides={["ours", "theirs"]}

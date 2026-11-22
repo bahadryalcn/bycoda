@@ -149,6 +149,35 @@ const initial: Session = {
   context: { used: 64000, window: 128000 },
 };
 function seedComposer() {
+  if (params.has("clipboardRoundTrip")) {
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jVZsAAAAASUVORK5CYII=";
+    setComposerAttachments(sessionId, [
+      {
+        id: "clipboard-image",
+        kind: "image",
+        mimeType: "image/png",
+        name: "image.png",
+        size: atob(png).length,
+        data: png,
+      },
+    ]);
+    setComposerDraft(sessionId, "Look at [image1] before replying.");
+    return;
+  }
+  if (params.get("inlineExamples") === "repeated-pdf") {
+    setComposerAttachments(sessionId, [
+      {
+        id: "report",
+        kind: "file",
+        mimeType: "application/pdf",
+        name: "Detailed-project-report-tr (1).pdf",
+        size: 71 * 1024,
+      },
+    ]);
+    setComposerDraft(sessionId, "/ui-ux-pro-max [file1] [file1]");
+    return;
+  }
   if (params.has("inlineExamples")) {
     setComposerAttachments(sessionId, [
       {
@@ -318,7 +347,13 @@ Object.assign(window, {
   __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   __TAURI_INTERNALS__: {
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
-    invoke: async (command: string, args?: { url?: string }) => {
+    invoke: async (command: string, args?: { url?: string; name?: string; data?: string }) => {
+      if (params.has("clipboardRoundTrip") && command === "write_attachment") {
+        document.documentElement.dataset.clipboardImageBytes = String(
+          atob(args?.data ?? "").length,
+        );
+        return `/fixture/attachments/${args?.name}`;
+      }
       if (params.has("inlineExamples")) {
         if (command === "plugin:opener|open_url") {
           document.documentElement.dataset.composerOpenedUrl = args?.url;
@@ -328,7 +363,10 @@ Object.assign(window, {
         if (command === "list_skills")
           return exampleSkills.map((name) => ({
             name,
-            description: "Design review",
+            description:
+              params.get("inlineExamples") === "skill-panels" && name === "ui-ux-pro-max"
+                ? "UI/UX guidance for web and mobile. Reviews layouts, typography, color palettes, spacing, accessibility and interaction states. Covers dashboards, landing pages, forms, navigation and mobile flows. Suggests component patterns for React, Vue, Svelte, SwiftUI and React Native, with examples for common controls and data visualizations."
+                : "Design review",
             path: `/fixture/.claude/skills/${name}/SKILL.md`,
             scope: "project",
             source: "claude",

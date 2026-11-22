@@ -64,6 +64,23 @@ for (const theme of ["light", "dark"])
       await page.screenshot({
         path: `temp/verification/subagent-retention/history-${theme}-${width}.png`,
       });
+      const menu = page.getByRole("menu", { name: "Session subagents" });
+      await expect(menu.locator("..").locator(":scope > .popover-frosted")).toHaveCount(1);
+      const firstRow = menu.getByRole("menuitem").first();
+      const spacing = await firstRow.evaluate((row) => {
+        const style = getComputedStyle(row);
+        return {
+          inset: parseFloat(style.paddingBlockStart),
+          gap:
+            row.nextElementSibling!.getBoundingClientRect().top -
+            row.getBoundingClientRect().bottom,
+        };
+      });
+      expect(spacing.inset).toBeGreaterThanOrEqual(6);
+      expect(spacing.gap).toBeGreaterThanOrEqual(4);
+      await expect(firstRow).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(menu.getByRole("menuitem").nth(1)).toBeFocused();
       await page.getByRole("menuitem", { name: /^Physics table 2,/ }).click();
       await expect(panel).toContainText("Low initial entropy");
     });
@@ -129,14 +146,17 @@ for (const theme of ["light", "dark"])
         exact: true,
       });
       const toggle = dock.locator("button[data-dock-toggle]");
-      await expect(toggle).toContainText("Background work");
+      // The visible summary is provider marks and counts; the title lives in the accessible name.
+      await expect(toggle).not.toContainText("Background work");
+      await expect(toggle).toHaveAccessibleName(/^Background work, /);
+      await expect(toggle.locator("[data-dock-providers] > *").first()).toBeVisible();
       for (const label of ["1 running", "1 done", "1 failed", "1 stopped", "1 interrupted"]) {
         await expect(toggle.locator("[data-tone]", { hasText: label })).toBeVisible();
       }
       expect(
         await toggle.evaluate((button) => {
           const trigger = button.getBoundingClientRect();
-          return [...button.querySelectorAll("[data-tone][data-variant]")].every((badge) => {
+          return [...button.querySelectorAll("[data-tone]")].every((badge) => {
             const box = badge.getBoundingClientRect();
             return (
               box.left >= trigger.left &&
@@ -192,18 +212,27 @@ for (const theme of ["dark", "light"]) {
           ),
         );
         await expect(row).toHaveAttribute("data-dock-agent-state", state);
-        const status = row.locator("[data-dock-agent-title] > [data-dock-agent-status]");
-        await expect(status).toBeVisible();
-        const geometry = await status.evaluate((node) => {
-          const icon = node.getBoundingClientRect();
-          const title = node.nextElementSibling!.getBoundingClientRect();
+        // The provider mark leads; the state reads as icon and word among the metrics.
+        const lead = row.locator("[data-dock-agent-lead]");
+        await expect(lead).toBeVisible();
+        const geometry = await lead.evaluate((node) => {
+          const icon = node.firstElementChild!.getBoundingClientRect();
+          const title = node
+            .parentElement!.querySelector("[data-dock-agent-title]")!
+            .getBoundingClientRect();
           return {
             size: icon.width,
-            besideTitle: icon.right <= title.left,
-            alignedWithTitle: Math.abs(icon.top - title.top) <= 2,
+            beforeTitle: icon.right <= title.left,
+            alignedWithTitle: Math.abs(icon.top - title.top) <= 4,
           };
         });
-        expect(geometry).toEqual({ size: 16, besideTitle: true, alignedWithTitle: true });
+        expect(geometry).toEqual({ size: 16, beforeTitle: true, alignedWithTitle: true });
+        // The state word appears once, from the status mark or from a detail that names it.
+        const word = state === "stopped" ? "stopped by you" : state;
+        const metrics = (
+          await row.locator(".activity-dock-agent-metrics").innerText()
+        ).toLowerCase();
+        expect(metrics.split(word).length - 1).toBe(1);
       }
       const running = dock.locator('[data-dock-agent="status-running"]');
       const geometry = await running.evaluate((node) => {

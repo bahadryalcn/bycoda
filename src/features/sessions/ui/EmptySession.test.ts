@@ -1,10 +1,13 @@
 import { createElement } from "react";
 import { renderToStaticMarkup, renderToReadableStream } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { EmptySession } from "./EmptySession";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { adoptRemoteMachineInventory } from "../../connections/model/connections";
 
 describe("empty session heading", () => {
+  afterEach(() => adoptRemoteMachineInventory([]));
+
   it("shows the project path as visible text, not only on hover", () => {
     const markup = renderToStaticMarkup(
       createElement(EmptySession, { cwd: "/work/demo", composer: createElement("textarea") }),
@@ -22,6 +25,38 @@ describe("empty session heading", () => {
       expect(markup).toMatch(/<h2[^>]*>demo<\/h2>/);
       expect(markup).toContain(`<p class="bycoda-task-path">${cwd}</p>`);
     }
+  });
+
+  it("shows the saved machine name and folder path for a remote project", () => {
+    adoptRemoteMachineInventory([
+      {
+        id: "saved-machine",
+        name: "Office Mac",
+        endpoint: "http://office.local",
+        environmentId: "host-id",
+      },
+    ]);
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "remote://host-id/Users/user/projects/demo",
+        composer: createElement("textarea"),
+      }),
+    );
+
+    expect(markup).toContain("Office Mac · /Users/user/projects/demo");
+    expect(markup).not.toContain("remote://host-id");
+  });
+
+  it("uses a generic machine label until the saved name is available", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "remote://host-id/C:/projects/demo",
+        composer: createElement("textarea"),
+      }),
+    );
+
+    expect(markup).toContain("Remote computer · C:/projects/demo");
+    expect(markup).not.toContain("remote://host-id");
   });
 
   it("names the wordmark with a role assistive technology reads", () => {

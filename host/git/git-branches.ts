@@ -1,4 +1,4 @@
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "./git-exec-pool";
 import { withHostGitMutation } from "./git-mutations";
 import { headBranchFromFiles } from "./git-actions";
 
@@ -23,18 +23,19 @@ export type RefsRevision = (cwd: string) => Promise<{ etag: string; watching: bo
 /** Two processes, run together: every start blocks the Host event loop on Windows. */
 async function readBranches(cwd: string): Promise<HostBranches> {
   const [{ stdout: refs }, { stdout: configuredRemotes }, fromFiles] = await Promise.all([
-    exec(
+    hostGitExec.exec(
       "git",
       ["for-each-ref", "--format=%(refname)%00%(symref)", "refs/heads", "refs/remotes"],
       options(cwd),
     ),
-    exec("git", ["remote"], options(cwd)),
+    hostGitExec.exec("git", ["remote"], options(cwd)),
     headBranchFromFiles(cwd),
   ]);
   // Files answer a branch, "" (detached) or undefined (reftable or unreadable: ask git).
   const current =
     fromFiles === undefined
-      ? await exec("git", ["symbolic-ref", "--quiet", "HEAD"], options(cwd))
+      ? await hostGitExec
+          .exec("git", ["symbolic-ref", "--quiet", "HEAD"], options(cwd))
           .then(({ stdout }) => stdout.trim().replace(/^refs\/heads\//, "") || null)
           .catch(() => null)
       : fromFiles || null;
@@ -110,15 +111,19 @@ async function switchHostBranchSerialized(
   if (!state.branches.includes(branch) && !remoteRef)
     throw new Error("Choose an existing local branch");
   if (state.current === branch) return state;
-  const { stdout: changes } = await exec(
+  const { stdout: changes } = await hostGitExec.exec(
     "git",
     ["status", "--porcelain", "--untracked-files=all"],
     options(cwd),
   );
   if (changes) throw new Error("Commit or stash changes on the host before switching branches");
   if (remoteRef && !state.branches.includes(branch))
-    await exec("git", ["switch", "--track", "-c", branch, remoteRef], options(cwd, true));
-  else await exec("git", ["switch", branch], options(cwd, true));
+    await hostGitExec.exec(
+      "git",
+      ["switch", "--track", "-c", branch, remoteRef],
+      options(cwd, true),
+    );
+  else await hostGitExec.exec("git", ["switch", branch], options(cwd, true));
   return hostBranches(cwd);
 }
 
@@ -140,15 +145,15 @@ async function createHostBranchSerialized(cwd: string, branch: unknown): Promise
     branch.startsWith("@")
   )
     throw new Error("Enter a valid branch name");
-  await exec("git", ["check-ref-format", "--branch", branch], options(cwd));
+  await hostGitExec.exec("git", ["check-ref-format", "--branch", branch], options(cwd));
   const state = await hostBranches(cwd);
   if (state.branches.includes(branch)) throw new Error("Branch already exists");
-  const { stdout: changes } = await exec(
+  const { stdout: changes } = await hostGitExec.exec(
     "git",
     ["status", "--porcelain", "--untracked-files=all"],
     options(cwd),
   );
   if (changes) throw new Error("Commit or stash changes on the host before switching branches");
-  await exec("git", ["switch", "-c", branch], options(cwd, true));
+  await hostGitExec.exec("git", ["switch", "-c", branch], options(cwd, true));
   return hostBranches(cwd);
 }

@@ -10,7 +10,8 @@ import { AssistantResponseValidationSchema } from "../../src/shared/model/host-c
 import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects";
 import { getHostRpcMethod } from "../../src/shared/model/host-contracts/methods";
 import { trackRpc } from "../diagnostics/loop-stall";
-import { mcpMetricName, perfMetrics } from "../diagnostics/perf-metrics";
+import { createLogger } from "../diagnostics/logger";
+import { mcpMetricName, perfMetrics, syncDbTiming } from "../diagnostics/perf-metrics";
 import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
 import { requestingDeviceName } from "../desktop/remoteActivity";
 import { memoized } from "../desktop/requester-name";
@@ -130,6 +131,7 @@ export function createHttpRuntime(
     | "workspacePolicy"
     | "featureClaims"
     | "terminalService"
+    | "terminals"
     | "nativeServiceUploads"
     | "desktopControl"
     | "desktopHelper"
@@ -307,7 +309,7 @@ export function createHttpRuntime(
               !runtimePrincipal &&
               !conversationPrincipal &&
               !peerIdentity &&
-              !(await dependencies.engine.store.authenticated(credential)))
+              !(await dependencies.engine.store.authenticateIncomingDevice(credential)))
           ) {
             response.writeHead(401, { "X-Bycoda-Auth-Stage": "before-dispatch" }).end(
               JSON.stringify({
@@ -371,6 +373,23 @@ export function createHttpRuntime(
             input.params && typeof input.params === "object" && !Array.isArray(input.params)
               ? (input.params as Record<string, unknown>)
               : {};
+          const syncMethod =
+            input.method === "sync.pull" || input.method === "sync.push" ? input.method : undefined;
+          const syncCallId =
+            typeof params.syncCallId === "string" && /^[a-z0-9-]{1,64}$/i.test(params.syncCallId)
+              ? params.syncCallId
+              : undefined;
+          const syncTiming: NonNullable<ReturnType<typeof syncDbTiming.getStore>> = { dbWaitMs: 0 };
+          let syncAdmittedAt = ingressAt;
+          let syncHandlerMs = 0;
+          let syncSerializationMs = 0;
+          const syncTimings = () => ({
+            receiveToAdmitMs: elapsedSince(ingressAt, syncAdmittedAt),
+            dbWaitMs: syncTiming.dbWaitMs,
+            handlerMs: Math.max(0, syncHandlerMs - syncTiming.dbWaitMs),
+            serializationMs: syncSerializationMs,
+            loopMaxRecentMs: perfMetrics.recentLoopMaxMs(),
+          });
           const transportToken = token;
           const resultAuthorities: Array<() => Promise<boolean>> = [];
           // Handlers see one signal for the client hanging up before its answer was
@@ -460,11 +479,17 @@ export function createHttpRuntime(
             awaitWrite = false,
           ) => {
             const inline = serializedResponse(value);
-            const body = voiceDisclosure
+            const serializationStartedAt = syncMethod ? monotonicNow() : 0;
+            let body = voiceDisclosure
               ? await voiceDisclosure.body(value)
               : inline === undefined
                 ? JSON.stringify({ result: value })
                 : `{"result":${inline}}`;
+            // A non-empty result object: append metadata without encoding its records again.
+            if (syncMethod && body.endsWith("}}") && !body.endsWith("{}}")) {
+              syncSerializationMs = elapsedSince(serializationStartedAt);
+              body = `${body.slice(0, -2)},"timings":${JSON.stringify(syncTimings())}}}`;
+            }
             // After authority: a revoked device gets its 401, never a size hint. Before any
             // write: the work is done and its receipt kept, so only the answer is withheld.
             await verify?.();
@@ -735,41 +760,44 @@ export function createHttpRuntime(
               },
             });
           }
-          await dependencies.engine.store.db.withAuthorization(
-            () => dependencies.engine.store.authenticated(token),
-            async () => {
-              const method = String(input.method);
-              // Only registered names are recorded; a held long poll is never a stall suspect.
-              const done = trackRpc(
-                getHostRpcMethod(method) ? method : "unknown",
-                undefined,
-                slowRpcThresholdMs(method, params) > slowRpcThresholdMs("", {}),
-              );
-              try {
-                await dispatchOwnerRpc(dependencies, {
-                  input,
-                  params,
-                  get result() {
-                    return result;
-                  },
-                  set result(value: unknown) {
-                    result = value;
-                  },
-                  token,
-                  domainContext,
-                  tokenHash,
-                  request,
-                  pollState,
-                  response,
-                  get closing() {
-                    return closing;
-                  },
-                });
-              } finally {
-                done();
-              }
-            },
-          );
+          const dispatch = () =>
+            dependencies.engine.store.db.withAuthorization(
+              () => dependencies.engine.store.authenticated(token),
+              async () => {
+                const method = String(input.method);
+                if (syncMethod) syncAdmittedAt = monotonicNow();
+                // Only registered names are recorded; a held long poll is never a stall suspect.
+                const done = trackRpc(
+                  getHostRpcMethod(method) ? method : "unknown",
+                  undefined,
+                  slowRpcThresholdMs(method, params) > slowRpcThresholdMs("", {}),
+                );
+                try {
+                  await dispatchOwnerRpc(dependencies, {
+                    input,
+                    params,
+                    get result() {
+                      return result;
+                    },
+                    set result(value: unknown) {
+                      result = value;
+                    },
+                    token,
+                    domainContext,
+                    tokenHash,
+                    request,
+                    pollState,
+                    response,
+                    get closing() {
+                      return closing;
+                    },
+                  });
+                } finally {
+                  if (syncMethod) syncHandlerMs = elapsedSince(syncAdmittedAt);
+                  done();
+                }
+              },
+            );
           const finishResult = () =>
             endResult(
               result,
@@ -780,17 +808,45 @@ export function createHttpRuntime(
               input.method === "assistant.request" ||
                 input.method === "native.services.assistant.browser.panel",
             );
-          if (input.method === "assistant.request") {
-            await dependencies.assistant.withResponseDisclosure(
-              AssistantResponseValidationSchema.parse(result),
-              {
-                environmentId: dependencies.engine.store.environmentId,
-                deviceHash: tokenHash,
-                authorized: domainContext.authorized,
-              },
-              finishResult,
-            );
-          } else await finishResult();
+          if (syncMethod) {
+            try {
+              await syncDbTiming.run(syncTiming, dispatch);
+              await finishResult();
+            } finally {
+              const complete = () => {
+                const totalMs = elapsedSince(ingressAt);
+                if (totalMs >= 2_000)
+                  createLogger("host.sync").warn("slow call", {
+                    method: syncMethod,
+                    callId: syncCallId,
+                    totalMs,
+                    ...syncTimings(),
+                  });
+              };
+              if (signal.aborted && syncTiming.work) {
+                const completeAfterAbort = () => {
+                  syncHandlerMs = elapsedSince(syncAdmittedAt);
+                  complete();
+                };
+                void syncTiming.work
+                  .then(completeAfterAbort, completeAfterAbort)
+                  .catch(() => undefined);
+              } else complete();
+            }
+          } else {
+            await dispatch();
+            if (input.method === "assistant.request") {
+              await dependencies.assistant.withResponseDisclosure(
+                AssistantResponseValidationSchema.parse(result),
+                {
+                  environmentId: dependencies.engine.store.environmentId,
+                  deviceHash: tokenHash,
+                  authorized: domainContext.authorized,
+                },
+                finishResult,
+              );
+            } else await finishResult();
+          }
         } catch (error) {
           if (voiceToolLog) voiceToolLog.outcome = "error";
           const internal = isInternalFailure(error);

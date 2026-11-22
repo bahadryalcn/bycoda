@@ -410,8 +410,9 @@ html.theme-light .project-sigil {
     grid-template-columns: repeat(auto-fit, minmax(28px, 1fr));
   }
 }
-/* Active agents follow workspace tools and disappear when none are visible. */
+/* Activity has its own space below the project ledger. */
 .bycoda-rail-status {
+  border-block-start: 1px solid var(--ui-pane-border);
   display: flex;
   flex-direction: column;
   gap: 1px;

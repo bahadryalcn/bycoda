@@ -30,7 +30,10 @@ export type HostGitSubmodules = { paths: string[]; limit: RepositoryDiscoveryLim
 
 const SHARED_TTL_MS = 2 * 60_000;
 const SHARED_LIMIT = 64;
-const shared = new Map<string, { at: number; scan: Promise<HostGitSubmodules> }>();
+const shared = new Map<
+  string,
+  { at: number; scan: Promise<HostGitSubmodules>; refreshing: boolean }
+>();
 
 /**
  * One discovery per checkout for all connections, reused for a while. Every client rescans on
@@ -44,14 +47,20 @@ export function sharedHostGitSubmodules(
 ): Promise<HostGitSubmodules> {
   const key = `${includeRepositories}:${cwd}`;
   const hit = shared.get(key);
-  if (!fresh && hit && elapsedSince(hit.at) < SHARED_TTL_MS) return hit.scan;
+  if (hit && (hit.refreshing || (!fresh && elapsedSince(hit.at) < SHARED_TTL_MS))) return hit.scan;
   const scan = hostGitSubmodules(cwd, includeRepositories);
+  const entry = { at: monotonicNow(), scan, refreshing: fresh };
   shared.delete(key);
-  shared.set(key, { at: monotonicNow(), scan });
+  shared.set(key, entry);
   while (shared.size > SHARED_LIMIT) shared.delete(shared.keys().next().value as string);
-  scan.catch(() => {
-    if (shared.get(key)?.scan === scan) shared.delete(key);
-  });
+  void scan.then(
+    () => {
+      entry.refreshing = false;
+    },
+    () => {
+      if (shared.get(key) === entry) shared.delete(key);
+    },
+  );
   return scan;
 }
 

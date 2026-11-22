@@ -1,4 +1,4 @@
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, isolateHistory } from "@codemirror/commands";
 import {
   Annotation,
   Compartment,
@@ -10,6 +10,7 @@ import {
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 
 const externalChange = Annotation.define<boolean>();
+const managedCut = Annotation.define<boolean>();
 const editors = new WeakMap<HTMLTextAreaElement, EditorView>();
 
 export function composerInputFocused(field: HTMLTextAreaElement) {
@@ -55,6 +56,19 @@ function changesBetween(before: string, after: string) {
   return { from, to, insert: after.slice(from, end) };
 }
 
+/** A Composer cut needs its own editor undo step because it also moves files. */
+export function applyComposerInlineCut(field: HTMLTextAreaElement, text: string, caret: number) {
+  const view = editors.get(field);
+  if (!view) return false;
+  view.dispatch({
+    changes: changesBetween(view.state.doc.toString(), text),
+    selection: EditorSelection.single(caret),
+    annotations: [managedCut.of(true), isolateHistory.of("full")],
+    userEvent: "delete.cut",
+  });
+  return true;
+}
+
 /** Keep draft/IME/clipboard owners on their existing input endpoint while the view owns text layout. */
 export function attachComposerInlineInput(
   field: HTMLTextAreaElement,
@@ -68,7 +82,7 @@ export function attachComposerInlineInput(
   const selectAll = field.select.bind(field);
   const settings = new Compartment();
   let disposed = false;
-  let pending = false;
+  let pendingInput: string | null = null;
   const view = new EditorView({
     parent,
     state: EditorState.create({
@@ -120,6 +134,12 @@ export function attachComposerInlineInput(
               }),
             );
           },
+          copy(event) {
+            return relayClipboard(event);
+          },
+          cut(event) {
+            return relayClipboard(event);
+          },
           focus(event) {
             field.dispatchEvent(
               new FocusEvent("focusin", { bubbles: true, relatedTarget: event.relatedTarget }),
@@ -144,17 +164,26 @@ export function attachComposerInlineInput(
           if (update.transactions.every((transaction) => transaction.annotation(externalChange)))
             return;
           if (update.docChanged) {
-            field.dispatchEvent(new InputEvent("beforeinput", { inputType: "" }));
+            const inputType = update.transactions.some((transaction) =>
+              transaction.isUserEvent("undo"),
+            )
+              ? "historyUndo"
+              : update.transactions.some((transaction) => transaction.isUserEvent("redo"))
+                ? "historyRedo"
+                : "";
+            if (!update.transactions.some((transaction) => transaction.annotation(managedCut)))
+              field.dispatchEvent(new InputEvent("beforeinput", { inputType }));
             field.value = update.state.doc.toString();
-            pending = true;
+            pendingInput = inputType;
           }
           const range = update.state.selection.main;
           selection(range.from, range.to, range.anchor > range.head ? "backward" : "forward");
           queueMicrotask(() => {
             if (disposed) return;
-            if (pending) {
-              pending = false;
-              field.dispatchEvent(new InputEvent("input", { bubbles: true }));
+            if (pendingInput !== null) {
+              const inputType = pendingInput;
+              pendingInput = null;
+              field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType }));
             } else field.dispatchEvent(new Event("select", { bubbles: true }));
           });
         }),
@@ -172,6 +201,13 @@ export function attachComposerInlineInput(
     const blocked = !field.dispatchEvent(forwarded);
     if (blocked) event.preventDefault();
     return blocked;
+  }
+
+  function relayClipboard(event: ClipboardEvent) {
+    return relay(
+      event,
+      new ClipboardEvent(event.type, { ...eventInit(event), clipboardData: event.clipboardData }),
+    );
   }
 
   function sync(scrollIntoView = false) {

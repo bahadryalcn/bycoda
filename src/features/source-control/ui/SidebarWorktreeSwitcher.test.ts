@@ -4,15 +4,16 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
 import { setWorktreeFocus, worktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
-import { createWorktree, type Worktree } from "../model/worktrees";
+import { type Worktree } from "../model/worktrees";
+import { createProjectWorktree as createWorktree } from "../model/remoteWorktrees";
 import { SidebarWorktreeSwitcher } from "./SidebarWorktreeSwitcher";
 
 vi.mock("../hooks/useProjectWorktrees", () => ({
   useProjectWorktrees: vi.fn(),
 }));
-vi.mock("../model/worktrees", async (original) => ({
-  ...(await original<typeof import("../model/worktrees")>()),
-  createWorktree: vi.fn(),
+vi.mock("../model/remoteWorktrees", async (original) => ({
+  ...(await original<typeof import("../model/remoteWorktrees")>()),
+  createProjectWorktree: vi.fn(),
 }));
 const tree = (path: string, branch: string | null, isMain = false): Worktree => ({
   path,

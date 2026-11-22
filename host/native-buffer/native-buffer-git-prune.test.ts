@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { createGitObjectStore, gitBlobOid } from "./git-object-store";
+import { BLOB_BATCH_BYTES, createGitObjectStore, gitBlobOid } from "./git-object-store";
 import { NATIVE_BUFFER_SWEEP_BATCH, unreferencedSharedKeys } from "./native-buffer-git-prune";
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -129,4 +129,14 @@ it("reads base manifests across batches and keeps what any batch references", as
   }
   const { git, tree } = await repository(files);
   expect(await unreferencedSharedKeys(git, tree, new Map(), new Set())).toEqual([chunk(c)]);
+});
+
+it("splits a large blob write into bounded fast-import batches in order", async () => {
+  const git = await emptyGit();
+  const big = Buffer.alloc(BLOB_BATCH_BYTES - 16, 1);
+  const bodies = [big, Buffer.from("small"), Buffer.alloc(32, 2), Buffer.from("last")];
+  const oids = await git.writeBlobs(bodies);
+  expect(oids).toEqual(bodies.map(gitBlobOid));
+  const present = await git.batchCheck(oids);
+  expect(present.every(Boolean)).toBe(true);
 });

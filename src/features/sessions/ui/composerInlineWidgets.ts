@@ -1,11 +1,14 @@
-import { EditorState, StateEffect, StateField, type Extension } from "@codemirror/state";
+import {
+  EditorState,
+  StateEffect,
+  StateField,
+  type ChangeDesc,
+  type Extension,
+} from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import { openExternal } from "../../../platform/tauri/openExternal";
-import {
-  composerInlineReferences,
-  type InlineReference,
-  type InlineReferenceContext,
-} from "./composerInlineReferences";
+import type { InlineReference, InlineReferenceContext } from "./composerInlineReferences";
+import { createInlineScan, updateInlineScan, type InlineScan } from "./composerInlineScan";
 import styles from "../../../shared/ui/DraftToken.module.css";
 
 const namespace = "http://www.w3.org/2000/svg";
@@ -91,6 +94,7 @@ class ReferenceWidget extends WidgetType {
     const mark = referenceIcon(ref);
     chip.dataset.inlineIcon = mark;
     chip.contentEditable = "false";
+    chip.spellcheck = false;
     if (chip instanceof HTMLButtonElement) {
       chip.type = "button";
       chip.setAttribute("aria-label", actions.openLabel(ref));
@@ -141,6 +145,31 @@ class ReferenceWidget extends WidgetType {
   }
 }
 
+/** Whether `next` is `previous` carried through `changes` with no edit at any widget's edge. */
+function sameReferences(
+  previous: readonly InlineReference[],
+  next: readonly InlineReference[],
+  changes: ChangeDesc,
+) {
+  return (
+    previous.length === next.length &&
+    previous.every((a, index) => {
+      const b = next[index]!;
+      return (
+        a.kind === b.kind &&
+        a.value === b.value &&
+        a.label === b.label &&
+        a.detail === b.detail &&
+        a.tone === b.tone &&
+        changes.mapPos(a.start, -1) === b.start &&
+        changes.mapPos(a.start, 1) === b.start &&
+        changes.mapPos(a.end, -1) === b.end &&
+        changes.mapPos(a.end, 1) === b.end
+      );
+    })
+  );
+}
+
 export function inlineComposerWidgets(initial: InlineReferenceContext, actions: WidgetActions) {
   const configure = StateEffect.define<InlineReferenceContext>();
   const decorate = (references: InlineReference[], edited?: InlineReference): DecorationSet =>
@@ -156,28 +185,47 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
     );
   const ranges = StateField.define<{
     context: InlineReferenceContext;
+    scan: InlineScan;
     references: InlineReference[];
     edited?: InlineReference;
     decorations: DecorationSet;
   }>({
     create(state) {
-      const references = composerInlineReferences(state.doc.toString(), initial);
-      return { context: initial, references, decorations: decorate(references) };
+      const scan = createInlineScan(state, initial);
+      return {
+        context: initial,
+        scan,
+        references: scan.references,
+        decorations: decorate(scan.references),
+      };
     },
     update(value, transaction) {
       const context =
         transaction.effects.find((effect) => effect.is(configure))?.value ?? value.context;
-      const references =
+      // Each edit rescans only the lines it touched and reparses only the blocks it changed.
+      const scan =
         transaction.docChanged || context !== value.context
-          ? composerInlineReferences(transaction.newDoc.toString(), context)
-          : value.references;
+          ? updateInlineScan(
+              value.scan,
+              transaction.newDoc.toString(),
+              transaction.changes,
+              context,
+            )
+          : value.scan;
+      const { references } = scan;
       const { head } = transaction.newSelection.main;
       const edited = references.find(
         (item) => item.kind === "url" && item.start < head && item.end > head,
       );
-      return references !== value.references || edited !== value.edited
-        ? { context, references, edited, decorations: decorate(references, edited) }
-        : value;
+      if (scan === value.scan && edited === value.edited) return value;
+      // Typing that leaves every widget as it was keeps their decorations, shifted by the edit.
+      const decorations =
+        !edited &&
+        !value.edited &&
+        sameReferences(value.references, references, transaction.changes)
+          ? value.decorations.map(transaction.changes)
+          : decorate(references, edited);
+      return { context, scan, references, edited, decorations };
     },
     provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
   });

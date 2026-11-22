@@ -21,6 +21,8 @@ export function DeleteWorktreeDialog({
   cwd,
   tree,
   sessionCount = 0,
+  ignoredEntryCount = 0,
+  ignoredEntryPaths,
   onRemove,
   onClose,
   onDeleted,
@@ -28,6 +30,8 @@ export function DeleteWorktreeDialog({
   cwd: string;
   tree: Worktree;
   sessionCount?: number;
+  ignoredEntryCount?: number;
+  ignoredEntryPaths?: readonly string[];
   onRemove: (cwd: string, path: string, force: boolean, deleteSessions: boolean) => Promise<void>;
   onClose: () => void;
   onDeleted: () => void;
@@ -76,6 +80,21 @@ export function DeleteWorktreeDialog({
         icon: FileDiff,
         tone: "warning",
         content: t("All uncommitted and untracked changes here are discarded."),
+      },
+      ignoredEntryCount > 0 && {
+        key: "ignored",
+        icon: CircleAlert,
+        tone: "warning",
+        content: (
+          <>
+            {t("Ignored entries that will be deleted: {p0}", { p0: ignoredEntryCount })}
+            {ignoredEntryPaths?.map((path) => (
+              <span key={path} className="block break-all font-mono">
+                {path}
+              </span>
+            ))}
+          </>
+        ),
       },
       tree.dirty == null && {
         key: "unchecked",

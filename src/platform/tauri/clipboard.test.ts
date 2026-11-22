@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
-import { copyMessage, copyText, messageFilesFromClipboard, readClipboardImage } from "./clipboard";
+import {
+  clipboardTextWithAttachments,
+  copyMessage,
+  copyText,
+  messageFilesFromClipboard,
+  messageFromClipboard,
+  readClipboardImage,
+} from "./clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import {
   MAX_EMBED_BYTES,
@@ -226,7 +233,7 @@ it("cleans up failed legacy copying and preserves focus and text selection", asy
   }
 });
 
-it("copies fresh disk images but leaves their restored placeholders alone", async () => {
+it("copies fresh and restored disk images", async () => {
   vi.mocked(invoke).mockResolvedValue(btoa("<svg></svg>"));
   const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
   const files = displayAttachments([
@@ -247,12 +254,15 @@ it("copies fresh disk images but leaves their restored placeholders alone", asyn
   write.mockClear();
   vi.mocked(invoke).mockClear();
   await copyMessage("Diagram", files.map(persistableAttachment));
-  expect(write).not.toHaveBeenCalled();
-  expect(invoke).not.toHaveBeenCalled();
-  expect(await navigator.clipboard.readText()).toBe("Diagram");
+  expect(invoke).toHaveBeenCalledWith("read_file_base64", { path: "/diagram.svg" });
+  expect(write).toHaveBeenCalledOnce();
+  const restoredHtml = await (await write.mock.calls[0][0][0].getType("text/html")).text();
+  expect(await messageFilesFromClipboard({ getData: () => restoredHtml })![0].text()).toBe(
+    "<svg></svg>",
+  );
 });
 
-it("copies a message with multiple attachments and preserves names and bytes on paste", async () => {
+it("copies multiple attachments and restores their positions and numbers in the receiving draft", async () => {
   let written: ClipboardItem[] = [];
   vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
     written = items;
@@ -275,7 +285,8 @@ it("copies a message with multiple attachments and preserves names and bytes on 
       data: "ZGVm",
     },
   ]);
-  expect(await (await written[0].getType("text/plain")).text()).toBe("Look at these");
+  const text = await (await written[0].getType("text/plain")).text();
+  expect(text).toBe("Look at these");
   const html = await (await written[0].getType("text/html")).text();
   const files = messageFilesFromClipboard({
     getData: (type) => (type === "text/html" ? html : ""),
@@ -284,6 +295,22 @@ it("copies a message with multiple attachments and preserves names and bytes on 
   expect(await files![0].text()).toBe("abc");
   expect(await files![1].text()).toBe("def");
   expect(written[0].types).toEqual(["text/plain", "text/html"]);
+  const message = messageFromClipboard({
+    getData: (type) => (type === "text/html" ? html : text),
+  })!;
+  const pasted = message.files.map((file, index) => ({
+    id: `pasted-${index}`,
+    name: file.name,
+    mimeType: file.type,
+    kind: file.type.startsWith("image/") ? ("image" as const) : ("file" as const),
+    size: file.size,
+  }));
+  expect(
+    clipboardTextWithAttachments(message, pasted, [
+      { ...pasted[0], id: "existing-image", name: "existing.png" },
+      ...pasted,
+    ]),
+  ).toBe("[Image 2 · screen.png · 3 B] Look at these [File 1 · report.pdf · 3 B]");
 });
 
 it("pastes attachment bytes and names copied by an older Bycoda build", async () => {
@@ -349,43 +376,27 @@ it("embeds each attachment once and keeps escaped names and text intact", async 
   expect(Array.from(new Uint8Array(await files![0].arrayBuffer()))).toEqual([251, 255, 191]);
 });
 
-it("skips restored images without live content while keeping the text", async () => {
-  vi.mocked(invoke).mockImplementation(async (_command, args) => {
-    if ((args as { path: string }).path === "/old.png") return "YWJj";
-    throw new Error("File no longer exists");
-  });
-  await copyMessage("Old message", [
-    {
-      id: "1",
-      name: "old.png",
-      mimeType: "image/png",
-      kind: "image",
-      size: 3,
-      path: "/old.png",
-    },
-  ]);
-  expect(await navigator.clipboard.readText()).toBe("Old message");
-  expect(invoke).not.toHaveBeenCalledWith("read_file_base64", {
-    path: "/old.png",
-  });
-});
-
-it("keeps the existing clipboard when a message has no copyable content", async () => {
+it.each([
+  {},
+  { path: "/old.png", hostEnvironmentId: "other-host" },
+  { path: "remote://other-host/old.png" },
+])("keeps the clipboard when a restored image has no readable source (%j)", async (source) => {
+  vi.mocked(invoke).mockClear();
   await navigator.clipboard.writeText("Previous clipboard");
+  requireCompleteClipboardWrite();
+  const image = persistableAttachment({
+    id: "restored",
+    name: "old.png",
+    mimeType: "image/png",
+    kind: "image",
+    size: 3,
+    ...source,
+  });
 
-  await expect(
-    copyMessage("", [
-      {
-        id: "restored",
-        name: "old.png",
-        mimeType: "image/png",
-        kind: "image",
-        size: 3,
-        path: "/old.png",
-      },
-    ]),
-  ).rejects.toThrow("No copyable content");
-
+  await expect(copyMessage("Old message", [image])).rejects.toThrow(
+    "Could not copy old.png: File content is no longer available.",
+  );
+  expect(invoke).not.toHaveBeenCalled();
   expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
 });
 
@@ -404,11 +415,14 @@ it("copies a folder path, including when the message is only that folder", async
   await copyMessage("See the reports", [folder]);
   expect(await navigator.clipboard.readText()).toBe("See the reports\n/home/dev/reports");
 
+  await copyMessage("Open [file1] first", [folder]);
+  expect(await navigator.clipboard.readText()).toBe("Open /home/dev/reports first");
+
   let written: ClipboardItem[] = [];
   vi.spyOn(navigator.clipboard, "write").mockImplementation(async (items) => {
     written = items;
   });
-  await copyMessage("See the reports", [
+  await copyMessage("[image1] See [file1] first", [
     folder,
     {
       id: "1",
@@ -419,8 +433,15 @@ it("copies a folder path, including when the message is only that folder", async
       data: "YWJj",
     },
   ]);
-  expect(await (await written[0].getType("text/plain")).text()).toBe(
-    "See the reports\n/home/dev/reports",
+  const text = await (await written[0].getType("text/plain")).text();
+  const html = await (await written[0].getType("text/html")).text();
+  expect(text).toBe("See /home/dev/reports first");
+  const message = messageFromClipboard({
+    getData: (type) => (type === "text/html" ? html : text),
+  })!;
+  expect(message.files.map((file) => file.name)).toEqual(["shot.png"]);
+  expect(message.referenceText).toBe(
+    "[Image: Attachment; ref=clipboard-0] See /home/dev/reports first",
   );
 });
 

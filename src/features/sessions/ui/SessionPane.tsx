@@ -65,7 +65,7 @@ import { DiscussionEmpty } from "./DiscussionEmpty";
 import { LinkedWorkItemUpdateNotice } from "../../inbox/ui/LinkedWorkItemUpdateNotice";
 import { orchestrationLocksUndo } from "./SessionReview";
 import { LatestTurnAccessory } from "./LatestTurnAccessory";
-import { SessionProviderGoal } from "./SessionProviderGoal";
+import { SessionProviderGoal, type SessionProviderGoalCommand } from "./SessionProviderGoal";
 import { PromptOutline } from "./PromptOutline";
 import {
   canCompactHarnessContext,
@@ -188,6 +188,7 @@ import {
 } from "./LiveSessionBlocks";
 import type { HostSession, RefreshAdoptedSession } from "../../connections";
 import { AdoptedSessionNotice } from "../../connections/public/AdoptedSessionNotice";
+import { useAdoptedSteerSupport } from "../../connections/public/remoteCapabilities";
 import { remoteOrigin } from "./RemoteOriginMark";
 import { SharedQueueRecoveryNotice } from "../../connections/public/SharedQueueRecoveryNotice";
 export type SessionPaneProps = {
@@ -631,6 +632,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
       (block.role === "user" || block.role === "assistant") && !block.draft && !block.internal,
   );
   const remote = remoteSession;
+  const adoptedSteerSupported = useAdoptedSteerSupport(
+    !remote && !session.busy && session.continuingElsewhere ? session.harness : undefined,
+  );
   const activeSessionIdRef = useRef(session.id);
   // The pane's `session` keeps its identity across streamed text, so event-time
   // reads go to the store for the current one (a remote session is not in it).
@@ -1317,7 +1321,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onOpenDiff,
     ],
   );
-  const providerGoalCommand = useStableCallback((command: "/goal resume" | "/goal clear") =>
+  const providerGoalCommand = useStableCallback((command: SessionProviderGoalCommand) =>
     onSubmit(session.id, command, [], { intent: "default" }),
   );
   const goalControl = stableSession.providerGoal ? (
@@ -1339,6 +1343,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onCommand={providerGoalCommand}
     />
   ) : undefined;
+  const crewManaged = useCrewManagedSession(session.id);
+  const showOwnerComposer =
+    !crewManaged || (crewCoordinatorChat && crewManaged.role === "coordinator");
+  const queueVisible =
+    showOwnerComposer &&
+    (dockComposer || (isEmpty && !embedded && !session.inboxAsk && !remoteSessionLoading));
+  const reviewRow = session.queuedMessages?.find((row) => row.deliveryUnknown);
+  const reviewInQueue = queueVisible && !!reviewRow && reviewRow.author?.kind !== "delegation";
+  const sharedQueueRecovery = <SharedQueueRecoveryNotice key={session.id} sessionId={session.id} />;
   const composerNotices = (
     <>
       <ApprovalDecisionProvider {...approvalContext}>
@@ -1372,6 +1385,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         message={remote ? "The host stopped this turn before it finished." : undefined}
         onContinue={continueInterruptedTurn}
       />
+      {sharedQueueRecovery}
       {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
         <ProviderRetryNotice
           key={session.id}
@@ -1387,7 +1401,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ) : null}
     </>
   );
-  const crewManaged = useCrewManagedSession(session.id);
   const ownerComposer = (
     <Composer
       notices={composerNotices}
@@ -1400,6 +1413,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
       subagents={sessionSubagentRows}
       onOpenSubagent={openDockAgent}
       remoteSession={remoteSession}
+      adoptedSteerSupported={
+        adoptedSteerSupported === undefined
+          ? undefined
+          : adoptedSteerSupported && !!session.adoptedRunId && session.adoptedRunId !== "desktop"
+      }
       remoteOrigin={remoteOrigin(session)}
       managedWorkspaceCreationReady={managedWorkspaceCreationReady}
       sendBlockedReason={sendBlockedReason}
@@ -1555,11 +1573,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   // A live crew runs this conversation: it is read here and managed from Crews.
   const composer =
-    crewManaged && !(crewCoordinatorChat && crewManaged.role === "coordinator") ? (
-      <CrewManagedBar managed={crewManaged} />
-    ) : (
-      ownerComposer
-    );
+    !showOwnerComposer && crewManaged ? <CrewManagedBar managed={crewManaged} /> : ownerComposer;
 
   // A lone chat is named by its title-bar tab, so its pane carries no header of
   // its own; only a real split needs per-pane identity, focus and a drag handle.
@@ -1761,12 +1775,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ) : null}
       {lifecycle.dialog}
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <SharedQueueRecoveryNotice key={`queue:${session.id}`} sessionId={session.id} />
-        <DeliveryProgressNotice
-          key={`delivery:${session.id}`}
-          sessionId={session.id}
-          messages={session.queuedMessages ?? []}
-        />
+        {!queueVisible && sharedQueueRecovery}
+        {!reviewInQueue && (
+          <DeliveryProgressNotice
+            key={`delivery:${session.id}`}
+            sessionId={session.id}
+            messages={session.queuedMessages ?? []}
+          />
+        )}
         <AdoptedSessionNotice
           key={session.id}
           session={session}

@@ -349,3 +349,12 @@ Reports include outcome; done by surface with path:line; checks and opened
 screenshots with exact unverified checks; branch/commit and readiness for review;
 remaining blockers with actor; and build stamp with inclusion
 included/excluded/unknown. A completion timestamp alone cannot prove inclusion.
+
+## Dedicated Linux removal admission
+
+Manual removals, scheduled cleanup and resumed removal journals use the same
+execution-Host lease. A dedicated system service can verify exclusive account
+and filesystem ownership as described in [Managed workspaces](../guides/managed-workspaces.md).
+The Host makes that decision from its local deployment settings and OS evidence.
+Clients cannot opt in through review or removal RPC parameters. Any desktop
+already observed in this Host process continues through native acknowledgement.

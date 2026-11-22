@@ -136,8 +136,7 @@ export function desktopCopyOf(
 export const ADOPTED_RUNNING_REASON =
   "This conversation is running in the background on this computer. New messages appear automatically.";
 /** Flagged without a proven divergence: the other computer's latest turn has not arrived yet. */
-export const ADOPTED_UNSYNCED_MESSAGE =
-  "This conversation has not finished syncing with the other computer. Your messages are kept.";
+export const ADOPTED_UNSYNCED_MESSAGE = "This conversation is catching up with the local Host.";
 /** A proven divergence: both computers added to the conversation after the version they last shared. */
 export const ADOPTED_CHOICE_MESSAGE =
   "This conversation was changed on two computers. Choose the version to keep.";
@@ -174,7 +173,9 @@ export function planAdoptedFetches(
   return entries.filter((entry) => {
     const session = byId.get(entry.id);
     return (
-      comparable(session) &&
+      !!session &&
+      !session.busy &&
+      (!session.historyLoading || !!session.storedHistory) &&
       (mirrored.get(entry.id) !== entry.revision ||
         unconfirmed(session) ||
         (entry.authorityGeneration !== undefined &&
@@ -640,6 +641,8 @@ export type AdoptedMirrorDeps = {
    * a full snapshot. */
   load: (sessionId: string, known?: HostSession) => Promise<HostSession>;
   local: () => readonly Session[];
+  /** Complete a reopened tab's stored history before comparing it with the Host. */
+  hydrate?: (sessionId: string) => Promise<boolean>;
   /** Replaces the local session; `previous` is the copy it was merged from. */
   apply: (merged: Session, previous: Session) => void;
   mirrored: Map<string, number>;
@@ -752,7 +755,7 @@ export async function refreshAdoptedSession(
 ): Promise<boolean> {
   const entry = (await deps.list()).find((item) => item.id === sessionId);
   if (!entry) throw new Error("This conversation is no longer available on the host.");
-  const before = deps.local().find((session) => session.id === sessionId);
+  const before = await openedForComparison(deps, sessionId);
   if (!before || before.busy)
     throw new Error("Wait for the local turn to finish before refreshing.");
   // A partly loaded transcript would be saved as a branch missing its start;
@@ -761,6 +764,15 @@ export async function refreshAdoptedSession(
   // Always request a full snapshot, including when the revision has not moved.
   const host = await deps.load(sessionId);
   return applyAdoptedSnapshot(deps, before, host, resolution);
+}
+
+async function openedForComparison(deps: AdoptedMirrorDeps, id: string) {
+  const session = deps.local().find((item) => item.id === id);
+  if (!session?.busy && session?.historyLoading && session.storedHistory && deps.hydrate) {
+    await deps.hydrate(id);
+    return deps.local().find((item) => item.id === id);
+  }
+  return session;
 }
 
 /** Both manual and periodic refresh leave a divergence for the user to answer. */
@@ -925,7 +937,8 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
     if (settling(entry) || backingOff(deps.mirrored, entry)) continue;
     let failure: { error: unknown } | undefined;
     try {
-      const before = deps.local().find((session) => session.id === entry.id);
+      const before = await openedForComparison(deps, entry.id);
+      if (!comparable(before)) continue;
       const host = await deps.load(entry.id, known.get(entry.id));
       // A local turn may have started while the snapshot was in flight.
       const current = deps.local().find((session) => session.id === entry.id);

@@ -316,8 +316,8 @@ export function createManagedWorkspaceRegistry(
           baseCommit = await managedWorkspaceBase(project.cwd, request.dependency.commit);
           baseRef = dependency.branchRef;
           // The caller cannot label an unrelated object as this dependency's committed result.
-          const { execFileAsync } = await import("../../src/shared/lib/processExecution.node");
-          await execFileAsync(
+          const { hostGitExec } = await import("../git/git-exec-pool");
+          await hostGitExec.exec(
             "git",
             ["merge-base", "--is-ancestor", baseCommit, dependency.branchRef],
             { cwd: project.cwd, windowsHide: true, timeout: 10_000 },

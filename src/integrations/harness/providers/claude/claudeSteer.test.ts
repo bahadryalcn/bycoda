@@ -24,8 +24,14 @@ vi.mock("../../core/child", () =>
   }),
 );
 
-const { cancelClaudeTurn, sendClaudeTurn, steerClaudeTurn, stopClaudeSession, __claudeTestReset } =
-  await import("./claude");
+const {
+  cancelClaudeTurn,
+  claudeSteerReady,
+  sendClaudeTurn,
+  steerClaudeTurn,
+  stopClaudeSession,
+  __claudeTestReset,
+} = await import("./claude");
 
 const parse = () => sent.map((line) => JSON.parse(line) as Record<string, unknown>);
 const users = () => parse().filter((message) => message.type === "user");
@@ -113,6 +119,7 @@ describe("claude steering", () => {
   it("keeps the follow-up queued when the CLI reports no command lifecycle", async () => {
     await startTurn();
     const before = users().length;
+    expect(claudeSteerReady("s1")).toBe(false);
     await expect(steer("also this")).rejects.toBeInstanceOf(TurnNotReadyError);
     expect(users()).toHaveLength(before);
   });
@@ -121,6 +128,7 @@ describe("claude steering", () => {
     const { turn } = await startTurn();
     lifecycle(primary(), "queued");
     lifecycle(primary(), "started");
+    expect(claudeSteerReady("s1")).toBe(true);
     await steer("also this");
     const written = users().at(-1)!;
     expect(written.uuid).toEqual(expect.any(String));

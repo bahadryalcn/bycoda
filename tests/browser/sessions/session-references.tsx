@@ -91,6 +91,11 @@ const nativeLink = buildLocalSessionLink({
   sourceProfileId: "profile-1",
   sessionId: "native-session",
 });
+const subagentLink = buildLocalSessionLink({
+  kind: "host",
+  environmentId: "local-host",
+  sessionId: "subagent-session",
+});
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 });
@@ -140,6 +145,14 @@ function Fixture() {
       async resolve(reference) {
         if (slow) await new Promise((resolve) => setTimeout(resolve, 1000));
         if (failure) throw new Error("This local session is unavailable.");
+        if (reference.locator.sessionId === "subagent-session")
+          return {
+            title: "W21: On-host backup target",
+            project: "G:/Projects/example-project",
+            origin: "Local Host",
+            status: "Running",
+            agentRole: "Subagent",
+          };
         return {
           title: "Current renamed title — investigation and recovery",
           project: "G:/Projects/example-project",
@@ -219,6 +232,9 @@ function Fixture() {
           <output className="fixture-output" data-open-count>
             {openCount}
           </output>
+        </section>
+        <section aria-label="Subagent reference">
+          <AgentMarkdown text={`I started [W21](${subagentLink}) for the backup work.`} />
         </section>
         <section aria-label="Notes references">
           <h2>Notes</h2>

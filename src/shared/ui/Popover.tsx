@@ -1,6 +1,7 @@
 import { NativePopupHost, PopupBackdrop } from "./NativePopupHost";
 // Public alias of the NativePopupHost component; the catalog entry lives on its definition.
 export { NativePopover } from "./NativePopupHost";
+import { Surface } from "./Surface";
 import {
   useCallback,
   useContext,
@@ -126,6 +127,8 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   layer?: number;
   /** Drops the glass frame and keeps only placement and the content animation. */
   bare?: boolean;
+  /** Match the chat composer surface for overlays attached to its input. */
+  appearance?: "composer";
   /** Non-interactive hints must not return focus when their trigger blurs. */
   restoreFocus?: boolean;
   /** A non-interactive hint participates in modal containment without owning Escape. */
@@ -317,6 +320,7 @@ function NativePopover({
     constrainHeight: _constrainHeight,
     layer: _layer,
     bare: _bare,
+    appearance: _appearance,
     solid: _solid,
     frosted: _frosted,
     motion: _motion,
@@ -361,6 +365,7 @@ function WebPopover({
   flow = "auto",
   layer = LAYER.popover,
   bare = false,
+  appearance,
   solid = false,
   frosted = false,
   className,
@@ -575,6 +580,7 @@ function WebPopover({
     <div
       ref={frame}
       data-popover-side={position?.side ?? side}
+      data-popover-appearance={appearance}
       style={
         {
           ...placed,
@@ -585,7 +591,17 @@ function WebPopover({
       }
       className={[!bare && FRAME, minWidth != null && styles.list].filter(Boolean).join(" ")}
     >
-      {bare ? null : <PopupBackdrop solid={solid} frosted={frosted} />}
+      {bare ? null : appearance === "composer" ? (
+        <Surface
+          variant="floating"
+          frame="none"
+          material={solid ? undefined : "glass"}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+        />
+      ) : (
+        <PopupBackdrop solid={solid} frosted={frosted} />
+      )}
       <div
         {...(dialog ? { role: "dialog", tabIndex: -1 } : null)}
         {...rest}

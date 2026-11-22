@@ -84,6 +84,12 @@ Object.assign(window, {
       // does, so no incidental answer ("the machine replied") clears the outage mid-test.
       if (remoteDown && !command.startsWith("plugin:event|"))
         throw new Error("Machine is unreachable");
+      // ?binary=unsupported: bytes that are not an image, so the unsupported card shows.
+      if (
+        command === "read_binary_file" &&
+        new URLSearchParams(location.search).get("binary") === "unsupported"
+      )
+        return new TextEncoder().encode("\u007fELF fixture firmware payload ".repeat(4096)).buffer;
       if (command === "read_binary_file")
         return (await fetch("/brand/bycoda-tasks.png")).arrayBuffer();
       if (command === "reveal_path" && operationState.hold)
@@ -172,7 +178,14 @@ function Fixture() {
         </section>
       ) : new URLSearchParams(location.search).has("binary") ? (
         <section className="min-w-0 flex-1">
-          <BinaryFileView cwd="/fixture" path="/fixture/preview.png" />
+          <BinaryFileView
+            cwd="/fixture"
+            path={
+              new URLSearchParams(location.search).get("binary") === "unsupported"
+                ? "/fixture/build/firmware-v2.4.1-release.bin"
+                : "/fixture/preview.png"
+            }
+          />
         </section>
       ) : preview ? (
         <FilePreviewSearch active contentVersion="fixture">

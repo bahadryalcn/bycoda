@@ -1,5 +1,8 @@
 import { hostname } from "node:os";
-import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
+import {
+  HOST_PROTOCOL_VERSION,
+  providerSteerCapability,
+} from "../../src/features/connections/model/protocol";
 import { createEnvironmentService } from "../domains/environment/service";
 import { reachableAddresses } from "../mobile/mobile-lan";
 import { defaultRouteAddress } from "../mobile/mobile-network";
@@ -11,6 +14,7 @@ import type { ServerBindings } from "./bindings";
 import { GROUP_LOCK_REMOTE_CAPABILITY } from "../../src/shared/model/host-contracts/group-lock";
 import { DECISION_INSTALL_CAPABILITY } from "../../src/shared/model/host-contracts/decision-models";
 import { DELEGATION_MESSAGES_STREAM } from "../../src/shared/model/host-contracts/delegation";
+import { GITHUB_WORK_ITEMS } from "../../src/shared/model/host-contracts/work-items";
 export function createEnvironmentRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -160,6 +164,9 @@ export function createEnvironmentRuntime(
         "commands.status",
         "sessions.harnessSwitch",
         "sessions.steer",
+        ...dependencies.providers
+          .filter((id) => dependencies.engine.supportsSteer(id))
+          .map(providerSteerCapability),
         "sessions.executionOwner",
         "sessions.queue.claimDispatch",
         "sessions.rewind",
@@ -207,6 +214,7 @@ export function createEnvironmentRuntime(
         "git.createBranch",
         "git.worktrees",
         "git.worktreeCreate",
+        "git.worktreeRemoval.v1",
         "files.read",
         "files.list",
         "files.index",
@@ -280,6 +288,7 @@ export function createEnvironmentRuntime(
         "preferences.desktop.v1",
         "worktrees.removal.desktop.v1",
         "git.selective.review",
+        GITHUB_WORK_ITEMS,
         "usage.sessions.read",
         "usage.limits.read",
         "usage.cost.read",

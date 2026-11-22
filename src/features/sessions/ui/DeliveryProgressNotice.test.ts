@@ -166,7 +166,7 @@ it("re-opens a dismissed notice when a delivery review is requested", async () =
   expect(container.querySelector("[data-delivery-progress]")).toBeNull();
   await act(async () => requestDeliveryReview("progress-chat"));
   expect(container.querySelector('[data-delivery-progress="unknown"]')).not.toBeNull();
-  expect(container.textContent).toContain("Already delivered");
+  expect(container.textContent).toContain("Mark as delivered");
   await act(async () => root.unmount());
 });
 
@@ -303,7 +303,7 @@ it("clears an obsolete rejection after the corresponding queued row is removed",
 
 it.each([
   ["Send again", "active", 2],
-  ["Already delivered", "paused", 1],
+  ["Mark as delivered", "paused", 1],
   ["Discard", "paused", 1],
 ] as const)(
   "resolves an unknown local row with %s: queue %s with %i row(s) left",
@@ -331,6 +331,7 @@ it.each([
         createElement(DeliveryProgressNotice, {
           sessionId: "progress-chat",
           messages: [unknown, next],
+          inlineRowId: label === "Send again" ? unknown.id : undefined,
         }),
       ),
     );
@@ -398,7 +399,7 @@ it("writes the duplicate risk as text and holds back Send again while the provid
 });
 
 it.each([
-  ["Already delivered", "delivered"],
+  ["Mark as delivered", "delivered"],
   ["Send again", "retry"],
   ["Keep queued, pause", "keep"],
   ["Discard", "discard"],

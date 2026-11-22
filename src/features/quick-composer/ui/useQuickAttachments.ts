@@ -28,7 +28,9 @@ import { collectSkippedAttachments } from "../../sessions/model/attachmentSkips"
 import { t } from "../../../shared/i18n";
 import { harnessSupportsAttachments, type Attachment } from "../../sessions/model/session";
 import {
+  clipboardTextWithAttachments,
   isFileReferenceText,
+  messageFromClipboard,
   nativeClipboardAttachments,
   readClipboardFilePaths,
   readClipboardImage,
@@ -136,6 +138,7 @@ export function useQuickAttachments(
       captureEarly = false,
       /** Wait behind a pending read instead of dropping this one; for pastes that already hold their files. */
       queued = false,
+      restorePaste?: (additions: Attachment[], attachments: Attachment[]) => boolean,
     ): Promise<void> => {
       const queue = queueRef.current;
       if (
@@ -220,8 +223,10 @@ export function useQuickAttachments(
             (file) =>
               !before.some((item) => item.id === file.id || (item.path && item.path === file.path)),
           );
-          updateFiles([...before, ...additions]);
-          if (additions.length) onAddedRef.current?.(additions, before);
+          const attachments = [...before, ...additions];
+          updateFiles(attachments);
+          if (additions.length && !restorePaste?.(additions, attachments))
+            onAddedRef.current?.(additions, before);
         });
       };
       const actual = owner ? owner.prepare(operation) : operation(localPreparation());
@@ -374,13 +379,37 @@ export function useQuickAttachments(
       event.preventDefault();
       return;
     }
-    const pasted = filesFromClipboard(event.clipboardData);
+    const message = messageFromClipboard(event.clipboardData);
+    const pasted = message?.files ?? filesFromClipboard(event.clipboardData);
     if (pasted.length) {
       if (!supported) return;
       event.preventDefault();
+      const captured = message ? captureDraft(event.target) : null;
+      if (captured && message?.text) insertRestoredText(captured, message.text);
+      const pasteEnd = captured ? captured.start + (message?.text.length ?? 0) : 0;
+      const expected = captured?.field.value;
       const selected = pasted.slice(0, MAX_ATTACHMENTS);
       const overflow = selected.length < pasted.length;
-      void collect((accepted) => readFiles(selected, accepted, overflow), false, true);
+      void collect(
+        (accepted) => readFiles(selected, accepted, overflow),
+        false,
+        true,
+        (additions, attachments) => {
+          if (!message || !captured || !captured.field.isConnected) return false;
+          if (captured.field.value !== expected) return false;
+          const restored = clipboardTextWithAttachments(message, additions, attachments);
+          if (restored === undefined) return false;
+          insertRestoredText(
+            {
+              ...captured,
+              value: captured.field.value,
+              end: message.text ? pasteEnd : captured.end,
+            },
+            restored,
+          );
+          return true;
+        },
+      );
       return;
     }
     if (!supported) return;

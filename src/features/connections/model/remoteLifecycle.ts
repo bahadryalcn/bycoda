@@ -194,7 +194,7 @@ export function remoteFeatureForMethod(
     if (typeof command === "string" && command.startsWith("git_")) return "git";
     if (
       typeof command === "string" &&
-      /^(browse_dir|read_text_file|search_|stat_|list_|write_text_file)/.test(command)
+      /^(browse_dir|read_text_file|search_|stat_|list_|write_text_file|write_file_)/.test(command)
     )
       return "files";
   }

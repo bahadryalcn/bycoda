@@ -4,7 +4,8 @@ import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import styles from "./WorktreesPage.module.css";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useRemoteSupports } from "../../connections/public/remoteCapabilities";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { WorktreeRow } from "./WorktreeRow";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
@@ -25,6 +26,13 @@ import {
   type RemoveWorktree,
   type Worktree,
 } from "../model/worktrees";
+import {
+  checkRemoteWorktreeRemoval,
+  removeRemoteWorktree,
+  reviewRemoteWorktreeRemoval,
+  REMOTE_WORKTREE_REMOVAL,
+  type RemoteWorktreeRemovalReview,
+} from "../model/remoteWorktrees";
 import { WorkspacePolicySettings } from "../../workspaces/ui/WorkspacePolicySettings";
 import type { ManagedWorkspace } from "../../workspaces/model/contracts";
 import {
@@ -73,17 +81,23 @@ export function WorktreesPage({
   const [error, setError] = useState<string>();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Worktree>();
+  const [remoteReview, setRemoteReview] = useState<{
+    project: string;
+    tree: Worktree;
+    review: RemoteWorktreeRemovalReview;
+  }>();
+  const [reviewingProject, setReviewingProject] = useState<string>();
+  const reviewRequest = useRef<object | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
   const removals = useBackgroundRemovals();
   const [revealFailure, setRevealFailure] = useState<{
     path: string;
     message: string;
   }>();
-  // Create, remove and preflight dispatch to this computer; only listing and Reveal
-  // follow a connected machine's path. Keep those actions off for remote projects.
   const remoteProject = project.startsWith(REMOTE_PATH_PREFIX);
+  const remoteRemovalAvailable = useRemoteSupports(project, REMOTE_WORKTREE_REMOVAL) === true;
   const remoteLifecycleNotice = t(
-    "Creating and deleting worktrees runs on this computer, so it is unavailable for a project on a connected machine.",
+    "Deleting worktrees runs on this computer, so it is unavailable for a project on a connected machine.",
   );
   const [managedWorkspaces, setManagedWorkspaces] = useState<ManagedWorkspace[] | null>(null);
   const [managedLoading, setManagedLoading] = useState(true);
@@ -119,6 +133,9 @@ export function WorktreesPage({
                   setProject(path);
                   setError(undefined);
                   setDeleting(undefined);
+                  setRemoteReview(undefined);
+                  reviewRequest.current = undefined;
+                  setReviewingProject(undefined);
                   setRevealFailure(undefined);
                   setManagedWorkspaces(null);
                   setManagedLoading(true);
@@ -130,8 +147,7 @@ export function WorktreesPage({
                   variant="secondary"
                   motion="none"
                   type="button"
-                  disabled={!data || remoteProject}
-                  tooltip={remoteProject ? remoteLifecycleNotice : undefined}
+                  disabled={!data}
                   onClick={() => setCreating(true)}
                   className="flex items-center gap-1.5"
                 >
@@ -184,7 +200,7 @@ export function WorktreesPage({
                 </Text>
               </Text>
             )}
-            {remoteProject && (
+            {remoteProject && !remoteRemovalAvailable && (
               <Text as="p" size="inherit" tone="secondary">
                 {remoteLifecycleNotice}
               </Text>
@@ -252,7 +268,11 @@ export function WorktreesPage({
                 const deleteDisabledReason =
                   warning ??
                   (remoteProject
-                    ? remoteLifecycleNotice
+                    ? !remoteRemovalAvailable
+                      ? remoteLifecycleNotice
+                      : reviewingProject === project
+                        ? t("Wait for managed workspaces to load.")
+                        : undefined
                     : managedLoading
                       ? t("Wait for managed workspaces to load.")
                       : undefined);
@@ -274,7 +294,37 @@ export function WorktreesPage({
                     onReveal={() => revealWorktree(tree.path)}
                     onDelete={() => {
                       setError(undefined);
-                      setDeleting(tree);
+                      if (!remoteProject) {
+                        setDeleting(tree);
+                        return;
+                      }
+                      const request = {};
+                      reviewRequest.current = request;
+                      setReviewingProject(project);
+                      void reviewRemoteWorktreeRemoval(project, tree.path)
+                        .then(
+                          (review) => {
+                            if (reviewRequest.current !== request) return;
+                            setRemoteReview({
+                              project,
+                              review,
+                              tree: {
+                                ...tree,
+                                branch: review.branch,
+                                head: review.head,
+                                dirty: !!review.status,
+                                unpushed: review.unpushed,
+                              },
+                            });
+                          },
+                          (failure) => {
+                            if (reviewRequest.current === request)
+                              setError(presentRemoteError(failure, { explicit: true }));
+                          },
+                        )
+                        .finally(() => {
+                          if (reviewRequest.current === request) setReviewingProject(undefined);
+                        });
                     }}
                   />
                 );
@@ -292,6 +342,37 @@ export function WorktreesPage({
             refresh();
           }}
           onCancel={() => setCreating(false)}
+        />
+      )}
+      {remoteReview?.project === project && (
+        <DeleteWorktreeDialog
+          cwd={project}
+          tree={remoteReview.tree}
+          sessionCount={remoteReview.review.sessionIds.length}
+          ignoredEntryCount={remoteReview.review.ignoredEntryCount}
+          ignoredEntryPaths={remoteReview.review.ignoredEntryPaths}
+          onRemove={async (cwd, path, force, deleteSessions) => {
+            checkRemoteWorktreeRemoval(remoteReview.review);
+            try {
+              await removeRemoteWorktree(
+                cwd,
+                path,
+                remoteReview.review,
+                force && !!(remoteReview.review.status || remoteReview.review.ignoredEntryCount),
+                !deleteSessions,
+              );
+            } finally {
+              await refresh();
+            }
+          }}
+          onClose={() => setRemoteReview(undefined)}
+          onDeleted={() => {
+            setRemoteReview(undefined);
+            if (isEqualOrInside(project, remoteReview.tree.path)) {
+              const main = data?.worktrees.find((item) => item.isMain);
+              if (main) setProject(main.path);
+            }
+          }}
         />
       )}
       {deleting && (

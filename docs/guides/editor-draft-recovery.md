@@ -29,9 +29,10 @@ finishes. A late report for the older write cannot mark a newer recovery copy as
 saved. The native save report retains the text; it is not a filesystem receipt.
 
 The **Recovered work** control opens **Conversations**, **File drafts** and
-**Earlier file reports** views. It remains available on desktop even when there
-are no recovered conversations or new-format file copies. File copies from earlier window incarnations remain discoverable in the
-same local desktop profile. The list starts with changed, unsaved copies; **All
+**Earlier file reports** views. When the sidebar entry is hidden, use **Recovered
+work** in the desktop command palette to check earlier reports. File copies from
+earlier window incarnations remain discoverable in the same local desktop profile.
+The list starts with changed, unsaved copies. **All
 copies** also includes reported saves and copies that match their captured disk
 baseline. Copies are ordered by their latest recorded update. Refresh the list
 when another window has edited the source.

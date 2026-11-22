@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileEditor } from "./FileEditor";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
+import { saveExplorerMapping } from "../../../shared/lib/remoteExplorerPaths";
 import {
   getDomainLanguagePreference,
   getLanguagePreference,
@@ -153,6 +154,32 @@ describe("HTML Go Live", () => {
     expect(bridge.invoke).toHaveBeenCalledWith("reveal_path", {
       path: "/repo/store/live-preview.html",
     });
+  });
+
+  it("reveals a mapped remote HTML file locally and browses an unmapped one", async () => {
+    saveExplorerMapping("remote://mac/Users/dev", "Z:/dev");
+    const remote = "remote://mac/Users/dev/site/index.html";
+    await render(remote, false);
+    const reveal = () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+        /Reveal in|Open containing folder/.test(item.getAttribute("aria-label") ?? ""),
+      );
+    expect(reveal()?.disabled).toBe(false);
+    await act(async () => reveal()!.click());
+    expect(bridge.invoke).toHaveBeenCalledWith("reveal_path", { path: "Z:/dev/site/index.html" });
+
+    const unmapped = "remote://other/Users/dev/site/index.html";
+    const base = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((command, args) =>
+      command === "browse_dir"
+        ? { path: "remote://other/Users/dev/site", parent: null, entries: [], canOpenFiles: true }
+        : base(command, args),
+    );
+    bridge.invoke.mockClear();
+    await render(unmapped, false);
+    await act(async () => reveal()!.click());
+    expect(bridge.invoke).toHaveBeenCalledWith("browse_dir", { path: unmapped, containing: true });
+    expect(bridge.invoke).not.toHaveBeenCalledWith("reveal_path", expect.anything());
   });
 
   it("refreshes the live view when the agent changes the HTML on disk", async () => {

@@ -5,7 +5,16 @@ import { RailBackgroundControls } from "../../../src/features/projects/ui/RailBa
 import { saveProjectChatBackgroundSettings } from "../../../src/features/projects/model/projectChatBackground";
 import { UsageProviderChip } from "../../../src/app/shell/UsageProviderChip";
 import { ResumeTurnRow } from "../../../src/features/sessions/ui/ResumeTurnRow";
-import { ProviderSignInPanel } from "../../../src/features/sessions/ui/ProviderSignInPanel";
+import {
+  ProviderSignInPanel,
+  type ProviderSignInState,
+} from "../../../src/features/sessions/ui/ProviderSignInPanel";
+import { RemoveProjectDialog } from "../../../src/features/projects/ui/RemoveProjectDialog";
+import { DeleteSessionDialog } from "../../../src/features/sessions/ui/DeleteSessionDialog";
+import {
+  offerSignInInstructionLine,
+  signInInstructionsKey,
+} from "../../../src/integrations/harness/core/authInstructions";
 import { SessionImportDialog } from "../../../src/features/sessions/ui/SessionImportDialog";
 import { AdditionalDirsDialog } from "../../../src/features/projects/ui/AdditionalDirsDialog";
 import { saveAdditionalDirs } from "../../../src/features/projects/model/additionalDirs";
@@ -40,6 +49,34 @@ import { languageReady } from "../../../src/shared/i18n";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import "../../../src/styles/index.css";
 
+const removeProjectParam = new URLSearchParams(location.search).get("removeProject");
+if (removeProjectParam) {
+  // `?removeProject=ok` counts 12 saved sessions; `?removeProject=error` rejects the way a Native
+  // storage failure does (a plain string from the command), so the dialog shows its real error path.
+  mockIPC(
+    (command) => {
+      if (command === "session_ids_by_project") {
+        if (removeProjectParam === "error") throw "database is locked (code 5)";
+        return Array.from({ length: 12 }, (_, index) => `fixture-session-${index}`);
+      }
+      return null;
+    },
+    { shouldMockEvents: true },
+  );
+}
+const providerSignInParam = new URLSearchParams(location.search).get("providerSignIn");
+const providerSignInState: ProviderSignInState =
+  providerSignInParam === "running" ||
+  providerSignInParam === "error" ||
+  providerSignInParam === "complete"
+    ? providerSignInParam
+    : "idle";
+if (providerSignInState === "running") {
+  // The browser-fallback link and device code a login CLI prints on a Host without a browser.
+  const key = signInInstructionsKey("claude");
+  offerSignInInstructionLine(key, "Open https://claude.ai/device to sign in");
+  offerSignInInstructionLine(key, "Enter the code: QZ7K-4MDP");
+}
 if (new URLSearchParams(location.search).has("projectVisual")) {
   mockIPC(() => null, { shouldMockEvents: true });
   (window as any).__TAURI_INTERNALS__.convertFileSrc = () => "/crew/star-wars/yoda.svg";
@@ -507,8 +544,32 @@ void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
           block={{ id: "fixture-resume", role: "user", text: "Continue the retained draft." }}
           kind="resume"
         />
+      ) : removeProjectParam ? (
+        <RemoveProjectDialog
+          name="bycoda"
+          path="/work/bycoda"
+          onCancel={() => {}}
+          onConfirm={() => {}}
+        />
+      ) : new URLSearchParams(location.search).has("deleteSession") ? (
+        // The real caller always passes the unused-worktree path, so the checkbox is part of the prompt.
+        <DeleteSessionDialog
+          title="Investigate why the nightly sync job fails only on the staging runner after the proxy change"
+          unusedWorktree="C:/Users/demo/.bycoda/worktrees/bycoda/nightly-sync-3f9a"
+          onClose={() => {}}
+        />
       ) : new URLSearchParams(location.search).has("providerSignIn") ? (
-        <ProviderSignInPanel harness="claude" state="idle" onSignIn={() => {}} />
+        // `?providerSignIn=running|error|complete`; bare `?providerSignIn` stays idle.
+        <ProviderSignInPanel
+          harness="claude"
+          state={providerSignInState}
+          error={
+            providerSignInState === "error"
+              ? "The sign-in window was closed before it finished. Try again."
+              : null
+          }
+          onSignIn={() => {}}
+        />
       ) : new URLSearchParams(location.search).has("controlDialogs") ? (
         new URLSearchParams(location.search).get("controlDialogs") === "folders" ? (
           <AdditionalDirsDialog project="/fixture/project" name="Fixture" onClose={() => {}} />

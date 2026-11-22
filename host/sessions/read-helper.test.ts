@@ -13,10 +13,10 @@ it("reuses the readonly helper after a size refusal", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-read-budget-"));
   const path = join(directory, "host.db");
   const database = new DatabaseSync(path);
-  const spawn = vi.fn(fork);
+  const spawn = vi.fn<typeof fork>(fork);
   const processes = new SessionReadProcesses(
     new URL("../session-read-helper.mjs", import.meta.url),
-    spawn,
+    spawn as unknown as typeof fork,
   );
   try {
     database.exec(`

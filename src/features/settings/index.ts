@@ -14,6 +14,7 @@ export type * as modelAppearancePreferencesApi from "./public/appearancePreferen
 export type * as modelApplicationPreferencesControlApi from "./public/applicationPreferencesControl";
 export type * as modelComposerSpellingApi from "./public/composerSpelling";
 export type * as modelDecorativeMotionApi from "./public/decorativeMotion";
+export type * as modelRemoteMediaModeApi from "./public/remoteMediaMode";
 export type * as modelMcpApi from "./public/mcp";
 export type * as modelMcpSettingsCacheApi from "./public/mcpSettingsCache";
 export type * as modelModelsSettingsLinkApi from "./public/modelsSettingsLink";

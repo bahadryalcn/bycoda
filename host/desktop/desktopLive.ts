@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { dedicatedWorktreeVerifier } from "./headless-worktree";
 import { requestedByName, type DesktopCommand } from "./desktopCommand";
 import type { PreparedDesktop } from "../domains/commands/service";
 export type { PreparedDesktop } from "../domains/commands/service";
@@ -217,6 +218,129 @@ function parseConcealedGroups(input: unknown): DesktopConcealedGroups | undefine
  * calls in (`sessions.desktopLive`); the host can't reach it otherwise.
  */
 export class DesktopLive {
+  private removalPages = new Map<string, string | undefined>();
+  get headlessRemovalConfigured(): boolean {
+    return !!this.verifyHeadless && !this.removalPages.size;
+  }
+  private removalJobs = new Map<
+    string,
+    {
+      id: string;
+      clientId: string;
+      pageToken?: string;
+      path?: string;
+      until: number;
+      reply?: (granted: boolean) => void;
+    }
+  >();
+
+  removalLeaseBeat(input: Record<string, unknown>) {
+    const clientId = input.clientId;
+    const now = Date.now();
+    const replies = Array.isArray(input.removalLeaseReplies)
+      ? input.removalLeaseReplies
+          .slice(0, 100)
+          .filter((entry) => typeof entry?.id === "string" && entry.id.length <= 36)
+      : [];
+    const acked = replies
+      .map((entry) => entry.id as string)
+      .filter(
+        (id) =>
+          this.removalJobs.has(JSON.stringify([id, clientId])) ||
+          ![...this.removalJobs.values()].some((job) => job.id === id),
+      );
+    const jobs: { id: string; clientId: string; path?: string }[] = [];
+    for (const [key, job] of this.removalJobs) {
+      const { id } = job;
+      if (job.until <= now) {
+        this.removalJobs.delete(key);
+        continue;
+      }
+      if (job.clientId !== clientId || (job.path && job.pageToken !== input.pageToken)) continue;
+      const result = replies.find((entry) => entry.id === id && entry.release === !job.path);
+      if (result) {
+        job.reply?.(result.granted === true);
+        if (!job.path) this.removalJobs.delete(key);
+      } else if (!job.path || job.reply) {
+        jobs.push({ id, clientId: job.clientId, path: job.path });
+      }
+    }
+    return { jobs, acked };
+  }
+
+  async withRemovalLease<T>(
+    id: string,
+    path: string,
+    run: (assertLease: () => void) => Promise<T>,
+    project?: () => Promise<string>,
+  ): Promise<T> {
+    const clients = [...this.removalPages.keys()];
+    const pages = new Map(clients.map((client) => [client, this.removalPages.get(client)]));
+    const unavailable =
+      "Cannot verify native terminal usage. Reconnect the execution Host desktop and retry.";
+    if (!clients.length && this.verifyHeadless && project) {
+      await this.verifyHeadless(path, await project());
+      const assertDedicated = () => {
+        if (this.removalPages.size) throw new Error(unavailable);
+      };
+      assertDedicated();
+      return run(assertDedicated);
+    }
+    if (!clients.length || clients.some((client) => !this.clientAlive(client)))
+      throw new Error(unavailable);
+    if (clients.includes("legacy")) throw new Error(unavailable);
+    const startedAt = performance.now();
+    const until = Date.now() + 15_000;
+    try {
+      const results = await Promise.all(
+        clients.map(
+          (clientId) =>
+            new Promise<boolean>((resolve) => {
+              const key = JSON.stringify([id, clientId]);
+              const pageToken = pages.get(clientId);
+              const timeout = setTimeout(() => resolve(false), 15_000);
+              const job = {
+                id,
+                clientId,
+                pageToken,
+                path,
+                until,
+                reply: (granted: boolean) => {
+                  clearTimeout(timeout);
+                  this.removalJobs.set(key, { id, clientId, pageToken, path, until });
+                  resolve(granted);
+                },
+              };
+              this.removalJobs.set(key, job);
+            }),
+        ),
+      );
+      if (performance.now() - startedAt >= 15_000 || !results.every(Boolean))
+        throw new Error(unavailable);
+      const assertLease = () => {
+        // Leave 150 seconds for a started mutation to finish within the native TTL.
+        if (
+          performance.now() - startedAt >= 450_000 ||
+          clients.some(
+            (client) =>
+              !this.clientAlive(client) || pages.get(client) !== this.removalPages.get(client),
+          ) ||
+          this.removalPages.size !== clients.length
+        )
+          throw new Error(unavailable);
+      };
+      assertLease();
+      return await run(assertLease);
+    } finally {
+      for (const clientId of clients)
+        this.removalJobs.set(JSON.stringify([id, clientId]), {
+          id,
+          clientId,
+          until: Date.now() + 600_000,
+        });
+    }
+  }
+
   private clients = new Map<string, number>();
   private sessions = new Map<string, LiveSession>();
   private commands: (DesktopCommand & { queuedAt: number })[] = [];
@@ -240,6 +364,7 @@ export class DesktopLive {
   onSourceChange?: (sessionIds: string[]) => void;
   /** A window's project directory projection changed or its window stopped answering. */
   onDirectoryChange?: () => void;
+  onRemovalHeartbeat?: () => void;
   /** A window reported a conversation busy (each beat while it runs). */
   onBusy?: (sessionId: string, clientId: string) => void;
   /** A conversation a window ran is no longer busy there (`idle`), or the window stopped answering (`gone`). */
@@ -277,6 +402,7 @@ export class DesktopLive {
   constructor(
     private readonly now: () => number = Date.now,
     private readonly watchSuspension: boolean = now === Date.now,
+    private readonly verifyHeadless = dedicatedWorktreeVerifier(),
   ) {
     this.clock = new AwakeClock(now);
     this.groupLock = new DesktopGroupLock(now);
@@ -325,6 +451,7 @@ export class DesktopLive {
     commands: DesktopCommand[];
     projectDirectoryRevision?: string;
     groupLock: ReturnType<DesktopGroupLock["beat"]>;
+    removalLease: ReturnType<DesktopLive["removalLeaseBeat"]>;
   } {
     const value =
       input && typeof input === "object" && !Array.isArray(input)
@@ -500,10 +627,12 @@ export class DesktopLive {
         !acked.has(command.id) || this.sessions.get(command.sessionId)?.clientId !== clientId,
     );
     this.clients.set(clientId, this.awake());
+    this.removalPages.set(clientId, pageToken);
     this.storedSince.clear();
     for (const [id, beatAt] of this.clients) {
       if (this.awake() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;
       this.clients.delete(id);
+      // Heartbeat expiry is not proof that native PTYs have exited.
       if (this.directories.delete(id)) directoryChanged = true;
       for (const [sessionId, session] of this.sessions)
         if (session.clientId === id) {
@@ -519,8 +648,10 @@ export class DesktopLive {
     if (sourceChangedIds.size) this.onSourceChange?.([...sourceChangedIds]);
     if (changedIds.size) this.onChange?.([...changedIds]);
     if (directoryChanged) this.onDirectoryChange?.();
+    this.onRemovalHeartbeat?.();
     return {
       groupLock: this.groupLock.beat(clientId, value.groupLock),
+      removalLease: this.removalLeaseBeat(value),
       ...(revision && this.directories.get(clientId)?.revision === revision
         ? { projectDirectoryRevision: revision }
         : {}),

@@ -28,6 +28,14 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./githubTasks", () => mocks);
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.nativeRead }));
 vi.mock("./githubRepositories", () => mocks);
+const remote = vi.hoisted(() => ({
+  remoteMachineFor: vi.fn(),
+  loadRemoteCapabilities: vi.fn(),
+  remoteRequest: vi.fn(),
+  machineProjects: vi.fn(),
+}));
+vi.mock("../../connections/public/connections", () => remote);
+vi.mock("../../automations/public/hostMachines", () => remote);
 vi.mock("./jira", () => mocks);
 vi.mock("./linear", () => mocks);
 vi.mock("./gitlab", () => mocks);
@@ -42,6 +50,7 @@ import {
   findWorkItemMentions,
   rankWorkItemMentions,
   workItemMentionCandidates,
+  searchWorkItemMentionCandidates,
   applyWorkItemMentionsToTurn,
   mergeWorkItemMentionCandidates,
 } from "../public/workItemMentions";
@@ -269,6 +278,20 @@ describe("provider reads and turn resolution", () => {
     const result = await workItemMentionCandidates("/repo", "github", "142", ["github"]);
     expect(result).toEqual([item()]);
   });
+  it("reports a typed search failure next to the cached rows, with the machine name", async () => {
+    mocks.peekInboxList.mockReturnValue({ items: [item()] });
+    mocks.githubRepo.mockResolvedValue(null);
+    const local = await searchWorkItemMentionCandidates("/repo", "github", "142", ["github"]);
+    expect(local.items).toEqual([item()]);
+    expect(local.failure).toMatchObject({ failure: "repository-unresolved", provider: "github" });
+    expect(local.machine).toBeUndefined();
+    remote.remoteMachineFor.mockResolvedValue({ id: "m", environmentId: "env", name: "Box" });
+    remote.loadRemoteCapabilities.mockResolvedValue([]);
+    const away = await searchWorkItemMentionCandidates("remote://env/home/me/app", "github", "1", [
+      "github",
+    ]);
+    expect(away).toMatchObject({ failure: { failure: "remote-host-unavailable" }, machine: "Box" });
+  });
   it("uses cached candidates, filters provider, fetches on cache miss, and fails open", async () => {
     const rows = [item(), item({ provider: "jira" })];
     mocks.peekInboxList.mockReturnValue({ items: rows });
@@ -326,6 +349,49 @@ describe("provider reads and turn resolution", () => {
     expect(mocks.githubRepo).toHaveBeenCalledTimes(1);
     expect(mocks.githubWorkItemDetails).toHaveBeenCalledWith("/repo", "owner/repo", "issue", 142);
   });
+
+  it("propagates typed remote search errors from the candidate model", async () => {
+    remote.remoteMachineFor.mockResolvedValue({ id: "machine", environmentId: "env" });
+    remote.loadRemoteCapabilities.mockResolvedValue([]);
+    await expect(
+      workItemMentionCandidates("remote://env/home/me/app", "github", "123"),
+    ).rejects.toMatchObject({ failure: "remote-host-unavailable", provider: "github" });
+  });
+
+  it.each(["/repo", "remote://env/home/me/app"])("ignores bare numbers in %s", async (cwd) => {
+    const text = "Fix step #1 and color #333.";
+    expect(await applyWorkItemMentionsToTurn(text, cwd)).toBe(text);
+    expect(remote.remoteRequest).not.toHaveBeenCalled();
+    expect(mocks.githubWorkItem).not.toHaveBeenCalled();
+  });
+
+  it.each(["@gh:#123", "@gh:owner/repo#123"])(
+    "resolves explicit remote mention %s",
+    async (token) => {
+      remote.remoteMachineFor.mockResolvedValue({ id: "machine", environmentId: "env" });
+      remote.loadRemoteCapabilities.mockResolvedValue(["workItems.github.v1"]);
+      remote.machineProjects.mockResolvedValue([{ id: "project", cwd: "/home/me/app" }]);
+      remote.remoteRequest.mockResolvedValue({
+        items: [{ ...item({ number: 123, kind: "pr" }), body: "Remote PR body" }],
+        errors: [],
+      });
+      const result = await applyWorkItemMentionsToTurn(
+        `Check ${token}.`,
+        "remote://env/home/me/app",
+      );
+      expect(result).toContain('"body":"Remote PR body"');
+      expect(remote.remoteRequest).toHaveBeenCalledWith(
+        "machine",
+        "workItems.get",
+        { projectId: "project", number: 123 },
+        false,
+        false,
+        "env",
+      );
+      expect(mocks.githubRepo).not.toHaveBeenCalled();
+      expect(mocks.githubWorkItem).not.toHaveBeenCalled();
+    },
+  );
 
   it("resolves a GitHub PR without falling through to issue", async () => {
     mocks.githubWorkItem.mockResolvedValue(item({ kind: "pr" }));

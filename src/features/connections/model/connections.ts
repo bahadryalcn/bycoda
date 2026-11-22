@@ -49,8 +49,11 @@ import {
 import { loadRemoteAutoReconnect } from "../../settings/public/settings";
 import {
   bindRemoteAttachmentReaders,
+  canPreview,
+  downloadPreview,
   withRemoteAttachmentPreviews,
 } from "./remoteAttachmentPreviews";
+import type { Block } from "../../sessions";
 import { RemoteSessionLists } from "./remoteSessionLists";
 import { applyProjectChange, noteOwnSessionRequest } from "./remoteListActivity";
 import { machineStatusPollDelay, remoteBackoffDelay } from "./remotePollingPolicy";
@@ -716,6 +719,47 @@ function applyRemoteSessionSync(base: HostSession | undefined, update: SessionSy
     done();
     throw error;
   }
+}
+
+/** Restore lazy readers for images whose paths were omitted from an adopted transcript. */
+export function bindStoredAdoptedImageReaders(sessionId: string, blocks: Block[]): Block[] {
+  return blocks.map((block) => {
+    if (!block.attachments?.some((file) => canPreview(file) && !file.path)) return block;
+    return {
+      ...block,
+      attachments: block.attachments.map((file) => {
+        if (!canPreview(file) || file.path || file.loadPreview) return file;
+        return {
+          ...file,
+          loadPreview: async () => {
+            const machine =
+              cachedMachines.find(isLocalSyncMachine) ??
+              (await invoke<RemoteMachine[]>("remote_machines")).find(isLocalSyncMachine);
+            if (
+              !machine?.environmentId ||
+              (file.hostEnvironmentId && file.hostEnvironmentId !== machine.environmentId)
+            )
+              throw new Error("Cannot reach the image’s owning Host.");
+            return downloadPreview(
+              machine.id,
+              sessionId,
+              file,
+              (params) =>
+                remoteRequest(
+                  machine.id,
+                  "attachments.read",
+                  params,
+                  false,
+                  false,
+                  machine.environmentId,
+                ),
+              true,
+            );
+          },
+        };
+      }),
+    };
+  });
 }
 
 /** Fetches only what changed since `known`; falls back to a full snapshot. */

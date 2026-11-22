@@ -108,6 +108,7 @@ function paletteActions(
   cwd: string,
   stopBackgroundWork: boolean,
   arrangeLayout: boolean,
+  recoveryAvailable: boolean,
 ): Action[] {
   const notes = loadNotesEnabled()
     ? [
@@ -136,6 +137,7 @@ function paletteActions(
       hint: keybindingShortcutLabel("App: Open Crews", `${MOD}${SHIFT}E`) ?? undefined,
     },
     ...destinationActions(),
+    ...(recoveryAvailable ? [{ id: "open-recovery", label: t("Recovered work") }] : []),
     ...(stopBackgroundWork
       ? [
           {
@@ -170,6 +172,7 @@ type Props = {
   stopBackgroundWork?: boolean;
   /** The active tab has several panes, so "Layout: …" commands apply. */
   arrangeLayout?: boolean;
+  recoveryAvailable?: boolean;
   onOpenFile: OpenFileFn;
   onRunAction: (id: string) => void;
   onClose: () => void;
@@ -182,6 +185,7 @@ export function FilePicker({
   initialQuery = "",
   stopBackgroundWork = false,
   arrangeLayout = false,
+  recoveryAvailable = false,
   onOpenFile,
   onRunAction,
   onClose,
@@ -221,7 +225,7 @@ export function FilePicker({
   );
   const actionResults = useMemo((): RankedAction[] => {
     if (!paletteMode) return [];
-    const actions = paletteActions(cwd, stopBackgroundWork, arrangeLayout);
+    const actions = paletteActions(cwd, stopBackgroundWork, arrangeLayout, recoveryAvailable);
     if (!actionQuery) {
       return actions.map((action) => ({
         ...action,
@@ -235,7 +239,7 @@ export function FilePicker({
         return hit ? [{ ...action, ...hit }] : [];
       })
       .sort((a, b) => b.score - a.score);
-  }, [actionQuery, paletteMode, cwd, stopBackgroundWork, arrangeLayout]);
+  }, [actionQuery, paletteMode, cwd, stopBackgroundWork, arrangeLayout, recoveryAvailable]);
   const optionCount = paletteMode ? actionResults.length : results.length;
   // Opening (or retargeting) the picker restarts it from the initial query and
   // the first row; a shrinking result list clamps the highlighted row.

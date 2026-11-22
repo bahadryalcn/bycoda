@@ -563,6 +563,7 @@ function Workspace({
 
   const {
     localHostReachable,
+    hydrateAdoptedHistoryRef,
     loadRunningOnHostRef,
     onRefreshAdoptedSession,
     desktopLiveHandlers,
@@ -959,8 +960,6 @@ function Workspace({
     inFlightSyncKey,
     sawInFlight,
     workspaceSyncKey,
-    setProjectCwd,
-    setRecents,
   });
 
   // Tabs are views. Hidden idle sessions drop their child. A visible session
@@ -1456,6 +1455,8 @@ function Workspace({
     sidebarCwd,
     refreshHistory,
   });
+
+  hydrateAdoptedHistoryRef.current = ensureSessionHistoryForExecution;
 
   /** Loads sessions this machine's host runs for another computer, so the
    * Working card shows them without a tab; they unload once seen after done. */
@@ -3045,8 +3046,6 @@ function Workspace({
       (record) =>
         record.state === "retained" && record.serializedTextDigest !== record.baselineDigest,
     ).length,
-    // Earlier path-only reports are inspected on demand and are absent from
-    // the modern draft count. Keep their desktop entry reachable at count 0.
     editorDraftAvailable: editorDraftRecovery.available,
     setRecoveryOpen,
     clearRecoveredSessions,
@@ -3651,6 +3650,11 @@ function Workspace({
                   activeTab={activeTab}
                   onOpenFile={onOpenFile}
                   onArrangeActiveTab={onArrangeActiveTab}
+                  onOpenRecovery={
+                    editorDraftRecovery.available && !toolWindow && !windowTransfer
+                      ? () => setRecoveryOpen(true)
+                      : undefined
+                  }
                   actions={actions}
                 />
 

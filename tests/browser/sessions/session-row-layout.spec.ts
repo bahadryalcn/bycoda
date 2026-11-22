@@ -4,11 +4,13 @@ import path from "node:path";
 
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
-for (const theme of ["dark", "light"]) {
-  test(`remote project and session markers in ${theme}`, async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
+for (const [theme, width] of ["dark", "light"].flatMap((theme) =>
+  [1280, 800].map((width) => [theme, width] as const),
+)) {
+  test(`remote project and session markers in ${theme} at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
     await page.goto(
-      `/tests/browser/sessions/session-row-layout.html?remote-header&legacy-remote-label&global&wide&${theme}`,
+      `/tests/browser/sessions/session-row-layout.html?remote-header&legacy-remote-label&global&wide&project-tooltip&${theme}`,
     );
     const project = page.locator(
       '[data-project-path="remote://fixture-office/fixture/bycoda"] [data-project-primary]',
@@ -25,22 +27,59 @@ for (const theme of ["dark", "light"]) {
     await expect(
       marker.locator("+ [data-tooltip-wrap] [data-session-provider=codex]"),
     ).toBeVisible();
-    const directory = path.resolve("temp/verification/remote-project-marker");
+    const directory = path.resolve("temp/verification/project-row-tooltip");
     await mkdir(directory, { recursive: true });
     await writeFile(
       path.join(directory, "README.md"),
-      "# Remote project and session markers\n\nIsolated desktop browser fixture at 1280 px.\n",
+      "# Project and session detail tooltips\n\nIsolated Chromium fixture at 1280 and 800 px, in light and dark.\n",
     );
-    await page.screenshot({ path: path.join(directory, `${theme}-rows.png`) });
+    await page.screenshot({ path: path.join(directory, `${theme}-${width}-rows.png`) });
     await project.hover();
     const tooltip = page.getByRole("tooltip");
-    await expect(tooltip).toContainText("/fixture/bycoda on Office Mac");
+    await expect(tooltip.getByText("bycoda", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("Office Mac", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("/fixture/bycoda", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("Not connected", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("Working", { exact: true })).toBeVisible();
     await expect(tooltip.locator("svg.lucide-server")).toBeVisible();
-    await page.screenshot({ path: path.join(directory, `${theme}-tooltip.png`) });
+    await expect(project).toHaveAttribute("aria-describedby", (await tooltip.getAttribute("id"))!);
+    await page.screenshot({ path: path.join(directory, `${theme}-${width}-project.png`) });
+    await project.focus();
+    await page.keyboard.press("Escape");
+    await expect(tooltip).toHaveCount(0);
+
+    await session.hover();
+    await expect(tooltip).toContainText("Last activity");
+    await page.screenshot({ path: path.join(directory, `${theme}-${width}-session.png`) });
+
+    await page.locator('[data-project-path="/fixture/demo-repo"] [data-project-primary]').hover();
+    await expect(tooltip.getByText("/fixture/demo-repo", { exact: true })).toBeVisible();
   });
 }
 
 for (const theme of ["dark", "light"]) {
+  test(`compact projects menu shows a row detail in ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-row-layout.html?remote-header&legacy-remote-label&project-tooltip&${theme}`,
+    );
+    await page.getByRole("button", { name: "Projects and groups", exact: true }).click();
+    const project = page
+      .locator("[data-project-navigation-flyout]")
+      .locator(
+        '[data-project-path="remote://fixture-office/fixture/bycoda"] [data-project-primary]',
+      );
+    await expect(project).toBeVisible();
+    const tooltip = page.getByRole("tooltip").filter({ hasText: "/fixture/bycoda" });
+    await expect(tooltip).toHaveCount(0);
+    await project.hover();
+    await expect(tooltip.getByText("Office Mac", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("Working", { exact: true })).toBeVisible();
+    const directory = path.resolve("temp/verification/project-row-tooltip");
+    await mkdir(directory, { recursive: true });
+    await page.screenshot({ path: path.join(directory, `${theme}-800-projects-menu.png`) });
+  });
+
   test(`managed session mark in ${theme}`, async ({ page }) => {
     const directory = path.resolve("temp/verification/managed-session-mark");
     await mkdir(directory, { recursive: true });

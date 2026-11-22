@@ -20,11 +20,13 @@ import styles from "./SidebarAccountFooter.module.css";
 export function SidebarAccountFooter({
   compact = false,
   updateNotice,
+  recoveryControl,
   onOpenSettings,
   onOpenAccountSettings,
 }: {
   compact?: boolean;
   updateNotice?: ReactNode;
+  recoveryControl?: ReactNode;
   onOpenSettings?: () => void;
   onOpenAccountSettings?: () => void;
 }) {
@@ -84,6 +86,7 @@ export function SidebarAccountFooter({
         ) : null}
         <SidebarUpdateFooter icon compact={compact} />
         <div {...surfaceAttributes(compact ? { frame: "pane", edge: "top" } : {}, styles.personal)}>
+          {recoveryControl}
           {settings}
           {account}
         </div>

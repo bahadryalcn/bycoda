@@ -1,7 +1,6 @@
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { isSkillGroupPickerItem } from "../model/skillGroupPicker";
 import { Text } from "../../../shared/ui/Text";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
@@ -79,10 +78,7 @@ export function SkillPicker({
 }: Props) {
   useLocale();
   return (
-    <div
-      data-skill-picker
-      {...surfaceAttributes(compact ? {} : { radius: "card", frame: "card" }, "overflow-hidden")}
-    >
+    <div data-skill-picker className="flex min-h-0 flex-col">
       {creating ? (
         <CreateSkillForm
           parentSessionId={parentSessionId}
@@ -106,17 +102,18 @@ export function SkillPicker({
             onPick={onPick}
           />
           {showCreate ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={onStartCreate}
-              className="flex w-full items-center gap-2"
-            >
-              <Plus className="icon-sm shrink-0" strokeWidth={1.75} />
-              {t("New skill")}
-            </Button>
+            <div className="flex shrink-0 justify-end px-3 pb-2 pt-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={onStartCreate}
+              >
+                <Plus className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden />
+                {t("New skill")}
+              </Button>
+            </div>
           ) : null}
         </>
       )}

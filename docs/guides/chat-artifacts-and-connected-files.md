@@ -6,9 +6,13 @@ fill. Reduced transparency and forced colors use a solid fill.
 Markdown formatting appears in the chat composer as you type. Move the caret onto a Markdown
 marker to see and edit it. Sent messages display Markdown, and **Show full content** opens long
 messages with the same formatting. **Copy message** and **Save as note** use the original Markdown.
-**Copy message** includes available file and image attachments, including those loaded from a connected machine.
+**Copy message** includes file and image attachments, including those loaded from a connected machine or reopened from a saved conversation.
+If an attachment cannot be read, copying fails with its file name in **Details** and keeps the previous clipboard contents.
 If copying fails, press **Copy message** again to retry or open **Details** for the reason.
-Pasting into a Bycoda draft restores the text and attachments. Other apps can paste the plain message text.
+Pasting into a Bycoda draft restores the text, files and inline attachment references in place, including in Quick Composer and the queue editor.
+Copied folders appear as paths at their original inline position or after the message if they had no inline reference.
+You can also copy or cut a selection containing attachment references in the chat composer.
+Undoing a cut restores the text and its attachments. Other apps can paste the plain message text.
 
 Markdown replies and document previews up to 131,072 characters parse without a background worker. Longer content, including 1 MiB documents, parses in a background worker. Documents with many blocks fill in progressively while the rendering indicator remains visible; completed blocks stay selectable. If parsing fails, the complete source text remains visible with a warning. Closing the failed preview allows a fresh worker attempt when another preview opens.
 
@@ -55,9 +59,9 @@ If the full-screen image fails, **Retry** reloads it from its owning Host or sav
 file instead of reusing an expired temporary preview URL.
 
 Pasted images are saved before they are accepted as attachments, so their file
-reference survives closing and reopening the app. If an older message saved only
-image metadata without a file reference, attach the original image again; its
-name and size cannot restore the missing picture.
+reference survives closing and reopening the app. Synced conversation history
+can reopen an image by its attachment ID when the Host still has the file. If
+the file is gone, attach the original image again.
 
 ## Visual explanations
 
@@ -109,11 +113,18 @@ keeps the recovery action available. Removing several messages gives each its ow
 If the provider refuses a queued follow-up before accepting it, the message returns
 to the queue without a turn-specific delegation notice in the conversation.
 
+Claude can accept a follow-up in the same Host turn once its running CLI reports
+command lifecycle events. While the CLI is getting ready, the composer keeps the
+message queued. Explicitly choosing **Queue message** always waits for dispatch.
+
 For shared queues, the project's Host can send the next message when a desktop
 window stops making progress and the Host verifies the conversation is ready.
 If the window is catching up on Host history, the Host can take over once it
 verifies it already has the window's saved history. Conflicting histories and
-unconfirmed deliveries wait for your review.
+unconfirmed deliveries wait for your review. On a held queue row, **Send again**
+replaces **Steer**. Check the conversation before retrying. Use the row's trash
+button to remove the saved copy, or leave it queued. Retry stays disabled while
+the provider can still answer.
 
 When the previous run is still closing, the queue shows that wait beside the
 message and retries an active queue when it can. If the Host needs you to check
@@ -226,6 +237,8 @@ Every connected path retains its owning machine. Windows drive paths, macOS/Linu
 - **Open live folder (read-only)** uses the saved bycoda connection to expose a temporary folder to this computer's file manager. It supports browsing and opening; writes are rejected. The OS must provide its WebDAV client. An unavailable OS client produces an actionable error and leaves the shared-folder and copy alternatives available.
 
 Only folders and files inside projects/worktrees already authorized on the owning host can be read through bycoda. Browsing metadata outside those roots does not grant file access. Temporary native-folder access is private to loopback, expires, and does not publish a share or change OS services.
+
+If another Git client moves a linked worktree or replaces it with a separate repository, the Host checks its current Git registration before opening or saving files at the old path.
 
 Local downloads are limited to 1 GiB per file and four simultaneous transfers. The cache is bounded to 4 GiB. Unchanged cached snapshots can be reused; edited copies are preserved. A file changing during transfer causes a retryable failure rather than opening inconsistent bytes.
 

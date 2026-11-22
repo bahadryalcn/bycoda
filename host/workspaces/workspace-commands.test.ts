@@ -8,6 +8,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   stat,
   symlink,
@@ -15,12 +16,33 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WorkspaceCommands, type WorkspaceCommandDelivery } from "./workspace-commands";
+import {
+  PREVIEW_SCAN_BYTES,
+  WorkspaceCommands,
+  type WorkspaceCommandDelivery,
+} from "./workspace-commands";
 import { hostWorktrees } from "../git/git-worktrees";
 import * as workspace from "./workspace";
 import * as gitActions from "../git/git-actions";
+import * as cleanup from "../workspace-cleanup";
 
-vi.mock("../git/git-worktrees", () => ({ hostWorktrees: vi.fn() }));
+vi.mock("../git/git-worktrees", async (original) => ({
+  ...(await original<typeof import("../git/git-worktrees")>()),
+  hostWorktrees: vi.fn(),
+}));
+const renameHooks = vi.hoisted(() => ({
+  after: undefined as undefined | (() => Promise<void>),
+}));
+vi.mock("../storage/rename-retry", async (original) => {
+  const actual = await original<typeof import("../storage/rename-retry")>();
+  return {
+    ...actual,
+    renameWithRetry: async (from: string, to: string) => {
+      await actual.renameWithRetry(from, to);
+      await renameHooks.after?.();
+    },
+  };
+});
 const roots: string[] = [];
 
 async function managedDeliverySetup(startMutation?: WorkspaceCommandDelivery["startMutation"]) {
@@ -323,7 +345,7 @@ it("admits a registered junction project and its worktree by physical root while
   const nested = join(physical, "nested");
   const linkedNested = join(root, "linked-nested");
   for (const path of [physical, tree, outside]) await mkdir(path);
-  await writeFile(join(tree, ".git"), "gitdir: elsewhere\n");
+  await linkFixtureWorktree(physical, tree);
   await mkdir(nested);
   await symlink(physical, registered, "junction");
   await symlink(tree, linkedTree, "junction");
@@ -638,14 +660,96 @@ it("resolves worktrees, caches results, invalidates and still rejects outside pa
   expect(hostWorktrees).toHaveBeenCalledTimes(210);
 });
 
-/** A worktree of the first project and an unrelated checkout, both with `.git` like real ones. */
+it("revokes cached worktree writes after cleanup changes Git membership with files still present", async () => {
+  const { root, projects, commands } = await setup();
+  const { path } = await worktreeFixture(root, projects);
+  const generation = cleanup.workspaceCleanupMembershipGeneration();
+  const epoch = vi.spyOn(cleanup, "workspaceCleanupMembershipGeneration");
+  try {
+    await commands.run("write_text_file", { path, content: "before" });
+    expect(hostWorktrees).toHaveBeenCalledTimes(105);
+    await commands.run("read_text_file", { path });
+    expect(hostWorktrees).toHaveBeenCalledTimes(105);
+    vi.mocked(hostWorktrees).mockResolvedValue({ defaultRoot: root, worktrees: [] });
+    epoch.mockReturnValue(generation + 1);
+    await expect(commands.run("write_text_file", { path, content: "after" })).rejects.toThrow(
+      "outside",
+    );
+    expect(await readFile(path, "utf8")).toBe("before");
+  } finally {
+    epoch.mockRestore();
+  }
+});
+
+it("previews a large file with a long line and stops before a later binary line", async () => {
+  const { projects, commands } = await setup();
+  await mkdir(projects[0].cwd);
+  const path = join(projects[0].cwd, "preview.txt");
+  await writeFile(path, "skip\r\n" + "é".repeat(600_000) + "\r\nlast\n\0");
+  expect(await commands.run("read_file_preview", { path, startLine: 2, maxLines: 2 })).toEqual([
+    "é".repeat(199) + "…",
+    "last",
+  ]);
+});
+
+it("stops a preview scan at its byte bound for a huge file without line breaks", async () => {
+  const { projects, commands } = await setup();
+  await mkdir(projects[0].cwd);
+  const path = join(projects[0].cwd, "huge.txt");
+  await writeFile(path, Buffer.alloc(PREVIEW_SCAN_BYTES + 64 * 1024, "x"));
+  // The first line is never finished within the bound: line 1 is cut, line 2 is never reached.
+  expect(await commands.run("read_file_preview", { path, maxLines: 1 })).toEqual([
+    "x".repeat(199) + "…",
+  ]);
+  expect(await commands.run("read_file_preview", { path, startLine: 2, maxLines: 1 })).toEqual([]);
+});
+
+it("revokes a cached path when an independent repository replaces a worktree", async () => {
+  const { project, tree, commands, git } = await managedDeliverySetup();
+  const path = join(tree, "source.txt");
+  await writeFile(path, "original");
+  await commands.run("read_text_file", { path });
+  git(project, "worktree", "move", tree, tree + "-moved");
+  await mkdir(tree);
+  git(tree, "init", "-q");
+  await writeFile(path, "new repo");
+  await expect(commands.run("read_text_file", { path })).rejects.toThrow("outside");
+});
+
+it("rejects cached writes after external Git prune leaves the worktree folder behind", async () => {
+  const { project, tree, commands, git } = await managedDeliverySetup();
+  const path = join(tree, "source.txt");
+  await writeFile(path, "before");
+  await commands.run("read_text_file", { path });
+  const parked = tree + "-parked";
+  await rename(tree, parked);
+  try {
+    git(project, "worktree", "prune", "--expire=now");
+  } finally {
+    await rename(parked, tree);
+  }
+  await expect(commands.run("write_text_file", { path, content: "after" })).rejects.toThrow(
+    "outside",
+  );
+  expect(await readFile(path, "utf8")).toBe("before");
+});
+
+/** The two Git pointers shared by a linked checkout and its owning repository. */
+async function linkFixtureWorktree(project: string, tree: string) {
+  const admin = join(project, ".git", "worktrees", "linked");
+  await mkdir(admin, { recursive: true });
+  await writeFile(join(admin, "commondir"), "../..\n");
+  await writeFile(join(admin, "gitdir"), join(tree, ".git") + "\n");
+  await writeFile(join(tree, ".git"), "gitdir: " + admin + "\n");
+}
+
+/** A worktree of the first project and a separate checkout. */
 async function worktreeFixture(root: string, projects: { cwd: string }[]) {
   const tree = join(root, "tree");
   const checkout = join(root, "other-checkout");
-  for (const folder of [tree, checkout]) {
-    await mkdir(folder);
-    await writeFile(join(folder, ".git"), "gitdir: elsewhere\n");
-  }
+  await mkdir(tree);
+  await linkFixtureWorktree(projects[0].cwd, tree);
+  await mkdir(join(checkout, ".git"), { recursive: true });
   const path = join(tree, "hello.txt");
   await writeFile(path, "hello");
   vi.mocked(hostWorktrees).mockImplementation(async (cwd) => ({
@@ -693,7 +797,7 @@ async function missFixture() {
   const projects = [join(root, "project-a"), join(root, "project-b")].map((cwd) => ({ cwd }));
   const checkout = join(root, "checkout");
   for (const folder of [...projects.map((project) => project.cwd), checkout]) await mkdir(folder);
-  await writeFile(join(checkout, ".git"), "gitdir: elsewhere\n");
+  await linkFixtureWorktree(projects[0].cwd, checkout);
   await writeFile(join(checkout, "a.txt"), "a");
   await writeFile(join(checkout, "b.txt"), "b");
   const store = { projects: () => projects, projectRegistryVersion: 0, attachmentDir: root };
@@ -789,4 +893,73 @@ it("retries once against current roots when invalidateRoots races a scan", async
   });
   await expect(read("a.txt")).rejects.toThrow("outside");
   expect(hostWorktrees).toHaveBeenCalledTimes(4);
+});
+
+it("refuses a versioned save over a file changed since it was read and chains saves", async () => {
+  const { projects, commands } = await setup();
+  const path = join(projects[104].cwd, "doc.txt");
+  await writeFile(path, "base");
+  const read = async () =>
+    (await commands.run("read_text_file", { path, withVersion: true })) as {
+      text: string;
+      version: string;
+    };
+  const save = async (content: string, baseVersion?: string) =>
+    (await commands.run("write_text_file", { path, content, baseVersion })) as { version: string };
+  // A plain read keeps its string result.
+  expect(await commands.run("read_text_file", { path })).toBe("base");
+  const first = await read();
+  const second = await read();
+  expect(second).toEqual(first);
+  // Two editors on one version: the first save wins, the second is refused and writes nothing.
+  const saved = await save("first", first.version);
+  await expect(save("second", second.version)).rejects.toMatchObject({ code: "FILE_CHANGED" });
+  expect(await readFile(path, "utf8")).toBe("first");
+  // The returned version chains the next save and matches a fresh read.
+  expect((await read()).version).toBe(saved.version);
+  const chained = await save("third", saved.version);
+  await save("fourth", chained.version);
+  expect(await readFile(path, "utf8")).toBe("fourth");
+});
+
+it("detects an external change between the versioned read and the save", async () => {
+  const { projects, commands } = await setup();
+  const path = join(projects[104].cwd, "doc.txt");
+  await writeFile(path, "base");
+  const { version } = (await commands.run("read_text_file", { path, withVersion: true })) as {
+    version: string;
+  };
+  await writeFile(path, "agent edit!");
+  await expect(
+    commands.run("write_text_file", { path, content: "mine", baseVersion: version }),
+  ).rejects.toThrow("FILE_CHANGED");
+  expect(await readFile(path, "utf8")).toBe("agent edit!");
+  await rm(path);
+  await expect(
+    commands.run("write_text_file", { path, content: "mine", baseVersion: version }),
+  ).rejects.toThrow("FILE_CHANGED");
+  expect((await readdir(projects[104].cwd)).length).toBe(0);
+});
+
+it("still overwrites without a baseVersion", async () => {
+  const { projects, commands } = await setup();
+  const path = join(projects[104].cwd, "doc.txt");
+  await writeFile(path, "base");
+  await writeFile(path, "agent edit!");
+  await commands.run("write_text_file", { path, content: "old client" });
+  expect(await readFile(path, "utf8")).toBe("old client");
+});
+
+it("does not report a version for a file replaced right after the rename", async () => {
+  const { projects, commands } = await setup();
+  const path = join(projects[104].cwd, "doc.txt");
+  await writeFile(path, "base");
+  renameHooks.after = async () => {
+    renameHooks.after = undefined;
+    await rm(path);
+    await writeFile(path, "external edit after rename");
+  };
+  await expect(commands.run("write_text_file", { path, content: "mine" })).rejects.toThrow(
+    "FILE_CHANGED",
+  );
 });

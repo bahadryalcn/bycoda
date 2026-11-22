@@ -75,24 +75,18 @@ $entries=0; $directories=0; $limit=$null
     if($next -eq $ancestor) { break }
     $ancestor=$next
   }
-  foreach($path in [IO.Directory]::EnumerateFileSystemEntries($directory)) {
+  foreach($entry in [IO.DirectoryInfo]::new($directory).EnumerateFileSystemInfos()) {
     if(++$entries -gt ${limits.entries}) { $limit='entries'; break scan }
-    $name=[IO.Path]::GetFileName($path)
-    if($skip -contains $name) { continue }
-    $attributes=[IO.File]::GetAttributes($path)
+    if($skip -contains $entry.Name) { continue }
+    $attributes=$entry.Attributes
     if(($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
     if(($attributes -band [IO.FileAttributes]::Directory) -eq 0) { continue }
     if($depth -ge ${limits.depth}) { if($null -eq $limit) { $limit='depth' }; continue }
-    $git=[IO.Path]::Combine($path,'.git')
-    $gitAttributes=$null
-    try { $gitAttributes=[IO.File]::GetAttributes($git) }
-    catch [IO.FileNotFoundException] { }
-    catch [IO.DirectoryNotFoundException] { }
-    if($null -ne $gitAttributes) {
-      if(($gitAttributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
-        if($result.Count -ge ${limits.repositories}) { $limit='repositories'; break scan }
-        $result.Add($path)
-      }
+    $path=$entry.FullName
+    foreach($marker in $entry.EnumerateFileSystemInfos('.git')) {
+      if($marker.Name -ine '.git' -or ($marker.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+      if($result.Count -ge ${limits.repositories}) { $limit='repositories'; break scan }
+      $result.Add($path)
     }
     $queue.Enqueue(@($path,($depth+1)))
   }

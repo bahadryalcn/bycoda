@@ -135,17 +135,28 @@ it("names the in-flight RPCs older than the lag and counts those completed", asy
   watch.stop();
 });
 
-it("reports a long gap where both clocks agree as a pause, without stats or profiling", async () => {
+it("reports a 35 s unclassified pause with in-flight and recent RPCs", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bycoda-stall-"));
   dirs.push(dir);
-  const { log, profiler, watch, tick } = fixture(dir);
-  await tick(15 * 60_000);
-  expect(log.warn).not.toHaveBeenCalled();
-  expect(log.info).toHaveBeenCalledWith("Host paused (likely sleep or debugger)", {
-    gapMs: 900_200,
-  });
-  expect(watch.takeMaxLagMs()).toBe(0);
+  const { log, profiler, watch, tick, now } = fixture(dir);
+  const done = trackRpc("git.status", now);
+  const active = trackRpc("files.searchContent", now);
+  await tick(300);
+  done();
+  await tick(35_000);
+  expect(log.warn).toHaveBeenCalledWith(
+    "event loop stalled",
+    expect.objectContaining({
+      gapMs: 35_200,
+      lagMs: 35_000,
+      cause: "uncertain",
+      inflight: "files.searchContent 35700ms",
+      finished: "git.status 500ms",
+    }),
+  );
+  expect(watch.takeMaxLagMs()).toBe(35_000);
   expect(profiler).not.toHaveBeenCalled();
+  active();
   watch.stop();
 });
 
@@ -206,13 +217,16 @@ it("drops a profile request the hourly limit refused instead of profiling an idl
   watch.stop();
 });
 
-it("reports a 90 s gap where both clocks agree as a pause (Windows sleep)", async () => {
+it("reports uncertainty when both clocks advance during a 90 s gap", async () => {
   const { log, watch, tick } = fixture();
   await tick();
   await tick(90_000);
-  expect(log.warn).not.toHaveBeenCalled();
-  expect(log.info).toHaveBeenCalledWith("Host paused (likely sleep or debugger)", {
-    gapMs: 90_200,
-  });
+  expect(log.warn).toHaveBeenCalledWith(
+    "event loop stalled",
+    expect.objectContaining({
+      gapMs: 90_200,
+      cause: "uncertain",
+    }),
+  );
   watch.stop();
 });

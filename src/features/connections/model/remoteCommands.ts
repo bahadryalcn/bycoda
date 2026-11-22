@@ -28,6 +28,10 @@ export const HOST_COMMANDS = new Set([
   "read_file_preview",
   "read_text_file_slice",
   "write_text_file",
+  "write_file_begin",
+  "write_file_chunk",
+  "write_file_commit",
+  "write_file_abort",
   "stat_files",
   "create_path",
   "rename_path",
@@ -132,6 +136,9 @@ const ENTRY_RESULTS = new Set(["list_dir", "list_project_files", "stat_files", "
 
 const UNAVAILABLE = "This isn’t available for projects on another machine yet.";
 const OUTDATED = "Update bycoda Host in Machines settings to use this project’s files.";
+/** Keeps the old Host's own 1 MB refusal and says how to lift it. */
+const OUTDATED_LARGE_SAVE =
+  "File is too large to save (maximum 1 MB). Update bycoda Host in Machines settings to save larger files.";
 const OUTDATED_FOLDERS =
   "Update bycoda Host in Machines settings to browse folders outside projects.";
 const OUTDATED_SKILLS =
@@ -226,11 +233,13 @@ async function runOnMachine(
       throw new Error(
         command === "browse_dir"
           ? OUTDATED_FOLDERS
-          : command === "skill_delete"
-            ? OUTDATED_SKILL_DELETE
-            : command.startsWith("skill_")
-              ? OUTDATED_SKILLS
-              : OUTDATED,
+          : command === "write_file_begin"
+            ? OUTDATED_LARGE_SAVE
+            : command === "skill_delete"
+              ? OUTDATED_SKILL_DELETE
+              : command.startsWith("skill_")
+                ? OUTDATED_SKILLS
+                : OUTDATED,
       );
     throw reason;
   }

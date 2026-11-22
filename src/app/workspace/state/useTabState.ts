@@ -10,7 +10,6 @@ import {
   withoutDelegatedTabs,
   withoutHiddenSessionTabs,
 } from "../../../features/workspace/model/delegatedWorkspace";
-import { lastProjectPath } from "../../../features/projects/model/recents";
 import {
   isolateTerminalPanes,
   newTab,
@@ -28,8 +27,7 @@ export interface WorkspaceSeedDeps {
 /** First session and tab for a window that has nothing restored. */
 export function useWorkspaceSeed({ toolWindow }: WorkspaceSeedDeps) {
   const [seed] = useState(() => {
-    const cwd = toolWindow?.cwd ?? lastProjectPath() ?? "~";
-    const session = newDefaultSession(cwd);
+    const session = newDefaultSession(toolWindow?.cwd);
     const tab = newTab(session.id);
     return { session, tab };
   });
@@ -70,9 +68,10 @@ export function useTabState({ seed, windowTransfer, resumed }: TabStateDeps) {
     },
     [],
   );
-  const [activeTabId, setActiveTabIdState] = useState(
-    () => windowTransfer?.activeTabId ?? resumed?.activeTabId ?? seed.tab.id,
-  );
+  const [activeTabId, setActiveTabIdState] = useState(() => {
+    const restoredId = windowTransfer?.activeTabId ?? resumed?.activeTabId ?? seed.tab.id;
+    return storedTabs.some((tab) => tab.id === restoredId) ? restoredId : (storedTabs[0]?.id ?? "");
+  });
   const tabs = useMemo(
     () => withoutHiddenSessionTabs(storedTabs, hiddenSessionIds),
     [storedTabs, hiddenSessionIds],
@@ -81,12 +80,17 @@ export function useTabState({ seed, windowTransfer, resumed }: TabStateDeps) {
     // Drop a delegated child's pane for good: a shell that reloads without its
     // lineage must not bring the tab back and pull focus from the parent.
     setTabsState(tabs);
-    if (!tabs.some((tab) => tab.id === activeTabId)) setActiveTabIdState(tabs[0]?.id ?? "");
+    if (
+      storedTabs.some((tab) => tab.id === activeTabId) &&
+      !tabs.some((tab) => tab.id === activeTabId)
+    )
+      setActiveTabIdState(tabs[0]?.id ?? "");
   }
   return {
     tabs,
     setTabs,
-    activeTabId: tabs.some((tab) => tab.id === activeTabId) ? activeTabId : (tabs[0]?.id ?? ""),
+    // Close actions need the selected id until they activate the surviving tab in its project.
+    activeTabId,
     setActiveTabIdState,
   };
 }

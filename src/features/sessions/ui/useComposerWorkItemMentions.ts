@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import {
   connectedWorkItemProviders,
   parseWorkItemQuery,
-  workItemMentionCandidates,
+  searchWorkItemMentionCandidates,
   peekWorkItemMentionCandidates,
   mergeWorkItemMentionCandidates,
   type InboxItem,
   type InboxProvider,
+  type WorkItemSearchError,
 } from "../../inbox/public/workItemMentions";
 import { workItemMentionRows } from "../model/workItemMentionRows";
 
@@ -15,6 +16,8 @@ type Source = {
   provider?: InboxProvider;
   items: InboxItem[];
   connected: InboxProvider[];
+  /** Why the search for `search` found nothing; replaced by every later search. */
+  failure?: { error: WorkItemSearchError; machine?: string; search: string };
 };
 
 /** Lazy reads cannot replace another project's suggestions or break file mentions. */
@@ -34,7 +37,7 @@ export function useComposerWorkItemMentions(input: {
     if (!active) return;
     let cancelled = false;
     setLoading(true);
-    void connectedWorkItemProviders()
+    void connectedWorkItemProviders(cwd)
       .then(async (connected) => {
         if (cancelled) return;
         setSource((previous) => ({
@@ -75,12 +78,16 @@ export function useComposerWorkItemMentions(input: {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
-      void workItemMentionCandidates(cwd, provider, search, connected, controller.signal)
-        .then((items) => {
+      void searchWorkItemMentionCandidates(cwd, provider, search, connected, controller.signal)
+        .then(({ items, failure, machine }) => {
           if (cancelled) return;
           setSource((previous) =>
             previous?.cwd === cwd && previous.provider === provider
-              ? { ...previous, items: mergeWorkItemMentionCandidates(previous.items, items) }
+              ? {
+                  ...previous,
+                  items: mergeWorkItemMentionCandidates(previous.items, items),
+                  failure: failure && { error: failure, machine, search },
+                }
               : previous,
           );
         })
@@ -100,6 +107,8 @@ export function useComposerWorkItemMentions(input: {
   return {
     rows: active && current ? workItemMentionRows(current.items, query, current.connected) : [],
     loading: active && (loading || !current),
+    /** Set only for the search text now typed, so a stale failure never labels another query. */
+    failure: active && current?.failure?.search === search ? current.failure : undefined,
     scoped: Boolean(provider),
     available: Boolean(current?.connected.length),
   };

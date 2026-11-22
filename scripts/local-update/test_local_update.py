@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 from local_update import UPDATER_FEED, build_env, archive_package, dependency_action, dependency_key, fingerprint, sync_source, queue_install, validate_versions, validate_product_identity, finish_build, host_key, install_job_active, snapshot, bundled_host_key, worker
 from local_update_lib import backup, count, safe_child, write_json, read_json, alive, digest, windows_binary_digest, PRODUCT_IDENTITY, package_identity
+import local_install
 from local_install import wait_idle, stop_windows_host, host_install, verify_windows_host_process
 from local_install import app_install, windows_app_process_filter, desktop_db, mac_app_update_paths
 from local_install import windows_app_snapshot
@@ -54,17 +55,17 @@ class LocalUpdateTests(unittest.TestCase):
         from local_update import cached_pnpm_environment
         with temp_dir() as folder:
             root = pathlib.Path(folder)
-            base = root / 'pnpm/package-manager-store/v11/links/@pnpm/exe.win32-x64/12.15.0/hash/node_modules/@pnpm/exe.win32-x64'
+            base = root / 'pnpm/package-manager-store/v11/links/@pnpm/exe.win32-x64/12.21.0/hash/node_modules/@pnpm/exe.win32-x64'
             base.mkdir(parents=True)
-            write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.15.0'})
+            write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.21.0'})
             (base / 'pnpm.exe').write_bytes(b'fixture exact manager')
             env = {'LOCALAPPDATA': folder, 'PATH': 'original-manager-bin'}
             with patch('local_update.os.name', 'nt'), patch('local_update.platform.machine', return_value='AMD64'):
-                selected = cached_pnpm_environment(env, '12.15.0')
+                selected = cached_pnpm_environment(env, '12.21.0')
                 self.assertTrue(selected['PATH'].startswith(str(base)))
                 self.assertEqual(env['PATH'], 'original-manager-bin')
                 write_json(base / 'package.json', {'name': '@pnpm/exe.win32-x64', 'version': '12.11.2'})
-                self.assertIsNone(cached_pnpm_environment(env, '12.15.0'))
+                self.assertIsNone(cached_pnpm_environment(env, '12.21.0'))
                 self.assertIsNone(cached_pnpm_environment(env, '12.99.0'))
                 with self.assertRaises(ValueError):
                     cached_pnpm_environment(env, '../../escape')
@@ -846,7 +847,7 @@ class LocalUpdateTests(unittest.TestCase):
                     built.write_bytes(b'new exe-__TAURI_BUNDLE_TYPE_VAR_UNK')
                     db = root / 'desktop.db'
                     with closing(sqlite3.connect(db)) as conn:
-                        conn.execute('CREATE TABLE in_flight_sessions (id TEXT)')
+                        conn.execute('CREATE TABLE in_flight_sessions (session_id TEXT)')
                     manifest = {'version': '0.6.25', 'appHashes': {}, 'binaryHash': digest(built)}
                     events = []
                     commands = []
@@ -865,7 +866,7 @@ class LocalUpdateTests(unittest.TestCase):
                         if failure == 'installer':
                             raise RuntimeError('setup failed after replacing files')
                     with patch.dict(os.environ, {'LOCALAPPDATA': str(root / 'local')}), \
-                         patch('local_install.desktop_db', return_value=db), \
+                         patch('local_install.BASE', root / 'host'), patch('local_install.desktop_db', return_value=db), \
                          patch('local_install.time.sleep'), \
                          patch('local_install.ps', side_effect=powershell), \
                          patch('local_install.run', side_effect=installer):
@@ -901,7 +902,7 @@ class LocalUpdateTests(unittest.TestCase):
             with patch.dict(os.environ, {'LOCALAPPDATA': str(root / 'local')}), \
                  patch('local_install.desktop_db', return_value=db), \
                  patch('local_install.time.sleep'), patch('local_install.wait_idle'), \
-                 patch('local_install.count', return_value=0), patch('local_install.backup'), \
+                 patch('local_install.app_active_count', return_value=0), patch('local_install.backup'), \
                  patch('local_install.ps', side_effect=powershell), \
                  patch('local_install.run', side_effect=lambda *args, **kwargs: shutil.copy2(expected, app)):
                 app_install(release, {'version': '0.6.25', 'appHashes': {}, 'binaryHash': digest(expected)},
@@ -942,7 +943,7 @@ class LocalUpdateTests(unittest.TestCase):
                      patch('local_install.desktop_db', return_value=db), \
                      patch('local_install.verify_tree'), patch('local_install.time.sleep'), \
                      patch('local_install.wait_idle'), patch('local_install.backup'), \
-                     patch('local_install.count', return_value=0), \
+                     patch('local_install.app_active_count', return_value=0), \
                      patch('local_install.run', side_effect=command):
                     if fail_verification:
                         with self.assertRaisesRegex(RuntimeError, 'signature failure'):
@@ -1116,7 +1117,7 @@ class LocalUpdateTests(unittest.TestCase):
                  patch('local_install.verify_tree'), patch('local_install.time.sleep'), \
                  patch('local_install.wait_idle'), patch('local_install.backup'), \
                  patch('local_install.ps', return_value='bycoda') as shell, \
-                 patch('local_install.count', return_value=1), patch('local_install.run') as installer:
+                 patch('local_install.app_active_count', return_value=1), patch('local_install.run') as installer:
                 with self.assertRaisesRegex(RuntimeError, 'new turn started'):
                     app_install(release, {'appHashes': {}}, lambda *a, **k: None)
             self.assertTrue(any('CloseMainWindow' in call.args[0]
@@ -1152,11 +1153,11 @@ class LocalUpdateTests(unittest.TestCase):
                  patch('local_install.verify_tree'), patch('local_install.time.sleep'), \
                  patch('local_install.wait_idle') as idle, \
                  patch('local_install.backup') as snapshot, \
-                 patch('local_install.ps'), patch('local_install.count', return_value=0), \
+                 patch('local_install.ps'), patch('local_install.app_active_count', return_value=0), \
                  patch('local_install.run', side_effect=RuntimeError('installer reached')):
                 with self.assertRaisesRegex(RuntimeError, 'installer reached'):
                     app_install(release, {'appHashes': {}}, lambda *a, **k: None)
-            idle.assert_called_once()
+            self.assertEqual(idle.call_count, 2)
             snapshot.assert_called_once_with(db, release / 'rollback-app/desktop.db')
 
     def test_product_identity_is_independent_from_upstream(self):
@@ -1312,7 +1313,7 @@ class LocalUpdateTests(unittest.TestCase):
                            {'id': 'same', 'pid': 123, 'state': 'waiting', 'activeSessions': 1})
             with patch('local_update.pathlib.Path.home', return_value=root), \
                  patch('local_update.alive', return_value=False), \
-                 patch('local_update.count', side_effect=[0, sqlite3.OperationalError('unreadable')]):
+                 patch('local_install.active_session_ids', side_effect=[set(), sqlite3.OperationalError('unreadable')]):
                 result = status()
             self.assertEqual(result['host']['state'], 'interrupted')
             self.assertNotIn('activeSessions', result['host'])
@@ -1614,9 +1615,62 @@ class LocalUpdateTests(unittest.TestCase):
     def test_bad_database_read_never_means_idle(self):
         reports = []
         with patch('local_install.count', side_effect=[sqlite3.OperationalError('busy'), 2, 0]), patch('local_install.time.sleep') as sleep:
-            wait_idle('unused', 'unused', lambda state, **values: reports.append(values['activeSessions']))
+            wait_idle(lambda: local_install.count('unused', 'unused'),
+                      lambda state, **values: reports.append(values['activeSessions']))
         self.assertEqual(reports, [None, 2, 0])
         self.assertEqual(sleep.call_count, 2)
+
+    def test_app_gate_waits_for_host_child_after_parent_is_idle(self):
+        with temp_dir() as folder:
+            root = pathlib.Path(folder)
+            desktop = root / 'desktop.db'
+            with closing(sqlite3.connect(desktop)) as conn:
+                conn.execute('CREATE TABLE in_flight_sessions(session_id TEXT)')
+            host = root / 'host.db'
+            with closing(sqlite3.connect(host)) as conn:
+                conn.execute('CREATE TABLE sessions(id TEXT, status TEXT, shell_running INTEGER)')
+                conn.executemany('INSERT INTO sessions VALUES (?,?,0)', [('parent','idle'), ('child','running')])
+                conn.commit()
+            self.assertEqual(local_install.app_active_count(root, desktop), 1)
+            with closing(sqlite3.connect(desktop)) as conn:
+                conn.execute("INSERT INTO in_flight_sessions VALUES ('child')")
+                conn.commit()
+                self.assertEqual(local_install.app_active_count(root, desktop), 1)
+                conn.execute("DELETE FROM in_flight_sessions")
+                conn.commit()
+            with closing(sqlite3.connect(host)) as conn:
+                conn.execute("UPDATE sessions SET status='idle'")
+                conn.commit()
+            self.assertEqual(local_install.app_active_count(root, desktop), 0)
+            host.unlink()
+            (root / 'runtime-path').touch()
+            with self.assertRaises(sqlite3.OperationalError):
+                local_install.app_active_count(root, desktop)
+
+    def test_mac_rechecks_host_after_staging_and_before_quit(self):
+        with temp_dir() as folder:
+            root = pathlib.Path(folder)
+            (root / 'bycoda.app').mkdir()
+            desktop = root / 'desktop.db'
+            desktop.touch()
+            events = []
+            def command(args, **kwargs):
+                events.append(args[0])
+                if args[0] == 'osascript':
+                    raise RuntimeError('verified quit reached')
+            def report(state, **values):
+                if 'activeSessions' in values:
+                    events.append((state, values['activeSessions']))
+            with patch('local_install.BASE', root), patch('local_install.MAC_APPLICATIONS', root), \
+                 patch('local_install.os', SimpleNamespace(name='posix')), \
+                 patch('local_install.desktop_db', return_value=desktop), \
+                 patch('local_install.app_active_count', side_effect=[0, 1, 0]), \
+                 patch('local_install.verify_tree'), patch('local_install.time.sleep'), \
+                 patch('local_install.backup'), patch('local_install.run', side_effect=command):
+                with self.assertRaisesRegex(RuntimeError, 'verified quit reached'):
+                    app_install(root, {'id': 'fixture', 'appHashes': {}}, report)
+            self.assertEqual(events, [('waiting', 0), 'codesign', 'ditto',
+                                      ('installing', 1), ('installing', 0), 'osascript'])
 
     def test_missing_database_count_fails_closed(self):
         with temp_dir() as folder:

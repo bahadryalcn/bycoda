@@ -2449,6 +2449,39 @@ describe("collapsed rail Inbox actions", () => {
 });
 
 describe("sidebar working agents", () => {
+  it("drops finished Activity rows as soon as a turn ends and keeps input requests", () => {
+    props.projectRailOpen = false;
+    const running = {
+      id: "running-agent",
+      cwd: "/workspace/alpha",
+      title: "Build settings",
+      harness: "codex" as const,
+      activity: "Working",
+      needsApproval: false,
+      done: false,
+    };
+    const approval = { ...running, id: "approval-agent", needsApproval: true };
+    const failed = { ...running, id: "failed-agent", issue: "failed" as const, done: true };
+    props.liveAgents = [running, approval, failed];
+    act(render);
+
+    const preview = container.querySelector('[data-live-agents-preview="full"]')!;
+    act(() => preview.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
+    const row = (id: string) => preview.querySelector(`[data-live-agent-card="${id}"]`);
+    expect(row(running.id)).not.toBeNull();
+    expect(row(approval.id)).not.toBeNull();
+    expect(row(failed.id)).toBeNull();
+
+    props.liveAgents = [{ ...running, done: true, activity: "Done" }, approval];
+    act(render);
+    expect(row(running.id)).toBeNull();
+    expect(row(approval.id)).not.toBeNull();
+
+    props.liveAgents = [{ ...running, done: true, activity: "Done" }];
+    act(render);
+    expect(container.querySelector("[data-live-agents-preview]")).toBeNull();
+  });
+
   it("shows the original working widget when the project rail is collapsed", () => {
     props.projectRailOpen = false;
     props.onSelectAgent = vi.fn();

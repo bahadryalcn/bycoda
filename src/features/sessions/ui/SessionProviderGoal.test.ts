@@ -149,6 +149,25 @@ it("retains complete Turkish, RTL and emoji objective text and updates native st
   expect(details().textContent).not.toContain("Goal paused");
 });
 
+it("pauses the active goal and waits for provider state before offering resume", async () => {
+  const onCommand = vi.fn(() => true);
+  const session = {
+    harness: "codex" as const,
+    providerSessionId: "native-conversation",
+    providerGoal: goal(),
+  };
+  await render(session, onCommand);
+  const pause = [...details().querySelectorAll("button")].find(
+    (button) => button.textContent === "Pause",
+  );
+  expect(pause).toBeDefined();
+  await act(async () => pause!.click());
+  expect(onCommand).toHaveBeenCalledExactlyOnceWith("/goal pause");
+  expect(details().textContent).toContain("Pursuing goal");
+  await render({ ...session, providerGoal: goal("paused") }, onCommand);
+  expect(details().textContent).toContain("Resume goal");
+});
+
 it("resumes and clears the exact goal through owner actions", async () => {
   const onCommand = vi.fn(() => true);
   await render(
@@ -176,8 +195,10 @@ it("shows native usage and keeps goal state separate from current work", async (
   expect(details().textContent).toContain("Goal blocked");
   expect(details().textContent).toContain("1,200 / 5,000 tokens");
   expect(details().textContent).toContain("1m 30s");
-  expect(details().textContent).not.toContain("Resume goal");
-  expect(details().querySelector("button")?.getAttribute("aria-disabled")).toBe("true");
+  expect(details().textContent).toContain("Resume goal");
+  for (const button of details().querySelectorAll("button")) {
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+  }
 });
 
 it("reports refused goal commands without changing the provider state", async () => {

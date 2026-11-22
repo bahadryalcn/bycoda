@@ -672,6 +672,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         | "workspaces.cleanup.plan"
         | "workspaces.cleanup.status"
         | "workspaces.cleanup.apply" => GIT_MUTATION,
+        "git.worktreeRemovalReview" | "git.worktreeRemove" => GIT_MUTATION,
         "workspace.run"
             if params
                 .get("command")
@@ -1059,6 +1060,10 @@ fn rpc_operation(method: &str, params: &Value) -> String {
                     | "skill_policy_get"
                     | "skill_policy_set"
                     | "stat_files"
+                    | "write_file_abort"
+                    | "write_file_begin"
+                    | "write_file_chunk"
+                    | "write_file_commit"
                     | "write_text_file"
             ) {
                 return format!("{method}:{action}");

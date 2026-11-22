@@ -350,3 +350,39 @@ it.each(["chronological", "reverse"] as const)(
     expect(saved.messages.map((row) => row.text)).toEqual(["task", "b", "c"]);
   },
 );
+
+describe("a failed queue read", () => {
+  it("carries its context, keeps the first-seen time and holds sending until it is read, once", async () => {
+    await act(async () => root.unmount());
+    mocks.request.mockReset().mockImplementation(async () => {
+      throw new Error("Machine is unreachable");
+    });
+    root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    expect(current.loaded).toBe(false);
+    expect(current.failure).toMatchObject({
+      machineId: "machine",
+      environmentId: "host",
+      sessionId: "chat",
+      operation: "queue.read",
+      code: "QUEUE_READ_UNREACHABLE",
+      transient: true,
+    });
+    const first = current.failure!.at;
+    // Sending is held: nothing is written to the host while the queue cannot be read.
+    await act(async () => {
+      expect(await current.prepareSend()).toBe(false);
+    });
+    expect(mocks.request.mock.calls.some((call) => String(call[1]).endsWith(".change"))).toBe(
+      false,
+    );
+    expect(current.failure!.at).toBe(first);
+    // Reload repeats the read only, then the message is sent exactly once.
+    mocks.request.mockReset().mockImplementation(async () => structuredClone(saved));
+    await act(async () => current.retry());
+    await vi.waitFor(() => expect(current.loaded).toBe(true));
+    expect(current.failure).toBeUndefined();
+    expect(mocks.request.mock.calls.every((call) => String(call[1]).endsWith(".get"))).toBe(true);
+    expect(saved.messages).toHaveLength(1);
+  });
+});

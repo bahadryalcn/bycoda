@@ -60,6 +60,7 @@ export interface WorkspaceRetentionDependencies {
   policy(workspace: ManagedWorkspace): Promise<WorkspacePolicy>;
   removal: Pick<WorkspaceRemovalService, "plan" | "apply">;
   sourceClean?(workspace: ManagedWorkspace): Promise<boolean>;
+  retryDeferredRemovals?(): Promise<void>;
   now?: () => number;
   onError?: (error: unknown) => void;
 }
@@ -75,6 +76,7 @@ export function createWorkspaceRetentionScheduler(deps: WorkspaceRetentionDepend
   };
   const run: RetentionScheduler["run"] = (request) =>
     enqueue(async () => {
+      if (!request.workspaceId) await deps.retryDeferredRemovals?.();
       const result: Awaited<ReturnType<RetentionScheduler["run"]>> = { removed: [], blocked: [] };
       const workspaces = request.workspaceId
         ? [await deps.get(request.workspaceId)]

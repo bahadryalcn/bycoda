@@ -56,6 +56,8 @@ const editable = {
   enabled: z.boolean().optional(),
   isolate: z.boolean().optional(),
 };
+/** UI read-back compares editable values without scheduler metadata. */
+export const AutomationEditableConfigurationSchema = z.object(editable);
 export const NativeAutomationMigrationSchema = z.strictObject({
   automationId: z.string(),
   receipt: z.string().min(1).max(200),

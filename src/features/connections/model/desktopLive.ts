@@ -1,4 +1,5 @@
 import type { Block, Session, ApprovalRequestToken, UserQuestionReply } from "../../sessions";
+import { invoke } from "@tauri-apps/api/core";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import type { DesktopProjectDirectory } from "./protocol";
 import type {
@@ -44,6 +45,7 @@ export type DesktopLiveSession = {
 };
 
 export type DesktopLivePayload = {
+  removalLeaseReplies?: DesktopRemovalLeaseReply[];
   writers?: { version: 1; sessionIds: string[] };
   projectDirectory?: DesktopProjectDirectory;
   /** Omit directory contents only after the host acknowledges this revision. */
@@ -73,6 +75,7 @@ export type DesktopLivePayload = {
 };
 
 export type DesktopLiveResult = {
+  removalLease?: { jobs: { id: string; clientId: string; path?: string }[]; acked: string[] };
   projectDirectoryRevision?: string;
   deletions?: {
     jobs: { id: string; sessionId: string; cwd: string; requestedBy?: string }[];
@@ -95,6 +98,9 @@ export type DesktopLiveResult = {
   /** Per conversation in `runLeases`: the lease kept, or `null` when another side runs it now. */
   runLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
 };
+
+type DesktopRemovalLeaseReply = { id: string; granted: boolean; release: boolean };
+const removalLeaseReplies = new Map<string, DesktopRemovalLeaseReply>();
 export type DesktopLiveCommand = {
   id: string;
   sessionId: string;
@@ -476,6 +482,7 @@ export async function runDesktopLiveTick(deps: {
     voiceActiveAgeMs === undefined &&
     live.length === 0 &&
     acked.length === 0 &&
+    removalLeaseReplies.size === 0 &&
     inboxReplies.length === 0 &&
     !deps.deletions?.results.size &&
     !deps.deletions?.running.size &&
@@ -517,6 +524,7 @@ export async function runDesktopLiveTick(deps: {
         }
       : {}),
     ...(deps.clientId ? { clientId: deps.clientId } : {}),
+    ...(removalLeaseReplies.size ? { removalLeaseReplies: [...removalLeaseReplies.values()] } : {}),
     ...(deps.userActive?.() ? { userActive: true as const } : {}),
     ...(voiceActiveAgeMs !== undefined ? { voiceActiveAgeMs } : {}),
     ...(pageToken ? { pageToken } : {}),
@@ -599,6 +607,21 @@ export async function runDesktopLiveTick(deps: {
         )
         .finally(() => runner.running.delete(job.id));
     }
+  }
+  for (const id of result?.removalLease?.acked ?? []) removalLeaseReplies.delete(id);
+  for (const job of result?.removalLease?.jobs ?? []) {
+    if (!deps.clientId || job.clientId !== deps.clientId || typeof job.id !== "string") continue;
+    const release = job.path === undefined;
+    if (!release && typeof job.path !== "string") continue;
+    const granted = await invoke<void>("desktop_worktree_removal_lease", {
+      clientId: deps.clientId,
+      leaseId: job.id,
+      path: job.path ?? null,
+    }).then(
+      () => true,
+      () => false,
+    );
+    removalLeaseReplies.set(job.id, { id: job.id, granted, release });
   }
   if (deps.groupLock) {
     const runner = deps.groupLock;

@@ -6,7 +6,9 @@ import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Text, type TextTone } from "../../../shared/ui/Text";
-import { CircleDot } from "../../../shared/ui/icons";
+import { CircleDot, Pause, Play } from "../../../shared/ui/icons";
+
+export type SessionProviderGoalCommand = "/goal pause" | "/goal resume" | "/goal clear";
 
 const GOAL_STATUS: Record<SessionGoal["status"], { label: string; tone: TextTone }> = {
   active: { label: "Pursuing goal", tone: "primary" },
@@ -24,7 +26,7 @@ export function SessionProviderGoal({
   blockedReason,
 }: {
   session: Pick<Session, "harness" | "providerSessionId" | "providerGoal" | "busy">;
-  onCommand: (command: "/goal resume" | "/goal clear") => boolean | void;
+  onCommand: (command: SessionProviderGoalCommand) => boolean | void;
   blockedReason?: string;
 }) {
   const t = useT();
@@ -56,7 +58,8 @@ export function SessionProviderGoal({
   const disabledReason =
     blockedReason ||
     (session.busy ? t("Wait for the current work to finish before changing the goal.") : undefined);
-  const run = (command: "/goal resume" | "/goal clear") => {
+  const active = goal.status === "active";
+  const run = (command: SessionProviderGoalCommand) => {
     if (disabledReason) return;
     try {
       setFailed(onCommand(command) === false);
@@ -77,7 +80,10 @@ export function SessionProviderGoal({
         aria-haspopup="dialog"
         aria-label={t(status.label)}
         startIcon={<CircleDot className="icon-sm" aria-hidden />}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setFailed(false);
+          setOpen(!open);
+        }}
       >
         {t(goal.status === "active" ? "Goal" : status.label)}
       </Button>
@@ -86,68 +92,65 @@ export function SessionProviderGoal({
           anchor={anchor}
           side="top"
           align="end"
-          width={356}
+          size="lg"
           kind="dialog"
-          solid
+          frosted
+          flow="scroll"
           aria-label={t("Goal")}
+          initialFocus="[data-goal-toggle]"
           onDismiss={() => setOpen(false)}
+          className="flex min-w-0 flex-col gap-3 p-3"
         >
-          <div className="flex min-w-0 flex-col gap-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-              <Text
-                as="span"
-                size="caption"
-                weight="medium"
-                tone={status.tone}
-                className="flex items-center gap-2"
-              >
-                <CircleDot className="icon-sm shrink-0" aria-hidden />
-                {t(status.label)}
-              </Text>
-              {usage.length ? (
-                <Text as="span" size="caption" tone="muted">
-                  {usage.join(" · ")}
-                </Text>
-              ) : null}
-            </div>
-            <Text size="caption" tone="secondary" wrap="anywhere">
-              {goal.objective}
+          <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
+            <CircleDot className="icon-sm" aria-hidden />
+            <Text as="span" size="caption" weight="medium" tone={status.tone} wrap="anywhere">
+              {t(status.label)}
             </Text>
-            <div className="flex flex-wrap justify-end gap-1">
-              {goal.status !== "active" && goal.status !== "complete" && !session.busy ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={!!disabledReason}
-                  disabledReason={disabledReason}
-                  onClick={() => run("/goal resume")}
-                >
-                  {t("Resume goal")}
-                </Button>
-              ) : null}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!!disabledReason}
-                disabledReason={disabledReason}
-                onClick={() => run("/goal clear")}
-              >
-                {t("Clear goal")}
-              </Button>
-            </div>
-            {goal.status === "blocked" ? (
-              <Text size="caption" tone="muted">
-                {t("{p0} did not provide a reason for this goal's blocked state.", {
-                  p0: HARNESS_TITLE[session.harness],
-                })}
+            {usage.length ? (
+              <Text as="span" size="caption" tone="secondary" className="col-start-2 tabular-nums">
+                {usage.join(" · ")}
               </Text>
-            ) : null}
-            {failed ? (
-              <InlineError>
-                {t("Goal action was not sent. Try again when the conversation is ready.")}
-              </InlineError>
             ) : null}
           </div>
+          <Text size="secondary" tone="secondary" leading="relaxed" wrap="anywhere">
+            {goal.objective}
+          </Text>
+          {goal.status === "blocked" ? (
+            <Text size="caption" tone="muted">
+              {t("{p0} did not provide a reason for this goal's blocked state.", {
+                p0: HARNESS_TITLE[session.harness],
+              })}
+            </Text>
+          ) : null}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!!disabledReason}
+              disabledReason={disabledReason}
+              onClick={() => run("/goal clear")}
+            >
+              {t("Clear goal")}
+            </Button>
+            {goal.status !== "complete" ? (
+              <Button
+                data-goal-toggle
+                variant="secondary"
+                size="sm"
+                startIcon={active ? <Pause aria-hidden /> : <Play aria-hidden />}
+                disabled={!!disabledReason}
+                disabledReason={disabledReason}
+                onClick={() => run(active ? "/goal pause" : "/goal resume")}
+              >
+                {t(active ? "Pause" : "Resume goal")}
+              </Button>
+            ) : null}
+          </div>
+          {failed ? (
+            <InlineError>
+              {t("Goal action was not sent. Try again when the conversation is ready.")}
+            </InlineError>
+          ) : null}
         </Popover>
       ) : null}
     </>

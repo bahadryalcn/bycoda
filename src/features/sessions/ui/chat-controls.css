@@ -110,6 +110,13 @@
   }
 }
 
+/* Give the expanded send controls a row with Add at phone widths. */
+@container chat-composer (inline-size < 24rem) {
+  [data-composer]:not([data-composer-reading]) .composer-controls[data-busy] .composer-toolbar {
+    flex-basis: 100%;
+  }
+}
+
 [data-jump-to-bottom] {
   min-inline-size: 2rem;
   min-block-size: 2rem;

@@ -41,7 +41,12 @@ function record(id: string, blocks: unknown[], harness = "codex") {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.stubGlobal("window", { setTimeout: (fn: () => void, delay: number) => setTimeout(fn, delay) });
+  vi.stubGlobal(
+    "window",
+    Object.assign(new EventTarget(), {
+      setTimeout: (fn: () => void, delay: number) => setTimeout(fn, delay),
+    }),
+  );
   vi.mocked(invoke).mockReset();
   vi.mocked(claudeShellCommands).mockReset();
 });
@@ -50,6 +55,72 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("progressive stored history", () => {
+  it("rebinds metadata-only image attachments on both pages of an adopted transcript", async () => {
+    const id = "adopted-images";
+    const machine = {
+      id: "local-host",
+      environmentId: "local-environment",
+      localHost: true,
+      endpoint: "http://127.0.0.1:3776",
+    };
+    const block = (id: string) => ({
+      id,
+      role: "user",
+      text: "Image attached",
+      attachments: [{ id, name: "image.png", kind: "image", mimeType: "image/png", size: 3 }],
+    });
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "remote_machines")
+        return [{ ...machine, id: "remote-host", localHost: false }, machine] as never;
+      if (command === "remote_request") return { data: "YWJj", offset: 3, size: 3 } as never;
+      if (command !== "session_get_page") return [] as never;
+      const earlier = (args as { before?: number }).before !== undefined;
+      const message = block(earlier ? "older" : "recent");
+      const image = message.attachments[0]!;
+      return {
+        session: {
+          ...record(id, [
+            {
+              ...message,
+              attachments: [
+                image,
+                { ...image, id: "with-path", path: "/tmp/image.png" },
+                { ...image, id: "other-host", hostEnvironmentId: "other-environment" },
+              ],
+            },
+          ]),
+          adoptedBase: JSON.stringify({ count: 2, chain: "a".repeat(32) }),
+        },
+        before: earlier ? undefined : 1,
+        totalBlocks: 2,
+        revision: 7,
+      } as never;
+    });
+
+    const session = await getSession(id, { deferHistory: true });
+    const earlier = await getEarlierStoredHistory(session!);
+    expect(invoke).not.toHaveBeenCalledWith("remote_request", expect.anything());
+    await expect(session?.blocks[0]?.attachments?.[0]?.loadPreview?.()).resolves.toBe("YWJj");
+    await expect(earlier?.blocks[0]?.attachments?.[0]?.loadPreview?.()).resolves.toBe("YWJj");
+    expect(session?.blocks[0]?.attachments?.[1]?.loadPreview).toBeUndefined();
+    await expect(session?.blocks[0]?.attachments?.[2]?.loadPreview?.()).rejects.toThrow(
+      "owning Host",
+    );
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "remote_request"),
+    ).toHaveLength(2);
+    for (const attachmentId of ["recent", "older"])
+      expect(invoke).toHaveBeenCalledWith(
+        "remote_request",
+        expect.objectContaining({
+          machineId: machine.id,
+          expectedEnvironmentId: machine.environmentId,
+          method: "attachments.read",
+          params: { sessionId: id, id: attachmentId, offset: 0 },
+        }),
+      );
+  });
+
   it("opens with ten recent turns and reads older blocks only on demand", async () => {
     const id = "on-demand-history";
     const blocks = Array.from({ length: 64 }, (_, index) => ({

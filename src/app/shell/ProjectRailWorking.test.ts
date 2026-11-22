@@ -35,7 +35,7 @@ vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
 }));
 vi.mock("./SidebarUpdate", () => ({ SidebarUpdateFooter: () => null }));
 
-it("places recovery beside Search and Working below Inbox, preserving navigation when collapsed", async () => {
+it("places collapsed Activity below Projects and the recovery icon directly before Settings", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   const container = document.createElement("div");
@@ -67,19 +67,28 @@ it("places recovery beside Search and Working below Inbox, preserving navigation
         }),
       ),
     );
-    const search = container.querySelector('button[aria-label="Search"]')!;
     const preview = container.querySelector('[data-live-agents-preview="full"]')!;
     const inbox = container.querySelector('button[aria-label="Inbox"]')!;
     const recovery = container.querySelector('button[aria-label="Recovered sessions (28)"]')!;
-    expect(recovery.closest(".bycoda-rail-status")).not.toBeNull();
+    const footer = container.querySelector('nav[aria-label="Account"]')!;
+    const ledger = container.querySelector(".bycoda-project-ledger")!;
     expect(
-      search.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ledger.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(inbox.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(footer.contains(recovery)).toBe(true);
+    expect(ledger.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(ledger.contains(preview)).toBe(false);
+    expect(recovery.nextElementSibling?.getAttribute("aria-label")).toBe("Settings");
+    expect(recovery.querySelector('[data-variant="count"][aria-hidden="true"]')?.textContent).toBe(
+      "28",
+    );
     expect(inbox.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(inbox.closest('nav[aria-label="Workspace tools"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-live-agents-preview="full"]')).toHaveLength(1);
     const header = preview.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    act(() => header.click());
+    expect(header.getAttribute("aria-expanded")).toBe("true");
     act(() => header.click());
     expect(header.getAttribute("aria-expanded")).toBe("false");
     const project = container.querySelector<HTMLButtonElement>(

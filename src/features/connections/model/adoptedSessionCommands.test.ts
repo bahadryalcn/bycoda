@@ -20,6 +20,7 @@ vi.mock("./remoteAttachments", () => ({ uploadRemoteAttachments: io.upload }));
 vi.mock("./sharedQueueClient", () => ({ desktopQueueClientId: "desktop:this-window" }));
 vi.mock("./hostWake", () => ({ noteAdoptedBeat: io.wake }));
 const running = {
+  session: { harness: "claude" },
   status: "running",
   runId: "host-run",
   desktop: { updatedAt: 0 },
@@ -37,6 +38,7 @@ beforeEach(() => {
   io.upload.mockResolvedValue([]);
   io.capabilities.mockResolvedValue([
     "sessions.steer",
+    "sessions.steer.claude",
     "commands.status",
     "sessions.queue.claimDispatch",
   ]);
@@ -48,6 +50,12 @@ beforeEach(() => {
   });
 });
 const input = () => ({ sessionId: "s", text: "follow-up", attachments: [], isCurrent: () => true });
+
+it("keeps a Claude follow-up queued on Hosts that only advertise the generic command", async () => {
+  io.capabilities.mockResolvedValue(["sessions.steer"]);
+  await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
+  expect(io.request.mock.calls.some(([, method]) => method === "commands.dispatch")).toBe(false);
+});
 
 it("retains a claimed row on an older Host without attempting an incompatible command", async () => {
   io.capabilities.mockResolvedValue(["sessions.steer", "commands.status"]);
@@ -71,6 +79,18 @@ it("keeps a definitive validation refusal distinct from a coordination wait", as
     throw refusal;
   });
   await expect(sendAdoptedFollowUp(input())).rejects.toBe(refusal);
+});
+
+it("keeps a proven pre-write steer readiness refusal queued without checking for delivery", async () => {
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return snapshot;
+    throw Object.assign(new Error("RPC_WS_REMOTE: The active turn is not ready for steering."), {
+      code: "RPC_WS_REMOTE",
+      uncertain: false,
+    });
+  });
+  await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
+  expect(io.request.mock.calls.some(([, method]) => method === "commands.status")).toBe(false);
 });
 
 it("passes the existing desktop claim and drain epoch to the Host", async () => {
@@ -200,6 +220,19 @@ it("defers a command proven not sent without marking its delivery unknown", asyn
   });
   await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
   expect(io.request.mock.calls.some(([, method]) => method === "commands.status")).toBe(false);
+});
+it("recovers a proven pre-write steer race after the dispatch reply was lost", async () => {
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return snapshot;
+    if (method === "commands.dispatch") throw new Error("connection closed");
+    if (method === "commands.status")
+      throw new Error("Host rejected request: The active turn is not ready for steering.");
+    return null;
+  });
+  await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
+  expect(io.request.mock.calls.filter(([, method]) => method === "commands.dispatch")).toHaveLength(
+    1,
+  );
 });
 
 it("defers a host run race without pausing the follow-up queue", async () => {

@@ -238,33 +238,55 @@ export async function hostFeatureRequest<T>(
   let { status: deviceStatus, device } = machineDevices.get(machineId)!;
   let result: unknown;
   switch (method) {
-    case "desktop.request":
+    case "desktop.request": {
+      // `?desktop=ready|working|stopped` opens Computer use in a configured state; default stays Off.
+      const desktop = new URLSearchParams(location.search).get("desktop");
+      const on = desktop === "ready" || desktop === "working";
       result = {
         configuration: {
-          enabled: false,
-          binaryPath: "",
-          binarySha256: "",
-          allowedApps: [],
+          enabled: on,
+          binaryPath: on ? "C:/verified/helper.exe" : "",
+          binarySha256: on ? "a".repeat(64) : "",
+          allowedApps: on ? ["Notes", "File Explorer"] : [],
           allowPhysicalInput: false,
           permissionMode: "ask",
           allowAllApps: false,
           driver: "agent-desktop",
-          version: 0,
+          version: on ? 1 : 0,
         },
         status: {
-          installed: false,
-          verified: false,
-          enabled: false,
-          stopped: false,
-          active: false,
+          installed: on,
+          verified: on,
+          enabled: on,
+          stopped: desktop === "stopped",
+          active: desktop === "working",
+          ...(desktop === "working" ? { currentAction: { app: "Notes", action: "type" } } : {}),
           upstreamRef: "pinned",
           protocol: "2.5",
         },
       };
       break;
-    case "desktop.helper.request":
-      result = { phase: "missing" };
+    }
+    case "desktop.helper.request": {
+      const desktop = new URLSearchParams(location.search).get("desktop");
+      result =
+        desktop === "ready" || desktop === "working"
+          ? {
+              phase: "ready",
+              helper: {
+                binaryPath: "C:/verified/helper.exe",
+                binarySha256: "a".repeat(64),
+                sourceRef: "pinned",
+                protocol: "2.5",
+                version: "1.0.2",
+                manifestPath: "C:/verified/manifest.json",
+              },
+            }
+          : desktop === "preparing"
+            ? { phase: "preparing", stage: "building" }
+            : { phase: "missing" };
       break;
+    }
     case "runtimeLogs.read": {
       const label = machineId === "fixture-local" ? "Demo" : "MacBook";
       const sources = [
@@ -422,7 +444,15 @@ export async function hostFeatureRequest<T>(
     case "devices.status":
       if (new URLSearchParams(location.search).has("slowDeviceStatus"))
         await new Promise((resolve) => setTimeout(resolve, 2500));
-      result = deviceStatus;
+      // `?deviceStatus=last-error` shows the Host's last failure in the setup sheet.
+      result =
+        new URLSearchParams(location.search).get("deviceStatus") === "last-error"
+          ? {
+              ...deviceStatus,
+              lastError:
+                "adb: failed to check server version: cannot connect to daemon at tcp:5037: Connection refused (os error 10061)",
+            }
+          : deviceStatus;
       break;
     case "devices.setup":
       deviceStatus = {

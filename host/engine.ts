@@ -104,6 +104,7 @@ import type {
   HarnessOperationContext,
   SendTurnInput,
 } from "../src/integrations/harness/core/types";
+import { TurnNotReadyError } from "../src/integrations/harness/core/types";
 import {
   HARNESS_LABEL,
   RUNTIME_MODES,
@@ -1529,6 +1530,10 @@ export class HostEngine {
       this.switchingProjects.delete(projectId);
       this.onUnblocked?.();
     }
+  }
+
+  supportsSteer(id: RemoteProvider): boolean {
+    return !!this.providers[id]?.steer;
   }
 
   private provider(id: string): HostProvider {
@@ -3198,8 +3203,16 @@ export class HostEngine {
                   }),
                 );
             } else {
-              if (value.runId !== command.runId || value.status !== "running")
+              if (value.runId !== command.runId || value.status !== "running") {
+                if (command.type === "steer")
+                  throw new HostDomainRefusalError(
+                    "CONTEXT_CHANGED",
+                    "conflict",
+                    true,
+                    "This request belongs to a finished or replaced turn",
+                  );
                 throw new Error("This request belongs to a finished or replaced turn");
+              }
               if (command.type === "cancel") {
                 const original = this.running.get(command.sessionId);
                 const cancel = provider.cancel;
@@ -3309,9 +3322,27 @@ export class HostEngine {
               } else if (command.type === "steer") {
                 assertModelProvider(value.session.harness, value.session.model);
                 const active = this.running.get(command.sessionId);
-                if (!provider.steer) throw new Error("This provider cannot steer an active turn");
+                if (!provider.steer)
+                  throw new HostDomainRefusalError(
+                    "COMMAND_INVALID",
+                    "validation",
+                    false,
+                    "This provider cannot steer an active turn",
+                  );
                 if (!active || active.cancelled || active.ending)
-                  throw new Error("This turn was stopped");
+                  throw new HostDomainRefusalError(
+                    "CONTEXT_CHANGED",
+                    "conflict",
+                    true,
+                    "This turn was stopped",
+                  );
+                if (provider.steerReady && !provider.steerReady(command.sessionId))
+                  throw new HostDomainRefusalError(
+                    "COMMAND_BUSY",
+                    "conflict",
+                    true,
+                    "The active turn is not ready for steering.",
+                  );
                 const attachments = await resolveAttachments(this.store, command.attachments ?? []);
                 const owner = value.session.blocks[executionUserIndex(value.session.blocks)];
                 value = {
@@ -3388,7 +3419,6 @@ export class HostEngine {
                         this.running.get(command.sessionId) !== active
                       )
                         return;
-                      attempted = true;
                       await this.followUpDelivery(
                         command.sessionId,
                         command.runId,
@@ -3406,6 +3436,7 @@ export class HostEngine {
                           runId: command.runId,
                         });
                       await this.checkProviderSchedule(command.sessionId, command.runId);
+                      attempted = true;
                       await provider.steer!(preparedSteer);
                       // Cancellation can resolve a provider's steer without submitting it.
                       // A retired owner therefore cannot establish successful delivery.
@@ -3422,15 +3453,18 @@ export class HostEngine {
                     })
                     .catch(async (reason) => {
                       if (this.running.get(command.sessionId) === active) {
+                        const uncertain = attempted && !(reason instanceof TurnNotReadyError);
                         await this.followUpDelivery(
                           command.sessionId,
                           command.runId,
                           command.commandId,
-                          attempted ? "uncertain" : "undelivered",
+                          uncertain ? "uncertain" : "undelivered",
                         );
                         this.event(command.sessionId, command.runId, {
                           type: "status",
-                          text: `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`,
+                          text: uncertain
+                            ? `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`
+                            : `The follow-up was not sent. It is saved as a draft. ${String(reason)}`,
                         });
                       }
                     });
@@ -3607,7 +3641,15 @@ export class HostEngine {
               : {}),
           };
           if (admission?.onAccepted) await admission.onAccepted(result);
-          await this.store.recordReceipt(signature, result);
+          await this.store.recordReceipt(
+            signature,
+            command.type === "steer"
+              ? {
+                  ...result,
+                  steer: { runId: command.runId },
+                }
+              : result,
+          );
           return { receipt: result, saved };
         }, "critical");
         if (command.type === "cancel") {

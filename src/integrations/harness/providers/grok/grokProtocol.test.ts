@@ -6,6 +6,7 @@ import {
   fallbackGrokModels,
   grokAuthMethodId,
   grokEffort,
+  grokEffortControl,
   grokPromptBlocks,
   grokSessionNewParams,
   grokSpawnArgs,
@@ -24,6 +25,68 @@ import {
 import { harnessSupportsAttachments } from "../../../../features/sessions/model/session";
 
 describe("grok protocol", () => {
+  it("uses legacy model metadata for an advertised reasoning effort", () => {
+    const control = grokEffortControl(
+      { protocolVersion: 1 },
+      {
+        models: {
+          currentModelId: "grok-4.7",
+          availableModels: [
+            {
+              modelId: "grok-4.7",
+              _meta: {
+                reasoningEffort: "low",
+                reasoningEfforts: [{ value: "low" }, { value: "medium" }],
+              },
+            },
+          ],
+        },
+      },
+      "grok-4.7",
+    );
+    expect(control.current).toBe("low");
+    expect(control.request("medium")).toEqual({
+      method: "session/set_model",
+      params: { modelId: "grok-4.7", _meta: { reasoningEffort: "medium" } },
+    });
+    expect(control.request("turbo")).toBeUndefined();
+  });
+
+  it("uses legacy mode IDs only when explicitly offered", () => {
+    const setup = { modes: { currentModeId: "ask", availableModes: [{ id: "high" }] } };
+    const legacy = grokEffortControl({ protocolVersion: 1 }, setup, "grok-4.7");
+    expect(legacy.request("high")).toEqual({
+      method: "session/set_mode",
+      params: { modeId: "high" },
+    });
+    expect(legacy.request("medium")).toBeUndefined();
+    expect(
+      grokEffortControl({ protocolVersion: 2 }, setup, "grok-4.7").request("high"),
+    ).toBeUndefined();
+  });
+
+  it("keeps advertised effort choices after a model switch answers without config options", () => {
+    const previous = {
+      models: { currentModelId: "grok-4.7" },
+      configOptions: [
+        {
+          id: "thought",
+          type: "select",
+          category: "thought_level",
+          currentValue: "low",
+          options: [{ value: "low" }, { value: "medium" }],
+        },
+      ],
+    };
+    const control = grokEffortControl({ protocolVersion: 2 }, {}, "grok-4.7-mini", previous);
+    // The new model's current effort is unknown, so the selected one is applied once.
+    expect(control.current).toBeUndefined();
+    expect(control.request("medium")).toEqual({
+      method: "session/set_config_option",
+      params: { configId: "thought", value: "medium" },
+    });
+  });
+
   it("supports attachments despite Grok's stale advertised capability", () => {
     expect(harnessSupportsAttachments("grok")).toBe(true);
     expect(harnessSupportsAttachments("cursor")).toBe(true);

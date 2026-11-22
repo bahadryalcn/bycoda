@@ -11,7 +11,9 @@ import { crewMentionOf } from "../model/crewMentions";
 import { CrewMentionIcon, CrewMentionText } from "./ComposerCrewMentionRow";
 import { workItemMentionOf, WORK_ITEM_PROVIDER_NAMES } from "../model/workItemMentionRows";
 import { WorkItemMentionText, workItemMentionMeta } from "./ComposerWorkItemMentionRow";
-import { InboxProviderMark } from "../../inbox/public/workItemMentions";
+import { InboxProviderMark, type WorkItemSearchError } from "../../inbox/public/workItemMentions";
+import { workItemSearchNotice } from "../model/workItemSearchNotice";
+import { usePresentationNow } from "./AgentClock";
 import { serverMentionOf } from "../model/serverMentions";
 type Props = {
   files: RankedFile[];
@@ -26,6 +28,8 @@ type Props = {
   includeNotes?: boolean;
   includeWorkItems?: boolean;
   workItemsScoped?: boolean;
+  /** Why the tracker search found nothing; replaces "No matches" with a short reason. */
+  workItemsFailure?: { error: WorkItemSearchError; machine?: string };
   serversScoped?: boolean;
   includeServers?: boolean;
   onActive: (index: number) => void;
@@ -44,12 +48,16 @@ export function FileMentionPicker({
   includeNotes = false,
   includeWorkItems = false,
   workItemsScoped = false,
+  workItemsFailure,
   serversScoped = false,
   includeServers = false,
   onActive,
   onPick,
 }: Props) {
   const t = useT();
+  const now = usePresentationNow(
+    workItemsFailure?.error.failure === "rate-limited" && !!workItemsFailure.error.retryAt,
+  );
   const includesMentions = includeWorkItems || workItemsScoped || includeServers || serversScoped;
   const list = usePickerList({
     options: files.map((file) => {
@@ -160,7 +168,9 @@ export function FileMentionPicker({
         onRetry={onRetry}
         emptyLabel={
           includesMentions
-            ? t("No matches")
+            ? workItemsFailure
+              ? workItemSearchNotice(workItemsFailure.error, workItemsFailure.machine, t, now)
+              : t("No matches")
             : query.trim()
               ? includeNotes
                 ? t("No matching files or notes")

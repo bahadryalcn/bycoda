@@ -55,8 +55,5 @@ export function withoutInternalWorkspaceSessions(snapshot: WorkspaceSnapshot): W
     ...snapshot,
     tabs,
     sessions,
-    activeTabId: tabs.some((tab) => tab.id === snapshot.activeTabId)
-      ? snapshot.activeTabId
-      : (tabs[0]?.id ?? ""),
   };
 }

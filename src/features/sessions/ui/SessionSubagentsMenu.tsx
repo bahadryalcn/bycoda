@@ -52,25 +52,27 @@ export function SessionSubagentsMenu({
       title: `${agent.name} · ${status}`,
       icon: <AgentStatusDot status={agent.status} />,
       content: (
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <Text size="inherit" tone="neutral" weight="medium" truncate>
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <Text size="inherit" weight="medium" truncate>
             {agent.name}
           </Text>
-          {agent.model || elapsed ? (
-            <Text size="caption" tone="secondary" className="flex items-center gap-2">
-              {agent.model ? (
-                <ModelLabel
-                  model={agent.model}
-                  harness={agent.harness}
-                  name={agent.model}
-                  size="xs"
-                />
-              ) : null}
-              {elapsed ? <span className="ms-auto shrink-0 tabular-nums">{elapsed}</span> : null}
+          {agent.model ? (
+            <Text size="caption" tone="secondary" className="flex min-w-0">
+              <ModelLabel
+                model={agent.model}
+                harness={agent.harness}
+                name={agent.model}
+                size="xs"
+              />
             </Text>
           ) : null}
         </span>
       ),
+      trailing: elapsed ? (
+        <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
+          {elapsed}
+        </Text>
+      ) : null,
     };
   };
   const { standalone, phases } = groupDockAgents(agents);
@@ -140,6 +142,8 @@ export function SessionSubagentsMenu({
           side="top"
           align="end"
           width={340}
+          density="comfortable"
+          frosted
           items={items}
           onPick={(id) => {
             const agent = agents.find((candidate) => candidate.blockId === id);

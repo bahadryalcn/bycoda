@@ -82,9 +82,9 @@ it("shows the assistant avatar with a status dot, docked or floating", () => {
   );
   const button = document.querySelector("#compact button");
   expect(button?.getAttribute("aria-label")).toBe("Talk to Arif");
-  expect(button?.querySelector("[data-avatar]")?.getAttribute("data-initial")).toBe("A");
+  expect(button?.querySelector('[data-state] [data-surface-radius="circle"] img')).not.toBeNull();
   expect(button?.querySelector("[data-state]")?.getAttribute("data-state")).toBe("listening");
-  expect(button?.querySelector("[data-avatar] ~ [data-tone]")?.getAttribute("data-tone")).toBe(
+  expect(button?.querySelector("[data-state] [data-tone]")?.getAttribute("data-tone")).toBe(
     "success",
   );
 });

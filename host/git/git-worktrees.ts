@@ -1,10 +1,17 @@
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
 import { hostGitExec } from "./git-exec-pool";
+import { StringDecoder } from "node:string_decoder";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
-import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
-import { lstat, mkdir } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { lstat, mkdir, open, readFile, readlink, realpath, stat } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import type { WorktreeRemovalReview } from "../../src/features/source-control/model/worktrees";
+import {
+  entryMissing,
+  inside,
+  inventoryWorkspaceLinks,
+  validateWorkspaceCleanupPaths,
+} from "../workspaces/workspace-cleanup-paths";
 import type {
   ManagedWorkspace,
   WorkspaceNames,
@@ -64,7 +71,7 @@ export async function managedWorkspaceBase(cwd: string, ref: string): Promise<st
   if (!ref || ref.startsWith("-") || /[\0\r\n]/.test(ref))
     throw new Error("Invalid committed workspace base");
   return (
-    await exec(
+    await hostGitExec.exec(
       "git",
       ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
       options(cwd),
@@ -108,30 +115,25 @@ export async function materializeManagedWorkspace(
     if (owner === null) {
       // update-ref transactions atomically reserve the branch and its complete owner ID.
       const input = `start\ncreate ${workspace.branchRef} ${workspace.baseCommit}\ncreate ${marker} ${workspace.baseCommit}\nprepare\ncommit\n`;
-      await new Promise<void>((done, reject) => {
-        // spawn ignores `timeout`; the abort signal enforces the same mutation deadline.
-        const deadline = options(cwd, true);
-        const signal = AbortSignal.timeout(deadline.timeout);
-        const child = spawn("git", ["update-ref", "--stdin"], {
-          ...deadline,
-          signal,
-          stdio: ["pipe", "ignore", "pipe"],
+      const decoder = new StringDecoder("utf8");
+      let stderr = "";
+      await hostGitExec
+        .exec("git", ["update-ref", "--stdin"], {
+          ...options(cwd, true),
+          input,
+          onOutput: (stream, chunk) => {
+            if (stream === "stderr" && stderr.length < 2000)
+              stderr += decoder.write(chunk).slice(0, 2000 - stderr.length);
+          },
+        })
+        .catch((error: { code?: string | number | null; killed?: boolean }) => {
+          if (error.killed || error.code === "ETIMEDOUT")
+            throw new Error("Workspace branch reservation timed out");
+          if (typeof error.code !== "number" && error.code !== null) throw error;
+          throw new Error(
+            `Workspace branch reservation failed: ${(stderr + decoder.end()).slice(0, 2000)}`,
+          );
         });
-        let error = "";
-        child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
-          if (error.length < 2000) error += chunk.slice(0, 2000 - error.length);
-        });
-        child.on("error", (cause) =>
-          reject(signal.aborted ? new Error("Workspace branch reservation timed out") : cause),
-        );
-        child.on("close", (code) =>
-          code === 0
-            ? done()
-            : reject(new Error(`Workspace branch reservation failed: ${error.slice(0, 2000)}`)),
-        );
-        child.stdin.on("error", reject);
-        child.stdin.end(input);
-      });
     } else if (owner !== workspace.baseCommit)
       throw new Error("Workspace branch ownership changed");
     if ((await managedWorkspaceBase(cwd, workspace.branchRef)) !== workspace.baseCommit)
@@ -146,7 +148,9 @@ export async function materializeManagedWorkspace(
       (await hostGitRepositoryKey(cwd)) !== workspace.repositoryId
     )
       throw new Error("Managed workspace repository changed");
-    const actual = (await exec("git", ["symbolic-ref", "HEAD"], options(path))).stdout.trim();
+    const actual = (
+      await hostGitExec.exec("git", ["symbolic-ref", "HEAD"], options(path))
+    ).stdout.trim();
     if (actual !== workspace.branchRef) throw new Error("Managed workspace branch changed");
     if (creating && (await managedWorkspaceBase(path, "HEAD")) !== workspace.baseCommit)
       throw new Error("Managed workspace HEAD changed during creation");
@@ -163,7 +167,11 @@ export async function materializeManagedWorkspace(
       // Restore only this absent, owned registration. Git refuses an existing path;
       // never prune other missing worktrees or bypass a locked registration.
       try {
-        await exec("git", ["worktree", "add", "--force", "--", path, branch], options(cwd, true));
+        await hostGitExec.exec(
+          "git",
+          ["worktree", "add", "--force", "--", path, branch],
+          options(cwd, true),
+        );
         await verify();
         return;
       } finally {
@@ -178,7 +186,7 @@ export async function materializeManagedWorkspace(
   if (listed.worktrees.some((tree) => tree.branch === branch))
     throw new Error("Managed branch is checked out elsewhere");
   try {
-    await exec("git", ["worktree", "add", "--", path, branch], options(cwd, true));
+    await hostGitExec.exec("git", ["worktree", "add", "--", path, branch], options(cwd, true));
     await verify();
   } finally {
     invalidateHostWorktrees();
@@ -309,6 +317,51 @@ function requestedPath(projectCwd: string, requested: unknown): string | null {
   return actual === projectCwd ? null : actual;
 }
 
+/** Bounded reads of Git's small text pointers, including relative-worktree pointers. */
+async function readGitPointer(path: string): Promise<string> {
+  const info = await stat(path);
+  if (!info.isFile() || info.size > 8192) return "";
+  const file = await open(path, "r");
+  try {
+    const bytes = Buffer.alloc(8193);
+    const { bytesRead } = await file.read(bytes);
+    return bytesRead > 8192 ? "" : bytes.toString("utf8", 0, bytesRead).trimEnd();
+  } finally {
+    await file.close();
+  }
+}
+
+/** A listed checkout still belongs to this project only while Git points back to it. */
+export async function isCurrentProjectWorktree(root: string, project: string): Promise<boolean> {
+  const marker = resolve(root, ".git");
+  try {
+    const common = await hostGitRepositoryKey(project);
+    const info = await stat(marker);
+    const target = info.isDirectory()
+      ? marker
+      : /^gitdir: (.+)$/.exec(await readGitPointer(marker))?.[1];
+    if (!target) return false;
+    const admin = await realpath(resolve(root, target));
+    // Primary checkouts have no admin backlink. Confirm Git's primary path even with --separate-git-dir.
+    if (!relative(common, admin)) {
+      const [main] = (await listCached(project, true)).worktrees;
+      return !!main && !main.missing && !relative(root, await realpath(main.path));
+    }
+    if (relative(resolve(common, "worktrees"), dirname(admin))) return false;
+    const owner = await readGitPointer(join(admin, "commondir"));
+    if (!owner || relative(common, await realpath(resolve(admin, owner)))) return false;
+    const back = await readGitPointer(join(admin, "gitdir"));
+    const backMarker = resolve(admin, back);
+    return (
+      !!back &&
+      basename(backMarker) === ".git" &&
+      !relative(root, await realpath(dirname(backMarker)))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** A cached list may predate a worktree made outside this host: look again before refusing. */
 export async function resolveHostWorktreeAsync(
   projectCwd: string,
@@ -316,15 +369,201 @@ export async function resolveHostWorktreeAsync(
 ): Promise<string> {
   const actual = requestedPath(projectCwd, requested);
   if (actual === null) return projectCwd;
-  const ok = (listed: HostWorktrees) =>
-    listed.worktrees.some((tree) => tree.path === actual && !tree.missing) && available(actual);
-  if (ok(await listCached(projectCwd))) return actual;
-  if (ok(await listCached(projectCwd, true))) return actual;
+  const listed = (trees: HostWorktrees) =>
+    trees.worktrees.some((tree) => tree.path === actual && !tree.missing);
+  if (
+    (listed(await listCached(projectCwd)) || listed(await listCached(projectCwd, true))) &&
+    (await isCurrentProjectWorktree(actual, projectCwd))
+  )
+    return actual;
   throw new Error("Choose an available worktree of this project");
 }
 
 export function hostWorktrees(cwd: string): Promise<HostWorktrees> {
   return listCached(cwd);
+}
+
+type RemovalUsage = Pick<WorktreeRemovalReview, "sessionIds" | "hasTerminals" | "hasAgents">;
+
+export async function inspectHostWorktreeRemoval(
+  cwd: string,
+  requested: unknown,
+  usage: (path: string) => Promise<RemovalUsage>,
+  fingerprint: (input: Record<string, unknown>) => Promise<string>,
+  allowMissing = false,
+) {
+  if (
+    typeof requested !== "string" ||
+    requested.length > 4096 ||
+    requested.includes("\0") ||
+    !isAbsolute(requested)
+  )
+    throw new Error("Choose an absolute worktree path");
+  const path = await canonicalWorkspaceEntry(requested);
+  const git = async (args: string[], directory = path) =>
+    (await hostGitExec.exec("git", args, bufferedOptions(directory))).stdout;
+  // Use the raw registration. The picker resolves aliases for display.
+  const trees = parse(await git(LIST_ARGS, cwd));
+  const main = trees[0];
+  if (!main) throw new Error("No working copies found");
+  const projectCwd = await canonicalWorkspacePath(main.path);
+  const commonDir = await hostGitRepositoryKey(cwd);
+  const tree = trees.find((entry) => workspacePathKey(entry.path) === workspacePathKey(path));
+  if (tree?.isMain || workspacePathKey(projectCwd) === workspacePathKey(path))
+    throw new Error("Main cannot be removed.");
+  if (tree?.locked) throw new Error("The worktree is locked.");
+  if (await entryMissing(path)) {
+    if (allowMissing) return { path, projectCwd, commonDir, gone: true as const };
+    throw new Error("The worktree directory is missing.");
+  }
+  if (!tree) throw new Error("Choose a registered worktree of this project.");
+  await validateWorkspaceCleanupPaths(path, path);
+  const metadata = await lstat(join(path, ".git"));
+  if (!metadata.isFile() || (await hostGitRepositoryKey(path)) !== commonDir)
+    throw new Error("Worktree repository identity changed.");
+  const top = (await git(["rev-parse", "--show-toplevel"])).trim();
+  if (workspacePathKey(top) !== workspacePathKey(path)) throw new Error("Worktree root changed.");
+  const admin = (await git(["rev-parse", "--absolute-git-dir"])).trim();
+  if (
+    workspacePathKey(dirname(admin)) !== workspacePathKey(join(commonDir, "worktrees")) ||
+    workspacePathKey(resolve(admin, (await readFile(join(admin, "gitdir"), "utf8")).trim())) !==
+      workspacePathKey(join(path, ".git"))
+  )
+    throw new Error("Worktree registration changed.");
+  const links = await inventoryWorkspaceLinks(path);
+
+  let status = await git([
+    "-c",
+    "status.showUntrackedFiles=normal",
+    "-c",
+    "core.fsmonitor=false",
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=normal",
+    "--ignore-submodules=none",
+  ]);
+  const refs = await git(["rev-list", "HEAD", "--not", "--remotes"]);
+  const unpushed = refs.trim() ? refs.trim().split("\n").length : 0;
+  const indexEntries = (await git(["ls-files", "--stage", "-v", "-z"])).split("\0");
+  const blockers: string[] = [];
+  let submodule = false;
+  const sparse =
+    (await git(["config", "--type=bool", "--default=false", "core.sparseCheckout"])).trim() ===
+    "true";
+  for (const entry of indexEntries) {
+    const match = /^(\S) (\d+) ([0-9a-f]+) \d\t(.*)$/s.exec(entry);
+    if (!match) continue;
+    const [, flag, mode, id, file] = match;
+    const full = resolve(path, file);
+    if (!inside(path, full)) throw new Error("Unsafe Git index path.");
+    if (mode === "160000") {
+      submodule = true;
+      if (!(await entryMissing(join(full, ".git")))) {
+        if (
+          links.some(
+            (link) =>
+              workspacePathKey(link.path) === workspacePathKey(full) || inside(link.path, full),
+          )
+        )
+          throw new Error("Cannot verify a linked submodule.");
+        const privateCommit = await git(
+          ["rev-list", "--max-count=1", "HEAD", "--all", "--reflog", "--not", "--remotes"],
+          full,
+        );
+        if (privateCommit.trim()) blockers.push(`Submodule has unpublished commits: ${file}`);
+      }
+      continue;
+    }
+    if (!/^[a-zS]$/.test(flag)) continue;
+    if (links.some((link) => inside(link.path, full)))
+      throw new Error("Cannot inspect a tracked file through a symbolic link.");
+    const info = await lstat(full).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+      return null;
+    });
+    if (!info && sparse && flag.toUpperCase() === "S") continue;
+    const actual =
+      mode === "120000" && info?.isSymbolicLink()
+        ? (
+            await hostGitExec.exec("git", ["hash-object", "--stdin"], {
+              ...bufferedOptions(path),
+              input: await readlink(full),
+            })
+          ).stdout.trim()
+        : info?.isFile() && mode !== "120000"
+          ? (await git(["hash-object", "--", file])).trim()
+          : "";
+    if (
+      actual !== id ||
+      (process.platform !== "win32" &&
+        info?.isFile() &&
+        Boolean(info.mode & 0o100) !== (mode === "100755"))
+    )
+      status += ` M ${file}\0`;
+  }
+  if (submodule) blockers.push("Submodule history requires separate review before removal.");
+  const hasReparsePoints = process.platform === "win32" && links.length > 0;
+  const files = (await git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"]))
+    .split("\0")
+    .filter(Boolean);
+  const ignored = (
+    await git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"])
+  )
+    .split("\0")
+    .filter(Boolean);
+  const index = resolve(path, (await git(["rev-parse", "--git-path", "index"])).trim());
+  const content =
+    submodule || hasReparsePoints
+      ? ""
+      : await fingerprint({
+          path,
+          files,
+          ignored,
+          index,
+          head: tree.head,
+          branch: tree.branch ?? "",
+          status,
+          detachedLinks: [],
+        });
+  const activity = await usage(path);
+  const review = {
+    projectCwd,
+    commonDir,
+    path,
+    branch: tree.branch,
+    head: tree.head,
+    status,
+    ignoredEntryCount: ignored.length,
+    ignoredEntryPaths: ignored.slice(0, 10),
+    unpushed,
+    ...activity,
+    blockers,
+  };
+  const state = createHash("sha256")
+    .update(JSON.stringify([review, refs, content, metadata.ino, metadata.birthtimeMs, links]))
+    .digest("hex");
+  return { ...review, state, hasReparsePoints, gone: false as const };
+}
+
+export async function removeHostWorktreeDirectory(cwd: string, path: string, force: boolean) {
+  try {
+    await hostGitExec.exec(
+      "git",
+      [
+        "-c",
+        "status.showUntrackedFiles=normal",
+        "worktree",
+        "remove",
+        ...(force ? ["--force"] : []),
+        "--",
+        path,
+      ],
+      bufferedOptions(cwd, true),
+    );
+  } finally {
+    invalidateHostWorktrees();
+  }
 }
 
 export async function createHostWorktree(
@@ -354,7 +593,7 @@ async function createHostWorktreeSerialized(
     branch.startsWith("@")
   )
     throw new Error("Enter a valid branch name");
-  await exec("git", ["check-ref-format", "--branch", branch], options(cwd));
+  await hostGitExec.exec("git", ["check-ref-format", "--branch", branch], options(cwd));
   if (typeof base !== "string" || base.length > 255 || typeof existing !== "boolean")
     throw new Error("Invalid worktree base");
   const listed = await listCached(cwd, true);
@@ -364,7 +603,7 @@ async function createHostWorktreeSerialized(
   const path = join(listed.defaultRoot, slug);
   if (existsSync(path)) throw new Error(`${path} already exists. Choose another branch name.`);
   const refs = (
-    await exec(
+    await hostGitExec.exec(
       "git",
       ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
       options(cwd),
@@ -380,7 +619,7 @@ async function createHostWorktreeSerialized(
   if (!source || (existing && !refs.includes(source)))
     throw new Error("Choose an available base branch");
   const commit = (
-    await exec(
+    await hostGitExec.exec(
       "git",
       ["rev-parse", "--verify", "--end-of-options", `${source}^{commit}`],
       options(sourceCwd),
@@ -389,9 +628,10 @@ async function createHostWorktreeSerialized(
   await mkdir(listed.defaultRoot, { recursive: true });
   invalidateHostWorktrees(cwd);
   try {
-    if (existing) await exec("git", ["worktree", "add", "--", path, branch], options(cwd, true));
+    if (existing)
+      await hostGitExec.exec("git", ["worktree", "add", "--", path, branch], options(cwd, true));
     else
-      await exec(
+      await hostGitExec.exec(
         "git",
         ["worktree", "add", "--no-track", "-b", branch, "--", path, commit],
         options(cwd, true),
@@ -428,7 +668,7 @@ async function renameHostWorktreeBranchSerialized(
     throw new Error("This is not an automatically created worktree branch");
   if (!branch || branch.length > 120 || branch.startsWith("-") || branch.startsWith("@"))
     throw new Error("Enter a valid branch name");
-  await exec("git", ["check-ref-format", "--branch", branch], options(cwd));
+  await hostGitExec.exec("git", ["check-ref-format", "--branch", branch], options(cwd));
   const tree = (await listCached(cwd, true)).worktrees.find(
     (entry) => entry.path === path && !entry.missing,
   );
@@ -438,7 +678,7 @@ async function renameHostWorktreeBranchSerialized(
   if (!(await stillOwned())) throw new Error("The session no longer owns this branch");
   invalidateHostWorktrees(cwd);
   try {
-    await exec("git", ["branch", "-m", expectedBranch, branch], options(tree.path));
+    await hostGitExec.exec("git", ["branch", "-m", expectedBranch, branch], options(tree.path));
   } finally {
     invalidateHostWorktrees(cwd);
   }

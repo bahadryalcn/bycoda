@@ -20,12 +20,19 @@ type CommandOptions = {
   timeout: number;
   maxBuffer?: number;
   encoding?: BufferEncoding | "buffer";
-  input?: string | Buffer;
+  input?: string | Buffer | readonly (string | Buffer)[];
   windowsHide?: boolean;
+  replaceEnv?: boolean;
+  streaming?: boolean;
 };
 /** `network` is for long fetch/push/pull/clone calls so they cannot starve short probes. */
 type Lane = "default" | "network";
-type ExecOptions = CommandOptions & { signal?: AbortSignal; lane?: Lane };
+type ExecOptions = Omit<CommandOptions, "streaming"> & {
+  signal?: AbortSignal;
+  lane?: Lane;
+  /** Consume chunks synchronously with pipe backpressure. The caller owns output limits. */
+  onOutput?: (stream: "stdout" | "stderr", chunk: Buffer) => void;
+};
 type Command = {
   id: number;
   lane: Lane;
@@ -37,12 +44,14 @@ type Command = {
 };
 
 type Reply = Result<string | ArrayBuffer> & { id: number; error?: Failure };
+type Chunk = { id: number; stream: "stdout" | "stderr"; bytes: Uint8Array };
 
 // Inline CommonJS keeps the same worker usable from the bundled Host and source tests.
 const WORKER_SOURCE = `
 const { parentPort } = require("node:worker_threads");
-const { execFile, execFileSync } = require("node:child_process");
+const { execFile, execFileSync, spawn } = require("node:child_process");
 const active = new Map();
+const resumeOutput = new Map();
 let closing = false;
 
 // Hooks, helpers and transports are grandchildren: stop the whole tree, not only git.
@@ -92,7 +101,7 @@ function report(id, error, stdout, stderr) {
 }
 
 function run({ id, file, args, options, deadline, cancelled }) {
-  const { input, encoding = "utf8", env, cwd, maxBuffer, windowsHide = true } = options;
+  const { input, encoding = "utf8", env, cwd, maxBuffer, windowsHide = true, streaming, replaceEnv } = options;
   const empty = encoding === "buffer" ? Buffer.alloc(0) : "";
   const remaining = () => Math.ceil(Number(deadline - process.hrtime.bigint()) / 1e6);
   const cmd = [file, ...args].join(" ");
@@ -115,14 +124,31 @@ function run({ id, file, args, options, deadline, cancelled }) {
 
   let child, timer, killTimer, outcome, stopped, inputError;
   try {
-    child = execFile(file, args, {
-      encoding, cwd, maxBuffer: maxBuffer ?? 1024 * 1024, windowsHide,
-      env: childEnv(env),
+    const launch = {
+      cwd, windowsHide,
+      env: replaceEnv ? env : childEnv(env),
       // A POSIX process group lets cancellation reach grandchildren.
       detached: process.platform !== "win32",
-    }, (error, stdout, stderr) => {
-      outcome = { error, stdout, stderr };
-    });
+    };
+    if (streaming) {
+      child = spawn(file, args, launch);
+      outcome = { stdout: empty, stderr: empty };
+      child.once("error", (error) => { outcome.error = error; });
+      for (const stream of ["stdout", "stderr"]) {
+        child[stream].on("data", (chunk) => {
+          child[stream].pause();
+          const bytes = Uint8Array.from(chunk);
+          resumeOutput.get(id)[stream] = () => child[stream].resume();
+          parentPort.postMessage({ id, stream, bytes }, [bytes.buffer]);
+        });
+      }
+    } else {
+      child = execFile(file, args, {
+        ...launch, encoding, maxBuffer: maxBuffer ?? 1024 * 1024,
+      }, (error, stdout, stderr) => {
+        outcome = { error, stdout, stderr };
+      });
+    }
   } catch (error) {
     report(id, error, empty, empty);
     return;
@@ -140,15 +166,19 @@ function run({ id, file, args, options, deadline, cancelled }) {
     child.stderr.destroy();
   };
   active.set(id, stop);
-  child.once("close", (_code, signal) => {
+  if (streaming) resumeOutput.set(id, {});
+  child.once("close", (code, signal) => {
     clearTimeout(timer);
     clearTimeout(killTimer);
     active.delete(id);
+    resumeOutput.delete(id);
     const { error, stdout, stderr } = outcome;
     const failure = stopped
       // Windows tree kill ends the child without a signal; keep the signal contract.
       ? errorFor(stopped, true, signal ?? (stopped === "ETIMEDOUT" ? "SIGTERM" : "SIGKILL"))
-      : error || inputError;
+      : error || (streaming && code !== 0
+        ? Object.assign(new Error("Command failed: " + cmd), { code, signal, cmd })
+        : inputError);
     report(id, failure, stdout, stderr);
     if (closing && !active.size) parentPort.close();
   });
@@ -159,12 +189,21 @@ function run({ id, file, args, options, deadline, cancelled }) {
   if (cancelledDuringLaunch || delay <= 0) stop(cancelledDuringLaunch ?? "ETIMEDOUT");
   else {
     timer = setTimeout(() => stop("ETIMEDOUT"), delay);
-    if (input !== undefined) child.stdin.end(input);
+    if (Array.isArray(input)) {
+      for (const piece of input) child.stdin.write(piece);
+      child.stdin.end();
+    } else if (input !== undefined || streaming) child.stdin.end(input);
   }
 }
 
 parentPort.on("message", (message) => {
   if (message.type === "run") run(message.command);
+  else if (message.type === "resume") {
+    const streams = resumeOutput.get(message.id);
+    const resume = streams?.[message.stream];
+    if (streams) delete streams[message.stream];
+    resume?.();
+  }
   else if (message.type === "abort") active.get(message.id)?.("ABORT_ERR");
   else if (message.type === "close") {
     closing = true;
@@ -179,6 +218,8 @@ process.on("exit", () => {
 
 type Job = {
   command: Command;
+  onOutput?: ExecOptions["onOutput"];
+  outputFailure?: { error: unknown };
   signal?: AbortSignal;
   queueTimer?: NodeJS.Timeout;
   abort: () => void;
@@ -236,7 +277,7 @@ export class GitExecPool {
   exec(
     file: string,
     args: readonly string[],
-    { signal, lane = "default", ...options }: ExecOptions,
+    { signal, lane = "default", onOutput, ...options }: ExecOptions,
   ): Promise<Result> {
     return new Promise((resolve, reject) => {
       if (
@@ -252,12 +293,12 @@ export class GitExecPool {
         lane,
         file,
         args: [...args],
-        options: { ...options, env: options.env && { ...options.env } },
+        options: { ...options, streaming: !!onOutput, env: options.env && { ...options.env } },
         deadline: process.hrtime.bigint() + BigInt(options.timeout) * 1_000_000n,
         // A posted run can reach the worker before a later cancellation message.
         cancelled: new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)),
       };
-      const job: Job = { command, signal, resolve, reject, abort: () => this.abort(job) };
+      const job: Job = { command, signal, onOutput, resolve, reject, abort: () => this.abort(job) };
       if (signal?.aborted) {
         this.fail(job, "ABORT_ERR", "The operation was aborted");
         return;
@@ -342,9 +383,24 @@ export class GitExecPool {
       });
     });
     const slot: Slot = { worker, active, exited };
-    worker.on("message", (reply: Reply) => {
+    worker.on("message", (reply: Reply | Chunk) => {
       const job = slot.active.get(reply.id);
       if (!job) return;
+      if ("stream" in reply) {
+        if (job.signal?.aborted || job.outputFailure || this.closing) return;
+        try {
+          job.onOutput?.(
+            reply.stream,
+            Buffer.from(reply.bytes.buffer, reply.bytes.byteOffset, reply.bytes.byteLength),
+          );
+          if (!job.signal?.aborted)
+            worker.postMessage({ type: "resume", id: reply.id, stream: reply.stream });
+        } catch (error) {
+          job.outputFailure = { error };
+          this.abort(job);
+        }
+        return;
+      }
       slot.active.delete(reply.id);
       const { stdout, stderr } = reply;
       const result = {
@@ -352,7 +408,8 @@ export class GitExecPool {
         stderr: typeof stderr === "string" ? stderr : Buffer.from(stderr),
       };
       this.cleanup(job);
-      if (reply.error) {
+      if (job.outputFailure) job.reject(job.outputFailure.error as Error);
+      else if (reply.error) {
         const { message, ...error } = reply.error;
         job.reject(
           Object.assign(

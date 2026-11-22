@@ -6,7 +6,7 @@ import type { InboxItem, InboxProvider } from "../../inbox/public/workItemMentio
 
 const mocks = vi.hoisted(() => ({
   connectedWorkItemProviders: vi.fn(),
-  workItemMentionCandidates: vi.fn(),
+  searchWorkItemMentionCandidates: vi.fn(),
   peekWorkItemMentionCandidates: vi.fn(),
 }));
 vi.mock("../../inbox/public/workItemMentions", async (original) => ({
@@ -52,7 +52,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.connectedWorkItemProviders.mockResolvedValue(["jira", "github"]);
   mocks.peekWorkItemMentionCandidates.mockReturnValue([item(9)]);
-  mocks.workItemMentionCandidates.mockResolvedValue([item(90)]);
+  mocks.searchWorkItemMentionCandidates.mockResolvedValue({ items: [item(90)] });
   host = document.createElement("div");
   root = createRoot(host);
 });
@@ -68,17 +68,17 @@ describe("composer tracker search", () => {
   it("keeps an empty unscoped menu to alias hints without item reads", async () => {
     await render("");
     await advance(1000);
-    expect(mocks.workItemMentionCandidates).not.toHaveBeenCalled();
+    expect(mocks.searchWorkItemMentionCandidates).not.toHaveBeenCalled();
     expect(result.rows.every((row) => row.workItem.kind === "hint")).toBe(true);
   });
   it("shows cache immediately, debounces rest text, and merges returned rows", async () => {
     await render("jira:9");
     expect(result.rows.map((row) => row.name)).toEqual(["PROJ-9 Login bug"]);
     await advance(224);
-    expect(mocks.workItemMentionCandidates).not.toHaveBeenCalled();
+    expect(mocks.searchWorkItemMentionCandidates).not.toHaveBeenCalled();
     await render("jr:90");
     await advance();
-    expect(mocks.workItemMentionCandidates).toHaveBeenCalledExactlyOnceWith(
+    expect(mocks.searchWorkItemMentionCandidates).toHaveBeenCalledExactlyOnceWith(
       "/repo",
       "jira",
       "90",
@@ -92,10 +92,10 @@ describe("composer tracker search", () => {
 
   it("rejects an older query reply even when it completes last", async () => {
     let finish!: (items: InboxItem[]) => void;
-    mocks.workItemMentionCandidates.mockImplementationOnce(
+    mocks.searchWorkItemMentionCandidates.mockImplementationOnce(
       () =>
-        new Promise<InboxItem[]>((resolve) => {
-          finish = resolve;
+        new Promise<{ items: InboxItem[] }>((resolve) => {
+          finish = (items) => resolve({ items });
         }),
     );
     await render("jira:9");
@@ -110,10 +110,10 @@ describe("composer tracker search", () => {
 
   it.each(["cwd", "provider", "closed"])("rejects a reply after %s changes", async (change) => {
     let finish!: (items: InboxItem[]) => void;
-    mocks.workItemMentionCandidates.mockImplementationOnce(
+    mocks.searchWorkItemMentionCandidates.mockImplementationOnce(
       () =>
-        new Promise<InboxItem[]>((resolve) => {
-          finish = resolve;
+        new Promise<{ items: InboxItem[] }>((resolve) => {
+          finish = (items) => resolve({ items });
         }),
     );
     await render("jira:9");
@@ -131,20 +131,37 @@ describe("composer tracker search", () => {
   });
 
   it("keeps cached rows after failure and makes no requests while closed", async () => {
-    mocks.workItemMentionCandidates.mockRejectedValue(new Error("offline"));
+    mocks.searchWorkItemMentionCandidates.mockRejectedValue(new Error("offline"));
     await render("jira:9");
     await advance();
     expect(result.rows).toHaveLength(1);
     await render("jira:90", "/repo", false);
     await advance(1000);
-    expect(mocks.workItemMentionCandidates).toHaveBeenCalledTimes(1);
+    expect(mocks.searchWorkItemMentionCandidates).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes the typed search failure only for the query that failed", async () => {
+    const failure = { failure: "unauthenticated", provider: "github" };
+    mocks.searchWorkItemMentionCandidates.mockResolvedValueOnce({
+      items: [],
+      failure,
+      machine: "Box",
+    });
+    await render("gh:77");
+    expect(result.failure).toBeUndefined();
+    await advance();
+    expect(result.failure).toEqual({ error: failure, machine: "Box", search: "77" });
+    await render("gh:78");
+    expect(result.failure).toBeUndefined();
+    await advance();
+    expect(result.failure).toBeUndefined();
   });
 
   it("cancels a pending debounce when the menu closes", async () => {
     await render("jira:9");
     await render("jira:9", "/repo", false);
     await advance(1000);
-    expect(mocks.workItemMentionCandidates).not.toHaveBeenCalled();
+    expect(mocks.searchWorkItemMentionCandidates).not.toHaveBeenCalled();
   });
 
   it("retains searched rows when the same menu reopens", async () => {
@@ -153,6 +170,6 @@ describe("composer tracker search", () => {
     await render("jira:90", "/repo", false);
     await render("jira:90");
     expect(result.rows[0].name).toBe("PROJ-90 Login bug");
-    expect(mocks.workItemMentionCandidates).toHaveBeenCalledTimes(1);
+    expect(mocks.searchWorkItemMentionCandidates).toHaveBeenCalledTimes(1);
   });
 });

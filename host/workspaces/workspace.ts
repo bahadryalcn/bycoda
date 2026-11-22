@@ -1,7 +1,4 @@
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
-import { spawn } from "node:child_process";
 import { hostGitExec } from "../git/git-exec-pool";
-import { hostGitStarts } from "../git/git-start-gate";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   currentHostGitRepository,
@@ -594,46 +591,18 @@ async function searchGitOutput(
   signal: AbortSignal | undefined,
   options: ContentSearchOptions,
 ): Promise<{ output: string; truncated: boolean }> {
-  await hostGitStarts.enter(signal);
-  return new Promise((resolve, reject) => {
-    signal?.throwIfAborted();
-    const child = spawn("git", ["-c", "core.pager=cat", ...args], {
-      cwd: root,
-      windowsHide: true,
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, LC_ALL: "C.UTF-8", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
-    });
+  signal?.throwIfAborted();
+  {
+    const stop = new AbortController();
     const chunks: Buffer[] = [];
     const filterWords = options.wholeWord && !options.regex;
     let recordParts: Buffer[] = [];
     let bytes = 0,
       nulls = 0,
       records = 0;
-    let truncated = false,
-      finished = false;
+    let truncated = false;
     let diagnostic = "";
-    const finish = (error?: unknown) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
-      child.stdout.destroy();
-      child.stderr.destroy();
-      if (error) reject(error);
-      else resolve({ output: Buffer.concat(chunks, bytes).toString("utf8"), truncated });
-    };
-    const abort = () => {
-      child.kill();
-      finish(signal?.reason ?? new Error("Search cancelled"));
-    };
-    const timer = setTimeout(() => {
-      child.kill();
-      finish(new Error("git grep timed out after 10 seconds"));
-    }, 10_000);
-    signal?.addEventListener("abort", abort, { once: true });
-    child.stdout.on("data", (chunk: Buffer) => {
-      if (finished) return;
+    const consume = (chunk: Buffer) => {
       let length = Math.min(chunk.length, 8 * 1024 * 1024 - bytes);
       let start = 0;
       for (let i = 0; i < length; i++) {
@@ -664,24 +633,42 @@ async function searchGitOutput(
       bytes += length;
       if (truncated || bytes >= 8 * 1024 * 1024) {
         truncated = true;
-        child.kill();
-        finish();
+        stop.abort();
       }
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      diagnostic = (diagnostic + chunk.toString("utf8")).slice(-2000);
-    });
-    child.once("error", finish);
-    child.once("close", (code) => {
-      if (finished) return;
-      if (code === 0 || code === 1) finish();
-      else
-        finish(
-          Object.assign(new Error(diagnostic || "Git search failed"), { code, stderr: diagnostic }),
-        );
-    });
-    if (signal?.aborted) abort();
-  });
+    };
+    await hostGitExec
+      .exec("git", ["-c", "core.pager=cat", ...args], {
+        cwd: root,
+        timeout: 10_000,
+        signal: signal ? AbortSignal.any([signal, stop.signal]) : stop.signal,
+        env: { LC_ALL: "C.UTF-8", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+        onOutput: (stream, chunk) => {
+          if (stream === "stdout") consume(chunk);
+          else diagnostic = (diagnostic + chunk.toString("utf8")).slice(-2000);
+        },
+      })
+      .catch((error: Error & { code?: number | string | null; killed?: boolean }) => {
+        signal?.throwIfAborted();
+        if (truncated || error.code === 1) return;
+        if (error.code === "EAGAIN" || (error.code === "ETIMEDOUT" && !error.killed))
+          throw new Error(
+            "Git search could not start because the Host is busy. Retry the search.",
+            {
+              cause: error,
+            },
+          );
+        if (error.killed || error.code === "ETIMEDOUT")
+          throw new Error("git grep timed out after 10 seconds");
+        if (typeof error.code === "number" || error.code === null)
+          throw Object.assign(new Error(diagnostic || "Git search failed"), {
+            code: error.code,
+            stderr: diagnostic,
+          });
+        throw error;
+      });
+    signal?.throwIfAborted();
+    return { output: Buffer.concat(chunks, bytes).toString("utf8"), truncated };
+  }
 }
 
 function matchesFilters(path: string, options: ContentSearchOptions): boolean {
@@ -1551,13 +1538,13 @@ async function runHostGitAction(
           await gitWithInput(root, ["hash-object", "-w", "--path", path, "--stdin"], contents)
         ).trim();
         if (!index)
-          await exec("git", ["read-tree", "--empty"], {
+          await hostGitExec.exec("git", ["read-tree", "--empty"], {
             cwd: root,
             windowsHide: true,
             timeout: 10_000,
             env: { ...process.env, GIT_INDEX_FILE: lockPath, GIT_TERMINAL_PROMPT: "0" },
           });
-        await exec("git", ["update-index", "--add", "--cacheinfo", mode, hash, path], {
+        await hostGitExec.exec("git", ["update-index", "--add", "--cacheinfo", mode, hash, path], {
           cwd: root,
           windowsHide: true,
           timeout: 10_000,

@@ -250,6 +250,7 @@ export function useSessionLoading({
             !current?.storedHistory ||
             current.busy ||
             current.storedHistory.revision !== original.storedHistory?.revision ||
+            current.blocks !== original.blocks ||
             current.queuedMessages !== original.queuedMessages ||
             current.cwd !== original.cwd ||
             sessionWorkCwd(current) !== sessionWorkCwd(original) ||
@@ -262,7 +263,11 @@ export function useSessionLoading({
             { sessionsRef, setSessions, loadedSessionCache, removingSessionIds, sessionLoadEpochs },
             sessionId,
             epoch,
-          ).onHydrated?.(current, hydrated);
+          ).onHydrated?.(current, {
+            ...hydrated,
+            queuedMessages: current.queuedMessages,
+            queueStatus: current.queueStatus,
+          });
           lastPersisted.current.set(sessionId, persistFingerprint(hydrated));
           return !sessionsRef.current.find((session) => session.id === sessionId)?.historyLoading;
         })

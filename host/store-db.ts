@@ -9,7 +9,7 @@ import {
 } from "./storage/persistence-health";
 import { createDedupedWarn } from "./diagnostics/log-dedupe";
 import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
-import { ReadPoolUnavailableError, StoreReadPool, type ReadLease } from "./store-read-pool";
+import { ReadPoolUnavailableError, StoreReadPool, type ReadLease } from "./storage/store-read-pool";
 
 export type StoreRow = Record<string, any>;
 /** Every Host read and write waits behind a scope this long; the owner names the holder. */
@@ -24,6 +24,8 @@ const SCOPE_DEADLINE_MS = 5 * 60_000;
 const BOUNDARY_DEADLINE_MS = 60_000;
 export type ScopeOptions = {
   deadlineMs?: number;
+  /** Stable attribution for a known database operation when entering an idle queue. */
+  site?: string | (() => string);
   /**
    * Absolute `monotonicNow()` instant after which this request must not be admitted. It is
    * the caller's original ingress deadline, so FIFO queue time counts against it. A scope
@@ -77,14 +79,18 @@ const defaultReaders = (): number => {
 const isMemoryPath = (path: string): boolean =>
   path === "" || path === ":memory:" || /^file:(?::memory:|\?.*mode=memory)/.test(path);
 /** The functions that entered a scope: names only, no paths and none of this module's frames. */
-const scopeSite = (entry: Error, depth = 3): string =>
-  (entry.stack ?? "")
-    .split("\n")
-    .slice(1)
-    .map((line) => /^\s*at (?:async )?([\w$.<>]+) \(/.exec(line)?.[1])
-    .filter((name): name is string => !!name && !/^(?:StoreDatabase|StoreStatement)\./.test(name))
-    .slice(0, depth)
-    .join(" < ") || "unknown";
+const scopeSite = (entry: Error | string, depth = 3): string =>
+  typeof entry === "string"
+    ? entry
+    : (entry.stack ?? "")
+        .split("\n")
+        .slice(1)
+        .map((line) => /^\s*at (?:async )?([\w$.<>]+) \(/.exec(line)?.[1])
+        .filter(
+          (name): name is string => !!name && !/^(?:StoreDatabase|StoreStatement)\./.test(name),
+        )
+        .slice(0, depth)
+        .join(" < ") || "unknown";
 /**
  * Structured clone ships a typed-array view's entire backing ArrayBuffer. A 64 KiB
  * chunk sliced from a 64 MiB artifact would otherwise copy 64 MiB per statement, so
@@ -103,7 +109,7 @@ const workerParams = (
   ) as SQLInputValue[] | SQLInputValue[][];
 type Owner = { id: string; phase: "open" | "closing" | "closed"; timings?: ScopeTimings };
 /** The owner holding the writer queue, for the one watchdog that names a stuck holder. */
-type Holder = { id: string; entry: Error; enteredAt: number; admittedBefore: number };
+type Holder = { id: string; entry: Error | string; enteredAt: number; admittedBefore: number };
 type AuthorizationCheck = () => boolean | Promise<boolean>;
 export type StoreAuthorization =
   | AuthorizationCheck
@@ -677,10 +683,18 @@ export class StoreDatabase {
     const admittedBefore = ++this.admissionVersion;
     // The caller's stack is gone by the time a scope turns out slow, so it is captured here:
     // V8 formats it only when read, and a short capture is all the caller names need.
-    const stackLimit = Error.stackTraceLimit;
-    Error.stackTraceLimit = SITE_FRAMES;
-    const entry = new Error();
-    Error.stackTraceLimit = stackLimit;
+    let entry: Error | string;
+    if (options?.site && this.activeScopes === 0)
+      entry = typeof options.site === "function" ? options.site() : options.site;
+    else {
+      const stackLimit = Error.stackTraceLimit;
+      Error.stackTraceLimit = SITE_FRAMES;
+      try {
+        entry = new Error();
+      } finally {
+        Error.stackTraceLimit = stackLimit;
+      }
+    }
     const queuedAt = performance.now();
     let entered = false;
     this.activeScopes++;
@@ -810,7 +824,7 @@ export class StoreDatabase {
   private withDeadline<T>(
     work: T | Promise<T>,
     owner: Owner,
-    entry: Error,
+    entry: Error | string,
     deadlineMs: number,
   ): Promise<T> {
     if (!Number.isFinite(deadlineMs)) return Promise.resolve(work);
@@ -977,7 +991,11 @@ export class StoreDatabase {
       if (method === "run") return Promise.reject(new Error("A read scope cannot write."));
       return lease.request(method, sql, workerParams(params) as SQLInputValue[]);
     }
-    return this.scope(() => this.request(method, sql, params));
+    return this.scope(() => this.request(method, sql, params), undefined, {
+      // The statement text (never its parameters) names what a slow holder was doing.
+      // Built only when used: nested statements return before the label is needed.
+      site: () => `SQL ${method}: ${sql.replace(/\s+/g, " ").trim().slice(0, 80)}`,
+    });
   }
   runMany(sql: string, rows: SQLInputValue[][]): Promise<void> {
     return this.scope(() => this.request("runMany", sql, rows));

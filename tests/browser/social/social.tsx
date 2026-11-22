@@ -2529,6 +2529,101 @@ if (new URLSearchParams(location.search).has("calendar-seeded")) {
     },
   ];
 }
+// ?activity-rich: a filled ActivityHistory (jobs in every state plus AI actions); opt-in only.
+if (new URLSearchParams(location.search).has("activity-rich")) {
+  const hour = 3_600_000;
+  const base = {
+    operationId: "activity-operation",
+    dedupeKey: "activity-key",
+    accountId: "x",
+    projectIds: ["demo"],
+    provider: "x",
+    attempts: 1,
+    actorId: "fixture",
+  };
+  const now = Date.now();
+  snapshot.jobs = [
+    {
+      ...base,
+      id: "activity-ok",
+      kind: "publish",
+      payload: { text: "Launch day: the new pricing page is live. Read the changelog.", media: [] },
+      status: "succeeded",
+      scheduledAt: now - hour,
+      createdAt: now - hour,
+      url: "https://example.test/status/1",
+    },
+    {
+      ...base,
+      id: "activity-review",
+      kind: "reply",
+      payload: { text: "Thanks for the question, here is how annual billing works.", media: [] },
+      status: "review",
+      reviewReason: "awaiting_approval",
+      scheduledAt: now - 2 * hour,
+      createdAt: now - 2 * hour,
+    },
+    {
+      ...base,
+      id: "activity-failed",
+      kind: "message",
+      payload: { text: "Hi Sam, a quick follow-up on your demo request.", media: [] },
+      status: "failed",
+      error: "The platform rejected the message.",
+      scheduledAt: now - 5 * hour,
+      createdAt: now - 5 * hour,
+    },
+    {
+      ...base,
+      id: "activity-queued",
+      kind: "comment",
+      payload: { text: "Great write-up, sharing it with the team.", media: [] },
+      status: "queued",
+      scheduledAt: now + hour,
+      createdAt: now - 6 * hour,
+    },
+    {
+      ...base,
+      id: "activity-cancelled",
+      kind: "publish",
+      payload: { text: "Draft thread about onboarding tips.", media: [] },
+      status: "cancelled",
+      scheduledAt: now - 26 * hour,
+      createdAt: now - 26 * hour,
+    },
+  ];
+  aiActions.push(
+    {
+      id: "activity-ai-1",
+      at: now - 3 * hour,
+      actor: "ai",
+      accountId: "x",
+      action: "replies.draft",
+      summary: "Drafted a reply to a pricing question",
+      status: "done",
+      undo: { action: "drafts.delete", input: { id: "fixture-draft-2" } },
+    },
+    {
+      id: "activity-ai-2",
+      at: now - 8 * hour,
+      actor: "ai",
+      accountId: "x",
+      action: "people.tag",
+      summary: "Tagged 4 people as prospects",
+      status: "blocked",
+      reason: "Needs your approval",
+    },
+    {
+      id: "activity-ai-3",
+      at: now - 30 * hour,
+      actor: "ai",
+      accountId: "x",
+      action: "replies.send",
+      summary: "Sent a reply to a support thread",
+      status: "undone",
+    },
+  );
+}
 const fixtureQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={fixtureQueryClient}>

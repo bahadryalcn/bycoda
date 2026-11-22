@@ -287,7 +287,7 @@ export class StoreReadPool {
       waiter.fail(new ReadPoolUnavailableError(reason));
     }
     const error = new ReadPoolUnavailableError(reason);
-    for (const slot of this.slots.splice(0)) void this.kill(slot, error);
+    for (const slot of this.slots.splice(0)) this.stopInBackground(slot, error);
   }
 
   private send(slot: Slot, method: string, extra: Record<string, unknown>): Promise<unknown> {
@@ -312,6 +312,12 @@ export class StoreReadPool {
     await slot.worker.terminate().catch(() => undefined);
   }
 
+  private stopInBackground(slot: Slot, error: Error): void {
+    this.kill(slot, error).catch((cause: unknown) => {
+      console.error("Host database reader cleanup failed.", cause);
+    });
+  }
+
   /**
    * One timer for the whole pool, armed while any connection is leased: a scope past the
    * deadline fails and its connection is replaced, so a lost reply cannot pin a reader.
@@ -321,12 +327,13 @@ export class StoreReadPool {
     this.watchdog = setTimeout(() => {
       this.watchdog = undefined;
       const now = performance.now();
-      for (const slot of [...this.slots]) {
+      // A copy: replacing a stuck slot removes it from `slots` during the loop.
+      for (const slot of this.slots.slice()) {
         if (!slot.busy || now - slot.leasedAt < this.deadlineMs) continue;
         const index = this.slots.indexOf(slot);
         if (index >= 0) this.slots.splice(index, 1);
         console.error("Host database read scope exceeded its deadline; its reader was replaced.");
-        void this.kill(
+        this.stopInBackground(
           slot,
           new Error(`Host database read scope exceeded its deadline ms=${this.deadlineMs}`),
         );

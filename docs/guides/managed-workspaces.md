@@ -62,6 +62,33 @@ For remote projects, creating and deleting managed directories is unavailable;
 listing and reveal still work.
 
 The Worktrees view keeps the selected project and create/refresh actions together.
+For worktree rows on connected machines, **Delete worktree** opens a fresh review
+from the owning Host when it supports remote removal. The Host checks the same
+checkout again before deleting. Close active agents and terminals before retrying.
+If the Host cannot verify usage, it stops the removal. Older Hosts show the
+existing remote removal notice.
+
+On a dedicated Linux server, the system administrator can set
+`BYCODA_HEADLESS_WORKSPACE_ROOT=/var/lib/bycoda/workspaces` in the execution
+Host's systemd **system** service. Run the foreground Host directly under a
+dedicated non-root `User=` with a `nologin` or `false` login shell. Create the
+workspace root owned by that account with mode `0700`. Keep the main checkouts,
+linked worktrees and their Git common directories inside it. Use local storage
+exclusive to the service. A checkout mounted, exported or otherwise accessible
+to another desktop is outside this deployment contract.
+
+This setting declares that the account runs only the Host and its headless
+children. Keep native desktop applications and other services on separate accounts.
+The Host checks physical paths and Linux process ownership before a removal.
+Use the machine's normal PID namespace and full procfs view. Nested mounts,
+visible bind aliases, and shared network filesystems cannot establish private
+workspace storage.
+An unrelated process running as that user, a disconnected desktop previously
+observed by the Host, or an unreadable ownership check blocks headless removal.
+The existing review, dirty-file, terminal, agent and managed recovery checks
+still apply. Ordinary desktop and user-service installations retain native
+desktop confirmation.
+
 Managed rows show the conversation title when available, otherwise the branch name.
 Expand **Details** for the exact folder, branch, workspace ID and owner. Review and
 directory actions keep their existing ownership checks. **Workspace policy** holds

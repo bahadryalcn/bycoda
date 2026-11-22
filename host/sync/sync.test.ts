@@ -1,8 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
+import { syncDbTiming } from "../diagnostics/perf-metrics";
+import { handleSessionsRpc } from "../server/rpc-sessions";
+import { setTimeout as delay } from "node:timers/promises";
 import { syncPull, syncPush } from "./sync";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -21,6 +24,30 @@ function setup() {
 }
 
 describe("syncPush / syncPull", () => {
+  it("attributes a blocked push to the writer queue", async () => {
+    const store = setup();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const holder = store.db.scope(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    const timing = { dbWaitMs: 0 };
+    const request = { input: { method: "sync.push" }, params: { ops: [] }, result: undefined };
+    const push = syncDbTiming.run(timing, () =>
+      handleSessionsRpc({ engine: { store } } as never, request as never),
+    );
+    try {
+      await delay(60);
+      expect(timing.dbWaitMs).toBe(0);
+    } finally {
+      release.resolve();
+      await Promise.all([holder, push]);
+    }
+    expect(timing.dbWaitMs).toBeGreaterThanOrEqual(50);
+    expect(request.result).toMatchObject({ applied: [] });
+  });
   it("enforces UTF-8 bytes for ASCII, Turkish, CJK and emoji without losing valid neighbors", async () => {
     const store = await setup();
     for (const [index, char] of ["a", "ğ", "漢", "😀"].entries()) {
@@ -89,6 +116,29 @@ describe("syncPush / syncPull", () => {
       "arrived-later",
     ]);
   });
+  it("pulls every record across read batches on the read pool, including a shared legacy rev", async () => {
+    const store = await setup();
+    await syncPush(
+      store.db,
+      Array.from({ length: 600 }, (_, i) => ({
+        table: "group" as const,
+        id: `small${i}`,
+        baseRev: 0,
+        value: { id: `small${i}`, name: "n" },
+      })),
+    );
+    // Two legacy rows sharing one rev straddle the 256-row batch boundary.
+    await store.db
+      .prepare("UPDATE sync_records SET rev=256 WHERE id IN ('small255','small256')")
+      .run();
+    const viaPool = vi.spyOn(store.db, "readScope");
+    const pulled = await syncPull(store.db, 0);
+    expect(viaPool).toHaveBeenCalledTimes(1);
+    expect(new Set(pulled.records.map((record) => record.id)).size).toBe(600);
+    const revs = pulled.records.map((record) => record.rev);
+    expect(revs).toEqual(revs.toSorted((a, b) => a - b));
+  });
+
   it("accepts a brand-new record and reports it as applied", async () => {
     const store = await setup();
     const result = await syncPush(store.db, [

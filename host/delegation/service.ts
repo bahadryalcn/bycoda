@@ -1035,13 +1035,19 @@ export class ConversationDelegation {
   private async describe(record: DelegationRecord, locate: Locate) {
     record = await this.follow(record);
     const status = await this.statusOf(record);
-    const child = await this.deps.engine.store
-      .session(record.childSessionId)
-      .catch(() => undefined);
-    const reply =
-      child && status.status === "succeeded"
-        ? lastTurnReply(child.session.blocks, { includePlan: true })
-        : "";
+    // Only a succeeded run reports a reply, so any other state never loads the transcript. A
+    // cold transcript is parsed off the writer queue (signalled read) and abandoned if slow.
+    let resultUnavailable = false;
+    const child =
+      status.status === "succeeded"
+        ? await this.deps.engine.store
+            .session(record.childSessionId, AbortSignal.timeout(30_000))
+            .catch(() => {
+              resultUnavailable = true;
+              return undefined;
+            })
+        : undefined;
+    const reply = child ? lastTurnReply(child.session.blocks, { includePlan: true }) : "";
     const result = reply ? truncateGraphemes(reply, DELEGATION_LIMITS.resultGraphemes) : undefined;
     const locator = await locate(record.childSessionId).catch(() => undefined);
     return {
@@ -1054,6 +1060,8 @@ export class ConversationDelegation {
       status: status.status,
       ...(record.ownerFollowUp ? { ownerFollowUp: true } : {}),
       ...(result === undefined ? {} : { result, truncated: result !== reply }),
+      // The run succeeded but its transcript could not be read: not the same as an empty reply.
+      ...(resultUnavailable ? { resultUnavailable: true } : {}),
       ...(status.error ? { error: truncateGraphemes(status.error, 2000) } : {}),
     };
   }

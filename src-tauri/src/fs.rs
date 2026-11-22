@@ -6335,6 +6335,11 @@ pub(crate) fn output_with_timeout(
     cmd: &mut Command,
     timeout: Duration,
 ) -> std::io::Result<std::process::Output> {
+    let _reservation = cmd
+        .get_current_dir()
+        .map(crate::worktree_lifecycle::reserve_spawn)
+        .transpose()
+        .map_err(std::io::Error::other)?;
     let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

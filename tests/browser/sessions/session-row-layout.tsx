@@ -387,6 +387,7 @@ function Fixture() {
           compactProjectRail={!params.has("no-rail")}
           titleBarAbove
           sessions={history.filter((row) => row.cwd === projectCwd)}
+          busyProjectPaths={params.has("project-tooltip") ? [cwd] : undefined}
           busySessionIds={new Set(params.has("statuses") ? ["status-working"] : ["row-working"])}
           sessionWaits={params.has("statuses") ? statusWaits : undefined}
           unseenFinishedIds={params.has("statuses") ? new Set(["status-done"]) : undefined}

@@ -30,7 +30,7 @@ const fingerprint = createHash("sha256").update(lock).digest("hex");
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "bycoda-bootstrap-"));
   roots.push(root);
-  await writeFile(join(root, "package.json"), JSON.stringify({ packageManager: "pnpm@12.15.0" }));
+  await writeFile(join(root, "package.json"), JSON.stringify({ packageManager: "pnpm@12.21.0" }));
   await writeFile(join(root, "pnpm-lock.yaml"), lock);
   await mkdir(join(root, "src-tauri"));
   await writeFile(join(root, "src-tauri", "Cargo.lock"), "cargo lock");
@@ -48,7 +48,7 @@ const request = {
 it("deduplicates concurrent preparation by workspace and lock identity and uses pinned frozen pnpm without overriding its shared store", async () => {
   const root = await fixture();
   const run = vi.fn<BootstrapCommand>(async ({ args }) =>
-    args[0] === "--version" ? "12.15.0" : "",
+    args[0] === "--version" ? "12.21.0" : "",
   );
   const service = new WorkspaceBootstrapService({
     resolveWorkspace: async () => root,
@@ -107,7 +107,7 @@ it("cancels active preparation, awaits its child settlement, then permits an exp
     sawAbort = done;
   });
   const run: BootstrapCommand = async ({ args, signal }) => {
-    if (args[0] === "--version") return "12.15.0";
+    if (args[0] === "--version") return "12.21.0";
     signal.addEventListener("abort", sawAbort, { once: true });
     started();
     // An abort notification alone does not prove physical settlement.
@@ -172,7 +172,7 @@ it("detects lockfile changes during installation without exposing installer diag
   const service = new WorkspaceBootstrapService({
     resolveWorkspace: async () => root,
     runCommand: async ({ args }) => {
-      if (args[0] === "--version") return "12.15.0";
+      if (args[0] === "--version") return "12.21.0";
       await writeFile(join(root, "pnpm-lock.yaml"), "changed");
       return "token=secret";
     },
@@ -199,7 +199,7 @@ it("bounds a hung install with BOOTSTRAP_TIMEOUT, aborts its process tree and fr
   const root = await fixture();
   const installSignals: AbortSignal[] = [];
   const run = vi.fn<BootstrapCommand>(async ({ args, signal }) => {
-    if (args[0] === "--version") return "12.15.0";
+    if (args[0] === "--version") return "12.21.0";
     installSignals.push(signal);
     return hangUntilAborted(signal, true);
   });
@@ -243,7 +243,7 @@ it("keeps the workspace owner held when a timed-out command cannot prove its tre
     resolveWorkspace: async () => root,
     // Ignores the abort entirely: no settlement proof ever arrives.
     runCommand: async ({ args }) =>
-      args[0] === "--version" ? "12.15.0" : new Promise<string>(() => {}),
+      args[0] === "--version" ? "12.21.0" : new Promise<string>(() => {}),
     commandTimeoutMs: { install: 20 },
     commandKillGraceMs: 20,
   });
@@ -268,7 +268,7 @@ it("times out only the stalled workspace's install and leaves an unrelated insta
   const service = new WorkspaceBootstrapService({
     resolveWorkspace: async (id) => (id === "workspace" ? stalled : unrelated),
     runCommand: async ({ args, cwd, signal }) => {
-      if (args[0] === "--version") return "12.15.0";
+      if (args[0] === "--version") return "12.21.0";
       if (cwd.endsWith(basename(stalled))) return hangUntilAborted(signal, true);
       unrelatedSignal = signal;
       await gate;
@@ -688,7 +688,7 @@ it("bounds settled bootstrap hot snapshots with exact durable replay after evict
   try {
     const receipts = new WorkspaceBootstrapReceipts(store);
     const run = vi.fn<BootstrapCommand>(async ({ args }) =>
-      args[0] === "--version" ? "12.15.0" : "",
+      args[0] === "--version" ? "12.21.0" : "",
     );
     const options = { receipts, resolveWorkspace: async () => root, runCommand: run };
     const service = new WorkspaceBootstrapService(options);

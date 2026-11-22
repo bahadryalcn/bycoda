@@ -454,15 +454,21 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
   }
 }
 
+/** A Host receipt must not accept a follow-up the live CLI cannot track. */
+export function claudeSteerReady(sessionId: string): boolean {
+  const live = liveByThread.get(sessionId);
+  return !!live?.activeTurn && !live.cancelled && live.commands.tracksCommands;
+}
+
 export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
   assertProviderOperation(input.operationContext);
 
   input = { ...input };
 
   const live = liveByThread.get(input.sessionId);
-  if (!live?.activeTurn) throw new Error(turnFinishedFollowUpText());
+  if (!live?.activeTurn) throw new TurnNotReadyError(turnFinishedFollowUpText());
   if (!ownsOperation(input.operationContext, live.handle, live.operation))
-    throw new Error("Provider operation replaced before steer");
+    throw new TurnNotReadyError("Provider operation replaced before steer");
 
   // Without a command lifecycle a result cannot be tied to its input, so the
   // composer keeps the message queued until the current turn has settled.

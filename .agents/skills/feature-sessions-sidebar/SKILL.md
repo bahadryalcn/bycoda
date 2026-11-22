@@ -29,7 +29,7 @@ Own conversation collections and rows across the shell, session models, Host/nat
 - Submitted turn provenance owns provider history; preserve optional summary metadata through Native, Host and remote projections. Persist pin/order/filter/search/paging and sibling updates. Filtered rows never stand for the entire collection in bulk actions or counts.
 - Validated delegated advisors and subagents stay out of ordinary lists, search and restored tabs. Resolve child links to the verified parent panel; retain child execution, request ownership and finished history independently of current defaults.
 - Interrupted status and activity survive partial reads and quit/recovery; owner Stop stays terminal without erasing transcript bytes.
-- Working summarizes the open project while retaining global counts and other-project paging; compare canonical keys including remote machine identity.
+- Activity uses one bounded list across projects for working, waiting, retrying and input rows. Ended turns leave Activity and remain in conversation history.
 - Retain title drafts, focus, drag targets and native menus. Rename and regeneration keep exact owner/receipt, concurrent-title checks and locks; regeneration never submits a turn.
 - Unsent text/attachments use existing mounted and restored composer-draft subscriptions, active-editor exclusion and saved-draft/status precedence.
 - Update/footer state belongs to the displayed version and confirmed package; repository and update notices coexist with distinct dismissal rules.

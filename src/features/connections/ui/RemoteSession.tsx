@@ -25,7 +25,7 @@ import {
   saveHostSessionBinding,
   flushHostSessionBindings,
 } from "../model/sessionExecutionBinding";
-import { applyStreamSync } from "../model/protocol";
+import { applyStreamSync, providerSteerCapability } from "../model/protocol";
 import { mergePreviewBlocks } from "../model/mergePreviewBlocks";
 import { resolveQuestionDraft } from "../../sessions/public/questionDrafts";
 import {
@@ -162,7 +162,7 @@ import {
   leaseRetryDelay,
   type RemoteQueueDraft,
 } from "../model/remoteQueue";
-import { followUpRefusalEvent, type QueueEvent } from "../model/queueState";
+import { followUpRefusalEvent, steerWaitReason, type QueueEvent } from "../model/queueState";
 import { isLeaseHeld } from "../../sync/model/runLease";
 import { remoteTurnInterrupted } from "../model/remoteRecovery";
 import { forgetRemoteQueue } from "../model/useRemoteQueue";
@@ -797,9 +797,8 @@ function ConnectedRemoteSession({
       (!snapshot.executionOwner && snapshot.runId === "desktop"));
   const remoteCanSteer =
     !desktopRun &&
-    !!descriptor?.capabilities.includes("sessions.steer") &&
     !!hostSession &&
-    ["codex", "claude", "cursor", "opencode", "pi", "omp", "hermes"].includes(hostSession.harness);
+    !!descriptor?.capabilities.includes(providerSteerCapability(hostSession.harness));
   // A removed draft leaves the transcript at once and returns if the host refuses.
   const [removingDraft, setRemovingDraft] = useState<string>();
   // An accepted turn stays on screen until a sync shows the host's copy, so
@@ -922,13 +921,6 @@ function ConnectedRemoteSession({
                 historyPageRequest.current = null;
                 setRemoteHistoryLoading(false);
                 setRemoteDeleted(true);
-                const currentData = remoteDataStateRef.current;
-                publishRemoteDataState({
-                  phase: currentData.updatedAt ? "stale" : "error",
-                  updatedAt: currentData.updatedAt,
-                  error: t("This conversation was deleted on the host."),
-                });
-                setError(t("This conversation was deleted on the host."));
                 return;
               }
               if (changes.reset || sourceChanged) {
@@ -3002,10 +2994,28 @@ function ConnectedRemoteSession({
     const needsVerification = !stored.entry?.savedAt;
     const stopped = !!stored.entry?.stopRequested;
     let recovered: CommandReceipt | null | undefined;
+    const version = bindingGen.version;
     if (descriptor?.capabilities.includes("commands.status")) {
       try {
         recovered = await executionClient.commandStatus(pending.commandId);
       } catch (reason) {
+        if (
+          pending.type === "steer" &&
+          classifyCommandFailure(reason) === "definitive" &&
+          steerWaitReason(String(reason))
+        ) {
+          // The Host retained the undelivered draft or queue row. Retire this
+          // command ID so an owner can retry once the turn is ready.
+          await settleDurableRemoteCommand(project.key, machine.environmentId, pending);
+          const remaining = await readDurableRemoteCommand(
+            project.key,
+            machine.environmentId,
+            sessionId ?? null,
+            shell.id,
+          );
+          if (alive.current && version === bindingGen.version) setPending(remaining.command);
+          return "settled";
+        }
         if (!automatic)
           setError(
             t("Couldn’t check whether the host accepted this request: {p0}", {
@@ -3038,7 +3048,6 @@ function ConnectedRemoteSession({
       );
       return "stop";
     }
-    const version = bindingGen.version;
     if (!stopped) setStarting((current) => (current ? { ...current, failed: false } : current));
     lastFailureClass.current = undefined;
     const receipt = recovered
@@ -3143,7 +3152,7 @@ function ConnectedRemoteSession({
   const notice = queue.error
     ? queueRetrying
       ? undefined
-      : remoteQueueReadNotice(queue.error, queue.retry)
+      : remoteQueueReadNotice(queue.error, queue.retry, queue.failure, machine.name)
     : pending && !sending && !(waitingForReconnect && outageShownCentrally)
       ? remotePendingRequestNotice(
           retryStopped,
@@ -3240,6 +3249,7 @@ function ConnectedRemoteSession({
   // The notice the owner closed; different text or detail shows again.
   const [closedNotice, setClosedNotice] = useState("");
   const noticeKey = notice ? JSON.stringify([notice.text, notice.detail ?? ""]) : "";
+  const deletedNotice = remoteDeleted ? t("This conversation was deleted on the host.") : "";
 
   // A transport failure has one recovery owner above the conversation. Keep
   // independent queue/storage and command failures actionable in their own notice.
@@ -3938,14 +3948,13 @@ function ConnectedRemoteSession({
   };
   const overrides: RemoteSessionOverrides = {
     questionDraftScope,
-    headerStatus: (
+    headerStatus: remoteDeleted ? undefined : (
       <RemoteDataStatus
         cwd={owner?.environmentId ?? project.key}
         presentation="indicator"
         state={remoteDataState}
         onRefresh={refreshOwnerContent}
         label={t("conversation")}
-        disabled={remoteDeleted}
         connectionIssueHandled={connectionIssueHandled}
       />
     ),
@@ -3985,8 +3994,8 @@ function ConnectedRemoteSession({
             environmentId: machine.environmentId,
             sessionId: activeSessionId,
           },
-    sendBlockedReason: remoteDeleted
-      ? t("This conversation was deleted on the host.")
+    sendBlockedReason: deletedNotice
+      ? deletedNotice
       : pageCacheOnly
         ? // Opening from the saved preview while the host answers is loading, not a problem.
           blocksSending(connection.status)
@@ -4216,17 +4225,28 @@ function ConnectedRemoteSession({
           cwdOrEnvironmentId={owner?.environmentId ?? project.key}
           stale={!!hostSession}
         />
-        <RemoteDataStatus
-          cwd={owner?.environmentId ?? project.key}
-          presentation="notice"
-          state={remoteDataState}
-          onRefresh={refreshOwnerContent}
-          label={t("conversation")}
-          disabled={remoteDeleted}
-          connectionIssueHandled={connectionIssueHandled}
-        />
+        {!remoteDeleted && (
+          <RemoteDataStatus
+            cwd={owner?.environmentId ?? project.key}
+            presentation="notice"
+            state={remoteDataState}
+            machineLabel={machine.name}
+            onRefresh={refreshOwnerContent}
+            label={t("conversation")}
+            connectionIssueHandled={connectionIssueHandled}
+          />
+        )}
         <RemoteOutboxNotice project={project.key} environment={machine.environmentId} />
-        {notice && !noticeHandledByConnection && closedNotice !== noticeKey ? (
+        {deletedNotice && closedNotice !== deletedNotice ? (
+          <Toast
+            tone="info"
+            placement="top-center"
+            durationMs={null}
+            message={deletedNotice}
+            onDismiss={() => setClosedNotice(deletedNotice)}
+          />
+        ) : null}
+        {!remoteDeleted && notice && !noticeHandledByConnection && closedNotice !== noticeKey ? (
           // The shared alert stack (top center for warnings and errors). Closing it only hides
           // it: sending stays held, and the same problem shows again once it changes.
           <Toast
@@ -4243,7 +4263,12 @@ function ConnectedRemoteSession({
                 ) : null}
               </span>
             }
-            historyMessage={notice.text}
+            historyMessage={"history" in notice ? notice.history : notice.text}
+            extra={
+              "details" in notice && notice.details ? (
+                <ErrorDetails title={notice.text} detail={notice.details} />
+              ) : undefined
+            }
             action={
               notice.action && notice.action.kind !== "dismiss"
                 ? {

@@ -178,7 +178,11 @@ it("shares one discovery per checkout for a short while and never reuses a failu
   expect(one.paths).toEqual(["first"]);
   f.repo("parent/second");
   expect((await sharedHostGitSubmodules(parent, true)).paths).toEqual(["first"]);
-  expect((await sharedHostGitSubmodules(parent, true, true)).paths).toEqual(["first", "second"]);
+  const fresh = sharedHostGitSubmodules(parent, true, true);
+  const concurrentRefresh = sharedHostGitSubmodules(parent, true, true);
+  const refreshed = await Promise.all([fresh, concurrentRefresh]);
+  expect(refreshed[0]).toBe(refreshed[1]);
+  expect(refreshed[0].paths).toEqual(["first", "second"]);
   expect((await sharedHostGitSubmodules(parent, true)).paths).toEqual(["first", "second"]);
   const missing = join(f.root, "missing");
   await expect(sharedHostGitSubmodules(missing, true)).rejects.toThrow();

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { Text } from "../../../shared/ui/Text";
 import { Toast } from "../../../shared/ui/ToastRegion";
 import { Button } from "../../../shared/ui/Button";
@@ -6,10 +7,12 @@ import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { useDelayedVisible } from "../../../shared/hooks/useDelayedVisible";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Check, RefreshCw, Server } from "../../../shared/ui/icons";
 import type { RemoteDataState } from "../model/remoteDataState";
+import { sanitizeConnectionError } from "../model/connectionReason";
 import {
   classifyRemoteError,
   describeRemoteError,
@@ -29,6 +32,7 @@ export function RemoteDataStatus({
   connectionIssueHandled = false,
   presentation = "auto",
   machineName,
+  machineLabel,
 }: {
   state: RemoteDataState;
   /** The data's owning remote project, for the workspace connection notice. */
@@ -42,6 +46,8 @@ export function RemoteDataStatus({
   presentation?: "auto" | "indicator" | "notice";
   /** Keep remote identity in a project heading, with freshness in its tooltip. */
   machineName?: string;
+  /** The machine this data belongs to, named in the floating notice and its details. */
+  machineLabel?: string;
 }) {
   useLocale();
   // A first load that ends quickly never shows its indicator; a background refresh only spins
@@ -93,7 +99,11 @@ export function RemoteDataStatus({
                 ? t("Couldn’t refresh {p0}. Showing last loaded data.", { p0: dataLabel })
                 : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: dataLabel })
               : state.phase === "stale"
-                ? t("Showing last loaded data. Updates have not been verified.")
+                ? presentation === "notice"
+                  ? t("Showing last loaded {p0}. Updates have not been verified.", {
+                      p0: dataLabel,
+                    })
+                  : t("Showing last loaded data. Updates have not been verified.")
                 : state.phase === "empty"
                   ? t("No {p0}.", { p0: dataLabel })
                   : t("Up to date");
@@ -164,17 +174,23 @@ export function RemoteDataStatus({
   // the same state comes back only once it changes.
   if (presentation === "notice") {
     if (dismissed === noticeKey) return null;
+    // Which machine and which data, when it was last verified and why it failed: technical
+    // lines behind Details, so cards of different data or times stay distinguishable.
+    const noticeDetails = noticeDetailLines({
+      machine: machineLabel ?? machineName,
+      data: dataLabel,
+      verifiedAt: state.updatedAt,
+      reason: errorView
+        ? sanitizeConnectionError(redactDiagnosticText(errorView.details))
+        : undefined,
+    });
     return (
       <Toast
         tone={tone}
+        title={machineLabel ?? machineName ?? dataLabel}
         message={
           <span data-remote-data-state={state.phase} aria-busy={busy}>
             {message}
-            {time ? (
-              <Text size="inherit" tone="muted" className="ml-1">
-                · {time}
-              </Text>
-            ) : null}
             {shownError && fitsOneLine(shownError) ? (
               <Text as="p" size="inherit" tone="muted" className="mt-1 break-words">
                 {shownError}
@@ -182,13 +198,9 @@ export function RemoteDataStatus({
             ) : null}
           </span>
         }
-        historyMessage={message}
+        historyMessage={`${message}\n${noticeDetails}`}
         durationMs={null}
-        extra={
-          shownError && (!fitsOneLine(shownError) || replacedError) ? (
-            <ErrorDetails title={message} detail={errorView?.details ?? shownError} />
-          ) : null
-        }
+        extra={<ErrorDetails title={message} detail={noticeDetails} />}
         action={
           onRefresh
             ? {
@@ -261,4 +273,21 @@ export function RemoteDataStatus({
       </div>
     </Alert>
   );
+}
+
+/** The identity, last verification and reason of a data notice, one line each. */
+export function noticeDetailLines(input: {
+  machine?: string;
+  data: string;
+  verifiedAt?: number;
+  reason?: string;
+}): string {
+  return [
+    input.machine ? `machine: ${input.machine}` : "",
+    `data: ${input.data}`,
+    input.verifiedAt ? `last verified: ${isoTimestamp(input.verifiedAt) ?? ""}` : "",
+    input.reason ? `reason: ${input.reason}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

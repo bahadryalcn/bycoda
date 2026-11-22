@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { RemoteDataStatus } from "./RemoteDataStatus";
+import { ToastRegion, type ToastAnnouncement } from "../../../shared/ui/ToastRegion";
 import type { RemoteDataState } from "../model/remoteDataState";
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
@@ -247,4 +248,71 @@ it("shows the classified reason after quiet retries and keeps the raw text behin
   expect(alert?.textContent).toContain("This computer is busy right now. Try again in a moment.");
   expect(alert?.textContent).not.toContain("RPC_TIMEOUT");
   expect(alert?.textContent).toContain("Details");
+});
+
+it("names the machine and data of a stale notice and keeps separate notices apart", async () => {
+  const { noticeDetailLines } = await import("./RemoteDataStatus");
+  act(() =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(RemoteDataStatus, {
+          state: { phase: "stale", updatedAt: 1000 },
+          presentation: "notice",
+          machineLabel: "Office Mac",
+          label: "conversation",
+          onRefresh: vi.fn(),
+        }),
+        createElement(RemoteDataStatus, {
+          state: { phase: "stale", updatedAt: 9000 },
+          presentation: "notice",
+          machineLabel: "Office Mac",
+          label: "Jira board",
+          onRefresh: vi.fn(),
+        }),
+      ),
+    ),
+  );
+  const text = document.body.querySelector("[data-toast-region]")?.textContent ?? "";
+  expect(text).toContain("Showing last loaded conversation.");
+  expect(text).toContain("Showing last loaded Jira board.");
+  expect(text.match(/Office Mac/g)).toHaveLength(2);
+  const details = noticeDetailLines({
+    machine: "Office Mac",
+    data: "conversation",
+    verifiedAt: 1000,
+    reason: "Machine is unreachable",
+  });
+  expect(details).toBe(
+    "machine: Office Mac\ndata: conversation\nlast verified: 1970-01-01T00:00:01.000Z\nreason: Machine is unreachable",
+  );
+});
+
+it("records a stale read's verification time and sanitized reason in history", () => {
+  const record = vi.fn<(entry: ToastAnnouncement) => void>();
+  act(() =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(ToastRegion, { onRecord: record }),
+        createElement(RemoteDataStatus, {
+          state: {
+            phase: "stale",
+            updatedAt: 1000,
+            error: "Host rejected request: [RPC_TIMEOUT] token=private-test-value",
+          },
+          machineLabel: "Office Mac",
+          presentation: "notice",
+          label: "conversation",
+        }),
+      ),
+    ),
+  );
+  const entry = record.mock.calls.at(-1)?.[0];
+  expect(entry?.title).toBe("Office Mac");
+  expect(entry?.message).toContain("1970-01-01T00:00:01.000Z");
+  expect(entry?.message).toContain("RPC_TIMEOUT");
+  expect(entry?.message).not.toContain("private-test-value");
 });

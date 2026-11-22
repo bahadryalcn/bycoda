@@ -6,7 +6,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { withGithubRead } from "../../shared/lib/githubReadGate";
 import { open } from "@tauri-apps/plugin-dialog";
 import { t } from "../../shared/i18n/core";
-import { decodeBase64 } from "../../shared/lib/base64";
+import { bytesToBase64, decodeBase64 } from "../../shared/lib/base64";
 import { parentPath, slash, joinPath } from "../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 import { localExplorerPath } from "../../shared/lib/remoteExplorerPaths";
@@ -1152,18 +1152,51 @@ export function openPathWithDefaultApp(path: string): Promise<void> {
   return invoke<void>("open_path_with_default_app", { path });
 }
 
-/** Read-only live native folder access, using the recorded owning machine. */
-export async function openLiveRemoteFolder(path: string): Promise<void> {
+/** The connected machine that owns a `remote://` path, and the path on that machine. */
+async function owningMachinePath(path: string, kind: "folder" | "file") {
   const { parseRemotePath } = await import("../../features/connections/model/remoteProjects");
   const parsed = parseRemotePath(path);
-  if (!parsed) throw new Error("Choose a folder on a connected computer.");
+  if (!parsed) throw new Error(`Choose a ${kind} on a connected computer.`);
   const machine = await remoteMachineResolver?.(parsed.environmentId);
   if (!machine) throw new Error("The owning computer is not connected.");
-  return invokeLocal<void>("remote_open_live_folder", {
-    machineId: machine.id,
-    environmentId: parsed.environmentId,
-    path: parsed.hostPath,
+  return { machineId: machine.id, environmentId: parsed.environmentId, path: parsed.hostPath };
+}
+
+/** Read-only live native folder access, using the recorded owning machine. */
+export async function openLiveRemoteFolder(path: string): Promise<void> {
+  return invokeLocal<void>("remote_open_live_folder", await owningMachinePath(path, "folder"));
+}
+
+/** Size of a connected file and its finished local copy for this exact version, if one exists. */
+export async function remoteMediaInfo(
+  path: string,
+): Promise<{ size: number; cachedPath: string | null }> {
+  const info = await invokeWorkspace<{ size: number; version: string }>("read_file_info", { path });
+  if (!Number.isSafeInteger(info.size) || info.size < 0 || typeof info.version !== "string")
+    throw new Error("The connected computer returned invalid file information.");
+  const cachedPath = await invokeLocal<string | null>("cached_remote_file_copy", {
+    key: JSON.stringify([path, info.version]),
   });
+  return { size: info.size, cachedPath };
+}
+
+/**
+ * Loopback-only read-only URL with HTTP Range, scoped to this one connected file; nothing is
+ * mounted. The URL is a secret capability: never log it. It stays valid while `lease` is held
+ * (release it with `releaseRemoteMediaLease` when the player closes).
+ */
+export async function remoteMediaStreamUrl(
+  path: string,
+): Promise<{ url: string; size: number; lease: string }> {
+  return invokeLocal<{ url: string; size: number; lease: string }>(
+    "remote_media_url",
+    await owningMachinePath(path, "file"),
+  );
+}
+
+/** Lets a stream's loopback gateway expire after the normal idle period. */
+export async function releaseRemoteMediaLease(lease: string): Promise<void> {
+  await invokeLocal<void>("remote_media_release", { lease });
 }
 
 /** Whether a failed remote read may be asked again; anything else ends the download. */
@@ -1208,6 +1241,15 @@ export function prepareLocalFile(
     : prepareLocalFileCopy(path, options);
 }
 
+type RemoteFileTransfer = {
+  controller: AbortController;
+  progress: Set<(received: number) => void>;
+  received: number;
+  result: Promise<string>;
+};
+
+const remoteFileTransfers = new Map<string, RemoteFileTransfer>();
+
 /** Download a snapshot to this computer. Editing the copy does not update its host. */
 export async function prepareLocalFileCopy(
   path: string,
@@ -1219,15 +1261,15 @@ export async function prepareLocalFileCopy(
   };
   checkCancelled();
   const isTransient = await transientRemoteFailure();
-  const readInfo = () =>
+  const readInfo = (signal?: AbortSignal) =>
     retryTransient(
       () => invokeWorkspace<{ size: number; version: string }>("read_file_info", { path }),
       {
-        signal: options.signal,
+        signal,
         isTransient,
       },
     );
-  const info = await readInfo();
+  const info = await readInfo(options.signal);
   if (
     !Number.isSafeInteger(info.size) ||
     info.size < 0 ||
@@ -1241,10 +1283,77 @@ export async function prepareLocalFileCopy(
     throw new Error(`File is too large to preview (maximum ${options.maxBytes / 1024 / 1024} MB).`);
   checkCancelled();
   const key = JSON.stringify([path, info.version]);
+  let transfer = remoteFileTransfers.get(key);
+  if (!transfer) {
+    const created: RemoteFileTransfer = {
+      controller: new AbortController(),
+      progress: new Set(),
+      received: 0,
+      result: Promise.resolve()
+        .then(() => downloadRemoteFileCopy(path, key, info, readInfo, isTransient, created))
+        .finally(() => {
+          if (remoteFileTransfers.get(key) === created) remoteFileTransfers.delete(key);
+        }),
+    };
+    remoteFileTransfers.set(key, created);
+    transfer = created;
+  }
+  const shared = transfer;
+  return new Promise<string>((resolve, reject) => {
+    const progress = (received: number) => {
+      try {
+        options.onProgress?.(received, info.size);
+      } catch (error) {
+        reject(error);
+        cancel();
+      }
+    };
+    const release = () => {
+      options.signal?.removeEventListener("abort", cancel);
+      shared.progress.delete(progress);
+    };
+    const cancel = () => {
+      release();
+      if (shared.progress.size === 0 && remoteFileTransfers.get(key) === shared) {
+        remoteFileTransfers.delete(key);
+        shared.controller.abort();
+      }
+      reject(new DOMException("Cancelled", "AbortError"));
+    };
+    shared.progress.add(progress);
+    options.signal?.addEventListener("abort", cancel, { once: true });
+    void shared.result.then(
+      (local) => {
+        release();
+        resolve(local);
+      },
+      (error: unknown) => {
+        release();
+        reject(error);
+      },
+    );
+    if (shared.received > 0) progress(shared.received);
+  });
+}
+
+async function downloadRemoteFileCopy(
+  path: string,
+  key: string,
+  info: { size: number; version: string },
+  readInfo: (signal: AbortSignal) => Promise<{ size: number; version: string }>,
+  isTransient: (error: unknown) => boolean,
+  transfer: RemoteFileTransfer,
+): Promise<string> {
+  const { signal } = transfer.controller;
+  const onProgress = (received: number) => {
+    transfer.received = received;
+    for (const notify of transfer.progress) notify(received);
+  };
+  signal.throwIfAborted();
   const cached = await invokeLocal<string | null>("cached_remote_file_copy", { key });
-  checkCancelled();
+  signal.throwIfAborted();
   if (cached) {
-    options.onProgress?.(info.size, info.size);
+    onProgress(info.size);
     return cached;
   }
   const id = await invokeLocal<string>("begin_remote_file_copy", {
@@ -1255,7 +1364,7 @@ export async function prepareLocalFileCopy(
   try {
     await downloadRemoteChunks({
       size: info.size,
-      signal: options.signal,
+      signal,
       // The exact version read above rides on every chunk; the Host rejects a changed file.
       read: (offset, length) =>
         invokeWorkspace<RemoteChunk>("read_file_chunk", {
@@ -1266,13 +1375,13 @@ export async function prepareLocalFileCopy(
         }),
       append: (offset, data) => invokeLocal<void>("append_remote_file_copy", { id, offset, data }),
       isTransient,
-      onProgress: options.onProgress,
+      onProgress,
     });
-    checkCancelled();
-    const current = await readInfo();
+    signal.throwIfAborted();
+    const current = await readInfo(signal);
     if (current.version !== info.version || current.size !== info.size)
       throw new Error("The file changed while downloading. Try again.");
-    checkCancelled();
+    signal.throwIfAborted();
     return await invokeLocal<string>("finish_remote_file_copy", { id });
   } catch (error) {
     await invokeLocal<void>("cancel_remote_file_copy", { id }).catch(() => undefined);
@@ -1479,6 +1588,211 @@ export function deleteGeneratedImages(paths: string[]): Promise<void> {
 
 export function writeTextFile(path: string, content: string): Promise<void> {
   return invoke<void>("write_text_file", { path, content });
+}
+
+/** A file's text with the Host's version stamp; only a connected machine reports a version. */
+export async function readTextFileVersioned(
+  path: string,
+): Promise<{ text: string; version?: string }> {
+  if (!isRemotePath(path)) return { text: await readTextFile(path) };
+  let reply: string | { text: string; version?: string };
+  try {
+    reply = await invoke<string | { text: string; version?: string }>("read_text_file", {
+      path,
+      withVersion: true,
+    });
+  } catch (error) {
+    // A text file over the one-message limit is read in chunks when the Host offers that.
+    if (!isTooLargeToEditError(error)) throw error;
+    return await readLargeRemoteText(path, error);
+  }
+  // An older Host answers with the bare text.
+  return typeof reply === "string" ? { text: reply } : reply;
+}
+
+/** Largest text a connected machine's file may be edited at (same as this computer). */
+const REMOTE_EDIT_TEXT_MAX_BYTES = 8 * 1024 * 1024;
+/** Raw bytes per chunk; base64 of it stays well inside the 1 MiB remote message cap. */
+const REMOTE_EDIT_CHUNK_BYTES = 512 * 1024;
+/** Request overhead (envelope, path, version) kept out of the single-message budget. */
+const REMOTE_MESSAGE_CAP_BYTES = 1024 * 1024;
+const REMOTE_MESSAGE_SLACK_BYTES = 16 * 1024;
+
+const TOO_LARGE_TO_EDIT_PREFIX = "File is too large to edit";
+
+function isTooLargeToEditError(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)).startsWith(
+    TOO_LARGE_TO_EDIT_PREFIX,
+  );
+}
+
+function fileChangedWhileOpening(): Error {
+  return new Error("FILE_CHANGED: The file changed on disk while it was being opened.");
+}
+
+async function readLargeRemoteText(
+  path: string,
+  tooLarge: unknown,
+): Promise<{ text: string; version: string }> {
+  const info = await invoke<{ size: number; version: string; textEditLimit?: number }>(
+    "read_file_info",
+    { path },
+  );
+  // No limit means an older Host: its own refusal stands.
+  if (typeof info.textEditLimit !== "number") throw tooLarge;
+  if (!Number.isSafeInteger(info.size) || info.size < 0 || typeof info.version !== "string")
+    throw new Error("The connected computer returned invalid file information.");
+  const limit = Math.min(info.textEditLimit, REMOTE_EDIT_TEXT_MAX_BYTES);
+  if (info.size > limit)
+    throw new Error(`${TOO_LARGE_TO_EDIT_PREFIX} (maximum ${limit / 1024 / 1024} MB).`);
+  const isTransient = await transientRemoteFailure();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const parts: string[] = [];
+  let received = 0;
+  while (received < info.size) {
+    const length = Math.min(REMOTE_EDIT_CHUNK_BYTES, info.size - received);
+    let chunk: RemoteChunk;
+    try {
+      chunk = await retryTransient(
+        () =>
+          invoke<RemoteChunk>("read_file_chunk", {
+            path,
+            version: info.version,
+            offset: received,
+            length,
+          }),
+        { isTransient },
+      );
+    } catch (error) {
+      // The Host pins every chunk to the version read above.
+      if (/changed while downloading/i.test(String(error))) throw fileChangedWhileOpening();
+      throw error;
+    }
+    const bytes = decodeBase64(chunk.data);
+    if (chunk.offset !== received || bytes.length !== chunk.length || bytes.length < 1)
+      throw new Error("The connected computer returned an invalid file chunk.");
+    if (bytes.indexOf(0) !== -1) throw new Error("Binary files cannot be edited.");
+    try {
+      parts.push(decoder.decode(bytes, { stream: true }));
+    } catch {
+      throw new Error("File is not valid UTF-8.");
+    }
+    received += bytes.length;
+  }
+  try {
+    parts.push(decoder.decode());
+  } catch {
+    throw new Error("File is not valid UTF-8.");
+  }
+  const after = await invoke<{ size: number; version: string }>("read_file_info", { path });
+  if (after.version !== info.version || after.size !== info.size) throw fileChangedWhileOpening();
+  return { text: parts.join(""), version: info.version };
+}
+
+/**
+ * Saves text. On a connected machine `baseVersion` (from `readTextFileVersioned` or the previous
+ * save) makes the Host refuse with `FILE_CHANGED` when the file changed since; resolves the new
+ * version when the Host reports one.
+ */
+export async function writeTextFileChecked(
+  path: string,
+  content: string,
+  baseVersion?: string,
+): Promise<{ version?: string }> {
+  if (!isRemotePath(path)) {
+    await writeTextFile(path, content);
+    return {};
+  }
+  const encoded = new TextEncoder().encode(content);
+  // The wire form is the JSON-escaped text; measure it so control characters count in full.
+  const singleMessageBytes =
+    encoded.length <= REMOTE_MESSAGE_CAP_BYTES / 6
+      ? encoded.length
+      : new TextEncoder().encode(JSON.stringify(content)).length;
+  const reply =
+    singleMessageBytes + path.length + REMOTE_MESSAGE_SLACK_BYTES <= REMOTE_MESSAGE_CAP_BYTES
+      ? await invoke<{ version?: string } | null | undefined>("write_text_file", {
+          path,
+          content,
+          ...(baseVersion ? { baseVersion } : {}),
+        })
+      : await writeLargeRemoteText(path, encoded, baseVersion);
+  const result = reply && typeof reply === "object" ? reply : {};
+  if (result.version) rememberWrittenVersion(path, content, result.version);
+  return result;
+}
+
+/**
+ * Saves text over the one-message limit as a staged upload: the Host keeps the original until
+ * the commit swaps the finished temporary in, so any failure before it leaves the file untouched.
+ * Hosts without the upload commands refuse with the 1 MB message.
+ */
+async function writeLargeRemoteText(
+  path: string,
+  bytes: Uint8Array,
+  baseVersion?: string,
+): Promise<{ version?: string }> {
+  if (bytes.length > REMOTE_EDIT_TEXT_MAX_BYTES)
+    throw new Error(
+      `File is too large to save (maximum ${REMOTE_EDIT_TEXT_MAX_BYTES / 1024 / 1024} MB).`,
+    );
+  const begun = await invoke<{ uploadId: string; chunkBytes?: number }>("write_file_begin", {
+    path,
+    size: bytes.length,
+    ...(baseVersion ? { baseVersion } : {}),
+  });
+  const { uploadId } = begun;
+  const chunkBytes = Math.min(REMOTE_EDIT_CHUNK_BYTES, begun.chunkBytes ?? REMOTE_EDIT_CHUNK_BYTES);
+  const isTransient = await transientRemoteFailure();
+  try {
+    for (let offset = 0; offset < bytes.length; offset += chunkBytes) {
+      const data = bytesToBase64(bytes.subarray(offset, offset + chunkBytes));
+      // A chunk is idempotent at its offset, so a passing outage retries just that chunk.
+      await retryTransient(
+        () => invoke<unknown>("write_file_chunk", { path, uploadId, offset, data }),
+        { isTransient },
+      );
+    }
+    const committed = await retryTransient(
+      () => invoke<{ version?: string }>("write_file_commit", { path, uploadId }),
+      { isTransient },
+    );
+    return committed;
+  } catch (error) {
+    // Best effort: the Host also expires and sweeps an upload nobody finishes.
+    await invoke<unknown>("write_file_abort", { path, uploadId }).catch(() => undefined);
+    throw error;
+  }
+}
+
+const WRITTEN_VERSIONS_MAX = 32;
+const writtenVersions = new Map<string, { content: string; version: string }>();
+
+function rememberWrittenVersion(path: string, content: string, version: string): void {
+  writtenVersions.delete(path);
+  writtenVersions.set(path, { content, version });
+  if (writtenVersions.size > WRITTEN_VERSIONS_MAX)
+    writtenVersions.delete(writtenVersions.keys().next().value as string);
+}
+
+/**
+ * The version the Host returned for the last successful save of exactly `content` at `path` from
+ * this app, so another editor of the same file can adopt it when its peer saves. `undefined` when
+ * the save is unknown or wrote different text.
+ */
+export function writtenTextVersion(path: string, content: string): string | undefined {
+  const entry = writtenVersions.get(path);
+  return entry && entry.content === content ? entry.version : undefined;
+}
+
+/** Whether `path` lives on a connected machine, where saves are version-checked. */
+export function isConnectedMachinePath(path: string): boolean {
+  return isRemotePath(path);
+}
+
+/** True for the Host's refusal to save over a file that changed after it was read. */
+export function isFileChangedError(error: unknown): boolean {
+  return /\bFILE_CHANGED\b/.test(error instanceof Error ? error.message : String(error));
 }
 
 /** Last path segment, or `/` for the filesystem root. */

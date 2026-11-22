@@ -59502,6 +59502,147 @@
       "retry": "never",
       "scope": "device"
     },
+    "workItems.get": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "number": { "maximum": 2147483647, "minimum": 1, "type": "integer" },
+          "projectId": { "maxLength": 256, "minLength": 1, "type": "string" }
+        },
+        "required": ["projectId", "number"],
+        "type": "object"
+      },
+      "requiredCapability": "workItems.github.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "errors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "message": { "type": "string" },
+                "reason": {
+                  "enum": [
+                    "missing-tool",
+                    "unauthenticated",
+                    "rate-limited",
+                    "not-found",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                "retryAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+              },
+              "required": ["reason", "message"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "body": { "type": "string" },
+                "draft": { "type": "boolean" },
+                "kind": { "enum": ["issue", "pr"], "type": "string" },
+                "number": { "maximum": 2147483647, "minimum": 1, "type": "integer" },
+                "repo": { "type": "string" },
+                "state": { "type": "string" },
+                "title": { "type": "string" },
+                "updatedAt": { "type": "string" },
+                "url": { "type": "string" }
+              },
+              "required": ["kind", "repo", "number", "title", "url", "state", "updatedAt", "draft"],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["items", "errors"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "workItems.search": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "enum": ["issue", "pr"], "type": "string" },
+          "projectId": { "maxLength": 256, "minLength": 1, "type": "string" },
+          "query": { "maxLength": 200, "type": "string" }
+        },
+        "required": ["projectId", "query"],
+        "type": "object"
+      },
+      "requiredCapability": "workItems.github.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "errors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "message": { "type": "string" },
+                "reason": {
+                  "enum": [
+                    "missing-tool",
+                    "unauthenticated",
+                    "rate-limited",
+                    "not-found",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                "retryAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+              },
+              "required": ["reason", "message"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "body": { "type": "string" },
+                "draft": { "type": "boolean" },
+                "kind": { "enum": ["issue", "pr"], "type": "string" },
+                "number": { "maximum": 2147483647, "minimum": 1, "type": "integer" },
+                "repo": { "type": "string" },
+                "state": { "type": "string" },
+                "title": { "type": "string" },
+                "updatedAt": { "type": "string" },
+                "url": { "type": "string" }
+              },
+              "required": ["kind", "repo", "number", "title", "url", "state", "updatedAt", "draft"],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["items", "errors"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
     "workspaces.cleanup.apply": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -71496,6 +71637,51 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "workItems.search", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["issue", "pr"], "type": "string" },
+                "projectId": { "maxLength": 256, "minLength": 1, "type": "string" },
+                "query": { "maxLength": 200, "type": "string" }
+              },
+              "required": ["projectId", "query"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "workItems.get", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "number": { "maximum": 2147483647, "minimum": 1, "type": "integer" },
+                "projectId": { "maxLength": 256, "minLength": 1, "type": "string" }
+              },
+              "required": ["projectId", "number"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "projects.list", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
@@ -82455,5 +82641,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "faa3df713683c7910d99bf0377d3cf79f58fc00b40b3d80d1a938dea40e5a348"
+  "schemaHash": "f97f6d311678d05830450568fa06c38e1b10212832364990f6c052635c052b35"
 }

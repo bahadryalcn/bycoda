@@ -9,7 +9,7 @@ import { Worker } from "node:worker_threads";
 import { HostStore } from "./store";
 import { monotonicNow } from "../src/shared/lib/time/timestamps";
 import { RequestAuthorizationError, StoreDatabase } from "./store-db";
-import { ReadPoolUnavailableError, StoreReadPool } from "./store-read-pool";
+import { ReadPoolUnavailableError, StoreReadPool } from "./storage/store-read-pool";
 import type { HostSession } from "../src/features/connections/model/protocol";
 
 const cleanups: Array<() => void | Promise<void>> = [];
@@ -1327,10 +1327,10 @@ it("fails a lease waiting on a reader that is stopped before it reports ready", 
     onError: () => {},
   });
   const work = vi.fn(async () => "ran");
-  const leased = pool.lease(work);
+  const rejected = expect(pool.lease(work)).rejects.toBeInstanceOf(ReadPoolUnavailableError);
   await new Promise((resolve) => setTimeout(resolve, 50));
   await pool.close();
-  await expect(leased).rejects.toBeInstanceOf(ReadPoolUnavailableError);
+  await rejected;
   expect(work).not.toHaveBeenCalled();
 });
 

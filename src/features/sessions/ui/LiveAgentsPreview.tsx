@@ -8,12 +8,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
 import { useId, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import {
-  formatLiveElapsed,
-  formatLiveMinutes,
-  shouldShowLiveAgents,
-  type LiveAgent,
-} from "../model/liveAgents";
+import { formatLiveMinutes, isLiveActivityAgent, type LiveAgent } from "../model/liveAgents";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import {
   loadTabGroupColors,
@@ -24,7 +19,7 @@ import {
   resolveTabGroupLabel,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
-import { Check, CircleAlert, Clock, Internet } from "../../../shared/ui/icons";
+import { CircleAlert, Clock, Internet } from "../../../shared/ui/icons";
 import { RailSectionHeader } from "../../../app/shell/useRailSections";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { HarnessIcon } from "./HarnessIcon";
@@ -33,12 +28,8 @@ import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { SessionWorkingStatus } from "./SessionWorkingStatus";
 import { sessionWaitReasonWith } from "../model/sessionWait";
 
-const LIVE_AGENT_CAP = 4;
-
 type Props = {
   agents: LiveAgent[];
-  /** Project whose working conversations already appear in the workspace list. */
-  currentProject?: string;
   activeSessionId?: string;
   onSelect?: (sessionId: string) => void;
   bottomSpacing?: boolean;
@@ -51,7 +42,6 @@ type Props = {
 
 export function LiveAgentsPreview({
   agents,
-  currentProject,
   activeSessionId,
   onSelect,
   bottomSpacing = false,
@@ -71,74 +61,71 @@ export function LiveAgentsPreview({
   const groupCustomColors = groupCustomColorsProp ?? loadedGroupCustomColors;
   const groupMascots = groupMascotsProp ?? loadedGroupMascots;
   const [expanded, setExpanded] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [expandedProject, setExpandedProject] = useState<string | null>(null);
+  const collapsed = collapsible && !expanded;
   const listId = useId();
   const lockList = useLockOverscroll<HTMLDivElement>();
-  const summary = summarizeLiveAgents(agents);
-  const currentProjectKey =
-    currentProject && currentProject !== "~" ? projectKey(currentProject) : null;
-  const projectAgents = currentProjectKey
-    ? agents.filter(
-        (agent) =>
-          projectKey(agent.cwd) === currentProjectKey &&
-          !agent.done &&
-          !agent.issue &&
-          !agent.needsApproval &&
-          !agent.waiting,
-      )
-    : [];
-  const projectWorkingCount = projectAgents.length;
-  const projectExpanded = currentProjectKey != null && expandedProject === currentProjectKey;
-  const attentionAgents = agents.filter((agent) => agent.issue || agent.needsApproval);
-  const listedAgents = agents.filter(
-    (agent) => !agent.issue && !agent.needsApproval && !projectAgents.includes(agent),
-  );
-  const visibleOnRail = projectWorkingCount > 0 || shouldShowLiveAgents(agents, activeSessionId);
+  const grouped = groupLiveActivity(agents);
+  const { attention, working, waiting } = grouped;
   const ticking =
-    visibleOnRail && !collapsed && agents.some((agent) => !agent.done && agent.startedAt != null);
+    !collapsed && agents.some((agent) => isLiveActivityAgent(agent) && agent.startedAt != null);
 
   // Minute precision keeps the preview from re-rendering every second. The tick only
   // triggers the render; labels read the exact time.
   const now = useMinuteNow(ticking) ? wallClockNow() : 0;
 
-  if (!visibleOnRail) return null;
+  if (!attention.length && !working.length && !waiting.length) return null;
 
-  const cap = collapsible ? 2 : LIVE_AGENT_CAP;
-  const extra = listedAgents.length - cap;
-  const visible = expanded || extra <= 0 ? listedAgents : listedAgents.slice(0, cap);
   const title = t("Activity");
-  const attentionTone =
-    attentionAgents.length === 1 && attentionAgents[0].issue === "failed" ? "danger" : "warning";
+  const summary = liveActivityCounts(grouped);
+  const groups = [
+    { label: t("Needs attention"), rows: attention },
+    { label: t("Working"), rows: working },
+    { label: t("Waiting"), rows: waiting },
+  ];
   const statusMark = <Clock aria-hidden className="icon-sm shrink-0" strokeWidth={1.75} />;
   const countText = (
-    <span className="inline-flex items-center gap-1">
-      <Badge variant="count" size="xs" tone="neutral">
-        {agents.length}
-      </Badge>
-      {collapsed && summary.attention > 0 ? (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      {attention.length > 0 ? (
         <Badge
           variant="count"
           size="xs"
-          tone={attentionTone}
-          aria-label={t(summary.attention === 1 ? "{p0} needs attention" : "{p0} need attention", {
-            p0: summary.attention,
+          tone="warning"
+          aria-label={t(attention.length === 1 ? "{p0} needs attention" : "{p0} need attention", {
+            p0: attention.length,
           })}
           icon={<CircleAlert aria-hidden className="icon-xs" />}
         >
-          {summary.attention}
+          {attention.length}
+        </Badge>
+      ) : null}
+      {working.length > 0 ? (
+        <Badge
+          variant="count"
+          size="xs"
+          tone="neutral"
+          aria-label={t(working.length === 1 ? "{p0} working agent" : "{p0} working agents", {
+            p0: working.length,
+          })}
+          icon={<SessionWorkingStatus showElapsed={false} />}
+        >
+          {working.length}
+        </Badge>
+      ) : null}
+      {waiting.length > 0 ? (
+        <Badge
+          variant="count"
+          size="xs"
+          tone="neutral"
+          aria-label={t(waiting.length === 1 ? "{p0} waiting agent" : "{p0} waiting agents", {
+            p0: waiting.length,
+          })}
+          icon={<Clock aria-hidden className="icon-xs" />}
+        >
+          {waiting.length}
         </Badge>
       ) : null}
     </span>
   );
-  // One list, most urgent first; each row's own status mark says which state it is in.
-  const leadingRows = attentionAgents;
-  const trailingRows = [
-    ...(projectExpanded ? projectAgents : []),
-    ...visible.filter((agent) => !agent.done && !agent.waiting),
-    ...visible.filter((agent) => !agent.done && agent.waiting),
-    ...visible.filter((agent) => agent.done),
-  ];
   const renderCard = (agent: LiveAgent) => (
     <LiveAgentCard
       key={agent.id}
@@ -169,11 +156,6 @@ export function LiveAgentsPreview({
           p0: summary.attention,
         })
       : null,
-    summary.finished > 0
-      ? t(summary.finished === 1 ? "{p0} finished agent" : "{p0} finished agents", {
-          p0: summary.finished,
-        })
-      : null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -181,7 +163,7 @@ export function LiveAgentsPreview({
   return (
     <section
       aria-label={t("Activity")}
-      className={`min-w-0 shrink-0 ${collapsible ? "mb-2" : "px-2"} ${bottomSpacing ? "pb-2" : ""}`}
+      className={`min-w-0 shrink-0 ${bottomSpacing ? "pb-2" : ""}`}
       data-live-agents-preview="full"
       data-live-agents-headline={summary.headline}
       data-collapsed={collapsible && collapsed ? "" : undefined}
@@ -193,86 +175,66 @@ export function LiveAgentsPreview({
           icon={statusMark}
           count={countText}
           collapsed={collapsed}
-          onToggleCollapsed={() => setCollapsed((value) => !value)}
+          onToggleCollapsed={() => setExpanded((value) => !value)}
           controlsId={listId}
         />
       ) : (
-        <SectionLabel icon={statusMark} count={agents.length}>
+        <SectionLabel icon={statusMark} count={attention.length + working.length + waiting.length}>
           {title}
         </SectionLabel>
       )}
       <div id={listId} hidden={collapsed} className="px-2 pb-1">
         <div
           ref={lockList}
-          className="flex max-h-[min(24rem,40vh)] min-w-0 flex-col overflow-y-auto overscroll-none"
+          className="flex max-h-[min(14rem,30vh)] min-w-0 flex-col overflow-y-auto overscroll-none"
           data-live-agents-list
         >
-          {leadingRows.map(renderCard)}
-          {projectWorkingCount > 0 ? (
-            <Button
-              variant="item"
-              fullWidth
-              motion="none"
-              expanded={projectExpanded}
-              aria-controls={`${listId}-project`}
-              onClick={() => setExpandedProject(projectExpanded ? null : currentProjectKey)}
-              aria-label={t("{p0} working in this project", { p0: projectWorkingCount })}
-              data-live-agents-project-summary
-              className="min-w-0 shrink-0 gap-1.5"
-            >
-              <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1 text-start">
-                {t("This project")}
-              </Text>
-              <Badge variant="count" size="xs" tone="neutral">
-                {projectWorkingCount}
-              </Badge>
-            </Button>
-          ) : null}
-          <div id={`${listId}-project`} className="contents">
-            {trailingRows.map(renderCard)}
-          </div>
+          {groups.map(({ label, rows }) =>
+            rows.length > 0 ? (
+              <div key={label} className="min-w-0 shrink-0" data-live-agents-group>
+                <SectionLabel variant="inline" className="block px-1.5 pt-1">
+                  {label}
+                </SectionLabel>
+                {rows.map(renderCard)}
+              </div>
+            ) : null,
+          )}
         </div>
-        {extra > 0 ? (
-          <Button
-            fullWidth
-            variant="item"
-            motion="none"
-            type="button"
-            expanded={expanded}
-            chevron="start"
-            aria-controls={listId}
-            onClick={() => setExpanded((open) => !open)}
-          >
-            {expanded ? t("Show less") : t("{p0} more", { p0: extra })}
-          </Button>
-        ) : null}
       </div>
     </section>
   );
 }
 
-/**
- * Real counts behind the header. Failed or retrying agents and agents waiting for input need
- * attention; a finished agent is `done` without an issue; the rest are running. The headline is
- * the most urgent non-empty group, so a mixed list is never labelled by one row.
- */
-export function summarizeLiveAgents(agents: readonly LiveAgent[]) {
-  let attention = 0;
-  let finished = 0;
-  let working = 0;
-  let waiting = 0;
+function groupLiveActivity(agents: readonly LiveAgent[]) {
+  const groups: Record<"attention" | "working" | "waiting", LiveAgent[]> = {
+    attention: [],
+    working: [],
+    waiting: [],
+  };
   for (const agent of agents) {
-    if (agent.issue || agent.needsApproval) attention += 1;
-    else if (agent.done) finished += 1;
-    else if (agent.waiting) waiting += 1;
-    else working += 1;
+    if (!isLiveActivityAgent(agent)) continue;
+    if (agent.needsApproval || agent.issue === "retrying") {
+      groups.attention.push(agent);
+    } else if (agent.waiting) groups.waiting.push(agent);
+    else groups.working.push(agent);
   }
-  const headline: "working" | "attention" | "waiting" | "finished" =
-    working > 0 ? "working" : attention > 0 ? "attention" : waiting > 0 ? "waiting" : "finished";
-  return { attention, finished, working, waiting, headline };
+  return groups;
 }
 
-/** Title and count for the summary's headline group; shared by the full and compact rails. */
+function liveActivityCounts(groups: ReturnType<typeof groupLiveActivity>) {
+  const { length: attention } = groups.attention;
+  const { length: working } = groups.working;
+  const { length: waiting } = groups.waiting;
+  const headline: "working" | "attention" | "waiting" =
+    working > 0 ? "working" : attention > 0 ? "attention" : "waiting";
+  return { attention, working, waiting, headline };
+}
+
+export function summarizeLiveAgents(agents: readonly LiveAgent[]) {
+  return liveActivityCounts(groupLiveActivity(agents));
+}
+
+/** Title and count for the compact rail's headline group. */
 export function liveHeadline(
   summary: ReturnType<typeof summarizeLiveAgents>,
   t: (key: string) => string,
@@ -284,9 +246,7 @@ export function liveHeadline(
         ? t("Working")
         : headline === "attention"
           ? t("Needs attention")
-          : headline === "waiting"
-            ? t("Waiting")
-            : t("Finished"),
+          : t("Waiting"),
     count: summary[headline],
   };
 }
@@ -327,44 +287,27 @@ function LiveAgentCard({
   const key = projectKey(agent.cwd);
   const project = resolveTabGroupLabel(key, groupLabels, seed);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
-  const elapsed = agent.done
-    ? agent.durationMs != null
-      ? formatLiveElapsed(0, agent.durationMs)
-      : ""
-    : agent.startedAt != null
-      ? formatLiveMinutes(agent.startedAt, now)
-      : "";
-  const activity = agent.issue
-    ? t(agent.issue === "retrying" ? "Retrying" : "Failed")
-    : agent.needsApproval
-      ? t(agent.inputKind === "question" ? "Question" : "Need approval")
-      : agent.done
-        ? t("Done")
-        : agent.waiting
-          ? t("Waiting")
-          : agent.activity;
-  const live = !agent.issue && !agent.needsApproval && !agent.done && !agent.waiting;
+  const elapsed = agent.startedAt != null ? formatLiveMinutes(agent.startedAt, now) : "";
+  const needsAttention = agent.needsApproval || agent.issue === "retrying";
+  const activity = agent.needsApproval
+    ? t(agent.inputKind === "question" ? "Question" : "Need approval")
+    : agent.issue === "retrying"
+      ? t("Retrying")
+      : agent.waiting
+        ? t("Waiting")
+        : agent.activity;
+  const live = !needsAttention && !agent.waiting;
   const remote = isRemoteProjectPath(agent.cwd);
-  const waitReason = agent.waiting && !agent.done ? sessionWaitReasonWith(t, agent.waiting) : "";
+  const waitReason =
+    !needsAttention && agent.waiting ? sessionWaitReasonWith(t, agent.waiting) : "";
   const hint = liveAgentHint({ waitReason, remote, remoteLabel: t("On another machine") });
 
-  const flagged = agent.issue || agent.needsApproval || agent.done || agent.waiting;
-  const tone = agent.issue
-    ? agent.issue === "failed"
-      ? "danger"
-      : "warning"
-    : agent.needsApproval
-      ? "warning"
-      : agent.done
-        ? "success"
-        : agent.waiting
-          ? "neutral"
-          : "accent";
+  const tone = needsAttention ? "warning" : agent.waiting ? "neutral" : "accent";
   return (
     <Button
       // shrink-0: the explicit min height lets flex squeeze a row below its two lines; the list scrolls instead.
       controlMinHeight="compact"
-      padding={{ block: "xs" }}
+      padding={{ block: "xxs" }}
       className="min-w-0 shrink-0 flex-col items-stretch gap-0.5 text-start"
       fullWidth
       motion="none"
@@ -378,15 +321,13 @@ function LiveAgentCard({
       aria-current={selected ? "true" : undefined}
       data-live-agent-card={agent.id}
       data-live-agent-state={
-        agent.issue
-          ? agent.issue
-          : agent.needsApproval
-            ? "input"
-            : agent.done
-              ? "done"
-              : agent.waiting
-                ? "waiting"
-                : "working"
+        agent.needsApproval
+          ? "input"
+          : needsAttention
+            ? "retrying"
+            : agent.waiting
+              ? "waiting"
+              : "working"
       }
       onClick={() => onSelect?.(agent.id)}
     >
@@ -397,29 +338,7 @@ function LiveAgentCard({
             {agent.title}
           </Text>
         </OverflowTooltip>
-        <Text
-          size="caption"
-          tone={tone}
-          className="inline-flex min-w-0 max-w-[50%] items-center gap-1"
-          data-live-agent-status
-        >
-          {agent.issue || agent.needsApproval ? (
-            <CircleAlert aria-hidden className="icon-xs shrink-0" />
-          ) : agent.done ? (
-            <Check aria-hidden className="icon-xs shrink-0" />
-          ) : agent.waiting ? (
-            <Clock aria-hidden className="icon-xs shrink-0" />
-          ) : (
-            <SessionWorkingStatus startedAt={agent.startedAt} showElapsed={false} />
-          )}
-          {flagged ? (
-            <Text size="inherit" tone="inherit" truncate>
-              {activity}
-            </Text>
-          ) : null}
-        </Text>
       </span>
-      {/* Secondary line: where the work lives on the left, its real state on the right. */}
       <Text
         size="caption"
         tone="secondary"
@@ -445,10 +364,29 @@ function LiveAgentCard({
           size="inherit"
           tone="inherit"
           truncate
-          className="min-w-0 flex-1 @max-[220px]/rail:sr-only"
+          className="min-w-0 @max-[220px]/rail:sr-only"
           data-live-agent-project
         >
           {project}
+        </Text>
+        <Text
+          size="inherit"
+          tone={tone}
+          className="inline-flex min-w-0 flex-1 items-center gap-1"
+          data-live-agent-status
+        >
+          {needsAttention ? (
+            <CircleAlert aria-hidden className="icon-xs shrink-0" />
+          ) : agent.waiting ? (
+            <Clock aria-hidden className="icon-xs shrink-0" />
+          ) : (
+            <SessionWorkingStatus startedAt={agent.startedAt} showElapsed={false} />
+          )}
+          {!live ? (
+            <Text size="inherit" tone="inherit" truncate>
+              {activity}
+            </Text>
+          ) : null}
         </Text>
         {elapsed ? (
           <Text

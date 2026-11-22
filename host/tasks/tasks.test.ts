@@ -2273,7 +2273,7 @@ describe("host tasks", () => {
   it.each(["a", "b"])(
     "runs at most two tasks at once, oldest first (%s reaches provider first)",
     async (firstProviderTask) => {
-      const { tasks, input, task, turns, settled, clock, addProject, advance, engine, store } =
+      const { tasks, input, task, turns, settled, clock, addProject, engine, store } =
         await setup();
       expect(MAX_RUNNING_TASKS).toBe(2);
       for (const id of ["a", "b", "c"]) {

@@ -23,6 +23,10 @@
   max-inline-size: min(var(--popup-max-width), 100vw);
 }
 
+.frame[data-popover-appearance="composer"] {
+  border-color: var(--ui-composer-border);
+}
+
 .listContent {
   padding: var(--space-1);
 }

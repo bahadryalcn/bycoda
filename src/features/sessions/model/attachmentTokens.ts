@@ -116,7 +116,11 @@ export function tokenLabel(token: string): string {
  * A token for a number no attachment has, one inside a code span or fenced
  * block, and one glued to a preceding word are ordinary text.
  */
-export function findTokens(text: string, files: TokenFile[]): TokenMatch[] {
+export function findTokens(
+  text: string,
+  files: TokenFile[],
+  code?: readonly (readonly [number, number])[],
+): TokenMatch[] {
   if (!files.length) return [];
   const named = new Map<string, number>();
   if (text.includes("; ref=")) {
@@ -137,7 +141,13 @@ export function findTokens(text: string, files: TokenFile[]): TokenMatch[] {
   }
   const drafts = attachmentDraftTokens(files);
   drafts.forEach((token, index) => named.set(token, index));
-  return findTokenMatches(text, attachmentTokens(files), legacyAttachmentTokens(files), named);
+  return findTokenMatches(
+    text,
+    attachmentTokens(files),
+    legacyAttachmentTokens(files),
+    named,
+    code,
+  );
 }
 
 /** Occurrences of the exact `tokens` (or same-index `aliases`) in `text`; `index` is the token's place in `tokens`. */
@@ -146,11 +156,13 @@ export function findTokenMatches(
   tokens: readonly string[],
   aliases: readonly string[] = [],
   named?: ReadonlyMap<string, number>,
+  /** Code ranges the caller already knows; omitted, they are parsed from `text`. */
+  knownCode?: readonly (readonly [number, number])[],
 ): TokenMatch[] {
   if (!tokens.length || !text.includes("[")) return [];
   const indexByToken = new Map(aliases.map((token, index) => [token, index]));
   tokens.forEach((token, index) => indexByToken.set(token, index));
-  const code = codeRanges(text);
+  const code = knownCode ?? codeRanges(text);
   const matches: TokenMatch[] = [];
   for (const match of text.matchAll(TOKEN)) {
     const index = named?.get(match[0]) ?? indexByToken.get(match[0]);
@@ -175,9 +187,12 @@ export function findTokenMatches(
 }
 
 /** Named references without an owning attachment can still show their filename in the draft. */
-export function splitNamedAttachmentReferences(text: string) {
+export function splitNamedAttachmentReferences(
+  text: string,
+  knownCode?: readonly (readonly [number, number])[],
+) {
   const parts: ({ text: string } | { token: string; name: string })[] = [];
-  const code = codeRanges(text);
+  const code = knownCode ?? codeRanges(text);
   let start = 0;
   for (const match of text.matchAll(NAMED_REFERENCE)) {
     if (code.some(([from, to]) => match.index >= from && match.index < to)) continue;

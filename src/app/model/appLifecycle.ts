@@ -475,7 +475,7 @@ export function loadBootWorkspace(): Promise<BootWorkspace> {
         loadResumedWorkspace(),
       ]);
       const listed =
-        hintedCwd && sameProjectPath(resumed?.projectCwd ?? hintedCwd, hintedCwd) ? hinted : null;
+        hintedCwd && resumed && sameProjectPath(resumed.projectCwd, hintedCwd) ? hinted : null;
       return {
         windowTransfer: null,
         resumed,

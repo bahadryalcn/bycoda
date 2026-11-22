@@ -10,7 +10,7 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
 import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
-import { createWorktree } from "../model/worktrees";
+import { createProjectWorktree } from "../model/remoteWorktrees";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
 import { shortSha } from "../../../shared/lib/shortSha";
@@ -121,7 +121,7 @@ export function SidebarWorktreeSwitcher({
     setCreating(true);
     setCreationError(undefined);
     try {
-      const tree = await createWorktree(focus?.path ?? cwd, createName, "HEAD", false);
+      const tree = await createProjectWorktree(focus?.path ?? cwd, createName, "HEAD", false);
       await refresh();
       // Finishing a creation for a previous project must not navigate this one.
       if (!mounted.current || currentCwd.current !== cwd) return;

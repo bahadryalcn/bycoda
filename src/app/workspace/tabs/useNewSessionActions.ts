@@ -96,7 +96,7 @@ export interface NewSessionActions {
     project: string,
     remoteSessionId: string,
     options?: { preview?: boolean },
-  ) => void;
+  ) => Promise<boolean>;
   onStartInboxItem: (item: InboxItem, body?: string) => Promise<void>;
   onAddNoteToChat: (card: NoteChatRequest) => void;
 }
@@ -251,7 +251,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
             tabs.map((tab) => (tab.id === ownedTab.tab.id ? keepSessionTab(tab) : tab)),
           );
         activateTab(ownedTab.tab.id, ownedTab.id);
-        return;
+        return true;
       }
       // A session still being created by an open tab is that tab's, not a new one.
       const existing = resolveRemoteSessionTarget(
@@ -268,7 +268,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
             tabs.map((tab) => (tab.id === existing.tab.id ? keepSessionTab(tab) : tab)),
           );
         activateTab(existing.tab.id, existing.shellId);
-        return;
+        return true;
       }
       const current = workspaceNavigation.captureRequest?.() ?? (() => true);
       let release: Awaited<ReturnType<typeof reserveSessionWindow>>;
@@ -276,12 +276,12 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         release = await reserveSessionWindow([requestedKey]);
       } catch (error) {
         toast.show({ tone: "warning", message: String(error) });
-        return;
+        return false;
       }
-      if (!release) return;
+      if (!release) return false;
       let retained = false;
       try {
-        if (!current()) return;
+        if (!current()) return false;
         // Recheck after async ownership admission; another local open may have won.
         const already = resolveRemoteSessionTarget(
           tabsRef.current,
@@ -294,7 +294,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         if (already) {
           activateTab(already.tab.id, already.shellId);
           retained = true;
-          return;
+          return true;
         }
         // Never reuse a blank remote composer: it may hold a create/upload in flight.
         const session = newDefaultSession(project, sessionDefaults?.runtimeMode);
@@ -314,6 +314,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         setActiveTabId(tab.id);
         followProject(project);
         retained = true;
+        return true;
       } finally {
         await release(retained).catch((error) =>
           console.error("Conversation ownership release failed", error),

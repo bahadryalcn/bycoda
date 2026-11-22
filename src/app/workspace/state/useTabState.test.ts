@@ -2,10 +2,32 @@
 import { act, createElement, memo, type SetStateAction } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { useActiveTabSetter, useTabState } from "./useTabState";
+import { useActiveTabSetter, useTabState, useWorkspaceSeed } from "./useTabState";
 import { newSession } from "../../../features/sessions/model/session";
 import { getSessions, setSessions } from "../../../features/sessions/model/sessionsStore";
 import { newTab } from "../../../features/workspace/model/layout";
+
+it("starts in No project when only recent projects exist", () => {
+  const recentsKey = "bycoda.recentProjects";
+  const previousRecents = localStorage.getItem(recentsKey);
+  localStorage.setItem(recentsKey, JSON.stringify([{ path: "/byshoot", openedAt: 1 }]));
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  let cwd: string | undefined;
+  function Harness() {
+    cwd = useWorkspaceSeed({ toolWindow: null }).session.cwd;
+    return null;
+  }
+  try {
+    act(() => root.render(createElement(Harness)));
+    expect(cwd).toBe("~");
+  } finally {
+    act(() => root.unmount());
+    if (previousRecents === null) localStorage.removeItem(recentsKey);
+    else localStorage.setItem(recentsKey, previousRecents);
+    vi.unstubAllGlobals();
+  }
+});
 
 it.each(["advisor", "subagent"])(
   "removes a %s tab when its lineage arrives without removing the session",

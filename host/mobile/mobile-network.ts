@@ -8,8 +8,9 @@ export type NetworkInterfaces = ReturnType<typeof networkInterfaces>;
 
 /** `os.networkInterfaces()` is a synchronous adapter query (~20 ms on Windows, more
  * under load) and status reads call it per address on every poll, so it blocked the
- * Host event loop for seconds at a time. Share one snapshot for one LAN poll period. */
-const INTERFACES_CACHE_MS = 5_000;
+ * Host event loop for seconds at a time. Share one snapshot as long as the route probe
+ * (a profile still showed this read at ~100 ms every 5 s under load). */
+const INTERFACES_CACHE_MS = 30_000;
 let interfaces: { value: ReturnType<typeof networkInterfaces>; at: number } | undefined;
 export function currentNetworkInterfaces(): ReturnType<typeof networkInterfaces> {
   if (!interfaces || elapsedSince(interfaces.at) >= INTERFACES_CACHE_MS)

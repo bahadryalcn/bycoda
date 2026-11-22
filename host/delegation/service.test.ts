@@ -802,6 +802,21 @@ describe("agents.wait", () => {
     });
   });
 
+  it("marks the result unavailable when a succeeded child's transcript cannot be loaded", async () => {
+    setup({ subagents: [codexFive] });
+    const started = await delegate("req-1");
+    host.finish(String(started.sessionId), "Parser fixed.");
+    const load = host.store.session;
+    host.store.session = async (sessionId: string, signal?: AbortSignal) => {
+      // Only the reply load carries a deadline signal; the status check reads without one.
+      if (signal) throw new Error("timed out");
+      return await load(sessionId);
+    };
+    const waited = await call("agents.wait", { runId: started.runId });
+    expect(waited).toMatchObject({ status: "succeeded", resultUnavailable: true });
+    expect(waited).not.toHaveProperty("result");
+  });
+
   it("reports a failed child with its error note", async () => {
     setup({ subagents: [codexFive] });
     const started = await delegate("req-1");

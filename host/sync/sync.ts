@@ -1,4 +1,6 @@
 import { StoreDatabase } from "../store-db";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { syncDbTiming } from "../diagnostics/perf-metrics";
 type SyncDatabase = DatabaseSync | StoreDatabase;
 import type { DatabaseSync } from "node:sqlite";
 import { canonicalJson } from "../../src/features/sync/model/canonicalJson";
@@ -71,18 +73,17 @@ export async function syncPull(
   sinceRev: number,
   page?: { untilRev?: number; maxBytes?: number },
 ): Promise<SyncPullResult> {
+  const timing = syncDbTiming.getStore();
+  const queuedAt = monotonicNow();
   const work = async () => {
-    const untilRev = Math.min(page?.untilRev ?? (await currentRev(db)), await currentRev(db));
+    if (timing) timing.dbWaitMs = elapsedSince(queuedAt);
+    const latest = await currentRev(db);
+    const untilRev = Math.min(page?.untilRev ?? latest, latest);
     const maxBytes = Math.max(128 * 1024, Math.min(page?.maxBytes ?? 1024 * 1024, 8 * 1024 * 1024));
-    const rows = db
-      .prepare(
-        "SELECT table_name, id, value, rev FROM sync_records WHERE rev > ? AND rev <= ? ORDER BY rev",
-      )
-      .iterate(sinceRev, untilRev);
     const records: SyncRecord[] = [];
     let bytes = 256;
     let cursor = sinceRev;
-    for await (const row of rows) {
+    for await (const row of pulledRows(db, sinceRev, untilRev)) {
       const { corrupt, ...record } = rowToRecord(row);
       if (!corrupt) {
         const size = Buffer.byteLength(JSON.stringify(record), "utf8") + 1;
@@ -97,7 +98,27 @@ export async function syncPull(
     }
     return page ? { rev: untilRev, records, more: false, untilRev } : { rev: untilRev, records };
   };
-  return db instanceof StoreDatabase ? db.scope(work) : work();
+  // A pull only reads committed records: it runs on one read snapshot beside the writer queue.
+  return db instanceof StoreDatabase ? db.readScope(work) : work();
+}
+
+const PULL_BATCH_ROWS = 256;
+/** Rows in `(sinceRev, untilRev]`, oldest first, read in bounded keyset batches. */
+async function* pulledRows(db: SyncDatabase, sinceRev: number, untilRev: number) {
+  // Every accepted write gets its own rev; rowid keeps a shared legacy rev from being skipped.
+  const first = db.prepare(
+    `SELECT rowid AS row_key, table_name, id, value, rev FROM sync_records WHERE rev > ? AND rev <= ? ORDER BY rev, rowid LIMIT ${PULL_BATCH_ROWS}`,
+  );
+  const next = db.prepare(
+    `SELECT rowid AS row_key, table_name, id, value, rev FROM sync_records WHERE (rev, rowid) > (?, ?) AND rev <= ? ORDER BY rev, rowid LIMIT ${PULL_BATCH_ROWS}`,
+  );
+  let rows = await first.all(sinceRev, untilRev);
+  for (;;) {
+    yield* rows;
+    if (rows.length < PULL_BATCH_ROWS) return;
+    const last = rows[rows.length - 1];
+    rows = await next.all(last.rev, last.row_key, untilRev);
+  }
 }
 
 const MAX_VALUE_BYTES = 64 * 1024;

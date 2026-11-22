@@ -30,6 +30,7 @@ import {
   readCommandReceipt,
   readWorkspaceReceipt,
 } from "./storage/command-receipt-retention";
+import type { StoredCommandReceipt } from "./domains/commands/service";
 import {
   initializeWorkspaceSessionProbe,
   startupSessionStates,
@@ -2883,11 +2884,54 @@ export class HostStore {
   }
   async receiptStatus(
     id: string,
-    options: { admit?: boolean } = {},
-  ): Promise<CommandReceipt | undefined> {
-    return this.db.storeScope(() => readCommandReceipt(this.db, id, undefined, options));
+    options: { admit?: boolean; includeSteer?: boolean } = {},
+  ): Promise<StoredCommandReceipt | undefined> {
+    return this.db.storeScope(async () => {
+      const receipt = await readCommandReceipt(this.db, id, undefined, options);
+      if (
+        !options.includeSteer ||
+        options.admit ||
+        !receipt ||
+        receipt.steer ||
+        receipt.runId ||
+        !receipt.sessionId
+      )
+        return receipt;
+      // Older Hosts recorded admission alone. A retained follow-up draft still carries
+      // authoritative delivery evidence even though its receipt lacks a steer marker.
+      const command = await this.db
+        .prepare(
+          "SELECT json_extract(payload,'$.command.type') AS kind,json_extract(payload,'$.command.runId') AS runId FROM events WHERE session_id=? AND revision=? AND json_extract(payload,'$.command.commandId')=?",
+        )
+        .get(receipt.sessionId, receipt.revision, id);
+      if (command) {
+        if (command.kind === "steer" && typeof command.runId === "string")
+          receipt.steer = { runId: command.runId };
+        return receipt;
+      }
+      const session = await this.find(receipt.sessionId);
+      const block = session?.session.blocks.find((item) => item.id === id);
+      if (block?.followUpDelivery) receipt.steer = { runId: session?.runId ?? id };
+      return receipt;
+    });
   }
-  async recordReceipt(signature: string, receipt: CommandReceipt): Promise<void> {
+  async bindSteerClaim(id: string, token: string): Promise<void> {
+    this.db.assertCriticalScope();
+    await this.db
+      .prepare("UPDATE receipts SET receipt=json_set(receipt,'$.steer.claimToken',?) WHERE id=?")
+      .run(token, id);
+  }
+  async settleSteerReceipt(id: string, outcome: "delivered" | "not_delivered"): Promise<void> {
+    this.db.assertCriticalScope();
+    for (const table of ["receipts", "compact_command_receipts"]) {
+      await this.db
+        .prepare(
+          `UPDATE ${table} SET receipt=json_set(receipt,'$.steer.outcome',?) WHERE id=? AND json_type(receipt,'$.steer')='object' AND json_type(receipt,'$.steer.outcome') IS NULL`,
+        )
+        .run(outcome, id);
+    }
+  }
+  async recordReceipt(signature: string, receipt: StoredCommandReceipt): Promise<void> {
     return this.db.storeScope(() =>
       this.transaction(async () => {
         this.db.assertCriticalScope();
@@ -3223,6 +3267,42 @@ export class HostStore {
   }
   /** Positive credentials are cached for 1.5s. Local authorization changes
    * invalidate immediately; external SQLite changes are checked at expiry. */
+  async authenticateIncomingDevice(token: string): Promise<boolean> {
+    const cached = this.authCache.get(token);
+    if (!cached || cached.expires > Date.now()) return this.authenticated(token);
+    // Only the initial HTTP check uses its own committed snapshot. Cold credentials and
+    // checks inside an operation keep their existing writer/transaction ordering.
+    const expires = Date.now() + 1500;
+    const hash = this.hash(token);
+    const row = await this.db.readScope(() =>
+      this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash),
+    );
+    if (this.authCache.get(token) !== cached || Date.now() >= expires)
+      return this.authenticated(token);
+    if (!row) {
+      this.authCache.delete(token);
+      return false;
+    }
+    cached.expires = expires;
+    // Presence is best effort. The indexed UPDATE cannot recreate a revoked device.
+    void this.noteDeviceSeen(hash).catch(() => undefined);
+    return true;
+  }
+
+  private async noteDeviceSeen(hash: string): Promise<void> {
+    const now = Date.now();
+    const previous = this.deviceLastSeen.get(hash);
+    if (previous !== undefined && now - previous < 60_000) return;
+    this.deviceLastSeen.set(hash, now);
+    while (this.deviceLastSeen.size > 256)
+      this.deviceLastSeen.delete(this.deviceLastSeen.keys().next().value!);
+    try {
+      await this.db.prepare("UPDATE devices SET last_seen_at=? WHERE hash=?").run(now, hash);
+    } catch {
+      // Activity metadata is best effort; valid credentials still authenticate.
+    }
+  }
+
   async authenticated(token: string): Promise<boolean> {
     const cached = this.authCache.get(token);
     if (cached && cached.expires > Date.now()) return true;
@@ -3237,18 +3317,7 @@ export class HostStore {
       const hash = this.hash(token);
       const known = !!(await this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash));
       if (known) {
-        const now = Date.now();
-        const previous = this.deviceLastSeen.get(hash);
-        if (previous === undefined || now - previous >= 60_000) {
-          this.deviceLastSeen.set(hash, now);
-          while (this.deviceLastSeen.size > 256)
-            this.deviceLastSeen.delete(this.deviceLastSeen.keys().next().value!);
-          try {
-            await this.db.prepare("UPDATE devices SET last_seen_at=? WHERE hash=?").run(now, hash);
-          } catch {
-            // Activity metadata is best effort; valid credentials still authenticate.
-          }
-        }
+        await this.noteDeviceSeen(hash);
         this.authCache.set(token, { version, expires: Date.now() + 1500 });
         while (this.authCache.size > 256)
           this.authCache.delete(this.authCache.keys().next().value!);

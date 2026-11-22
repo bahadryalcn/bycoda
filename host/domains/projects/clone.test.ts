@@ -11,7 +11,6 @@ import {
   runGitClone,
   validateCloneName,
   validateCloneUrl,
-  type CloneChild,
   type CloneFolderPorts,
 } from "./clone";
 import { createProjectsService } from "./service";
@@ -151,27 +150,19 @@ it("removes the partial folder a failed clone claimed, so a retry can use the na
   ).resolves.toEqual({ path: join(root, "retry") });
 });
 
-it("kills the whole clone tree when the deadline passes", async () => {
-  const closeListeners: Array<(code: number | null) => void> = [];
-  const kill = vi.fn(() => closeListeners.forEach((listener) => listener(null)));
-  const killTree = vi.fn();
-  const child = {
-    pid: 4242,
-    stderr: { setEncoding() {}, on() {} },
-    once(event: string, listener: (code: number | null) => void) {
-      if (event === "close") closeListeners.push(listener);
-    },
-    kill,
-  } as unknown as CloneChild;
+it("uses the network pool deadline and reports a clone timeout", async () => {
+  const exec = vi.fn().mockRejectedValue(Object.assign(new Error("timed out"), { killed: true }));
   await expect(
     runGitClone("https://h/a/b", "/x/b", {
-      spawn: () => child,
-      killTree,
+      exec,
       deadlineMs: 5,
     }),
   ).rejects.toThrow("git clone timed out");
-  expect(killTree).toHaveBeenCalledWith(4242);
-  expect(kill).toHaveBeenCalled();
+  expect(exec).toHaveBeenCalledWith(
+    "git",
+    ["clone", "--progress", "--", "https://h/a/b", "/x/b"],
+    expect.objectContaining({ lane: "network", timeout: 5 }),
+  );
 });
 
 it("service rejects a parent that is not an existing absolute directory", async () => {

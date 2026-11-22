@@ -489,12 +489,12 @@ test("composer attachment submission stays local and keeps Stop available", asyn
   );
   await expect(
     page.getByRole("button", {
-      name: "Remove clipboard-image.png",
+      name: "Open clipboard-image.png",
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
-    /Keep this chat draft/,
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toContainText(
+    "Keep this chat draft",
   );
 });
 
@@ -2095,7 +2095,7 @@ test("external drop: the composer shows one mark and one badge that names the at
   await fileDrag(box, "drop", [{ name: "dropped.png", type: "image/png" }]);
   await expect(dropBadge(page)).toHaveCount(0);
   await expect(dropMarks(page)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Remove dropped\.png/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open dropped.png", exact: true })).toBeVisible();
 
   // More files than a draft can hold: the badge says how many will be kept.
   await fileDrag(box, "dragover", files(25));
@@ -2361,6 +2361,32 @@ test("queue row icons and saved account presentation", async ({ page }) => {
   }
 });
 
+test("replaces Steer with Send again on the unconfirmed queue row", async ({ page }) => {
+  await initializeChatLayout(page);
+  for (const theme of ["dark", "light"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts&queue-state=unknown&theme=${theme}`,
+      );
+      const card = page.locator("[data-message-queue-card]");
+      const review = card.locator('[data-delivery-progress="unknown"]');
+      const retry = review.getByRole("button", { name: "Send again", exact: true });
+      await expect(retry).toBeVisible();
+      await expect(retry).toHaveAttribute("data-button-tone", "warning");
+      await expect(retry).toBeEnabled();
+      await expect(card.getByRole("button", { name: "Steer", exact: true })).toHaveCount(1);
+      await expect(card.getByRole("button", { name: "Remove queued message" })).toHaveCount(2);
+      await expect(card.getByRole("button", { name: "Discard", exact: true })).toHaveCount(0);
+      await expect(card.getByRole("button", { name: "Resume", exact: true })).toHaveCount(0);
+      await card.screenshot({
+        animations: "disabled",
+        path: `temp/verification/queue-steer-sync/review-${theme}-${width}.png`,
+      });
+    }
+  }
+});
+
 test("queue removal offers inline Undo without a confirmation", async ({ page }) => {
   await initializeChatLayout(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -2508,16 +2534,22 @@ for (const theme of ["light", "dark"])
       );
       const marker = page.locator('[data-probe="extras"] [data-surface-radius="pill"]').first();
       const count = page.locator('[data-extras-trigger] [data-surface-radius="sm"]');
-      const ring = page.locator('[data-probe="delegation"] [data-surface-radius="pill"]').first();
+      const account = page.locator('[data-probe="delegation"] [data-model-account-number]');
       const help = page.locator("[data-model-setting-help]");
       await expect(marker).toBeVisible();
       await expect(count).toBeVisible();
-      await expect(ring).toBeVisible();
+      await expect(account).toBeVisible();
+      await expect(account).toHaveText("2");
+      expect(
+        await account.evaluate((node) =>
+          getComputedStyle(node).getPropertyValue("--badge-identity").trim(),
+        ),
+      ).toBe("#b55272");
       const computed = await Promise.all(
-        [marker, count, ring].map((loc) =>
+        [marker, count].map((loc) =>
           loc.evaluate((node) => {
             const s = getComputedStyle(node);
-            return { bg: s.backgroundColor, shadow: s.boxShadow };
+            return { bg: s.backgroundColor };
           }),
         ),
       );
@@ -2530,13 +2562,11 @@ for (const theme of ["light", "dark"])
         };
         const accent = background("var(--color-accent)");
         const selection = background("var(--color-selection)");
-        const base = background("var(--color-background-base)");
         probe.remove();
-        return { accent, selection, base };
+        return { accent, selection };
       });
       expect(computed[0]!.bg).toBe(expected.accent);
       expect(computed[1]!.bg).toBe(expected.selection);
-      expect(computed[2]!.shadow).toContain(`${expected.base} 0px 0px 0px 2px`);
       const helpBorder = await help.evaluate((node) => {
         const style = getComputedStyle(node);
         const probe = document.createElement("span");

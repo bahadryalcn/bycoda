@@ -11,7 +11,7 @@ import { orchestrator } from "../../../features/orchestration/model/orchestratio
 import { upsertSession } from "../../../features/sessions/data/sessionStore";
 
 export interface OrchestrationActionsDeps {
-  onOpenApprovalSession: (sessionId: string) => unknown;
+  onOpenApprovalSession: (sessionId: string) => Promise<boolean>;
   queueWorkerPanes: (workers: OrchestrationWorkerDetail[]) => void;
   onSubmit: Submit;
 }
@@ -110,11 +110,5 @@ export function useOrchestrationActions({
     [onOpenApprovalSession, queueWorkerPanes, onSubmit, updateOrchestrationCard],
   );
 
-  const onSelectLiveAgent = useCallback(
-    (sessionId: string) => {
-      void onOpenApprovalSession(sessionId);
-    },
-    [onOpenApprovalSession],
-  );
-  return { orchestrationActions, onSelectLiveAgent };
+  return { orchestrationActions, onSelectLiveAgent: onOpenApprovalSession };
 }

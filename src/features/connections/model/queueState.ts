@@ -42,6 +42,12 @@ export type QueueState =
  * turn another side runs). The follow-up waits its turn in the queue. */
 const STEER_BUSY_ELSEWHERE = /cannot be redirected through the host/i;
 
+/** Exact Host refusals raised before a steer can reach the provider. */
+export const steerWaitReason = (failure: string): boolean =>
+  /(?:This request belongs to a finished or replaced turn|This turn was stopped|The active turn is not ready for steering)\.?$/.test(
+    failure,
+  );
+
 /**
  * What a follow-up the host did not take means for its queue. An explicit
  * refusal is a failed delivery (`reject`: held for the owner). Anything else,
@@ -52,6 +58,7 @@ export function followUpRefusalEvent(failure?: string): QueueEvent {
   return failure &&
     /Host rejected request:/.test(failure) &&
     !STEER_BUSY_ELSEWHERE.test(failure) &&
+    !steerWaitReason(failure) &&
     !isLeaseHeld(failure)
     ? "reject"
     : "coordination";

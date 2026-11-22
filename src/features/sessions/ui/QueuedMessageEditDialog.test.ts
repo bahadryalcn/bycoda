@@ -137,27 +137,37 @@ describe("QueuedMessageEditDialog", () => {
     expect(document.body.querySelector('[aria-label="Remove shot.png"]')).not.toBeNull();
   });
 
-  it("pastes copied prose with a single reference for the attached image", async () => {
-    const file = message.attachments[0];
-    vi.spyOn(attachmentApi, "attachmentsFromFiles").mockResolvedValue([file]);
-    const { field, button, onSave } = await open({
-      message: { id: "empty", text: "Before replace after", attachments: [] },
-    });
-    field.setSelectionRange(7, 14);
-    const event = new Event("paste", { bubbles: true, cancelable: true });
-    Object.defineProperty(event, "clipboardData", {
-      value: {
-        getData: (type: string) =>
-          type === "text/html"
-            ? '<img data-bycoda-file="shot.png" src="data:image/png;base64,AA==">'
-            : "[image1] See image",
-      },
-    });
-    await act(async () => field.dispatchEvent(event));
-    expect(event.defaultPrevented).toBe(true);
-    await act(async () => button("Save").click());
-    expect(onSave).toHaveBeenCalledWith("Before See image [Image 1 · 1 B] after", [file]);
-  });
+  it.each([false, true])(
+    "pastes copied prose with a single image reference (inline: %s)",
+    async (inline) => {
+      const file = message.attachments[0];
+      vi.spyOn(attachmentApi, "attachmentsFromFiles").mockResolvedValue([file]);
+      const { field, button, onSave } = await open({
+        message: { id: "empty", text: "Before replace after", attachments: [] },
+      });
+      field.setSelectionRange(7, 14);
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: {
+          getData: (type: string) =>
+            type === "text/html"
+              ? (inline
+                  ? '<pre data-bycoda-reference-text="[Image: Attachment; ref=clipboard-0] See image"></pre>'
+                  : "") + '<img data-bycoda-file="shot.png" src="data:image/png;base64,AA==">'
+              : "[image1] See image",
+        },
+      });
+      await act(async () => field.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(true);
+      await act(async () => button("Save").click());
+      expect(onSave).toHaveBeenCalledWith(
+        inline
+          ? "Before [Image 1 · 1 B] See image after"
+          : "Before See image [Image 1 · 1 B] after",
+        [file],
+      );
+    },
+  );
 
   it("removing a chip removes its token", async () => {
     const { field, button, onSave } = await open();

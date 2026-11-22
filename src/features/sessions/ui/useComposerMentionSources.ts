@@ -218,6 +218,7 @@ export function useComposerMentionSources(input: {
     workItemsLoading: workItems.loading,
     workItemsScoped: workItems.scoped,
     workItemsAvailable: workItems.available,
+    workItemsFailure: workItems.failure,
     serversScoped,
     serversAvailable: rankedFiles.some(serverMentionOf),
     serversLoading: serversScoped && !remote && !serversFailed && servers === null,

@@ -79,6 +79,7 @@ export function useAdoptedSessions(
   /** The workspace store's change notifications (`subscribeShell`): a tab opened on a
    * listed conversation is compared at once instead of on the next timer. */
   subscribeSessions?: (listener: () => void) => () => void,
+  hydrate?: MutableRefObject<((id: string) => Promise<boolean>) | undefined>,
 ): MutableRefObject<boolean> {
   const hostReachable = useRef(false);
   useEffect(() => {
@@ -207,6 +208,7 @@ export function useAdoptedSessions(
             return host;
           },
           local: () => (stopped ? [] : sessionsRef.current.filter(desktopOwned)),
+          hydrate: (id) => hydrate?.current?.(id) ?? Promise.resolve(false),
           mirrored,
           // Only an explicit refresh saves a separate copy, before it replaces
           // the local conversation. A failed backup leaves the original untouched.
@@ -489,6 +491,6 @@ export function useAdoptedSessions(
       window.removeEventListener("bycoda:remote-machines", onWake);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [sessionsRef, setSessions, loadRunning, refreshRef, subscribeSessions]);
+  }, [sessionsRef, setSessions, loadRunning, refreshRef, subscribeSessions, hydrate]);
   return hostReachable;
 }

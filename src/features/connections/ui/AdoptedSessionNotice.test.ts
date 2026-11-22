@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { AdoptedSessionNotice } from "./AdoptedSessionNotice";
 import { newSession } from "../../sessions/model/session";
-import { ADOPTED_RUNNING_REASON, ADOPTED_UNSYNCED_MESSAGE } from "../model/adoptedSessions";
+import { ADOPTED_UNSYNCED_MESSAGE } from "../model/adoptedSessions";
 import { setAdoptedSyncing } from "../model/adoptedSyncing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -32,16 +32,14 @@ it("leaves host execution to the header mark without a notice row", () => {
   expect(renderToString(createElement(AdoptedSessionNotice, { session }))).toBe("");
 });
 
-it("shows queued waiting during host execution without hiding or replacing the composer", () => {
+it("leaves the pending message's status in its queue row", () => {
   const session = {
     ...newSession("codex", "/fake"),
     continuingElsewhere: true,
     queuedMessages: [{ id: "q", text: "waiting", attachments: [] }],
   };
   const html = renderToString(createElement(AdoptedSessionNotice, { session }));
-  expect(html).toContain('role="status"');
-  expect(html).not.toContain(ADOPTED_RUNNING_REASON);
-  expect(html).toContain("Queue is waiting for the current turn to finish.");
+  expect(html).toBe("");
 });
 it("does not leave a waiting notice after the mirrored host turn settles", () => {
   const session = newSession("codex", "/fake");

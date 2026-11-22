@@ -18,6 +18,7 @@ export type { SkillGroup, SkillGroupInput } from "./model/skillGroups";
 export { autoGroupSkills, parseSkillGroupProposal } from "./model/autoGroupSkills";
 export type { GroupingSkill, AutoGroupSkillsOptions } from "./model/autoGroupSkills";
 export type { SkillGroupingModel } from "./model/skillGroupingModel";
+export { skillInvocationTokens } from "./model/skillTokens";
 export {
   isSkillGroupPickerItem,
   skillGroupMembers,

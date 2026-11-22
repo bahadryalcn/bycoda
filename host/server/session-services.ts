@@ -8,7 +8,7 @@ import { parseRemoteAttachments, resolveAttachments } from "../attachments/attac
 import { browseHostDirectories, createHostDirectory } from "../browser/browse";
 import { initializeEmptyProjectRepository } from "../git/git-init";
 import { DesktopCommandDelivery } from "../desktop/desktop-command-delivery";
-import { spawn } from "node:child_process";
+import { hostGitExec } from "../git/git-exec-pool";
 import { dirname } from "node:path";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { createProjectsService } from "../domains/projects/service";
@@ -57,21 +57,7 @@ export function createSessionServicesRuntime(
   const projectsService = createProjectsService({
     list: dependencies.namedProjects,
     clonePorts: {
-      // POSIX: a process group of its own, so the tree can be killed together.
-      spawn: (command, args, options) =>
-        spawn(command, args, { ...options, detached: process.platform !== "win32" }),
-      killTree: (pid) => {
-        // git's transport helpers (git-remote-https, ssh) are grandchildren that a plain kill leaves running.
-        const killer =
-          process.platform === "win32"
-            ? spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
-                windowsHide: true,
-                stdio: "ignore",
-              })
-            : spawn("kill", ["-KILL", "--", `-${pid}`], { stdio: "ignore" });
-        // Best effort: the caller still kills the direct child, so a missing killer is not an error.
-        killer.on("error", () => {});
-      },
+      exec: hostGitExec.exec.bind(hostGitExec),
       folders: {
         exists: (path) =>
           stat(path).then(

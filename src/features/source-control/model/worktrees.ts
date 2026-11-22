@@ -8,7 +8,12 @@ import {
   resolveProjectLocation,
 } from "../../../platform/tauri/fs";
 import { isFilesystemTab, type FilePaneTab } from "../../workspace/model/layout";
-import { isEqualOrInside, pathKey, parentPath } from "../../../shared/lib/paths";
+import {
+  isEqualOrInside,
+  isRemoteProjectPath,
+  pathKey,
+  parentPath,
+} from "../../../shared/lib/paths";
 import { isBlankSession } from "../../projects/public/projectReturn";
 import { t } from "../../../shared/i18n/gitCore";
 
@@ -38,8 +43,10 @@ export type WorktreeRemovalReview = {
   hasTerminals: boolean;
   hasAgents: boolean;
 };
-export const reviewWorktreeRemoval = (cwd: string, path: string) =>
-  invoke<WorktreeRemovalReview>("git_worktree_removal_review", { cwd, path });
+export const reviewWorktreeRemoval = async (cwd: string, path: string) => {
+  assertLocalRemoval(cwd, path);
+  return invoke<WorktreeRemovalReview>("git_worktree_removal_review", { cwd, path });
+};
 
 export const listWorktrees = (cwd: string) => invokeWorkspace<Worktrees>("git_worktrees", { cwd });
 
@@ -106,6 +113,16 @@ export function namedWorktreeBranch(fragment: string): string | null {
   return clean ? `mc/${clean}` : null;
 }
 
+/** Native removal accepts only local paths. Remote removal routes through the owning Host. */
+function assertLocalRemoval(...paths: string[]) {
+  if (paths.some(isRemoteProjectPath))
+    throw new Error(
+      t(
+        "Deleting worktrees runs on this computer, so it is unavailable for a project on a connected machine.",
+      ),
+    );
+}
+
 export async function removeWorktree(
   cwd: string,
   path: string,
@@ -113,6 +130,7 @@ export async function removeWorktree(
   keepSessions = false,
   expectedReview?: WorktreeRemovalReview,
 ) {
+  assertLocalRemoval(cwd, path);
   const result = await invoke<{ sessionIds: string[]; projectCwd: string }>("git_worktree_remove", {
     cwd,
     path,
@@ -139,8 +157,10 @@ export async function removeOrchestrationBranch(cwd: string, branch: string) {
 }
 
 /** Read-only preflight; final removal must still recheck for new blockers. */
-export const checkWorktreeRemoval: RemoveWorktree = (cwd, path, force) =>
-  invoke("git_worktree_check_remove", { cwd, path, force });
+export const checkWorktreeRemoval: RemoveWorktree = async (cwd, path, force) => {
+  assertLocalRemoval(cwd, path);
+  return invoke("git_worktree_check_remove", { cwd, path, force });
+};
 
 export function assertWorktreeFilesClosed(path: string, files: readonly FilePaneTab[]) {
   if (

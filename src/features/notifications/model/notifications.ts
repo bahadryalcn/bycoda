@@ -12,6 +12,8 @@ import {
   decideNotification,
   maskLockedNotification,
   sessionsNeedingAttention,
+  turnEndedAt,
+  turnErrorId,
   turnKey,
   turnOutcome,
   type AttentionKind,
@@ -559,17 +561,41 @@ export async function announceBackgroundFinish(
  * its in-app sound fallback. A failure or usage limit gets its own banner; a
  * stop the user asked for gets none.
  */
-const announcedIssues = new Map<string, string>();
+const announcedIssues = new Map<
+  string,
+  { turn: string; issue: string; errors: Set<string>; summaryOnly: boolean }
+>();
 
+/**
+ * One banner per issue event. Each error block of a turn is its own event. `summary` marks an
+ * announcement made from a Host's session summary before the session was opened: the error
+ * block that opening later shows for the same turn is that same event, not a new one.
+ */
 export async function announceSessionIssue(
   session: Session,
   issue: "retrying" | "failed",
   sessionVisible: boolean,
+  source?: "summary",
 ): Promise<void> {
-  const key = `${turnKey(session)}:${issue}`;
-  if (announcedIssues.get(session.id) === key) return;
-  if (announcedIssues.size >= 1000) announcedIssues.delete(announcedIssues.keys().next().value!);
-  announcedIssues.set(session.id, key);
+  const turn = turnKey(session);
+  const error = issue === "failed" ? turnErrorId(session) : "";
+  const seen = announcedIssues.get(session.id);
+  if (seen?.turn === turn && seen.issue === issue) {
+    if (source === "summary" || seen.errors.has(error)) return;
+    seen.errors.add(error);
+    if (seen.summaryOnly) {
+      seen.summaryOnly = false;
+      return;
+    }
+  } else {
+    if (announcedIssues.size >= 1000) announcedIssues.delete(announcedIssues.keys().next().value!);
+    announcedIssues.set(session.id, {
+      turn,
+      issue,
+      errors: new Set(source === "summary" ? [] : [error]),
+      summaryOnly: source === "summary",
+    });
+  }
   await notifySession(session, "failed", sessionVisible);
 }
 
@@ -627,11 +653,14 @@ async function notifyProjectSession(
   if (kind !== "input" && loadNotificationEvents()[kind] && allowsProjectNotification(subject)) {
     logNotification({
       kind,
-      key: `${session.id}:${kind}:${turnKey(session)}`,
+      key: `${session.id}:${kind}:${turnKey(session)}${kind === "failed" ? `:${turnErrorId(session)}` : ""}`,
       title: session.title,
       label: attentionText(session, kind, { projectName: notificationProjectName(session) }).body,
       session,
-      occurredAt: subject.occurredAt ?? Date.now(),
+      // A turn that ended before this was announced (written after a reconnect) keeps its own
+      // time; the announcement time is stored apart.
+      occurredAt: Math.min(turnEndedAt(session) ?? Infinity, subject.occurredAt ?? Date.now()),
+      announcedAt: subject.occurredAt ?? Date.now(),
       locked: isProjectLocked(session.cwd),
     });
   }

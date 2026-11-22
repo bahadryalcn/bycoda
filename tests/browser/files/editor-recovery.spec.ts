@@ -292,7 +292,6 @@ async function openCopy(page: Page) {
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 async function openEarlierReports(page: Page) {
-  await page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ }).click();
   await expect(page.getByRole("dialog", { name: "Recovered work", exact: true })).toBeVisible();
   await page.getByRole("tab", { name: /^Earlier file reports/ }).click();
   expect((await snapshot(page)).legacyCalls).toEqual([]);
@@ -532,6 +531,7 @@ test("a late report inspection stays concealed after lock and unlock until anoth
 }, info) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/tests/browser/files/editor-recovery.html?hold-legacy");
+  await page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ }).click();
   await openEarlierReports(page);
   await legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }).click();
   await expect.poll(async () => (await snapshot(page)).legacyCalls.length).toBe(2);
@@ -579,10 +579,14 @@ test("a late report inspection stays concealed after lock and unlock until anoth
   expect((await snapshot(page)).legacyReport.held).toBe(true);
 });
 
-test("the desktop recovery entry reaches retained reports with no conversations or new-format copies", async ({
+test("the command palette reaches retained reports when the empty recovery row is hidden", async ({
   page,
 }) => {
   await page.goto("/tests/browser/files/editor-recovery.html?legacy-only");
+  await fixtureReady(page);
+  await expect(page.getByRole("button", { name: /^Recovered work/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Command Palette", exact: true }).click();
+  await page.getByRole("option", { name: "Recovered work", exact: true }).click();
   await openEarlierReports(page);
   await legacyRow(page).getByRole("button", { name: "Inspect report", exact: true }).click();
   await page.getByRole("button", { name: "Find file recovery copies", exact: true }).click();
@@ -603,6 +607,7 @@ for (const width of [1280, 800]) {
       await page.goto(
         `/tests/browser/files/editor-recovery.html?legacy-error${light ? "&light" : ""}`,
       );
+      await page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ }).click();
       await openEarlierReports(page);
       const blocked = page
         .getByRole("list", { name: "Earlier file reports", exact: true })

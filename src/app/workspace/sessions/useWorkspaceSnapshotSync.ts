@@ -1,11 +1,4 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import {
-  lastProjectPath,
-  loadRecents,
-  looksLikeProject,
-  rememberProject,
-} from "../../../features/projects/model/recents";
+import { useEffect, type MutableRefObject } from "react";
 import {
   reconcileProjectReturn,
   type ProjectReturnMemory,
@@ -20,7 +13,6 @@ import {
   saveWorkspaceSnapshot,
 } from "../../../features/sessions/data/sessionStore";
 import type { Session } from "../../../features/sessions/model/session";
-import { setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
   collectWorkspaceSnapshot,
   workspaceSnapshotKey,
@@ -51,14 +43,9 @@ export interface WorkspaceSnapshotSyncDeps {
   inFlightSyncKey: MutableRefObject<string | null>;
   sawInFlight: MutableRefObject<boolean>;
   workspaceSyncKey: MutableRefObject<string | null>;
-  setProjectCwd: Dispatch<SetStateAction<string>>;
-  setRecents: Dispatch<SetStateAction<ReturnType<typeof loadRecents>>>;
 }
 
-/**
- * In-flight session sync, debounced workspace snapshot save and the one-time
- * `default_cwd` seed. Three effects in their original order.
- */
+/** Persists in-flight sessions and the workspace snapshot. */
 export function useWorkspaceSnapshotSync({
   tabs,
   sessions,
@@ -76,10 +63,9 @@ export function useWorkspaceSnapshotSync({
   inFlightSyncKey,
   sawInFlight,
   workspaceSyncKey,
-  setProjectCwd,
-  setRecents,
 }: WorkspaceSnapshotSyncDeps): void {
   const serverRestore = useServerTerminalRestoreState();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep native interrupted-session records in sync with active local work.
   useEffect(() => {
     const refs = inFlightRefs(sessions, tabs);
     if (refs.length > 0) sawInFlight.current = true;
@@ -93,6 +79,7 @@ export function useWorkspaceSnapshotSync({
     });
   }, [sessions, tabs]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Persist the current window layout for the next launch.
   useEffect(() => {
     if (windowTransfer || toolWindow) return;
     // Collect and key inside the debounce: a burst of session events then
@@ -139,20 +126,4 @@ export function useWorkspaceSnapshotSync({
     serverRestore.initialized,
     serverRestore.restore,
   ]);
-
-  useEffect(() => {
-    if (lastProjectPath()) return;
-    void invoke<string>("default_cwd")
-      .then((cwd) => {
-        if (!looksLikeProject(cwd)) return;
-        setProjectCwd(cwd);
-        void rememberProject(cwd)
-          .then((next) => setRecents((prev) => (prev.length > 0 ? prev : next)))
-          .catch((error: unknown) => console.error("Could not remember project", error));
-        setSessions((prev) => prev.map((s) => (s.cwd === "~" ? { ...s, cwd } : s)));
-      })
-      .catch((error) => {
-        console.warn("App operation failed", error);
-      });
-  }, [setProjectCwd, setRecents]);
 }

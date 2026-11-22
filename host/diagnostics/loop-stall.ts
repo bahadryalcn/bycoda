@@ -161,13 +161,11 @@ export function watchLoopStalls(options: {
     const lag = elapsed - TICK_MS;
     const settled = takeFinished();
     // The monotonic clock stands still while the machine sleeps (macOS/Linux), the wall clock
-    // does not; on Windows both advance and the pause threshold below handles it.
+    // does not. On Windows both advance, so a pause past PAUSE_MS is logged and kept in the
+    // health maximum with an uncertain cause (it may be a real freeze), but it does not count
+    // toward the profiling trigger: a sleep is not a wave worth profiling.
     if (wallElapsed - elapsed > SUSPEND_DRIFT_MS) {
       options.log.info("Host resumed after suspend", { wallGapMs: Math.round(wallElapsed) });
-      return;
-    }
-    if (lag >= PAUSE_MS) {
-      options.log.info("Host paused (likely sleep or debugger)", { gapMs: Math.round(elapsed) });
       return;
     }
     if (lag < STALL_MS) {
@@ -183,21 +181,26 @@ export function watchLoopStalls(options: {
       }
       return;
     }
+    const paused = lag >= PAUSE_MS;
     maxLag = Math.max(maxLag, lag);
-    lastStall = at;
-    recent = [...recent.filter((time) => elapsedSince(time, at) < PROFILE_WINDOW_MS), at];
-    if (lastWarn !== undefined && elapsedSince(lastWarn, at) < WARN_EVERY_MS) suppressed++;
+    if (!paused) {
+      lastStall = at;
+      recent = [...recent.filter((time) => elapsedSince(time, at) < PROFILE_WINDOW_MS), at];
+    }
+    if (!paused && lastWarn !== undefined && elapsedSince(lastWarn, at) < WARN_EVERY_MS)
+      suppressed++;
     else {
       const slow = [...inflight.values()]
         .map((entry) => ({
           method: entry.method,
           ageMs: Math.round(elapsedSince(entry.startedAt, at)),
         }))
-        .filter((entry) => entry.ageMs > lag)
+        .filter((entry) => lag >= PAUSE_MS || entry.ageMs > lag)
         .sort((a, b) => b.ageMs - a.ageMs)
         .slice(0, INFLIGHT_REPORTED);
       options.log.warn("event loop stalled", {
         lagMs: Math.round(lag),
+        ...(lag >= PAUSE_MS ? { gapMs: Math.round(elapsed), cause: "uncertain" } : {}),
         recentStalls: recent.length,
         rpcCompleted: completedRpcs - completedBefore,
         ...(slow.length

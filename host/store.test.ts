@@ -1273,6 +1273,50 @@ describe("reads beside the writer queue", () => {
     expect((await store.projects()).map((row) => row.name)).toEqual(["A", "B"]);
   });
 });
+describe("session reads beside the writer", () => {
+  async function seeded(name: string) {
+    const path = join(open(), name);
+    const first = new HostStore(path);
+    const project = await first.addProject(`/${name}`, name);
+    const saved = await first.save(session("s1", project.id), {});
+    await first.close();
+    // A reopened store has a cold cache, so reads must come from SQLite.
+    const store = new HostStore(path);
+    cleanups.push(async () => await store.close());
+    await store.ready;
+    return { store, project, saved };
+  }
+  it("prefers an unwritten session over the stored row", async () => {
+    const { store, project, saved } = await seeded("pending.db");
+    await store.save(
+      { ...saved, revision: saved.revision + 1, updatedAt: saved.updatedAt + 1 },
+      {},
+      { deferred: true },
+    );
+    expect((await store.session("s1")).revision).toBe(saved.revision + 1);
+    expect((await store.sessionStateMetadata("s1"))?.revision).toBe(saved.revision + 1);
+    expect(project.id).toBe(saved.projectId);
+  });
+  it("sees its own writes inside a writer scope", async () => {
+    const { store, saved } = await seeded("owner.db");
+    const next = await store.db.storeScope(async () => {
+      await store.save({ ...saved, revision: saved.revision + 1 }, {});
+      return {
+        value: await store.session("s1"),
+        metadata: await store.sessionStateMetadata("s1"),
+      };
+    });
+    expect(next.value.revision).toBe(saved.revision + 1);
+    expect(next.metadata?.revision).toBe(saved.revision + 1);
+  });
+  it("rejects a credential at once after it was revoked", async () => {
+    const { store } = await seeded("auth.db");
+    const { token } = await store.issueDevice("Phone", "phone");
+    expect(await store.authenticated(token)).toBe(true);
+    expect(await store.revokeToken(token)).toBe(true);
+    expect(await store.authenticated(token)).toBe(false);
+  });
+});
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!();
 });
@@ -1707,30 +1751,114 @@ describe("HostStore device credentials", () => {
     expect(await store.authenticated(second.token)).toBe(false);
     expect(await store.authenticated("unknown")).toBe(false);
   });
-  it("sees an external revocation when the authentication cache expires", async () => {
-    const directory = open();
-    const path = join(directory, "host.db");
-    const store = new HostStore(path);
+  it.each(["authenticated", "authenticateIncomingDevice"] as const)(
+    "%s sees an external revocation when the authentication cache expires",
+    async (check) => {
+      const directory = open();
+      const path = join(directory, "host.db");
+      const store = new HostStore(path);
+      cleanups.push(async () => await store.close());
+      const device = await store.issueDevice("cli-revoked");
+      expect(await store.authenticated(device.token)).toBe(true);
+      expect(await store.authenticated(device.token)).toBe(true);
+      const other = new DatabaseSync(path);
+      try {
+        other.prepare("DELETE FROM devices WHERE id=?").run(device.id);
+      } finally {
+        await other.close();
+      }
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1501);
+      try {
+        expect(await store[check](device.token)).toBe(false);
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+  it("does not renew an incoming credential invalidated during its read", async () => {
+    const store = new HostStore(join(open(), "host.db"));
     cleanups.push(async () => await store.close());
-    const device = await store.issueDevice("cli-revoked");
-    expect(await store.authenticated(device.token)).toBe(true);
-    expect(await store.authenticated(device.token)).toBe(true);
-    const other = new DatabaseSync(path);
-    try {
-      other.prepare("DELETE FROM devices WHERE id=?").run(device.id);
-    } finally {
-      await other.close();
-    }
+    const device = await store.issueDevice("desktop");
+    await store.authenticated(device.token);
     const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1501);
+    const snapshot = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const readScope = store.db.readScope.bind(store.db);
+    const paused = vi.spyOn(store.db, "readScope").mockImplementationOnce(async (read) => {
+      const value = await readScope(read);
+      snapshot.resolve();
+      await release.promise;
+      return value;
+    });
+    const check = store.authenticateIncomingDevice(device.token);
     try {
-      expect(await store.authenticated(device.token)).toBe(false);
+      await snapshot.promise;
+      await store.revokeToken(device.token);
+      release.resolve();
+      expect(await check).toBe(false);
     } finally {
+      release.resolve();
+      paused.mockRestore();
       clock.mockRestore();
     }
   });
 });
 describe("HostStore receipts", () => {
   const receipt = (commandId: string) => ({ commandId }) as unknown as CommandReceipt;
+  it("recovers unresolved follow-up evidence from a session saved before steer-aware receipts", async () => {
+    const directory = open();
+    const store = new HostStore(join(directory, "host.db"));
+    try {
+      const project = await store.addProject(directory, "legacy");
+      const old = session("s", project.id);
+      old.session.blocks.push({
+        id: "steer",
+        role: "user",
+        text: "follow-up",
+        draft: true,
+        followUpDelivery: "uncertain",
+      });
+      await store.save(old, {});
+      const wire = { commandId: "steer", sessionId: "s", revision: 1 };
+      await store.recordReceipt("sig", wire);
+      expect(await store.receiptStatus("steer")).toEqual(wire);
+      expect((await store.receiptStatus("steer", { includeSteer: true }))?.steer).toBeDefined();
+      await store.save(
+        { ...old, revision: 2 },
+        {
+          type: "command",
+          command: { type: "steer", commandId: "old-command", runId: "original-run" },
+        },
+      );
+      await store.recordReceipt("sig", { ...wire, commandId: "old-command", revision: 2 });
+      expect((await store.receiptStatus("old-command", { includeSteer: true }))?.steer).toEqual({
+        runId: "original-run",
+      });
+    } finally {
+      await store.close();
+    }
+  });
+  it("keeps steer proof and claim private through compaction and restart", async () => {
+    const path = join(open(), "host.db");
+    const store = new HostStore(path);
+    const wire = { commandId: "steer", sessionId: "s", revision: 1 };
+    await store.recordReceipt("sig", { ...wire, steer: { runId: "r" } });
+    await store.transaction(() => store.bindSteerClaim("steer", "token"), "critical");
+    await store.db.prepare("UPDATE receipts SET created_at=0 WHERE id='steer'").run();
+    await store.pruneReceipts();
+    await store.transaction(() => store.settleSteerReceipt("steer", "not_delivered"), "critical");
+    await store.close();
+    const reopened = new HostStore(path);
+    try {
+      expect(await reopened.receipt("steer", "sig")).toEqual(wire);
+      expect(await reopened.receiptStatus("steer", { includeSteer: true })).toEqual({
+        ...wire,
+        steer: { runId: "r", claimToken: "token", outcome: "not_delivered" },
+      });
+    } finally {
+      await reopened.close();
+    }
+  });
   it("compacts old request signatures while preserving exact retry answers", async () => {
     const directory = open();
     const path = join(directory, "host.db");

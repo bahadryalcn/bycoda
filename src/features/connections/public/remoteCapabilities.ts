@@ -4,5 +4,6 @@ export {
   GIT_CONFLICTS,
   HOST_UPDATE_NOTICE,
   requireRemoteSupport,
+  useAdoptedSteerSupport,
   useRemoteSupports,
 } from "../model/remoteCapabilities";

@@ -145,6 +145,8 @@ export function useRemoteModelCatalog({
   useLayoutEffect(() => {
     requestRef.current = request;
   }, [request]);
+  // The refresh token whose forced read was already sent (answered or failed). A forced read is a one-shot argument.
+  const spentRefresh = useRef(0);
 
   // Reason: opens the Host stream or the polling loop for this scope and tears it down on change.
   useEffect(() => {
@@ -192,6 +194,13 @@ export function useRemoteModelCatalog({
           .then((value) => {
             if (disposed) return;
             apply(value);
+            // The forced read is spent: let the effect return to the Host stream (polling hosts keep polling).
+            if (forceRefresh && streaming)
+              setRefresh((current) =>
+                current.token === refreshToken && current.force
+                  ? { token: current.token, force: false }
+                  : current,
+              );
             failures = 0;
             if (!value.pending?.length && !value.errors.codex) waits = 0;
             else if (waits < POLL_PENDING_LIMIT) schedule(pollDelay(waits++));
@@ -209,7 +218,10 @@ export function useRemoteModelCatalog({
       };
       document.addEventListener("visibilitychange", onVisible);
       unwatchVisibility = () => document.removeEventListener("visibilitychange", onVisible);
-      load(forceRefresh);
+      // A re-run of this effect for the same refresh token (scope, pane or Host change) reads normally.
+      const forced = forceRefresh && spentRefresh.current !== refreshToken;
+      if (forced) spentRefresh.current = refreshToken;
+      load(forced);
     };
     const fallBack = () => {
       if (!disposed) setStreamFailed(attempt);

@@ -23,6 +23,7 @@ import { droppedFileCount } from "../../../shared/lib/externalDrop";
 import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
 import { attachmentDropVerdict } from "../model/attachmentDrop";
 import {
+  clipboardTextWithAttachments,
   isFileReferenceText,
   messageFromClipboard,
   nativeClipboardAttachments,
@@ -46,6 +47,7 @@ import {
   queuedEditDraft,
   removeDraftAttachment,
   type QueuedEditDraft,
+  type QueuedPasteLayout,
 } from "../model/queuedMessageEdit";
 import type { Attachment, QueuedMessage } from "../model/session";
 import { AttachmentChip } from "./AttachmentChip";
@@ -262,7 +264,7 @@ function QueueEditContent({
     updateDraft(edit.draft);
   };
 
-  const attach = (incoming: Attachment[]) => {
+  const attach = (incoming: Attachment[], pasteLayout?: QueuedPasteLayout) => {
     if (!alive.current || saved.current || !canAttachRef.current) {
       incoming.forEach(revokeAttachment);
       return;
@@ -271,7 +273,7 @@ function QueueEditContent({
     const el = field.current;
     const caret = pendingCaret.current;
     const selection = caret === null ? captureDraft(el) : { start: caret, end: caret };
-    const result = addDraftAttachments(draftRef.current, incoming, selection);
+    const result = addDraftAttachments(draftRef.current, incoming, selection, pasteLayout);
     for (const file of incoming) {
       if (result.draft.attachments.includes(file)) {
         added.current.set(file.id, file);
@@ -323,15 +325,26 @@ function QueueEditContent({
     const files = message?.files ?? filesFromClipboard(data);
     if (files.length > 0) {
       event.preventDefault();
+      const { value, selectionStart, selectionEnd } = event.currentTarget;
       if (message?.text) {
-        const { value, selectionStart, selectionEnd } = event.currentTarget;
         change(
           value.slice(0, selectionStart) + message.text + value.slice(selectionEnd),
           selectionStart + message.text.length,
         );
       }
       if (!canAttach) return;
-      void attachBlobs(files);
+      const pastedDraft = draftRef.current;
+      const end = message?.text ? (pendingCaret.current ?? selectionStart) : selectionEnd;
+      const start = message?.text ? end - message.text.length : selectionStart;
+      void attachBlobs(files, (incoming) =>
+        message?.referenceText && draftRef.current === pastedDraft && start >= 0
+          ? {
+              range: { start, end },
+              textWithAttachments: (attachments) =>
+                clipboardTextWithAttachments(message, incoming, attachments),
+            }
+          : undefined,
+      );
       return;
     }
     // A webview reports a pasted screenshot or copied file as text only (or
@@ -357,6 +370,7 @@ function QueueEditContent({
   const collect = async (
     read: () => Promise<Attachment[]>,
     restore?: (incoming: Attachment[]) => void,
+    pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | undefined,
   ) => {
     const admitted = parentChanged.admit();
     if (!admitted) return;
@@ -380,7 +394,7 @@ function QueueEditContent({
         apply: (incoming) =>
           admitted.apply(() => {
             restore?.(incoming);
-            attach(incoming);
+            attach(incoming, pasteLayout?.(incoming));
           }),
         isAlive: () => alive.current,
         setError,
@@ -395,14 +409,21 @@ function QueueEditContent({
   };
 
   /** Pasted and dropped files: valid ones attach, skipped blobs are named instead of vanishing. */
-  const attachBlobs = (files: File[]) =>
-    collect(async () => {
-      const skips = collectSkippedAttachments();
-      const attached = await attachmentsFromFiles(files, { onSkipped: skips.onSkipped });
-      const notice = skips.notice();
-      if (alive.current && notice) setError(notice);
-      return attached;
-    });
+  const attachBlobs = (
+    files: File[],
+    pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | undefined,
+  ) =>
+    collect(
+      async () => {
+        const skips = collectSkippedAttachments();
+        const attached = await attachmentsFromFiles(files, { onSkipped: skips.onSkipped });
+        const notice = skips.notice();
+        if (alive.current && notice) setError(notice);
+        return attached;
+      },
+      undefined,
+      pasteLayout,
+    );
 
   const hasFiles = (event: DragEvent) =>
     Array.from(event.dataTransfer?.types ?? []).includes("Files");

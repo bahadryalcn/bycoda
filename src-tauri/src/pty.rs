@@ -562,6 +562,63 @@ pub fn pty_spawn(
     }
 }
 
+#[tauri::command(async)]
+pub fn desktop_worktree_removal_lease(
+    host: State<'_, PtyHost>,
+    agents: State<'_, crate::harness::HarnessHost>,
+    client_id: String,
+    lease_id: String,
+    path: Option<String>,
+) -> Result<(), String> {
+    if uuid::Uuid::parse_str(&client_id).is_err() || uuid::Uuid::parse_str(&lease_id).is_err() {
+        return Err("Invalid desktop removal lease identity.".into());
+    }
+    let Some(path) = path else {
+        crate::worktree_lifecycle::release_desktop_removal_lease(&client_id, &lease_id);
+        return Ok(());
+    };
+    acquire_desktop_removal_lease(
+        &host,
+        &agents,
+        std::path::Path::new(&path),
+        client_id,
+        lease_id,
+        std::time::Duration::from_secs(600),
+    )
+}
+
+fn acquire_desktop_removal_lease(
+    host: &PtyHost,
+    agents: &crate::harness::HarnessHost,
+    path: &std::path::Path,
+    client_id: String,
+    lease_id: String,
+    ttl: std::time::Duration,
+) -> Result<(), String> {
+    let _gate = host.spawn_gate.lock().unwrap_or_else(|e| e.into_inner());
+    let path = crate::worktree_lifecycle::canonical_removal_path(path)?;
+    if host
+        .sessions
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .values()
+        .any(|live| crate::worktrees::contains_working_dir(&path, &live.cwd))
+    {
+        return Err("Stop active terminals and agents before removing the worktree.".into());
+    }
+    crate::worktree_lifecycle::install_desktop_removal_lease(
+        &path,
+        client_id.clone(),
+        lease_id.clone(),
+        ttl,
+    )?;
+    if agents.has_working_dir(&path) {
+        crate::worktree_lifecycle::release_desktop_removal_lease(&client_id, &lease_id);
+        return Err("Stop active terminals and agents before removing the worktree.".into());
+    }
+    Ok(())
+}
+
 /// Only the window owning a local PTY can query its launch shell's catalog.
 #[tauri::command(async)]
 pub fn pty_suggestions(
@@ -760,6 +817,7 @@ fn spawn_private_program(
         .map(std::path::PathBuf::from)
         .filter(|path| path.is_dir())
         .ok_or("Home directory is unavailable")?;
+    let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let shell = (program.into(), args, vec![("SSH_ASKPASS_REQUIRE", "never")]);
     #[cfg(unix)]
     return spawn_unix(
@@ -1160,6 +1218,7 @@ fn spawn_unix(
             return Err(error);
         }
     };
+    let workspace = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let spawned = cmd.spawn();
     drop(slave);
     let child = match spawned {
@@ -1299,6 +1358,8 @@ fn spawn_unix(
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
+        // Window teardown can remove the registry entry before the shell exits.
+        let _workspace = workspace;
         let exit = child.wait();
         let output_complete = command::await_drain(one_shot, drain);
         let code = crate::pty_runtime_logs::report_exit(log_exit.as_ref(), exit.as_ref().ok());
@@ -1410,6 +1471,7 @@ fn spawn_windows(
         .take_writer()
         .map_err(|err| format!("Failed to write to terminal: {err}"))?;
 
+    let workspace = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
         .map_err(|err| format!("Failed to start {shell}: {err}"))?;
     let pid = child.process_id().unwrap_or(0);
@@ -1500,6 +1562,8 @@ fn spawn_windows(
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
+        // Window teardown can remove the registry entry before the shell exits.
+        let _workspace = workspace;
         let exit = child.wait();
         let output_complete = command::await_drain(one_shot, drain);
         let code = crate::pty_runtime_logs::report_exit(log_exit.as_ref(), exit.as_ref().ok());
@@ -2404,6 +2468,9 @@ mod tests {
 
 #[cfg(test)]
 mod coalesce_tests;
+
+#[cfg(all(test, any(unix, windows)))]
+mod removal_lease_tests;
 
 #[cfg(test)]
 mod queued_writer_tests {

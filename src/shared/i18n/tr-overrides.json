@@ -1,4 +1,9 @@
 {
+  "Syncing with the local Host…": "Yerel Host ile eşitleniyor…",
+  "This conversation is catching up with the local Host.": "Bu sohbet yerel Host ile eşitleniyor.",
+  "Mark as delivered": "Teslim edildi olarak işaretle",
+  "Delivery unconfirmed · Review": "Teslim doğrulanamadı · İncele",
+  "Sends when the current turn finishes": "Mevcut tur bitince gönderilecek",
   "Enable": "Etkinleştir",
   "Scroll tabs left": "Sekmeleri sola kaydır",
   "Scroll tabs right": "Sekmeleri sağa kaydır",

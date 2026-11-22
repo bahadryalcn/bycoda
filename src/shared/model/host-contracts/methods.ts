@@ -1,4 +1,10 @@
 import { nativeRuntimeLogMethods } from "./native-runtime-log-methods";
+import {
+  GITHUB_WORK_ITEMS,
+  workItemGetParams,
+  workItemResult,
+  workItemSearchParams,
+} from "./work-items";
 import { SIDE_CHAT_RPC } from "./side-chat";
 import { VOICE_CAPABILITY, VOICE_RPC_SCHEMAS, type VoiceMethod } from "./voice";
 import {
@@ -674,6 +680,14 @@ export const HOST_RPC_METHODS = Object.freeze({
   "environment.describe": read(
     z.strictObject({ supportedProviders: z.array(IdentifierSchema).max(32).optional() }),
   ),
+  "workItems.search": {
+    ...projectOperation(workItemSearchParams, workItemResult),
+    requiredCapability: GITHUB_WORK_ITEMS,
+  },
+  "workItems.get": {
+    ...projectOperation(workItemGetParams, workItemResult),
+    requiredCapability: GITHUB_WORK_ITEMS,
+  },
   "projects.list": projectOperation(
     projectsDto.ProjectsEmptyParamsSchema,
     z.array(projectsDto.HostProjectSchema),

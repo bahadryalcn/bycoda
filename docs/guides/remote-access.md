@@ -346,7 +346,8 @@ together, and both sides report the result.
 
 When another device continues a conversation through this computer's Host, the
 desktop catches up automatically. You can read the conversation while the latest
-messages arrive. If the desktop cannot finish syncing, **Sync conversation**
+messages arrive. Reopening a long conversation loads the older local pages needed
+to compare its history and bring in new Host messages. If the desktop cannot finish syncing, **Sync conversation**
 retries the read. If both copies changed, the desktop asks which version to keep.
 Syncing preserves your draft and queued messages and does not resend a turn.
 
@@ -467,6 +468,7 @@ progress. If every address is silent, SSH still tries the preferred address.
 3. Send a message. The first message creates the session on the host with the model, reasoning effort, and permission mode shown in the composer.
 
 Remote projects show a server icon in the project rail. Hover or focus the project to see its machine, folder path, and connection status. Remote sessions show the server icon beside the provider icons.
+The new session screen shows the saved machine name and the folder path on that machine. If the name is unavailable, it shows **Remote computer** beside the path.
 While a remote turn runs, the composer shows its working status and offers **Stop**.
 
 The composer's model picker lists models for the providers installed on the host. Model, provider-specific settings, and permission changes apply to the host session directly, and the next turn uses them; a change made during a running turn is applied when that turn finishes. If the host cannot load its model list, or no longer lists the session's model, the session's saved settings remain visible. The normal workspace and branch pickers use the host checkout through the shared file and Git commands. Choose an existing host worktree or create one from a branch before the first message; the session then runs in that working copy. Once the conversation starts, its worktree is fixed, as in a local session. Start a new session to use another worktree. The branch picker can search local and remote branches, create a local branch, and switch the current working copy when it is clean and the project's sessions are idle. Machine connection state appears on its project rail dot.

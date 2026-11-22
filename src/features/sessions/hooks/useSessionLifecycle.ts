@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useLocalLifecycleMachine } from "./useLocalLifecycleMachine";
 import {
   applyLifecycleListRead,
@@ -106,26 +106,47 @@ export function useRemoteSessionLifecycleLists(machineKey: string) {
     () => remoteLists,
   );
   const machineIds = machineKey ? (JSON.parse(machineKey) as string[]) : [];
-  const pending = machineIds.some((machineId) =>
-    [...(lists.get(machineId)?.values() ?? [])].some((view) => view.state === "settling"),
+  // Only a Host with a settling session polls fast; the others keep their own cadence.
+  const pendingKey = JSON.stringify(
+    machineIds.filter((machineId) =>
+      [...(lists.get(machineId)?.values() ?? [])].some((view) => view.state === "settling"),
+    ),
   );
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Subscribe to lifecycle reads for the visible remote Hosts.
+  const subscriptions = useRef(new Map<string, { pending: boolean; stop: () => void }>());
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Subscribe to lifecycle reads for the visible remote Hosts; a Host's subscription is replaced only when its own pace changes.
   useEffect(() => {
-    if (!machineKey) return;
-    const stops = (JSON.parse(machineKey) as string[]).map((machineId) =>
-      subscribeSharedRead(
-        `remote-lifecycle-list:${machineId}:${pending}`,
+    const active = subscriptions.current;
+    const wanted = new Set(machineKey ? (JSON.parse(machineKey) as string[]) : []);
+    const pending = new Set(JSON.parse(pendingKey) as string[]);
+    for (const [machineId, entry] of active) {
+      if (wanted.has(machineId) && entry.pending === pending.has(machineId)) continue;
+      entry.stop();
+      active.delete(machineId);
+    }
+    for (const machineId of wanted) {
+      if (active.has(machineId)) continue;
+      const busy = pending.has(machineId);
+      const stop = subscribeSharedRead(
+        `remote-lifecycle-list:${machineId}:${busy}`,
         async (isCurrent) => {
           const revision = remoteRevisions.get(machineId);
           const { records } = await sessionLifecycleClient(machineId, false).list();
           if (isCurrent() && revision === remoteRevisions.get(machineId))
             publishRemoteList(machineId, new Map(records.map((view) => [view.sessionId, view])));
         },
-        { intervalMs: pending ? POLL_SETTLING_MS : REFRESH_LIST_MS, refreshOnFocus: true },
-      ),
-    );
-    return () => stops.forEach((stop) => stop());
-  }, [machineKey, pending]);
+        { intervalMs: busy ? POLL_SETTLING_MS : REFRESH_LIST_MS, refreshOnFocus: true },
+      );
+      active.set(machineId, { pending: busy, stop });
+    }
+  }, [machineKey, pendingKey]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Release every Host subscription when the hook unmounts.
+  useEffect(() => {
+    const active = subscriptions.current;
+    return () => {
+      for (const entry of active.values()) entry.stop();
+      active.clear();
+    };
+  }, []);
   return { lists, change: changeRemoteLifecycle };
 }
 

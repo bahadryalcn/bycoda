@@ -11,6 +11,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import {
   DeliveryNoticeReopen,
+  DeliveryProgressNotice,
   DeliveryProgressIndicator,
   deliveryIsPending,
   useDeliveryProgress,
@@ -33,15 +34,7 @@ import { useT } from "../../../shared/i18n";
 import type { QueueAction } from "../model/queueAction";
 import "./chat-controls.css";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import {
-  CornerDownRight,
-  GripVertical,
-  ListEnd,
-  Pause,
-  Pencil,
-  Play,
-  Trash2,
-} from "../../../shared/ui/icons";
+import { GripVertical, Pause, Pencil, Play, Trash2 } from "../../../shared/ui/icons";
 import {
   useEffect,
   useCallback,
@@ -150,6 +143,7 @@ export function MessageQueue({
         : undefined,
   });
   const departing = useAcceptedQueueDeparture(messages, delivery);
+  const reviewRow = messages.find((row) => row.deliveryUnknown);
   const actionRef = useRef(false);
   const [pendingAction, setPendingAction] = useState<string>();
   const dragAdmission = useRef<{
@@ -420,41 +414,43 @@ export function MessageQueue({
                       ? t("Queue paused because you interrupted")
                       : t("Queue paused")}
             </Text>
-            {reopenIn === "paused" ? (
+            {reopenIn === "paused" && !reviewRow ? (
               <DeliveryNoticeReopen sessionId={sessionId} messages={messages} />
             ) : null}
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={
-                !onResume ||
-                !!pendingAction ||
-                pendingDelivery ||
-                // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
-                (hold.kind === "held" && hold.reason === "unknown") ||
-                hasMissingAttachment(messages[0])
-              }
-              disabledReason={
-                sendingReason ??
-                // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
-                (hold.kind === "held" && hold.reason === "unknown"
-                  ? t("Delivery is not confirmed. Automatic resend is held.")
-                  : hasMissingAttachment(messages[0])
-                    ? t("Attachment missing")
-                    : !onResume
-                      ? t(
-                          "This queue action is unavailable. Reopen the conversation and try again.",
-                        )
-                      : undefined)
-              }
-              loading={pendingAction === "resume"}
-              loadingLabel={t("Resuming…")}
-              onClick={() => trigger("resume", onResume)}
-              className="shrink-0"
-            >
-              <Play className="icon-sm" />
-              {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
-            </Button>
+            {!reviewRow ? (
+              <Button
+                variant="ghost"
+                type="button"
+                disabled={
+                  !onResume ||
+                  !!pendingAction ||
+                  pendingDelivery ||
+                  // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
+                  (hold.kind === "held" && hold.reason === "unknown") ||
+                  hasMissingAttachment(messages[0])
+                }
+                disabledReason={
+                  sendingReason ??
+                  // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
+                  (hold.kind === "held" && hold.reason === "unknown"
+                    ? t("Delivery is not confirmed. Automatic resend is held.")
+                    : hasMissingAttachment(messages[0])
+                      ? t("Attachment missing")
+                      : !onResume
+                        ? t(
+                            "This queue action is unavailable. Reopen the conversation and try again.",
+                          )
+                        : undefined)
+                }
+                loading={pendingAction === "resume"}
+                loadingLabel={t("Resuming…")}
+                onClick={() => trigger("resume", onResume)}
+                className="shrink-0"
+              >
+                <Play className="icon-sm" />
+                {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
+              </Button>
+            ) : null}
           </Text>
         ) : null}
         {leaseHeld && sessionId ? (
@@ -555,11 +551,10 @@ export function MessageQueue({
             className="flex min-h-7 items-center gap-2 px-1"
             data-queue-summary
           >
-            <ListEnd className="icon-sm shrink-0" />
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
-            <span className="shrink-0">
-              {t("Queue")} · {messages.length}
-            </span>
+            <Text size="inherit" tone="primary" weight="medium" className="shrink-0">
+              {t("{p0} queued", { p0: messages.length })}
+            </Text>
             {activeFeedback && !activeFeedback.error ? (
               <OverflowTooltip label={activeFeedback.text}>
                 <Text size="inherit" tone="inherit" truncate tabIndex={0}>
@@ -708,6 +703,19 @@ export function MessageQueue({
                       {label}
                     </Text>
                   </OverflowTooltip>
+                  {busy &&
+                  !paused &&
+                  !restored &&
+                  !leaseHeld &&
+                  !reviewRow &&
+                  index === 0 &&
+                  !queueDelivery &&
+                  !pendingDelivery &&
+                  !waitingOnSubagents ? (
+                    <Text as="div" size="caption" tone="secondary">
+                      {t("Sends when the current turn finishes")}
+                    </Text>
+                  ) : null}
                   {attachmentGone ? (
                     <Text
                       size="inherit"
@@ -737,9 +745,22 @@ export function MessageQueue({
                   ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  {remote ? null : (
+                  {message.id === reviewRow?.id ? (
+                    <DeliveryProgressNotice
+                      sessionId={sessionId}
+                      messages={queued}
+                      inlineRowId={message.id}
+                      retryDisabled={
+                        queueClosed ||
+                        !!pendingAction ||
+                        pendingDelivery ||
+                        attachmentGone ||
+                        heldByOtherWindow
+                      }
+                    />
+                  ) : remote ? null : (
+                    // A worded action: the row's one way to send now reads as such, not as an arrow.
                     <Button
-                      iconOnly
                       size="sm"
                       label={
                         pendingAction === message.id ||
@@ -791,7 +812,7 @@ export function MessageQueue({
                       }
                       className="shrink-0"
                     >
-                      <CornerDownRight className="icon-sm" />
+                      {t("Steer")}
                     </Button>
                   )}
                   <Button

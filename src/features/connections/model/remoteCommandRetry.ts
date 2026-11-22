@@ -41,9 +41,7 @@ const NOT_SENT_TEXT =
 export function classifyCommandFailure(error: unknown): CommandFailureClass {
   const text = remoteErrorText(error);
   const code = nativeConnectionFailureCode(error);
-  if (DEFINITIVE_TEXT.test(text) || (code !== undefined && DEFINITIVE_CODES.has(code)))
-    return "definitive";
-  // A native failure marks itself uncertain when the Host may have received it.
+  // An explicit delivery outcome survives the legacy HTTP refusal prefix.
   if (
     (typeof error === "object" &&
       error !== null &&
@@ -52,6 +50,17 @@ export function classifyCommandFailure(error: unknown): CommandFailureClass {
     UNCERTAIN_TEXT.test(text)
   )
     return "uncertain";
+  if (DEFINITIVE_TEXT.test(text) || (code !== undefined && DEFINITIVE_CODES.has(code)))
+    return "definitive";
+  // The native connection preserved the Host's pre-execution refusal.
+  if (
+    code === "RPC_WS_REMOTE" &&
+    typeof error === "object" &&
+    error !== null &&
+    "uncertain" in error &&
+    error.uncertain === false
+  )
+    return "definitive";
   if (code !== undefined && NOT_SENT_CODES.has(code)) return "not-sent";
   if (NOT_SENT_TEXT.test(text)) return "not-sent";
   return "uncertain";

@@ -188,9 +188,13 @@ export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: stri
 export function DeliveryProgressNotice({
   sessionId = "",
   messages,
+  inlineRowId,
+  retryDisabled = false,
 }: {
   sessionId?: string;
   messages: QueuedMessage[];
+  inlineRowId?: string;
+  retryDisabled?: boolean;
 }) {
   const t = useT();
   const {
@@ -242,7 +246,7 @@ export function DeliveryProgressNotice({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [sessionId, progress, messages, client, clientState]);
-  if (!present || !key || dismissed) return null;
+  if (!present || !key || (dismissed && !inlineRowId)) return null;
   const noticeOnly = !!progress?.noticeOnly;
   // A recorded outcome is already a plain sentence; a failure keeps its raw text behind details.
   const raw =
@@ -313,6 +317,34 @@ export function DeliveryProgressNotice({
     );
     finish();
   };
+  if (inlineRowId) {
+    if (unknownRow?.id !== inlineRowId || clientState.queue.claim) return null;
+    return (
+      <div data-delivery-progress="unknown">
+        <Button
+          size="sm"
+          variant="secondary"
+          tone="warning"
+          disabled={retryDisabled || working || lateSettlement}
+          disabledReason={
+            lateSettlement
+              ? t(
+                  "The provider has not answered yet and may still deliver this message. Wait for the answer, or stop the turn.",
+                )
+              : undefined
+          }
+          tooltip={t(
+            "Check the conversation first. Sending again duplicates a message that was delivered. Keeping it queued pauses the queue and does not resend it.",
+          )}
+          onClick={() => choose("retry")}
+        >
+          <TriangleAlert className="icon-sm" aria-hidden="true" />
+          {t("Send again")}
+        </Button>
+        {resolveError ? <InlineError>{resolveError}</InlineError> : null}
+      </div>
+    );
+  }
   const hasChildren = !!body || (unknownRow && !clientState.queue.claim) || !!resolveError;
   return (
     // In-flow banner at the top of the pane body: the transcript (and its Find bar) sits below it,

@@ -73,8 +73,6 @@ test("shell counts stay compact and follow custom accents in both rail presentat
         `/tests/browser/app-shell/compact-navigation.html?badgeCount=${count}${expanded ? "&expandedRail" : ""}`,
       );
       const working = page.locator("[data-workspace-working-count]");
-      // The expanded rail shows the plain section count; label-less rails keep the corner badge.
-      const recovery = page.locator(expanded ? ".recovery-rail-number" : ".recovery-rail-count");
       await expect(working).toHaveText(String(Math.min(count, 9)));
       const workingCount = Math.min(count, 9);
       // The badge is decorative; a screen-reader-only live region carries the meaning.
@@ -83,7 +81,6 @@ test("shell counts stay compact and follow custom accents in both rail presentat
         `${workingCount} working ${workingCount === 1 ? "session" : "sessions"}`,
       );
       await expect(working.locator('[data-size="xs"][aria-hidden="true"]')).toBeVisible();
-      await expect(recovery).toHaveText(count > 99 ? "99+" : String(count));
       for (const light of [false, true]) {
         await page.evaluate((light) => {
           document.documentElement.classList.toggle("theme-light", light);
@@ -95,25 +92,32 @@ test("shell counts stay compact and follow custom accents in both rail presentat
         for (const width of [1280, 800]) {
           await page.setViewportSize({ width, height: 900 });
           await compactAccentCounter(working);
-          if (!expanded) await compactAccentCounter(recovery);
           const owner = page.getByRole("button", {
             name: `Recovered sessions (${count})`,
             exact: true,
           });
           await expect(owner).toBeVisible();
+          const recoveryCount = owner.locator('[data-variant="count"]');
+          await expect(recoveryCount).toHaveText(count > 99 ? "99+" : String(count));
+          await compactAccentCounter(recoveryCount);
           await owner.focus();
           await page.keyboard.press("Enter");
           await expect(page.getByLabel("Selected action", { exact: true })).toHaveText(
             "Recovered sessions",
           );
-          const icon = (await owner.locator("svg").boundingBox())!;
-          const number = (await recovery.boundingBox())!;
+          const settings = owner
+            .locator("..")
+            .getByRole("button", { name: "Settings", exact: true });
+          const icon = (await owner.boundingBox())!;
+          const badge = (await recoveryCount.boundingBox())!;
+          expect(badge.y).toBeLessThan(icon.y);
+          expect(badge.x + badge.width).toBeLessThanOrEqual(icon.x + icon.width);
+          const settingsBox = (await settings.boundingBox())!;
           if (expanded) {
-            expect(number.x).toBeGreaterThan(icon.x + icon.width);
-            await expect(owner.locator(".recovery-rail-label")).toBeVisible();
+            expect(icon.x + icon.width).toBeLessThanOrEqual(settingsBox.x);
+            expect(icon.y).toBe(settingsBox.y);
           } else {
-            expect(number.y).toBeLessThan(icon.y);
-            expect(number.y + number.height).toBeLessThan(icon.y + icon.height);
+            expect(icon.y + icon.height).toBeLessThanOrEqual(settingsBox.y);
           }
           const neutral = page.getByTestId("neutral-count");
           expect((await neutral.boundingBox())!.height).toBeLessThanOrEqual(18);
@@ -127,7 +131,7 @@ test("shell counts stay compact and follow custom accents in both rail presentat
           ).not.toBe(await working.evaluate((element) => getComputedStyle(element).color));
           if (count === 8) {
             await page.screenshot({
-              path: `temp/verification/2026-10-27-badges/${testInfo.project.name}/${expanded ? "expanded" : "compact"}-${light ? "light" : "dark"}-${width}.png`,
+              path: `temp/verification/recovery-footer-icon/${testInfo.project.name}/${expanded ? "expanded" : "compact"}-${light ? "light" : "dark"}-${width}.png`,
             });
           }
         }

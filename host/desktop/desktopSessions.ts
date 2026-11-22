@@ -114,7 +114,9 @@ async function desktopDatabasePathsAsync(env: NodeJS.ProcessEnv): Promise<string
     [...checked].map((file) =>
       stat(file).then(
         () => present.add(file),
-        () => undefined,
+        (error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+        },
       ),
     ),
   );
@@ -126,7 +128,17 @@ const DATABASE_PATHS_TTL_MS = 3_000;
 const DATABASE_PATHS_MAX_AGE_MS = 30_000;
 /** A stat that never returns must not hold `pathsRefresh` forever. */
 const REFRESH_TIMEOUT_MS = 5_000;
-let pathsCache: { key: string; at: number; value: string[] } | undefined;
+let pathsCache:
+  | {
+      key: string;
+      validatedAt: number;
+      attemptedAt: number;
+      value: string[];
+      /** A candidate could not be checked (EACCES, EBUSY…): the answer is used for one TTL,
+       * then checked again, and it never counts as a validation. */
+      uncertain?: boolean;
+    }
+  | undefined;
 /** The one refresh in flight, if any. */
 let pathsRefresh: Promise<void> | undefined;
 
@@ -156,28 +168,53 @@ export function cachedDesktopDatabasePaths(): string[] {
   const now = Date.now();
   // An answer older than the age bound is never served: a refresh that keeps failing or
   // hanging must not pin a pre-install `[]` for the life of the Host.
-  if (pathsCache?.key !== key || now - pathsCache.at >= DATABASE_PATHS_MAX_AGE_MS) {
-    const value = desktopDatabasePaths();
-    pathsCache = { key, at: now, value };
+  const same = pathsCache?.key === key ? pathsCache : undefined;
+  if (!same || now - same.validatedAt >= DATABASE_PATHS_MAX_AGE_MS) {
+    // An uncertain answer is reused for one TTL instead of re-statting on every call.
+    if (same?.uncertain && now - same.attemptedAt < DATABASE_PATHS_TTL_MS) return same.value;
+    let uncertain = false;
+    const value = selectDesktopDatabases(process.env, process.platform, homedir(), (file) => {
+      try {
+        statSync(file);
+        return true;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // One unreadable candidate does not hide the others; it reads as absent for now.
+        if (code !== "ENOENT" && code !== "ENOTDIR") uncertain = true;
+        return false;
+      }
+    });
+    pathsCache = {
+      key,
+      validatedAt: uncertain ? (same?.validatedAt ?? 0) : now,
+      attemptedAt: now,
+      value,
+      uncertain,
+    };
     return value;
   }
-  if (now - pathsCache.at >= DATABASE_PATHS_TTL_MS && !pathsRefresh)
-    refreshDesktopDatabasePaths(key);
-  return pathsCache.value;
+  if (now - same.attemptedAt >= DATABASE_PATHS_TTL_MS && !pathsRefresh)
+    refreshDesktopDatabasePaths(same);
+  return same.value;
 }
 
 /** Async callers: the cached answer while it is young, else a fresh one made off the main thread. */
 export async function desktopDatabasePathsFresh(): Promise<string[]> {
   const cached = pathsCache;
-  if (cached && Date.now() - cached.at < DATABASE_PATHS_MAX_AGE_MS)
+  const key = desktopPathsKey();
+  if (cached?.key === key && Date.now() - cached.validatedAt < DATABASE_PATHS_MAX_AGE_MS)
     return cachedDesktopDatabasePaths();
   try {
     const value = await withTimeout(desktopDatabasePathsAsync(process.env));
-    pathsCache = { key: desktopPathsKey(), at: Date.now(), value };
+    const now = Date.now();
+    // The environment changed meanwhile: answer for the new one.
+    if (desktopPathsKey() !== key) return cachedDesktopDatabasePaths();
+    if (pathsCache === cached) pathsCache = { key, validatedAt: now, attemptedAt: now, value };
     return value;
   } catch {
-    // A hung or failing disk: answer with what is known rather than fail the caller.
-    return cached?.value ?? [];
+    // Past the age bound nothing stale is served (a pre-install `[]` must not stick), and the
+    // disk that just stalled is not statted synchronously.
+    return [];
   }
 }
 
@@ -192,15 +229,18 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
   });
 }
 
-function refreshDesktopDatabasePaths(key: string): void {
+function refreshDesktopDatabasePaths(cached: NonNullable<typeof pathsCache>): void {
   pathsRefresh = withTimeout(desktopDatabasePathsAsync(process.env))
     .then(
       (value) => {
-        if (pathsCache?.key === key) pathsCache = { key, at: Date.now(), value };
+        if (pathsCache === cached) {
+          const now = Date.now();
+          pathsCache = { key: cached.key, validatedAt: now, attemptedAt: now, value };
+        }
       },
       () => {
         // Keep the last good answer; retry after another TTL instead of on every call.
-        if (pathsCache?.key === key) pathsCache.at = Date.now();
+        if (pathsCache === cached) cached.attemptedAt = Date.now();
       },
     )
     .finally(() => {

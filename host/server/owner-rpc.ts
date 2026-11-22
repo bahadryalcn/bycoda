@@ -1,4 +1,5 @@
 import { DESKTOP_TAKE_WAIT_MS } from "../../src/shared/model/host-contracts/native-services";
+import { WORKSPACE_COMMANDS } from "../workspaces/workspace-commands";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { handleApprovalsRpc } from "./rpc-approvals";
@@ -19,6 +20,7 @@ import { handleInboxRpc } from "./rpc-inbox";
 import { handleNativeRpc } from "./rpc-native";
 import { handleNotesRpc } from "./rpc-notes";
 import { handleProjectsRpc } from "./rpc-projects";
+import { handleGithubWorkItemsRpc } from "../work-items/github";
 import { handleProvidersRpc } from "./rpc-providers";
 import { handleResourcesRpc } from "./rpc-resources";
 import { handleRuntimeLogsRpc } from "./rpc-runtime-logs";
@@ -88,6 +90,8 @@ const LONG_RPC_DEADLINE_MS: Record<string, number> = {
   "git.switch": GIT_MUTATION_DEADLINE_MS,
   "git.createBranch": GIT_MUTATION_DEADLINE_MS,
   "git.worktreeCreate": GIT_MUTATION_DEADLINE_MS,
+  "git.worktreeRemovalReview": GIT_MUTATION_DEADLINE_MS,
+  "git.worktreeRemove": GIT_MUTATION_DEADLINE_MS,
   "workspaces.close": GIT_MUTATION_DEADLINE_MS,
   "workspaces.finish": GIT_MUTATION_DEADLINE_MS,
   "workspaces.cleanup.plan": GIT_MUTATION_DEADLINE_MS,
@@ -199,6 +203,10 @@ export function rpcFailureFields(
   const safe = SAFE_MESSAGE_ERRORS.some((type) => error instanceof type);
   return {
     method: String(request.input.method),
+    workspaceCommand:
+      request.input.method === "workspace.run"
+        ? WORKSPACE_COMMANDS.find((command) => command === request.params.command)
+        : undefined,
     id: correlationId(request.input.id),
     commandId: correlationId(request.params.commandId),
     error: error instanceof Error ? error.name : "UnknownError",
@@ -274,6 +282,7 @@ type Dependencies = Pick<
   | "projectsService"
   | "scopedDesktopCall"
   | "terminalService"
+  | "terminals"
   | "desktopSigningSecret"
   | "desktopControl"
   | "desktopHelper"
@@ -495,6 +504,8 @@ const handlers: Record<
   "projects.workspacePolicy.get": handleProjectsRpc,
   "projects.workspacePolicy.update": handleProjectsRpc,
   "projects.list": handleProjectsRpc,
+  "workItems.search": handleGithubWorkItemsRpc,
+  "workItems.get": handleGithubWorkItemsRpc,
   "projects.directory": handleProjectsRpc,
   "projects.browse": handleProjectsRpc,
   "projects.createDirectory": handleProjectsRpc,
@@ -825,6 +836,8 @@ const handlers: Record<
   "git.createBranch": handleGitRpc,
   "git.worktrees": handleGitRpc,
   "git.worktreeCreate": handleGitRpc,
+  "git.worktreeRemovalReview": handleGitRpc,
+  "git.worktreeRemove": handleGitRpc,
   "git.index": handleGitRpc,
   "git.generateText": handleGitRpc,
   "git.fileDiff": handleGitRpc,

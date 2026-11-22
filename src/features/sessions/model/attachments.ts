@@ -138,6 +138,7 @@ export function persistableAttachment(file: Attachment): Attachment {
     kind: file.kind,
     size: file.size,
     ...(file.path ? { path: file.path } : {}),
+    ...(file.hostEnvironmentId ? { hostEnvironmentId: file.hostEnvironmentId } : {}),
     ...(file.browserAnnotation ? { browserAnnotation: file.browserAnnotation } : {}),
   };
 }

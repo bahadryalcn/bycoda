@@ -538,7 +538,7 @@ describe("Resume always does something visible", () => {
     await pump(1500, 6);
     world.mode = "accept";
     await resume();
-    await click("Already delivered");
+    await click("Mark as delivered");
     await pump(1500, 4);
     expect(world.sent).toEqual([]);
     expect((await hostQueue()).claim).toBeUndefined();

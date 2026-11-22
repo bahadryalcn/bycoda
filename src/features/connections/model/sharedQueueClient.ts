@@ -458,10 +458,19 @@ export class SharedQueueClient {
           this.persist();
         } else if (previous && legacy && this.clientId.startsWith("desktop:")) {
           this.emit(true);
+          // The saved transcript is not a delivery decision. A stale or missing
+          // desktop row must not clear a hold recorded by the Host.
+          const messages = [...legacy.messages];
+          for (const [index, held] of value.messages.entries()) {
+            if (!held.deliveryUnknown) continue;
+            const local = messages.findIndex((row) => row.id === held.id);
+            if (local < 0) messages.splice(index, 0, held);
+            else messages[local] = held;
+          }
           this.mergeLocal(
             { ...previous, status: value.status, editingId: value.editingId },
             {
-              messages: legacy.messages,
+              messages,
               status: value.status ?? legacy.status,
               editingId: value.editingId,
             },

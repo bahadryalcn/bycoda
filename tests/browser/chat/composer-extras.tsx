@@ -83,6 +83,33 @@ const source = {
   probed: () => true,
   refresh: () => {},
 };
+// `?mention-files[=incomplete]`: the project file listing answers, so typing "@" in the composer
+// shows the real mention picker with rows instead of the "Could not index files" failure.
+if (new URLSearchParams(location.search).has("mention-files")) {
+  const relatives = [
+    "src/app/App.tsx",
+    "src/features/sessions/ui/Composer.tsx",
+    "src/features/sessions/ui/ComposerSuggestions.tsx",
+    "src/features/voice/ui/VoiceSettings.tsx",
+    "src/shared/ui/Button.tsx",
+    "docs/guides/chat-artifacts-and-connected-files.md",
+    "package.json",
+    "README.md",
+  ];
+  const listing = {
+    root: "/fixture",
+    files: relatives.map((relative) => ({ name: relative.split("/").at(-1)!, relative })),
+    truncated: new URLSearchParams(location.search).get("mention-files") === "incomplete",
+  };
+  Object.assign(window, {
+    __TAURI_INTERNALS__: {
+      invoke: async (cmd: string) => {
+        if (cmd === "list_project_files") return listing;
+        throw new Error(`Unmocked fixture command: ${cmd}`);
+      },
+    },
+  });
+}
 const accountPicker = new URLSearchParams(location.search).has("accounts");
 // A provider whose transport takes text only: files dragged over the composer are refused with a reason.
 if (new URLSearchParams(location.search).has("no-attachments"))
@@ -740,7 +767,7 @@ function SurfaceProbeFixture() {
     label: "Advisor",
     kind: "select" as const,
     value,
-    options: [{ value, label: "Fixture account", accountColor: "#b55272" }],
+    options: [{ value, label: "Fixture account", accountColor: "#b55272", accountNumber: 2 }],
   };
   const [values, setValues] = useState({ effort: "low" });
   return (

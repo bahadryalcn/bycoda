@@ -38,7 +38,10 @@ export type NotificationHistoryEntry = {
   harness?: HarnessId;
   label: string;
   kind: NotificationHistoryKind;
+  /** When the event happened (a turn's end), not when it was written to history. */
   occurredAt: number;
+  /** When this computer announced it, only when that was later than `occurredAt`. */
+  announcedAt?: number;
 };
 export const notificationKey = (notice: PendingApprovalNotice) =>
   `${notice.sessionId}:${notice.kind}:${notice.requestId}`;
@@ -67,6 +70,7 @@ export function readNotificationHistoryStatus(): NotificationHistoryRead {
           ) &&
           NOTIFICATION_HISTORY_KINDS.includes(item.kind) &&
           (item.target === undefined || typeof item.target === "string") &&
+          (item.announcedAt === undefined || Number.isFinite(item.announcedAt)) &&
           Number.isFinite(item.occurredAt) &&
           item.occurredAt >= 0 &&
           item.occurredAt <= 8_640_000_000_000_000,

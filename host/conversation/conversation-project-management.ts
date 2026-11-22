@@ -1,4 +1,4 @@
-import { execFileAsync } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "../git/git-exec-pool";
 import { hostGitStarts } from "../git/git-start-gate";
 import { existingPath, hostGitIndex, workspacePath } from "../workspaces/workspace";
 import { relative, sep } from "node:path";
@@ -119,7 +119,7 @@ export async function runConversationGitAction(
         // A missing directory is still a recursive Git pathspec. Accept only an
         // exact normal file in the index, never a directory prefix or submodule.
         await hostGitStarts.enter();
-        const tracked = await execFileAsync(
+        const tracked = await hostGitExec.exec(
           "git",
           ["--literal-pathspecs", "ls-files", "--stage", "-z", "--", relativePath],
           { cwd, windowsHide: true, timeout: 10_000, maxBuffer: 1024 * 1024 },
@@ -153,7 +153,7 @@ export async function runConversationGitAction(
     ];
   }
   await hostGitStarts.enter();
-  const result = await execFileAsync("git", ["-c", "core.pager=cat", ...args], {
+  const result = await hostGitExec.exec("git", ["-c", "core.pager=cat", ...args], {
     cwd,
     windowsHide: true,
     timeout: 120_000,

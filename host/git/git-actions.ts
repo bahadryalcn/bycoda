@@ -1,4 +1,3 @@
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
 import { hostGitExec } from "./git-exec-pool";
 import {
   gitMutationScope,
@@ -10,7 +9,6 @@ import {
 import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   hostConflictStages,
@@ -119,12 +117,13 @@ async function git(
 ): Promise<string> {
   try {
     return (
-      await exec(
+      await hostGitExec.exec(
         "git",
         [...(args.includes("--") ? ["--literal-pathspecs"] : []), "--no-pager", ...args],
         {
           cwd: root,
           timeout,
+          lane: timeout === NETWORK_MS ? "network" : "default",
           maxBuffer,
           encoding: "utf8",
           windowsHide: true,
@@ -693,40 +692,24 @@ const SNAPSHOT_REFS_BYTES = 2 * 1024 * 1024;
 
 /** Hashes a git command's output as it streams, so large diffs and indexes never
  * have to fit in a buffer. Fails with the command that could not be read. */
-function gitOutputDigest(root: string, args: string[]): Promise<string> {
-  let timedOut = false;
-  const failed = () =>
-    new Error(
-      `Git management snapshot could not read \`git ${args.join(" ")}\`${timedOut ? ` within ${SNAPSHOT_MS / 1000} seconds` : ""}. No action was executed.`,
-    );
-  return new Promise((resolve, reject) => {
-    const hash = createHash("sha256");
-    const child = spawn("git", ["--no-pager", ...args], {
+async function gitOutputDigest(root: string, args: string[]): Promise<string> {
+  const hash = createHash("sha256");
+  await hostGitExec
+    .exec("git", ["--no-pager", ...args], {
       cwd: root,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"],
-      env: {
-        ...process.env,
-        LC_ALL: "C.UTF-8",
-        GIT_OPTIONAL_LOCKS: "0",
-        GIT_TERMINAL_PROMPT: "0",
+      timeout: SNAPSHOT_MS,
+      env: { LC_ALL: "C.UTF-8", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+      onOutput: (stream, chunk) => {
+        if (stream === "stdout") hash.update(chunk);
       },
+    })
+    .catch((error: { killed?: boolean; code?: string }) => {
+      const timedOut = error.killed || error.code === "ETIMEDOUT";
+      throw new Error(
+        `Git management snapshot could not read \`git ${args.join(" ")}\`${timedOut ? ` within ${SNAPSHOT_MS / 1000} seconds` : ""}. No action was executed.`,
+      );
     });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, SNAPSHOT_MS);
-    child.stdout.on("data", (chunk: Buffer) => hash.update(chunk));
-    child.once("error", () => {
-      clearTimeout(timer);
-      reject(failed());
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve(hash.digest("hex"));
-      else reject(failed());
-    });
-  });
+  return hash.digest("hex");
 }
 
 /** An opaque receipt: credentials in remote configuration never leave the host. */

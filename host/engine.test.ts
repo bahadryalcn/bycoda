@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
+import { TurnNotReadyError } from "../src/integrations/harness/core/types";
 import { withMachineSkillPolicy, type HostProvider } from "./providers/providers";
 import { HostEngine, parseCommand } from "./engine";
 import { HostStore } from "./store";
@@ -685,6 +686,36 @@ it("steers the active host turn without replacing it, and deduplicates retries",
     (await store.session(id)).session.blocks.filter((block) => block.id === "redirect"),
   ).toHaveLength(1);
   await expect(engine.command({ ...command, commandId: "stale", runId: "old" })).rejects.toThrow();
+});
+
+it("records a pre-write steer refusal as undelivered", async () => {
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+  provider.steer = vi.fn(async () => {
+    throw new TurnNotReadyError("Turn ended before writing");
+  });
+  await engine.command({ type: "send", commandId: "start", sessionId: id, text: "first" });
+  await waitForTurnStart();
+  turns[0].input.onAccepted?.();
+  const runId = (await store.session(id)).runId!;
+  provider.steerReady = () => false;
+  await expect(
+    engine.command({ type: "steer", commandId: "early", sessionId: id, runId, text: "second" }),
+  ).rejects.toMatchObject({ delivery: "not-sent", code: "COMMAND_BUSY" });
+  expect(provider.steer).not.toHaveBeenCalled();
+  provider.steerReady = () => true;
+  await engine.command({
+    type: "steer",
+    commandId: "redirect",
+    sessionId: id,
+    runId,
+    text: "second",
+  });
+  await vi.waitFor(async () =>
+    expect(
+      (await store.session(id)).session.blocks.find((block) => block.id === "redirect")
+        ?.followUpDelivery,
+    ).toBe("undelivered"),
+  );
 });
 
 it.each(["reasoning", "subagent", "background command"] as const)(

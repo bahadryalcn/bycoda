@@ -11,5 +11,10 @@ export {
   retainAttachmentPickerSelection,
   revokeAttachment,
 } from "../model/attachments";
-export { stripAttachmentTokens } from "../model/attachmentTokens";
+export {
+  attachmentDraftTokens,
+  findTokens,
+  rewriteTokenMatches,
+  stripAttachmentTokens,
+} from "../model/attachmentTokens";
 export type { Attachment } from "../model/session";

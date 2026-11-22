@@ -387,12 +387,13 @@ export class SessionQueues {
    * acknowledgement: the row is held as unconfirmed and the queue paused. It is
    * never sent again on its own; the sender may still settle it with its token.
    */
-  async reapStale(id: string): Promise<SharedQueue> {
+  async reapStale(id: string, uncertainToken?: string): Promise<SharedQueue> {
     return this.db.scope(async () => {
       await this.ready;
       const queue = await this.get(id);
       const claim = queue.claim;
-      if (!claim || this.now() < this.claimDeadline(queue)!) return queue;
+      if (!claim || (claim.token !== uncertainToken && this.now() < this.claimDeadline(queue)!))
+        return queue;
       return await this.save(id, {
         ...queue,
         messages: queue.messages.map((row) =>
@@ -718,6 +719,38 @@ export class SessionQueues {
         status: messages.length ? queue.status : undefined,
       });
     });
+  }
+  /** Only this command's claim may change its row. Recovery can run after a manual resolution. */
+  async settleSteer(
+    id: string,
+    token: string,
+    outcome: "delivered" | "not_delivered" | "unknown",
+  ): Promise<void> {
+    const queue = await this.get(id);
+    if (queue.claim?.token === token) {
+      if (outcome === "unknown") await this.reapStale(id, token);
+      else await this.finish(id, token, outcome === "delivered");
+      return;
+    }
+    const settled = queue.settled as StoredSettled | undefined;
+    if (
+      settled?.token !== token ||
+      !settled.reaped ||
+      settled.accepted ||
+      !queue.messages.some((row) => row.id === settled.id && row.deliveryUnknown)
+    )
+      return;
+    if (outcome === "delivered") await this.finish(id, token, true);
+    if (outcome === "not_delivered") {
+      const messages = queue.messages.map((row) =>
+        row.id === settled.id ? { ...row, deliveryUnknown: undefined } : row,
+      );
+      await this.save(id, {
+        ...queue,
+        messages,
+        settled: { token, clientId: settled.clientId, accepted: false },
+      });
+    }
   }
   async delete(id: string): Promise<void> {
     return this.db.scope(async () => {

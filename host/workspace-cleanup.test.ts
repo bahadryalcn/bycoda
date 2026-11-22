@@ -273,16 +273,20 @@ async function setup(linkedAncestor = false) {
       return structuredClone([...operations.values()]);
     },
   };
-  let probe: () => Promise<[]> = async () => [];
+  let probe: Parameters<typeof createExecutionActivityReservations>[0]["probe"] = async () => [];
   const reservations = createExecutionActivityReservations({
     get: async () => workspace,
-    probe: async () => probe(),
+    probe: async (input) => probe(input),
     pending: async (id, except) =>
       [...operations.values()].some(
         (op) => op.workspaceId === id && op.id !== except && op.phase !== "complete",
       ),
   });
   const deps: WorkspaceCleanupDependencies = {
+    withRemovalLease: async (_path, run, resolveProject) => {
+      expect(await resolveProject()).toBe(project);
+      return run(() => {});
+    },
     registry,
     reservations,
     location: async () => ({ projectCwd: project, managedRoot, archiveRoot }),
@@ -648,12 +652,17 @@ it("atomically fences starts while reserving and rejects active, unknown or unfi
   expect(existsSync(s.path)).toBe(true);
 }, 120_000);
 
-it("settles a missing workspace directory as removed by pruning only its stale registration", async () => {
+it("settles a missing workspace directory while preserving both stale registrations", async () => {
   const s = await setup();
+  const sibling = join(s.root, "missing-sibling");
+  git(s.project, "worktree", "add", "--detach", sibling, "HEAD");
+  rmSync(sibling, { recursive: true, force: true });
   rmSync(s.path, { recursive: true, force: true });
   const receipt = await s.apply();
   expect(receipt.directoryState).toBe("removed");
-  expect(git(s.project, "worktree", "list", "--porcelain")).not.toContain(s.path);
+  const listed = git(s.project, "worktree", "list", "--porcelain").split(/\r?\n/);
+  expect(listed).toContain(`worktree ${s.path.replaceAll("\\", "/")}`);
+  expect(listed).toContain(`worktree ${sibling.replaceAll("\\", "/")}`);
   expect(git(s.project, "branch", "--list", "bycoda/t/test")).toContain("bycoda/t/test");
 }, 120_000);
 it("returns an idempotent receipt and rejects payload reuse", async () => {
@@ -692,7 +701,24 @@ it("reconciles journaled partially deleted Windows-style remnants after restart 
     recoveryIds: [],
   };
   s.operations.set(op.id, op);
+  const unavailable = createWorkspaceRemovalService({ ...s.deps, withRemovalLease: undefined });
+  await expect(unavailable.recover(op.id)).rejects.toThrow("fresh desktop removal lease");
+  expect(existsSync(join(s.path, "locked-output.txt"))).toBe(true);
+  expect(s.operations.get(op.id)?.phase).toBe("blocked");
   const fresh = createWorkspaceRemovalService(s.deps);
+  s.setProbe(async () => [
+    {
+      id: "terminal",
+      workspaceId: s.workspace.id,
+      kind: "shell",
+      ownerId: "new-terminal",
+      startedAt: 2,
+    },
+  ]);
+  await expect(fresh.recover(op.id)).rejects.toThrow("Workspace is still in use");
+  expect(existsSync(join(s.path, "locked-output.txt"))).toBe(true);
+  expect(s.operations.get(op.id)?.phase).toBe("blocked");
+  s.setProbe(async () => []);
   const result = await fresh.recover(op.id);
   expect(result.phase).toBe("complete");
   expect(existsSync(s.path)).toBe(false);

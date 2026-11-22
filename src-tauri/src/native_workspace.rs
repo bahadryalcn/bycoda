@@ -144,7 +144,7 @@ fn requires_host_activity(
                         .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
                         .current_dir(ancestor);
                     crate::harness::prepare_gui_child(&mut command);
-                    if let Ok(output) = command.output() {
+                    if let Ok(output) = crate::fs::git_cmd_output(&mut command) {
                         if output.status.success() {
                             let branch = String::from_utf8_lossy(&output.stdout);
                             return Ok(branch.trim().starts_with("bycoda/s/")

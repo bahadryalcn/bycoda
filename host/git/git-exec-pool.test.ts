@@ -10,6 +10,23 @@ let cwd: string | undefined;
 const node = (code: string, options: Partial<Parameters<GitExecPool["exec"]>[2]> = {}) =>
   pool!.exec(process.execPath, ["-e", code], { timeout: 10_000, ...options });
 
+it("streams both pipes without buffering and preserves input and exit code", async () => {
+  pool = new GitExecPool();
+  const output = { stdout: [] as Buffer[], stderr: [] as Buffer[] };
+  const input = Buffer.alloc(2 * 1024 * 1024, 255);
+  await expect(
+    node(
+      "process.stdin.pipe(process.stdout); process.stderr.write(Buffer.alloc(2 * 1024 * 1024, 65)); process.exitCode = 7",
+      {
+        input: [input.subarray(0, 65536), input.subarray(65536)],
+        onOutput: (stream, chunk) => output[stream].push(chunk),
+      },
+    ),
+  ).rejects.toMatchObject({ code: 7, stdout: "", stderr: "" });
+  expect(Buffer.concat(output.stdout).equals(input)).toBe(true);
+  expect(Buffer.concat(output.stderr).equals(Buffer.alloc(input.length, 65))).toBe(true);
+});
+
 afterEach(async () => {
   await pool?.close();
   if (cwd) await rm(cwd, { recursive: true, force: true });

@@ -39,6 +39,96 @@ const url = (query: Record<string, string> = {}, light = false) => {
 const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
+
+test("selecting all with an inline skill keeps suggestions closed", async ({ page }) => {
+  for (const light of [false, true]) {
+    await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+    const editor = page.locator("[data-composer-inline-input]");
+    const picker = page.locator("[data-skill-picker]");
+    await expect(editor.locator('[data-inline-reference="skill"]')).toHaveText("ui-ux-pro-max");
+    const original = await field(page).inputValue();
+    await expect(picker).toBeHidden();
+
+    await editor.press("ControlOrMeta+a");
+    await expect
+      .poll(() =>
+        field(page).evaluate((input: HTMLTextAreaElement) => [
+          input.selectionStart,
+          input.selectionEnd,
+        ]),
+      )
+      .toEqual([0, original.length]);
+    await expect(picker).toBeHidden();
+    await expect(field(page)).toHaveValue(original);
+    await capture(page, `select-all-skill-${light ? "light" : "dark"}`);
+  }
+});
+
+test("cut and paste restores a PNG attachment inside the sentence", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions are required");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(url({ clipboardRoundTrip: "" }));
+  const image = page.locator('[data-composer-inline-input] [data-inline-reference="attachment"]');
+  await expect(image).toHaveAccessibleName("Open image.png");
+  const original = await field(page).inputValue();
+  await field(page).evaluate((input: HTMLTextAreaElement) => {
+    input.focus();
+    input.select();
+  });
+  await page.keyboard.press("ControlOrMeta+x");
+  await expect(field(page)).toHaveValue("");
+  await expect(image).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(field(page)).toHaveValue(original);
+  await expect(image).toHaveAccessibleName("Open image.png");
+  await expect(page.locator("html")).toHaveAttribute("data-clipboard-image-bytes", "68");
+});
+
+test("inline composer cuts real file bytes and restores the reference on undo", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions are required");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(url({ inlineExamples: "" }));
+  const editor = page.locator("[data-composer-inline-input]");
+  const csv = editor.locator("[data-inline-reference]").filter({ hasText: "bycoda-usage.csv" });
+  await expect(csv).toBeVisible();
+  const original = await field(page).inputValue();
+  await field(page).evaluate((input: HTMLTextAreaElement) => {
+    const token = /\[[^\]]*bycoda-usage\.csv[^\]]*\]/.exec(input.value)!;
+    input.focus();
+    input.setSelectionRange(token.index, token.index + token[0].length);
+  });
+  await page.keyboard.press("ControlOrMeta+c");
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const [item] = await navigator.clipboard.read();
+        return item?.types.includes("text/html") ? (await item.getType("text/html")).text() : "";
+      }),
+    )
+    .toContain('data-bycoda-file="bycoda-usage.csv"');
+  const html = await page.evaluate(async () => {
+    const [item] = await navigator.clipboard.read();
+    return (await item.getType("text/html")).text();
+  });
+  expect(html).toContain("data:text/csv;base64,ZmVhdHVyZSxldmVudHMKY29tcG9zZXIsMTI4");
+  await expect(csv).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+x");
+  await expect(csv).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(field(page)).toHaveValue(original);
+  await expect(csv).toBeVisible();
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+z" : "Control+y");
+  await expect(csv).toHaveCount(0);
+});
+
 test("the session composer renders all eight compact references in the editable line", async ({
   page,
 }) => {
@@ -56,6 +146,15 @@ test("the session composer renders all eight compact references in the editable 
     const editor = box.locator("[data-composer-inline-input]");
     const references = editor.locator("[data-inline-reference]");
     await expect(references).toHaveCount(8);
+    await expect(editor.locator('[data-inline-reference="skill"]')).toHaveAttribute(
+      "spellcheck",
+      "false",
+    );
+    await expect(editor.locator('[data-inline-reference="group"]')).toHaveAttribute(
+      "spellcheck",
+      "false",
+    );
+    await expect(editor).toHaveAttribute("spellcheck", "true");
     await expect(editor).toHaveCSS("font-family", /sans-serif/);
     await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
     await expect(references.locator(":scope > span")).toHaveText([
@@ -137,6 +236,33 @@ test("the session composer renders all eight compact references in the editable 
     await expect(field(page)).not.toHaveValue(/bycoda-export\.json/);
   }
 });
+test("repeated PDF references use their intrinsic width with small padding", async ({ page }) => {
+  const evidence = "temp/verification/composer-repeat-pdf";
+  mkdirSync(evidence, { recursive: true });
+  for (const width of [800, 1280]) {
+    for (const light of [false, true]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+      const box = page.locator("[data-composer]");
+      const editor = box.locator("[data-composer-inline-input]");
+      const pdfs = editor.getByRole("button", { name: "Open Detailed-project-report-tr (1).pdf" });
+      await expect(pdfs).toHaveCount(2);
+      await expect(editor.locator('[data-inline-reference="skill"]')).toHaveText("ui-ux-pro-max");
+      await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
+      for (const pdf of await pdfs.all()) {
+        await expect(pdf).toHaveText("Detailed-project-report-tr (1).pdf71 KB");
+        await expect(pdf).toHaveCSS("padding-inline", "5px");
+        const extraWidth = await pdf.evaluate((chip) => {
+          const icon = chip.firstElementChild!.getBoundingClientRect();
+          const size = chip.lastElementChild!.getBoundingClientRect();
+          return chip.getBoundingClientRect().width - (size.right - icon.left);
+        });
+        expect(extraWidth).toBeCloseTo(12, 0);
+      }
+      await box.screenshot({ path: `${evidence}/${light ? "light" : "dark"}-${width}.png` });
+    }
+  }
+});
 test("shows the complete attached filename in the card and inline while writing", async ({
   page,
 }) => {
@@ -177,6 +303,62 @@ test("wraps a long attached filename on narrow layouts without losing characters
     box.getByRole("button", { name: `Open ${filename}`, exact: true }).first(),
   ).toBeVisible();
 });
+test("skill panels match the composer and keep their actions visible", async ({ page }) => {
+  for (const light of [false, true]) {
+    for (const width of [800, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ inlineExamples: "skill-panels" }, light));
+      const box = page.locator("[data-composer-box]");
+      const editor = box.locator("[data-composer-inline-input]");
+      const composerMaterial = await box.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { fill: style.backgroundColor, filter: style.backdropFilter };
+      });
+      const checkMaterial = async (panel: Locator) => {
+        const surface = panel.locator(':scope > [aria-hidden="true"]');
+        await expect(surface).toHaveCSS("background-color", composerMaterial.fill);
+        await expect(surface).toHaveCSS("backdrop-filter", composerMaterial.filter);
+      };
+      await editor.getByRole("button", { name: "ui-ux-pro-max", exact: true }).click();
+      const details = page.getByRole("dialog", { name: "ui-ux-pro-max" });
+      const openFile = details.getByRole("button", { name: "Open SKILL.md" });
+      await expect(openFile).toBeVisible();
+      await capture(page, `skill-details-${light ? "light" : "dark"}-${width}`);
+      await expect(openFile).toHaveAttribute("data-button-variant", "secondary");
+      await checkMaterial(details.locator(".."));
+      await openFile.click();
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-composer-opened-file",
+        "/fixture/.claude/skills/ui-ux-pro-max/SKILL.md",
+      );
+      await editor.focus();
+      await page.keyboard.press("Control+End");
+      await page.keyboard.type(" /");
+      const list = page.getByRole("listbox", { name: "Commands and skills" });
+      const create = page.getByRole("button", { name: "New skill", exact: true });
+      await expect(list).toBeVisible();
+      await expect(create).toBeVisible();
+      await capture(page, `skill-picker-${light ? "light" : "dark"}-${width}`);
+      await expect(create).toHaveAttribute("data-button-variant", "secondary");
+      const panel = list.locator("xpath=ancestor::*[@data-popover-side][last()]");
+      await checkMaterial(panel);
+      await expect
+        .poll(async () => {
+          const panelBounds = await panel.boundingBox();
+          const boxBounds = await box.boundingBox();
+          if (!panelBounds || !boxBounds) return Infinity;
+          return Math.max(
+            Math.abs(panelBounds.width - boxBounds.width),
+            Math.abs(panelBounds.x - boxBounds.x),
+          );
+        })
+        .toBeLessThanOrEqual(1);
+      await list.getByRole("option").last().scrollIntoViewIfNeeded();
+      await expect(create).toBeInViewport({ ratio: 1 });
+    }
+  }
+});
+
 test("opens references from the real session composer in both themes and widths", async ({
   page,
 }) => {

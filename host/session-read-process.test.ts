@@ -17,6 +17,7 @@ function fixture(options: { sendError?: Error } = {}) {
     EventEmitter & {
       pid: number;
       kill: ReturnType<typeof vi.fn>;
+      unref: ReturnType<typeof vi.fn>;
       input?: { id: string };
       send: ReturnType<typeof vi.fn>;
     }

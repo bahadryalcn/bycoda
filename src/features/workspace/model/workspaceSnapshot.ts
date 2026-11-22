@@ -1,6 +1,7 @@
 import { markTurnInterrupted, type ResumedWorkspace } from "../../sessions/model/inFlight";
 import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
 import { withoutInternalWorkspaceSessions } from "./delegatedWorkspace";
+import { findTabForProject, workspaceTabCwd } from "./workspaceTabGroups";
 import {
   closeLeaf,
   isAgentTab,
@@ -42,6 +43,7 @@ import type { InboxAskContext } from "../../inbox/model/inboxAsk";
 import {
   HARNESSES,
   RUNTIME_MODES,
+  newDefaultSession,
   newSession,
   type HarnessId,
   type RuntimeMode,
@@ -119,7 +121,23 @@ export function collectWorkspaceSnapshot(
       : {}),
     ...(isDockSide(lastDockSide) ? { lastDockSide } : {}),
   });
-  return withProjectReturnTargets(snapshot, memory);
+  return withProjectReturnTargets(
+    { ...snapshot, activeTabId: savedWorkspaceTabId(snapshot) },
+    memory,
+  );
+}
+
+function savedWorkspaceTabId({
+  tabs,
+  sessions,
+  activeTabId,
+  projectCwd,
+}: Pick<WorkspaceSnapshot, "tabs" | "activeTabId" | "projectCwd"> & {
+  sessions: Pick<Session, "id" | "cwd">[];
+}): string {
+  if (tabs.some((tab) => tab.id === activeTabId)) return activeTabId;
+  if (projectCwd === "~") return tabs.find((tab) => !workspaceTabCwd(tab, sessions))?.id ?? "";
+  return findTabForProject(tabs, sessions, projectCwd)?.id ?? "";
 }
 
 function withProjectReturnTargets(
@@ -207,9 +225,6 @@ export function parseWorkspaceSnapshot(raw: unknown, allowEmpty = false): Worksp
   const sessions = Array.isArray(value.sessions)
     ? value.sessions.map(sanitizeStub).filter((stub): stub is WorkspaceSessionStub => stub != null)
     : [];
-  const activeTabId = tabs.some((tab) => tab.id === value.activeTabId)
-    ? value.activeTabId
-    : (tabs[0]?.id ?? "");
   const projectCwd =
     typeof value.projectCwd === "string" && value.projectCwd.trim() ? value.projectCwd.trim() : "~";
   const projectTerminals = Array.isArray(value.projectTerminals)
@@ -221,13 +236,16 @@ export function parseWorkspaceSnapshot(raw: unknown, allowEmpty = false): Worksp
   const snapshot = withoutInternalWorkspaceSessions({
     tabs,
     sessions,
-    activeTabId,
+    activeTabId: value.activeTabId,
     projectCwd,
     projectTerminals,
     lastDockSide,
   });
   return snapshot.tabs.length > 0 || allowEmpty
-    ? withProjectReturnTargets(snapshot, parseProjectReturnTargets(value.projectReturnTargets))
+    ? withProjectReturnTargets(
+        { ...snapshot, activeTabId: savedWorkspaceTabId(snapshot) },
+        parseProjectReturnTargets(value.projectReturnTargets),
+      )
     : null;
 }
 
@@ -331,22 +349,35 @@ export function hydrateWorkspaceSnapshot(
   }
 
   if (tabs.length === 0) return null;
-  const activeTabId = tabs.some((tab) => tab.id === parsed.activeTabId)
-    ? parsed.activeTabId
-    : tabs[0].id;
-  const projectCwd =
-    parsed.projectCwd !== "~" ? parsed.projectCwd : (sessions.values().next().value?.cwd ?? "~");
+  const restoredSessions = [...sessions.values()];
+  let activeTabId = savedWorkspaceTabId({
+    ...parsed,
+    tabs,
+    sessions: restoredSessions,
+  });
+  let projectCwd = parsed.projectCwd;
+  if (!activeTabId) {
+    const session = newDefaultSession();
+    const tab = newTab(session.id);
+    restoredSessions.push(session);
+    tabs.push(tab);
+    activeTabId = tab.id;
+    projectCwd = session.cwd;
+  } else if (projectCwd === "~") {
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+    if (activeTab) projectCwd = workspaceTabCwd(activeTab, restoredSessions) ?? "~";
+  }
 
   return {
     tabs,
-    sessions: [...sessions.values()],
+    sessions: restoredSessions,
     activeTabId,
     projectCwd,
     projectTerminals: parsed.projectTerminals,
     projectReturnMemory: reconcileProjectReturn({
       memory: parseProjectReturnTargets(parsed.projectReturnTargets),
       tabs,
-      sessions: [...sessions.values()],
+      sessions: restoredSessions,
       activeTabId,
     }),
     lastDockSide: parsed.lastDockSide,

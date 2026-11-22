@@ -51,7 +51,7 @@ export function useLiveAgentAnnouncements({
           notice: "error",
           text: host.issueMessage || "Failed",
         });
-      void announceSessionIssue(session, host.issue, false);
+      void announceSessionIssue(session, host.issue, false, "summary");
     }
   }, [unopenedRemote]);
 }

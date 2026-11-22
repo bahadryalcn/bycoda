@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
-import { act, createElement, useCallback, useState, type ComponentProps } from "react";
+import { act, createElement, Fragment, useCallback, useState, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { setLanguagePreference, t } from "../../../shared/i18n";
+import { ToastRegion, type ToastAnnouncement } from "../../../shared/ui/ToastRegion";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { PaneTree } from "../../workspace/ui/PaneTree";
@@ -411,7 +412,9 @@ beforeEach(() => {
           "workspaces.managed.v1",
           "workspaces.policy.v1",
           ...(managedCreationSupported ? ["sessions.managedCreation.v1"] : []),
-          ...(steerSupported ? ["sessions.steer"] : []),
+          ...(steerSupported
+            ? ["sessions.steer", ...providers.map((id) => `sessions.steer.${id}`)]
+            : []),
           ...(sharedQueueSupported ? ["sessions.queue"] : []),
           ...(harnessSwitchSupported ? ["sessions.harnessSwitch"] : []),
           ...(accountSwitchSupported ? ["sessions.configure.providerAccount.v1"] : []),
@@ -899,7 +902,11 @@ it.each(["codex", "cursor"] as const)(
   },
 );
 
-async function render(session = shell(), extra: Partial<SessionPaneProps> = {}) {
+async function render(
+  session = shell(),
+  extra: Partial<SessionPaneProps> = {},
+  onToast?: (entry: ToastAnnouncement) => void,
+) {
   const props = {
     session,
     visible: true,
@@ -911,7 +918,14 @@ async function render(session = shell(), extra: Partial<SessionPaneProps> = {}) 
     onClose: vi.fn(),
     ...extra,
   } as unknown as SessionPaneProps;
-  await act(async () => root.render(createElement(SessionPane, props)));
+  const pane = createElement(SessionPane, props);
+  await act(async () =>
+    root.render(
+      onToast
+        ? createElement(Fragment, null, createElement(ToastRegion, { onRecord: onToast }), pane)
+        : pane,
+    ),
+  );
   await settle();
 }
 let remoteOverrides: RemoteSessionOverrides;
@@ -3599,9 +3613,10 @@ it("marks known revision updates refreshing and settles on the new owner snapsho
 });
 
 it("releases transcript demand and stops polling when the host deletes a session", async () => {
+  const onToast = vi.fn();
   lazyHistorySupported = true;
   openExistingChat();
-  await render();
+  await render(shell(), {}, onToast);
   await vi.waitFor(() =>
     expect(container.querySelector('[aria-label="Transcript"]')?.getAttribute("data-history")).toBe(
       "true",
@@ -3609,8 +3624,14 @@ it("releases transcript demand and stops polling when the host deletes a session
   );
   machineSessionDeleted = true;
   await vi.waitFor(() =>
-    expect(document.body.textContent).toContain("This conversation was deleted on the host."),
+    expect(onToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "This conversation was deleted on the host.",
+        tone: "info",
+      }),
+    ),
   );
+  expect(container.querySelector("[data-remote-data-state]")).toBeNull();
   await vi.waitFor(() =>
     expect(
       vi.mocked(invoke).mock.calls.some((call) => {
@@ -3840,7 +3861,7 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
       .join(" "),
-  ).toContain("Your messages are kept");
+  ).toContain("catching up with the local Host");
   expect(document.body.textContent).toContain("local edit");
   expect(byLabel("Stop")).not.toBeNull();
   await render({ ...session, continuingElsewhere: undefined });
@@ -3850,7 +3871,7 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
       .join(" "),
-  ).toContain("Your messages are kept");
+  ).toContain("catching up with the local Host");
 });
 
 it("refreshes an adopted conversation without remounting or clearing its unsent composer", async () => {
@@ -4560,6 +4581,37 @@ slow(
       "Preserve the refused follow-up",
     );
     expect(remoteOverrides.session?.queueStatus).toBe("paused");
+  },
+);
+
+slow(
+  "retires a pending steer on recovered pre-write refusal without sending it again",
+  async () => {
+    steerSupported = true;
+    commandStatusSupported = true;
+    steerFailure = "The host did not confirm the request";
+    openRunningChat();
+    const original = vi.mocked(invoke).getMockImplementation()!;
+    let attempts = 0;
+    vi.mocked(invoke).mockImplementation(async (command, input) => {
+      const request = input as { method?: string; params?: HostCommand };
+      if (request?.method === "commands.dispatch" && request.params?.type === "steer") attempts++;
+      if (request?.method === "commands.status") {
+        statusRequests.push(request.params!.commandId);
+        throw new Error("Host rejected request: The active turn is not ready for steering.");
+      }
+      return original(command, input);
+    });
+    await render();
+    await whenStopShown();
+    await send("Keep my follow-up");
+    await vi.waitFor(async () => {
+      expect(statusRequests.length).toBeGreaterThan(0);
+      expect(
+        (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+      ).toBeFalsy();
+    });
+    expect(attempts).toBe(1);
   },
 );
 

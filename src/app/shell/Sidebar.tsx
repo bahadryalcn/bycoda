@@ -349,7 +349,7 @@ import { ProjectRail } from "./ProjectRail";
 import { SidebarAccountFooter } from "./SidebarAccountFooter";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
-import { Tooltip } from "../../shared/ui/Tooltip";
+import { detailTooltipFrame, Tooltip } from "../../shared/ui/Tooltip";
 import { Spinner } from "../../shared/ui/Spinner";
 import { PaneHeader } from "../../shared/ui/PaneHeader";
 import { Sash } from "../../shared/ui/Sash";
@@ -541,7 +541,7 @@ type Props = {
   recents?: RecentProject[];
   busyProjectPaths?: Iterable<string>;
   liveAgents?: LiveAgent[];
-  onSelectAgent?: (sessionId: string) => void;
+  onSelectAgent?: (sessionId: string) => void | Promise<boolean>;
   onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
   onOpenCrewSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
   recentSessions?: RecentSessionsSource;
@@ -4216,7 +4216,6 @@ function SidebarComponent({
             >
               <LiveAgentsPreview
                 agents={liveAgents}
-                currentProject={lastSessionsOpen ? undefined : cwd}
                 activeSessionId={activeSessionId}
                 onSelect={onSelectAgent}
                 bottomSpacing={compactRailVisible}
@@ -5202,10 +5201,8 @@ function CompactProjectRail({
           active={assistantActive}
           onClick={action(assistantActive, () => openAssistantRoom())}
         />
-        {/* Same order as the full sidebar: panel, search and tools first, then the
-            work sections (recovered work, projects, last sessions, workspace). */}
+        {/* Match the full sidebar's order: tools, then work sections. */}
         <Divider decorative className="my-0.5 w-6 shrink-0 self-center" />
-        {recoveryControl}
         {onOpenProjectNavigation ? (
           <Button
             variant="ghost"
@@ -5242,6 +5239,7 @@ function CompactProjectRail({
       <div className="min-h-2 flex-1" />
       <SidebarAccountFooter
         compact
+        recoveryControl={recoveryControl}
         onOpenSettings={onOpenSettings}
         onOpenAccountSettings={onOpenAccountSettings}
       />
@@ -6700,15 +6698,11 @@ const SessionCard = memo(function SessionCard({
           anchor={detailRootRef}
           side="right"
           align="start"
-          gap={6}
-          size="sm"
+          {...detailTooltipFrame}
           maxHeight={280}
           role="tooltip"
           id={detailId}
-          passive
-          frosted
           restoreFocus={false}
-          className="pointer-events-none overflow-hidden p-2.5"
         >
           <ClampText
             as="p"

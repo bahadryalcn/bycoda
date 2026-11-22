@@ -99,6 +99,15 @@ for (const theme of ["light", "dark"])
       });
       await dialog.getByRole("button", { name: "Open beside", exact: true }).click();
       await expect(page.locator("[data-opened]")).toHaveText("Beside: stable-session · turn-2");
+      const subagent = page.getByRole("region", { name: "Subagent reference" });
+      await subagent.getByRole("button", { name: "Session details" }).click();
+      await expect(dialog).toContainText("Subagent · Running");
+      await expect(dialog.getByRole("button")).toHaveCount(1);
+      await page.screenshot({
+        path: `temp/verification/subagent-reference/${theme}-${width}-details.png`,
+      });
+      await dialog.getByRole("button", { name: "Open", exact: true }).click();
+      await expect(page.locator("[data-opened]")).toHaveText("Focused: subagent-session");
       const notes = page.getByRole("region", { name: "Notes references" });
       await notes.getByRole("link", { name: "Related conversation", exact: true }).click();
       await expect(page.locator("[data-note-editing]")).toHaveText("Reading");

@@ -31,7 +31,9 @@ import { hasPendingApproval, type Block, type HarnessId } from "../model/session
 import { executionUserIndex } from "../model/executionTurn";
 import { useTurnClockInTranscript, useTurnClockOrigin } from "../model/turnActivity";
 import { AgentClock } from "./AgentClock";
-import { SubagentMarks, SubagentStatusSummary } from "./SubagentAnatomy";
+import { SubagentStatusSummary } from "./SubagentAnatomy";
+import { HarnessIcon } from "./HarnessIcon";
+import type { TextTone } from "../../../shared/ui/Text";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
 import { STOP_ALL, useStopRequests } from "./useStopRequests";
 import { PacingUncle } from "./PacingUncle";
@@ -359,15 +361,15 @@ function DockBody({
               onClick={() => setExpanded(!open)}
               className="max-w-full min-w-0"
             >
-              <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <Text size="inherit" tone="inherit">
-                  {t("Background work")}
-                </Text>
-                <span className="flex min-w-0 flex-wrap items-center gap-1">
-                  {counts.map(({ text, tone }) => (
-                    <Badge key={text} size="xs" appearance="subtle" tone={tone}>
-                      {text}
-                    </Badge>
+              {/* The provider marks name who runs the work; the counts say how it stands.
+                  "Background work" stays in the accessible label only. */}
+              <span className="flex min-w-0 items-center gap-2">
+                <ProviderStack agents={listed} fallback={harness} />
+                <span className="flex min-w-0 flex-wrap items-center gap-x-1">
+                  {counts.map(({ text, tone }, index) => (
+                    <Text key={text} size="inherit" tone={tone ?? "inherit"}>
+                      {index ? `· ${text}` : text}
+                    </Text>
                   ))}
                 </span>
               </span>
@@ -456,6 +458,39 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
   );
 }
 
+const STATUS_TONE = {
+  running: "accent",
+  done: "secondary",
+  failed: "danger",
+  stopped: "warning",
+  interrupted: "warning",
+} as const satisfies Record<DockAgent["status"], TextTone>;
+
+/** Each provider running the listed work, once. */
+function ProviderStack({
+  agents,
+  fallback,
+}: {
+  agents: readonly DockAgent[];
+  fallback?: HarnessId;
+}) {
+  const providers = [
+    ...new Set(
+      agents.flatMap((agent) =>
+        agent.kind === "agent" && (agent.harness ?? fallback) ? [agent.harness ?? fallback!] : [],
+      ),
+    ),
+  ].slice(0, 4);
+  if (!providers.length) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-0.5" aria-hidden="true" data-dock-providers>
+      {providers.map((provider) => (
+        <HarnessIcon key={provider} harness={provider} size="sm" />
+      ))}
+    </span>
+  );
+}
+
 function accountSnapshot(provider: HarnessId | undefined, accountId: string | undefined): string {
   if (!provider || !accountId || !supportsProviderAccounts(provider)) return "";
   const account = providerAccounts(provider).find((item) => item.id === accountId);
@@ -505,11 +540,17 @@ function DockAgentRow({
         onClick={() => onOpen(agent)}
         className="activity-dock-agent min-w-0 flex-1 items-center text-left"
       >
+        {/* The provider leads an agent row, so mixed-provider runs read apart at a glance;
+            a command has no provider and keeps its state mark. */}
+        <span className="flex shrink-0 self-start pt-0.5" aria-hidden="true" data-dock-agent-lead>
+          {agent.kind === "agent" && provider ? (
+            <HarnessIcon harness={provider} size="md" />
+          ) : (
+            <AgentStatusDot status={agent.status} size="md" />
+          )}
+        </span>
         <span className="activity-dock-agent-identity flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-start gap-1.5" data-dock-agent-title>
-            <span className="flex shrink-0" aria-hidden="true" data-dock-agent-status>
-              <AgentStatusDot status={agent.status} size="md" />
-            </span>
             <ClampText
               as="span"
               lines={2}
@@ -534,13 +575,6 @@ function DockAgentRow({
           </span>
           {agent.kind === "agent" ? (
             <Text size="micro" tone="muted" className="flex min-w-0 items-center gap-1.5">
-              <SubagentMarks
-                name={agent.name}
-                member={agent.crewMember}
-                harness={provider}
-                active={agent.status === "running"}
-                failed={agent.status === "failed"}
-              />
               <Text size="inherit" tone="inherit" truncate>
                 {agent.model ?? t("Subagent")}
               </Text>
@@ -587,6 +621,19 @@ function DockAgentRow({
               )}
             </Text>
           ) : null}
+          {/* A detail that already names the state ("Interrupted", "stopped by you") keeps it once. */}
+          {agent.detail?.toLocaleLowerCase().includes(statusWord.toLocaleLowerCase()) ? null : (
+            <Text
+              size="inherit"
+              tone={STATUS_TONE[agent.status]}
+              weight={agent.status === "failed" ? "medium" : undefined}
+              className="inline-flex shrink-0 items-center gap-1"
+              data-dock-agent-status
+            >
+              <AgentStatusDot status={agent.status} />
+              {statusWord}
+            </Text>
+          )}
           <AgentClock
             startedAt={agent.startedAt}
             endedAt={agent.endedAt}

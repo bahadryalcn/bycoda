@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { hostGitExec } from "./git-exec-pool";
 import { createHash, randomUUID } from "node:crypto";
 import {
   chmod,
@@ -83,7 +83,7 @@ async function streamTurnGit(
   index: string | undefined,
   onStdout: (data: Buffer) => void,
 ): Promise<void> {
-  return new Promise<void>((resolveResult, reject) => {
+  {
     const env = { ...process.env };
     for (const key of [
       "GIT_DIR",
@@ -94,45 +94,51 @@ async function streamTurnGit(
       "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     ])
       delete env[key];
-    const child = spawn("git", ["--no-pager", ...args], {
-      cwd,
-      windowsHide: true,
-      stdio: "pipe",
-      env: {
-        ...env,
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_OPTIONAL_LOCKS: "0",
-        GIT_LITERAL_PATHSPECS: "1",
-        GIT_AUTHOR_NAME: "bycoda recovery",
-        GIT_AUTHOR_EMAIL: "recovery@bycoda.local",
-        GIT_COMMITTER_NAME: "bycoda recovery",
-        GIT_COMMITTER_EMAIL: "recovery@bycoda.local",
-        ...(index ? { GIT_INDEX_FILE: index } : {}),
-      },
-    });
     let error = "";
     let size = 0;
-    const timer = setTimeout(() => child.kill(), 60_000);
-    child.stdout.on("data", (data: Buffer) => {
-      size += data.length;
-      if (size > 256 * 1024 * 1024) child.kill();
-      else onStdout(data);
-    });
-    child.stderr.on("data", (data: Buffer) => {
-      if (error.length < 4000) error += data.toString();
-    });
-    child.on("error", (reason) => {
-      clearTimeout(timer);
-      reject(reason);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) reject(new Error(`Git ${args[0]} failed: ${error.trim() || code}`));
-      else resolveResult();
-    });
-    child.stdin.on("error", () => undefined);
-    child.stdin.end(input);
-  });
+    const stop = new AbortController();
+    await hostGitExec
+      .exec("git", ["--no-pager", ...args], {
+        cwd,
+        windowsHide: true,
+        timeout: 60_000,
+        input,
+        signal: stop.signal,
+        replaceEnv: true,
+        env: {
+          ...env,
+          GIT_TERMINAL_PROMPT: "0",
+          GIT_OPTIONAL_LOCKS: "0",
+          GIT_LITERAL_PATHSPECS: "1",
+          GIT_AUTHOR_NAME: "bycoda recovery",
+          GIT_AUTHOR_EMAIL: "recovery@bycoda.local",
+          GIT_COMMITTER_NAME: "bycoda recovery",
+          GIT_COMMITTER_EMAIL: "recovery@bycoda.local",
+          ...(index ? { GIT_INDEX_FILE: index } : {}),
+        },
+        onOutput: (stream, data) => {
+          if (stream === "stderr") {
+            if (error.length < 4000) error += data.toString();
+            return;
+          }
+          size += data.length;
+          if (size > 256 * 1024 * 1024) stop.abort();
+          else onStdout(data);
+        },
+      })
+      .catch((reason: { code?: number | string | null; killed?: boolean }) => {
+        if (
+          typeof reason.code === "number" ||
+          reason.code === null ||
+          reason.killed ||
+          reason.code === "ETIMEDOUT"
+        )
+          throw new Error(
+            `Git ${args[0]} failed: ${error.trim() || (reason.killed ? null : reason.code)}`,
+          );
+        throw reason;
+      });
+  }
 }
 export const gitText = async (cwd: string, args: string[]) =>
   (await turnGit(cwd, args)).toString().trim();

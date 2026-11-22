@@ -8,6 +8,11 @@ import {
   type NotificationHistoryKind,
 } from "./notificationHistory";
 
+/** A card never shows the same sentence as its title and its description. */
+function distinctLabel(title: string, label: string): string {
+  return title.trim() === label.trim() ? "" : label;
+}
+
 /** Recording never blocks or fails the announcement it belongs to. */
 function record(entry: NotificationHistoryEntry) {
   void recordNotificationHistory(entry).catch(() => undefined);
@@ -20,7 +25,7 @@ export function logToastAnnouncement(entry: ToastAnnouncement) {
     sessionId: "",
     cwd: "",
     title: truncateGraphemes(entry.title || entry.message, 200),
-    label: truncateGraphemes(entry.message, 2000),
+    label: truncateGraphemes(entry.title ? distinctLabel(entry.title, entry.message) : "", 2000),
     kind: entry.tone === "danger" ? "failed" : "background",
     occurredAt: entry.occurredAt,
   });
@@ -83,7 +88,10 @@ export function logNotification(entry: {
   /** `background:*` target; reminders carry a conversation instead. */
   target?: string;
   session?: { id: string; cwd: string; harness?: NotificationHistoryEntry["harness"] };
+  /** When the event happened (a turn end). */
   occurredAt: number;
+  /** When it was announced, if later than `occurredAt`. */
+  announcedAt?: number;
   locked?: boolean;
 }) {
   record({
@@ -93,8 +101,13 @@ export function logNotification(entry: {
     ...(entry.target ? { target: entry.target } : {}),
     ...(entry.session?.harness ? { harness: entry.session.harness } : {}),
     title: entry.locked ? "" : entry.title,
-    label: entry.locked ? t(LOCKED_NOTIFICATION_TEXT) : entry.label.slice(0, 2000),
+    label: entry.locked
+      ? t(LOCKED_NOTIFICATION_TEXT)
+      : distinctLabel(entry.title, entry.label).slice(0, 2000),
     kind: entry.kind,
     occurredAt: entry.occurredAt,
+    ...(entry.announcedAt !== undefined && entry.announcedAt > entry.occurredAt
+      ? { announcedAt: entry.announcedAt }
+      : {}),
   });
 }

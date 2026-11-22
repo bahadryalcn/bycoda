@@ -144,6 +144,12 @@ export function DelegatedRetentionFixture() {
     onStopSession: noop,
     closeNative: noop,
   });
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- `?sheet=<child id>` opens that subagent's sheet once on load, for visual review.
+  useEffect(() => {
+    const child = new URLSearchParams(location.search).get("sheet");
+    if (child) delegated.open(child);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fixture opens once; `delegated.open` is stable for the mounted pane.
+  }, []);
   const cards = useDelegatedCardBlocks(parentId, parent.blocks, true).filter(
     (block) => block.role === "tool",
   );

@@ -4,7 +4,16 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { basename, preparedFileSize, prepareLocalFile } from "../../../platform/tauri/fs";
+import {
+  basename,
+  preparedFileSize,
+  prepareLocalFile,
+  remoteMediaInfo,
+  releaseRemoteMediaLease,
+  remoteMediaStreamUrl,
+} from "../../../platform/tauri/fs";
+import { loadRemoteMediaMode } from "../../settings/public/remoteMediaMode";
+import { Download, Play } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { mediaKind } from "../model/mediaPreview";
 import { MediaVisibilityContext } from "../model/mediaVisibility";
@@ -24,15 +33,29 @@ type Props = {
   externalPath?: string | null;
 };
 type VideoMetadata = { duration?: number; width?: number; height?: number };
+/** Where to continue after the stream URL was replaced mid-playback. */
+type Resume = { at: number; play: boolean };
+
+/** Frees the loopback gateway held for an open player; best effort, it also expires on its own. */
+function releaseLease(held: { current: string | null }) {
+  const id = held.current;
+  held.current = null;
+  if (id) releaseRemoteMediaLease(id).catch(() => undefined);
+}
 type State =
   | { status: "loading"; received?: number; total?: number }
   | { status: "cancelled"; source?: object; size?: number }
+  /** Data saver: nothing has been transferred; the owner picks Play or Download. */
+  | { status: "manual"; size: number; source?: object }
   | {
       status: "ready";
       url: string;
       source: object;
       size?: number;
       metadata?: VideoMetadata;
+      /** The URL is a loopback stream whose gateway this player leases. */
+      streamed?: boolean;
+      resume?: Resume;
     }
   | { status: "error"; message: string; source?: object; size?: number };
 
@@ -70,7 +93,12 @@ export function MediaView({
   const localCopy = !!externalPath?.startsWith("remote://") && !localExplorerPath(externalPath);
   // Only a copy from a connected machine has a transfer to abort.
   const transferable = !readBytes && path.startsWith("remote://") && !localExplorerPath(path);
+  // A Play/Download click overrides the saved mode for this file only.
+  const [chosen, setChosen] = useState<{ path: string; mode: "stream" | "download" } | null>(null);
+  const chosenMode = chosen?.path === path ? chosen.mode : undefined;
   const transfer = useRef<AbortController | null>(null);
+  const lease = useRef<string | null>(null);
+  const refreshed = useRef(false);
   const cancelTransfer = () => {
     transfer.current?.abort();
     setState({ status: "cancelled", source });
@@ -84,6 +112,7 @@ export function MediaView({
     const request = ++generation.current;
     let ownedUrl: string | undefined;
     let size: number | undefined;
+    refreshed.current = false;
     setState({ status: "loading" });
     void (async () => {
       try {
@@ -97,19 +126,62 @@ export function MediaView({
           ownedUrl = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type }));
           url = ownedUrl;
         } else {
-          const local = await prepareLocalFile(path, {
-            signal: controller.signal,
-            onProgress: (received, total) => {
-              if (Number.isSafeInteger(total) && total >= 0) size = total;
-              if (!controller.signal.aborted) setState({ status: "loading", received, total });
-            },
-          });
-          if (controller.signal.aborted) return;
-          url = convertFileSrc(local);
-          localPath = local;
+          const copy = () =>
+            prepareLocalFile(path, {
+              signal: controller.signal,
+              onProgress: (received, total) => {
+                if (Number.isSafeInteger(total) && total >= 0) size = total;
+                if (!controller.signal.aborted) setState({ status: "loading", received, total });
+              },
+            });
+          let local: string | undefined;
+          let streamed: string | undefined;
+          if (transferable) {
+            // Shared (mapped) folders and local files above keep their direct path in every mode.
+            // A finished copy of this exact version is reused; otherwise the saved mode decides.
+            const info = await remoteMediaInfo(path);
+            if (controller.signal.aborted) return;
+            size = info.size;
+            const mode = chosenMode ?? loadRemoteMediaMode();
+            if (info.cachedPath) local = info.cachedPath;
+            else if (mode === "saver") {
+              setState({ status: "manual", size: info.size });
+              return;
+            } else if (mode === "stream") {
+              try {
+                const stream = await remoteMediaStreamUrl(path);
+                if (controller.signal.aborted) {
+                  // The player closed while the URL was being prepared; do not leak its lease.
+                  releaseRemoteMediaLease(stream.lease).catch(() => undefined);
+                  return;
+                }
+                streamed = stream.url;
+                releaseLease(lease);
+                lease.current = stream.lease;
+              } catch (reason) {
+                // Without the gateway (older Host, closed folder) the whole-copy path still works.
+                // The URL is a secret capability and is never logged.
+                console.warn("Remote media streaming unavailable; copying instead", reason);
+              }
+              if (controller.signal.aborted) return;
+            }
+          }
+          if (streamed) url = streamed;
+          else {
+            local ??= await copy();
+            if (controller.signal.aborted) return;
+            url = convertFileSrc(local);
+            localPath = local;
+          }
         }
         if (request !== generation.current) return;
-        setState({ status: "ready", url, source, size });
+        setState({
+          status: "ready",
+          url,
+          source,
+          size,
+          streamed: !readBytes && localPath === undefined,
+        });
         // Remote preparation already supplied the exact snapshot size. Stat only
         // the prepared native path when that information is absent, without delaying playback.
         if (isVideo && size === undefined && localPath) {
@@ -117,7 +189,9 @@ export function MediaView({
             .then((fileSize) => {
               if (controller.signal.aborted || request !== generation.current) return;
               setState((current) =>
-                current.status !== "loading" && current.source === source
+                current.status !== "loading" &&
+                current.status !== "manual" &&
+                current.source === source
                   ? { ...current, size: fileSize }
                   : current,
               );
@@ -131,6 +205,7 @@ export function MediaView({
     return () => {
       controller.abort();
       generation.current++;
+      releaseLease(lease);
       if (ownedUrl) {
         const url = ownedUrl;
         const element = player.current;
@@ -141,9 +216,9 @@ export function MediaView({
         });
       }
     };
-  }, [path, readBytes, mimeType, retry, shownOnce, source, isVideo]);
+  }, [path, readBytes, mimeType, retry, shownOnce, source, isVideo, transferable, chosenMode]);
 
-  const failPlayback = () =>
+  const showPlaybackError = () =>
     setState((current) =>
       current.status === "ready" && current.source === source
         ? {
@@ -154,6 +229,34 @@ export function MediaView({
           }
         : current,
     );
+  const failPlayback = () => {
+    if (state.status !== "ready" || state.source !== source || !state.streamed || refreshed.current)
+      return showPlaybackError();
+    // The gateway may have been replaced (closed folder, reconnect): ask for a fresh URL once
+    // and continue where the player stopped, instead of reporting an unplayable format.
+    refreshed.current = true;
+    const element = player.current;
+    const resume: Resume = { at: element?.currentTime ?? 0, play: !!element && !element.paused };
+    const request = generation.current;
+    remoteMediaStreamUrl(path).then(
+      (fresh) => {
+        if (request !== generation.current) {
+          releaseRemoteMediaLease(fresh.lease).catch(() => undefined);
+          return;
+        }
+        releaseLease(lease);
+        lease.current = fresh.lease;
+        setState((current) =>
+          current.status === "ready" && current.source === source
+            ? { ...current, url: fresh.url, resume }
+            : current,
+        );
+      },
+      () => {
+        if (request === generation.current) showPlaybackError();
+      },
+    );
+  };
   const currentVideo = isVideo && active && state.status !== "loading" && state.source === source;
   const metadata = currentVideo && state.status === "ready" ? state.metadata : undefined;
   const duration = formatMediaDuration(metadata?.duration);
@@ -167,6 +270,7 @@ export function MediaView({
             key={`${mediaKind(path)}:${state.url}`}
             path={path}
             url={state.url}
+            resume={state.resume}
             visible={active && visible && paneVisible}
             player={player}
             onError={failPlayback}
@@ -189,6 +293,30 @@ export function MediaView({
             >
               {t("Retry")}
             </Button>
+          </DocumentMessage>
+        ) : state.status === "manual" ? (
+          <DocumentMessage title={basename(path)}>
+            <span className="tabular-nums">{formatFileSize(state.size)}</span>
+            <div className="mt-2 flex justify-center gap-2">
+              <Button
+                variant="primary"
+                motion="none"
+                type="button"
+                startIcon={<Play className="icon-sm" />}
+                onClick={() => setChosen({ path, mode: "stream" })}
+              >
+                {t("Play")}
+              </Button>
+              <Button
+                variant="ghost"
+                motion="none"
+                type="button"
+                startIcon={<Download className="icon-sm" />}
+                onClick={() => setChosen({ path, mode: "download" })}
+              >
+                {t("Download")}
+              </Button>
+            </div>
           </DocumentMessage>
         ) : state.status === "cancelled" ? (
           <DocumentMessage title={t("Cancelled")}>
@@ -255,6 +383,7 @@ function releaseMediaSource(element: HTMLMediaElement | null, url: string) {
 function MediaPlayer({
   path,
   url,
+  resume,
   visible,
   player,
   onError,
@@ -262,6 +391,7 @@ function MediaPlayer({
 }: {
   path: string;
   url: string;
+  resume?: Resume;
   visible: boolean;
   player: { current: HTMLMediaElement | null };
   onError: () => void;
@@ -269,6 +399,13 @@ function MediaPlayer({
 }) {
   const elementRef = useRef<HTMLMediaElement | null>(null);
   const releaseSource = useRef<number | undefined>(undefined);
+  const resumed = useRef(false);
+  const applyResume = (element: HTMLMediaElement) => {
+    if (!resume || resumed.current) return;
+    resumed.current = true;
+    if (resume.at > 0) element.currentTime = resume.at;
+    if (resume.play && visible && !document.hidden) element.play().catch(() => undefined);
+  };
   const updateMetadata = (event: { currentTarget: HTMLMediaElement }) => {
     const element = event.currentTarget;
     if (
@@ -320,7 +457,10 @@ function MediaPlayer({
     src: url,
     controls: true,
     preload: "metadata",
-    onLoadedMetadata: updateMetadata,
+    onLoadedMetadata: (event: { currentTarget: HTMLMediaElement }) => {
+      applyResume(event.currentTarget);
+      updateMetadata(event);
+    },
     onDurationChange: updateMetadata,
     onPlay: (event: { currentTarget: HTMLMediaElement }) => {
       if (!visible || document.hidden) event.currentTarget.pause();

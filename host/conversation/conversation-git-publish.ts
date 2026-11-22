@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { execFileAsync } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "../git/git-exec-pool";
 import { hostGitStarts } from "../git/git-start-gate";
 import { scrubRuntimeLogText } from "../execution/runtime-logs";
 
@@ -85,10 +85,11 @@ const NETWORK_TIMEOUT = 120_000;
 async function git(cwd: string, args: string[], timeout = GIT_TIMEOUT) {
   await hostGitStarts.enter();
   return (
-    await execFileAsync("git", ["-c", "core.pager=cat", ...args], {
+    await hostGitExec.exec("git", ["-c", "core.pager=cat", ...args], {
       cwd,
       windowsHide: true,
       timeout,
+      lane: ["fetch", "push", "pull", "clone"].includes(args[0]) ? "network" : "default",
       maxBuffer: 1024 * 1024,
       encoding: "utf8",
       env: {

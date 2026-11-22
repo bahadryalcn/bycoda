@@ -192,8 +192,6 @@ it("collapses and reopens Working in the workspace when the project rail is clos
   const preview = container.querySelector('[data-live-agents-preview="full"]')!;
   const header = preview.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
   const card = preview.querySelector<HTMLButtonElement>('[data-live-agent-card="background"]')!;
-  expect(header.getAttribute("aria-expanded")).toBe("true");
-  act(() => header.click());
   expect(header.getAttribute("aria-expanded")).toBe("false");
   expect(card.closest("[hidden]")).not.toBeNull();
   expect(header.textContent).toContain("1");
@@ -341,7 +339,7 @@ it("counts host work without opening its sessions and updates when it finishes",
   expect(badge()).toBeNull();
 });
 
-it("keeps the turn clock in Sessions while Working summarizes this project", async () => {
+it("keeps the turn clock in Sessions and in expanded Activity", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(200_000);
   try {
@@ -372,23 +370,20 @@ it("keeps the turn clock in Sessions while Working summarizes this project", asy
       },
     ];
     await render();
-    // This project's duplicate row becomes a count; its session card retains the live clock.
     const rail = () =>
       container.querySelector('[data-live-agent-card="timed"] [data-live-agent-elapsed]');
     const card = () =>
       container.querySelector('[data-session-card="timed"] [data-session-working-status]');
-    expect(rail()).toBeNull();
-    expect(
-      container.querySelector("[data-live-agents-project-summary]")?.getAttribute("aria-label"),
-    ).toBe("1 working in this project");
+    const header = container.querySelector<HTMLButtonElement>(
+      "[data-live-agents-preview] button[aria-expanded]",
+    )!;
+    expect(header.getAttribute("aria-expanded")).toBe("false");
     expect(card()?.textContent).toContain("3m");
-    act(() => vi.advanceTimersByTime(1000));
-    expect(rail()).toBeNull();
-    expect(card()?.textContent).toContain("3m");
-    props.lastSessionsOpen = true;
-    await render();
-    expect(container.querySelector("[data-live-agents-project-summary]")).toBeNull();
+    act(() => header.click());
     expect(rail()?.textContent).toBe("3m");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(rail()?.textContent).toBe("3m");
+    expect(card()?.textContent).toContain("3m");
     props.lastSessionsOpen = false;
     props.busySessionIds = new Set();
     props.liveAgents = [];

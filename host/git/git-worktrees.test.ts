@@ -253,6 +253,10 @@ it("reuses a worktree list briefly and refreshes it after this host changes work
   expect((await hostWorktrees(cwd)).worktrees.map((tree) => tree.path)).toContain(created.path);
 
   git("worktree", "remove", "--force", outside);
+  git("init", "-q", outside);
+  await expect(resolveHostWorktreeAsync(cwd, outside)).rejects.toThrow(
+    "Choose an available worktree",
+  );
   invalidateHostWorktrees(cwd);
   expect((await hostWorktrees(cwd)).worktrees.map((tree) => tree.branch)).not.toContain("outside");
   await expect(resolveHostWorktreeAsync(cwd, outside)).rejects.toThrow(

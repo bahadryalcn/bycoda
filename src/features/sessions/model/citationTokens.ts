@@ -12,18 +12,23 @@ export function chatCitationTokens(count: number): string[] {
 }
 
 /** Tokens in `text` that name one of `count` citations, outside code. */
-export function findCitationTokens(text: string, count: number): TokenMatch[] {
-  return findTokenMatches(text, chatCitationTokens(count));
+export function findCitationTokens(
+  text: string,
+  count: number,
+  code?: readonly (readonly [number, number])[],
+): TokenMatch[] {
+  return findTokenMatches(text, chatCitationTokens(count), [], undefined, code);
 }
 
 /** The text cut into plain runs and the tokens that name a citation. */
 export function splitCitationTokens(
   text: string,
   count: number,
+  code?: readonly (readonly [number, number])[],
 ): ({ text: string } | { token: string; index: number })[] {
   const parts: ({ text: string } | { token: string; index: number })[] = [];
   let at = 0;
-  for (const match of findCitationTokens(text, count)) {
+  for (const match of findCitationTokens(text, count, code)) {
     if (match.start > at) parts.push({ text: text.slice(at, match.start) });
     parts.push({ token: match.token, index: match.index });
     at = match.end;

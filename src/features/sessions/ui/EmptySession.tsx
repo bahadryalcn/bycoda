@@ -3,6 +3,8 @@ import { useT } from "../../../shared/i18n";
 import { type ReactNode, useSyncExternalStore } from "react";
 import { basename } from "../../../platform/tauri/fs";
 import { projectKey } from "../../../shared/lib/paths";
+import { machineLabel, useRemoteMachines } from "../../connections/public/connections";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { looksLikeProject } from "../../projects/public/recents";
 import {
   loadTabGroupLabels,
@@ -28,6 +30,14 @@ type Props = {
 
 export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
   const t = useT();
+  const remote = parseRemotePath(cwd);
+  const { machines } = useRemoteMachines(!!remote);
+  const machine = remote
+    ? machines.find((entry) => entry.environmentId === remote.environmentId)
+    : undefined;
+  const projectLocation = remote
+    ? `${machine ? machineLabel(machines, machine) : t("Remote computer")} · ${remote.hostPath}`
+    : cwd;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const crewEnabled = useSyncExternalStore(
     subscribeCrewSceneEnabled,
@@ -64,7 +74,7 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
             </div>
             <div className="bycoda-task-brief pointer-events-auto">
               <Heading size="page">{title}</Heading>
-              {project ? <p className="bycoda-task-path">{cwd}</p> : null}
+              {project ? <p className="bycoda-task-path">{projectLocation}</p> : null}
               {project ? null : (
                 <div className="bycoda-entry-actions bycoda-arc">
                   <Button

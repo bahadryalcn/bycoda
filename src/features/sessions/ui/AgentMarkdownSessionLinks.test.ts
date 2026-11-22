@@ -208,6 +208,24 @@ describe("local references in the actual Markdown pipeline", () => {
     expect(host.textContent).not.toContain("Wrong local profile");
   });
 
+  it("shows one open action for a subagent and routes to the referenced target", async () => {
+    vi.mocked(navigation.resolve).mockResolvedValueOnce({
+      title: "Backup target",
+      agentRole: "Subagent",
+      status: "Running",
+    });
+    await render(`[W21](${href})`);
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Session details"]')!.click(),
+    );
+    const dialog = document.querySelector('[role="dialog"][aria-label="Session details"]')!;
+    expect(dialog.textContent).toContain("Subagent · Running");
+    const buttons = [...dialog.querySelectorAll("button")];
+    expect(buttons.map((button) => button.textContent)).toEqual(["Open"]);
+    await act(async () => buttons[0].click());
+    expect(navigation.open).toHaveBeenCalledWith(reference, { beside: false });
+  });
+
   it("guards repeated activation synchronously and keeps preview reads from cancelling opening feedback", async () => {
     let finish!: () => void;
     vi.mocked(navigation.open).mockImplementationOnce(

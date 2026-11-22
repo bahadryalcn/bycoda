@@ -20,6 +20,10 @@ import type { Attachment, QueuedMessage } from "./session";
  */
 
 export type QueuedEditDraft = { text: string; attachments: Attachment[] };
+export type QueuedPasteLayout = {
+  range: TextSelection;
+  textWithAttachments: (attachments: Attachment[]) => string | undefined;
+};
 
 export function queuedEditDraft(message: QueuedMessage): QueuedEditDraft {
   return {
@@ -86,7 +90,19 @@ export function addDraftAttachments(
   draft: QueuedEditDraft,
   incoming: Attachment[],
   selection: TextSelection | null,
+  pasteLayout?: QueuedPasteLayout,
 ): { draft: QueuedEditDraft; caret: number } {
+  if (pasteLayout) {
+    const attachments = mergeAttachments(draft.attachments, incoming);
+    const text = pasteLayout.textWithAttachments(attachments);
+    if (text !== undefined) {
+      const { start, end } = pasteLayout.range;
+      return {
+        draft: { text: draft.text.slice(0, start) + text + draft.text.slice(end), attachments },
+        caret: start + text.length,
+      };
+    }
+  }
   // Remove overwritten tokens before merging, so they also free capacity and
   // the incoming tokens use the surviving attachments' numbering.
   const start = Math.min(selection?.start ?? draft.text.length, draft.text.length);

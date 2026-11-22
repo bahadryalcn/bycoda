@@ -1,6 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
 import { Alert, type AlertProps } from "../../../shared/ui/Alert";
-import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
@@ -110,18 +109,11 @@ export function AdoptedSessionNotice({
       list.map((item) => (item.id === session.id ? keepAdoptedDivergence(item) : item)),
     );
   };
-  // Host execution itself is shown by RemoteOriginMark in the composer
-  // workspace row; a row appears only when it holds back the user's queued messages.
-  const queueWaiting =
-    !!session.continuingElsewhere &&
-    !session.busy &&
-    isUserConversation(session) &&
-    !!session.queuedMessages?.length;
-  if (!session.adoptedSyncConflict && !feedback && !refreshing && !queueWaiting)
+  if (!session.adoptedSyncConflict && !feedback && !refreshing)
     // The first comparison with the other computer's copy; a quick one shows nothing.
     return syncing ? (
       <div className="shrink-0 px-4 py-2">
-        <LoadingText>{t("Syncing with the other computer…")}</LoadingText>
+        <LoadingText>{t("Syncing with the local Host…")}</LoadingText>
       </div>
     ) : null;
   // Only two versions that both moved on need attention; an unfinished sync is information.
@@ -218,9 +210,6 @@ export function AdoptedSessionNotice({
         extra={noticeActions.extra ?? failureDetails}
       >
         <div className="min-w-0 space-y-1">
-          {queueWaiting && !session.adoptedSyncConflict ? (
-            <div>{t("Queue is waiting for the current turn to finish.")}</div>
-          ) : null}
           {session.adoptedSyncConflict ? (
             <div>{t(choosing ? ADOPTED_CHOICE_MESSAGE : ADOPTED_UNSYNCED_MESSAGE)}</div>
           ) : null}
