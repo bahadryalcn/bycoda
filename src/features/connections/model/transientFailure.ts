@@ -64,7 +64,7 @@ export function useGracedFailure({
   const attempts = progress?.episode === episode ? (progress?.attempts ?? 0) : 0;
   const running = progress?.episode === episode && progress?.running === true;
   const active = transient || (!permanent && !!episode && (loading || running));
-  const delay = graceMs ?? (episode?.restart || restart ? DECLARED_RESTART_GRACE_MS : FAILURE_GRACE_MS);
+  const delay = graceMs ?? ((episode?.restart ?? restart) ? DECLARED_RESTART_GRACE_MS : FAILURE_GRACE_MS);
 
   // Reason: record the start of a read interruption until a read settles or its owner changes.
   useEffect(() => {

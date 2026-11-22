@@ -60,6 +60,7 @@ export type BoardTask = HostTask & {
   cwd: string;
   /** The machine did not answer; this is what it last reported. */
   stale?: boolean;
+  pendingRefresh?: boolean;
   reviewRecheckSupported?: boolean;
   finishWithFindingsSupported?: boolean;
   blockedTakeoverSupported?: boolean;

@@ -178,6 +178,7 @@ import {
 } from "../../features/sessions/model/sessionOrder";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
 import { toast } from "../../shared/ui/ToastRegion";
+import { reportFailure } from "../../shared/ui/reportFailure";
 import "./sessionList.css";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
@@ -784,7 +785,7 @@ function SidebarComponent({
       });
       refreshRemoteProjectSessions();
     } catch (error) {
-      toast.show({ tone: "danger", message: `Could not update this session.\n\n${String(error)}` });
+      await reportFailure(error, { toast }).catch(() => {});
     }
   };
   const remoteDelete = async (
@@ -826,8 +827,8 @@ function SidebarComponent({
       }
       refreshRemoteProjectSessions();
     } catch (error) {
-      toast.show({ tone: "danger", message: `Could not delete this session.\n\n${String(error)}` });
       refreshRemoteProjectSessions();
+      await reportFailure(error, { toast }).catch(() => {});
     }
   };
   const onSelectSession = remoteProject
@@ -1046,10 +1047,29 @@ function SidebarComponent({
   const [sessionOrder, setSessionOrder] = useState<SessionOrder>(() =>
     NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd),
   );
-  const [organizationNotice, setOrganizationNotice] = useState<string | null>(null);
+  const [organizationNotice, setOrganizationNoticeText] = useState<string | null>(null);
+  const organizationFailure = useRef<AbortController | null>(null);
+  const sessionStateCwd = useRef(cwd);
+  const setOrganizationNotice = (message: string | null) => {
+    organizationFailure.current?.abort();
+    setOrganizationNoticeText(message);
+  };
+  const reportOrganizationFailure = (error: unknown) => {
+    if (sessionStateCwd.current !== cwd) return;
+    organizationFailure.current?.abort();
+    const controller = new AbortController();
+    organizationFailure.current = controller;
+    setOrganizationNoticeText((current) => (current === t("Saving…") ? null : current));
+    void reportFailure(error, {
+      toast: { show: ({ message }) => setOrganizationNoticeText(message) },
+      signal: controller.signal,
+    }).catch(() => {});
+  };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Abort pending notices when their project or sidebar leaves.
+  useEffect(() => () => organizationFailure.current?.abort(), [cwd]);
   const [partialPinSagas, setPartialPinSagas] = useState<PinSaga[]>([]);
   const organizationBusy = useRef(false);
-  const runSagaAction = useSingleFlight((error) => setOrganizationNotice(String(error)));
+  const runSagaAction = useSingleFlight(reportOrganizationFailure);
   const organizationUnresolved = useRef(false);
   const organizationRefreshRequired = useRef(false);
   const organizationReady = useRef(!NATIVE_SESSION_ORGANIZATION_ACTIVE);
@@ -1129,7 +1149,7 @@ function SidebarComponent({
     if (!lifecycleMachine || settlingProjectSessions.current) return;
     settlingProjectSessions.current = true;
     const client = sessionLifecycleClient(lifecycleMachine);
-    let firstError: string | undefined;
+    let firstError: unknown;
     try {
       for (const session of sessions) {
         if (remoteProject ? isProjectPasswordLocked(cwd) : isProjectLocked(session.cwd)) continue;
@@ -1148,13 +1168,13 @@ function SidebarComponent({
               await (undo ? client.unsettle(session.id) : client.settle(session.id)),
             );
         } catch (cause) {
-          firstError ??= presentRemoteError(cause, { explicit: true });
+          firstError ??= cause;
         }
       }
     } finally {
       settlingProjectSessions.current = false;
     }
-    if (firstError) toast.show({ tone: "danger", message: firstError });
+    if (firstError != null) await reportFailure(firstError, { toast }).catch(() => {});
   };
   const canSettleProjectSession = (session: SessionSummary) =>
     lifecycleMachine &&
@@ -1234,9 +1254,7 @@ function SidebarComponent({
       if (action === "settle") {
         await remoteLifecycle
           .change(machine.id, listed.session.id, remoteMenuUndo)
-          .catch((cause: unknown) => {
-            toast.show({ tone: "danger", message: presentRemoteError(cause, { explicit: true }) });
-          });
+          .catch((cause: unknown) => reportFailure(cause, { toast }).catch(() => {}));
       } else if (action === "archive") await remoteChange(listed.session.id, { archived }, target);
       else if (listed.session.status === "running") {
         toast.show({ tone: "warning", message: t("1 running conversation was skipped.") });
@@ -1623,13 +1641,13 @@ function SidebarComponent({
     active: panelOpen && sidebarAvailable,
   });
 
-  const sessionStateCwd = useRef(cwd);
   // Reset project-owned state before paint when switching projects. Initialization already
   // loaded the preferences for the first project.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps project-owned folder state in step with the selected project before paint
   useLayoutEffect(() => {
     if (sessionStateCwd.current === cwd) return;
     sessionStateCwd.current = cwd;
+    setOrganizationNotice(null);
     organizationReady.current = !NATIVE_SESSION_ORGANIZATION_ACTIVE;
     setSessionFolders(NATIVE_SESSION_ORGANIZATION_ACTIVE ? [] : loadSessionFolders(cwd));
     setSessionOrder(NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd));
@@ -1673,18 +1691,18 @@ function SidebarComponent({
                 setOrganizationNotice(t("Pin change needs review: {p0}", { p0: openSagas[0].id }));
             })
             .catch((error: unknown) => {
-              if (alive && generation === reconciliation) setOrganizationNotice(String(error));
+              if (alive && generation === reconciliation) reportOrganizationFailure(error);
             });
         }
       } catch (error) {
-        setOrganizationNotice(String(error));
+        reportOrganizationFailure(error);
       }
     };
     // A snapshot already in memory (another project was open) shows at once.
     if (cachedSessionOrganization()) onOrganizationChange();
-    const unsubscribe = subscribeSessionOrganization(onOrganizationChange, (error) =>
-      setOrganizationNotice(String(error)),
-    );
+    const unsubscribe = subscribeSessionOrganization(onOrganizationChange, (error) => {
+      if (alive) reportOrganizationFailure(error);
+    });
     return () => {
       alive = false;
       unsubscribe();
@@ -1793,7 +1811,7 @@ function SidebarComponent({
         kind: "replaceSessionIds",
         cwd,
         aliases: [...completedFolderSessions].map(([from, to]) => ({ from, to })),
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     setSessionFolders(next);
@@ -1869,7 +1887,7 @@ function SidebarComponent({
         } catch (error) {
           setOrganizationNotice(
             t("Change was applied, but the display could not be updated: {p0}", {
-              p0: String(error),
+              p0: presentRemoteError(error, { explicit: true }),
             }),
           );
         }
@@ -1887,11 +1905,9 @@ function SidebarComponent({
       return false;
     } catch (error) {
       if (admitted) organizationUnresolved.current = true;
-      setOrganizationNotice(
-        admitted
-          ? t("Folder change outcome needs verification: {p0}", { p0: gestureId })
-          : String(error),
-      );
+      if (admitted)
+        setOrganizationNotice(t("Folder change outcome needs verification: {p0}", { p0: gestureId }));
+      else reportOrganizationFailure(error);
       return false;
     } finally {
       organizationBusy.current = false;
@@ -1912,7 +1928,7 @@ function SidebarComponent({
           { kind: "assign", cwd, folderId, sessionIds: [sessionId] },
           { kind: "folderCollapsed", cwd, folderId, collapsed: false },
         ],
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     commitSessionFolders(
@@ -2380,7 +2396,7 @@ function SidebarComponent({
           .then((applied) => {
             if (applied) setRenamingFolderId(folderId);
           })
-          .catch((error: unknown) => setOrganizationNotice(String(error)));
+          .catch(reportOrganizationFailure);
         return;
       }
       const { folders, id: createdId } = createFolderWithSessions(sessionFolders, sessionIds);
@@ -2399,7 +2415,7 @@ function SidebarComponent({
             { kind: "assign", cwd, folderId, sessionIds },
             { kind: "folderCollapsed", cwd, folderId, collapsed: false },
           ],
-        }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        }).catch(reportOrganizationFailure);
         return;
       }
       const folders = sessionIds.reduce(
@@ -2416,7 +2432,7 @@ function SidebarComponent({
           cwd,
           folderId: null,
           sessionIds,
-        }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        }).catch(reportOrganizationFailure);
         return;
       }
       commitSessionFolders(
@@ -2447,8 +2463,7 @@ function SidebarComponent({
 
   const pinSessions = (sessionIds: readonly string[], pinned: boolean) => {
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-      void performPinSaga(null, [...sessionIds], pinned).catch((error: unknown) =>
-        setOrganizationNotice(String(error)),
+      void performPinSaga(null, [...sessionIds], pinned).catch(reportOrganizationFailure,
       );
       return;
     }
@@ -2487,7 +2502,7 @@ function SidebarComponent({
     if (id === "move-out") {
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
         void performOrganizationOperation({ kind: "moveFolderOut", cwd, folderId }).catch(
-          (error: unknown) => setOrganizationNotice(String(error)),
+          reportOrganizationFailure,
         );
         return;
       }
@@ -2503,7 +2518,7 @@ function SidebarComponent({
             cwd,
             folderId,
             pinned: !folder.pinned,
-          }).catch((error: unknown) => setOrganizationNotice(String(error)));
+          }).catch(reportOrganizationFailure);
         return;
       }
       if (folder) commitSessionFolders(setFolderPinned(sessionFolders, folderId, !folder.pinned));
@@ -2512,7 +2527,7 @@ function SidebarComponent({
     if (id === "ungroup") {
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
         void performOrganizationOperation({ kind: "deleteFolder", cwd, folderId }).catch(
-          (error: unknown) => setOrganizationNotice(String(error)),
+          reportOrganizationFailure,
         );
         return;
       }
@@ -2528,7 +2543,7 @@ function SidebarComponent({
         cwd,
         folderId: folderMenu.folderId,
         colorIndex,
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     commitSessionFolders(setFolderColor(sessionFolders, folderMenu.folderId, colorIndex));
@@ -2542,7 +2557,7 @@ function SidebarComponent({
         cwd,
         folderId: folderMenu.folderId,
         color,
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     commitSessionFolders(setFolderCustomColor(sessionFolders, folderMenu.folderId, color));
@@ -2684,11 +2699,14 @@ function SidebarComponent({
       });
     } catch (error) {
       if (sagaPrepared) organizationUnresolved.current = true;
-      setOrganizationNotice(
-        pinConfirmed
-          ? t("A pin was applied; final confirmation failed: {p0}", { p0: String(error) })
-          : String(error),
-      );
+      if (pinConfirmed)
+        setOrganizationNotice(
+          t("A pin was applied; final confirmation failed: {p0}", {
+            p0: presentRemoteError(error, { explicit: true }),
+          }),
+        );
+      else if (sagaPrepared) setOrganizationNotice(presentRemoteError(error, { explicit: true }));
+      else reportOrganizationFailure(error);
     } finally {
       organizationBusy.current = false;
     }
@@ -2814,14 +2832,13 @@ function SidebarComponent({
             };
       }
       if (pinChanges.length) {
-        void performPinSaga(operation, pinChanges, pinTo!).catch((error: unknown) =>
-          setOrganizationNotice(String(error)),
+        void performPinSaga(operation, pinChanges, pinTo!).catch(reportOrganizationFailure,
         );
         return;
       }
       void performOrganizationOperation(operation, () => {
         if (createdId) setRenamingFolderId(createdId);
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     captureListMotion();
@@ -3043,7 +3060,7 @@ function SidebarComponent({
     if (next === before) return;
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
       void performOrganizationOperation({ kind: "moveFolder", cwd, folderId, target }).catch(
-        (error: unknown) => setOrganizationNotice(String(error)),
+        reportOrganizationFailure,
       );
       return;
     }
@@ -3176,7 +3193,7 @@ function SidebarComponent({
               folderId: entry.folder.id,
               name,
             })
-              .catch((error: unknown) => setOrganizationNotice(String(error)))
+              .catch(reportOrganizationFailure)
               .then(() => setRenamingFolderId(null));
             return;
           }
@@ -4390,7 +4407,7 @@ function SidebarComponent({
                 }
               : roomPrivacyRetryAction(
                   () => setOrganizationNotice(null),
-                  (error) => setOrganizationNotice(String(error)),
+                  reportOrganizationFailure,
                 )
           }
           actions={

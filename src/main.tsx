@@ -5,6 +5,8 @@ import "./app/model/fileUiAdapters";
 import "./features/model-routing/public/rendererBootstrap";
 import "./features/settings/public/agentDefaultsSync";
 import "./features/connections/public/storedBlockForm";
+import { describeActionFailure } from "./features/connections/public/transientFailure";
+import { registerFailurePolicy } from "./shared/ui/reportFailure";
 import { readToolWindow } from "./app/model/toolWindows";
 import { loadWindowSurface, readHostToolsWindow } from "./app/model/hostToolsWindow";
 import { languageReady } from "./shared/i18n";
@@ -156,6 +158,7 @@ void listen("quit_aborted", () => {
 // not imported here to keep the painter out of the boot chunk). A worker that fails
 // to start falls back to the main-thread painter. Remove this line to switch it off.
 setCanvasWorkerEnabled("classic-crew", true);
+registerFailurePolicy(describeActionFailure);
 
 const appRoot = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 // Show a bounded, safe shell while workspace and durable drafts hydrate.

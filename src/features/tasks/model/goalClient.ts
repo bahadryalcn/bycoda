@@ -59,6 +59,7 @@ export type BoardGoal = HostGoal & {
   projects: BoardGoalProject[];
   /** The machine did not answer; this is what it last reported. */
   stale?: boolean;
+  pendingRefresh?: boolean;
   settingsSupported?: boolean;
 };
 

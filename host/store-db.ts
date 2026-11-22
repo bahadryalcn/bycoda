@@ -9,7 +9,7 @@ import {
 } from "./storage/persistence-health";
 import { createDedupedWarn } from "./diagnostics/log-dedupe";
 import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
-import { ReadPoolUnavailableError, StoreReadPool, type ReadLease } from "./storage/store-read-pool";
+import { HostDbClosingError, ReadPoolUnavailableError, StoreReadPool, type ReadLease } from "./storage/store-read-pool";
 
 export type StoreRow = Record<string, any>;
 /** Every Host read and write waits behind a scope this long; the owner names the holder. */
@@ -635,7 +635,7 @@ export class StoreDatabase {
    */
   dataVersion(): Promise<number> {
     // A closed worker never answers; fail like a scope would instead of waiting forever.
-    if (this.terminating) return Promise.reject(new Error("Host database is closed."));
+    if (this.terminating) return Promise.reject(new HostDbClosingError("Host database is closed."));
     return this.probeWorker("dataVersion").then((value) => Number(value));
   }
   afterCommit(effect: () => void | Promise<void>): void {
@@ -666,7 +666,7 @@ export class StoreDatabase {
       if (this.failed) return Promise.reject(this.failed);
       return Promise.resolve().then(work);
     }
-    if (this.closing) return Promise.reject(new Error("Host database is closing."));
+    if (this.closing) return Promise.reject(new HostDbClosingError());
     const authorization = this.authorizations.getStore();
     // A scoped credential may need metadata from a different database/worker.
     // Prepare it before joining the SQL FIFO, then recheck authority on admission.

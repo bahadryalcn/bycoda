@@ -144,6 +144,15 @@ export class HostStoppingError extends HostDomainOutcomeError {
 }
 export const HOST_STOP_GRACE_MS = 2_000;
 
+export class OwnerRpcCancelledError extends Error {
+  readonly code = "REQUEST_CANCELLED";
+
+  constructor() {
+    super("Request cancelled");
+    this.name = "OwnerRpcCancelledError";
+  }
+}
+
 /**
  * Settles with the handler, or rejects when the request signal aborts: on the deadline with
  * `OwnerRpcDeadlineError`, on a client disconnect with a cancellation, on Host shutdown with
@@ -161,7 +170,7 @@ function untilAborted(
       ? signal.reason
       : signal.reason instanceof DOMException && signal.reason.name === "TimeoutError"
         ? new OwnerRpcDeadlineError(method, deadlineMs)
-        : new Error("Request cancelled");
+        : new OwnerRpcCancelledError();
   work.catch(() => undefined);
   return new Promise<void>((resolve, reject) => {
     let grace: ReturnType<typeof setTimeout> | undefined;

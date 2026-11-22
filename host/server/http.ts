@@ -15,6 +15,7 @@ import { mcpMetricName, perfMetrics, syncDbTiming } from "../diagnostics/perf-me
 import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
 import { requestingDeviceName } from "../desktop/remoteActivity";
 import { memoized } from "../desktop/requester-name";
+import { HostDbClosingError } from "../storage/store-read-pool";
 import { RequestAuthorizationError } from "../store-db";
 import { serializedResponse } from "../sync/sync-transfer";
 import { HostVoiceToolDisclosure } from "../voice/voice-tool-disclosure";
@@ -26,6 +27,7 @@ import {
   dispatchOwnerRpc,
   HostStoppingError,
   isInternalFailure,
+  OwnerRpcCancelledError,
   OwnerRpcDeadlineError,
   ownerRpcDeadlineMs,
   slowRpcThresholdMs,
@@ -877,7 +879,9 @@ export function createHttpRuntime(
                       ? { code: error.code, delivery: error.delivery }
                       : error instanceof HostDomainOutcomeError
                         ? { delivery: error.delivery }
-                        : {}),
+                        : error instanceof OwnerRpcCancelledError || error instanceof HostDbClosingError
+                          ? { code: error.code }
+                          : {}),
                   ...(error instanceof HostIdentityMismatchError ? { code: error.code } : {}),
                   // An admitted device effect keeps its own unconfirmed code above.
                   ...(error instanceof HostResultTooLargeError && !deviceEffectAdmitted

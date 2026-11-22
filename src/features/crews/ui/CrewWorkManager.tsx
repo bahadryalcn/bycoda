@@ -304,11 +304,11 @@ export function CrewWorkManager({
         ) : null}
         {!data ? (
           <div className="p-4">
-            {state.error ? (
+            {state.visibleError ? (
               <FailureState
                 context="panel"
                 title={t("Could not load crews")}
-                error={state.error}
+                error={state.visibleError}
                 onRetry={() => state.refetch()}
               />
             ) : (
@@ -317,13 +317,13 @@ export function CrewWorkManager({
           </div>
         ) : noWork ? (
           <div className="px-4 pb-4">
-            {data.catalogError || (state.error && !refreshShownCentrally) ? (
+            {data.catalogError || (state.visibleError && !refreshShownCentrally) ? (
               <div className="pb-3">
                 <Alert
                   tone="warning"
                   action={{ label: t("Retry"), onClick: () => void state.refetch() }}
                 >
-                  {data.catalogError ?? state.error?.message}
+                  {data.catalogError ?? state.visibleError}
                 </Alert>
               </div>
             ) : null}
@@ -382,7 +382,7 @@ export function CrewWorkManager({
                 />
               </div>
             ) : null}
-            {hasDetail || data.catalogError || (state.error && !refreshShownCentrally) || error ? (
+            {hasDetail || data.catalogError || (state.visibleError && !refreshShownCentrally) || error ? (
               <div
                 className={`min-w-0 p-4 @min-[640px]/crew-management:min-h-64 ${hideDetailNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
               >
@@ -407,12 +407,12 @@ export function CrewWorkManager({
                     {data.catalogError}
                   </Alert>
                 ) : null}
-                {state.error && !refreshShownCentrally ? (
+                {state.visibleError && !refreshShownCentrally ? (
                   <Alert
                     tone="warning"
                     action={{ label: t("Retry"), onClick: () => void state.refetch() }}
                   >
-                    {state.error.message}
+                    {state.visibleError}
                   </Alert>
                 ) : null}
                 {selected?.coordinatorSessionId && renderCoordinator ? (

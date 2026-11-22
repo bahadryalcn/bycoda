@@ -1,5 +1,4 @@
 import { redactDiagnosticText } from "@bycoda/account-contracts";
-import type { ToastOptions } from "./ToastRegion";
 
 export const FAILURE_GRACE_MS = 3_000;
 export const FAILURE_RETRY_DELAYS_MS = [2_000, 4_000, 8_000] as const;
@@ -29,7 +28,7 @@ export async function reportFailure(
     retry,
     signal,
   }: {
-    toast: { show: (options: ToastOptions) => unknown };
+    toast: { show: (options: { tone: "danger"; message: string }) => unknown };
     retry?: () => void | Promise<unknown>;
     signal?: AbortSignal;
   },

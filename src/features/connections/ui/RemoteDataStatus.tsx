@@ -19,7 +19,7 @@ import {
   isConnectionFailure,
   isTransientTransportError,
 } from "../model/remoteFailure";
-import { useQuietRetry } from "../model/useQuietRetry";
+import { useGracedFailure } from "../model/transientFailure";
 import { useRemoteConnectionFeedback } from "./RemoteConnectionFeedback";
 
 /** Retained content stays visible; this strip explains whether it was verified. */
@@ -33,6 +33,7 @@ export function RemoteDataStatus({
   presentation = "auto",
   machineName,
   machineLabel,
+  autoRetry = true,
 }: {
   state: RemoteDataState;
   /** The data's owning remote project, for the workspace connection notice. */
@@ -48,6 +49,8 @@ export function RemoteDataStatus({
   machineName?: string;
   /** The machine this data belongs to, named in the floating notice and its details. */
   machineLabel?: string;
+  /** Paired toolbar and notice displays share one read owner. */
+  autoRetry?: boolean;
 }) {
   useLocale();
   // A first load that ends quickly never shows its indicator; a background refresh only spins
@@ -59,11 +62,12 @@ export function RemoteDataStatus({
   const failure = state.error ? classifyRemoteError(state.error) : undefined;
   const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
   // A busy machine is retried in the background; its failure is not an error yet.
-  const retrying = useQuietRetry(
-    state.phase === "error" ? state.error : undefined,
-    disabled ? undefined : onRefresh,
-    state.phase === "loading" || state.phase === "refreshing",
-  );
+  const { pending, visibleError } = useGracedFailure({
+    error: state.error,
+    retry: disabled || !autoRetry ? undefined : onRefresh,
+    loading: state.phase === "loading" || state.phase === "refreshing",
+    scope: cwd,
+  });
   // A machine-level notice cannot explain a failed data/service operation.
   if (
     !machineName &&
@@ -77,9 +81,9 @@ export function RemoteDataStatus({
   // The classified, localized reason; the raw transport text stays behind Details.
   const replacedError = !!state.error && isTransientTransportError(state.error);
   const errorView = state.error ? describeRemoteError(state.error) : undefined;
-  const shownError = errorView?.message;
-  const busy = retrying || state.phase === "loading" || state.phase === "refreshing";
-  const needsAttention = !retrying && (state.phase === "error" || state.phase === "stale");
+  const shownError = visibleError;
+  const busy = pending || state.phase === "loading" || state.phase === "refreshing";
+  const needsAttention = !pending && (state.phase === "error" || state.phase === "stale");
   const message =
     machineName &&
     (connectionIssueHandled || sharedConnectionIssue) &&
@@ -88,7 +92,7 @@ export function RemoteDataStatus({
       ? state.updatedAt
         ? t("Showing last loaded data. Updates have not been verified.")
         : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: dataLabel })
-      : retrying
+      : pending
         ? t("The machine is busy. Retrying…")
         : state.phase === "loading"
           ? t("Loading {p0}…", { p0: dataLabel })
@@ -119,7 +123,7 @@ export function RemoteDataStatus({
   if (!needsAttention || (presentation === "indicator" && machineName)) {
     const detail = `${machineName ? `${machineName} · ` : ""}${message}${time ? ` · ${t("Last verified {p0}", { p0: new Date(state.updatedAt!).toLocaleString(getLocale()) })}` : ""}`;
     const spinning =
-      retrying ||
+      pending ||
       (state.phase === "loading" && loadingShown) ||
       (state.phase === "refreshing" && onRefresh !== undefined);
     const icon = spinning ? (

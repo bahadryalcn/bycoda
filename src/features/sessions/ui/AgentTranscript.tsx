@@ -452,6 +452,7 @@ function AgentTranscriptComponent({
     pagingLoading,
     pagingError,
   } = useTranscriptPaging({
+    sessionId,
     turns,
     blockCount: blocks.length,
     openWork,

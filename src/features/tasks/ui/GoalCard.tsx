@@ -154,7 +154,7 @@ export function GoalCard({
             >
               {t(" · on")} {goal.machineName}
             </Text>
-            {goal.stale ? (
+            {goal.stale && !goal.pendingRefresh ? (
               <Text size="inherit" tone="warning" leading="inherit" wrap="anywhere">
                 {t(" (offline, last known)").trim()}
               </Text>

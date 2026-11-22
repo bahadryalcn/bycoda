@@ -8,7 +8,6 @@ import { formatDate } from "../../../shared/i18n";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { CircleAlert, RefreshCw } from "../../../shared/ui/icons";
 import { type RemoteDataState } from "../../connections";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 
 /** Root freshness at the end of the project row: icon, time, error, refresh. */
@@ -28,8 +27,7 @@ export function ExplorerSyncStatus({
     : undefined;
   // The failure is visible text in the row, so keyboard and screen-reader users reach it too;
   // a long or multi-line error keeps its full text behind Details.
-  const shownError =
-    warn && state.error ? presentRemoteError(state.error, { explicit: true }) : undefined;
+  const shownError = warn ? state.error : undefined;
   const verified = state.updatedAt
     ? t("Last verified {p0}", {
         p0: formatDate(state.updatedAt, {

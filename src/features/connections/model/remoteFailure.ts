@@ -43,7 +43,7 @@ const TEMPORARY =
 const HOST_RESTART_CODE = /^(?:HOST_STOPPING|HOST_DB_CLOSING)$/;
 const HOST_RESTART_TEXT = /^(?:Host is stopping|Host database is (?:closing|closed))\.?$/i;
 const TRANSIENT_CODE =
-  /^(?:REQUEST_CANCELLED|RPC_CANCELLED|GIT_START_TIMEOUT|HOST_RPC_DEADLINE|RPC_TIMEOUT|RPC_PROTOCOL|RPC_WS_(?:DEADLINE|OVERLOAD|DETACHED|CANCELLED))$/;
+  /^(?:ABORT_ERR|REQUEST_CANCELLED|RPC_CANCELLED|GIT_START_TIMEOUT|HOST_RPC_DEADLINE|RPC_TIMEOUT|RPC_PROTOCOL|RPC_WS_(?:DEADLINE|OVERLOAD|DETACHED|CANCELLED|RETRYABLE))$/;
 const TRANSIENT_TEXT =
   /^(?:Request cancell?ed|Command timed out before launch|AbortError(?::.*)?|Host did not answer .+ within \d+ s)\.?$/i;
 const PERMANENT_CODE =
@@ -79,7 +79,8 @@ function failureCode(error: unknown, message: string): string {
 
 export function isHostRestartFailure(error: unknown): boolean {
   const message = remoteErrorText(error).replace(/^(?:Error: )?(?:Host rejected request:\s*)?/i, "");
-  return HOST_RESTART_CODE.test(failureCode(error, message)) || HOST_RESTART_TEXT.test(message);
+  return HOST_RESTART_CODE.test(failureCode(error, message)) ||
+    HOST_RESTART_TEXT.test(message.replace(/^RPC_WS_INTERRUPTED:\s*/, ""));
 }
 
 /** Sorts a rejected remote request into what the user can do about it. The
@@ -118,7 +119,7 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   if (OUTDATED.test(text)) return { kind: "outdated", message };
   if (UNSUPPORTED.test(text)) return { kind: "unsupported", message };
   const operationCode = failureCode(error, message);
-  const operationText = message.replace(/^(?:RPC_WS_REMOTE|ETIMEDOUT):\s*/, "");
+  const operationText = message.replace(/^(?:(?:RPC_WS_REMOTE|ETIMEDOUT):\s*|\[RPC_WS_RETRYABLE\]\s*)/, "");
   if (PERMANENT_CODE.test(operationCode) || PERMANENT_TEXT.test(operationText))
     return { kind: "other", message };
   if (

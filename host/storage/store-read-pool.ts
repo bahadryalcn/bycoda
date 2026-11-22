@@ -20,6 +20,14 @@ export class ReadPoolUnavailableError extends Error {
     this.name = "ReadPoolUnavailableError";
   }
 }
+export class HostDbClosingError extends Error {
+  readonly code = "HOST_DB_CLOSING";
+
+  constructor(message = "Host database is closing.") {
+    super(message);
+    this.name = "HostDbClosingError";
+  }
+}
 type ReaderReply = {
   id?: number;
   ready?: boolean;
@@ -143,7 +151,7 @@ export class StoreReadPool {
       if (!slot.dead) void this.send(slot, "registerFunction", { name }).catch(() => undefined);
   }
 
-  async close(error = new Error("Host database is closing.")): Promise<void> {
+  async close(error = new HostDbClosingError()): Promise<void> {
     this.closed = true;
     clearTimeout(this.watchdog);
     this.watchdog = undefined;

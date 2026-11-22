@@ -440,6 +440,8 @@ pub struct WsFailure {
     pub command_id: Option<String>,
     /// True only when a mutating request may have reached the Host.
     pub uncertain: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub retryable: bool,
     /// Before dispatch only. Callers may negotiate a compatibility transport here.
     pub unsupported: bool,
 }
@@ -453,6 +455,7 @@ impl WsFailure {
             request_id: None,
             command_id: None,
             uncertain: false,
+            retryable: false,
             unsupported: false,
         }
     }

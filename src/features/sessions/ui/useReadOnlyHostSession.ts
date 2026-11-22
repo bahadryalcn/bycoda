@@ -107,13 +107,16 @@ function startReadOnlyReader({
     historyError: undefined,
   });
   const connect = async () => {
-    const resolved = await resolveLocalSessionReference({
-      locator: {
-        kind: "host",
-        environmentId: binding.environmentId,
-        sessionId: binding.sessionId,
+    const resolved = await resolveLocalSessionReference(
+      {
+        locator: {
+          kind: "host",
+          environmentId: binding.environmentId,
+          sessionId: binding.sessionId,
+        },
       },
-    });
+      { preserveTransientFailure: true },
+    );
     if (!current()) return;
     const host = resolved.host;
     if (!host || host.machine.id !== binding.machineId || host.project.id !== binding.projectId)

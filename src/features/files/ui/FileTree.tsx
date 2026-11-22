@@ -1637,8 +1637,8 @@ const TreeNode = memo(function TreeNode({
           parentLabel={entry.name}
           depth={depth + 1}
           entries={children}
-          loading={loading}
-          error={loadError}
+          loading={loading || pending}
+          error={loadError ?? null}
           onRetry={() => setRetry((n) => n + 1)}
         />
       ) : null}
@@ -1718,13 +1718,12 @@ export function NameRow({
       finished.current = true;
       setBusy(true);
       setSubmitError(null);
-      void onCommit(value).catch((err: unknown) => {
-        void reportFailure(err, {
+      void onCommit(value).catch(async (err: unknown) => {
+        await reportFailure(err, {
           toast: { show: ({ message }) => setSubmitError(message) },
-        }).finally(() => {
-          finished.current = false;
-          setBusy(false);
         });
+        finished.current = false;
+        setBusy(false);
       });
       return;
     }

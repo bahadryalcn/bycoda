@@ -80,9 +80,9 @@ export function CrewEditDialog({ cwd, ...focus }: { cwd: string } & EditorFocus)
     return (
       <Modal title={t("Crew")} size="sm" onClose={focus.onClose}>
         <div>
-          <Alert tone={state.error ? "warning" : "info"}>
-            {state.error ? state.error.message : t("Loading crews…")}
-            {state.error ? (
+          <Alert tone={state.visibleError ? "warning" : "info"}>
+            {state.visibleError ?? t("Loading crews…")}
+            {state.visibleError ? (
               <Button variant="ghost" onClick={() => void state.refetch()}>
                 {t("Retry")}
               </Button>

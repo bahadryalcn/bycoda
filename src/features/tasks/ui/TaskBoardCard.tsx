@@ -197,7 +197,7 @@ function TaskCardBody({
             {unread}
           </Badge>
         ) : null}
-        {task.stale ? (
+        {task.stale && !task.pendingRefresh ? (
           <Text tone="warning" size="inherit">
             {t("Offline")}
           </Text>

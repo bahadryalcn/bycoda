@@ -3,6 +3,7 @@ import {
   isUnsupportedRemoteRoute,
   presentRemoteError,
 } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { Text as UiText } from "../../../shared/ui/Text";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -14,6 +15,7 @@ import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Alert } from "../../../shared/ui/Alert";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { reportFailure } from "../../../shared/ui/reportFailure";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -123,7 +125,7 @@ type Props = {
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; content: string }
-  | { status: "error"; message: string; retryable: boolean };
+  | { status: "error"; error: unknown };
 
 type SaveState = { status: "idle" | "saving" | "saved" } | { status: "error"; message: string };
 
@@ -175,7 +177,7 @@ export function FileEditor({
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
   const [diskConflict, setDiskConflict] = useState(false);
-  const [diskVerificationError, setDiskVerificationError] = useState<string | null>(null);
+  const [diskVerificationError, setDiskVerificationError] = useState<unknown>(null);
   const [editorRevision, setEditorRevision] = useState(0);
   const retainedEditor = useMemo(
     () => ({ current: null as EditorCarry | null }),
@@ -265,7 +267,7 @@ export function FileEditor({
       await saveQueue.current;
       await openHtmlInChrome(path);
     } catch (error) {
-      setChromeError(errorText(error));
+      await reportFailure(error, { toast: { show: ({ message }) => setChromeError(message) } });
     } finally {
       openingRef.current = false;
       setOpeningChrome(false);
@@ -553,6 +555,7 @@ export function FileEditor({
             return;
           // A reload choice applies only to the draft the owner saw when choosing it.
           if (force && edits !== editVersion.current) return;
+          setDiskVerificationError(null);
           if (dirtyRef.current && !force) {
             // Keep unsaved edits; only a real change on disk blocks saving over it.
             pendingDiskRef.current =
@@ -584,23 +587,16 @@ export function FileEditor({
           currentIdentity.current.documentId !== documentId
         )
           return;
-        if (dirtyRef.current && !force) {
-          pendingDiskRef.current = true;
-          setDiskConflict(true);
-          return;
-        }
         if (force && dirtyRef.current) {
-          setSaveState({
-            status: "error",
-            message: errorText(error),
+          await reportFailure(error, {
+            toast: { show: ({ message }) => {
+              if (generation === loadGeneration.current) setSaveState({ status: "error", message });
+            } },
           });
           return;
         }
-        setLoadState({
-          status: "error",
-          message: errorText(error),
-          retryable: !isUnsupportedRemoteRoute(error),
-        });
+        if (dirtyRef.current) pendingDiskRef.current = true;
+        setDiskVerificationError(error);
       } finally {
         settled();
       }
@@ -623,6 +619,7 @@ export function FileEditor({
     setDirty(false);
     pendingDiskRef.current = false;
     setDiskConflict(false);
+    setDiskVerificationError(null);
     overwriteVersion.current = null;
     diskVersionRef.current = undefined;
     let cancelled = false;
@@ -660,13 +657,13 @@ export function FileEditor({
         };
         verifyLane();
         let actual: string | null = null;
-        let diskError: string | null = null;
+        let diskError: unknown = null;
         try {
           const disk = await readTextFileVersioned(path);
           actual = disk.text;
           diskVersionRef.current = disk.version;
         } catch (error) {
-          diskError = presentRemoteError(error, { explicit: true });
+          diskError = error;
         }
         if (cancelled || generation !== loadGeneration.current) return;
         verifyLane();
@@ -686,7 +683,7 @@ export function FileEditor({
           payload.serializedText ?? restoreLineEnding(payload.text, eolRef.current);
         pendingDiskRef.current = actual === null || actual !== payload.diskBaseline;
         if (pendingDiskRef.current) diskChangeVersion.current += 1;
-        setDiskConflict(pendingDiskRef.current);
+        setDiskConflict(actual !== null && pendingDiskRef.current);
         setDiskVerificationError(diskError);
         recoveryReviewRef.current = true;
         setRecoveredText(payload.text);
@@ -704,11 +701,7 @@ export function FileEditor({
     })()
       .catch((error: unknown) => {
         if (cancelled || generation !== loadGeneration.current) return;
-        setLoadState({
-          status: "error",
-          message: presentRemoteError(error, { explicit: true }),
-          retryable: !isUnsupportedRemoteRoute(error),
-        });
+        setLoadState({ status: "error", error });
       })
       .finally(settled);
     return () => {
@@ -723,9 +716,25 @@ export function FileEditor({
     editorClosure,
     admissionRetry,
   ]);
-  // A failed load or disk verification reruns once the machine's link is back.
-  useReloadOnReconnect(path, () => setReloadKey((value) => value + 1), {
-    active: loadState.status === "error" || diskVerificationError !== null,
+  const retryDocumentLoad = () => setReloadKey((value) => value + 1);
+  const failureScope = `${documentId}:${path}`;
+  const { visibleError: loadError, pending: loadPending } = useGracedFailure({
+    error: loadState.status === "error" ? loadState.error : null,
+    loading: loadState.status === "loading",
+    retry: shown ? retryDocumentLoad : undefined,
+    scope: failureScope,
+  });
+  const { visibleError: diskError, pending: diskPending } = useGracedFailure({
+    error: diskVerificationError,
+    retry: shown ? reloadFromDisk : undefined,
+    scope: failureScope,
+  });
+  // Recheck the current disk baseline without remounting the editor or discarding drafts.
+  useReloadOnReconnect(path, () => {
+    if (loadState.status === "error") retryDocumentLoad();
+    else return reloadFromDisk();
+  }, {
+    active: shown && (loadState.status === "error" || diskVerificationError !== null),
   });
 
   useEffect(() => {
@@ -997,11 +1006,20 @@ export function FileEditor({
           // The draft stays; the disk-conflict bar offers Reload or Overwrite.
           raiseDiskConflict(pendingDiskRef, diskChangeVersion, setDiskConflict);
         }
-        const message = changed
-          ? t("The file changed on disk. Reload or overwrite before saving.")
-          : presentRemoteError(error, { explicit: true });
         if (generation === saveGeneration.current) {
-          setSaveState({ status: "error", message });
+          if (changed) {
+            setSaveState({
+              status: "error",
+              message: t("The file changed on disk. Reload or overwrite before saving."),
+            });
+          } else {
+            await reportFailure(error, {
+              toast: { show: ({ message }) => {
+                if (generation === saveGeneration.current)
+                  setSaveState({ status: "error", message });
+              } },
+            });
+          }
         }
         throw error;
       } finally {
@@ -1092,8 +1110,11 @@ export function FileEditor({
         );
         notifyGitChanged(cwd, "index");
       } catch (error) {
-        const message = presentRemoteError(error, { explicit: true });
-        setSaveState({ status: "error", message });
+        await reportFailure(error, {
+          toast: { show: ({ message }) => {
+            if (currentIdentity.current.path === path) setSaveState({ status: "error", message });
+          } },
+        });
         throw error;
       }
     },
@@ -1177,7 +1198,11 @@ export function FileEditor({
       await handle.flush();
     } catch (error) {
       if (generation === draftViewGeneration.current)
-        setDraftActionError(presentRemoteError(error, { explicit: true }));
+        await reportFailure(error, {
+          toast: { show: ({ message }) => {
+            if (generation === draftViewGeneration.current) setDraftActionError(message);
+          } },
+        });
     } finally {
       settled();
       if (generation === draftViewGeneration.current) {
@@ -1202,7 +1227,11 @@ export function FileEditor({
       await draftHandleRef.current?.retry();
     } catch (error) {
       if (generation === draftViewGeneration.current)
-        setDraftActionError(presentRemoteError(error, { explicit: true }));
+        await reportFailure(error, {
+          toast: { show: ({ message }) => {
+            if (generation === draftViewGeneration.current) setDraftActionError(message);
+          } },
+        });
     } finally {
       settled();
       if (generation === draftViewGeneration.current) {
@@ -1224,10 +1253,11 @@ export function FileEditor({
     gitSettledPath !== path &&
     renderedDocumentRef.current !== documentId;
 
-  if (loadState.status === "loading" || diffPending) {
+  if (loadState.status === "loading" || loadPending || diffPending) {
     return (
       <UiText
         role="status"
+        aria-busy
         as="div"
         size="caption"
         tone="muted"
@@ -1241,12 +1271,13 @@ export function FileEditor({
   }
 
   if (loadState.status === "error") {
+    if (!loadError) return null;
     return (
       <FileLoadError
         path={path}
-        message={loadState.message}
-        retryable={loadState.retryable}
-        onRetry={() => setReloadKey((value) => value + 1)}
+        message={loadError}
+        retryable={!isUnsupportedRemoteRoute(loadState.error)}
+        onRetry={retryDocumentLoad}
       />
     );
   }
@@ -1327,7 +1358,7 @@ export function FileEditor({
   };
 
   return (
-    <div ref={editorRootRef} className="flex h-full min-h-0 min-w-0 flex-col">
+    <div ref={editorRootRef} aria-busy={diskPending} className="flex h-full min-h-0 min-w-0 flex-col">
       {draftPersistence?.initializationDecisionRequired ? (
         <UiText
           role="status"
@@ -1387,7 +1418,7 @@ export function FileEditor({
             t("Draft recovery copy could not be confirmed. Keep this editor open.")}
         </InlineError>
       ) : null}
-      {diskConflict && (
+      {(diskConflict || (diskError && pendingDiskRef.current)) && (
         <Alert
           tone="warning"
           className="shrink-0"
@@ -1407,7 +1438,7 @@ export function FileEditor({
             },
           }}
         >
-          {diskVerificationError
+          {diskError
             ? t(
                 "The disk version could not be verified. Reload reads it again; overwrite writes the recovered draft.",
               )
@@ -1416,6 +1447,11 @@ export function FileEditor({
               )}
         </Alert>
       )}
+      {diskError && !diskConflict && !pendingDiskRef.current ? (
+        <InlineError className="shrink-0" retry={{ onRetry: () => reloadFromDisk() }}>
+          {diskError}
+        </InlineError>
+      ) : null}
       {showDiff && gitDiff?.eolOnly && (
         <UiText
           role="status"

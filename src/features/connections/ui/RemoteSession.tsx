@@ -189,7 +189,7 @@ import {
   remoteErrorText,
 } from "../model/remoteFailure";
 import { errorText } from "../../../shared/lib/errors";
-import { useQuietRetry } from "../model/useQuietRetry";
+import { useGracedFailure } from "../model/transientFailure";
 import {
   classifyCommandFailure,
   COMMAND_RETRY_AUTOMATIC_LIMIT,
@@ -2965,16 +2965,12 @@ function ConnectedRemoteSession({
   };
 
   const catalogFailure = catalog?.errors[configuration.harness] ?? catalogError;
-  const visibleCatalogFailure =
-    configuration.harness === "codex" &&
-    catalog?.models.codex?.length &&
-    (/\btimed out\b/i.test(catalogFailure) ||
-      classifyRemoteError(catalogFailure).kind === "temporary")
-      ? ""
-      : catalogFailure;
-  const catalogProblem = useQuietRetry(visibleCatalogFailure, refreshCatalog, catalogLoading)
-    ? undefined
-    : visibleCatalogFailure;
+  const { visibleError: catalogProblem } = useGracedFailure({
+    error: catalogFailure,
+    retry: refreshCatalog,
+    loading: catalogLoading,
+    scope: questionDraftScope,
+  });
   /** Settles or sends again the pending command. The Host's receipt settles it; with
    * no receipt the same command is sent again, except shell, cancel, approve and
    * answer, which only a receipt can settle. `automatic` checks run from the pending
@@ -3148,7 +3144,11 @@ function ConnectedRemoteSession({
   const waitingForReconnect =
     !!pending && !sending && !retryStopped && !online && !pendingNeedsConfirmation;
   // A busy host (deadline, overload) is read again quietly first; sending stays held meanwhile.
-  const queueRetrying = useQuietRetry(queue.error, queue.retryRead);
+  const { pending: queueRetrying } = useGracedFailure({
+    error: queue.error,
+    retry: queue.retryRead,
+    scope: questionDraftScope,
+  });
   const notice = queue.error
     ? queueRetrying
       ? undefined
@@ -3952,6 +3952,7 @@ function ConnectedRemoteSession({
       <RemoteDataStatus
         cwd={owner?.environmentId ?? project.key}
         presentation="indicator"
+        autoRetry={false}
         state={remoteDataState}
         onRefresh={refreshOwnerContent}
         label={t("conversation")}

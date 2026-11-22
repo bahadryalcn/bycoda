@@ -1,4 +1,5 @@
 import { HOST_MODEL_ROUTING } from "../../../shared/model/host-contracts/model-routing";
+import { invoke } from "@tauri-apps/api/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -8,7 +9,7 @@ import {
   machineCapabilities,
 } from "../../automations/public/hostMachines";
 import { remoteRequest } from "../../connections/model/connections";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { useRemoteModelCatalog } from "../../connections/model/useRemoteModelCatalog";
 import { crewHasRunningWork } from "./crewPresentation";
 import type {
@@ -93,7 +94,7 @@ export function useProjectCrews(cwd: string, enabled = true) {
   const [older, setOlder] = useState<CrewRunView[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null | undefined>();
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string>();
+  const [historyError, setHistoryError] = useState<unknown>();
   const historyGeneration = useRef(0);
   const firstCursor = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -101,24 +102,30 @@ export function useProjectCrews(cwd: string, enabled = true) {
     firstCursor.current = undefined;
     setOlder((previous) => (previous.length ? [] : previous));
     setNextCursor(undefined);
+    setHistoryLoading(false);
     setHistoryError(undefined);
   }, [cwd]);
   const client = useQueryClient();
   const key = [HOST_CREWS, cwd];
+  const canRead = enabled && !!cwd && cwd !== "~";
   const query = useQuery({
     queryKey: key,
-    enabled: enabled && !!cwd && cwd !== "~",
+    enabled: canRead,
     queryFn: async (): Promise<CrewsSnapshot> => {
-      const machines = await backgroundMachines(HOST_CREWS);
+      // Read the owning machine directly so a capability request's failure keeps its
+      // reason and is not mistaken for a Host that lacks Crew support.
+      const machines = await invoke<RemoteMachine[]>("remote_machines");
       const machine = backgroundMachineFor(machines, cwd);
       if (!machine) throw new Error("Update and connect this project's host to use Crews.");
+      const capabilities = await machineCapabilities(machine);
+      if (!capabilities.includes(HOST_CREWS))
+        throw new Error("Update and connect this project's host to use Crews.");
       const project = await hostProjectFor(machine, cwd);
       // The model catalog is not read here: it changes far more slowly than run state and
       // has its own scoped read (`useRemoteModelCatalog`) below.
       const state = await remoteRequest<
         Pick<ProjectCrews, "definitions" | "runs" | "agents" | "historyNextCursor">
       >(machine.id, "crews.list", { projectId: project.id, historyLimit: 40 });
-      const capabilities = await machineCapabilities(machine);
       return {
         machine,
         project,
@@ -142,6 +149,12 @@ export function useProjectCrews(cwd: string, enabled = true) {
         ? 5000
         : 15_000,
     retry: false,
+  });
+  const listFailure = useGracedFailure({
+    error: canRead ? query.error : undefined,
+    retry: () => query.refetch({ cancelRefetch: false }),
+    loading: query.isFetching,
+    scope: cwd,
   });
   const machine = query.data?.machine;
   const project = query.data?.project;
@@ -213,12 +226,17 @@ export function useProjectCrews(cwd: string, enabled = true) {
       });
       setNextCursor(page.historyNextCursor ?? null);
     } catch (reason) {
-      if (generation === historyGeneration.current)
-        setHistoryError(presentRemoteError(reason, { explicit: true }));
+      if (generation === historyGeneration.current) setHistoryError(reason);
     } finally {
       if (generation === historyGeneration.current) setHistoryLoading(false);
     }
   };
+  const historyFailure = useGracedFailure({
+    error: canRead ? historyError : undefined,
+    retry: loadMoreHistory,
+    loading: historyLoading,
+    scope: cwd,
+  });
   // Keep this memo: one object per fetched result. Effects keyed on `data` must not
   // run on every render; on a remote project that re-rendered the sidebar forever
   // (React #185, the Mac crash). crewClient.test.ts guards it.
@@ -239,12 +257,14 @@ export function useProjectCrews(cwd: string, enabled = true) {
   return {
     ...query,
     data,
+    visibleError: listFailure.visibleError,
+    pendingFailure: listFailure.pending,
     /** Explicit retry of the model catalog only; `refetch` reads the crew list only. */
     refreshCatalog: catalogRead.refresh,
     call,
     loadMoreHistory,
-    historyLoading,
-    historyError,
+    historyLoading: historyLoading || historyFailure.pending,
+    historyError: historyFailure.visibleError,
     hasMoreHistory: !!(nextCursor === undefined ? query.data?.historyNextCursor : nextCursor),
   };
 }

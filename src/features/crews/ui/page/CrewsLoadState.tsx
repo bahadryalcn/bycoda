@@ -15,7 +15,7 @@ function RetryAlert({ state }: { state: CrewState }) {
       tone="warning"
       action={{ label: t("Retry"), pending: state.isFetching, onClick: () => void state.refetch() }}
     >
-      {state.error?.message}
+      {state.visibleError}
     </Alert>
   );
 }
@@ -33,8 +33,8 @@ export function CrewsLoadState({
   const data = state.data;
   if (!data)
     return (
-      <div className="p-4">
-        {state.error ? (
+      <div className="p-4" aria-busy={state.pendingFailure || undefined}>
+        {state.visibleError ? (
           <RetryAlert state={state} />
         ) : noProject ? (
           // The query is disabled without a real project folder: say so instead of loading forever.
@@ -46,10 +46,12 @@ export function CrewsLoadState({
     );
   return (
     <>
-      {state.error ? (
+      {state.visibleError ? (
         <div className="px-4 pt-4">
           <RetryAlert state={state} />
         </div>
+      ) : state.pendingFailure ? (
+        <LoadingText className="px-4 pt-4">{t("Loading crews…")}</LoadingText>
       ) : null}
       {children(data)}
     </>

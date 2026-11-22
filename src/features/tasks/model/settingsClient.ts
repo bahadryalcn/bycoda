@@ -16,6 +16,7 @@ export type MachineLimits = HostSettingsState & {
   machineId: string;
   machineName: string;
   stale?: boolean;
+  pendingRefresh?: boolean;
 };
 
 /** Machines whose host keeps work limits, this computer's included. Older
