@@ -15,10 +15,13 @@ export const TOAST_VISIBLE_MS = 10_000;
 
 /**
  * Default visible time by tone: confirmations are short, a warning needs a longer read, an error
- * stays long enough to act on, and an error that offers an action never expires on its own.
+ * stays long enough to act on, any notice with an action keeps the full time, and an error that
+ * offers an action never expires on its own.
  */
 export function toastDurationMs(tone: ToastTone, hasAction: boolean): number | null {
   if (tone === "danger") return hasAction ? null : TOAST_VISIBLE_MS;
+  // A notice that offers an action keeps the full read-and-act time whatever its tone.
+  if (hasAction) return TOAST_VISIBLE_MS;
   if (tone === "warning") return 8_000;
   return 5_000;
 }

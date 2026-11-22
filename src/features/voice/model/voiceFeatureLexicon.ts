@@ -31,7 +31,7 @@ const features: Record<string, string[]> = {
     "タスク",
     "任务",
   ],
-  notes: ["notes", "note", "notlar", "not", "notizen", "notas", "remarques", "注意事項", "注释"],
+  notes: ["notes", "note", "notlar", "not", "notizen", "notas", "remarques", "ノート", "笔记"],
   projects: [
     "projects",
     "project",
@@ -293,10 +293,10 @@ const hintLabels: Record<string, string> = {
   en: "crews, tasks, projects, sessions, automations, notes, inbox, skills, devices, browser",
   de: "Crews, Aufgaben, Projekte, Sitzungen, Automatisierungen, Notizen, Posteingang, Fähigkeiten, Geräte, Browser",
   es: "equipos, tareas, proyectos, sesiones, automatizaciones, notas, bandeja de entrada, habilidades, dispositivos, navegador",
-  fr: "équipes, tâches, projets, sessions, automatismes, remarques, boîte de réception, compétences, appareils, navigateur",
+  fr: "équipes, tâches, projets, sessions, automatismes, notes, boîte de réception, compétences, appareils, navigateur",
   pt: "equipes, tarefas, projetos, sessões, automações, notas, caixa de entrada, habilidades, dispositivos, navegador",
-  ja: "クルー, タスク, プロジェクト, セッション, 自動化, 注意事項, 受信箱, スキル, デバイス, ブラウザー",
-  zh: "小队, 任务, 项目, 会话, 自动化, 注释, 收件箱, 技能, 设备, 浏览器",
+  ja: "クルー, タスク, プロジェクト, セッション, 自動化, ノート, 受信箱, スキル, デバイス, ブラウザー",
+  zh: "小队, 任务, 项目, 会话, 自动化, 笔记, 收件箱, 技能, 设备, 浏览器",
 };
 const hintSuffix = "Crews, Tasks, Projects, Sessions, MCP.";
 const hintWords = (text: string) =>

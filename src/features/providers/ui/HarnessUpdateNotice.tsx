@@ -110,7 +110,7 @@ export function HarnessUpdateNotice() {
       aria-label={t("Harness updates")}
       tone="info"
       title={updates.length === 1 ? t("Harness update available") : t("Harness updates available")}
-      durationMs={allUpdated ? 5000 : undefined}
+      durationMs={allUpdated ? 5000 : null}
       historyMessage={updates
         .map((update) => `${HARNESS_TITLE[update.harness]}: ${update.installed} → ${update.latest}`)
         .join("\n")}

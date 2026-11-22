@@ -378,7 +378,8 @@ it("uses the routine corner by default and honours an explicit placement", () =>
 
 it("picks the default time by tone and keeps an error with an action until dismissed", () => {
   expect(toastDurationMs("info", false)).toBe(5_000);
-  expect(toastDurationMs("success", true)).toBe(5_000);
+  expect(toastDurationMs("success", false)).toBe(5_000);
+  expect(toastDurationMs("success", true)).toBe(TOAST_VISIBLE_MS);
   expect(toastDurationMs("warning", false)).toBe(8_000);
   expect(toastDurationMs("danger", false)).toBe(TOAST_VISIBLE_MS);
   expect(toastDurationMs("danger", true)).toBeNull();
