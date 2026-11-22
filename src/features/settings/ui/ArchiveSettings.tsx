@@ -227,10 +227,9 @@ export function ArchivePage({
       <Group
         id="archived-projects"
         title={t("Archived projects")}
-        scope={t(
-          "Scope: archived projects in this app. Locked projects appear after unlocking their group.",
-        )}
         description={`${t(
+          "Scope: archived projects in this app. Locked projects appear after unlocking their group.",
+        )} ${t(
           "Archive a project from the rail to keep its chats without listing it in the sidebar.",
         )} ${t(
           "Restore returns a project to the sidebar. Delete removes its conversations and app entry after confirmation; its folder stays on disk.",
@@ -497,7 +496,7 @@ export function ArchivePage({
         <Row
           id="show-archived"
           label={t("Archived conversations only")}
-          dependency={t(
+          description={t(
             "Show archived conversations instead of active conversations in the sidebar. This does not change the lists on this page.",
           )}
           feedback={

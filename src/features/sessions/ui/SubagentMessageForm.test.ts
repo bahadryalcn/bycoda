@@ -107,7 +107,7 @@ it("disables Send for an empty draft or a blocked child", () => {
   render(relay({ mode: "direct", draft: "   " }));
   expect(buttonLabels()).toContain("Send");
   const send = [...container.querySelectorAll("button")].find((b) => b.textContent === "Send");
-  expect(send?.disabled).toBe(true);
+  expect(send?.getAttribute("aria-disabled")).toBe("true");
 
   render(relay({ mode: "direct", blockedReason: "The child session is not ready." }));
   expect(container.textContent).toContain("The child session is not ready.");

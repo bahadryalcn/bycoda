@@ -207,7 +207,7 @@ describe("Codex requests reach the chat and notifications", () => {
         Array.from(form()!.querySelectorAll("button")).find(
           (candidate) => candidate.textContent?.trim() === label,
         )!;
-      expect(button("Send answer").disabled).toBe(true);
+      expect(button("Send answer").getAttribute("aria-disabled")).toBe("true");
       if (action === "skip") {
         await act(async () => button("Skip").click());
         expect(form()).toBeNull();

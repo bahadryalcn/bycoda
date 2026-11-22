@@ -689,7 +689,11 @@ export function SearchView({
           </LoadingText>
         ) : null}
         {empty ? (
-          <EmptyState context="panel" icon={<Search className="icon-md" />} />
+          <EmptyState
+            context="panel"
+            icon={<Search className="icon-md" />}
+            description={t("Search files, conversations, and projects")}
+          />
         ) : noResults ? (
           <>
             <EmptyState

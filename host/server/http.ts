@@ -879,7 +879,8 @@ export function createHttpRuntime(
                       ? { code: error.code, delivery: error.delivery }
                       : error instanceof HostDomainOutcomeError
                         ? { delivery: error.delivery }
-                        : error instanceof OwnerRpcCancelledError || error instanceof HostDbClosingError
+                        : error instanceof OwnerRpcCancelledError ||
+                            error instanceof HostDbClosingError
                           ? { code: error.code }
                           : {}),
                   ...(error instanceof HostIdentityMismatchError ? { code: error.code } : {}),

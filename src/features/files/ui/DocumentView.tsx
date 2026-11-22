@@ -215,14 +215,16 @@ export function DocumentView({
   } else if (state.status === "error" && loadShownCentrally) {
     body = null;
   } else if (state.status === "error") {
+    const parts = documentProblemParts(state.problem);
+    // A short one-line library or size detail is the reason itself; without one the plain reason explains.
     body = (
       <DocumentMessage
         title={t("Couldn’t open {p0}", { p0: name })}
         error
-        detail={documentProblemParts(state.problem).detail}
+        detail={parts.detail}
         onRetry={reload}
       >
-        {documentProblemParts(state.problem).reason}
+        {parts.detail ? null : parts.reason}
       </DocumentMessage>
     );
   } else if (state.status === "cancelled") {

@@ -762,7 +762,7 @@ html.theme-light {
   --ui-primary-hover: color-mix(in oklab, var(--color-content) 85%, var(--ui-tint-base));
   --ui-primary-pressed: color-mix(in oklab, var(--color-content) 75%, var(--ui-tint-base));
   --ui-control-thumb: var(--color-on-solid);
-  --ui-control-thumb-border: color-mix(in oklab, var(--color-scrim) 5%, transparent);
+  --ui-control-thumb-border: color-mix(in oklab, var(--color-scrim) 22%, transparent);
   --ui-control-thumb-shadow: 0 1px 4px color-mix(in oklab, var(--color-scrim) 20%, transparent);
   /* Height ladder (One component system spec): xs 24, sm 28, md 32, lg 40; density scales it. */
   --ui-control-height-xs: 1.5rem;
@@ -4441,10 +4441,6 @@ html:not(.theme-light) .markdown-code-token {
 
 /* Menus need a stable surface above bright buttons and custom backgrounds. */
 .popover-backdrop {
-  background: color-mix(in srgb, var(--ui-surface-floating) 95%, transparent);
-}
-
-html.theme-light .popover-backdrop {
   background: var(--ui-surface-floating);
 }
 
@@ -5012,7 +5008,7 @@ html.is-reordering
 :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
   --tw-backdrop-blur: blur(var(--glass-blur));
 }
-/* The floating surface (.popover-backdrop: popovers, menus, dialogs, sheets) is 95-100% opaque, so a
+/* The floating surface (.popover-backdrop: popovers, menus, dialogs, sheets) is opaque, so a
    blur behind it is invisible yet re-samples the pane on every repaint. Only .popover-frosted
    (a deliberately translucent popover) blurs, through its own rule above. */
 /* A nested glass surface samples the already blurred parent only once. */

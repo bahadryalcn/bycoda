@@ -326,9 +326,7 @@ describe("tool diff popovers", () => {
       ];
       act(() => root.render(createElement(AgentTranscript, { blocks, onOpenFile, onOpenDiff })));
       expect(container.textContent).not.toContain("before");
-      const expand = container.querySelector<HTMLButtonElement>(
-        'button[aria-label="Show the work"]',
-      )!;
+      const expand = container.querySelector<HTMLElement>('summary[aria-label="Show the work"]')!;
       act(() => expand.click());
       const trigger = container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
       expect(trigger).not.toBeNull();

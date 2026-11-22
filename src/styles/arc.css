@@ -87,7 +87,7 @@ html[data-input-modality="keyboard"]:root {
   --control-track-hover: color-mix(in oklch, var(--color-content) 28%, transparent);
   --control-thumb: var(--ui-control-thumb);
   --control-thumb-on: var(--ui-control-thumb);
-  --control-thumb-shadow: none;
+  --control-thumb-shadow: var(--ui-control-thumb-shadow);
   --shadow-resting: none;
   --shadow-raised: none;
   /* Type: 12 label (--text-xs/--text-sm), 13 entry (--text-base; fields and menus re-point

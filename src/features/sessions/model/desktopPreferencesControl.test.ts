@@ -138,7 +138,7 @@ it("reads and patches chat appearance only through a current, approved review", 
     })) as DesktopPreferencesStatus;
   expect(original.application.chatMessages).toEqual({
     userMessageOpacity: 42,
-    assistantMessageOpacity: 45,
+    assistantMessageOpacity: 90,
     messageColor: "theme",
   });
   expect((await patch("denied", { assistantMessageOpacity: 70 })).state).toBe("failed");

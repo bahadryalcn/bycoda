@@ -25,7 +25,7 @@ export function SourceControlSettings() {
     <div className="source-control-settings settings-topics flex min-w-0 flex-col gap-8">
       <Group
         title={t("Generation")}
-        scope={t("Used across projects unless a project has its own generation selection.")}
+        description={t("Used across projects unless a project has its own generation selection.")}
       >
         <Row
           id="git-generation-default"

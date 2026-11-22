@@ -141,7 +141,7 @@ describe("question attachments", () => {
 
   it("sends a picked file as an attachment-only answer", async () => {
     const onReply = render();
-    expect(button("Send answer").disabled).toBe(true);
+    expect(button("Send answer").getAttribute("aria-disabled")).toBe("true");
     await pick();
     expect(node.textContent).toContain(file.name);
     expect(button("Send answer").disabled).toBe(false);
