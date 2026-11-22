@@ -52,9 +52,14 @@ export function AssistantFoldersSettings({
   if (state.loading && !state.saved) return <LoadingText>{t("Loading folders…")}</LoadingText>;
   if (!state.saved)
     return (
-      <InlineError retry={{ onRetry: () => void state.reload(), label: t("Reload") }}>
-        {state.loadError || t("The folder list could not be read.")}
-      </InlineError>
+      <Row label={t("Assistant folders")} stacked>
+        <InlineError
+          details={state.loadError || undefined}
+          retry={{ onRetry: () => void state.reload(), label: t("Reload") }}
+        >
+          {t("The folder list could not be read.")}
+        </InlineError>
+      </Row>
     );
 
   async function add() {

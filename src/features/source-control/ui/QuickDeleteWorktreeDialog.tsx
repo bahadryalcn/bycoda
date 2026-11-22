@@ -188,7 +188,7 @@ export function QuickDeleteWorktreeDialog({
         {error ? (
           <GitFeedback
             detail={error}
-            title={t("Git operation failed")}
+            title={t("Couldn’t delete this worktree")}
             onRetry={!busy ? () => setRevision((value) => value + 1) : undefined}
           />
         ) : null}

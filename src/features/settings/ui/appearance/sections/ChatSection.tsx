@@ -42,7 +42,9 @@ export function ChatSection({
             id="transcript-backdrop"
             label={
               appearance.chatBackgroundPath
-                ? t("Image, {p0} visible", { p0: formatNumber(visible / 100, { style: "percent" }) })
+                ? t("Image, {p0} visible", {
+                    p0: formatNumber(visible / 100, { style: "percent" }),
+                  })
                 : t("No background image")
             }
           >

@@ -210,7 +210,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
                     const id = job.quickResult?.automationId ?? job.quickIntent?.automationId;
                     if (!id || !environmentId || job.quickAction.kind !== "automation")
                       throw new Error(
-                        "The linked automation is unavailable on its original computer.",
+                        t("The linked automation is unavailable on its original computer."),
                       );
                     const owner = await captureAssistantHostRead(environmentId);
                     const rows = await owner.automations();
@@ -218,7 +218,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
                     const actual = rows.find((row) => row.id === id && row.projectId === projectId);
                     if (!actual || !assistantJobVisible(job, canSeeProject))
                       throw new Error(
-                        "The linked automation is unavailable on its original computer.",
+                        t("The linked automation is unavailable on its original computer."),
                       );
                     await props.onOpenAutomation!({
                       id: actual.id,
@@ -270,38 +270,43 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
       <Disclosure size="sm" summary={t("Related work")}>
         <div className={styles.related}>
           {job.goalId && (
-            <p>
-              {t("Epic")}:{" "}
+            <div>
               <Button
                 variant="link"
                 disabled={!props.onReviewJobTasks || !!pending}
+                disabledReason={
+                  props.onReviewJobTasks ? undefined : t("Open this job on its own computer")
+                }
                 loading={pending?.key === `tasks:${job.id}`}
                 onClick={() => reviewJobTasks(job)}
               >
-                {job.goalId}
-              </Button>
-            </p>
+                {t("Epic: {p0}", { p0: job.title })}
+              </Button>{" "}
+              <Code>{job.goalId}</Code>
+            </div>
           )}
-          {job.sessionIds.map((id) => (
-            <Button
-              key={id}
-              variant="link"
-              disabled={!onOpenSession}
-              onClick={() => onOpenSession?.(id)}
-            >
-              {id}
-            </Button>
+          {job.sessionIds.map((id, index) => (
+            <div key={id}>
+              <Button
+                variant="link"
+                disabled={!onOpenSession}
+                disabledReason={onOpenSession ? undefined : t("Open this job on its own computer")}
+                onClick={() => onOpenSession?.(id)}
+              >
+                {t("Worker session {p0}", { p0: index + 1 })}
+              </Button>{" "}
+              <Code>{id}</Code>
+            </div>
           ))}
-          {job.taskIds.map((id) => (
+          {job.taskIds.length > 0 && (
             <Button
-              key={id}
               variant="link"
               disabled={!props.onReviewJobTasks || !!pending || job.kind === "quick" || !job.goalId}
               onClick={() => reviewJobTasks(job)}
             >
-              {id}
+              {t("Review tasks")}
             </Button>
-          ))}
+          )}
         </div>
       </Disclosure>
       <Tabs value={tab} onValueChange={setTab} id="job-detail">

@@ -10,7 +10,6 @@ import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { WandSparkles, X } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { generateCommitMessage } from "../model/gitTextGeneration";
-import { MOD } from "../../../platform/tauri/platform";
 
 type Busy = "stash" | "commit" | null;
 
@@ -120,18 +119,25 @@ export function SwitchBranchDialog({
           >
             {t("Cancel")}
           </Button>
+          {/* The action the user is working toward is the primary one: a typed message means commit. */}
           <Button
-            variant="secondary"
+            variant={trimmed ? "primary" : "secondary"}
             motion="none"
             type="button"
             loading={busy === "commit"}
+            shortcut="Mod+Enter"
             disabled={!canCommit}
+            disabledReason={
+              !trimmed && !busy && !generating
+                ? t("Write a commit message to commit and switch")
+                : undefined
+            }
             onClick={() => onCommit(trimmed)}
           >
             {t("Commit & switch")}
           </Button>
           <Button
-            variant="primary"
+            variant={trimmed ? "secondary" : "primary"}
             motion="none"
             type="button"
             loading={busy === "stash"}
@@ -173,7 +179,7 @@ export function SwitchBranchDialog({
             minRows={1}
             maxRows={8}
             value={message}
-            placeholder={t("Message ({p0}↩ to commit)", { p0: MOD })}
+            placeholder={t("Commit message")}
             disabled={Boolean(busy) || generating}
             aria-label={t("Commit message")}
             className="w-full"

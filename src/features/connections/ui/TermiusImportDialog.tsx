@@ -149,7 +149,9 @@ export function TermiusImportDialog({
       }}
       footer={
         <ModalActions
-          reason={preview && !outcome && !selected.size ? t("Select at least one entry.") : undefined}
+          reason={
+            preview && !outcome && !selected.size ? t("Select at least one entry.") : undefined
+          }
         >
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             {outcome ? t("Done") : t("Cancel")}

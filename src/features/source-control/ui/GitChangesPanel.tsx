@@ -315,12 +315,7 @@ export function GitChangesPanel({
 
   if (!cwd || cwd === "~") {
     return (
-      <EmptyState
-        size="inline"
-        kind="empty"
-        inset="row"
-        description={t("No project folder")}
-      />
+      <EmptyState size="inline" kind="empty" inset="row" description={t("No project folder")} />
     );
   }
 
@@ -1719,17 +1714,11 @@ function ChangedFiles({
               </FileSection>
             ) : null}
             {pointers.length > 0 ? (
-              <Text as="p" size="caption" tone="secondary" className="px-3 py-1">
+              <InlineMessage tone="info" inset="row">
                 {t("Submodule pointer changes: {p0}, shown on their submodule rows.", {
                   p0: pointers.length,
                 })}
-              </Text>
-            ) : null}
-            {deferredFileQuery ? (
-              <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-1">
-                {visibleStaged.length + visibleUnstaged.length} / {staged.length + unstaged.length}{" "}
-                {t("staged and unstaged entries")}
-              </Text>
+              </InlineMessage>
             ) : null}
           </>
         )}

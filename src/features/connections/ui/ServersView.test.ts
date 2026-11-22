@@ -385,7 +385,7 @@ it("filters names and addresses and distinguishes no matches from an empty inven
   expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
   await search("absent");
   expect(document.body.textContent).toContain("No matching servers");
-  expect(document.body.textContent).not.toContain("No machines connected.");
+  expect(document.body.textContent).not.toContain("No servers yet.");
   // A search with no match offers a reset, not creation.
   expect(document.body.querySelector('[data-kind="filtered"]')).toBeTruthy();
   await click("Reset filters");
@@ -393,7 +393,7 @@ it("filters names and addresses and distinguishes no matches from an empty inven
   expect(document.body.textContent).not.toContain("No matching servers");
   fixture.machines = [];
   await render();
-  expect(document.body.textContent).toContain("No machines connected.");
+  expect(document.body.textContent).toContain("No servers yet.");
   // Nothing to narrow: no search, filters or layout switch, only the way to add one.
   expect(document.body.querySelector('[aria-label="Search servers"]')).toBeNull();
   expect(document.body.querySelector('[aria-label="Server filters"]')).toBeNull();
@@ -420,13 +420,13 @@ it("separates initial loading and load failure from an empty successful inventor
     await new Promise((resolve) => setTimeout(resolve, LOADING_DELAY_MS + 50));
   });
   expect(document.body.querySelector('[role="status"]')?.textContent).toContain("Loading servers");
-  expect(document.body.textContent).not.toContain("No machines connected.");
+  expect(document.body.textContent).not.toContain("No servers yet.");
   Object.assign(fixture, { loading: false, error: "unavailable" });
   await render();
   expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
     "Couldn’t load servers",
   );
-  expect(document.body.textContent).not.toContain("No machines connected.");
+  expect(document.body.textContent).not.toContain("No servers yet.");
 });
 
 it("restores search, selection and scroll after navigating away and returning", async () => {
@@ -676,8 +676,6 @@ const openRowMenu = async (id: string) => {
   );
   expect(menuItem("Show details")).toBeTruthy();
 };
-/** ConfirmMorph ignores an answer within ~280 ms of the question being asked. */
-const settleQuestion = () => act(async () => new Promise((resolve) => setTimeout(resolve, 320)));
 const clickInDocument = async (label: string, scope: ParentNode = document) => {
   const button = [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
     (entry) => entry.textContent?.includes(label) || entry.getAttribute("aria-label") === label,
@@ -752,15 +750,10 @@ it("deletes an SSH server only after confirmation and clears the selection it he
   await click("Personal SSH");
   await openRowMenu("ssh-stable");
   await act(async () => menuItem("Delete")!.click());
-  const question = document.querySelector<HTMLElement>(
-    '[role="dialog"][aria-label="Delete Personal SSH?"]',
-  )!;
-  expect(question).toBeTruthy();
+  const question = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(question.textContent).toContain("Delete Personal SSH?");
   expect(removeSshConnection).not.toHaveBeenCalled();
   await clickInDocument("Delete", question);
-  await settleQuestion();
-  expect(removeSshConnection).not.toHaveBeenCalled();
-  await clickInDocument("Confirm delete", question);
   expect(removeSshConnection).toHaveBeenCalledExactlyOnceWith("ssh-stable");
   expect(document.body.querySelector('[aria-label="Server details"]')).toBeNull();
 });
@@ -772,13 +765,10 @@ it("reports a failed delete inline and keeps the server selected", async () => {
   await click("Personal SSH");
   await openRowMenu("ssh-stable");
   await act(async () => menuItem("Delete")!.click());
-  const question = document.querySelector<HTMLElement>(
-    '[role="dialog"][aria-label="Delete Personal SSH?"]',
-  )!;
+  const question = document.querySelector<HTMLElement>('[role="dialog"]')!;
   await clickInDocument("Delete", question);
-  await settleQuestion();
-  await clickInDocument("Confirm delete", question);
-  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain("database locked");
+  // The confirmation stays open and shows the failure once, with the delete still available.
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("database locked");
   expect(document.body.querySelector('[aria-label="Server details"]')?.textContent).toContain(
     "Personal SSH",
   );
@@ -788,13 +778,9 @@ it("removes a host machine from this desktop through the existing disconnect pat
   await render();
   await openRowMenu("mac");
   await act(async () => menuItem("Delete")!.click());
-  const question = document.querySelector<HTMLElement>(
-    '[role="dialog"][aria-label="Delete Home Mac?"]',
-  )!;
-  expect(question.textContent).toContain("this desktop only");
+  const question = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(question.textContent).toContain("Delete Home Mac?");
   await clickInDocument("Delete", question);
-  await settleQuestion();
-  await clickInDocument("Confirm delete", question);
   expect(disconnectMachine).toHaveBeenCalledExactlyOnceWith("mac");
   expect(removeSshConnection).not.toHaveBeenCalled();
 });

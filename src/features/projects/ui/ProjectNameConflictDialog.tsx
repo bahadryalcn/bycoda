@@ -43,7 +43,9 @@ export function ProjectNameConflictDialog({
     <Modal
       size="sm"
       title={t("Rename project")}
-      description={t("A project named “{p0}” already exists. Give this one a different name.", { p0: name })}
+      description={t("A project named “{p0}” already exists. Give this one a different name.", {
+        p0: name,
+      })}
       onClose={onCancel}
       footer={
         <ModalActions>

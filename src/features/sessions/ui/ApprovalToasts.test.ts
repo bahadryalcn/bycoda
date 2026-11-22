@@ -893,12 +893,12 @@ it("opens the owner request's conversation, or only closes the sheet without one
   openHistory();
   act(() => button("Approve with-session")?.click());
   expect(onFocusSession).toHaveBeenCalledWith("s-owner");
-  expect(document.querySelector("[data-sheet-side=\"end\"]")).toBeNull();
+  expect(document.querySelector('[data-sheet-side="end"]')).toBeNull();
   onFocusSession.mockClear();
   openHistory();
   act(() => button("Approve no-session").click());
   expect(onFocusSession).not.toHaveBeenCalled();
-  expect(document.querySelector("[data-sheet-side=\"end\"]")).toBeNull();
+  expect(document.querySelector('[data-sheet-side="end"]')).toBeNull();
 });
 
 it("never shows or stores a secret value, only its title and outcome", async () => {

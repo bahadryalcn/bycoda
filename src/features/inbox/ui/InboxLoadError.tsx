@@ -25,7 +25,9 @@ export function InboxLoadError({
       tone="danger"
       title={heading}
       action={
-        onRetry ? { label: t("Try again"), pending: retrying, disabled, onClick: onRetry } : undefined
+        onRetry
+          ? { label: t("Try again"), pending: retrying, disabled, onClick: onRetry }
+          : undefined
       }
       extra={<ErrorDetails title={heading} detail={error} />}
     />

@@ -16,7 +16,7 @@ import {
   type SocialPlatform,
 } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
+import { gateReason, type ActionGate } from "../common/DisabledReason";
 import {
   accountTypesFor,
   connectionMethods,
@@ -145,19 +145,20 @@ export function ConnectAccountDialog({
       }}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions reason={gateReason(gate)}>
           <Button variant="ghost" disabled={is("create")} onClick={onClose}>
             {t("Cancel")}
           </Button>
-          <DisabledReason
+          <Button
             type="submit"
             form={formId}
             variant="primary"
             loading={is("create")}
-            {...gateProps(gate)}
+            disabled={gate.disabled}
+            disabledReason={gateReason(gate)}
           >
             {t("Connect")}
-          </DisabledReason>
+          </Button>
         </ModalActions>
       }
     >

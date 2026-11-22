@@ -4236,7 +4236,9 @@ function ConnectedRemoteSession({
           </LoadingText>
         ) : null}
         {snapshot?.historyLoading ? (
-          <LoadingText inset="panel" className="shrink-0">{t("Loading earlier messages…")}</LoadingText>
+          <LoadingText inset="panel" className="shrink-0">
+            {t("Loading earlier messages…")}
+          </LoadingText>
         ) : null}
         <RemoteConnectionNotice
           cwdOrEnvironmentId={owner?.environmentId ?? project.key}

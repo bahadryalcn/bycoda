@@ -10,7 +10,7 @@ import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { EmailAccount } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
+import { gateReason, type ActionGate } from "../common/DisabledReason";
 import {
   EMAIL_KINDS,
   emailFormError,
@@ -79,19 +79,20 @@ export function EmailAccountDialog({ client, onClose, onCreated }: EmailAccountD
       }}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions reason={gateReason(gate)}>
           <Button variant="ghost" disabled={is("email")} onClick={onClose}>
             {t("Cancel")}
           </Button>
-          <DisabledReason
+          <Button
             type="submit"
             form={formId}
             variant="primary"
             loading={is("email")}
-            {...gateProps(gate)}
+            disabled={gate.disabled}
+            disabledReason={gateReason(gate)}
           >
             {t("Save email account")}
-          </DisabledReason>
+          </Button>
         </ModalActions>
       }
     >

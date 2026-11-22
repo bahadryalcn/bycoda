@@ -55,6 +55,10 @@ it("preserves domain search ranking and reveals only after the launcher has clos
     const options = [...document.querySelectorAll('[role="option"]')];
     expect(options).toHaveLength(expected.length);
     options.forEach((option, index) => expect(option.textContent).toContain(expected[index].label));
+    // The page name heads each group once instead of repeating on every row.
+    expect(document.querySelectorAll('[role="group"]')).toHaveLength(
+      new Set(expected.map((result) => result.sectionLabel)).size,
+    );
     await act(async () =>
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
     );

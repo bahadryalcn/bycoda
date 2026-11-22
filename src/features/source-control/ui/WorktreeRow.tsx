@@ -45,12 +45,25 @@ export function WorktreeRow({
   const folderName = projectName(tree.path);
   const head = t("Detached at {p0}", { p0: shortSha(tree.head) });
   const sessions =
-    sessionCount === 1
-      ? t("{p0} session in this worktree", { p0: sessionCount })
-      : t("{p0} sessions in this worktree", { p0: sessionCount });
-  const caption = [tree.branch ?? head, sessions].join(" · ");
-  const statusTone =
-    tree.missing || tree.dirty ? "warning" : tree.dirty == null ? "neutral" : "success";
+    sessionCount === 0
+      ? undefined
+      : sessionCount === 1
+        ? t("{p0} session in this worktree", { p0: sessionCount })
+        : t("{p0} sessions in this worktree", { p0: sessionCount });
+  // The folder name already heads the row, so a branch of the same name is not repeated.
+  const branchLabel = tree.branch ?? head;
+  const caption = [branchLabel === folderName ? undefined : branchLabel, sessions]
+    .filter(Boolean)
+    .join(" · ");
+  // A clean tree is the default and carries no badge; only exceptions are labeled.
+  const statusLabel = tree.missing
+    ? t("Missing folder")
+    : tree.dirty == null
+      ? t("Status unavailable")
+      : tree.dirty
+        ? t("Uncommitted changes")
+        : undefined;
+  const statusTone = tree.missing || tree.dirty ? "warning" : "neutral";
   return (
     <ActionHost
       role="listitem"
@@ -71,15 +84,11 @@ export function WorktreeRow({
               {folderName}
             </Heading>
           </Tooltip>
-          <Badge size="sm" tone={statusTone}>
-            {tree.missing
-              ? t("Missing folder")
-              : tree.dirty == null
-                ? t("Status unavailable")
-                : tree.dirty
-                  ? t("Uncommitted changes")
-                  : t("Clean")}
-          </Badge>
+          {statusLabel && (
+            <Badge size="sm" tone={statusTone}>
+              {statusLabel}
+            </Badge>
+          )}
           {selected && (
             <Badge size="sm" tone="info">
               {t("Selected project folder")}
@@ -113,11 +122,13 @@ export function WorktreeRow({
             </Badge>
           )}
         </div>
-        <Tooltip label={caption} when="overflow">
-          <Text size="caption" tone="muted" leading="inherit" truncate className={styles.caption}>
-            {caption}
-          </Text>
-        </Tooltip>
+        {caption && (
+          <Tooltip label={caption} when="overflow">
+            <Text size="caption" tone="muted" leading="inherit" truncate className={styles.caption}>
+              {caption}
+            </Text>
+          </Tooltip>
+        )}
         <Tooltip label={prettyCwd(tree.path)} when="overflow">
           <Text size="caption" tone="muted" leading="inherit" truncate className={styles.caption}>
             {prettyCwd(tree.path)}

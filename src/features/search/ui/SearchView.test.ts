@@ -181,7 +181,7 @@ it("names incomplete application indexing instead of claiming a confirmed empty 
   await render();
   await typeQuery("missing");
   expect(host.textContent).toContain("No indexed matches yet");
-  expect(host.textContent).toContain("Application-wide indexing");
+  expect(host.textContent).toContain("Indexing 3 conversations");
   expect(host.textContent).not.toContain("No results");
 });
 

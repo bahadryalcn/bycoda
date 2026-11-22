@@ -14,7 +14,13 @@ vi.mock("../../../../shared/ui/Modal", () => ({
       props.children,
       props.footer,
     ),
-  ModalActions: (props: { children: ReactNode }) => createElement("div", null, props.children),
+  ModalActions: (props: { reason?: string; children: ReactNode }) =>
+    createElement(
+      "div",
+      null,
+      props.reason ? createElement("p", { "data-reason": "" }, props.reason) : null,
+      props.children,
+    ),
 }));
 vi.mock("./EmailAccountDialog", () => ({
   EmailAccountDialog: () => createElement("div", { "data-testid": "email-dialog" }),
@@ -113,8 +119,8 @@ it("defaults to the official API and asks for a name before it connects", () => 
   render(client);
   expect(element.querySelector('button[aria-label="Platform: X"]')).not.toBeNull();
   expect(element.querySelector('button[aria-label="How to connect: Official API"]')).not.toBeNull();
-  expect(button("Connect")?.disabled).toBe(true);
-  expect(element.textContent).toContain("Enter a name for this account.");
+  expect(button("Connect")?.getAttribute("aria-disabled")).toBe("true");
+  expect(document.body.textContent).toContain("Enter a name for this account.");
 });
 
 it("creates the account with the chosen projects and leaves the connection to its detail", async () => {

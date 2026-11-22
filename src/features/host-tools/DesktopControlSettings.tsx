@@ -1,7 +1,6 @@
 import { errorText } from "../../shared/lib/errors";
 import { PermissionRow } from "../permissions";
 import { surfaceAttributes } from "../../shared/ui/Surface";
-import { Text } from "../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
@@ -73,7 +72,6 @@ export function DesktopControlSettings({
   const [saveConfirmed, setSaveConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [helperPending, setHelperPending] = useState(false);
   const [helperReady, setHelperReady] = useState(false);
   const generation = useRef(0);
   const stoppingRef = useRef(false);
@@ -265,7 +263,8 @@ export function DesktopControlSettings({
   // Stop stays reachable while computer use is on, switching on, or saving.
   const computerOn =
     !!status?.enabled || !!status?.active || !!draft?.enabled || pending || stopping;
-  // One unambiguous state: Working, Stopped, a helper still preparing, On · idle, Off or unsaved.
+  // One unambiguous state: Working, Stopped, On · idle, Off or unsaved. A helper that is not ready
+  // is told once, in the Helper row, and "Off" is the switch itself where there is one.
   const computerBadge = status?.active ? (
     <Badge tone="info" appearance="subtle">
       {t("Working")}
@@ -274,11 +273,7 @@ export function DesktopControlSettings({
     <Badge tone="warning" appearance="subtle">
       {t("Stopped")}
     </Badge>
-  ) : draft?.enabled && !helperReady ? (
-    <Badge tone={helperPending ? "info" : "warning"} appearance="subtle">
-      {helperPending ? t("Preparing helper…") : t("Helper not ready")}
-    </Badge>
-  ) : draft?.enabled && saved?.enabled === false ? (
+  ) : draft?.enabled && !helperReady ? null : draft?.enabled && saved?.enabled === false ? (
     <Badge tone="warning" appearance="subtle">
       {t("Turns on when saved")}
     </Badge>
@@ -286,7 +281,7 @@ export function DesktopControlSettings({
     <Badge tone="success" appearance="subtle">
       {t("On · idle")}
     </Badge>
-  ) : status ? (
+  ) : status && !showPermissionControls ? (
     <Badge tone="neutral" appearance="subtle">
       {t("Off")}
     </Badge>
@@ -377,7 +372,6 @@ export function DesktopControlSettings({
         disabled={pending || stopping}
         autoPrepare={!!draft?.enabled}
         selectedPath={draft?.binaryPath ?? ""}
-        onPendingChange={setHelperPending}
         onReadyChange={setHelperReady}
         onUse={(helper) =>
           setDraft((current) =>
@@ -541,10 +535,10 @@ export function DesktopControlSettings({
       </AdvancedSettings>
       {!saveRef && (
         <div className={styles.saveArea}>
-          <Text as="p" leading="normal">
-            {t("Computer controls save separately from assistant settings.")}
-          </Text>
           <div className={styles.actions}>
+            <InfoPopover>
+              <p>{t("Computer controls save separately from assistant settings.")}</p>
+            </InfoPopover>
             <Button
               type="button"
               variant="primary"

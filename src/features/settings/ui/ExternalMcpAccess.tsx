@@ -17,6 +17,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Popover } from "../../../shared/ui/Popover";
 import { CircleHelp, RefreshCw } from "../../../shared/ui/icons";
 import { remoteRequest } from "../../connections/public/connections";
@@ -446,7 +447,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       {loading && !data && (
         <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>
       )}
-      {data?.tokens.length || query || filter !== "all" ? (
+      {(data?.tokens.length ?? 0) > 5 || query || filter !== "all" ? (
         <div className={styles.toolbar}>
           <div className={styles.search}>
             <SearchInput
@@ -510,17 +511,21 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         </Popover>
       ) : null}
       {!loading && !error && data && !data.projects.length && (
-        <SettingsFeedback state="empty">
-          {t("Register a project on the local host before creating a token.")}
-        </SettingsFeedback>
+        <EmptyState
+          size="inline"
+          inset="row"
+          description={t("Register a project on the local host before creating a token.")}
+        />
       )}
       {!loading && !error && data && data.projects.length > 0 && !data.tokens.length && (
-        <SettingsFeedback state="empty">
-          {t("No external tokens. Create a token to connect a client.")}
-        </SettingsFeedback>
+        <EmptyState
+          size="inline"
+          inset="row"
+          description={t("No external tokens. Create a token to connect a client.")}
+        />
       )}
-      {!loading && data?.tokens.length && shownTokens.length === 0 ? (
-        <SettingsFeedback state="empty">{t("No tokens match your filters.")}</SettingsFeedback>
+      {!loading && !!data?.tokens.length && shownTokens.length === 0 ? (
+        <EmptyState size="inline" inset="row" description={t("No tokens match your filters.")} />
       ) : null}
       <ScrollArea axis="both" gutter="stable" className={styles.list}>
         {shownTokens.map((grant) => (

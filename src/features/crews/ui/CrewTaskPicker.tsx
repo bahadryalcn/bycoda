@@ -96,11 +96,6 @@ export function CrewTaskPicker({
       {value && !valid && !loading && !crews.error && (
         <Alert tone="warning">{t("Connect an updated host and choose an available crew.")}</Alert>
       )}
-      {value && valid && (
-        <Text as="p">
-          {t("This task starts its own crew run. The team can also work on other tasks.")}
-        </Text>
-      )}
     </div>
   );
 }

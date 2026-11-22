@@ -93,10 +93,10 @@ function readPlacements(): Record<string, Placement> {
   }
 }
 const placements = {
-  left: { label: "Dock Left", Icon: PanelLeft },
-  right: { label: "Dock Right", Icon: PanelRight },
-  top: { label: "Dock Top", Icon: PanelTop },
-  bottom: { label: "Dock Bottom", Icon: PanelBottom },
+  left: { label: "Dock left", Icon: PanelLeft },
+  right: { label: "Dock right", Icon: PanelRight },
+  top: { label: "Dock top", Icon: PanelTop },
+  bottom: { label: "Dock bottom", Icon: PanelBottom },
 } as const;
 
 function PlacementButton({

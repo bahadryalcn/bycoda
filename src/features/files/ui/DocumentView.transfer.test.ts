@@ -78,7 +78,7 @@ describe("DocumentView remote transfer", () => {
 
     expect(signal.aborted).toBe(true);
     expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(container.textContent).toContain("Cancelled");
+    expect(container.textContent).toContain("Opening cancelled");
     expect(fs.readBinaryFile).not.toHaveBeenCalled();
 
     fs.prepare.mockImplementation(() => new Promise<string>(() => {}));

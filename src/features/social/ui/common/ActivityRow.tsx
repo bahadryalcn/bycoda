@@ -4,13 +4,7 @@ import { Text } from "../../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { ActionHost, InlineTextAction } from "../../../../shared/ui/ActionHost";
-import {
-  MessageMultiple,
-  MessageSquare,
-  Share,
-  UserRound,
-  Zap,
-} from "../../../../shared/ui/icons";
+import { MessageMultiple, MessageSquare, Share, UserRound, Zap } from "../../../../shared/ui/icons";
 import { StatusText, type StatusTextStatus } from "./StatusText";
 import "./activity-row.css";
 

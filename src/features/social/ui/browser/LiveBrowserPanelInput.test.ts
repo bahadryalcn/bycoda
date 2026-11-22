@@ -41,7 +41,9 @@ function clientWith(frame: (accountId: string) => Promise<BrowserViewFrame | nul
 
 /** Opens the info popover and returns the page text, popover content included. */
 async function helpText() {
-  await act(async () => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
+  await act(async () =>
+    element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click(),
+  );
   return document.body.textContent ?? "";
 }
 

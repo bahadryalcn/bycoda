@@ -55,7 +55,8 @@ export function TranscriptViewGroup({
   useLocale();
   const { preferences, onPreferences, preferencesUnavailable } = appearance;
   const surfaceOff = preferences.transcriptSurface === "off";
-  const set = (change: Partial<AppearancePreferences>) => onPreferences({ ...preferences, ...change });
+  const set = (change: Partial<AppearancePreferences>) =>
+    onPreferences({ ...preferences, ...change });
   const reset = (field: keyof AppearancePreferences) => () =>
     set({ [field]: APPEARANCE_DEFAULTS[field] });
   const modified = (field: keyof AppearancePreferences) =>

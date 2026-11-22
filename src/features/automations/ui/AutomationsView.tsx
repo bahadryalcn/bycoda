@@ -48,7 +48,7 @@ import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ToolNavigation, ToolNavigationContext } from "../../../app/shell/ToolNavigation";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatDate, t, useLocale } from "../../../shared/i18n";
 import {
   GRACE_OPTIONS,
   RUN_TIME_LIMIT_OPTIONS,
@@ -851,8 +851,21 @@ function AutomationCard({
     ? formatRelativeTime(new Date(automation.lastRunAt).toISOString())
     : null;
   const triggers = automationTriggers(automation);
+  const nextRun =
+    automation.enabled && !automation.host && triggers.length > 0 && automation.nextRunAt > 0
+      ? t("Next: {p0}", {
+          p0: formatDate(automation.nextRunAt, {
+            weekday: "short",
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+        })
+      : "";
   const secondary = [
-    triggerLabel(automation) + (triggers.length > 1 ? ` +${triggers.length - 1}` : ""),
+    !triggers.length && !automation.hostTrigger && automation.enabled
+      ? t("No trigger, never runs")
+      : triggerLabel(automation) + (triggers.length > 1 ? ` +${triggers.length - 1}` : ""),
+    nextRun,
     automation.host ? t("on {p0}", { p0: automation.host.machineName }) : "",
     automation.host?.stale ? t("offline, last known") : "",
     project,
@@ -930,54 +943,28 @@ function AutomationPicker({
   return (
     <div ref={lockOverscroll} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none">
       <div className="automation-content automation-picker">
-        <header>
-          <Heading size="page">
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Heading size="page" className="me-auto">
             {firstUse ? t("Create your first automation") : t("New automation")}
           </Heading>
-        </header>
-        <div className="automation-start mt-5" role="group" aria-label={t("Start")}>
           <Button
             type="button"
             onClick={onBlank}
-            variant="item"
-            className="automation-start-option"
+            startIcon={<Plus className="icon-sm" strokeWidth={1.75} />}
           >
-            <span className="flex items-center gap-3">
-              <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">
-                <Plus className="icon-md" strokeWidth={1.75} />
-              </Text>
-              <span className="min-w-0">
-                <Text size="secondary" tone="neutral" weight="medium" className="block">
-                  {t("Start from scratch")}
-                </Text>
-              </span>
-            </span>
+            {t("Start from scratch")}
           </Button>
           {onAssistant ? (
             <Button
               type="button"
               onClick={onAssistant}
-              variant="item"
               aria-haspopup="dialog"
-              className="automation-start-option"
+              startIcon={<Sparkles className="icon-sm" strokeWidth={1.75} />}
             >
-              <span className="flex items-center gap-3">
-                <Text
-                  size="inherit"
-                  tone="muted"
-                  className="grid size-7 shrink-0 place-items-center"
-                >
-                  <Sparkles className="icon-md" strokeWidth={1.75} />
-                </Text>
-                <span className="min-w-0">
-                  <Text size="secondary" tone="neutral" weight="medium" className="block">
-                    {t("AI assistant")}
-                  </Text>
-                </span>
-              </span>
+              {t("AI assistant")}
             </Button>
           ) : null}
-        </div>
+        </header>
         <section className="mt-8" aria-labelledby="automation-templates-title">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <Heading id="automation-templates-title" size="item" level={2} className="me-auto">
@@ -1488,6 +1475,7 @@ function AutomationEditor({
                         draft.triggers.length >= 20 ||
                         (draft.runInBackground && !!draft.hostTrigger)
                       }
+                      placeholder={t("Add a trigger")}
                       searchPlaceholder={t("Search triggers")}
                     />
                   </div>
@@ -1653,7 +1641,8 @@ function AutomationEditor({
               {historyLoading ? <LoadingText inset="row" /> : null}
               {historyError ? (
                 <InlineError
-                  inset="row" className="mt-2"
+                  inset="row"
+                  className="mt-2"
                   retry={{ onRetry: onRefreshHistory, disabled: historyLoading }}
                 >
                   {historyError}

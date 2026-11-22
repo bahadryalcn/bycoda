@@ -6,6 +6,7 @@ import { documentProblemParts } from "../model/documentProblemText";
 import { documentProblem, type DocumentProblem } from "../model/documentViewer";
 import { loadSpreadsheet } from "../model/spreadsheetClient";
 import type { Spreadsheet } from "../model/spreadsheet";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { DocumentMessage } from "./DocumentMessage";
 import { SheetGridView } from "./SheetGridView";
 
@@ -86,9 +87,9 @@ export default function SheetViewer({
         />
       </div>
       {state.book.omittedSheets > 0 ? (
-        <p role="status" className="px-3 text-ui-caption text-(--ui-text-secondary)">
+        <InlineMessage tone="info" inset="row">
           {t("Only the first 100 sheets are previewed.")}
-        </p>
+        </InlineMessage>
       ) : null}
       {names.length > 1 ? (
         <Tabs

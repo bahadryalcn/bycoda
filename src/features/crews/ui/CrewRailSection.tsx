@@ -4,12 +4,11 @@ import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
-import { StatusDot } from "../../../shared/ui/StatusDot";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../shared/ui/InlineError";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { Play, Plus } from "../../../shared/ui/icons";
+import { CircleAlert, Pause, Play, Plus } from "../../../shared/ui/icons";
 import {
   RAIL_SECTION_BLOCK,
   RailSectionHeader,
@@ -25,7 +24,7 @@ import { CrewFaces } from "./CrewFaces";
 import { openCrewsPageAt } from "../model/crewsPage";
 import { CrewDialogHost } from "./CrewDialogHost";
 import { crewMenuDialog, crewMenuItems, type CrewDialog } from "./crewMenuItems";
-import { CREW_ATTENTION_TONE, CREW_EXECUTION_TONE, crewSignal } from "../model/crewSignal";
+import { CREW_ATTENTION_TONE, crewSignal } from "../model/crewSignal";
 import { crewAttentionLabel, crewWorkStatusLabel } from "../model/crewPresentation";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 export { crewWorkStatus, crewWorkStatusLabel } from "../model/crewPresentation";
@@ -229,17 +228,6 @@ export function CrewRailSection({
                   <span className="hidden icon-sm place-items-center @max-[140px]/rail:grid">
                     <CrewAvatar crew={crew} active={working} />
                   </span>
-                  {attention || (execution && !working) ? (
-                    <StatusDot
-                      label={statusText}
-                      className="absolute -right-0.5 -bottom-0.5"
-                      tone={
-                        attention
-                          ? CREW_ATTENTION_TONE[attention]
-                          : CREW_EXECUTION_TONE[execution as keyof typeof CREW_EXECUTION_TONE]
-                      }
-                    />
-                  ) : null}
                 </span>
                 <Text
                   size="secondary"
@@ -250,6 +238,12 @@ export function CrewRailSection({
                 >
                   {crew.name}
                 </Text>
+                {/* A glyph, not only a colour: attention is a circled "!", paused is a pause bar. */}
+                {attention ? (
+                  <CircleAlert className="icon-sm shrink-0" tone={CREW_ATTENTION_TONE[attention]} />
+                ) : execution === "paused" ? (
+                  <Pause className="icon-sm shrink-0" tone="muted" />
+                ) : null}
                 {working ? (
                   <span className="shrink-0 @max-[140px]/rail:hidden">
                     <WorkingIndicator size="xs" />

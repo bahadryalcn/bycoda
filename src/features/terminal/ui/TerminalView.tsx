@@ -18,8 +18,8 @@ import { TerminalSelectionMenu } from "./TerminalSelectionMenu";
 import { type TerminalTool } from "./TerminalTools";
 import { TerminalControls, type TerminalShellActions } from "./TerminalControls";
 import type { SshEndpoint } from "../../connections/model/serverInventory";
-import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useT } from "../../../shared/i18n";
 import { useToast } from "../../../shared/ui/ToastRegion";
@@ -615,6 +615,36 @@ export function TerminalView({
     applySizeRef.current();
   }, [fontSize, lineHeight]);
 
+  const inputPausedBody = t(
+    "Some input may not have reached the terminal. Check the shell before continuing.",
+  );
+  // One recovery step for a closed terminal: reconnect where the owner supports it, otherwise leave.
+  const closedAction = onReconnect
+    ? {
+        label: t("Reconnect"),
+        pending: reconnecting,
+        onClick: async () => {
+          if (reconnectPending.current) return;
+          reconnectPending.current = true;
+          setReconnecting(true);
+          await reconnectTerminal(
+            onReconnect,
+            (reason) => {
+              void reportFailure(reason, {
+                toast: { show: ({ message }) => setStartupOutcome(message) },
+              }).catch(() => undefined);
+            },
+            () => {
+              reconnectPending.current = false;
+              setReconnecting(false);
+            },
+          );
+        },
+      }
+    : onReturnToServers
+      ? { label: t("Back to servers"), onClick: onReturnToServers }
+      : undefined;
+
   return (
     <div
       {...actionContentScopeAttributes()}
@@ -682,84 +712,44 @@ export function TerminalView({
         onAlreadySaved={alreadySaved}
         onSendSelectedText={onSendToAgent}
       />
+      <div ref={hostRef} className="bycoda-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden" />
       {startupFailure.pending ? (
         <LoadingText inset="row" className="shrink-0" aria-busy="true" />
       ) : startupMessage || exitCode !== undefined ? (
         <div className="shrink-0 px-3 py-2">
-          <Alert tone={exitCode === 0 ? "info" : "warning"}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-ui-caption font-medium">
-                {t("Terminal closed")}
-                {exitCode != null ? ` · ${t("Exit code")}: ${exitCode}` : ""}
-              </span>
-              {onReconnect ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  loading={reconnecting}
-                  onClick={async () => {
-                    if (reconnectPending.current) return;
-                    reconnectPending.current = true;
-                    setReconnecting(true);
-                    await reconnectTerminal(
-                      onReconnect,
-                      (reason) => {
-                        void reportFailure(reason, {
-                          toast: { show: ({ message }) => setStartupOutcome(message) },
-                        }).catch(() => undefined);
-                      },
-                      () => {
-                        reconnectPending.current = false;
-                        setReconnecting(false);
-                      },
-                    );
-                  }}
-                >
-                  {t("Reconnect")}
-                </Button>
-              ) : onReturnToServers ? (
-                <Button size="sm" variant="secondary" onClick={onReturnToServers}>
-                  {t("Back to servers")}
-                </Button>
-              ) : null}
-            </div>
-            {startupMessage || (inputError != null && !inputErrorShownCentrally) ? (
-              <p className="mbs-2 break-words text-ui-caption">
-                {startupMessage ?? inputError?.message}
-              </p>
-            ) : null}
-            {inputError != null ? (
-              <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">
-                {t(
-                  "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
-                )}
-              </p>
-            ) : null}
+          <Alert
+            tone={exitCode === 0 ? "info" : "warning"}
+            title={
+              exitCode != null
+                ? `${t("Terminal closed")} · ${t("Exit code")}: ${exitCode}`
+                : t("Terminal closed")
+            }
+            action={closedAction}
+            extra={
+              inputError != null && !inputErrorShownCentrally ? (
+                <ErrorDetails title={t("Input paused")} detail={inputError.message} />
+              ) : undefined
+            }
+          >
+            {startupMessage ?? (inputError != null ? inputPausedBody : null)}
           </Alert>
         </div>
       ) : inputError !== null ? (
         <div className="shrink-0 px-3 py-2">
-          <Alert tone="warning">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-ui-caption font-medium">{t("Input paused")}</span>
-              <Button size="sm" variant="secondary" onClick={() => resumeInputRef.current()}>
-                {t("Resume input")}
-              </Button>
-            </div>
-            <p className="mbs-1 text-ui-caption">
-              {t(
-                "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
-              )}
-            </p>
-            {inputErrorShownCentrally ? null : (
-              <p className="mbs-2 break-words text-ui-caption text-(--ui-text-muted)">
-                {inputError.message}
-              </p>
-            )}
+          <Alert
+            tone="warning"
+            title={t("Input paused")}
+            action={{ label: t("Resume input"), onClick: () => resumeInputRef.current() }}
+            extra={
+              inputErrorShownCentrally ? undefined : (
+                <ErrorDetails title={t("Input paused")} detail={inputError.message} />
+              )
+            }
+          >
+            {inputPausedBody}
           </Alert>
         </div>
       ) : null}
-      <div ref={hostRef} className="bycoda-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden" />
       <TerminalSelectionMenu
         terminal={terminal}
         host={hostRef}

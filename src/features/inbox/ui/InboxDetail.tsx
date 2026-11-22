@@ -221,6 +221,17 @@ export function InboxDetail({
       )
     : null;
 
+  const mergeBlocker = [
+    ["REVIEW_REQUIRED", "CHANGES_REQUESTED"].includes(reviewDecision.toUpperCase())
+      ? t(reviewLabel)
+      : "",
+    prChecksOverall?.kind === "fail"
+      ? t("Failing checks: {p0}", { p0: formatNumber(prChecksOverall.failed) })
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   const refreshPostedThread = async () => {
     setThreadRefreshing(true);
     try {
@@ -544,7 +555,10 @@ export function InboxDetail({
                           </Text>
                         ) : null}
                         {chooseStartProject ? (
-                          <div className="min-w-0 max-w-full">
+                          <div className="flex min-w-0 max-w-full items-center gap-1.5">
+                            <Text size="caption" tone="secondary" className="shrink-0">
+                              {t("Project")}
+                            </Text>
                             <InboxProjectPicker
                               projects={projects}
                               value={startProject}
@@ -572,6 +586,7 @@ export function InboxDetail({
                         baseRef={baseRef}
                         headRef={headRef}
                         reviewedHeadOid={prDiff?.headOid || details?.headRefOid}
+                        mergeBlocker={mergeBlocker}
                         onChange={onItemChange}
                       />
                     ) : null}
@@ -591,7 +606,9 @@ export function InboxDetail({
                   </div>
                 </div>
                 {startError ? (
-                  <InlineError details={startError}>{t("Could not start the session.")}</InlineError>
+                  <InlineError details={startError}>
+                    {t("Could not start the session.")}
+                  </InlineError>
                 ) : null}
               </header>
               {isPr ? (
@@ -633,7 +650,7 @@ export function InboxDetail({
             className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"}
           >
             <div
-              className={`flex w-full min-w-0 flex-col gap-4 px-4 py-4 ${tab === "code" ? "" : tab === "checks" ? "mx-auto max-w-5xl" : "mx-auto max-w-3xl"}`}
+              className={`flex w-full min-w-0 flex-col gap-4 px-4 py-4 ${tab === "code" ? "" : "mx-auto max-w-3xl"}`}
             >
               {isPr && tab === "code" ? (
                 diffLoading && !prDiff ? (
@@ -643,7 +660,12 @@ export function InboxDetail({
                 ) : prDiff ? (
                   <>
                     {diffLoading ? <LoadingText /> : null}
-                    {diffError ? <InboxLoadError title={t("Could not load the code changes.")} error={diffError} /> : null}
+                    {diffError ? (
+                      <InboxLoadError
+                        title={t("Could not load the code changes.")}
+                        error={diffError}
+                      />
+                    ) : null}
                     <InboxPrDiff
                       key={inboxItemKey(item)}
                       diff={prDiff}

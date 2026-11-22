@@ -28,7 +28,7 @@ export const COLUMN_LABELS: Record<TaskColumn, string> = {
   running: "Running",
   review: "Review",
   done: "Done",
-  blocked: "Blocked",
+  blocked: "Needs attention",
 };
 
 const COLUMN_EMPTY: Record<TaskColumn, string> = {

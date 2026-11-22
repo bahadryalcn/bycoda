@@ -544,7 +544,9 @@ function ConversationHostTools({
           <Alert
             tone="danger"
             title={t("Could not open the tools.")}
-            extra={<ErrorDetails title={t("Could not open the tools.")} detail={presentationError} />}
+            extra={
+              <ErrorDetails title={t("Could not open the tools.")} detail={presentationError} />
+            }
           />
         ) : null}
         {hostScoped && machinesError && !machinesShownCentrally ? (

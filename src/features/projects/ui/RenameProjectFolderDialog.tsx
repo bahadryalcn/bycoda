@@ -26,7 +26,8 @@ export function RenameProjectFolderDialog({
   const formId = useId();
   const blockedReason = busy
     ? undefined
-    : (invalid ?? (name === basename(path) ? t("Change the name to rename the folder.") : undefined));
+    : (invalid ??
+      (name === basename(path) ? t("Change the name to rename the folder.") : undefined));
   return (
     <Modal
       title={t("Rename folder")}

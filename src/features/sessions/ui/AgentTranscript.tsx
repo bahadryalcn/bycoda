@@ -1656,7 +1656,10 @@ function TurnDuration({
   const hasOutput = hasTurnCopyText(turn);
   const getText = useCallback(() => turnCopyText(turn), [turn]);
   const dot = (
-    <span aria-hidden className="size-0.75 shrink-0 rounded-full border-[3px] border-(--ui-tone-neutral-border)" />
+    <span
+      aria-hidden
+      className="size-0.75 shrink-0 rounded-full border-[3px] border-(--ui-tone-neutral-border)"
+    />
   );
   return (
     <div

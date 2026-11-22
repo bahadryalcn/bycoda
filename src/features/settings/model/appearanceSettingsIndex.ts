@@ -5,15 +5,51 @@ import type { SettingsEntry } from "./settings";
 export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
   ...(
     [
-      ["transcript-surface", () => t("Reading surface"), "transcript reading surface reply column off okuma yüzeyi"],
-      ["transcript-surface-opacity", () => t("Surface opacity"), "transcript reply surface fill transparency yanıt yüzey saydamlık"],
-      ["transcript-surface-blur", () => t("Surface blur"), "transcript surface backdrop blur bulanıklık"],
-      ["chat-message-color", () => t("Surface color"), "chat bubble neutral theme tint sohbet mesaj renk"],
-      ["user-message-opacity", () => t("Your message opacity"), "chat bubble glass transparency sohbet mesaj saydamlık"],
-      ["transcript-body-ink", () => t("Reply text"), "transcript reply text brightness ink metin parlaklık"],
-      ["transcript-chrome-ink", () => t("Tool and action text"), "transcript tool command action text brightness ink araç komut metin"],
-      ["transcript-cards", () => t("Cards and code"), "transcript card code table inset outline solid kart kod tablo"],
-      ["transcript-actions", () => t("Message actions"), "transcript copy actions hover always eylem kopyala"],
+      [
+        "transcript-surface",
+        () => t("Reading surface"),
+        "transcript reading surface reply column off okuma yüzeyi",
+      ],
+      [
+        "transcript-surface-opacity",
+        () => t("Surface opacity"),
+        "transcript reply surface fill transparency yanıt yüzey saydamlık",
+      ],
+      [
+        "transcript-surface-blur",
+        () => t("Surface blur"),
+        "transcript surface backdrop blur bulanıklık",
+      ],
+      [
+        "chat-message-color",
+        () => t("Surface color"),
+        "chat bubble neutral theme tint sohbet mesaj renk",
+      ],
+      [
+        "user-message-opacity",
+        () => t("Your message opacity"),
+        "chat bubble glass transparency sohbet mesaj saydamlık",
+      ],
+      [
+        "transcript-body-ink",
+        () => t("Reply text"),
+        "transcript reply text brightness ink metin parlaklık",
+      ],
+      [
+        "transcript-chrome-ink",
+        () => t("Tool and action text"),
+        "transcript tool command action text brightness ink araç komut metin",
+      ],
+      [
+        "transcript-cards",
+        () => t("Cards and code"),
+        "transcript card code table inset outline solid kart kod tablo",
+      ],
+      [
+        "transcript-actions",
+        () => t("Message actions"),
+        "transcript copy actions hover always eylem kopyala",
+      ],
     ] as const
   ).map(([id, label, keywords]) => ({
     id,

@@ -18,6 +18,6 @@ export async function loadJobActivity(
 ): Promise<AssistantActivity[]> {
   const response = await request({ op: "jobs.activity", id: jobId, limit });
   if (!Array.isArray(response.jobActivity))
-    throw new Error(t("Job activity could not be confirmed. Retry."));
+    throw new Error(t("Job activity could not be confirmed."));
   return response.jobActivity;
 }

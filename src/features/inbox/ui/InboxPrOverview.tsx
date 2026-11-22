@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Text } from "../../../shared/ui/Text";
-import { Alert } from "../../../shared/ui/Alert";
+import { InboxLoadError } from "./InboxLoadError";
 import { Button } from "../../../shared/ui/Button";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -191,7 +191,9 @@ export function InboxPrChangesGlance({
           </Button>
         ) : null}
       </Text>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error ? (
+        <InboxLoadError title={t("Could not load the code changes.")} error={error} />
+      ) : null}
       {diff && files.length === 0 ? (
         <EmptyState size="inline" kind="empty" description={t("No file changes")} />
       ) : shown.length > 0 ? (

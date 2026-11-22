@@ -5,6 +5,7 @@ import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Heading } from "../../../../../shared/ui/Heading";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
 
 import { TextareaField } from "../../../../../shared/ui/TextareaField";
 import { TextField } from "../../../../../shared/ui/TextField";
@@ -141,6 +142,9 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
           </DisabledReason>
         </form>
       ) : null}
+      <SectionLabel variant="inline" size="secondary">
+        {t("Follow")}
+      </SectionLabel>
       <div className="social-field-row">
         <TextField
           label={t("X username to follow")}

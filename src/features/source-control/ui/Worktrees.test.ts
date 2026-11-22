@@ -209,9 +209,9 @@ it("keeps worktree creation pending until its async completion callback settles"
   );
   expect(createWorktree).toHaveBeenCalledWith("/repo", "feature", "HEAD", false);
   expect(onCreated).toHaveBeenCalledWith(tree);
-  expect(button("Create worktree").getAttribute("aria-disabled")).toBe("true");
+  expect(button("Create").getAttribute("aria-disabled")).toBe("true");
   await act(async () => finish());
-  expect(button("Create worktree").getAttribute("aria-disabled")).toBeNull();
+  expect(button("Create").getAttribute("aria-disabled")).toBeNull();
 });
 
 const type = (input: HTMLInputElement, value: string) => {
@@ -1083,16 +1083,12 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
   );
 
   expect(document.querySelector("select")).toBeNull();
-  const branchType = document.querySelector<HTMLButtonElement>('[aria-label^="Branch type:"]')!;
-  await act(async () => branchType.click());
-  let search = document.querySelector<HTMLInputElement>('input[placeholder="Search options…"]')!;
-  await act(async () => {
-    type(search, "existing");
-  });
-  expect(document.querySelectorAll('[role="option"]')).toHaveLength(1);
-  await act(async () =>
-    search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-  );
+  const branchType = (label: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role="radio"]')].find(
+      (option) => option.textContent === label,
+    )!;
+  await act(async () => branchType("Use an existing local branch").click());
+  let search: HTMLInputElement;
 
   const existingBranch = document.querySelector<HTMLButtonElement>(
     '[aria-label^="Existing branch:"]',
@@ -1110,14 +1106,7 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
   );
   expect(existingBranch.textContent).toContain("feature/search");
 
-  await act(async () => branchType.click());
-  search = document.querySelector<HTMLInputElement>('input[placeholder="Search options…"]')!;
-  await act(async () => {
-    type(search, "new");
-  });
-  await act(async () =>
-    search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-  );
+  await act(async () => branchType("Create a new branch").click());
   const startFrom = document.querySelector<HTMLButtonElement>('[aria-label^="Start from:"]')!;
   await act(async () => startFrom.click());
   search = document.querySelector<HTMLInputElement>(
@@ -1223,7 +1212,7 @@ it("shows unknown publication separately from a clean working tree", async () =>
     root.render(createElement(WorktreesPage, { cwd: "/publication", onRemove: vi.fn() })),
   );
   const row = container.querySelector('[role="listitem"]')!;
-  expect(row.textContent).toContain("Clean");
+  expect(row.textContent).not.toContain("Clean");
   expect(row.textContent).toContain("Publication unknown");
 });
 

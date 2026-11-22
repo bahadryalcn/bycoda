@@ -17,7 +17,9 @@ function cssFiles(dir: string): string[] {
 
 it("imports the surface sheet right after surface-roles.css", () => {
   const index = readFileSync("src/styles/index.css", "utf8");
-  expect(index).toMatch(/@import "\.\/surface-roles\.css";\n@import "\.\/transcript-surface\.css";/);
+  expect(index).toMatch(
+    /@import "\.\/surface-roles\.css";\n@import "\.\/transcript-surface\.css";/,
+  );
 });
 
 it("defines --transcript-surface-* and --transcript-ink-* only in transcript-surface.css", () => {
@@ -59,19 +61,26 @@ it("blurs only over artwork or native glass", () => {
 });
 
 it("drops transparency and blur under reduced transparency and forced colors", () => {
-  const block = /@media \(forced-colors: active\), \(prefers-reduced-transparency: reduce\) \{([\s\S]*)\}\s*$/.exec(
-    surface,
-  )?.[1];
+  const block =
+    /@media \(forced-colors: active\), \(prefers-reduced-transparency: reduce\) \{([\s\S]*)\}\s*$/.exec(
+      surface,
+    )?.[1];
   expect(block).toBeDefined();
   expect(block).toMatch(/--transcript-surface-fill:\s*var\(--transcript-surface-color\)/);
   expect(block).toMatch(/--transcript-surface-filter:\s*none/);
-  expect(block).toMatch(/data-transcript-surface="off"\][^{]*\{[^}]*--transcript-reply-fill:\s*var\(--transcript-surface-color\)/);
+  expect(block).toMatch(
+    /data-transcript-surface="off"\][^{]*\{[^}]*--transcript-reply-fill:\s*var\(--transcript-surface-color\)/,
+  );
 });
 
 it("roots every scope rule at html or the preview root", () => {
-  expect(surface).toMatch(/\[data-transcript-reply\]\s*\{[^}]*background:\s*var\(--transcript-reply-fill\)/);
+  expect(surface).toMatch(
+    /\[data-transcript-reply\]\s*\{[^}]*background:\s*var\(--transcript-reply-fill\)/,
+  );
   for (const attr of ["surface", "cards"]) {
-    for (const [selector] of surface.matchAll(new RegExp(`[^{}]*data-transcript-${attr}=[^{}]*`, "g"))) {
+    for (const [selector] of surface.matchAll(
+      new RegExp(`[^{}]*data-transcript-${attr}=[^{}]*`, "g"),
+    )) {
       expect(selector).toContain(":is(html, [data-transcript-preview])");
     }
   }
@@ -80,6 +89,8 @@ it("roots every scope rule at html or the preview root", () => {
 it("no longer scopes assistant fills per block", () => {
   for (const file of ["src/styles/bycoda.css", "src/styles/index.css"]) {
     const css = read(file);
-    expect(css, file).not.toMatch(/data-chat-message-surface="assistant"|assistant-message-opacity|assistant-surface-off|data-chat-message-preview/);
+    expect(css, file).not.toMatch(
+      /data-chat-message-surface="assistant"|assistant-message-opacity|assistant-surface-off|data-chat-message-preview/,
+    );
   }
 });

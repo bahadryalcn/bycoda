@@ -136,7 +136,7 @@ describe("AudienceScreen bulk tag", () => {
     select("Ada", "Grace");
     openBulk("Add a tag…");
 
-    expect(buttonByText("Add a tag")?.disabled).toBe(true);
+    expect(buttonByText("Add a tag")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Enter the tag to add.");
     setFieldValue(fieldByLabel("Tag"), "lead");
     clickButton("Add a tag");
@@ -207,7 +207,7 @@ describe("AudienceScreen bulk list and sequence", () => {
     openBulk("Add to sequence…");
     await flush();
 
-    expect(buttonByText("Add to sequence")?.disabled).toBe(true);
+    expect(buttonByText("Add to sequence")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Choose a sequence.");
     pickOption("Sequence", "Spring follow-up");
     expect(buttonByText("Add to sequence")?.disabled).toBe(false);

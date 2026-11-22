@@ -97,10 +97,7 @@ export function SummaryPanel({
                 leading="inherit"
                 className="task-ops-caption task-ops-num"
               >
-                {goal.done}
-                {t(" of ")}
-                {goal.total}
-                {t(" tasks done · ")}
+                {t("{p0} of {p1} tasks done", { p0: goal.done, p1: goal.total })} ·{" "}
                 {goal.machineName}
               </Text>
             </li>
@@ -197,7 +194,7 @@ export function SummaryPanel({
             t("Finished"),
             summary.finished,
             summary.autoMerged
-              ? ` ${t("({p0} merged automatically)", { p0: summary.autoMerged })}`
+              ? ` · ${t("{p0} merged automatically", { p0: summary.autoMerged })}`
               : "",
           )}
           {taskSection(t("Blocked"), summary.blocked)}
@@ -232,10 +229,12 @@ export function SummaryPanel({
                       leading="inherit"
                       className="task-ops-caption task-ops-num"
                     >
-                      {formatAgentMinutes(entry.usedMinutes)}
                       {entry.dailyAgentMinutes
-                        ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) })
-                        : ""}
+                        ? t("{p0} of {p1}", {
+                            p0: formatAgentMinutes(entry.usedMinutes),
+                            p1: formatAgentMinutes(entry.dailyAgentMinutes),
+                          })
+                        : formatAgentMinutes(entry.usedMinutes)}
                       {entry.usageUncertain ? ` · ${t("Incomplete")}` : ""}
                     </Text>
                   </li>

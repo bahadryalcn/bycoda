@@ -16,6 +16,7 @@ import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { Button } from "../../../shared/ui/Button";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Popover } from "../../../shared/ui/Popover";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
@@ -34,7 +35,7 @@ import {
   MessageSquarePlus,
   Plus,
   Save,
-  Trash2,
+  MoreHorizontal,
   X,
 } from "../../../shared/ui/icons";
 import {
@@ -668,6 +669,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   const [recovering, setRecovering] = useState(false);
   const [linking, setLinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreButton = useRef<HTMLButtonElement>(null);
   const { confirm: confirmDelete, dialog: deleteDialog } = useConfirm();
   const [selection] = useState<SessionNoteSelection>(() => ({ current: null }));
   const titleRef = useRef(title);
@@ -923,6 +926,43 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
 
   const hasBody = Boolean(body.trim());
 
+  const requestDelete = () =>
+    confirmDelete({
+      title: t("Delete note permanently?"),
+      message: title || t("Untitled"),
+      confirmLabel: t("Confirm delete"),
+      pendingLabel: t("Deleting…"),
+      onConfirm: async () => {
+        if (skipSave.current) return;
+        const work = inputOwner.operation("session-delete");
+        if (!work) throw noteInputWorkError(inputOwner);
+        skipSave.current = true;
+        setDeleting(true);
+        if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        saveTimerWork.current?.();
+        saveTimerWork.current = null;
+        try {
+          await enqueueSave(
+            note.id,
+            async (queued) => {
+              const deleted = await onDelete(note.id, savedRef.current.updatedAt, queued);
+              if (deleted) editorDrafts.delete(draftKey);
+              if (!deleted) {
+                skipSave.current = false;
+                setDeleting(false);
+                scheduleSave();
+                throw new Error(t("Could not delete note"));
+              }
+            },
+            work,
+          );
+        } finally {
+          work();
+        }
+      },
+    });
+
   return (
     <SurfaceSelection
       {...noteInputBudgetHandlers(inputOwner, (field) =>
@@ -1115,12 +1155,11 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         <Button
           variant="ghost"
           size="sm"
-          iconOnly
-          label={t("Add to chat")}
+          startIcon={<MessageSquarePlus className="icon-sm" />}
           disabled={!hasBody}
           onClick={sendToChat}
         >
-          <MessageSquarePlus className="icon-sm" />
+          {t("Add to chat")}
         </Button>
         {note.sourceSessionId !== sessionId ? (
           <Button
@@ -1173,48 +1212,32 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           variant="ghost"
           size="sm"
           iconOnly
-          label={t("Delete note")}
-          disabled={preparing || deleting}
-          onClick={() =>
-            confirmDelete({
-              title: t("Delete note permanently?"),
-              message: title || t("Untitled"),
-              confirmLabel: t("Confirm delete"),
-              pendingLabel: t("Deleting…"),
-              onConfirm: async () => {
-                if (skipSave.current) return;
-                const work = inputOwner.operation("session-delete");
-                if (!work) throw noteInputWorkError(inputOwner);
-                skipSave.current = true;
-                setDeleting(true);
-                if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
-                saveTimer.current = null;
-                saveTimerWork.current?.();
-                saveTimerWork.current = null;
-                try {
-                  await enqueueSave(
-                    note.id,
-                    async (queued) => {
-                      const deleted = await onDelete(note.id, savedRef.current.updatedAt, queued);
-                      if (deleted) editorDrafts.delete(draftKey);
-                      if (!deleted) {
-                        skipSave.current = false;
-                        setDeleting(false);
-                        scheduleSave();
-                        throw new Error(t("Could not delete note"));
-                      }
-                    },
-                    work,
-                  );
-                } finally {
-                  work();
-                }
-              },
-            })
-          }
+          label={t("More actions")}
+          ref={moreButton}
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((open) => !open)}
         >
-          <Trash2 className="icon-sm" />
+          <MoreHorizontal className="icon-sm" />
         </Button>
+        {moreOpen ? (
+          <DropdownMenu
+            anchor={moreButton}
+            returnFocusRef={moreButton}
+            label={t("More actions")}
+            items={[
+              {
+                kind: "item",
+                id: "delete",
+                label: t("Delete note"),
+                danger: true,
+                disabled: preparing || deleting,
+              },
+            ]}
+            onClose={() => setMoreOpen(false)}
+            onPick={requestDelete}
+          />
+        ) : null}
       </div>
       {deleteDialog}
     </SurfaceSelection>

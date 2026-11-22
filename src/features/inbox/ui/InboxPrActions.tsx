@@ -142,6 +142,8 @@ type GithubPrActionsProps = {
   baseRef: string;
   headRef: string;
   reviewedHeadOid?: string;
+  /** What still stands between this pull request and a clean merge ("Review required · Failing checks: 1"). Shown beside the merge button, which then stops being primary. */
+  mergeBlocker?: string;
   onChange?: (item: InboxItem) => void;
 };
 
@@ -160,6 +162,7 @@ function GithubPrActionsForItem({
   baseRef,
   headRef,
   reviewedHeadOid,
+  mergeBlocker,
   onChange,
 }: GithubPrActionsProps) {
   useLocale();
@@ -267,30 +270,37 @@ function GithubPrActionsForItem({
   return (
     <>
       {state === "open" && !item.draft ? (
-        <SplitButton
-          groupRef={mergeGroup}
-          variant="primary"
-          type="button"
-          label={
-            selectedMerge?.action === "merge"
-              ? t("Merge pull request")
-              : (selectedMerge?.label ?? t("Merge pull request"))
-          }
-          menuLabel={t("Merge options")}
-          disabled={busy}
-          menuOpen={mergeMenuOpen}
-          onMenuOpenChange={setMergeMenuOpen}
-          startIcon={<GitMerge className="icon-sm" strokeWidth={1.75} />}
-          onClick={(event) => askToRun(mergeAction, event.currentTarget)}
-          actions={GITHUB_PR_MERGE_OPTIONS.map((option) => ({
-            id: option.action,
-            label: option.label,
-            description: option.description,
-            checked: option.action === mergeAction,
-            selectionRole: "radio",
-            onSelect: () => setMergeAction(option.action),
-          }))}
-        />
+        <>
+          {mergeBlocker ? (
+            <Text size="caption" tone="warning" className="min-w-0 wrap-anywhere">
+              {mergeBlocker}
+            </Text>
+          ) : null}
+          <SplitButton
+            groupRef={mergeGroup}
+            variant={mergeBlocker ? "secondary" : "primary"}
+            type="button"
+            label={
+              selectedMerge?.action === "merge"
+                ? t("Merge pull request")
+                : (selectedMerge?.label ?? t("Merge pull request"))
+            }
+            menuLabel={t("Merge options")}
+            disabled={busy}
+            menuOpen={mergeMenuOpen}
+            onMenuOpenChange={setMergeMenuOpen}
+            startIcon={<GitMerge className="icon-sm" strokeWidth={1.75} />}
+            onClick={(event) => askToRun(mergeAction, event.currentTarget)}
+            actions={GITHUB_PR_MERGE_OPTIONS.map((option) => ({
+              id: option.action,
+              label: option.label,
+              description: option.description,
+              checked: option.action === mergeAction,
+              selectionRole: "radio",
+              onSelect: () => setMergeAction(option.action),
+            }))}
+          />
+        </>
       ) : null}
       {state === "open" && item.draft ? (
         <Button

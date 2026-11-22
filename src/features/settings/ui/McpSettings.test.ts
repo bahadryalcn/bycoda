@@ -534,8 +534,10 @@ it("exposes configured remote sign-in per provider without offering it to disabl
     });
   }
   expect(rowOf("disabled").textContent).toContain("Off");
-  expect(rowOf("local-tool").textContent).toContain("Configured");
-  expect(rowOf("desktop").textContent).toContain("Configured");
+  // Configured is the quiet default: the dot names it, the row writes nothing.
+  expect(rowOf("local-tool").querySelector('[aria-label="Configured"]')).not.toBeNull();
+  expect(rowOf("local-tool").textContent).not.toContain("Configured");
+  expect(rowOf("desktop").querySelector('[aria-label="Configured"]')).not.toBeNull();
   expect(container.textContent).not.toContain("Ready");
 });
 

@@ -27,9 +27,7 @@ it("shows the computer name in the dialog title with every slot filled", async (
   const root = createRoot(container);
   const plan = { name: "Work Mac", routes: [] } as unknown as AccountPairPlan;
   await act(async () =>
-    root.render(
-      createElement(AccountPairDialog, { plan, onClose: vi.fn(), onPaired: vi.fn() }),
-    ),
+    root.render(createElement(AccountPairDialog, { plan, onClose: vi.fn(), onPaired: vi.fn() })),
   );
   cleanup = () => {
     act(() => root.unmount());

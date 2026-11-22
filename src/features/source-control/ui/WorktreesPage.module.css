@@ -93,17 +93,6 @@
   gap: 4px;
 }
 
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding-block: 8px;
-}
-.empty > p {
-  margin: 0;
-}
-
 .location {
   display: flex;
   flex-direction: row;

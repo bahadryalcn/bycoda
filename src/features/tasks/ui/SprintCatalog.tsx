@@ -78,7 +78,12 @@ export function SprintCatalog({
       ) : catalog.loading ? (
         <SurfaceLoading label={t("Loading sprints…")} />
       ) : !failures.length ? (
-        <EmptyState size="inline" description={t("No sprints match these filters.")} />
+        <EmptyState
+          size="inline"
+          description={
+            projectKey || environmentId ? t("No sprints match these filters.") : t("No sprints yet")
+          }
+        />
       ) : null}
       {failures.map((source) =>
         source.error ? (

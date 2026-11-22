@@ -41,7 +41,7 @@ export function CrewWorkBadges({ run, size = "sm" }: { run: CrewRunView; size?: 
   const running = run.status !== "finished" && crewHasRunningWork(run);
   return (
     <>
-      {namedState(state, false) || state === "finished" ? (
+      {(namedState(state, false) && !attention) || state === "finished" ? (
         <Badge
           tone={executionTone(state)}
           size={size}
@@ -61,19 +61,19 @@ export function CrewWorkBadges({ run, size = "sm" }: { run: CrewRunView; size?: 
   );
 }
 
-/** Plain-text form for lists and the rail: "Paused · Needs decision"; idle work says nothing. */
+/** Plain-text form for lists and the rail: one status, the open attention or else "Paused"; idle work says nothing. */
 export function CrewWorkStatusText({ run }: { run: CrewRunView }) {
   useLocale();
   const state = crewExecutionState(run);
   const attention = crewOpenAttention(run);
   const running = run.status !== "finished" && crewHasRunningWork(run);
-  const named = namedState(state, true);
+  // One status: an open decision, review or blocker outranks the execution label.
+  const named = namedState(state, true) && !attention;
   if (!named && !attention) return null;
   return (
     <span className="inline-flex min-w-0 shrink-0 items-center gap-1">
       {running ? <WorkingIndicator size="xs" /> : null}
       {named ? <span>{crewExecutionLabel(state)}</span> : null}
-      {named && attention ? <span aria-hidden="true">·</span> : null}
       {attention ? (
         <Badge tone={attentionTone(attention)} size="xs">
           {crewAttentionLabel(attention)}

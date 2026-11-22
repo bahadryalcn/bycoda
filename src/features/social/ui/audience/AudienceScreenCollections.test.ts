@@ -251,6 +251,10 @@ describe("AudienceScreen editing a segment", () => {
     act(() => {
       for (const box of document.querySelectorAll<HTMLInputElement>("input[type=checkbox]"))
         if (box.checked) box.click();
+      for (const chip of document.querySelectorAll<HTMLButtonElement>(
+        'button[aria-pressed="true"]',
+      ))
+        chip.click();
     });
     expect(isBlocked(buttonByText("Save segment"))).toBe(true);
     expect(bodyText()).toContain("Add at least one condition.");

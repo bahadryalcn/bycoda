@@ -1,7 +1,6 @@
 import { Badge } from "../../../shared/ui/Badge";
 import "./ProviderDefaults.css";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { DefaultsTargetsPicker } from "./providerDefaultsTargetsPicker";
 import { selectedTargetValues, type DefaultsDraft } from "../model/providerDefaultsDraft";
 import { prepareDefaultsDraft } from "../model/providerDefaultsSupport";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
@@ -144,7 +143,6 @@ export function useDefaultsTargets(cwd: string | undefined, recents: RecentProje
 export function ProviderDefaultsSaveBar({
   target,
   options,
-  onTargetChange,
   changes,
   saveState,
   saving = false,
@@ -163,7 +161,6 @@ export function ProviderDefaultsSaveBar({
   onDraftChange?: (draft: DefaultsDraft) => void;
   target: DefaultsTarget;
   options: ReturnType<typeof useDefaultsTargets>["options"];
-  onTargetChange: (value: string) => void;
   /** Every unsaved field across providers and accounts. */
   changes: readonly PendingChange[];
   saveState: DefaultsSaveState;
@@ -263,15 +260,6 @@ export function ProviderDefaultsSaveBar({
             </div>
           ) : null}
         </>
-      }
-      trailing={
-        <div className="provider-defaults-field provider-defaults-field-end">
-          <DefaultsTargetsPicker
-            values={values}
-            options={options}
-            onChange={(next) => onTargetChange(JSON.stringify(next))}
-          />
-        </div>
       }
       successLabel={
         saveState.state === "saved" ? t("Saved to {p0}", { p0: saveState.target }) : undefined

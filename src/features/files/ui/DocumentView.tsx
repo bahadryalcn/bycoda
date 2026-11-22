@@ -1,5 +1,4 @@
 import { Progress } from "../../../shared/ui/Progress";
-import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
   Suspense,
@@ -228,19 +227,9 @@ export function DocumentView({
     );
   } else if (state.status === "cancelled") {
     body = (
-      <DocumentMessage title={t("Cancelled")}>
+      <DocumentMessage title={t("Opening cancelled")} onRetry={retry}>
         {name}
         {detail}
-        <Button
-          size="sm"
-          variant="ghost"
-          motion="none"
-          type="button"
-          onClick={retry}
-          className="mt-3"
-        >
-          {t("Retry")}
-        </Button>
       </DocumentMessage>
     );
   } else if (state.status === "loading") {

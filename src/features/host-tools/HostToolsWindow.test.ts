@@ -360,7 +360,9 @@ it("keeps explicit pin choice while new registration and stale replies never hij
   await snapshot(two);
   expect(active()?.getAttribute("data-session")).toBe("one");
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Keep this conversation"]')!.click(),
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Follow active conversation"]')!
+      .click(),
   );
   expect(active()?.getAttribute("data-session")).toBe("two");
   const previous = revision;

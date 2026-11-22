@@ -26,7 +26,6 @@ import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Divider } from "../../../shared/ui/Divider";
 import { Sheet } from "../../../shared/ui/Sheet";
 import "./ServersView.css";
-import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 import { Popover } from "../../../shared/ui/Popover";
@@ -143,7 +142,10 @@ export function ServersView({
     clearTimeout(detailOpenTimer.current);
     setDetailReady(true);
     setSelectedId(server.id);
-    void openTerminal?.(server).catch((reason) => setActionError(errorText(reason)));
+    void openTerminal?.(server).catch((reason) => {
+      setActionTitle(t("Couldn’t open a terminal on {p0}", { p0: server.name }));
+      setActionError(errorText(reason));
+    });
   };
   const [quickConnect, setQuickConnect] = useState(false);
   const [sshSettings, setSshSettings] = useState(false);
@@ -158,12 +160,11 @@ export function ServersView({
     serverId: string;
     at: ServerMenuAt;
   }>();
-  const [deleteTarget, setDeleteTarget] = useState<{
-    server: ServerRecord;
-    at: ServerMenuAt;
-  }>();
+  const [deleteTarget, setDeleteTarget] = useState<{ server: ServerRecord }>();
   const [deleting, setDeleting] = useState<string>();
   const [actionError, setActionError] = useState("");
+  // Names what could not be done (and on which server) so the raw cause is never the headline.
+  const [actionTitle, setActionTitle] = useState("");
   // The retry belongs to the failure that produced it; any other failure text shows no Retry.
   const [actionRetry, setActionRetry] = useState<{ text: string; retry: () => void }>();
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
@@ -269,6 +270,12 @@ export function ServersView({
         }
       }
       if (remove) setBulkTargets(failed.length ? failed : undefined);
+      if (failures.length)
+        setActionTitle(
+          remove
+            ? t("Couldn’t delete {p0} servers", { p0: failures.length })
+            : t("Couldn’t favorite {p0} servers", { p0: failures.length }),
+        );
       setActionError(failures.join("\n"));
       return failures.join("\n");
     } finally {
@@ -277,14 +284,15 @@ export function ServersView({
     }
   };
 
-  const runAction = async (work: () => Promise<unknown>) => {
+  const runAction = async (work: () => Promise<unknown>, title: string) => {
     setActionError("");
     try {
       await work();
     } catch (reason) {
       const text = errorText(reason);
+      setActionTitle(title);
       setActionError(text);
-      setActionRetry({ text, retry: () => void runAction(work) });
+      setActionRetry({ text, retry: () => void runAction(work, title) });
     }
   };
   const menuItems = (server: ServerRecord): ContextMenuItem[] => [
@@ -348,12 +356,6 @@ export function ServersView({
       icon: <Trash2 aria-hidden className="icon-sm" />,
       danger: true,
       disabled: bulkBusy,
-      title:
-        server.kind === "ssh"
-          ? undefined
-          : t(
-              "Removes this machine from this desktop only. The host and its sessions keep running.",
-            ),
     },
   ];
   const pickMenuItem = (server: ServerRecord, id: string, at: ServerMenuAt) => {
@@ -367,19 +369,22 @@ export function ServersView({
       if (server.kind === "ssh") setEditor(server);
       else requestMachineEdit(server.id);
     } else if (id === "favorite")
-      void runAction(() =>
-        updateServerMetadata(server.id, { favorite: !server.metadata.favorite }),
+      void runAction(
+        () => updateServerMetadata(server.id, { favorite: !server.metadata.favorite }),
+        t("Couldn’t update {p0}", { p0: server.name }),
       );
     else if (id === "color") setColorTarget({ serverId: server.id, at });
     else if (id === "copy")
-      void runAction(() =>
-        copyWithFeedback(copyFeedback.copyAsync, () =>
-          navigator.clipboard.writeText(address(server)),
-        ),
+      void runAction(
+        () =>
+          copyWithFeedback(copyFeedback.copyAsync, () =>
+            navigator.clipboard.writeText(address(server)),
+          ),
+        t("Couldn’t copy the address of {p0}", { p0: server.name }),
       );
     else if (id === "delete") {
       setActionError("");
-      setDeleteTarget({ server, at });
+      setDeleteTarget({ server });
     }
   };
   const openServerMenu = (serverId: string, at: ServerMenuAt) => setMenu({ serverId, at });
@@ -392,15 +397,13 @@ export function ServersView({
       if (server.kind === "ssh") await removeSshConnection(server.id);
       else await disconnectMachine(server.id);
       setSelectedId((current) => (current === server.id ? undefined : current));
-    } catch (reason) {
-      setActionError(errorText(reason));
-      throw reason;
     } finally {
+      // A failure is thrown to the confirmation, which shows it and offers another try.
       setDeleting(undefined);
     }
   };
   const saveColor = (serverId: string, patch: ServerMetadataPatch) =>
-    void runAction(() => updateServerMetadata(serverId, patch));
+    void runAction(() => updateServerMetadata(serverId, patch), t("Couldn’t update the server"));
   return (
     <Text
       as="section"
@@ -602,7 +605,7 @@ export function ServersView({
       {actionError ? (
         <div className="px-3 pt-2">
           <RemoteActionError
-            title={t("Couldn’t complete the action")}
+            title={actionTitle || t("Couldn’t complete the action")}
             error={describeRemoteError(actionError)}
             action={
               actionRetry?.text === actionError
@@ -612,19 +615,13 @@ export function ServersView({
           />
         </div>
       ) : null}
-      {loading && !loaded ? (
-        <LoadingText inset="row">{t("Loading servers…")}</LoadingText>
-      ) : null}
+      {loading && !loaded ? <LoadingText inset="row">{t("Loading servers…")}</LoadingText> : null}
       {groups.length > 0 ? (
         <div
           aria-label={t("Group")}
           className="flex shrink-0 flex-wrap items-center gap-1 px-3 py-2"
         >
-          <Button
-            variant="ghost"
-            pressed={!group}
-            onClick={() => setGroup("")}
-          >
+          <Button variant="ghost" pressed={!group} onClick={() => setGroup("")}>
             {t("All")}{" "}
             <Badge size="xs" variant="count">
               {servers.length}
@@ -655,8 +652,9 @@ export function ServersView({
             <EmptyState
               kind="empty"
               icon={<Server aria-hidden className="icon-lg" />}
-              title={t("No machines connected.")}
+              title={t("No servers yet.")}
               action={{ label: t("Add SSH server"), onClick: () => setEditor("new") }}
+              secondaryAction={{ label: t("Add a computer"), onClick: requestMachineAdd }}
             />
           ) : null}
           {servers.length > 0 && filtered.length === 0 ? (
@@ -987,42 +985,18 @@ export function ServersView({
         />
       ) : null}
       {deleteTarget ? (
-        <Popover
-          anchor={deleteTarget.at}
-          align="start"
-          width={280}
-          kind="dialog"
-          aria-label={t("Delete {p0}?", { p0: deleteTarget.server.name })}
-          variant="panel"
-          onDismiss={() => {
-            if (!deleting) setDeleteTarget(undefined);
+        <ConfirmDialog
+          request={{
+            title: t("Delete {p0}?", { p0: deleteTarget.server.name }),
+            message: t(
+              "Removes saved connections from bycoda. Machines and their running sessions are not deleted.",
+            ),
+            details: <Text wrap="anywhere">{address(deleteTarget.server)}</Text>,
+            confirmLabel: t("Delete"),
+            onConfirm: () => deleteServer(deleteTarget.server),
           }}
-        >
-          <Text as="div" size="body" tone="inherit" className="flex flex-col gap-3">
-            <Text as="p" size="inherit" tone="inherit" weight="medium">
-              {t("Delete {p0}?", { p0: deleteTarget.server.name })}
-            </Text>
-            <Text as="p" tone="muted">
-              {deleteTarget.server.kind === "ssh"
-                ? t("Removes this SSH server from bycoda. The machine is not changed.")
-                : t(
-                    "Removes this machine from this desktop only. The host and its sessions keep running.",
-                  )}
-            </Text>
-            <ConfirmMorph
-              label={t("Delete")}
-              icon={<Trash2 aria-hidden className="icon-sm" />}
-              tone="danger"
-              confirmMode="press"
-              disabled={deleting != null}
-              onConfirm={() => deleteServer(deleteTarget.server)}
-              onStateChange={(state) => {
-                if (state === "done") setDeleteTarget(undefined);
-              }}
-              onCancel={() => setDeleteTarget(undefined)}
-            />
-          </Text>
-        </Popover>
+          onSettle={() => setDeleteTarget(undefined)}
+        />
       ) : null}
       {quickConnect ? <QuickConnect onClose={() => setQuickConnect(false)} /> : null}
       {termiusImport ? (

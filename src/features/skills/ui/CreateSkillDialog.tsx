@@ -25,7 +25,6 @@ export function CreateSkillDialog({
         cwd={cwd}
         monospace={false}
         className=""
-        showScopeHelp
         error={error}
         busy={busy}
         onCancel={onCancel}

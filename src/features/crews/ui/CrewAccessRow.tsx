@@ -20,10 +20,7 @@ export function CrewAccessRow({
 }) {
   useLocale();
   return (
-    <section
-      aria-label={t("Access for every member")}
-      className="grid min-w-0 grid-cols-1 items-start gap-3 @min-[44rem]/crew-editor:grid-cols-3"
-    >
+    <section aria-label={t("Access for every member")} className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <Text size="body" tone="inherit" weight="medium">
           {t("Access for every member")}
@@ -35,8 +32,8 @@ export function CrewAccessRow({
           />
         ) : null}
       </div>
-      <Text as="div" className="flex min-w-0 items-center justify-between gap-2">
-        <span className="min-w-0">{t("Coordinator answers permission requests")}</span>
+      <Text as="div" className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1">{t("Coordinator answers permission requests")}</span>
         <Switch
           aria-label={t("Coordinator answers permission requests")}
           checked={policy.delegateApprovals === true}
@@ -55,8 +52,8 @@ export function CrewAccessRow({
           </p>
         </InfoPopover>
       </Text>
-      <Text as="div" className="flex min-w-0 items-center justify-between gap-2">
-        <span className="min-w-0">{t("Allow provider sub-agents")}</span>
+      <Text as="div" className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1">{t("Allow provider sub-agents")}</span>
         <Switch
           aria-label={t("Allow provider sub-agents")}
           checked={policy.allowSubagents}

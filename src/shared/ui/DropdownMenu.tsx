@@ -312,8 +312,7 @@ function MenuSurface({
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       event.stopPropagation();
-      if (highlighted)
-        activate(highlighted, document.getElementById(rowId(highlighted.id)), true);
+      if (highlighted) activate(highlighted, document.getElementById(rowId(highlighted.id)), true);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);

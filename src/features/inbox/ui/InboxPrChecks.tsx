@@ -5,6 +5,7 @@ import { Text } from "../../../shared/ui/Text";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
+import { InboxLoadError } from "./InboxLoadError";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
@@ -609,7 +610,7 @@ export function InboxPrChecks({
   if (!checks && error) {
     return (
       <div className="flex flex-col items-start gap-2" data-inbox-pr-checks>
-        <Alert tone="danger">{error}</Alert>
+        <InboxLoadError title={t("Could not load the checks.")} error={error} />
         <Button
           variant="ghost"
           type="button"

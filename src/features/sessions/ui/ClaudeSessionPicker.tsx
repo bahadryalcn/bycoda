@@ -49,10 +49,7 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
       fitViewport
     >
       {error ? (
-        <InlineError
-          inset="row"
-          retry={{ onRetry: () => setRetry((value) => value + 1) }}
-        >
+        <InlineError inset="row" retry={{ onRetry: () => setRetry((value) => value + 1) }}>
           {error}
         </InlineError>
       ) : sessions === null ? (

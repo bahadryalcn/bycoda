@@ -167,19 +167,6 @@
 .tools-hub-pane[hidden] {
   display: none;
 }
-.tools-hub-empty {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 16px;
-}
-.tools-hub-empty strong {
-  max-inline-size: 100%;
-  overflow-wrap: anywhere;
-}
 @media (width < 540px) {
   .tools-hub-title {
     display: none;

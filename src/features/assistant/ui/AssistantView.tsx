@@ -374,7 +374,7 @@ export function AssistantView(props: AssistantViewProps) {
           </section>
         ) : (
           <>
-            <RoomStatusPopovers snapshot={snapshot} />
+            <RoomStatusPopovers snapshot={snapshot} workLabel={mode.label} />
             {errorFor("presence")}
             {errorFor("presence.return")}
             {returnMessage && (

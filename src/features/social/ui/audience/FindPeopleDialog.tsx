@@ -11,7 +11,6 @@ import type { SocialAccount } from "../../model/social";
 import type { SocialList } from "../../model/audience";
 import type { CollectResult } from "../../model/socialActions";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason } from "../common/DisabledReason";
 import { TechnicalDetails } from "../common/TechnicalDetails";
 import { LabeledSelect } from "./LabeledSelect";
 import { PlatformIcon } from "../common/PlatformIcon";
@@ -67,7 +66,6 @@ export function FindPeopleDialog({
       : !limitValid
         ? t("Enter a whole number from 1 to {p0}.", { p0: COLLECT_LIMIT_MAX })
         : undefined;
-  const actionState = reason ? { disabled: true as const, reason } : { disabled: false as const };
   const needs = findPeopleNeeds(form.kind);
 
   async function run() {
@@ -100,18 +98,19 @@ export function FindPeopleDialog({
       size="lg"
       footerStart={error ? <InlineError>{error}</InlineError> : undefined}
       footer={
-        <ModalActions>
+        <ModalActions reason={error ? undefined : reason}>
           <Button variant="ghost" disabled={running} onClick={onClose}>
             {result ? t("Done") : t("Cancel")}
           </Button>
-          <DisabledReason
+          <Button
             variant="primary"
             loading={running}
-            {...actionState}
+            disabled={Boolean(reason)}
+            disabledReason={reason}
             onClick={() => void run().catch(() => undefined)}
           >
             {t("Find people")}
-          </DisabledReason>
+          </Button>
         </ModalActions>
       }
     >

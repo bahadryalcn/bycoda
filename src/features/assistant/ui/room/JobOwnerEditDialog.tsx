@@ -191,22 +191,27 @@ export function JobOwnerEditDialog({
       setPending(false);
     }
   }
+  const blockedReason =
+    !draft.intent && mode === "replan" && !draft.feedback.trim()
+      ? t("Describe what should change")
+      : undefined;
   return (
     <Modal
       title={t(mode === "replan" ? "Replan job" : "Job priority")}
       onClose={onClose}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions reason={blockedReason}>
           <Button variant="ghost" disabled={pending} onClick={onClose}>
-            {t("Close")}
+            {t("Cancel")}
           </Button>
           <Button
             form={formId}
             type="submit"
             variant="primary"
             loading={pending}
-            disabled={!draft.intent && mode === "replan" && !draft.feedback.trim()}
+            disabled={Boolean(blockedReason)}
+            disabledReason={blockedReason}
           >
             {t(draft.intent ? "Check status" : mode === "replan" ? "Replan" : "Save")}
           </Button>
@@ -227,6 +232,7 @@ export function JobOwnerEditDialog({
         {mode === "replan" ? (
           <TextareaField
             label={t("Replan feedback")}
+            placeholder={t("What should the plan do differently?")}
             value={draft.feedback}
             maxLength={3000}
             minRows={5}
@@ -263,17 +269,17 @@ export function JobOwnerEditDialog({
         />
         {error && <InlineError className={rootStyles.error}>{error}</InlineError>}
         {draftStorageError && (
-          <InlineError className={rootStyles.error}>
-            {t("Could not save this draft. It is kept in this window.")}{" "}
-            <Button
-              type="button"
-              onClick={() => {
+          <InlineError
+            className={rootStyles.error}
+            retry={{
+              label: t("Retry saving"),
+              onRetry: () => {
                 retain(draft);
                 writer.flush();
-              }}
-            >
-              {t("Retry saving")}
-            </Button>
+              },
+            }}
+          >
+            {t("Could not save this draft. It is kept in this window.")}
           </InlineError>
         )}
       </form>

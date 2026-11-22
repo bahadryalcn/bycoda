@@ -7,7 +7,6 @@ import { confirmInApp } from "../../../shared/model/appConfirm";
 import { InlineTextAction } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { CollectionFooter, ContinuousList } from "../../../shared/ui/ContinuousList";
 import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -534,7 +533,8 @@ function McpConnections({
                             {t("Starts with session")}
                           </Badge>
                         ) : null}
-                        {statusLabel(status)}
+                        {/* The dot carries the quiet default; only an exception is written. */}
+                        {status === "configured" ? null : statusLabel(status)}
                       </>
                     }
                     action={
@@ -571,7 +571,16 @@ function McpConnections({
       ) : null}
       <Group
         title={t("Session startup")}
-        description={t("Applies to new sessions.")}
+        info={
+          <>
+            <p>{t("Applies to new sessions.")}</p>
+            <p>
+              {t("When needed: a server starts the first time a session uses one of its tools.")}
+            </p>
+            <p>{t("With every session: all servers start when a session opens.")}</p>
+            <p>{t("Open a server to start just that one with every session.")}</p>
+          </>
+        }
         feedback={
           hub.loading?.corrupt ? (
             <SettingsFeedback state="error">
@@ -585,15 +594,6 @@ function McpConnections({
         <Row
           id="mcp-loading"
           label={t("Start MCP servers")}
-          info={
-            <InfoPopover className="shrink-0">
-              <p>
-                {t("When needed: a server starts the first time a session uses one of its tools.")}
-              </p>
-              <p>{t("With every session: all servers start when a session opens.")}</p>
-              <p>{t("Open a server to start just that one with every session.")}</p>
-            </InfoPopover>
-          }
           disabled={!policy || hub.saving || !!hub.loading?.corrupt}
         >
           <SharedSelect

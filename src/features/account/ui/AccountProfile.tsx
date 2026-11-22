@@ -53,6 +53,7 @@ export function AccountProfile({
         <Row label={t("Display name")}>
           <InlineEdit
             label={t("Display name")}
+            variant="body"
             value={user.displayName}
             validate={(next) => (next.trim() ? null : t("Enter a name."))}
             onSave={(next) => update.mutateAsync({ displayName: next.trim() })}
@@ -80,7 +81,6 @@ export function AccountProfile({
       >
         <Row
           label={t("Time zone")}
-          descriptionVisible
           description={
             user.timeZone === here ? t("Same as this computer.") : t("Differs from this computer.")
           }

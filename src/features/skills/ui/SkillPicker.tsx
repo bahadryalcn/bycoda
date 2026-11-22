@@ -269,7 +269,6 @@ export function CreateSkillForm({
   query,
   cwd,
   monospace = true,
-  showScopeHelp = false,
   className = "px-2.5 py-2",
   error,
   busy,
@@ -280,7 +279,6 @@ export function CreateSkillForm({
   query: string;
   cwd: string;
   monospace?: boolean;
-  showScopeHelp?: boolean;
   className?: string;
   error?: string | null;
   busy?: boolean;
@@ -355,9 +353,6 @@ export function CreateSkillForm({
       }}
       className={className}
     >
-      <Text as="p" size="micro" tone="secondary" className="mb-2">
-        {t("Writes a starter SKILL.md you can edit.")}
-      </Text>
       <TextField
         monospace={monospace}
         label={t("Skill name")}
@@ -365,7 +360,11 @@ export function CreateSkillForm({
         value={name}
         spellCheck={false}
         placeholder={t("skill-name")}
-        aria-label={t("Skill name")}
+        error={
+          !error && name.trim() && !valid
+            ? t("Use lowercase letters, numbers, and hyphens.")
+            : undefined
+        }
         disabled={busy}
         readOnly={parentClosed}
         onChange={(e) => {
@@ -389,7 +388,9 @@ export function CreateSkillForm({
           {
             value: "project",
             label: t("Project"),
-            description: ".agents/skills",
+            description: project
+              ? ".agents/skills"
+              : t("Open a local project to enable project scope."),
             disabled: !project,
           },
           {
@@ -399,28 +400,7 @@ export function CreateSkillForm({
           },
         ]}
       />
-      {showScopeHelp ? (
-        <Text
-          as="p"
-          size="caption"
-          tone="secondary"
-          className="[margin-block-end:0.5rem] break-all"
-        >
-          {project && scope === "project"
-            ? t("Creates a starter in {p0}.agents/skills. Edit SKILL.md after creation.", {
-                p0: `${cwd.replace(/[\\/]+$/, "")}/`,
-              })
-            : t("Creates a starter in ~/.agents/skills on this computer.")}
-          {!project ? ` ${t("Open a local project to enable project scope.")}` : ""}
-        </Text>
-      ) : null}
-      {error ? (
-        <Alert tone="danger">{error}</Alert>
-      ) : !name.trim() || valid ? null : (
-        <Text as="p" size="caption" tone="secondary" className="mb-2">
-          {t("Use lowercase letters, numbers, and hyphens.")}
-        </Text>
-      )}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
       <div className="flex items-center justify-end gap-1">
         <Button
           variant="ghost"

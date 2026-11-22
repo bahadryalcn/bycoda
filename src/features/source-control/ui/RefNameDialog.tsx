@@ -72,20 +72,11 @@ export function RefNameDialog({
       }}
       footer={
         <ModalActions reason={complete ? undefined : t("Fill in every field.")}>
-          <Button
-            size="sm"
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={busy}
-            onClick={onCancel}
-          >
+          <Button variant="ghost" type="button" disabled={busy} onClick={onCancel}>
             {t("Cancel")}
           </Button>
           <Button
-            size="sm"
             variant="primary"
-            motion="none"
             type="submit"
             form={formId}
             loading={busy}

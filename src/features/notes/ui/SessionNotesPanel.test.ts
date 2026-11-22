@@ -149,6 +149,14 @@ function button(label: string) {
   expect(found, label).toBeTruthy();
   return found!;
 }
+async function openDeleteMenu() {
+  await click("More actions");
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((entry) =>
+    entry.textContent?.includes("Delete note"),
+  );
+  expect(item).toBeTruthy();
+  await act(async () => item!.click());
+}
 async function click(label: string) {
   await act(async () => button(label).click());
 }
@@ -204,7 +212,7 @@ it("keeps autosaving the draft after deletion fails", async () => {
   await render();
   vi.useFakeTimers();
   await input(body(), "Keep this draft");
-  await click("Delete note");
+  await openDeleteMenu();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(300);
   });
@@ -443,7 +451,7 @@ it("continues editing and deleting the recovered copy while the original still e
   expect(stored.find((note) => note.id === recovered.id)?.body).toBe("Editing the recovered copy");
   expect(stored.find((note) => note.id === own.id)?.body).toBe(own.body);
   vi.useFakeTimers();
-  await click("Delete note");
+  await openDeleteMenu();
   await act(async () => vi.advanceTimersByTimeAsync(300));
   await click("Confirm delete");
   expect(stored.some((note) => note.id === recovered.id)).toBe(false);

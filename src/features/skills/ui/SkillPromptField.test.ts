@@ -53,6 +53,8 @@ describe("SkillPromptField", () => {
           onChange(next);
           setValue(next);
         },
+        label: "Instructions",
+        placeholder: "Describe the work",
       });
     }
 

@@ -872,8 +872,13 @@ test("transcript-base-ink owns the --transcript-ink-* and --transcript-surface-*
   const ink = (file, text) => rulesOf(file, text).includes("transcript-base-ink");
   const roles = ".a { --transcript-ink-body: var(--ui-text-secondary); }";
   assert.ok(ink("src/features/sessions/ui/Transcript.css", roles));
-  assert.ok(ink("src/styles/index.css", `${indexCss}
-:root { --transcript-surface-fill: red; }`));
+  assert.ok(
+    ink(
+      "src/styles/index.css",
+      `${indexCss}
+:root { --transcript-surface-fill: red; }`,
+    ),
+  );
   assert.ok(!ink("src/styles/transcript-surface.css", `:root { --transcript-ink-body: red; }`));
 });
 
@@ -885,8 +890,14 @@ test("transcript-assistant-surface and transcript-reply-fill guard the transcrip
       "transcript-assistant-surface",
     ),
   );
-  assert.ok(!rules('<div data-chat-message-surface="user">x</div>').includes("transcript-assistant-surface"));
-  assert.ok(rules('<div className="p-2 bg-(--ui-surface)">x</div>').includes("transcript-reply-fill"));
+  assert.ok(
+    !rules('<div data-chat-message-surface="user">x</div>').includes(
+      "transcript-assistant-surface",
+    ),
+  );
+  assert.ok(
+    rules('<div className="p-2 bg-(--ui-surface)">x</div>').includes("transcript-reply-fill"),
+  );
   assert.ok(rules('<div className="backdrop-blur-sm">x</div>').includes("transcript-reply-fill"));
   assert.ok(
     !rules('<div data-transcript-reply className="bg-(--ui-surface)">x</div>').includes(

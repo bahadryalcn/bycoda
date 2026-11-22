@@ -281,7 +281,12 @@ export function AccountFormActions({
 }) {
   return (
     <>
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "integration-actions integration-actions-bar")}>
+      <div
+        {...surfaceAttributes(
+          { frame: "pane", edge: "block-start" },
+          "integration-actions integration-actions-bar",
+        )}
+      >
         {children}
         <Button
           variant="primary"

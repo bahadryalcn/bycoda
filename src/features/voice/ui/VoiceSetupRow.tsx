@@ -113,17 +113,17 @@ export function VoiceSetupRow({
               </Button>
             ) : null}
             <Button
-                ref={moreAnchor}
-                variant="ghost"
-                size="sm"
-                iconOnly
-                label={t("More voice setup actions")}
-                aria-haspopup="menu"
-                aria-expanded={moreOpen}
-                onClick={() => setMoreOpen((open) => !open)}
-              >
-                <MoreHorizontal aria-hidden className="icon-sm" />
-              </Button>
+              ref={moreAnchor}
+              variant="ghost"
+              size="sm"
+              iconOnly
+              label={t("More voice setup actions")}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((open) => !open)}
+            >
+              <MoreHorizontal aria-hidden className="icon-sm" />
+            </Button>
             {moreOpen ? (
               <DropdownMenu
                 anchor={moreAnchor}
@@ -132,7 +132,14 @@ export function VoiceSetupRow({
                   { kind: "item", id: "locate", label: t("Locate existing") },
                   ...(visibleError
                     ? []
-                    : [{ kind: "item" as const, id: "check", label: t("Check again"), disabled: busy }]),
+                    : [
+                        {
+                          kind: "item" as const,
+                          id: "check",
+                          label: t("Check again"),
+                          disabled: busy,
+                        },
+                      ]),
                 ]}
                 onClose={() => setMoreOpen(false)}
                 onPick={(id) => {
@@ -172,27 +179,27 @@ export function VoiceSetupRow({
           <div className={styles.locations}>
             {paths.map(([key, label, id]) => (
               <Row key={key} id={id} label={t(label)} stacked>
-                  <div className={styles.path}>
-                    <TextField
-                      label={t(label)}
-                      hideLabel
-                      aria-label={t(label)}
-                      value={settings[key]}
-                      placeholder={t("Automatic detection")}
-                      onChange={(event) => {
-                        setup.resetJob();
-                        change({ [key]: event.target.value });
-                      }}
-                    />
-                    <Button
-                      disabled={installing || setup.browsing !== null}
-                      loading={setup.browsing === key}
-                      onClick={() => setup.browse(key)}
-                    >
-                      {t("Browse")}
-                    </Button>
-                  </div>
-                </Row>
+                <div className={styles.path}>
+                  <TextField
+                    label={t(label)}
+                    hideLabel
+                    aria-label={t(label)}
+                    value={settings[key]}
+                    placeholder={t("Automatic detection")}
+                    onChange={(event) => {
+                      setup.resetJob();
+                      change({ [key]: event.target.value });
+                    }}
+                  />
+                  <Button
+                    disabled={installing || setup.browsing !== null}
+                    loading={setup.browsing === key}
+                    onClick={() => setup.browse(key)}
+                  >
+                    {t("Browse")}
+                  </Button>
+                </div>
+              </Row>
             ))}
             <InfoPopover className="self-end shrink-0">
               {t("Leave a location empty to find it automatically.")}

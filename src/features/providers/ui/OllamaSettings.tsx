@@ -10,6 +10,8 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Progress } from "../../../shared/ui/Progress";
+import { RefreshCw } from "../../../shared/ui/icons";
+import { StatusText } from "../../../shared/ui/StatusText";
 import { TextField } from "../../../shared/ui/TextField";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { ollamaClient } from "../model/ollamaClient";
@@ -70,7 +72,11 @@ function OllamaPortRow({
           type="submit"
           disabled={disabled || !validPort(value) || value === port}
           disabledReason={
-            disabled || invalid ? undefined : value === port ? t("The port has not changed.") : undefined
+            disabled || invalid
+              ? undefined
+              : value === port
+                ? t("The port has not changed.")
+                : undefined
           }
           loading={saving}
         >
@@ -357,9 +363,21 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
       action={
         // Missing and stopped states carry their own Check again / Start action.
         status?.runtime === "running" ? (
-          <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void load()}>
-            {status.version ? t("Ollama {p0}", { p0: status.version }) : t("Check again")}
-          </Button>
+          <>
+            {status.version ? (
+              <StatusText tone="done">{t("Ollama {p0}", { p0: status.version })}</StatusText>
+            ) : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              iconOnly
+              label={t("Check again")}
+              disabled={!!busy}
+              onClick={() => void load()}
+            >
+              <RefreshCw className="icon-sm" aria-hidden="true" />
+            </Button>
+          </>
         ) : undefined
       }
       feedback={feedback}

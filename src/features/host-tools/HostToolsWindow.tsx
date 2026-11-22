@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { HostToolsWindow as HostToolsWindowProps } from "../../app/model/hostToolsWindow";
 import { SessionHostTools } from "./SessionHostTools";
 import { Alert } from "../../shared/ui/Alert";
+import { EmptyState } from "../../shared/ui/EmptyState";
 import { Button } from "../../shared/ui/Button";
 import { Modal } from "../../shared/ui/Modal";
 import { LoadingText } from "../../shared/ui/LoadingText";
@@ -109,6 +110,8 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   retainedRef.current = retained;
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  // The shown error came from the return step, so Try again repeats that step.
+  const [returnFailed, setReturnFailed] = useState(false);
   const returning = useRef(false);
   const returnAbort = useRef<AbortController | null>(null);
   const windowLifetime = useRef(0);
@@ -423,6 +426,12 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
     !!availableWindows &&
     !availableWindows.has(retainedPane.composerWindow);
   const currentPane = ownerUnavailable ? undefined : retainedPane;
+  // Asks the other windows again which of them still own tools, after the owner went away.
+  const checkAgain = () => {
+    void requestToolsSources()
+      .then((windows) => setAvailableWindows(windows))
+      .catch((cause) => setError(toolsTransferError(cause)));
+  };
   const toggleFollow = () => {
     const next = !follow;
     setFollow(next);
@@ -444,6 +453,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
     };
     setPending(true);
     setError("");
+    setReturnFailed(false);
     try {
       const session: ToolsSession = {
         ...currentPane,
@@ -530,6 +540,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       setSelected(null);
     } catch (cause) {
       setError(toolsTransferError(cause));
+      setReturnFailed(true);
     } finally {
       returning.current = false;
       returnAbort.current = null;
@@ -600,7 +611,8 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           iconOnly
           pressed={follow}
           tone={follow ? "accent" : "neutral"}
-          label={t(follow ? "Follow active conversation" : "Keep this conversation")}
+          // One fixed name; the pressed state carries on/off, so a screen reader never hears a contradiction.
+          label={t("Follow active conversation")}
           disabled={pending}
           onClick={toggleFollow}
         >
@@ -624,7 +636,18 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           <PanelRightClose className="icon-sm" aria-hidden />
         </Button>
       </header>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error ? (
+        <Alert
+          tone="danger"
+          action={
+            returnFailed && currentPane?.composerWindow && !pending
+              ? { label: t("Try again"), onClick: () => void reattach() }
+              : undefined
+          }
+        >
+          {error}
+        </Alert>
+      ) : null}
       <div className="tools-hub-body">
         {retained.map((pane) => {
           const active = !!currentPane && paneKey(pane) === paneKey(currentPane);
@@ -649,26 +672,18 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           );
         })}
         {!currentPane ? (
-          <Text
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            as="div"
-            className="tools-hub-empty"
-          >
-            {current ? (
-              <Text size="inherit" tone="primary" weight="medium" leading="inherit" as="strong">
-                {toolsProjectName(current)} · {current.title}
-              </Text>
-            ) : null}
-            <span>
-              {t(
-                ownerUnavailable
-                  ? "Conversation tools owner unavailable"
-                  : "No tools in this conversation",
-              )}
-            </span>
-          </Text>
+          <EmptyState
+            context="panel"
+            icon={<Wrench aria-hidden className="icon-lg" />}
+            title={
+              ownerUnavailable
+                ? t("Conversation tools owner unavailable")
+                : t("No tools in this conversation")
+            }
+            description={current ? `${toolsProjectName(current)} · ${current.title}` : undefined}
+            showDescription
+            action={ownerUnavailable ? { label: t("Check again"), onClick: checkAgain } : undefined}
+          />
         ) : null}
       </div>
       {pending ? (

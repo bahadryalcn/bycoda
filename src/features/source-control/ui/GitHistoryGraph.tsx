@@ -151,7 +151,7 @@ export function GitHistoryGraph({
       setGitFeedback(cwd, {
         kind: "error",
         get title() {
-          return t("Git operation failed");
+          return t("Couldn’t update the repository");
         },
         detail: errorText(error),
       });
@@ -292,22 +292,12 @@ export function GitHistoryGraph({
   const list = (variant: "compact" | "workspace") => {
     const empty =
       !cwd || cwd === "~" ? (
-        <EmptyState
-          size="inline"
-          kind="empty"
-          inset="row"
-          description={t("No project folder")}
-        />
+        <EmptyState size="inline" kind="empty" inset="row" description={t("No project folder")} />
       ) : commits.length === 0 ? (
         loading ? (
           <GitLoading text="Loading commit graph…" />
         ) : error || failure ? undefined : ( // The failure notice above the list already explains it; no second failure state here.
-          <EmptyState
-            size="inline"
-            kind="empty"
-            inset="row"
-            description={t("No commits yet")}
-          />
+          <EmptyState size="inline" kind="empty" inset="row" description={t("No commits yet")} />
         )
       ) : items.length === 0 ? (
         <EmptyState

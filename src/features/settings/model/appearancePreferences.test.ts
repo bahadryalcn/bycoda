@@ -48,9 +48,10 @@ describe("appearance preferences", () => {
   });
 
   it("turns a stored zero assistant opacity into the off surface and the default opacity", () => {
-    expect(
-      normalizeAppearancePreferences({ assistantMessageOpacity: 0 } as never),
-    ).toMatchObject({ transcriptSurface: "off", transcriptSurfaceOpacity: 45 });
+    expect(normalizeAppearancePreferences({ assistantMessageOpacity: 0 } as never)).toMatchObject({
+      transcriptSurface: "off",
+      transcriptSurfaceOpacity: 45,
+    });
   });
 
   it("keeps stored transcript fields over a leftover assistant opacity", () => {
@@ -64,9 +65,9 @@ describe("appearance preferences", () => {
   });
 
   it("ignores a malformed legacy value and bounds or defaults every transcript field", () => {
-    expect(
-      normalizeAppearancePreferences({ assistantMessageOpacity: "x" } as never),
-    ).toMatchObject({ transcriptSurface: "reply", transcriptSurfaceOpacity: 45 });
+    expect(normalizeAppearancePreferences({ assistantMessageOpacity: "x" } as never)).toMatchObject(
+      { transcriptSurface: "reply", transcriptSurfaceOpacity: 45 },
+    );
     expect(
       normalizeAppearancePreferences({
         transcriptSurface: "bogus",

@@ -12,6 +12,12 @@ import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Globe } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
+import { Group, Row } from "../../../shared/ui/settings";
+import {
+  selectedTargetValues,
+  targetValue,
+  type DefaultsTarget,
+} from "../model/providerDefaultsDraft";
 import type { SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
 
 export function defaultsTargetsSummary(
@@ -189,5 +195,38 @@ export function DefaultsTargetsPicker({
         </Popover>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Where the edits below are saved: Bycoda defaults, or the chosen projects and groups. It sits above
+ * the fields it governs, so the target is read before a value is changed.
+ */
+export function ProviderDefaultsScopeRow({
+  selection,
+  target,
+  options,
+  onTargetChange,
+}: {
+  selection?: string;
+  target: DefaultsTarget;
+  options: SearchableSelectOption[];
+  onTargetChange: (value: string) => void;
+}) {
+  const values = selectedTargetValues(
+    selection ?? targetValue(target),
+    options.filter((option) => !option.disabled).map((option) => option.value),
+  );
+  if (!values.length) values.push("global");
+  return (
+    <Group id="defaults-scope" layout="full" title={t("Applies to")}>
+      <Row label={t("Defaults saved to")}>
+        <DefaultsTargetsPicker
+          values={values}
+          options={options}
+          onChange={(next) => onTargetChange(JSON.stringify(next))}
+        />
+      </Row>
+    </Group>
   );
 }

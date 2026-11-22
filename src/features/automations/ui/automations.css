@@ -53,11 +53,6 @@
   max-inline-size: 64rem;
   margin-inline: auto;
 }
-.automation-start {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  gap: 12px;
-}
 .automation-gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
@@ -71,16 +66,6 @@
   block-size: 100%;
   white-space: normal;
   text-align: start;
-}
-.automation-start > .automation-start-option.automation-start-option[data-button-hierarchy] {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: stretch;
-  min-inline-size: 0;
-  white-space: normal;
-  text-align: start;
-  padding: 8px 12px;
 }
 .automation-template-search {
   inline-size: min(100%, 16rem);

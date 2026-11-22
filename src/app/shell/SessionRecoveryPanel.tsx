@@ -359,9 +359,7 @@ export function SessionRecoveryPanel({
   ) : null;
   const primaryOpensSelected = selectedIds.length > 0;
   // The primary action opens exactly what the owner sees: the selection, else the filtered list.
-  const primaryIds = primaryOpensSelected
-    ? selectedIds
-    : shown.map((row) => row.stub.id);
+  const primaryIds = primaryOpensSelected ? selectedIds : shown.map((row) => row.stub.id);
   const primaryAction = primaryOpensSelected ? "open-selected" : "open-shown";
   const primaryLabel = primaryOpensSelected
     ? `${t("Open selected")} (${selectedIds.length})`

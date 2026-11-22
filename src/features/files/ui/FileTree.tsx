@@ -1883,7 +1883,8 @@ function NameIssueView({
     <InlineMessage
       id={id}
       tone={error ? "danger" : "warning"}
-      inset="row" className="min-w-0 break-words ms-(--layout-padding-inline-start)"
+      inset="row"
+      className="min-w-0 break-words ms-(--layout-padding-inline-start)"
       style={{ "--layout-padding-inline-start": nameFieldInset(depth) } as CSSProperties}
     >
       {body}

@@ -74,7 +74,7 @@ describe("BulkDialog list", () => {
   it("explains that a list must be chosen when no static list exists", async () => {
     renderDialog(clientMock(), { lists: [SEGMENT_LIST] });
     await flush();
-    expect(buttonByText("Add to list")?.disabled).toBe(true);
+    expect(buttonByText("Add to list")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Choose a list.");
   });
 
@@ -134,7 +134,7 @@ describe("BulkDialog tag", () => {
     const mock = clientMock();
     renderDialog(mock, { action: "tag" });
     await flush();
-    expect(buttonByText("Add a tag")?.disabled).toBe(true);
+    expect(buttonByText("Add a tag")?.getAttribute("aria-disabled")).toBe("true");
     setFieldValue(fieldByLabel("Tag"), "  lead  ");
     clickButton("Add a tag");
     await flush();
@@ -213,6 +213,6 @@ describe("BulkDialog sequence", () => {
     renderDialog(mock, { action: "sequence" });
     await flush();
     expect(bodyText()).toContain("Sequences are unavailable.");
-    expect(buttonByText("Add to sequence")?.disabled).toBe(true);
+    expect(buttonByText("Add to sequence")?.getAttribute("aria-disabled")).toBe("true");
   });
 });

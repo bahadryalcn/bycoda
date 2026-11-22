@@ -209,7 +209,8 @@ export function WorktreePicker({
           />
           {(error || loadError) && (
             <InlineError
-              inset="row" className="shrink-0"
+              inset="row"
+              className="shrink-0"
               retry={
                 loadError
                   ? { onRetry: () => void refresh(), pending: loading, disabled: busy }

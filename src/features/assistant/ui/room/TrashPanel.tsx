@@ -5,13 +5,14 @@ import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type { AssistantTrash } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
-import { InlineAction, ActionHost } from "../../../../shared/ui/ActionHost";
+import { InlineMoreAction, ActionHost } from "../../../../shared/ui/ActionHost";
+import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { Modal } from "../../../../shared/ui/Modal";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { ConfirmDialog, type ConfirmRequest } from "../../../../shared/ui/ConfirmDialog";
-import { Trash2 } from "../../../../shared/ui/icons";
 import styles from "./TrashPanel.module.css";
 import type { OwnerRequest } from "./assistantRoomHelpers";
 
@@ -32,6 +33,7 @@ export function TrashPanel({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   async function restore(id: string) {
     if (pending) return;
     setPending(id);
@@ -50,11 +52,20 @@ export function TrashPanel({
     }
   }
   return (
-    <Modal title={t("Recently deleted")} onClose={onClose} size="md" fitViewport>
+    <Modal
+      title={t("Recently deleted")}
+      onClose={onClose}
+      size="md"
+      fitViewport
+      footerStart={
+        <InfoPopover label={t("About recently deleted")}>
+          <Text as="p" tone="muted" leading="inherit">
+            {t("Deleted records are kept for seven days. Restoring a job does not restart it.")}
+          </Text>
+        </InfoPopover>
+      }
+    >
       <div className={styles.stack}>
-        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.hint}>
-          {t("Deleted records are kept for seven days. Restoring a job does not restart it.")}
-        </Text>
         {!entries.length && (
           <EmptyState
             size="inline"
@@ -108,27 +119,37 @@ export function TrashPanel({
                 >
                   {t("Restore")}
                 </Button>
-                <InlineAction
+                <InlineMoreAction
                   reveal="always"
-                  label={t("Delete permanently")}
+                  label={t("More actions")}
                   disabled={Boolean(pending)}
-                  onClick={() =>
-                    setConfirm({
-                      title: t("Delete permanently?"),
-                      message: entry.title,
-                      confirmLabel: t("Delete permanently"),
-                      consequences: [t("This record cannot be restored.")],
-                      onConfirm: async () => {
-                        await assistantRequest({ op: "trash.purge", id: entry.id });
-                      },
-                    })
-                  }
-                >
-                  <Trash2 className="icon-sm" />
-                </InlineAction>
+                  expanded={menu?.id === entry.id}
+                  onOpen={(anchor) => setMenu({ id: entry.id, anchor })}
+                />
               </ActionHost>
             ))}
           </ul>
+        )}
+        {menu && (
+          <DropdownMenu
+            anchor={menu.anchor}
+            label={t("More actions")}
+            items={[{ kind: "item", id: "purge", label: t("Delete permanently"), danger: true }]}
+            onClose={() => setMenu(null)}
+            onPick={() => {
+              const entry = entries.find((item) => item.id === menu.id);
+              if (!entry) return;
+              setConfirm({
+                title: t("Delete permanently?"),
+                message: entry.title,
+                confirmLabel: t("Delete permanently"),
+                consequences: [t("This record cannot be restored.")],
+                onConfirm: async () => {
+                  await assistantRequest({ op: "trash.purge", id: entry.id });
+                },
+              });
+            }}
+          />
         )}
         {error && <InlineError className={styles.error}>{error}</InlineError>}
         {confirm && <ConfirmDialog request={confirm} onSettle={() => setConfirm(null)} />}

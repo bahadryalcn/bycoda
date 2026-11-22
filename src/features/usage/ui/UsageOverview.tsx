@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import {
@@ -563,33 +564,31 @@ export function UsageOverview({
             ]}
           />
         )}
-        <div className="usage-band-scope">
-          <Text as="p" leading="inherit">
-            {t("This machine")}
-          </Text>
-          <InfoPopover label={t("Data sources and coverage")}>
-            <p>{t(limitsOnly ? "This machine" : "This machine · Local session logs")}</p>
-            <p>{Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
-            {view !== "limits" && load.refreshedAt > 0 && !partial && !unavailable && (
-              <p>
-                {t("Updated")}{" "}
-                {new Date(load.refreshedAt).toLocaleTimeString(locale, {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: false,
-                })}
-              </p>
-            )}
-          </InfoPopover>
-          {view === "limits" ? (
-            <InfoPopover label={t("About limit filters")}>
-              {t(
-                "Provider and account filters apply to account limits and history. Local budget rules keep their own scope.",
-              )}
-            </InfoPopover>
-          ) : null}
-        </div>
         <div className="usage-analytics-actions">
+          <div className="usage-band-scope">
+            <Badge>{t("This machine")}</Badge>
+            <InfoPopover label={t("Data sources and coverage")}>
+              <p>{t(limitsOnly ? "This machine" : "This machine · Local session logs")}</p>
+              <p>{Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+              {view !== "limits" && load.refreshedAt > 0 && !partial && !unavailable && (
+                <p>
+                  {t("Updated")}{" "}
+                  {new Date(load.refreshedAt).toLocaleTimeString(locale, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  })}
+                </p>
+              )}
+              {view === "limits" ? (
+                <p>
+                  {t(
+                    "Provider and account filters apply to account limits and history. Local budget rules keep their own scope.",
+                  )}
+                </p>
+              ) : null}
+            </InfoPopover>
+          </div>
           <div className="usage-controls" ref={dateAnchor}>
             <Select
               hideLabel

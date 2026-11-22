@@ -33,9 +33,9 @@ type Props = {
   harness: HarnessId;
   cwd: string;
   onChange: (value: string) => void;
-  /** Accessible name; defaults to "Instructions". */
-  label?: string;
-  placeholder?: string;
+  /** Accessible name; the caller words it for its own surface. */
+  label: string;
+  placeholder: string;
   /** Smallest height in lines (default 4). */
   minRows?: number;
   maxRows?: number;
@@ -56,8 +56,8 @@ export function SkillPromptField({
   harness,
   cwd,
   onChange,
-  label = "Instructions",
-  placeholder = "Tell the agent what to do when this automation runs…",
+  label,
+  placeholder,
   minRows = 4,
   maxRows,
   maxHeight,

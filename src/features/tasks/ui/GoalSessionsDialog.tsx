@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { taskSessionIds } from "../model/backgroundSession";
@@ -35,6 +36,9 @@ export function GoalSessionsDialog({
     >
       <Text as="div" size="secondary" tone="inherit" className="grid">
         <SectionLabel count={goalTasks.length}>{t("Tasks")}</SectionLabel>
+        {goalTasks.length === 0 ? (
+          <EmptyState size="inline" description={t("No tasks yet")} />
+        ) : null}
         {goalTasks.map((task, index) => {
           const sessions = taskSessionIds(task);
           return (
@@ -62,6 +66,7 @@ export function GoalSessionsDialog({
                     variant="secondary"
                     size="sm"
                     type="button"
+                    aria-label={t("Open worker session: {p0}", { p0: task.title })}
                     onClick={() => {
                       goals.setSessionsFor(null);
                       onOpenSession(task, sessions.worker!);
@@ -79,6 +84,7 @@ export function GoalSessionsDialog({
                     variant="secondary"
                     size="sm"
                     type="button"
+                    aria-label={t("Open review session: {p0}", { p0: task.title })}
                     onClick={() => {
                       goals.setSessionsFor(null);
                       onOpenSession(task, sessions.review!);

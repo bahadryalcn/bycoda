@@ -192,7 +192,8 @@ it("approves an Inbox request from the chat directly, with Review opening the fu
 });
 
 const closers = {
-  Escape: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  Escape: () =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   backdrop: () =>
     document
       .querySelector("[data-modal-layer]")!
@@ -228,7 +229,9 @@ for (const [name, close] of Object.entries(closers)) {
       const reopen = element.querySelector<HTMLButtonElement>("[data-owner-request-reopen]");
       expect(reopen).not.toBeNull();
       await act(async () => reopen!.click());
-      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Exact global consent");
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+        "Exact global consent",
+      );
       await act(async () => {
         [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
           .find((button) => button.textContent?.trim() === "Cancel")!

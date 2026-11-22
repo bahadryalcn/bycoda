@@ -538,18 +538,16 @@ export function SearchView({
     ) : null;
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
-      <Text as="p" size="micro" tone="muted" className="px-2.5 py-1">
-        {pendingIndex === 1
-          ? t("Application-wide indexing: Indexing {p0} conversation. Results may be incomplete.", {
-              p0: pendingIndex,
-            })
-          : t(
-              "Application-wide indexing: Indexing {p0} conversations. Results may be incomplete.",
-              {
-                p0: pendingIndex,
-              },
-            )}
-      </Text>
+      <div className="flex items-center gap-1 px-2.5 py-1">
+        <LoadingText delay={false}>
+          {pendingIndex === 1
+            ? t("Indexing {p0} conversation", { p0: pendingIndex })
+            : t("Indexing {p0} conversations", { p0: pendingIndex })}
+        </LoadingText>
+        <InfoPopover label={t("Indexing status")}>
+          <p>{t("Results may be incomplete until indexing finishes.")}</p>
+        </InfoPopover>
+      </div>
     ) : null;
 
   const searchField = (
@@ -600,7 +598,9 @@ export function SearchView({
             dragRegion
             chromeInset={!besideRail ? true : compactRail ? "compact" : false}
             className="select-none"
-            leading={!besideRail ? <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} /> : null}
+            leading={
+              !besideRail ? <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} /> : null
+            }
             actions={
               onCompact ? (
                 <Button variant="ghost" iconOnly label={t("Restore")} onClick={onCompact}>

@@ -332,10 +332,14 @@ it("previews certificate and ordered jump references before an import choice", a
   expect(container.textContent).toContain("Public SSH certificate file: C:/keys/user-certificate");
   expect(container.textContent).toContain("alice@first:22 → bob@second:2222");
   expect(container.querySelector("details")).toBeNull();
-  expect(container.textContent).toContain(
+  // The jump-host explanation sits behind the info button, not in the layout.
+  expect(container.textContent).not.toContain("Each jump host uses its own identity");
+  const help = container.querySelector<HTMLButtonElement>('button[aria-label="Help"]');
+  expect(help).not.toBeNull();
+  await act(async () => help?.click());
+  expect(document.body.textContent).toContain(
     "Each jump host uses its own identity and host-key verification",
   );
-  expect(container.textContent).toContain("pick keys");
 });
 
 it("offers agent forwarding only with the compatible terminal owner and delegates explicit approval", async () => {

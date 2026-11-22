@@ -67,7 +67,9 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
   const replace = async () => {
     const approved = await confirm({
       title: t("Replace skill groups?"),
-      message: t("These groups will be deleted and cannot be restored. Installed skills stay unchanged."),
+      message: t(
+        "These groups will be deleted and cannot be restored. Installed skills stay unchanged.",
+      ),
       consequences: listSkillGroups().map((group) => ({ content: group.name, tone: "danger" })),
       confirmLabel: t("Replace groups"),
       danger: true,

@@ -250,7 +250,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
           completed.onExit(code ?? null);
         }
         const status = code == null ? "" : ` (${code})`;
-        output.append(`\n[process exited${status}]\r\n`);
+        output.append(`\r\n[process exited${status}]\r\n`);
       },
       true,
     );

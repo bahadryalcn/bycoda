@@ -302,7 +302,9 @@ it("keeps the polled server count out of the live region and leaves scan failure
     error: "Permission denied",
   });
   await act(async () => button("Refresh").click());
-  expect(container.querySelector("[role='alert']")?.textContent).toContain("Could not refresh servers.");
+  expect(container.querySelector("[role='alert']")?.textContent).toContain(
+    "Could not refresh servers.",
+  );
 });
 
 it("shows affected ports before graceful stop and requires a separate explicit force choice", async () => {

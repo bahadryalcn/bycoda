@@ -5,7 +5,6 @@ import { ClampText } from "../../../shared/ui/ClampText";
 import {
   AlertCircle,
   CheckCircle,
-  ChevronRight,
   File,
   Gauge,
   GitPullRequest,
@@ -62,7 +61,6 @@ export function AutomationTemplateCard({
             {t(template.description)}
           </ClampText>
         </span>
-        <ChevronRight aria-hidden className="icon-sm mt-1 shrink-0" tone="muted" />
       </span>
       <Text
         size="micro"

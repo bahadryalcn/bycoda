@@ -11,7 +11,7 @@ test("walks through the character guide, restores previous steps and finishes", 
   await page.goto(fixture);
   const guide = page.getByRole("alertdialog");
   await expect(guide.getByRole("heading", { name: "Start a chat" })).toBeVisible();
-  await expect(guide.getByRole("button", { name: "← Back" })).toBeDisabled();
+  await expect(guide.getByRole("button", { name: "Back" })).toBeDisabled();
   await expect
     .poll(() =>
       guide
@@ -20,14 +20,14 @@ test("walks through the character guide, restores previous steps and finishes", 
     )
     .toBeGreaterThan(0);
   await page.screenshot({ path: `${captures}/chat-dark.png`, animations: "disabled" });
-  await guide.getByRole("button", { name: "Continue →" }).click();
+  await guide.getByRole("button", { name: "Next" }).click();
   await expect(guide.getByText("Leia Organa")).toBeVisible();
   await expect(guide.locator('[aria-current="step"]')).toContainText("Step 2 of 5");
   await expect(guide.getByRole("term").filter({ hasText: "Queue message" })).toBeVisible();
-  await guide.getByRole("button", { name: "← Back" }).click();
+  await guide.getByRole("button", { name: "Back" }).click();
   await expect(guide.getByText("Obi-Wan Kenobi")).toBeVisible();
   for (let i = 0; i < 4; i++) {
-    await guide.getByRole("button", { name: "Continue →" }).click();
+    await guide.getByRole("button", { name: "Next" }).click();
     await expect(guide.locator(".usage-guide-progress")).toHaveText(`Step ${i + 2} of 5`);
   }
   await expect(guide.getByText("Chewbacca")).toBeVisible();
@@ -80,7 +80,7 @@ test("supports light appearance, keyboard navigation and reduced motion", async 
   await expect(guide).toBeVisible();
   await expect(guide.locator(".usage-guide-scroll")).toHaveCSS("animation-name", "none");
   await expect(guide.locator(".usage-guide-progress")).toHaveText("Step 1 of 5");
-  await guide.getByRole("button", { name: "Continue →" }).focus();
+  await guide.getByRole("button", { name: "Next" }).focus();
   await page.keyboard.press("Enter");
   await expect(guide.getByText("Leia Organa")).toBeVisible();
   await expect(guide.locator(".usage-guide-progress")).toHaveText("Step 2 of 5");

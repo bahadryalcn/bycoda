@@ -24,10 +24,13 @@ export function MachineStatus({
   machine,
   details = false,
   showDiagnostics = true,
+  quiet = false,
 }: {
   machine: RemoteMachine;
   details?: boolean;
   compact?: boolean;
+  /** List rows: say nothing while the machine is simply not connected; only live or problem states show. */
+  quiet?: boolean;
   /** A detail surface can place the secondary host diagnostics in its own disclosure. */
   showDiagnostics?: boolean;
 }) {
@@ -66,7 +69,9 @@ export function MachineStatus({
       : indicator.tone === "connected" && !degraded
         ? "success"
         : "neutral";
-  // Health is always readable; SSH capability is a separate type label.
+  if (quiet && !details && indicator.tone === "down" && tone === "neutral" && !lifecycle.paused)
+    return null;
+  // Health is readable whenever it is live or a problem; SSH capability is a separate type label.
   const badge = (
     <Badge variant="dot" size="sm" tone={tone}>
       <LiveText text={label} />

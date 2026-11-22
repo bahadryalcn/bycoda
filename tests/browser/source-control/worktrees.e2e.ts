@@ -722,7 +722,6 @@ for (const theme of ["light", "dark"])
 
       // Every worktree status the page can show is reachable.
       for (const text of [
-        "Clean",
         "Uncommitted changes",
         "Missing folder",
         "Publication unknown",

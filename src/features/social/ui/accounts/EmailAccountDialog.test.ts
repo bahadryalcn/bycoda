@@ -13,7 +13,13 @@ vi.mock("../../../../shared/ui/Modal", () => ({
       props.children,
       props.footer,
     ),
-  ModalActions: (props: { children: ReactNode }) => createElement("div", null, props.children),
+  ModalActions: (props: { reason?: string; children: ReactNode }) =>
+    createElement(
+      "div",
+      null,
+      props.reason ? createElement("p", { "data-reason": "" }, props.reason) : null,
+      props.children,
+    ),
 }));
 
 let element: HTMLDivElement, root: Root;
@@ -71,14 +77,14 @@ const submit = () =>
   });
 
 const reasons = () =>
-  [...element.querySelectorAll(".social-disabled-reason-text")].map((node) => node.textContent);
+  [...document.querySelectorAll("[data-reason]")].map((node) => node.textContent);
 
 const saveButton = () =>
   [...element.querySelectorAll("button")].find((node) => node.textContent === "Save email account");
 
 it("walks the owner through what is missing before the account can be saved", () => {
   render(vi.fn());
-  expect(saveButton()?.disabled).toBe(true);
+  expect(saveButton()?.getAttribute("aria-disabled")).toBe("true");
   expect(reasons()).toEqual(["Enter a name for this email account."]);
   typeInto("Name", "Newsletter");
   typeInto("Sender address", "hello@example.com");

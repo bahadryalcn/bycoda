@@ -22,8 +22,7 @@ export default defineRule({
       const { name } = node.name;
       if (name === "Button" && attributeOf(node, "expanded")) report(node);
       if (/^[a-z]/.test(name) && attributeOf(node, "aria-expanded")) report(node);
-      if (name === "InlineAction" && isInteractionReveal(attributeOf(node, "reveal")))
-        report(node);
+      if (name === "InlineAction" && isInteractionReveal(attributeOf(node, "reveal"))) report(node);
       if (name === "div" && attributeOf(node, "onClick")) report(node);
     },
   }),

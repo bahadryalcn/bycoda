@@ -62,6 +62,8 @@ export function TaskList({
   planningLabel?: (task: BoardTask) => string;
 }) {
   const t = useT();
+  // The machine name only tells rows apart when the list spans several machines.
+  const showMachine = new Set(tasks.map((task) => task.machineId)).size > 1;
   const activeTask = tasks.find((task) => `${task.machineId}:${task.id}` === activeKey);
   return (
     <div className="grid content-start">
@@ -86,9 +88,12 @@ export function TaskList({
           const updatedAt = taskListUpdatedAt(task);
           const key = bulkTaskKey(task);
           const isActive = activeKey === `${task.machineId}:${task.id}`;
+          // A failure's reason belongs on the row, not only in the hover hint.
+          const failure = status.tone === "danger" ? status.detail : "";
           const secondary = [
+            failure,
             projectDisplayName(task.cwd),
-            task.machineName,
+            showMachine ? task.machineName : "",
             task.stale && !task.pendingRefresh ? t("Offline") : "",
             planning,
             description,

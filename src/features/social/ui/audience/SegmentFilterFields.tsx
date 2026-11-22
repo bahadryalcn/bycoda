@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
+import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
@@ -16,7 +16,6 @@ import {
   filterSummary,
   interactionLabel,
   stageLabel,
-  stageTone,
   uniqueTags,
 } from "./audienceModel";
 import "./audience.css";
@@ -83,6 +82,41 @@ function CheckGroup<T extends string>({
   );
 }
 
+/**
+ * A multi-pick set of short words (stages): pressed chips, not checkboxes, so the state reads as
+ * on or off and no colored badge competes with the control.
+ */
+function ChipGroup<T extends string>({
+  legend,
+  options,
+  selected,
+  onToggle,
+  disabled,
+}: {
+  legend: string;
+  options: readonly { value: T; label: string }[];
+  selected: readonly T[] | undefined;
+  onToggle: (value: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <FieldGroup legend={legend} layout="row" gap="sm" disabled={disabled}>
+      {options.map((option) => (
+        <Button
+          key={option.value}
+          variant="secondary"
+          size="sm"
+          pressed={selected?.includes(option.value) ?? false}
+          disabled={disabled}
+          onClick={() => onToggle(option.value)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </FieldGroup>
+  );
+}
+
 /** How many of the optional conditions (tags, language, score, text) are set. */
 function detailCount(filter: AudienceFilter): number {
   return [filter.tags?.length, filter.language, filter.minScore !== undefined, filter.query].filter(
@@ -130,17 +164,10 @@ export function SegmentFilterFields({
           onChange(withFilterField(value, { platforms: toggle(value.platforms, platform) }))
         }
       />
-      <CheckGroup<PersonStage>
+      <ChipGroup<PersonStage>
         legend={t("Stage is one of")}
         disabled={disabled}
-        options={ALL_STAGES.map((stage) => ({
-          value: stage,
-          label: (
-            <Badge size="sm" tone={stageTone(stage)}>
-              {stageLabel(stage)}
-            </Badge>
-          ),
-        }))}
+        options={ALL_STAGES.map((stage) => ({ value: stage, label: stageLabel(stage) }))}
         selected={value.stages}
         onToggle={(stage) =>
           onChange(withFilterField(value, { stages: toggle(value.stages, stage) }))

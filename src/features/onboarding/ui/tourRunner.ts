@@ -45,11 +45,11 @@ export const COMPACT_TOUR_OPTIONS: Partial<Options> = {
 
 export function tourLocale(): Locale {
   return {
-    back: t("← Back"),
+    back: t("Back"),
     close: t("Close guide"),
     skip: t("Close guide"),
     last: t("Done"),
-    next: t("Continue →"),
+    next: t("Next"),
     open: t("Usage guide"),
   };
 }

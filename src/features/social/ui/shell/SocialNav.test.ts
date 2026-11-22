@@ -28,7 +28,11 @@ it("reveals external selection, container resize and enlarged tab text without s
     const nav = this.closest<HTMLElement>("[role=tablist]");
     const scroll = nav?.scrollLeft ?? 0;
     const left =
-      this.getAttribute("role") === "tablist" ? 0 : this.dataset.tabValue === "accounts" ? 400 - scroll : -scroll;
+      this.getAttribute("role") === "tablist"
+        ? 0
+        : this.dataset.tabValue === "accounts"
+          ? 400 - scroll
+          : -scroll;
     return {
       left,
       right:

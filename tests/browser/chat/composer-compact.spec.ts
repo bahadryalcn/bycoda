@@ -477,7 +477,9 @@ test("saved chat message appearance reaches the real transcript", async ({ page 
   await page.goto(url());
   const root = page.locator("html");
   const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
-  const reply = page.locator('[data-transcript-reply]:has([data-selectable-agent-response="reply-39"])');
+  const reply = page.locator(
+    '[data-transcript-reply]:has([data-selectable-agent-response="reply-39"])',
+  );
   await expect(root).toHaveAttribute("data-chat-message-color", "neutral");
   await expect(root).toHaveAttribute("data-transcript-surface", "off");
   await expect(reply).toHaveCSS("backdrop-filter", "none");

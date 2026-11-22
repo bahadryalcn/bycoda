@@ -433,51 +433,51 @@ export function TaskForm({
       </div>
       <ModalFooter>
         <ModalActions reason={saving ? undefined : footerReason}>
-        <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
-          {t("Cancel")}
-        </Button>
-        {draft.id ? (
-          <Button
-            variant="primary"
-            type="submit"
-            form={formId}
-            loading={saving}
-            disabled={!canSave || saving}
-            disabledReason={
-              canSave || saving ? undefined : (blockedReason ?? t("Add a description to save."))
-            }
-          >
-            {t("Save")}
+          <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
+            {t("Cancel")}
           </Button>
-        ) : (
-          <>
-            <Button
-              variant="secondary"
-              type="button"
-              disabled={!ready || !hasDescription || saving}
-              loading={saving && submitMode === "queued"}
-              tooltip={ready && hasDescription ? t("Queues it for an agent now.") : undefined}
-              disabledReason={(ready && hasDescription) || saving ? undefined : startReason}
-              onClick={() => {
-                setSubmitMode("queued");
-                onSubmit("queued", draft);
-              }}
-            >
-              {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
-            </Button>
+          {draft.id ? (
             <Button
               variant="primary"
               type="submit"
               form={formId}
-              loading={saving && submitMode === "todo"}
-              disabled={!canTodo || saving}
-              tooltip={canTodo ? t("Saves it without running.") : undefined}
-              disabledReason={canTodo || saving ? undefined : todoReason}
+              loading={saving}
+              disabled={!canSave || saving}
+              disabledReason={
+                canSave || saving ? undefined : (blockedReason ?? t("Add a description to save."))
+              }
             >
-              {t("Add to To do")}
+              {t("Save")}
             </Button>
-          </>
-        )}
+          ) : (
+            <>
+              <Button
+                variant="secondary"
+                type="button"
+                disabled={!ready || !hasDescription || saving}
+                loading={saving && submitMode === "queued"}
+                tooltip={ready && hasDescription ? t("Queues it for an agent now.") : undefined}
+                disabledReason={(ready && hasDescription) || saving ? undefined : startReason}
+                onClick={() => {
+                  setSubmitMode("queued");
+                  onSubmit("queued", draft);
+                }}
+              >
+                {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
+              </Button>
+              <Button
+                variant="primary"
+                type="submit"
+                form={formId}
+                loading={saving && submitMode === "todo"}
+                disabled={!canTodo || saving}
+                tooltip={canTodo ? t("Saves it without running.") : undefined}
+                disabledReason={canTodo || saving ? undefined : todoReason}
+              >
+                {t("Add to To do")}
+              </Button>
+            </>
+          )}
         </ModalActions>
       </ModalFooter>
     </form>

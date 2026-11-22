@@ -60,7 +60,7 @@ it("aborts a remote media copy on Cancel and Retry copies again", async () => {
 
   expect(signal.aborted).toBe(true);
   expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(container.textContent).toContain("Cancelled");
+  expect(container.textContent).toContain("Opening cancelled");
 
   mocks.prepare.mockResolvedValueOnce("C:/cache/demo.mp4");
   await act(async () => button("Retry")!.click());

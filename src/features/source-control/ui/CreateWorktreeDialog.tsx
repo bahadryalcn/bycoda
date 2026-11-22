@@ -12,6 +12,7 @@ import { prettyCwd } from "../../../shared/lib/paths";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 
 export function CreateWorktreeDialog({
   cwd,
@@ -78,6 +79,10 @@ export function CreateWorktreeDialog({
     <Modal
       languageDomain="git"
       title={t("Create worktree")}
+      description={t(
+        "An independent worktree of {p0}. Existing uncommitted changes stay in their current worktree.",
+        { p0: prettyCwd(cwd) },
+      )}
       size="sm"
       onClose={() => {
         if (!busy) onCancel();
@@ -96,41 +101,24 @@ export function CreateWorktreeDialog({
             disabled={busy || !name.trim()}
             disabledReason={name.trim() ? undefined : t("Enter a name.")}
           >
-            {t("Create worktree")}
+            {t("Create")}
           </Button>
         </ModalActions>
       }
     >
       <form id={formId} className="flex flex-col gap-4" action={submit}>
-        <Text as="p" size="caption" tone="secondary">
-          {t("An independent worktree of ")}
-          {prettyCwd(cwd)}
-          {t(". Existing uncommitted changes stay in their current worktree.")}
-        </Text>
-        <SearchableSelect
+        <SegmentedControl
           label={t("Branch type")}
-          disabled={busy}
           value={existing ? "existing" : "new"}
           options={[
-            {
-              value: "new",
-              get label() {
-                return t("Create a new branch");
-              },
-            },
-            {
-              value: "existing",
-              get label() {
-                return t("Use an existing local branch");
-              },
-            },
+            { value: "new", label: t("Create a new branch") },
+            { value: "existing", label: t("Use an existing local branch") },
           ]}
-          onChange={(value) => {
+          onValueChange={(value) => {
+            if (busy) return;
             setExisting(value === "existing");
             setName("");
           }}
-          searchPlaceholder="Search options…"
-          layer={LAYER.dialogPopover}
         />
         {existing ? (
           <SearchableSelect
@@ -176,8 +164,7 @@ export function CreateWorktreeDialog({
         )}
         {defaultRoot && (
           <Text as="p" size="micro" tone="muted" className="break-all">
-            {t("Created in ")}
-            {prettyCwd(defaultRoot)}
+            {t("Created in {p0}", { p0: prettyCwd(defaultRoot) })}
           </Text>
         )}
         {error ? <InlineError>{error}</InlineError> : null}

@@ -90,17 +90,27 @@ function TourCard({
       </ScrollArea>
       <footer className="usage-guide-footer">
         {size > 1 && !isLastStep ? (
-          <Button {...skipProps} variant="ghost" size="sm" className="usage-guide-skip">
+          <Button
+            {...withoutTitle(skipProps)}
+            variant="ghost"
+            size="sm"
+            className="usage-guide-skip"
+          >
             {t("Skip tour")}
           </Button>
         ) : null}
         <div className="usage-guide-actions">
           {size > 1 ? (
-            <Button {...backProps} variant="secondary" size="sm" disabled={index === 0}>
+            <Button
+              {...withoutTitle(backProps)}
+              variant="secondary"
+              size="sm"
+              disabled={index === 0}
+            >
               {t("Back")}
             </Button>
           ) : null}
-          <Button {...primaryProps} size="sm">
+          <Button {...withoutTitle(primaryProps)} size="sm">
             {t(isLastStep ? "Done" : "Next")}
           </Button>
         </div>
@@ -145,7 +155,7 @@ function UsageGuidePanel({
       >
         <span>{t("Usage guide")}</span>
         <LiveText
-          className="usage-guide-progress"
+          className="sr-only usage-guide-progress"
           text={t("Step {p0} of {p1}", { p0: index + 1, p1: size })}
         />
         <Button
@@ -182,7 +192,7 @@ function UsageGuidePanel({
           label={t("Usage guide")}
           steps={Array.from({ length: size }, (_, position) => ({
             id: String(position),
-            label: t("Step {p0} of {p1}", { p0: position + 1, p1: size }),
+            label: t("{p0} / {p1}", { p0: position + 1, p1: size }),
           }))}
           current={index}
           compact
@@ -190,7 +200,7 @@ function UsageGuidePanel({
         <div className="usage-guide-actions">
           {size > 1 && !isLastStep ? (
             <Button
-              {...skipProps}
+              {...withoutTitle(skipProps)}
               variant="ghost"
               aria-label={t("Skip tour")}
               className="usage-guide-skip"
@@ -199,13 +209,22 @@ function UsageGuidePanel({
             </Button>
           ) : null}
           {size > 1 ? (
-            <Button {...backProps} variant="secondary" disabled={index === 0}>
-              {t("← Back")}
+            <Button {...withoutTitle(backProps)} variant="secondary" disabled={index === 0}>
+              {t("Back")}
             </Button>
           ) : null}
-          <Button {...primaryProps}>{t(isLastStep ? "Done" : "Continue →")}</Button>
+          <Button {...withoutTitle(primaryProps)}>{t(isLastStep ? "Done" : "Next")}</Button>
         </div>
       </footer>
     </Text>
   );
+}
+
+/**
+ * Joyride puts a `title` on its action props; the shared `Button` turns `title` into a tooltip
+ * that only repeats the visible label, so the tour drops it.
+ */
+function withoutTitle<T extends { title?: string }>(props: T): Omit<T, "title"> {
+  const { title: _title, ...rest } = props;
+  return rest;
 }

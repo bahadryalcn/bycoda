@@ -542,7 +542,9 @@ it("offers a retry after a load error and refreshes on demand", async () => {
       onRefresh,
     }),
   );
-  expect(failed.querySelector('[role="alert"]')?.textContent).toBe("rate limited");
+  expect(failed.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load the checks.",
+  );
   const retry = buttonByLabel("Retry loading checks");
   expect(retry).not.toBeNull();
   await act(async () => {

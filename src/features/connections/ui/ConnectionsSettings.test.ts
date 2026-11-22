@@ -719,7 +719,12 @@ it("explains removal and removes the saved connection without stopping or revoki
     machineId: "machine",
   });
   expect(document.body.textContent).toContain("The host and its sessions keep running");
-  expect(document.body.textContent).toContain("leaves this desktop's credential valid");
+  // The credential explanation sits behind the info button; the service command behind its disclosure.
+  expect(document.body.textContent).not.toContain("credential valid on the host");
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("credential valid on the host");
   expect(document.body.textContent).toContain("~/.bycoda-host/bin/bycoda-host service uninstall");
   await act(async () => confirmRemove().click());
   expect(invoke).toHaveBeenCalledWith("remote_disconnect", {
@@ -763,8 +768,12 @@ it("keeps the connection when the host cannot revoke its credential", async () =
   expect(invoke).not.toHaveBeenCalledWith("remote_disconnect", {
     machineId: "machine",
   });
-  expect(document.body.textContent).toContain("was not removed because access could not be revoked");
-  expect(document.body.textContent).toContain("was not removed because access could not be revoked");
+  expect(document.body.textContent).toContain(
+    "was not removed because access could not be revoked",
+  );
+  expect(document.body.textContent).toContain(
+    "was not removed because access could not be revoked",
+  );
 });
 
 it("does not spellcheck or autocorrect the machine name", async () => {

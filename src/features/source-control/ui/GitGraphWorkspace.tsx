@@ -280,8 +280,12 @@ export function GitGraphWorkspace({
     } catch (error) {
       setGitFeedback(cwd, {
         kind: "error",
-        title: t("Git operation failed"),
+        // The progress label names the action that failed ("Fetching…" -> "Fetching failed").
+        title: t("{p0} failed", { p0: t(label).replace(/…$/, "") }),
         detail: presentRemoteError(error, { explicit: true }),
+        retry: async () => {
+          await run(label, action);
+        },
       });
       onCommit(null);
       return false;

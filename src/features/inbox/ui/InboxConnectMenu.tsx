@@ -29,25 +29,32 @@ export function InboxConnectMenu({
       label={t("Connect an inbox source")}
       size="sm"
       items={[
-        ...sources.map((source) => ({
-          kind: "item" as const,
-          id: source,
-          label: t("Connect {p0}", { p0: INBOX_SOURCE_LABELS[source] }),
-          icon: <InboxProviderMark provider={source} className="block icon-sm shrink-0" />,
-        })),
-        ...(onConnectMessages
-          ? [
-              {
-                kind: "item" as const,
-                id: MESSAGES_ID,
-                label: t("Connect messages"),
-                description: ENABLED_MESSAGING_PROVIDERS.map((provider) =>
-                  t(MESSAGING_PROVIDER_LABELS[provider]),
-                ).join(", "),
-                icon: <MessageMultiple className="block icon-sm shrink-0" strokeWidth={1.75} />,
-              },
-            ]
-          : []),
+        {
+          kind: "group",
+          id: "sources",
+          label: t("Connect an inbox source"),
+          items: [
+            ...sources.map((source) => ({
+              kind: "item" as const,
+              id: source,
+              label: INBOX_SOURCE_LABELS[source],
+              icon: <InboxProviderMark provider={source} className="block icon-sm shrink-0" />,
+            })),
+            ...(onConnectMessages
+              ? [
+                  {
+                    kind: "item" as const,
+                    id: MESSAGES_ID,
+                    label: t("Messages"),
+                    description: ENABLED_MESSAGING_PROVIDERS.map((provider) =>
+                      t(MESSAGING_PROVIDER_LABELS[provider]),
+                    ).join(", "),
+                    icon: <MessageMultiple className="block icon-sm shrink-0" strokeWidth={1.75} />,
+                  },
+                ]
+              : []),
+          ],
+        },
       ]}
       onClose={onClose}
       onPick={(id) => {

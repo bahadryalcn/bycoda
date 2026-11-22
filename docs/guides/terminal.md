@@ -38,7 +38,7 @@ controls at its upper right, visible on hover or keyboard focus (always availabl
 on touch). **Terminal pane actions** offers Scroll to bottom, Clear terminal and
 text size for that pane. The terminal list and split panes retain their layout.
 
-**Hide Terminal** (the collapse-panel icon, Ctrl/Cmd+J outside a focused terminal, or
+**Hide terminal** (the collapse-panel icon, Ctrl/Cmd+J outside a focused terminal, or
 Ctrl+" on Turkish layouts) only hides the dock; every shell keeps running. The X beside it closes the
 active terminal. Closing asks first when a process is still running in that terminal,
 or when it is the last one, because closing the last terminal also closes the panel.

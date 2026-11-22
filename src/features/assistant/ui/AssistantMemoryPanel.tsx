@@ -37,6 +37,9 @@ const GROUPS = [
   ["fact", "Learned"],
 ] as const;
 
+/** The Host keeps up to 40 active rules; the count only matters near that limit. */
+const RULE_LIMIT_NOTICE = 30;
+
 /** Memory owns its readable collection; mutations retain the Room's Host and receipts. */
 export function AssistantMemoryPanel(props: Props) {
   return (
@@ -44,9 +47,11 @@ export function AssistantMemoryPanel(props: Props) {
       <header className={styles.header}>
         <div className={styles.title}>
           <Heading size="page">{t("Memory")}</Heading>
-          <Badge size="xs" tone="neutral">
-            {t("Rules {p0}/40", { p0: props.ruleCount })}
-          </Badge>
+          {props.ruleCount >= RULE_LIMIT_NOTICE && (
+            <Badge size="xs" tone="warning">
+              {t("Rules {p0}/40", { p0: props.ruleCount })}
+            </Badge>
+          )}
         </div>
         <SearchInput
           type="search"
@@ -119,16 +124,13 @@ export function AssistantMemoryPanel(props: Props) {
                         )}
                       </span>
                       <span aria-hidden>·</span>
-                      <span>
-                        {t(
-                          entry.source === "typed"
-                            ? "You wrote"
-                            : entry.source === "spoken"
-                              ? "You said"
-                              : "Learned",
-                        )}
-                      </span>
-                      <span aria-hidden>·</span>
+                      {/* The group title already says "Learned". */}
+                      {(entry.source === "typed" || entry.source === "spoken") && (
+                        <>
+                          <span>{t(entry.source === "typed" ? "You wrote" : "You said")}</span>
+                          <span aria-hidden>·</span>
+                        </>
+                      )}
                       <Timestamp className={styles.time} value={entry.createdAt} />
                     </Text>
                     {entry.quote && entry.quote !== entry.text && (
@@ -153,7 +155,7 @@ export function AssistantMemoryPanel(props: Props) {
                       <Trash2 className="icon-sm" />
                     </InlineAction>
                     <Switch
-                      aria-label={t("Enable memory")}
+                      label={t("Active")}
                       aria-describedby={`assistant-memory-${entry.id}`}
                       checked={entry.active}
                       disabled={props.pending}

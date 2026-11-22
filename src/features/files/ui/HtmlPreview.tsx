@@ -136,11 +136,7 @@ export function HtmlPreview({
       {state.error && !sourceVisible ? (
         compact ? (
           // An embedded card has no room for a full message page: one line, retry beside it.
-          <InlineError
-            inset="row"
-            details={state.error}
-            retry={{ onRetry: reloadPreview }}
-          >
+          <InlineError inset="row" details={state.error} retry={{ onRetry: reloadPreview }}>
             {t("Couldn’t preview this file")}
           </InlineError>
         ) : (

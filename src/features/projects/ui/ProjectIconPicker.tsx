@@ -107,7 +107,8 @@ export function ProjectIconPicker({
           <EmptyState
             size="inline"
             kind="filtered"
-            inset="panel" className="justify-center"
+            inset="panel"
+            className="justify-center"
             description={t("No matching icons")}
           />
         ) : null}

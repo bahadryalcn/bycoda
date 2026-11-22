@@ -1,5 +1,6 @@
 import { describeLocalError, presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import styles from "./WorktreesPage.module.css";
@@ -194,10 +195,7 @@ export function WorktreesPage({
                 data-setting-id="worktree-location"
                 className={styles.location}
               >
-                {t("New worktrees are created in ")}{" "}
-                <Text size="inherit" tone="muted">
-                  {prettyCwd(data.defaultRoot)}
-                </Text>
+                {t("New worktrees are created in {p0}", { p0: prettyCwd(data.defaultRoot) })}
               </Text>
             )}
             {remoteProject && !remoteRemovalAvailable && (
@@ -231,16 +229,16 @@ export function WorktreesPage({
               </LoadingText>
             )}
             {managedLoading && (
-              <Text as="p" size="inherit" tone="secondary" role="status" className={styles.empty}>
-                {t(
-                  "Managed workspaces are loading. Deletion is unavailable until their status is known.",
-                )}
-              </Text>
+              <LoadingText delay={false} inset="row">
+                {t("Loading managed workspaces…")}
+              </LoadingText>
             )}
             {data && !worktrees.length && !managedWorkspaces?.length && (
-              <Text as="p" size="inherit" tone="secondary" className={styles.empty}>
-                {t("Create a worktree to work on another branch in a separate folder.")}
-              </Text>
+              <EmptyState
+                size="inline"
+                inset="row"
+                description={t("Create a worktree to work on another branch in a separate folder.")}
+              />
             )}
             {worktrees
               .filter((tree) =>

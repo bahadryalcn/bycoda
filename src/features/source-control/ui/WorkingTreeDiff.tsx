@@ -563,7 +563,11 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
   return (
     <div className="flex h-full min-h-0 flex-col">
       {stale && error ? <StaleReviewNotice error={error} onRetry={reload} /> : null}
-      {mutationError && <InlineError inset="row" className="shrink-0">{mutationError}</InlineError>}
+      {mutationError && (
+        <InlineError inset="row" className="shrink-0">
+          {mutationError}
+        </InlineError>
+      )}
       <UnifiedDiffView
         files={reviewModels}
         fileCount={focusKind ? entries.length : files.length}

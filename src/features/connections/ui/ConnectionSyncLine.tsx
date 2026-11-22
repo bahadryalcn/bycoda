@@ -22,6 +22,8 @@ export function ConnectionSyncLine({
     scope: machineId,
   });
   const { tone, text } = summarizeSync(sync, wallClockNow(), failure.pending);
+  // A sync that has not started has nothing to say; the line appears once there is state to report.
+  if ((sync.state === "idle" || sync.state === "unlinked") && sync.pendingOps <= 0) return null;
   return (
     <Text
       as="div"

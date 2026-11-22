@@ -98,7 +98,9 @@ export function PoliciesSettings() {
               onChange={setLanguageOverride}
             />
             <InfoPopover className="shrink-0">
-              <p>{t("Document language only; your app language and permissions stay unchanged.")}</p>
+              <p>
+                {t("Document language only; your app language and permissions stay unchanged.")}
+              </p>
             </InfoPopover>
           </Text>
           <TabList className="policy-navigation" label={t("Policy documents")}>

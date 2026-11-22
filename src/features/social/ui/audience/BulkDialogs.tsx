@@ -8,7 +8,6 @@ import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialList, SocialPerson } from "../../model/audience";
 import type { Sequence } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason } from "../common/DisabledReason";
 import { LabeledSelect } from "./LabeledSelect";
 import { AudienceReportList } from "./AudienceReportList";
 import { addTag, addToList, addToSequence, type BulkResult } from "./audienceBulk";
@@ -81,7 +80,6 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
         : action === "sequence" && !sequenceId
           ? t("Choose a sequence.")
           : undefined;
-  const runState = reason ? { disabled: true as const, reason } : { disabled: false as const };
 
   async function run() {
     if (reason) return;
@@ -116,19 +114,20 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
       }}
       footerStart={error ? <InlineError>{error}</InlineError> : undefined}
       footer={
-        <ModalActions>
+        <ModalActions reason={result || error ? undefined : reason}>
           <Button variant="ghost" disabled={running} onClick={onClose}>
             {result ? t("Done") : t("Cancel")}
           </Button>
           {!result ? (
-            <DisabledReason
+            <Button
               variant="primary"
               loading={running}
-              {...runState}
+              disabled={Boolean(reason)}
+              disabledReason={reason}
               onClick={() => void run().catch(() => undefined)}
             >
               {titleOf(action)}
-            </DisabledReason>
+            </Button>
           ) : null}
         </ModalActions>
       }

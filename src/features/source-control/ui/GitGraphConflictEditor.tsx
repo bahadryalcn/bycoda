@@ -166,8 +166,7 @@ export function GitGraphConflictEditor({
         onRetry={() => setRetry((value) => value + 1)}
       />
     );
-  if (!loaded)
-    return <LoadingText inset="row">{t("Loading conflict versions")}</LoadingText>;
+  if (!loaded) return <LoadingText inset="row">{t("Loading conflict versions")}</LoadingText>;
   if (loaded.disk !== null && hasConflictMarkers(loaded.disk))
     return (
       <MergeConflictEditor

@@ -343,10 +343,7 @@ function ConnectedCrewEditor({
   const footerIssue = issueSummary && (showIssues || draft.agents.length) ? issueSummary : "";
 
   const scopeLabel = draft.projectId ? t("This project") : t("All projects on this host");
-  const editLevel = [
-    isNew ? t("New crew") : t("Edit crew"),
-    page.kind === "add" ? t("Add members") : scopeLabel,
-  ].join(" · ");
+  const editLevel = page.kind === "add" ? t("Add members") : scopeLabel;
 
   const liveSelected = selected.filter((id) => draft.agents.some((agent) => agent.id === id));
 
@@ -519,12 +516,15 @@ function ConnectedCrewEditor({
         canStart={!!onStart}
         onCreate={create}
         onStart={start}
+        onDone={() => {
+          if (!pending) onClose();
+        }}
       />
     );
 
   return (
     <Modal
-      title={isNew ? draft.name.trim() || t("New crew") : latest?.name || draft.name || t("Crew")}
+      title={isNew ? t("New crew") : t("Edit crew")}
       context={editLevel}
       size="lg"
       onClose={() => {

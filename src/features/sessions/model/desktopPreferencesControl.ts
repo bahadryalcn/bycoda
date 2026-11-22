@@ -380,12 +380,20 @@ export function createDesktopPreferencesControl(overrides: Partial<Deps> = {}) {
         throw new Error("An explicit project target is required");
       let apply: () => void | Promise<void>;
       let verify: () => boolean;
-      if (["theme", "density", "language", "voice", "chatMessages", "transcript"].includes(change.kind)) {
+      if (
+        ["theme", "density", "language", "voice", "chatMessages", "transcript"].includes(
+          change.kind,
+        )
+      ) {
         exact(change, ["kind", "value"]);
         apply = () => applyApplicationPreference(change, context.valid);
         verify = () => {
           const current = applicationPreferencesSnapshot();
-          if (change.kind === "voice" || change.kind === "chatMessages" || change.kind === "transcript") {
+          if (
+            change.kind === "voice" ||
+            change.kind === "chatMessages" ||
+            change.kind === "transcript"
+          ) {
             const settings: Record<string, unknown> = current[change.kind];
             return Object.entries(change.value as Record<string, unknown>).every(
               ([key, value]) => settings[key] === value,

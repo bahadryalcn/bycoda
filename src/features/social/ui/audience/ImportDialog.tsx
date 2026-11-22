@@ -13,7 +13,6 @@ import { SOCIAL_PLATFORM_NAMES, type SocialAccount } from "../../model/social";
 import type { SocialList } from "../../model/audience";
 import type { ImportResult } from "../../model/socialActions";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason } from "../common/DisabledReason";
 import { LabeledSelect } from "./LabeledSelect";
 import { PlatformIcon } from "../common/PlatformIcon";
 import { errorMessage } from "./audienceModel";
@@ -110,7 +109,6 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
         : ready === 0
           ? t("No row can be imported. Fix the rows listed below.")
           : undefined;
-  const importState = reason ? { disabled: true as const, reason } : { disabled: false as const };
 
   async function chooseFile(file: File | undefined) {
     if (!file) return;
@@ -180,19 +178,20 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
       size="lg"
       footerStart={error ? <InlineError>{error}</InlineError> : undefined}
       footer={
-        <ModalActions>
+        <ModalActions reason={result || error ? undefined : reason}>
           <Button variant="ghost" disabled={importing} onClick={onClose}>
             {result ? t("Done") : t("Cancel")}
           </Button>
           {!result ? (
-            <DisabledReason
+            <Button
               variant="primary"
               loading={importing}
-              {...importState}
+              disabled={Boolean(reason)}
+              disabledReason={reason}
               onClick={() => void runImport().catch(() => undefined)}
             >
               {ready ? t("Import {p0} people", { p0: formatNumber(ready) }) : t("Import people")}
-            </DisabledReason>
+            </Button>
           ) : null}
         </ModalActions>
       }
@@ -206,9 +205,7 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
             void chooseFile(files[0]).catch((err: unknown) => setFileError(errorMessage(err)))
           }
         />
-        {reading ? (
-          <LoadingText>{t("Reading the file…")}</LoadingText>
-        ) : null}
+        {reading ? <LoadingText>{t("Reading the file…")}</LoadingText> : null}
         {fileError ? <InlineError>{fileError}</InlineError> : null}
 
         {table ? (

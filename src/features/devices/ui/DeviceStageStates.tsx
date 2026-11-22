@@ -263,17 +263,15 @@ export function DeviceWaitingState({
             )
           }
         />
-        <p className="device-panel-waiting-text" role="status">
-          {device.physical
-            ? t(
-                "This phone is not available. Connect it with USB debugging enabled and unlocked, then refresh devices.",
-              )
-            : device.platform === "ios"
-              ? t("Start this simulator to view or control it.")
-              : t("Start this emulator to view or control it.")}
-        </p>
         {device.physical ? (
           <div className="device-panel-waiting-actions">
+            <InfoPopover label={t("How to connect")}>
+              <p>
+                {t(
+                  "This phone is not available. Connect it with USB debugging enabled and unlocked, then refresh devices.",
+                )}
+              </p>
+            </InfoPopover>
             <Button
               variant="ghost"
               aria-haspopup="dialog"
@@ -330,9 +328,6 @@ export function DeviceWaitingState({
       leading="inherit"
       className="device-panel-waiting"
     >
-      <p className="device-panel-waiting-text" role="status">
-        {t("Select a device to view its screen.")}
-      </p>
       <div
         {...surfaceAttributes(
           { frame: "card", edge: "all", radius: "card" },

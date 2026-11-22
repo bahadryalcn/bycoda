@@ -1176,7 +1176,9 @@ function DevicePanelSurface({
           }
           error={error ?? ""}
           retrying={operation === "status"}
-          onRetry={unavailable("status") ? undefined : () => execute("status", api.status, setStatus)}
+          onRetry={
+            unavailable("status") ? undefined : () => execute("status", api.status, setStatus)
+          }
         />
       )}
       {status && !status.running && (

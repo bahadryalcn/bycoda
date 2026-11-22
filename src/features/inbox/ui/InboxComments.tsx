@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { InboxReviewBadge } from "./InboxReviewBadge";
-import { Alert } from "../../../shared/ui/Alert";
+import { InboxLoadError } from "./InboxLoadError";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -148,7 +148,7 @@ export function InboxComments({
   }
   if (!thread) {
     if (error) {
-      return <Alert tone="danger">{error}</Alert>;
+      return <InboxLoadError title={t("Could not load the comments.")} error={error} />;
     }
     if (loading) return <CommentsPending />;
     return null;
@@ -187,7 +187,7 @@ export function InboxComments({
         ) : null}
         {loading ? <Spinner size="xs" tone="secondary" /> : null}
       </Text>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error ? <InboxLoadError title={t("Could not load the comments.")} error={error} /> : null}
       {thread.commits ? (
         <ol className="flex flex-col">
           {timelineItems(activityTimeline(thread)).map((item, index, items) =>

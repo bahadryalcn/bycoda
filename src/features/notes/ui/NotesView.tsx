@@ -835,6 +835,7 @@ export function NotesView({
             ref={selectionButton}
             variant="ghost"
             size="sm"
+            iconOnly
             label={t("Select notes")}
             pressed={selectionMode}
             disabled={bulkDeleting}
@@ -844,7 +845,6 @@ export function NotesView({
             }}
           >
             <Check className="icon-sm" />
-            {t("Select notes")}
           </Button>
         ) : null}
         <Button
@@ -2074,6 +2074,9 @@ function NoteEditor({
                   })}
                 />
               )}
+              <Text size="caption" tone="muted" leading="inherit" className="note-detail-words">
+                <NoteWordCount body={body} />
+              </Text>
               <NoteChatAction
                 projectCwd={sourceCwd ?? activeCwd}
                 recents={recents}
@@ -2186,9 +2189,6 @@ function NoteEditor({
                 }}
               />
             </div>
-            <Text size="caption" tone="muted" leading="inherit" className="note-detail-words">
-              <NoteWordCount body={body} />
-            </Text>
           </Text>
           {saveError ? (
             <Alert tone="danger" className="note-detail-error">

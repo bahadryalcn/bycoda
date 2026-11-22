@@ -215,6 +215,9 @@ it("keeps one compact identity and reveals health metadata only on owner request
   expect(container.textContent).not.toContain("Last checked:");
   expect(container.textContent).not.toContain("Work tracking continues while voice is off.");
   await click("Assistant status");
+  expect(document.body.textContent).toContain("Last checked");
+  expect(document.body.textContent).not.toContain("Work tracking continues while voice is off.");
+  await click("About work tracking");
   expect(document.body.textContent).toContain("Work tracking continues while voice is off.");
   expect(
     mock.request.mock.calls.some(
@@ -664,7 +667,7 @@ it("toggles memory with only canonical schema fields and its captured version", 
     },
   ];
   await render({ initialTab: "memory" });
-  await click("Enable memory");
+  await click("Active");
   const request = mock.request.mock.calls.find(([input]) => input.op === "memory.save")![0];
   expect(request).toMatchObject({
     id: "rule-one",
@@ -1472,9 +1475,7 @@ it.each([true, false])(
         [...document.querySelectorAll("button")].some((button) => button.textContent === "Undo"),
       ).toBe(false);
       await click("Recently deleted");
-      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-        "Deleted records are kept for seven days",
-      );
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Recently deleted");
     }
     expect(mock.request).not.toHaveBeenCalledWith({
       op: "trash.restore",
@@ -2167,8 +2168,8 @@ it("opens project goal and task links through the canonical job source and exclu
   const review = vi.fn(async () => {});
   await render({ initialTab: "jobs", onReviewJobTasks: review });
   await click(original.title);
-  await click(original.goalId);
-  await click(original.taskIds[0]);
+  await click(`Epic: ${original.title}`);
+  await click("Review tasks");
   expect(review).toHaveBeenCalledTimes(2);
   expect(review).toHaveBeenLastCalledWith({
     jobId: original.id,

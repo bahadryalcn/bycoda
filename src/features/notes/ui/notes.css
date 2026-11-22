@@ -176,7 +176,7 @@
 }
 
 .note-detail-words {
-  margin-inline-start: auto;
+  padding-inline: 4px;
   font-variant-numeric: tabular-nums;
 }
 

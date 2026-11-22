@@ -272,7 +272,8 @@ export function SidebarWorktreeSwitcher({
           />
           {creationError || switchError || error ? (
             <InlineError
-              inset="row" className="shrink-0"
+              inset="row"
+              className="shrink-0"
               retry={
                 error
                   ? {

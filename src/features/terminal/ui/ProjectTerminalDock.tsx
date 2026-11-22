@@ -79,25 +79,25 @@ const SIDE_ITEMS: { id: DockSide; label: string }[] = [
   {
     id: "bottom",
     get label() {
-      return t("Dock Bottom");
+      return t("Dock bottom");
     },
   },
   {
     id: "top",
     get label() {
-      return t("Dock Top");
+      return t("Dock top");
     },
   },
   {
     id: "left",
     get label() {
-      return t("Dock Left");
+      return t("Dock left");
     },
   },
   {
     id: "right",
     get label() {
-      return t("Dock Right");
+      return t("Dock right");
     },
   },
 ];
@@ -297,7 +297,7 @@ function ProjectTerminalDockComponent({
             {onAddTerminalWithProfile ? (
               <div ref={profileButton} className="terminal-profile-trigger">
                 <IconButton
-                  label={t("Launch Profile…")}
+                  label={t("Launch profile…")}
                   active={!!profileMenu}
                   onClick={() => {
                     setMenu(null);
@@ -326,7 +326,7 @@ function ProjectTerminalDockComponent({
               </IconButton>
             </div>
             {/* Hide keeps every shell running; Close All lives in the actions menu. */}
-            <IconButton label={t("Hide Terminal ({p0}J)", { p0: MOD })} onClick={onHide}>
+            <IconButton label={t("Hide terminal ({p0}J)", { p0: MOD })} onClick={onHide}>
               {hideIcon(dock.side)}
             </IconButton>
           </>
@@ -489,7 +489,7 @@ function ProjectTerminalDockComponent({
               label: t("Close others"),
               disabled: dock.pane.files.length < 2,
             },
-            { kind: "item", id: "close-all", label: t("Close All Terminals") },
+            { kind: "item", id: "close-all", label: t("Close all terminals") },
           ]}
           onPick={(id) => {
             if (!isVisible()) return;
@@ -557,7 +557,7 @@ function ProjectTerminalDockComponent({
                   {
                     kind: "item" as const,
                     id: "default",
-                    label: t("Select Default Profile…"),
+                    label: t("Select default profile…"),
                   },
                 ]
               : []),
@@ -586,7 +586,7 @@ function ProjectTerminalDockComponent({
             {
               kind: "item",
               id: "move",
-              label: t("Move Terminal"),
+              label: t("Move terminal"),
               icon: sideIcon(dock.side),
               submenu: SIDE_ITEMS.map((item) => ({
                 kind: "item" as const,
@@ -599,7 +599,7 @@ function ProjectTerminalDockComponent({
             {
               kind: "item",
               id: "close",
-              label: t("Close Active Terminal"),
+              label: t("Close active terminal"),
               icon: <X className="icon-sm" />,
             },
             {
@@ -608,12 +608,12 @@ function ProjectTerminalDockComponent({
               label: t("Close others"),
               disabled: dock.pane.files.length < 2,
             },
-            { kind: "item", id: "close-all", label: t("Close All Terminals"), danger: true },
+            { kind: "item", id: "close-all", label: t("Close all terminals"), danger: true },
             { kind: "sep" },
             {
               kind: "item",
               id: "hide",
-              label: t("Hide Terminal ({p0}J)", { p0: MOD }),
+              label: t("Hide terminal ({p0}J)", { p0: MOD }),
               icon: hideIcon(dock.side),
             },
           ]}

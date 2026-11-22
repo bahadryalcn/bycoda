@@ -118,6 +118,7 @@ export function AccountDevices({
               <Icon className="icon-sm shrink-0" aria-hidden />
               <InlineEdit
                 label={t("Device name")}
+                variant="body"
                 value={device.name}
                 validate={(next) => (next.trim() ? null : t("Enter a name."))}
                 onSave={(next) => rename.mutateAsync({ id: device.id, name: next.trim() })}

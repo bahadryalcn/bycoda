@@ -130,7 +130,9 @@ function GoalSettingsForm({
         ) : null}
       </div>
       <ModalFooter>
-        <ModalActions reason={valid ? undefined : t("Enter a run limit between 0 and 10080 minutes.")}>
+        <ModalActions
+          reason={valid ? undefined : t("Enter a run limit between 0 and 10080 minutes.")}
+        >
           <Button variant="ghost" disabled={saving} onClick={onCancel}>
             {t("Cancel")}
           </Button>

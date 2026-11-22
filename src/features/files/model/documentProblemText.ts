@@ -53,7 +53,10 @@ export function describeDocumentProblem(problem: DocumentProblem): string {
 }
 
 /** A viewer failure split for `DocumentMessage`: the plain reason and, when the library or host gave one, its redacted raw text. */
-export function documentProblemParts(problem: DocumentProblem): { reason: string; detail?: string } {
+export function documentProblemParts(problem: DocumentProblem): {
+  reason: string;
+  detail?: string;
+} {
   if (problem.reason !== "unreadable") return { reason: describeDocumentProblem(problem) };
   return {
     reason: t("The file could not be read; it may be corrupt."),

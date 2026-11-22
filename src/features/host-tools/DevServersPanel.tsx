@@ -963,10 +963,7 @@ function ProjectDevServersPanel({
           )}
         </Text>
         {/* Counts change on every poll, so only the scan's start and failure are announced. */}
-        <LiveText
-          className="sr-only"
-          text={scanning && !scan ? t("Scanning servers…") : ""}
-        />
+        <LiveText className="sr-only" text={scanning && !scan ? t("Scanning servers…") : ""} />
         <div className="dev-server-actions">
           <Button
             variant="ghost"

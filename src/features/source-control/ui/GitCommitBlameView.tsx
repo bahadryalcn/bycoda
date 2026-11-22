@@ -7,6 +7,8 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useGitResource } from "../hooks/useGitResource";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
+import { formatAbsoluteTime, formatRelativeTime } from "../model/gitGraphDisplay";
 import { GitFeedback } from "./GitFeedback";
 
 /** Historical attribution paired with the same revision's file content. */
@@ -30,6 +32,7 @@ export function GitCommitBlameView({
     read,
     false,
   );
+  const now = useMinuteNow();
   const lines = useMemo(() => text.split(/\r?\n/), [text]);
   return (
     <section aria-label={t("Blame at commit")} className="flex min-h-0 flex-1 flex-col">
@@ -43,9 +46,7 @@ export function GitCommitBlameView({
       {resource.loading && !resource.data ? (
         <LoadingText inset="row">{t("Loading…")}</LoadingText>
       ) : null}
-      {!sha ? (
-        <EmptyState size="inline" inset="row" description={t("No commits yet")} />
-      ) : null}
+      {!sha ? <EmptyState size="inline" inset="row" description={t("No commits yet")} /> : null}
       <Text
         as="div"
         size="caption"
@@ -66,17 +67,32 @@ export function GitCommitBlameView({
                 "flex whitespace-pre",
               )}
             >
-              <Tooltip label={`${entry.sha}\n${entry.author} · ${entry.summary}`} asChild>
+              <Tooltip
+                label={first ? entry.summary : undefined}
+                details={
+                  first ? [`${entry.shortSha} · ${formatAbsoluteTime(entry.timestamp)}`] : []
+                }
+                asChild
+              >
                 <Text
+                  as="div"
                   size="micro"
                   tone="secondary"
-                  truncate
+                  tabIndex={first ? 0 : undefined}
                   {...surfaceAttributes(
                     { variant: "canvas" },
-                    "sticky left-0 w-44 shrink-0 px-2 font-sans",
+                    "sticky left-0 flex w-64 shrink-0 items-baseline gap-2 px-2 font-sans",
                   )}
                 >
-                  {first ? `${entry.shortSha} ${entry.author}` : ""}
+                  {first ? (
+                    <>
+                      <span className="shrink-0 font-mono">{entry.shortSha}</span>
+                      <span className="min-w-0 flex-1 truncate">{entry.author}</span>
+                      <span className="shrink-0 tabular-nums">
+                        {formatRelativeTime(entry.timestamp, now)}
+                      </span>
+                    </>
+                  ) : null}
                 </Text>
               </Tooltip>
               <Text

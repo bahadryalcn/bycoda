@@ -7,7 +7,6 @@ import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { SettingsFeedback, SettingsSaveBar } from "../../../../shared/ui/settings";
 import { Tab, TabList, TabPanel, Tabs } from "../../../../shared/ui/Tabs";
 import { TabDirtyDot } from "../../../../shared/ui/TabLabel";
-import { Text } from "../../../../shared/ui/Text";
 import {
   providerAccounts,
   subscribeProviderAccounts,
@@ -208,13 +207,6 @@ function OrderSettingsForm({
         saved={editor.saved}
         canSave={!editor.validation && !editor.conflict}
         saveLabel={t("Save changes")}
-        leading={
-          !editor.dirty && !editor.pending && !editor.saved && !editor.conflict ? (
-            <Text size="caption" tone="secondary">
-              {t("No unsaved changes")}
-            </Text>
-          ) : null
-        }
         discardLabel={editor.conflict ? t("Reload") : undefined}
         discardEnabled={editor.dirty || editor.conflict}
         onDiscard={() => {

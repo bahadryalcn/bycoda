@@ -176,12 +176,8 @@ export function GitGraphBranches({
         />
       </div>
       <div className="min-h-0 overflow-y-auto pb-3">
-        {error ? (
-          <InlineError inset="row" details={error} retry={{ onRetry: refresh }} />
-        ) : null}
-        {loading && !data ? (
-          <LoadingText inset="row">{t("Loading branches…")}</LoadingText>
-        ) : null}
+        {error ? <InlineError inset="row" details={error} retry={{ onRetry: refresh }} /> : null}
+        {loading && !data ? <LoadingText inset="row">{t("Loading branches…")}</LoadingText> : null}
         {data?.detached ? (
           <InlineMessage tone="warning" live="off" inset="row">
             {t("Detached HEAD")}

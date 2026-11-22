@@ -193,7 +193,7 @@ it("opens New skill as a dialog without copying the search text into the name", 
   });
   await chooseFromMenu("New", "New skill");
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-  expect(document.querySelector<HTMLInputElement>('input[aria-label="Skill name"]')?.value).toBe(
+  expect(document.querySelector<HTMLInputElement>('input[placeholder="skill-name"]')?.value).toBe(
     "",
   );
   await click("Cancel");
@@ -521,9 +521,9 @@ describe("Settings skill preview", () => {
       if (preview) await openPreview("Project guide");
       const previewPanel = container.querySelector('[aria-label="Skill preview"]');
       await chooseFromMenu("New", "New skill");
-      expect(document.activeElement?.getAttribute("aria-label")).toBe("Skill name");
+      expect((document.activeElement as HTMLInputElement | null)?.placeholder).toBe("skill-name");
       if (control !== "Skill name") {
-        const input = document.querySelector<HTMLInputElement>('[aria-label="Skill name"]')!;
+        const input = document.querySelector<HTMLInputElement>('input[placeholder="skill-name"]')!;
         act(() => {
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
             input,

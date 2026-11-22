@@ -11,7 +11,8 @@ export function StaleReviewNotice({ error, onRetry }: { error: string; onRetry: 
   const t = useT();
   return (
     <InlineError
-      inset="row" className="shrink-0"
+      inset="row"
+      className="shrink-0"
       details={error}
       retry={{ onRetry, label: t("Retry refresh") }}
     >

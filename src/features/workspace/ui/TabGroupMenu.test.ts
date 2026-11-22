@@ -256,7 +256,10 @@ it("does not take focus on open and saves a typed name only on Enter", () => {
 
   act(() => input.focus());
   act(() => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Renamed");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Renamed",
+    );
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   act(() => input.blur());

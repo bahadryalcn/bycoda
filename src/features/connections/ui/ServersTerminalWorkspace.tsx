@@ -15,7 +15,6 @@ import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { confirmCloseTerminal } from "../../terminal/model/terminalClose";
 import { ArrowLeft, Terminal, X } from "../../../shared/ui/icons";
-import { Badge } from "../../../shared/ui/Badge";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import type { ServerRecord, SshEndpoint } from "../model/serverInventory";
@@ -415,13 +414,10 @@ export function ServersTerminalWorkspace({
                   className="flex min-w-0 items-center gap-2 px-3"
                 >
                   <Terminal aria-hidden className="icon-sm shrink-0" tone="secondary" />
+                  {/* The tab strip below names each terminal and its state; the header only says where we are. */}
                   <Text size="inherit" tone="inherit" truncate>
-                    {terminals.find((terminal) => terminal.id === active)?.name ??
-                      t("SSH terminal")}
+                    {t("SSH terminal")}
                   </Text>
-                  <Badge tone="neutral" size="sm">
-                    SSH
-                  </Badge>
                 </Text>
               </ToolHeader>
               {!IS_MAC ? <WindowControls /> : null}

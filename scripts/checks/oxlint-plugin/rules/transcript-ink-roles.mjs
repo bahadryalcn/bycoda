@@ -23,7 +23,7 @@ const styleText = (value) => {
 export default defineRule({
   files: ["src/features/sessions/ui/**/*.tsx"],
   message:
-    'Transcript text ink must come from the transcript ink roles, not full or global text tokens: `--color-content` flattens the hierarchy (commands, chips and icons read as loud as the emphasis they support), and `--ui-text-secondary` / `--ui-text-muted` do not follow the reading surface. Use `text-(--transcript-ink-emphasis)` for emphasis, `text-(--transcript-ink-body)` for body text, and `text-(--transcript-ink-chrome)` / `text-(--transcript-ink-chrome-active)` for chrome at rest and active. If a full-ink use is real emphasis, keep it with `// oxlint-disable-next-line bycoda/transcript-ink-roles -- <what is emphasized>` on the line above.',
+    "Transcript text ink must come from the transcript ink roles, not full or global text tokens: `--color-content` flattens the hierarchy (commands, chips and icons read as loud as the emphasis they support), and `--ui-text-secondary` / `--ui-text-muted` do not follow the reading surface. Use `text-(--transcript-ink-emphasis)` for emphasis, `text-(--transcript-ink-body)` for body text, and `text-(--transcript-ink-chrome)` / `text-(--transcript-ink-chrome-active)` for chrome at rest and active. If a full-ink use is real emphasis, keep it with `// oxlint-disable-next-line bycoda/transcript-ink-roles -- <what is emphasized>` on the line above.",
   create: (context, report) => {
     const file = path.basename(context.filename.replaceAll("\\", "/"));
     const transcriptFile = TRANSCRIPT_FILE.test(file);

@@ -4,7 +4,7 @@
   gap: var(--space-4);
   max-width: 60rem;
   margin: 0 auto;
-  padding: var(--space-4);
+  padding: 0;
 }
 
 .header {
@@ -36,20 +36,8 @@
   min-width: 0;
 }
 
-.screen[data-wide] .layout {
-  display: grid;
-  grid-template-columns: 11rem minmax(0, 1fr);
-  align-items: start;
-  gap: var(--space-6);
-}
-
 .nav {
   min-width: 0;
-}
-
-.screen[data-wide] .nav {
-  position: sticky;
-  inset-block-start: calc(var(--ui-control-height-compact) + var(--space-4) + var(--space-3));
 }
 
 .panel {

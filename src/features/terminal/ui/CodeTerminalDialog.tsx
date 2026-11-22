@@ -4,6 +4,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Alert } from "../../../shared/ui/Alert";
+import { StatusBadge, type BadgeStatus } from "../../../shared/ui/Badge";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -126,6 +127,19 @@ export function CodeTerminalDialog({
     if (autoReport && state.phase === "exited") report();
   }, [autoReport, state.phase, report]);
   const notStarted = state.phase === "not-started";
+  const unknownStatus =
+    state.phase === "unknown" || readFailure.visibleError || state.exitCode === null;
+  // Success, failure and "can't tell" must look different at a glance, not only read differently.
+  const statusKind: BadgeStatus =
+    actionFailure.pending || working
+      ? "running"
+      : notStarted
+        ? "failed"
+        : unknownStatus
+          ? "warning"
+          : state.exitCode === 0
+            ? "done"
+            : "failed";
   const status = actionFailure.pending
     ? t("Loading…")
     : notStarted
@@ -139,29 +153,33 @@ export function CodeTerminalDialog({
             : state.exitCode === null
               ? t("Command status unknown")
               : t("Command exited with code {p0}", { p0: state.exitCode });
+  const stop = () => {
+    setStopping(true);
+    return controller
+      .stop()
+      .finally(() => setStopping(false))
+      .catch(() => {});
+  };
+  // A running command is stopped before the dialog goes: closing never leaves it running unseen.
+  const closeDialog = () => {
+    if (!working) return onClose();
+    if (state.phase === "starting") return;
+    // A refused stop stays in the dialog with its failure instead of hiding it.
+    void stop().then(() => {
+      if (!controller.snapshot().actionError) onClose();
+    });
+  };
   return (
     <Modal
       title={t("Run in terminal")}
       context={options.cwd}
       size="xl"
-      closeDisabled={working}
-      onClose={onClose}
+      onClose={closeDialog}
       footer={
         <ModalActions
           start={
-            working || state.phase === "unknown" || readFailure.visibleError ? (
-              <Button
-                variant="ghost"
-                tone="danger"
-                disabled={stopping || state.phase === "starting"}
-                onClick={() => {
-                  setStopping(true);
-                  void controller
-                    .stop()
-                    .finally(() => setStopping(false))
-                    .catch(() => {});
-                }}
-              >
+            !working && (state.phase === "unknown" || readFailure.visibleError) ? (
+              <Button variant="ghost" tone="danger" disabled={stopping} onClick={() => void stop()}>
                 {stopping ? t("Stopping…") : t("Stop")}
               </Button>
             ) : undefined
@@ -172,16 +190,30 @@ export function CodeTerminalDialog({
               {t("Add result to chat")}
             </Button>
           ) : null}
-          <Button variant="ghost" disabled={working} onClick={onClose}>
-            {t("Close")}
-          </Button>
+          {working ? (
+            <Button
+              variant="primary"
+              tone="danger"
+              disabled={stopping || state.phase === "starting"}
+              disabledReason={state.phase === "starting" ? t("Starting…") : undefined}
+              onClick={closeDialog}
+            >
+              {stopping ? t("Stopping…") : t("Stop and close")}
+            </Button>
+          ) : (
+            <Button variant="ghost" onClick={onClose}>
+              {t("Close")}
+            </Button>
+          )}
         </ModalActions>
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <LiveText text={status} />
-          {onReport ? (
+          <StatusBadge status={statusKind}>
+            <LiveText text={status} />
+          </StatusBadge>
+          {onReport && !exited ? (
             <Checkbox
               label={t("Add result to chat when finished")}
               checked={autoReport}

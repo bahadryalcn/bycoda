@@ -7,10 +7,9 @@ import { reportFailure } from "../../../shared/ui/reportFailure";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, Folder, Minus, Plus, RotateCcw } from "../../../shared/ui/icons";
+import { Check, Copy, Folder, Minus, Plus } from "../../../shared/ui/icons";
 import { ExplorerMenu } from "./ExplorerMenu";
 import { FileTransferProgress } from "./FileTransferProgress";
-import { FileTypeIcon } from "./FileTypeIcon";
 import { formatFileSize, sniffImageMime } from "../model/filePreview";
 import { watchFile } from "../model/fileWatch";
 import {
@@ -167,7 +166,10 @@ export function BinaryFileView({ path, cwd }: Props) {
         error
         detail={visibleError}
         onRetry={reload}
-        action={{ label: t("Reveal"), onClick: () => void revealPath(path).catch((e) => console.warn("Reveal failed", e)) }}
+        action={{
+          label: t("Reveal"),
+          onClick: () => void revealPath(path).catch((e) => console.warn("Reveal failed", e)),
+        }}
       />
     );
   }
@@ -185,36 +187,11 @@ export function BinaryFileView({ path, cwd }: Props) {
   }
 
   if (state.status === "cancelled") {
-    return (
-      <FileCard
-        path={path}
-        cwd={cwd}
-        title={t("Cancelled")}
-        icon={
-          <div className="mx-auto mb-3 flex justify-center">
-            <FileTypeIcon name={basename(path)} isDir={false} size="lg" />
-          </div>
-        }
-        onRetry={retry}
-      />
-    );
+    return <DocumentMessage title={t("Opening cancelled")} onRetry={retry} />;
   }
 
   if (state.status === "unsupported") {
-    return (
-      <FileCard
-        path={path}
-        cwd={cwd}
-        title={t("This file can’t be previewed")}
-        detail={`${formatFileSize(state.size)} · ${t("It isn’t a readable image.")}`}
-        openable
-        icon={
-          <div className="mx-auto mb-3 flex justify-center">
-            <FileTypeIcon name={basename(path)} isDir={false} size="lg" />
-          </div>
-        }
-      />
-    );
+    return <UnsupportedFile path={path} cwd={cwd} size={state.size} />;
   }
 
   return <ImageView path={path} url={state.url} size={state.size} mime={state.mime} />;
@@ -317,10 +294,14 @@ function ImageView({
         />
       </div>
       {copyError ? (
-        <InlineError inset="row" className="shrink-0 break-words">{copyError}</InlineError>
+        <InlineError inset="row" className="shrink-0 break-words">
+          {copyError}
+        </InlineError>
       ) : null}
       {openAction.error ? (
-        <InlineError inset="row" className="shrink-0 break-words">{openAction.error}</InlineError>
+        <InlineError inset="row" className="shrink-0 break-words">
+          {openAction.error}
+        </InlineError>
       ) : null}
       <ViewerFooter name={basename(path)}>
         <span className="tabular-nums">{natural ? `${natural.w} × ${natural.h}` : "—"}</span>
@@ -403,91 +384,47 @@ function ImageView({
   );
 }
 
-function FileCard({
-  path,
-  cwd,
-  title,
-  detail,
-  icon,
-  onRetry,
-  openable,
-}: {
-  path: string;
-  cwd: string;
-  title: string;
-  detail?: string;
-  icon: React.ReactNode;
-  onRetry?: () => void;
-  /** Offers the one "Open in default app" way out for a file the viewer cannot show. */
-  openable?: boolean;
-}) {
+/** A file the viewer cannot show: says what it is and offers the ways to reach it on disk. */
+function UnsupportedFile({ path, cwd, size }: { path: string; cwd: string; size: number }) {
   useLocale();
   const openOwner = useMemo(() => ({ path }), [path]);
   const openAction = useDefaultAppOpen(openOwner, path);
   const localCopy = !!parseRemotePath(path) && !localExplorerPath(path);
-  const [pending, setPending] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
   const [error, setError] = useState<string>();
-  const running = useRef(false);
-  const run = async (action: string, work: () => Promise<void>) => {
-    if (running.current) return;
-    running.current = true;
-    setPending(action);
+  const revealRunning = useRef(false);
+  const reveal = async () => {
+    if (revealRunning.current) return;
+    revealRunning.current = true;
+    setRevealing(true);
     setError(undefined);
     try {
-      await work();
+      await revealPath(path);
     } catch (error) {
       await reportFailure(error, { toast: { show: ({ message }) => setError(message) } });
     } finally {
-      running.current = false;
-      setPending(null);
+      revealRunning.current = false;
+      setRevealing(false);
     }
   };
+  const failure = error ?? openAction.error;
   return (
-    <div className="grid h-full min-w-0 place-items-center overflow-auto p-6">
-      <div className="w-full min-w-0 max-w-md text-center">
-        {icon}
-        <Text as="p" size="secondary" tone="primary" className="break-words">
-          {title}
-        </Text>
-        {detail ? (
-          <Text as="p" size="secondary" tone="secondary" className="mt-1">
-            {detail}
-          </Text>
-        ) : null}
-        <Text as="p" size="caption" tone="muted" className="mt-1 break-words font-mono">
-          {displayPath(path, cwd)}
-        </Text>
-        {error || openAction.error ? (
-          <InlineError className="mt-2 justify-center break-words">
-            {error ?? openAction.error}
-          </InlineError>
-        ) : null}
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-          {onRetry ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onRetry}
-              disabled={pending !== null}
-              startIcon={<RotateCcw className="icon-xs" strokeWidth={1.75} />}
-            >
-              {t("Retry")}
-            </Button>
-          ) : null}
-          {openable ? (
-            <OpenInDefaultAppButton
-              localCopy={localCopy}
-              loading={openAction.opening}
-              onOpen={openAction.open}
-            />
-          ) : null}
+    <DocumentMessage
+      title={t("This file can’t be previewed")}
+      action={{
+        label: t(localCopy ? "Open local copy" : "Open in default app"),
+        onClick: openAction.open,
+        pending: openAction.opening,
+      }}
+      extra={
+        <>
           <Button
             size="sm"
             variant="ghost"
-            disabled={pending !== null}
-            loading={pending === "reveal"}
+            disabled={revealing}
+            loading={revealing}
             startIcon={<Folder className="icon-xs" strokeWidth={1.75} />}
-            onClick={() => void run("reveal", () => revealPath(path))}
+            onClick={() => void reveal()}
           >
             {t("Reveal")}
           </Button>
@@ -498,8 +435,18 @@ function FileCard({
             text={path}
             resetKeys={[path]}
           />
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <Text as="span" size="secondary" tone="secondary" className="break-words">
+        {`${formatFileSize(size)} · ${t("Not an image")}`}
+      </Text>
+      <Text as="span" size="caption" tone="muted" className="mt-1 block break-words font-mono">
+        {displayPath(path, cwd)}
+      </Text>
+      {failure ? (
+        <InlineError className="mt-2 justify-center break-words">{failure}</InlineError>
+      ) : null}
+    </DocumentMessage>
   );
 }

@@ -427,7 +427,7 @@ function ChangeDirRow({
               as="span"
               size="inherit"
               tone="inherit"
-              weight="medium"
+              weight="regular"
               className="flex min-w-0 flex-1"
             >
               <MiddleTruncate mode="path" size="body" tone="primary" className="min-w-0 flex-1">

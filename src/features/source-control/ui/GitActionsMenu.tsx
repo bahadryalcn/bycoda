@@ -233,9 +233,18 @@ export function GitActionsMenu({
       setGitFeedback(cwd, {
         kind: "error",
         get title() {
-          return t("Git operation failed");
+          // The progress label names the action ("Pulling…" -> "Pulling failed").
+          return pending
+            ? t("{p0} failed", { p0: t(pending).replace(/…$/, "") })
+            : t("Git operation failed");
         },
         detail: errorText(error),
+        // Only the repeatable network actions (pull, push, fetch, sync) offer Try again.
+        retry: pending
+          ? async () => {
+              await run(work, status, pending);
+            }
+          : undefined,
       });
     } finally {
       onPending?.(null);

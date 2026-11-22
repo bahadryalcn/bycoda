@@ -128,8 +128,6 @@ async function openInstallStep(client: DecisionModelsClient) {
   const view = await renderWizard(client);
   clickButton("Continue");
   await settleDecisionUi();
-  clickButton("Continue");
-  await settleDecisionUi();
   return view;
 }
 
@@ -139,8 +137,6 @@ describe("LocalInstallWizard", () => {
       recommendation: { tier: "insufficient", modelId: "clef-flash-9b" },
     });
     const { onChooseApi } = await renderWizard(client);
-    clickButton("Continue");
-    await settleDecisionUi();
     expect(bodyText()).toContain("not suited to local use");
     expect(buttonByText("Install")).toBeUndefined();
     clickButton("Choose an API provider");
@@ -160,8 +156,6 @@ describe("LocalInstallWizard", () => {
         }),
     );
     const { onClose } = await renderWizard(client);
-    clickButton("Continue");
-    await settleDecisionUi();
     clickButton("Continue");
     clickButton("Install");
     await settleDecisionUi();
@@ -187,8 +181,6 @@ describe("LocalInstallWizard", () => {
       recommendation: { tier: "strong", modelId: "clef-flash-9b" },
     });
     await renderWizard(client);
-    clickButton("Continue");
-    await settleDecisionUi();
     clickButton("Continue");
     await settleDecisionUi();
     expect(mocks.install).not.toHaveBeenCalled();
@@ -307,8 +299,6 @@ describe("LocalInstallWizard", () => {
       recommendation: { tier: "strong", modelId: "clef-flash-9b" },
     });
     await renderWizard(client);
-    clickButton("Continue");
-    await settleDecisionUi();
     expect(mocks.plan).toHaveBeenCalledWith({ modelId: "clef-flash-9b" });
     expect(bodyText()).toContain(
       `Download ${formatBytes(5 * 1024 ** 3)}. Free disk space: ${formatBytes(100 * 1024 ** 3)}.`,
@@ -323,12 +313,10 @@ describe("LocalInstallWizard", () => {
       plan: { ...plan, fits: false, freeDiskBytes: 1024 ** 3 },
     });
     await renderWizard(client);
-    clickButton("Continue");
-    await settleDecisionUi();
     expect(bodyText()).toContain(
       `Not enough free disk space: ${formatBytes(5 * 1024 ** 3)} needed.`,
     );
-    expect(buttonByText("Continue")?.disabled).toBe(true);
+    expect(buttonByText("Continue")).toBeUndefined();
     expect(buttonByText("Install")).toBeUndefined();
     expect(buttonByText("Choose an API provider")).toBeDefined();
   });
@@ -339,8 +327,6 @@ describe("LocalInstallWizard", () => {
     });
     mocks.plan.mockRejectedValueOnce(new Error("Disk unavailable"));
     await renderWizard(client);
-    clickButton("Continue");
-    await settleDecisionUi();
     expect(buttonByText("Continue")?.disabled).toBe(true);
     expect(mocks.install).not.toHaveBeenCalled();
     clickButton("Try again");

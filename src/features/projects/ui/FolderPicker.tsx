@@ -378,11 +378,14 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           </Text>
           <div className="flex h-[min(340px,50dvh)] min-h-0 shrink flex-col px-3 py-2">
             {loading ? (
-              <LoadingText inset="row" className="shrink-0">{t("Loading folders…")}</LoadingText>
+              <LoadingText inset="row" className="shrink-0">
+                {t("Loading folders…")}
+              </LoadingText>
             ) : visibleEntries.length === 0 && !error ? (
               <EmptyState
                 size="inline"
-                inset="row" className="shrink-0"
+                inset="row"
+                className="shrink-0"
                 description={t("No subfolders")}
               />
             ) : null}

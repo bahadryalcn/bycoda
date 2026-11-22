@@ -64,7 +64,6 @@ export function CreateBranchDialog({
     <Modal
       languageDomain="git"
       title={t(branches ? "New branch from…" : "New branch")}
-      description={t("Create and check out a branch in this project.")}
       size="sm"
       onClose={() => {
         if (!busy) onCancel();
@@ -88,27 +87,6 @@ export function CreateBranchDialog({
       }
     >
       <form id={formId} className="flex flex-col gap-4" onSubmit={submit}>
-        {branches ? (
-          <>
-            <TextField
-              label={t("Base branch")}
-              value={reference}
-              onChange={(event) => setReference(event.target.value)}
-              aria-label={t("Base branch")}
-              list={referencesId}
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              disabled={busy}
-            />
-            <datalist id={referencesId}>
-              {references?.map((value) => (
-                <option key={value} value={value} />
-              ))}
-            </datalist>
-          </>
-        ) : null}
         <TextField
           label={t("Branch name")}
           ref={input}
@@ -123,7 +101,27 @@ export function CreateBranchDialog({
           disabled={busy}
           onChange={(event) => setName(event.target.value)}
         />
-
+        {branches ? (
+          <>
+            <TextField
+              label={t("Base branch")}
+              value={reference}
+              aria-label={t("Base branch")}
+              onChange={(event) => setReference(event.target.value)}
+              list={referencesId}
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              disabled={busy}
+            />
+            <datalist id={referencesId}>
+              {references?.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+          </>
+        ) : null}
         {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>

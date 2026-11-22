@@ -2,7 +2,7 @@ import { Badge } from "../../../../shared/ui/Badge";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { LiveText } from "../../../../shared/ui/LiveText";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Text } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
 import { Row } from "../../../../shared/ui/settings";
@@ -103,17 +103,11 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
           </li>
         ))}
       </ul>
-      <LiveText
-        size="micro"
-        tone="secondary"
-        leading="inherit"
-        className={`${viewStyles.muted} ${styles.usageNote}`}
-        text={
-          usage.workerUsageIncomplete || !cache || !cache.complete
-            ? t("Some usage is unavailable.")
-            : ""
-        }
-      />
+      {(usage.workerUsageIncomplete || !cache || !cache.complete) && (
+        <InlineMessage tone="warning" className={styles.usageNote}>
+          {t("Some usage is unavailable.")}
+        </InlineMessage>
+      )}
       {cache ? (
         <>
           <InfoPopover label={t("About usage")}>

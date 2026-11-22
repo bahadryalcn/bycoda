@@ -110,14 +110,12 @@ export function BackgroundSessionDialog({
             <div className="flex flex-col gap-1">
               <Text as="p" size="caption" leading="snug" tone="secondary">
                 {summary.status}
-                {t(" · on this computer’s host")}
               </Text>
             </div>
             <Text
               as="div"
-              size="caption"
+              size="secondary"
               leading="relaxed"
-              tone="secondary"
               {...surfaceAttributes(
                 { frame: "card", edge: "all" },
                 "min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card)-(--ui-card-border) p-3",

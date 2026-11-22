@@ -11,6 +11,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { TextField } from "../../../shared/ui/TextField";
@@ -154,11 +155,20 @@ export function ServerFiles({
     <>
       <Sheet title={t("SFTP files")} onClose={close} size="xl">
         <div className="flex min-h-0 flex-col gap-3">
-          {serverName ? (
-            <Text as="p" tone="muted" truncate>
-              {t("Target")}: {serverName}
-            </Text>
-          ) : null}
+          <div className="flex min-w-0 items-center gap-1">
+            {serverName ? (
+              <Text as="p" tone="muted" truncate>
+                {t("Target")}: {serverName}
+              </Text>
+            ) : null}
+            <InfoPopover>
+              <p>
+                {t(
+                  "SFTP uses trusted OpenSSH keys or your agent. Downloads require a new local filename. Uploads require replacement consent. Interrupted transfers keep owned partials for explicit content-verified recovery. Symlink entries are not opened automatically.",
+                )}
+              </p>
+            </InfoPopover>
+          </div>
           <form
             className="flex flex-wrap items-center gap-2"
             onSubmit={(event) => {
@@ -178,7 +188,6 @@ export function ServerFiles({
             </Button>
             <TextField
               label={t("Remote directory")}
-              hideLabel
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               disabled={busy}
@@ -515,11 +524,6 @@ export function ServerFiles({
               />
             ) : null}
           </div>
-          <Text as="p" tone="muted">
-            {t(
-              "SFTP uses trusted OpenSSH keys or your agent. Downloads require a new local filename. Uploads require replacement consent. Interrupted transfers keep owned partials for explicit content-verified recovery. Symlink entries are not opened automatically.",
-            )}
-          </Text>
         </div>
       </Sheet>
       {proxy.dialog}

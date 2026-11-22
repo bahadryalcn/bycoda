@@ -3,7 +3,6 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { isTauri } from "@tauri-apps/api/core";
 import { t } from "../../../../shared/i18n";
-import { Button } from "../../../../shared/ui/Button";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import { ConfirmDialog } from "../../../../shared/ui/ConfirmDialog";
 import { Skeleton } from "../../../../shared/ui/Skeleton";
@@ -169,23 +168,21 @@ export function ConversationPanel(props: ConversationPanelProps) {
           </div>
         )}
         {draftSaveError && (
-          <InlineError className={styles.draftError}>
-            {t("Could not save this draft. It is kept in this window.")}{" "}
-            <Button
-              type="button"
-              onClick={() => {
+          <InlineError
+            className={styles.draftError}
+            retry={{
+              label: t("Retry saving"),
+              onRetry: () => {
                 if (isTauri() && nativeDraftReady !== nativeDraftKey)
                   setNativeDraftReload((value) => value + 1);
                 else flushDrafts();
-              }}
-            >
-              {t("Retry saving")}
-            </Button>
-            {isTauri() && (
-              <Button type="button" onClick={openDraftRecovery}>
-                {t("Recover draft")}
-              </Button>
-            )}
+              },
+            }}
+            secondaryAction={
+              isTauri() ? { label: t("Recover draft"), onClick: openDraftRecovery } : undefined
+            }
+          >
+            {t("Could not save this draft. It is kept in this window.")}
           </InlineError>
         )}
         <ConversationComposer c={c} onFailure={reportFailure} />

@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { observeResize } from "../../../shared/lib/observeResize";
+import { useEffect, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Divider } from "../../../shared/ui/Divider";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -43,9 +42,6 @@ export type AccountTabId =
 /** Tabs a deactivated account can still use; the rest of the account API answers `account_deactivated`. */
 const DEACTIVATED_TABS: readonly AccountTabId[] = ["profile", "privacy", "status"];
 
-/** Below this width the tab menu moves from the side to a scrolling strip above the content. */
-const SIDE_NAV_MIN = 640;
-
 function tabItems(): { value: AccountTabId; label: string; icon: ReactNode }[] {
   const icon = (Icon: typeof UserRound) => <Icon className="icon-sm" aria-hidden />;
   return [
@@ -60,36 +56,8 @@ function tabItems(): { value: AccountTabId; label: string; icon: ReactNode }[] {
   ];
 }
 
-/** Content width, the same measure the observer's `contentRect` reports (box minus horizontal padding). */
-function contentWidth(element: Element): number {
-  const style = getComputedStyle(element);
-  return (
-    element.getBoundingClientRect().width -
-    (parseFloat(style.paddingLeft) || 0) -
-    (parseFloat(style.paddingRight) || 0)
-  );
-}
-
 /**
- * True while the element's content is at least `min` pixels wide. The first value is measured in
- * the layout effect, before the first paint, so a narrow window never paints the wide layout; the
- * shared observer then follows later resizes.
- */
-function useWide(min: number, mountKey: string) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [wide, setWide] = useState(true);
-  // Keep keyboard navigation orientation aligned with the available account width.
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    setWide(contentWidth(element) >= min);
-    return observeResize(element, (entry) => setWide(entry.contentRect.width >= min));
-  }, [min, mountKey]);
-  return { ref, wide };
-}
-
-/**
- * The account center. Signed in it shows who is signed in above a side menu with one tab per area
+ * The account center. Signed in it shows who is signed in above one tab strip with a tab per area
  * (profile, security, devices, active time, notifications, privacy and data, support, account
  * status). Signed out it is a single sign-in panel; the rest of the app never depends on it.
  */
@@ -101,7 +69,6 @@ export function AccountScreen() {
     userId: "",
     tabs: [],
   });
-  const { ref, wide } = useWide(SIDE_NAV_MIN, state.phase);
   const stale = state.phase === "signed-in" && state.stale;
   // Refresh cached account facts without blocking offline navigation.
   useEffect(() => {
@@ -148,7 +115,7 @@ export function AccountScreen() {
   const items = tabItems().filter((item) => !deactivated || DEACTIVATED_TABS.includes(item.value));
   const active = items.some((item) => item.value === tab) ? tab : items[0]!.value;
   return (
-    <div ref={ref} className={styles.screen} data-wide={wide || undefined}>
+    <div className={styles.screen}>
       <AccountHeader
         context={state.context}
         stale={state.stale}
@@ -176,11 +143,10 @@ export function AccountScreen() {
           }));
         }}
         id="account-center"
-        orientation={wide ? "vertical" : "horizontal"}
       >
         <div className={styles.layout}>
           <nav className={styles.nav}>
-            <TabList label={t("Account")} items={items} scroll={wide ? undefined : "auto"} />
+            <TabList label={t("Account")} items={items} scroll="wrap" />
           </nav>
           <div className={styles.panel}>
             <TabPanel value="profile">

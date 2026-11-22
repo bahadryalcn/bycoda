@@ -31,7 +31,9 @@ import { RevealedSetting } from "../../../shared/ui/settings";
 
 /** Opens the info popover and returns the page text, popover content included. */
 function helpText() {
-  act(() => [...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Help"]')].at(-1)!.click());
+  act(() =>
+    [...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Help"]')].at(-1)!.click(),
+  );
   return document.body.textContent ?? "";
 }
 
@@ -76,9 +78,7 @@ it("opens shared-account setup from Accounts without offering unsupported named 
   });
   expect(details.open).toBe(true);
   const popoverText = helpText();
-  expect(popoverText).toContain(
-    "bycoda uses the shared Antigravity CLI account on this computer",
-  );
+  expect(popoverText).toContain("bycoda uses the shared Antigravity CLI account on this computer");
   expect(popoverText).toContain("/logout");
   expect(container.textContent).not.toContain("Add account");
   act(() => {

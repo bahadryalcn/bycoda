@@ -134,3 +134,40 @@ it("holds a known undelivered command failure for grace without replay", async (
     vi.unstubAllGlobals();
   }
 });
+
+it("stops a running command before it closes, with no silently locked close", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const state: CodeTerminalState = {
+    ...exitedController().snapshot(),
+    phase: "running",
+    exitCode: undefined,
+    output: "",
+  } as CodeTerminalState;
+  const stop = vi.fn(async () => {});
+  const onClose = vi.fn();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(CodeTerminalDialog, {
+          controller: { ...exitedController(), stop, snapshot: () => state },
+          options,
+          onClose,
+        }),
+      ),
+    );
+    const buttons = [...document.querySelectorAll("button")];
+    expect(buttons.some((button) => button.textContent === "Close" && button.disabled)).toBe(false);
+    const stopAndClose = buttons.find((button) => button.textContent === "Stop and close");
+    expect(stopAndClose).toBeTruthy();
+    await act(async () => stopAndClose!.click());
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

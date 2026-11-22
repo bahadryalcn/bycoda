@@ -93,7 +93,6 @@ export function SkillMachinesPanel({
                 data-error={(list.skills === null && !!list.error) || undefined}
               >
                 {status}
-                {here ? ` · ${t("Shown")}` : ""}
               </Text>
             </Text>
             <div className={styles.machineActions}>

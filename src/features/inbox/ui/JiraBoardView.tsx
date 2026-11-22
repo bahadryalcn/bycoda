@@ -3,7 +3,7 @@ import { useJiraDragEdgeScroll, type DragPoint } from "../hooks/useJiraDragEdgeS
 import { JiraBoardToolbar } from "./JiraBoardToolbar";
 import { StatusText } from "../../../shared/ui/StatusText";
 import { Text } from "../../../shared/ui/Text";
-import { Alert } from "../../../shared/ui/Alert";
+import { InboxLoadError } from "./InboxLoadError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import {
   ActionHost,
@@ -752,20 +752,26 @@ export function JiraBoardView({
             {issue.title}
           </Heading>
           <Text size="caption" tone="secondary">
-            {issue.identifier} ·{" "}
-            <StatusText
-              tone={
-                issue.stateType === "done"
-                  ? "done"
-                  : issue.stateType === "indeterminate"
-                    ? "running"
-                    : "idle"
-              }
-            >
-              {issue.state === issue.state.toUpperCase()
-                ? issue.state.charAt(0) + issue.state.slice(1).toLowerCase()
-                : issue.state}
-            </StatusText>
+            {issue.identifier}
+            {/* A kanban column is already the status; only backlog and sprint rows name it. */}
+            {column ? null : (
+              <>
+                {" · "}
+                <StatusText
+                  tone={
+                    issue.stateType === "done"
+                      ? "done"
+                      : issue.stateType === "indeterminate"
+                        ? "running"
+                        : "idle"
+                  }
+                >
+                  {issue.state === issue.state.toUpperCase()
+                    ? issue.state.charAt(0) + issue.state.slice(1).toLowerCase()
+                    : issue.state}
+                </StatusText>
+              </>
+            )}
           </Text>
         </Button>
         <div className="flex min-w-0 items-center gap-1">
@@ -940,9 +946,9 @@ export function JiraBoardView({
           </Text>
         ) : null}
         {group.error ? (
-          <Alert tone="danger" className="min-w-0 flex-1">
-            {group.error}
-          </Alert>
+          <div className="min-w-0 flex-1">
+            <InboxLoadError title={t("Could not load these issues.")} error={group.error} />
+          </div>
         ) : null}
         {group.stale || group.error || group.token ? (
           <CollectionFooter
@@ -1031,9 +1037,9 @@ export function JiraBoardView({
         </Text>
       ) : null}
       {error ? (
-        <Alert tone="danger" className="jira-board-error">
-          {error}
-        </Alert>
+        <div className="jira-board-error">
+          <InboxLoadError title={t("The Jira request failed.")} error={error} />
+        </div>
       ) : null}
       {pick ? (
         <Surface

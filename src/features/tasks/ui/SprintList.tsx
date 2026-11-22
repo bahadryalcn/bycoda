@@ -46,6 +46,8 @@ export function SprintList({
             archived: "Archived",
           }[state as (typeof STATES)[number]],
         );
+  // Server and machine names only tell rows apart when several machines are involved.
+  const manyServers = machines.length > 1;
   const shown = rows.filter(
     (sprint) => !filtering || stateFilter === "all" || sprint.state === stateFilter,
   );
@@ -72,7 +74,7 @@ export function SprintList({
               >
                 {sprint.name}
               </Button>
-              {sprint.serverName ? (
+              {sprint.serverName && (manyServers || sprint.unavailable) ? (
                 <Text size="caption" tone="secondary">
                   {sprint.serverName}
                   {sprint.unavailable ? ` (${t("Offline")})` : ""}
@@ -93,7 +95,9 @@ export function SprintList({
                 .filter((project) => accessible.has(sprintProjectKey(project)))
                 .map((project, index) => ({
                   id: `${index}:${project.name}`,
-                  label: `${project.name}${machines.find((machine) => machine.environmentId === project.environmentId) ? ` / ${machines.find((machine) => machine.environmentId === project.environmentId)!.name}` : ""}`,
+                  label: manyServers
+                    ? `${project.name}${machines.find((machine) => machine.environmentId === project.environmentId) ? ` / ${machines.find((machine) => machine.environmentId === project.environmentId)!.name}` : ""}`
+                    : project.name,
                 }))}
             />
             <SprintStatusBadge state={sprint.state} />

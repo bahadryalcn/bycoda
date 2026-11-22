@@ -15,7 +15,11 @@ vi.mock("./sections/BackgroundSection", () => ({
 }));
 vi.mock("./sections/ChatSection", () => ({
   ChatSection: ({ onOpenBackground }: { onOpenBackground: () => void }) =>
-    createElement("button", { id: "setting-transcript-surface", onClick: onOpenBackground }, "Chat setting"),
+    createElement(
+      "button",
+      { id: "setting-transcript-surface", onClick: onOpenBackground },
+      "Chat setting",
+    ),
 }));
 vi.mock("./sections/InterfaceSection", () => ({
   InterfaceSection: () =>

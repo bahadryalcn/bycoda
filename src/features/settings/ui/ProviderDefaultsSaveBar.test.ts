@@ -4,6 +4,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { ProviderDefaultsSaveBar, type DefaultsSaveState } from "./ProviderDefaultsSaveBar";
+import { ProviderDefaultsScopeRow } from "./providerDefaultsTargetsPicker";
 
 const changesOf = (count: number) =>
   Array.from({ length: count }, (_, index) => ({ id: String(index), label: `Field ${index}` }));
@@ -18,7 +19,6 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
         createElement(ProviderDefaultsSaveBar, {
           target: { kind: "global" },
           options: [],
-          onTargetChange: vi.fn(),
           changes: changesOf(pending),
           saveState,
           saving,
@@ -86,7 +86,6 @@ it("keeps group apply details available when the draft is clean", async () => {
           saveState: { state: "idle" },
           onSave: vi.fn(),
           onDiscard: vi.fn(),
-          onTargetChange: vi.fn(),
         }),
       ),
     );
@@ -107,7 +106,6 @@ it("shows the provider scope only while changes are pending", async () => {
         createElement(ProviderDefaultsSaveBar, {
           target: { kind: "global" },
           options: [],
-          onTargetChange: vi.fn(),
           changes: changesOf(pending),
           saveState: { state: "idle" },
           onSave: vi.fn(),
@@ -131,31 +129,24 @@ it("shows the provider scope only while changes are pending", async () => {
   }
 });
 
-it("aligns the Save in field through a structural class, not its translated label", async () => {
+it("shows where defaults are saved above the fields, not in the save bar", async () => {
   const css = readFileSync("src/features/settings/ui/ProviderDefaults.css", "utf8");
   expect(css).not.toMatch(/\[aria-label/);
-  expect(css).toMatch(/\.provider-defaults-field-end\s*\{[^}]*margin-inline-start:\s*auto/);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   try {
     await act(async () =>
       root.render(
-        createElement(ProviderDefaultsSaveBar, {
+        createElement(ProviderDefaultsScopeRow, {
           target: { kind: "global" },
           options: [],
           onTargetChange: vi.fn(),
-          changes: changesOf(0),
-          saveState: { state: "idle" },
-          saving: false,
-          onSave: vi.fn(),
-          onDiscard: vi.fn(),
         }),
       ),
     );
-    const field = container.querySelector(".provider-defaults-field-end");
-    expect(field).not.toBeNull();
-    expect(field!.querySelector("button[aria-haspopup='dialog']")).not.toBeNull();
+    expect(container.textContent).toContain("Applies to");
+    expect(container.querySelector("button[aria-haspopup='dialog']")).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();

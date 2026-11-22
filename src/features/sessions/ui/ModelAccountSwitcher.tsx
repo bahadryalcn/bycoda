@@ -219,7 +219,8 @@ export function ModelAccountList({
         <EmptyState
           size="inline"
           kind="filtered"
-          inset="row" className="ui-caption-text"
+          inset="row"
+          className="ui-caption-text"
           description={t("No matching accounts")}
         />
       ) : (

@@ -77,7 +77,7 @@ export function ServerItem({
   // place; the status slot only ever carries live connection state.
   const kind = server.machine ? "Host" : "SSH";
   const status = server.machine ? (
-    <MachineStatus machine={server.machine} compact={!cards} />
+    <MachineStatus machine={server.machine} compact={!cards} quiet />
   ) : null;
   const favorite = server.metadata.favorite ? (
     <Star aria-label={t("Favorite")} className="icon-xs shrink-0" tone="muted" />

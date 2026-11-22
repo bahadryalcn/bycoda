@@ -199,7 +199,7 @@ it.each(["terminal", "dock", "profile"])(
             .querySelector<HTMLButtonElement>(
               menu === "dock"
                 ? '[aria-label="Terminal dock actions"]'
-                : '[aria-label="Launch Profile…"]',
+                : '[aria-label="Launch profile…"]',
             )!
             .click();
         }
@@ -369,7 +369,7 @@ it("splits the targeted row and keeps both canvases visible while changing focus
     );
     expect(onSelectTerminal).toHaveBeenCalledWith("one");
     await act(async () =>
-      host.querySelector<HTMLButtonElement>('[aria-label="Launch Profile…"]')!.click(),
+      host.querySelector<HTMLButtonElement>('[aria-label="Launch profile…"]')!.click(),
     );
     expect(host.querySelector('[role="menu"]')).not.toBeNull();
     await act(async () =>

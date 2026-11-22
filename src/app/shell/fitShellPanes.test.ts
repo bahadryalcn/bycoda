@@ -5,7 +5,11 @@ import { fitShellPanes } from "./fitShellPanes";
 const both = { rail: true, sidebar: true };
 
 it("keeps both stored panes while the conversation keeps a readable column", () => {
-  expect(fitShellPanes(1024, both)).toEqual({ rail: true, sidebar: true, compactRailForced: false });
+  expect(fitShellPanes(1024, both)).toEqual({
+    rail: true,
+    sidebar: true,
+    compactRailForced: false,
+  });
 });
 
 it("opens the session list beside the compact rail at 800 px instead of squeezing the conversation", () => {

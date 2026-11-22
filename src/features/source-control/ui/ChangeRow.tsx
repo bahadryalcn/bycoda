@@ -167,7 +167,7 @@ export const ChangeRow = memo(function ChangeRow({
               <Text
                 size="secondary"
                 tone="primary"
-                weight="medium"
+                weight="regular"
                 truncate
                 className={`max-w-full shrink-0 ${file.status === "deleted" ? "line-through" : ""}`}
               >

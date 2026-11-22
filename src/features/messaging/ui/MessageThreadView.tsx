@@ -204,7 +204,9 @@ export function MessageThreadView({
               retrying={loading}
             />
           ) : (
-            <LoadingText inset="panel" className="justify-center">{t("Loading conversation…")}</LoadingText>
+            <LoadingText inset="panel" className="justify-center">
+              {t("Loading conversation…")}
+            </LoadingText>
           )
         ) : (
           <>
@@ -242,13 +244,15 @@ export function MessageThreadView({
                 description={t("No messages in this conversation yet.")}
               />
             ) : (
-              <MessageTimeline
-                windowed
-                label={t("Messages")}
-                className="px-4 py-3"
-                items={items}
-                onSizeChange={keepEnd}
-              />
+              // The timeline's CSS module resets its own padding, so the gutter lives on a wrapper.
+              <div className="px-4 py-3">
+                <MessageTimeline
+                  windowed
+                  label={t("Messages")}
+                  items={items}
+                  onSizeChange={keepEnd}
+                />
+              </div>
             )}
           </>
         )}

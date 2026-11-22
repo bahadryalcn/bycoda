@@ -1270,7 +1270,9 @@ function StandardCodeMirrorEditor({
           </InlineError>
         ) : null}
         {contextError ? (
-          <InlineError inset="row" className="shrink-0">{contextError}</InlineError>
+          <InlineError inset="row" className="shrink-0">
+            {contextError}
+          </InlineError>
         ) : null}
         {languageFailure?.path === path ? (
           <InlineError text={{ wrap: "anywhere" }} inset="row" className="shrink-0">

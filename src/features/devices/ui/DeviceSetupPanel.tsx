@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Check, Download, Play, RefreshCw, Square, TriangleAlert } from "../../../shared/ui/icons";
+import { Check, Download, Play, RefreshCw, Square } from "../../../shared/ui/icons";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { DEVICE_HUB_VERSION } from "../../../shared/model/host-contracts/native-devices";
 import { platformLabel } from "../model/deviceLabels";
@@ -68,7 +69,7 @@ export function DeviceSetupPanel({
             <StatusDot tone={unknown ? "warning" : running ? "success" : "neutral"} />
             <Text size="body" tone="primary" weight="medium">
               {unknown
-                ? t("Unknown")
+                ? t("Device host status unknown")
                 : running
                   ? t("Device host running")
                   : t("Device host stopped")}
@@ -121,18 +122,24 @@ export function DeviceSetupPanel({
                 {item.available ? t("SDK detected") : (item.reason ?? t("Unavailable"))}
               </Text>
             </div>
-            {item.available ? (
-              <Check className="icon-sm" tone="success" aria-hidden />
-            ) : (
-              <TriangleAlert className="icon-sm" tone="warning" aria-hidden />
-            )}
+            {item.available ? <Check className="icon-sm" tone="success" aria-hidden /> : null}
           </Text>
         ))}
       </ul>
       {showLastError && status.lastError ? (
-        <OutputBlock size="micro" tone="primary" leading="inherit" className="device-panel-output">
-          {status.lastError}
-        </OutputBlock>
+        <Alert
+          tone="danger"
+          title={t("Device host reported an error")}
+          action={{
+            label: t("Refresh status"),
+            pending: refresh.loading,
+            disabled: refresh.disabled,
+            onClick: refresh.onClick,
+          }}
+          extra={
+            <ErrorDetails title={t("Device host reported an error")} detail={status.lastError} />
+          }
+        />
       ) : null}
       <div className="host-tool-actions device-panel-setup-actions">
         <Button disabled={setup.disabled} loading={setup.loading} onClick={setup.onClick}>
@@ -140,7 +147,12 @@ export function DeviceSetupPanel({
           {status.installed ? t("Update setup") : t("Set up device tools")}
         </Button>
         {status.running ? (
-          <Button disabled={stop.disabled} loading={stop.loading} onClick={stop.onClick}>
+          <Button
+            variant="ghost"
+            disabled={stop.disabled}
+            loading={stop.loading}
+            onClick={stop.onClick}
+          >
             <Square className="icon-sm" aria-hidden />
             {t("Stop device host")}
           </Button>

@@ -114,6 +114,7 @@ export function AccountSupport() {
   const [busy, setBusy] = useState(false);
   // Field errors follow the draft as it is now, and only while the last send was rejected.
   const issues = result?.status === "invalid" ? validateSupportDraft(draft) : [];
+  const incomplete = !draft.subject.trim() || !draft.body.trim();
   const issue = (...names: SupportDraftIssue[]) => {
     const found = issues.find((name) => names.includes(name));
     return found ? issueText(found) : undefined;
@@ -150,7 +151,14 @@ export function AccountSupport() {
       <Group
         title={t("Contact support")}
         action={
-          <Button variant="primary" size="sm" loading={busy} onClick={send}>
+          <Button
+            variant="primary"
+            size="sm"
+            loading={busy}
+            disabled={incomplete}
+            disabledReason={t("Add a subject and a message first.")}
+            onClick={send}
+          >
             {t("Send to support")}
           </Button>
         }

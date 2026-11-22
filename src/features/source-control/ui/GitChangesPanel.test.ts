@@ -1006,7 +1006,9 @@ describe("GitChangesPanel action feedback", () => {
   describe("with a file filter", () => {
     async function filterFiles(query: string) {
       await act(async () => {
-        container.querySelector<HTMLButtonElement>('button[aria-label="Filter changed files"]')!.click();
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="Filter changed files"]')!
+          .click();
       });
       const input = document.querySelector<HTMLInputElement>('input[type="search"]')!;
       await act(async () => {

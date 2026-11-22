@@ -53,7 +53,15 @@ export function DocumentMessage({
         />
       ) : (
         // Children can hold a recovery button (Retry), so they stay visible rather than behind the info affordance.
-        <EmptyState title={title} description={children ?? ""} showDescription />
+        <EmptyState
+          title={title}
+          description={children ?? ""}
+          showDescription
+          action={action}
+          onRetry={onRetry ? () => void onRetry() : undefined}
+          retryLabel={retryLabel}
+          extra={extra}
+        />
       )}
     </div>
   );

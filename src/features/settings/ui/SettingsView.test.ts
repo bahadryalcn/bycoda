@@ -1956,7 +1956,7 @@ describe("settings search", () => {
   it("finds a setting that lives on another page", async () => {
     await render("general");
     await type("coffeehouse");
-    expect(options().map((item) => item.textContent)).toEqual(["Agent crewAppearance"]);
+    expect(options().map((item) => item.textContent)).toEqual(["Agent crew"]);
 
     await choose();
     expect(onSelectSection).toHaveBeenCalledWith("appearance");
@@ -1965,9 +1965,7 @@ describe("settings search", () => {
   it("finds and reveals project notifications separately from global notifications", async () => {
     await render("general");
     await type("project notifications");
-    expect(options().map((item) => item.textContent)).toEqual([
-      "Project notificationsNotifications",
-    ]);
+    expect(options().map((item) => item.textContent)).toEqual(["Project notifications"]);
 
     await choose();
     expect(onSelectSection).toHaveBeenCalledWith("notifications");
@@ -1979,21 +1977,25 @@ describe("settings search", () => {
 
   // A page whose name starts with the query beats a setting that merely
   // mentions it; anything weaker loses to the settings themselves.
-  it("ranks a page against the settings that mention it", async () => {
+  it("ranks a page against the settings that mention it, grouped under one page heading each", async () => {
+    // Results gather by page in order of first appearance; the rank holds within a page.
+    const grouped = (query: string) => {
+      const pages = new Map<string, string[]>();
+      for (const item of searchSettings(query))
+        pages.set(item.sectionLabel, [...(pages.get(item.sectionLabel) ?? []), item.label]);
+      return [...pages.values()].flat();
+    };
+    const titles = () =>
+      options().map((item) => item.querySelector("[data-search-result-title]")!.textContent);
     await render("general");
     await type("archive");
-    expect(
-      options().map((item) => item.querySelector("[data-search-result-title]")!.textContent),
-    ).toEqual(searchSettings("archive").map((item) => item.label));
-    expect(options()[0]?.querySelector("[data-search-result-title]")!.textContent).toBe("Archive");
+    expect(titles()).toEqual(grouped("archive"));
+    expect(titles()[0]).toBe("Archive");
 
     await type("notification");
-    expect(
-      options().map((item) => item.querySelector("[data-search-result-title]")!.textContent),
-    ).toEqual(searchSettings("notification").map((item) => item.label));
-    expect(options()[0]?.querySelector("[data-search-result-title]")!.textContent).toBe(
-      "Notifications",
-    );
+    // The previous query's group leaves through an exit animation.
+    await vi.waitFor(() => expect(titles()).toEqual(grouped("notification")));
+    expect(titles()[0]).toBe("Notifications");
   });
 
   it("closes the results without touching the page when cleared", async () => {

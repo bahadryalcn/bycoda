@@ -121,7 +121,7 @@ describe("ImportDialog account and list", () => {
       accounts: [ACCOUNT, second],
     });
 
-    expect(buttonByText("Import 1 people")?.disabled).toBe(true);
+    expect(buttonByText("Import 1 people")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Choose the account the people belong to.");
     pickOption("Account", "X · Studio");
     expect(buttonByText("Import 1 people")?.disabled).toBe(false);
@@ -163,7 +163,7 @@ describe("ImportDialog column mapping", () => {
     const mock = clientMock();
     await chosen(mock, textFile("people.csv", "handle,label,labels\nu1,Ada,vip;lead"));
 
-    expect(buttonByText("Import people")?.disabled).toBe(true);
+    expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Match the Platform ID and Name columns.");
 
     pickOption("Platform ID · Required", "handle");
@@ -178,7 +178,7 @@ describe("ImportDialog column mapping", () => {
   it("cannot import when every row has a problem and lists the problems", async () => {
     const mock = clientMock();
     await chosen(mock, textFile("people.csv", "platformId,name,email\n1,,\n2,Grace,not-an-email"));
-    expect(buttonByText("Import people")?.disabled).toBe(true);
+    expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("No row can be imported. Fix the rows listed below.");
     expect(bodyText()).toContain("Row 1: No name in this row.");
     expect(bodyText()).toContain("Row 2: The email address is not valid.");
@@ -201,7 +201,7 @@ describe("ImportDialog files", () => {
     await chosen(clientMock(), { name: "big.csv", size: 1024 * 1024 + 1, text });
     expect(bodyText()).toContain("The import can be at most 1 MiB.");
     expect(text).not.toHaveBeenCalled();
-    expect(buttonByText("Import people")?.disabled).toBe(true);
+    expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Choose a file first.");
   });
 
@@ -213,7 +213,7 @@ describe("ImportDialog files", () => {
     await flush();
     await flush();
     expect(bodyText()).toContain("The file must contain a JSON list of people.");
-    expect(buttonByText("Import people")?.disabled).toBe(true);
+    expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("imports only the first 500 rows of a longer file and says so", async () => {

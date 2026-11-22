@@ -232,7 +232,8 @@ it("does not hold the settings dialog open while the helper prepares on the Host
     root.render(createElement(DesktopControlSettings, { onDraftStateChange: report })),
   );
   await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
-  expect(container.textContent).toContain("Preparing helper…");
+  // The Helper row tells the preparation once; the Enable row does not repeat it.
+  expect(container.textContent).toContain("Preparing…");
   expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: true, pending: false }));
 });
 it("keeps emergency Stop available while a settings save is pending", async () => {
@@ -343,7 +344,7 @@ it("prepares a missing helper once when computer use is switched on, and never e
   expect(helperPrepares()).toBe(1);
   expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
   expect(mock.request.mock.calls.map(([input]) => input.op)).not.toContain("configure");
-  expect(container.textContent).toContain("Helper not ready");
+  expect(container.textContent).toContain("Not installed");
   await flush();
   expect(helperPrepares()).toBe(1);
 });

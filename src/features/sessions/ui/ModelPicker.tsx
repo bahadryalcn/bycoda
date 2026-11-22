@@ -9,14 +9,7 @@ import { formatShortcutWith, usePlatform } from "../../../shared/ui/shortcut";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Check, Gauge, Zap } from "../../../shared/ui/icons";
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   coerceModelPickerTab,
   getModelSnapshot,
@@ -1062,23 +1055,21 @@ export function ModelPicker({
           highlight="state"
           initialActiveId={recentMenu?.initialId}
           items={[
-            ...recentModels.map(
-              (item): DropdownMenuItem => ({
-                kind: "item",
-                id: modelChoiceKey(item),
-                label: item.name,
-                icon: <HarnessIcon harness={item.harness} className="size-4 shrink-0" />,
-                trailing: (
-                  <Text size="caption" tone="secondary">
-                    {HARNESS_TITLE[item.harness]}
-                    {item.provider ? ` · ${item.provider.name}` : ""}
-                  </Text>
-                ),
-                checked: modelChoiceKey(item) === currentChoiceKey,
-                selectionRole: "radio",
-                disabled: !source.available(item.harness),
-              }),
-            ),
+            ...recentModels.map((item): DropdownMenuItem => ({
+              kind: "item",
+              id: modelChoiceKey(item),
+              label: item.name,
+              icon: <HarnessIcon harness={item.harness} className="size-4 shrink-0" />,
+              trailing: (
+                <Text size="caption" tone="secondary">
+                  {HARNESS_TITLE[item.harness]}
+                  {item.provider ? ` · ${item.provider.name}` : ""}
+                </Text>
+              ),
+              checked: modelChoiceKey(item) === currentChoiceKey,
+              selectionRole: "radio",
+              disabled: !source.available(item.harness),
+            })),
             ...(recentModels.some((item) => source.available(item.harness))
               ? []
               : [

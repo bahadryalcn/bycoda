@@ -42,6 +42,7 @@ import { saveDefaultsTargetsWithDelegation } from "../../model/providerDefaultsS
 import { useDelegationProfile } from "../../../model-routing/public/delegation";
 import { prepareDefaultsDraft } from "../../model/providerDefaultsSupport";
 import { ProviderDefaultsPanel } from "../ProviderDefaultsPanel";
+import { ProviderDefaultsScopeRow } from "../providerDefaultsTargetsPicker";
 import {
   ProviderDefaultsSaveBar,
   useDefaultsTargets,
@@ -224,6 +225,11 @@ export function ModelsPage({
     return unchanged;
   };
 
+  const targetOptions = targets.options.map((option) =>
+    delegation.supported && option.value !== "global"
+      ? { ...option, label: `${option.label} (${t("Chats only")})` }
+      : option,
+  );
   const project = target.kind === "project" ? target.path : null;
   // The settings shell offers "Restore defaults" for a project; visibility and accounts stay.
   useSettingsPageReset(
@@ -280,6 +286,18 @@ export function ModelsPage({
         data-setting-id="models-chat"
         hidden={tab !== "defaults"}
       >
+        <ProviderDefaultsScopeRow
+          selection={targetChoice}
+          target={target}
+          options={targetOptions}
+          onTargetChange={(value) => {
+            if (value === targetChoice) return;
+            leave.guard(() => {
+              updateRetainedModelsPage({ target: value });
+              setTargetChoice(value);
+            });
+          }}
+        />
         <ProviderDefaultsPanel
           harness={activeProvider}
           accountScope={accountScope}
@@ -315,21 +333,7 @@ export function ModelsPage({
             )}
             onDraftChange={setDraft}
             target={target}
-            options={targets.options.map((option) =>
-              delegation.supported && option.value !== "global"
-                ? {
-                    ...option,
-                    label: `${option.label} (${t("Chats only")})`,
-                  }
-                : option,
-            )}
-            onTargetChange={(value) => {
-              if (value === targetChoice) return;
-              leave.guard(() => {
-                updateRetainedModelsPage({ target: value });
-                setTargetChoice(value);
-              });
-            }}
+            options={targetOptions}
             changes={changes}
             saveState={saveState}
             saving={saving}

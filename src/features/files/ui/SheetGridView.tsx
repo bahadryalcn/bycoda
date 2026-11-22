@@ -1,6 +1,8 @@
 import "./SheetGridView.css";
 import type { CSSProperties } from "react";
 import { Text } from "../../../shared/ui/Text";
+import { Badge } from "../../../shared/ui/Badge";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -83,24 +85,34 @@ export function SheetGridView({
       }
     >
       {grid.truncated ? (
-        <Text
-          as="div"
-          size="micro"
-          tone="secondary"
-          {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-1")}
+        <div
+          {...surfaceAttributes(
+            { frame: "pane", edge: "bottom" },
+            "flex shrink-0 items-center gap-1.5 px-3 py-1",
+          )}
         >
-          {t("Showing the first {p0} of {p1} rows and {p2} of {p3} columns.", {
-            p0: format.formatNumber(grid.rowCount, { maximumFractionDigits: 0 }),
-            p1: format.formatNumber(grid.totalRows, { maximumFractionDigits: 0 }),
-            p2: format.formatNumber(grid.columns.length, { maximumFractionDigits: 0 }),
-            p3: format.formatNumber(grid.totalColumns, { maximumFractionDigits: 0 }),
-          })}
-          {grid.budgetLimited
-            ? ` ${t(
-                "Cell/text preview budget reached; some values are omitted or shortened. Open the original file to see all values.",
-              )}`
-            : ""}
-        </Text>
+          <Badge size="sm" tone="neutral">
+            {t("{p0} of {p1} rows", {
+              p0: format.formatNumber(grid.rowCount, { maximumFractionDigits: 0 }),
+              p1: format.formatNumber(grid.totalRows, { maximumFractionDigits: 0 }),
+            })}
+          </Badge>
+          <InfoPopover label={t("Preview limits")}>
+            <Text as="p" size="caption" tone="secondary">
+              {t("Showing the first {p0} of {p1} rows and {p2} of {p3} columns.", {
+                p0: format.formatNumber(grid.rowCount, { maximumFractionDigits: 0 }),
+                p1: format.formatNumber(grid.totalRows, { maximumFractionDigits: 0 }),
+                p2: format.formatNumber(grid.columns.length, { maximumFractionDigits: 0 }),
+                p3: format.formatNumber(grid.totalColumns, { maximumFractionDigits: 0 }),
+              })}
+              {grid.budgetLimited
+                ? ` ${t(
+                    "Cell/text preview budget reached; some values are omitted or shortened. Open the original file to see all values.",
+                  )}`
+                : ""}
+            </Text>
+          </InfoPopover>
+        </div>
       ) : null}
       <div
         ref={scrollRef}

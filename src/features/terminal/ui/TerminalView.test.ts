@@ -1014,7 +1014,14 @@ it.each(["terminal input is backed up", "disconnected"])(
         edit("\r");
       });
       expect(pty.writePty).toHaveBeenCalledExactlyOnceWith(`failure-${message}`, "npm test");
-      expect(host.querySelector('[role="status"]')?.textContent).toContain(message);
+      // The band says what to do; the raw cause waits behind Details instead of repeating it.
+      expect(host.querySelector('[role="status"]')?.textContent).toContain("Input paused");
+      expect(host.querySelector('[role="status"]')?.textContent).not.toContain(message);
+      const details = Array.from(host.querySelectorAll("button")).find(
+        (button) => button.textContent === "Details",
+      );
+      await act(async () => details?.click());
+      expect(document.body.textContent).toContain(message);
       await act(async () => edit("discarded\r"));
       expect(pty.writePty).toHaveBeenCalledTimes(1);
       const resume = Array.from(host.querySelectorAll("button")).find((button) =>

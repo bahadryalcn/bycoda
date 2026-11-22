@@ -128,7 +128,7 @@ it("collects only the required fields, keeps the draft and advances with them", 
   await submit();
   expect(field("Email address")).toBeTruthy();
   expect(field("Username")).toBeTruthy();
-  expect(button("Continue")?.disabled).toBe(true);
+  expect(button("Continue")?.getAttribute("aria-disabled")).toBe("true");
   type("Email address", "ada@example.com");
   type("Username", "ada_l");
   expect(field("Email address").value).toBe("ada@example.com");

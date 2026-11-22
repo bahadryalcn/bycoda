@@ -199,7 +199,9 @@ it("requires a booted device for capture and prevents booting a physical device"
   expect(button("Boot")).toBeUndefined();
   expect(button("Start emulator")).toBeUndefined();
   expect(container.textContent).not.toContain("Boot the selected device");
-  expect(container.textContent).toContain("This phone is not available");
+  // The connection help sits behind its info button, not in the layout.
+  expect(container.textContent).not.toContain("This phone is not available");
+  expect(container.querySelector('button[aria-label="How to connect"]')).not.toBeNull();
   expect(container.textContent).toContain("Not ready");
   expect(button("Refresh devices")).toBeDefined();
   expect(api.boot).not.toHaveBeenCalled();
@@ -221,7 +223,8 @@ it("shows a stopped emulator's facts and boots it only from its named Start acti
   );
   expect(container.querySelector(".device-panel-bar")?.textContent).not.toContain("Emulator");
   expect(api.boot).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("Start this emulator");
+  // The button names the action; no sentence repeats it.
+  expect(container.textContent).not.toContain("Start this emulator");
   await act(async () => button("Start emulator").click());
   expect(api.boot).toHaveBeenCalledWith("emulator");
 });
@@ -610,9 +613,9 @@ it("reports the host state as unknown until discovery itself succeeds", async ()
   expect(setupSummary()).toContain("Device host running");
   vi.mocked(api.list).mockRejectedValueOnce(new Error("Discovery refresh failed"));
   await clickButton("Refresh devices");
-  expect(setupSummary()).toContain("Unknown");
+  expect(setupSummary()).toContain("Device host status unknown");
   await clickButton("Capture");
-  expect(setupSummary()).toContain("Unknown");
+  expect(setupSummary()).toContain("Device host status unknown");
   await clickButton("Refresh devices");
   expect(setupSummary()).toContain("Device host running");
 });
@@ -807,7 +810,9 @@ it("loads devices from an already-running host and offers status retry", async (
       }),
     );
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not load devices");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load devices",
+  );
   const retry = button("Try again");
   retry.focus();
   await act(async () => retry.click());

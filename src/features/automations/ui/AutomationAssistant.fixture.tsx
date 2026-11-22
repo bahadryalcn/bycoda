@@ -13,6 +13,7 @@ vi.mock("../../../shared/ui/Modal", () => ({
       {footer}
     </div>
   ),
+  ModalActions: ({ children }: any) => <div>{children}</div>,
 }));
 vi.mock("../../sessions/ui/ModelPicker", () => ({
   ModelPicker: ({ onChange }: any) => (

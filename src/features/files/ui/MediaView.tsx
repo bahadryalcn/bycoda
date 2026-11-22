@@ -1,4 +1,3 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
@@ -314,16 +313,10 @@ export function MediaView({
             </div>
           </DocumentMessage>
         ) : state.status === "cancelled" ? (
-          <DocumentMessage title={t("Cancelled")}>
-            <Button
-              variant="ghost"
-              motion="none"
-              type="button"
-              onClick={() => setRetry((value) => value + 1)}
-            >
-              {t("Retry")}
-            </Button>
-          </DocumentMessage>
+          <DocumentMessage
+            title={t("Opening cancelled")}
+            onRetry={() => setRetry((value) => value + 1)}
+          />
         ) : (
           <FileTransferProgress
             label={t("Loading…")}
@@ -341,11 +334,7 @@ export function MediaView({
                 {metadata.width} × {metadata.height}
               </span>
             ) : null}
-            {duration ? (
-              <Tooltip label={t("Duration")} asChild>
-                <span className="whitespace-nowrap tabular-nums">{duration}</span>
-              </Tooltip>
-            ) : null}
+            {duration ? <span className="whitespace-nowrap tabular-nums">{duration}</span> : null}
             {currentVideo && state.size !== undefined ? (
               <span className="whitespace-nowrap tabular-nums">{formatFileSize(state.size)}</span>
             ) : null}

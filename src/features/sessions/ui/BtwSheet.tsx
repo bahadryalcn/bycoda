@@ -546,47 +546,47 @@ export function BtwSheet({
         ) : null
       }
       tabs={
-          <Tabs value={activeTabId ?? ""} onValueChange={btw.selectTab} panels="none">
-            <TabList
-              label={t("Side questions")}
-              scrollbar="hidden"
-              className="min-w-0 flex-1 overflow-x-auto"
-            >
-              {tabs.map((tab) => {
-                const selected = tab.id === activeTabId;
-                const label = compactQuestion(tab.question);
-                return (
-                  <ActionHost
-                    key={tab.id}
-                    selected={selected}
-                    {...surfaceAttributes(
-                      { radius: "row" },
-                      "flex max-w-[15rem] shrink-0 items-center",
-                    )}
+        <Tabs value={activeTabId ?? ""} onValueChange={btw.selectTab} panels="none">
+          <TabList
+            label={t("Side questions")}
+            scrollbar="hidden"
+            className="min-w-0 flex-1 overflow-x-auto"
+          >
+            {tabs.map((tab) => {
+              const selected = tab.id === activeTabId;
+              const label = compactQuestion(tab.question);
+              return (
+                <ActionHost
+                  key={tab.id}
+                  selected={selected}
+                  {...surfaceAttributes(
+                    { radius: "row" },
+                    "flex max-w-[15rem] shrink-0 items-center",
+                  )}
+                >
+                  <Tab value={tab.id} tooltip={tab.question} className="min-w-0">
+                    {tab.status ? <BtwStatusDot status={tab.status} /> : null}
+                    <Text size="inherit" tone="inherit" truncate>
+                      {label}
+                    </Text>
+                  </Tab>
+                  <InlineAction
+                    className="me-1 shrink-0"
+                    tabIndex={selected ? 0 : -1}
+                    label={
+                      tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
+                    }
+                    type="button"
+                    tooltip={tab.thread ? t("Delete") : t("Discard")}
+                    onClick={() => btw.closeTab(tab)}
                   >
-                    <Tab value={tab.id} tooltip={tab.question} className="min-w-0">
-                      {tab.status ? <BtwStatusDot status={tab.status} /> : null}
-                      <Text size="inherit" tone="inherit" truncate>
-                        {label}
-                      </Text>
-                    </Tab>
-                    <InlineAction
-                      className="me-1 shrink-0"
-                      tabIndex={selected ? 0 : -1}
-                      label={
-                        tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
-                      }
-                      type="button"
-                      tooltip={tab.thread ? t("Delete") : t("Discard")}
-                      onClick={() => btw.closeTab(tab)}
-                    >
-                      <X className="icon-xs" strokeWidth={1.75} />
-                    </InlineAction>
-                  </ActionHost>
-                );
-              })}
-            </TabList>
-          </Tabs>
+                    <X className="icon-xs" strokeWidth={1.75} />
+                  </InlineAction>
+                </ActionHost>
+              );
+            })}
+          </TabList>
+        </Tabs>
       }
     >
       <div className="min-h-0 flex-1">

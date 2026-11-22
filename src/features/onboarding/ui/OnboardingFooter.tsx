@@ -23,7 +23,7 @@ export function OnboardingFooter({
       <div className="onboarding-footer-start">
         {start}
         {note ? (
-          <Text as="span" size="micro" tone="muted" className="onboarding-save-note">
+          <Text as="span" size="caption" tone="secondary" className="onboarding-save-note">
             {note}
           </Text>
         ) : null}

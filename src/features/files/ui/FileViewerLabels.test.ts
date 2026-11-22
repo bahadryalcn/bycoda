@@ -70,7 +70,7 @@ it("translates native reveal actions and empty-cell accessible names", async () 
         createElement(BinaryFileView, { path: "C:/project/unsupported.png", cwd: "C:/project" }),
       ),
     );
-    expect(host.textContent).toContain("localized:It isn’t a readable image.");
+    expect(host.textContent).toContain("localized:Not an image");
   } finally {
     await act(async () => root.unmount());
     host.remove();

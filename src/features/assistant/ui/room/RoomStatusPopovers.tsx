@@ -4,13 +4,22 @@ import { Button } from "../../../../shared/ui/Button";
 import { Text } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
 import { Popover } from "../../../../shared/ui/Popover";
+import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { AssistantKeepAwakeStatus } from "../AssistantKeepAwakeStatus";
 import { AssistantPresenceStatus } from "../AssistantPresenceStatus";
 import styles from "./RoomShell.module.css";
 import { date } from "./assistantRoomHelpers";
 import { useAssistantRoom } from "./assistantRoomContext";
 
-export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }) {
+/** `workLabel` is the header chip's work state, so the panel names it instead of contradicting it. */
+export function RoomStatusPopovers({
+  snapshot,
+  workLabel,
+}: {
+  snapshot: AssistantSnapshot;
+  workLabel: string;
+}) {
   const room = useAssistantRoom();
   const {
     setSettings,
@@ -34,24 +43,42 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
           variant="panel"
         >
           <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
-            <AssistantPresenceStatus
-              snapshot={snapshot}
-              offline={Boolean(room.readError)}
-              details
-            />
+            <DescriptionList size="sm">
+              <DescriptionItem
+                term={
+                  <>
+                    {t("Work")}
+                    <InfoPopover label={t("About work tracking")}>
+                      <Text as="p" tone="muted" leading="inherit">
+                        {t("Work tracking continues while voice is off.")}
+                      </Text>
+                    </InfoPopover>
+                  </>
+                }
+              >
+                {workLabel}
+              </DescriptionItem>
+              <DescriptionItem term={t("Presence")}>
+                <AssistantPresenceStatus
+                  snapshot={snapshot}
+                  offline={Boolean(room.readError)}
+                  details
+                />
+              </DescriptionItem>
+              <DescriptionItem term={t("Last checked")}>
+                {snapshot.lastHeartbeatAt
+                  ? date(snapshot.lastHeartbeatAt)
+                  : t("Waiting for the first check")}
+              </DescriptionItem>
+              <DescriptionItem term={t("Sleep prevention")}>
+                <AssistantKeepAwakeStatus state={snapshot.keepAwake} />
+              </DescriptionItem>
+            </DescriptionList>
             {roomPrivacy.pending && (
               <Text as="p" tone="secondary" leading="normal">
                 {t("Confirming Room privacy protection…")}
               </Text>
             )}
-            <Text as="p" leading="normal">
-              {snapshot.lastHeartbeatAt
-                ? t("Last checked: {p0}", {
-                    p0: date(snapshot.lastHeartbeatAt),
-                  })
-                : t("Waiting for the first check")}
-            </Text>
-            <AssistantKeepAwakeStatus state={snapshot.keepAwake} />
             <Button
               variant="link"
               onClick={() => {
@@ -63,9 +90,6 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
                 p0: formatNumber(snapshot.usage.total),
               })}
             </Button>
-            <Text as="p" leading="normal">
-              {t("Work tracking continues while voice is off.")}
-            </Text>
             <Select
               hideLabel
               label={t("Presence")}

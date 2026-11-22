@@ -101,7 +101,9 @@ test("unavailable history disables file revert with its reason and permits keep 
   page,
 }) => {
   await open(page, "unavailable");
-  await expect(dialog(page).getByRole("switch", { name: "Also revert file changes" })).toBeDisabled();
+  await expect(
+    dialog(page).getByRole("switch", { name: "Also revert file changes" }),
+  ).toBeDisabled();
   await expect(dialog(page)).toContainText("File history for this older message is unavailable.");
   await confirm(page);
   await restored(page);

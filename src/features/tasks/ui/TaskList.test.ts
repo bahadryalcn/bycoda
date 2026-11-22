@@ -117,5 +117,37 @@ it("shows the assignment title without repeating crew role instructions", async 
   );
   expect(container.textContent).toContain("Repair standalone packaging");
   expect(container.textContent).not.toContain("Responsibilities");
+  expect(container.textContent).not.toContain("Workstation");
+});
+
+it("shows a failure's reason on the row and names machines only when several are listed", async () => {
+  const failed = {
+    id: "failed-task",
+    title: "Ship the report",
+    prompt: "Ship it",
+    status: "blocked",
+    error: "Checks failed: 2 tests. See the log.",
+    machineId: "a",
+    machineName: "Workstation",
+    cwd: "/project",
+  } as BoardTask;
+  const other = { ...failed, id: "other", error: undefined, machineId: "b", machineName: "Laptop" };
+  const draw = (tasks: BoardTask[]) =>
+    act(async () =>
+      root.render(
+        createElement(TaskList, {
+          tasks,
+          selection: false,
+          selected: new Set<string>(),
+          onOpen: vi.fn(),
+          onToggle: vi.fn(),
+        }),
+      ),
+    );
+  await draw([failed]);
+  expect(container.textContent).toContain("Checks failed: 2 tests.");
+  expect(container.textContent).not.toContain("Workstation");
+  await draw([failed, other]);
   expect(container.textContent).toContain("Workstation");
+  expect(container.textContent).toContain("Laptop");
 });

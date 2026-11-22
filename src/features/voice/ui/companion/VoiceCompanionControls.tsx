@@ -96,15 +96,15 @@ export function VoiceCompanionControls({
         </Button>
         {status !== "idle" && (
           <Button
-          shape="pill"
-          size="lg"
-          tone="danger"
-          aria-label={t("Disconnect voice")}
-          startIcon={<PhoneOff className="icon-sm" />}
-          onClick={onClose}
-        >
-          {t("Disconnect")}
-        </Button>
+            shape="pill"
+            size="lg"
+            tone="danger"
+            aria-label={t("Disconnect voice")}
+            startIcon={<PhoneOff className="icon-sm" />}
+            onClick={onClose}
+          >
+            {t("Disconnect")}
+          </Button>
         )}
       </div>
     );

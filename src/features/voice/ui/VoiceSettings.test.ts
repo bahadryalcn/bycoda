@@ -272,8 +272,8 @@ async function openLocate() {
       .querySelector<HTMLButtonElement>('button[aria-label="More voice setup actions"]')!
       .click(),
   );
-  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-    (element) => element.textContent?.includes("Locate existing"),
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((element) =>
+    element.textContent?.includes("Locate existing"),
   );
   expect(item).toBeDefined();
   await act(async () => item!.click());

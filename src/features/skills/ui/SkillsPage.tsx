@@ -48,7 +48,8 @@ import {
   type ReactNode,
 } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { RefreshCw, X } from "../../../shared/ui/icons";
+import { ChevronLeft, RefreshCw, X } from "../../../shared/ui/icons";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { confirmNative } from "../../source-control/model/gitConfirmation";
 import { canTransferSkill, SkillExistsError, transferSkill } from "../model/transferSkill";
@@ -1052,10 +1053,7 @@ export function SkillsPage({
             onClose={() => groupView.selectGroup(null)}
           />
         ) : groupView.view === "groups" ? (
-          <EmptyState
-            title={t("Select a group")}
-            description={t("Choose a group to add or remove its skills.")}
-          />
+          <EmptyState title={t("Select a group")} />
         ) : previewSkill && shownCopy ? (
           <aside id={previewId} aria-label={t("Skill preview")} className={styles.detail}>
             <header className={styles.detailHeader}>
@@ -1063,6 +1061,15 @@ export function SkillsPage({
                 className={styles.headingRow}
                 aria-busy={policyTarget === JSON.stringify([shownOn, previewSkill.path])}
               >
+                <Button
+                  variant="ghost"
+                  className={styles.backAction}
+                  startIcon={<ChevronLeft className="icon-sm" aria-hidden="true" />}
+                  disabled={saving}
+                  onClick={() => setPreviewSkill(null)}
+                >
+                  {t("Back")}
+                </Button>
                 <Heading size="page" level={2}>
                   {previewSkill.name}
                 </Heading>
@@ -1085,6 +1092,7 @@ export function SkillsPage({
                   ref={closePreview}
                   variant="ghost"
                   iconOnly
+                  className={styles.closeAction}
                   label={t("Close skill preview")}
                   tooltip={t("Close preview (Escape)")}
                   disabled={saving}
@@ -1127,14 +1135,14 @@ export function SkillsPage({
                   {previewSkill.description}
                 </Text>
               ) : null}
-              {!canDeleteSkill(previewSkill) ? (
+              {!canDeleteSkill(previewSkill) || previewMachine ? (
                 <Text as="p" size="caption" tone="secondary" leading="inherit">
-                  {t("Managed skill: deletion is controlled by the provider, plugin or app.")}
-                </Text>
-              ) : null}
-              {previewMachine ? (
-                <Text as="p" size="caption" tone="secondary" leading="inherit">
-                  {t("Copy this skill to this computer to edit it.")}
+                  {!canDeleteSkill(previewSkill) ? t("Managed skill") : t("Read-only copy")}
+                  <InfoPopover label={t("About this skill's access")}>
+                    {!canDeleteSkill(previewSkill)
+                      ? t("Managed skill: deletion is controlled by the provider, plugin or app.")
+                      : t("Copy this skill to this computer to edit it.")}
+                  </InfoPopover>
                 </Text>
               ) : null}
               {machines.length ? (
@@ -1186,7 +1194,11 @@ export function SkillsPage({
                       {t("Discard changes")}
                     </Button>
                   ) : null}
-                  {editable ? (
+                  {editable &&
+                  (dirty ||
+                    saving ||
+                    (savedDocument?.path === previewSkill.path &&
+                      savedDocument.content === draft)) ? (
                     <Button
                       variant="primary"
                       loading={saving}
@@ -1197,6 +1209,7 @@ export function SkillsPage({
                         savedDocument.content === draft
                       }
                       successLabel={t("Saved")}
+                      tooltip={t("Save (Ctrl/Cmd+S)")}
                       disabled={!dirty || previewText === null}
                       onClick={() => void onSave()}
                     >
@@ -1304,18 +1317,12 @@ export function SkillsPage({
                 >
                   {/* A read failure is announced once, in the pane above, not again here. */}
                   <span>{previewError ? null : previewStatusText[previewStatus]}</span>
-                  <span>
-                    {editingSource || (split && editable) ? t("Ctrl/Cmd+S to save") : t("Markdown")}
-                  </span>
                 </Text>
               </>
             )}
           </aside>
         ) : (
-          <EmptyState
-            title={t("Select a skill")}
-            description={t("Choose a skill to view or edit its instructions.")}
-          />
+          <EmptyState title={t("Select a skill")} />
         )}
         {actionFeedback}
       </div>

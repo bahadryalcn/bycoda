@@ -45,7 +45,7 @@ function InstallProgress({ progress }: { progress: InstallState["progress"] | nu
 }
 
 /**
- * Local install in three steps: this computer, the recommendation, then an explicit install.
+ * Local install in two steps: this computer with its recommendation, then an explicit install.
  * An insufficient machine never gets an install button; the API path is offered instead.
  */
 export function LocalInstallWizard({
@@ -119,11 +119,10 @@ export function LocalInstallWizard({
   const [wasInstalling, setWasInstalling] = useState(installing);
   if (wasInstalling !== installing) {
     setWasInstalling(installing);
-    if (installing) setStep(2);
+    if (installing) setStep(1);
   }
 
   const steps: StepperStep[] = [
-    { id: "computer", label: target ?? t("This computer") },
     { id: "recommendation", label: t("Recommendation") },
     {
       id: "install",
@@ -133,21 +132,22 @@ export function LocalInstallWizard({
   ];
   const installed = result?.state === "installed" || result?.state === "running";
   // One primary action per step keeps the footer a single decision.
+  const planBlocked = plan !== null && (!plan.installable || !plan.fits);
   const primary =
-    step === 0
-      ? { label: t("Continue"), disabled: !loaded, onClick: () => setStep(1) }
-      : step === 1 && offer === "install"
-        ? { label: t("Continue"), disabled: !readyToInstall, onClick: () => setStep(2) }
-        : step === 1 && offer === "api"
-          ? { label: t("Choose an API provider"), onClick: onChooseApi }
-          : step === 2 && !installed
+    step === 0 && offer === "install" && !planBlocked
+      ? { label: t("Continue"), disabled: !readyToInstall, onClick: () => setStep(1) }
+      : step === 0 && (offer === "api" || planBlocked)
+        ? { label: t("Choose an API provider"), onClick: onChooseApi }
+        : step === 0
+          ? { label: t("Continue"), disabled: true, onClick: () => setStep(1) }
+          : step === 1 && !installed
             ? {
                 label: t("Install"),
                 loading: installing,
                 disabled: installing || !modelId || !readyToInstall || result !== null,
                 onClick: install,
               }
-            : step === 2 && installed
+            : step === 1 && installed
               ? { label: t("Done"), onClick: onClose }
               : null;
 
@@ -160,6 +160,7 @@ export function LocalInstallWizard({
           : t("A local model runs on this computer and needs no key.")
       }
       size="lg"
+      height="tall"
       onClose={onClose}
       closeDisabled={installing}
       footer={
@@ -188,7 +189,7 @@ export function LocalInstallWizard({
       }
     >
       <div className="flex min-w-0 flex-col gap-4">
-        <Stepper steps={steps} current={step} label={t("Install steps")} compact />
+        <Stepper steps={steps} current={step} label={t("Install steps")} />
         {step === 0 ? (
           <div className="flex min-w-0 flex-col gap-2">
             {loadError !== null ? (
@@ -214,7 +215,7 @@ export function LocalInstallWizard({
             ) : null}
           </div>
         ) : null}
-        {step === 1 && loaded ? (
+        {step === 0 && loaded ? (
           <div className="flex min-w-0 flex-col gap-2">
             <p>{recommendationText(loaded.recommendation.tier)}</p>
             {offer === "install" ? (
@@ -258,11 +259,6 @@ export function LocalInstallWizard({
                     })}
                   </InlineMessage>
                 ) : null}
-                {plan !== null && (!plan.installable || !plan.fits) ? (
-                  <Button variant="secondary" onClick={onChooseApi}>
-                    {t("Choose an API provider")}
-                  </Button>
-                ) : null}
               </>
             ) : null}
             {offer === "unknown" ? (
@@ -274,7 +270,7 @@ export function LocalInstallWizard({
             ) : null}
           </div>
         ) : null}
-        {step === 2 ? (
+        {step === 1 ? (
           <div className="flex min-w-0 flex-col gap-2">
             {result === null && !installing && installError === null && !local.cancelled ? (
               <p>

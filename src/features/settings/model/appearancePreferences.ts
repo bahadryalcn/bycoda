@@ -299,7 +299,10 @@ export function applyAppearancePreferences(value: AppearancePreferences) {
     "--appearance-transcript-surface-opacity",
     `${value.transcriptSurfaceOpacity}%`,
   );
-  root.style.setProperty("--appearance-transcript-surface-blur", `${value.transcriptSurfaceBlur}px`);
+  root.style.setProperty(
+    "--appearance-transcript-surface-blur",
+    `${value.transcriptSurfaceBlur}px`,
+  );
   root.style.setProperty("--appearance-transcript-body-ink", `${value.transcriptBodyInk}%`);
   root.style.setProperty("--appearance-transcript-chrome-ink", `${value.transcriptChromeInk}%`);
   // Unitless multiplier the transcript ink reads; Contrast 100 leaves it at 1.

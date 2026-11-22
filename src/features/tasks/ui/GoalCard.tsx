@@ -106,7 +106,11 @@ export function GoalCard({
             <GoalStatusBadge status={goal.status} />
           </div>
           <Text as="p" size="caption" tone="secondary">
-            <TaskModelChoiceLabel choice={goal.modelChoice} machineId={goal.machineId} /> ·{" "}
+            {goal.modelChoice && goal.modelChoice.kind !== "fixed" ? (
+              <>
+                <TaskModelChoiceLabel choice={goal.modelChoice} machineId={goal.machineId} /> ·{" "}
+              </>
+            ) : null}
             <ModelLabel harness={goal.harness} model={goal.model} />
           </Text>
           <Text
@@ -123,13 +127,7 @@ export function GoalCard({
                   aria-label={t("Epic progress")}
                   value={progress.done}
                   max={progress.total}
-                  tone={
-                    goal.status === "blocked"
-                      ? "danger"
-                      : goal.status === "done"
-                        ? "success"
-                        : "neutral"
-                  }
+                  tone={goal.status === "done" ? "success" : "neutral"}
                 />
                 <span>{t("{p0}/{p1} done", { p0: progress.done, p1: progress.total })}</span>
               </span>
@@ -152,11 +150,11 @@ export function GoalCard({
               truncate
               className="goal-card-machine"
             >
-              {t(" · on")} {goal.machineName}
+              {t("on {p0}", { p0: goal.machineName })}
             </Text>
             {goal.stale && !goal.pendingRefresh ? (
               <Text size="inherit" tone="warning" leading="inherit" wrap="anywhere">
-                {t(" (offline, last known)").trim()}
+                {t("Offline")}
               </Text>
             ) : null}
           </Text>

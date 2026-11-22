@@ -341,11 +341,9 @@ export function SettingsView({
             onChange={(value) => onReveal(value as SettingsSectionId, null)}
           />
         </div>
-        {embedded ? (
-          <Text as="span" size="secondary" tone="secondary" className="bycoda-settings-breadcrumb">
-            {t("Settings")} <span aria-hidden="true">/</span>
-          </Text>
-        ) : null}
+        <Text as="span" size="secondary" tone="secondary" className="bycoda-settings-breadcrumb">
+          {t("Settings")} <span aria-hidden="true">/</span>
+        </Text>
         <Heading size="page" truncate className="settings-page-title" tabIndex={-1}>
           {settingsSectionLabel(section)}
         </Heading>
@@ -440,8 +438,6 @@ export function SettingsView({
               </Text>
             </Button>
           }
-          title={t("Settings")}
-          titleAs="div"
           trailing={IS_MAC ? null : <WindowControls />}
         />
       )}

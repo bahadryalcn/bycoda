@@ -240,7 +240,6 @@ export function ManualSessionSupervision({
       <>
         <Row
           label={t("Supervise my conversations")}
-          descriptionVisible
           description={t("Only enrolled conversations in selected projects are supervised.")}
         >
           {off}

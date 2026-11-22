@@ -89,6 +89,19 @@ async function click(text: string) {
   expect(button).toBeDefined();
   await act(async () => button!.click());
 }
+async function openDetails() {
+  const details = [...container.querySelectorAll<HTMLElement>("button")].find((b) =>
+    b.textContent?.startsWith("Details"),
+  );
+  expect(details).toBeDefined();
+  await act(async () => details!.click());
+}
+
+it("names the status on backlog cards only; a kanban column already is the status", () => {
+  const card = () => container.querySelector("article")!.textContent;
+  expect(card()).toContain("ENG-1");
+  expect(card()).not.toContain("Ready");
+});
 
 it("restores the board mode and search after leaving the board and returning", async () => {
   await click("Backlog & sprints");
@@ -208,7 +221,11 @@ it("keeps failed writes visible after reloading the server state", async () => {
   );
   await click("Move ENG-1");
   await click("Working");
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Permission denied");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "The Jira request failed.",
+  );
+  await openDetails();
+  expect(document.querySelector("pre")?.textContent).toBe("Permission denied");
   expect(container.querySelector('section[aria-label="Ready"]')?.textContent).toContain("ENG-1");
 });
 it("does not claim an empty sprint after its refresh failed", async () => {
@@ -223,7 +240,9 @@ it("does not claim an empty sprint after its refresh failed", async () => {
       : previous(command, args),
   );
   await click("Refresh");
-  expect(sprint().textContent).toContain("Sprint unavailable");
+  expect(sprint().textContent).toContain("Could not load these issues.");
+  await openDetails();
+  expect(document.querySelector("pre")?.textContent).toContain("Sprint unavailable");
   expect(sprint().textContent).not.toContain("Drop issues here");
   expect(sprint().querySelector('[role="alert"]')).not.toBeNull();
 });
@@ -475,7 +494,9 @@ it("keeps loaded issues and offers retry after a later page fails", async () => 
   await click("Refresh");
   await click("Load more issues");
   expect(container.textContent).toContain("ENG-1");
-  expect(container.textContent).toContain("Page unavailable");
+  expect(container.textContent).toContain("Could not load these issues.");
+  await openDetails();
+  expect(document.querySelector("pre")?.textContent).toContain("Page unavailable");
   expect(container.textContent).toContain("Retry");
 });
 

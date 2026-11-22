@@ -1,6 +1,8 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { TabStrip } from "../../../shared/ui/Tabs";
+import { Badge } from "../../../shared/ui/Badge";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useCallback, useState, type ComponentProps } from "react";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -45,7 +47,7 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
       <div
         {...surfaceAttributes(
           { frame: "pane", edge: "bottom" },
-          "flex shrink-0 items-center px-3 py-1.5",
+          "flex shrink-0 items-center gap-2 px-3 py-1.5",
         )}
       >
         <TabStrip
@@ -60,12 +62,23 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
             { value: "source", label: t("Source") },
           ]}
         />
+        {dirty ? (
+          <>
+            <Badge size="sm" tone="warning">
+              {t("Unsaved")}
+            </Badge>
+            {mode === "preview" ? (
+              <InfoPopover label={t("Unsaved edits")}>
+                <Text as="p" size="caption" tone="secondary">
+                  {t(
+                    "Preview shows the saved file. Your source edits are kept in the Source view.",
+                  )}
+                </Text>
+              </InfoPopover>
+            ) : null}
+          </>
+        ) : null}
       </div>
-      {mode === "preview" && dirty ? (
-        <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-1">
-          {t("Preview shows the saved file. Your source edits are kept in the Source view.")}
-        </Text>
-      ) : null}
       <div className="relative min-h-0 flex-1">
         {mode === "preview" ? (
           <DocumentView path={props.path} cwd={props.cwd} visible={props.shown} />

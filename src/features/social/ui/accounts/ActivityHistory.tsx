@@ -209,6 +209,11 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
                 details={
                   <>
                     <p>{truncateGraphemes(job.payload.text, 160)}</p>
+                    {job.status === "review" ? (
+                      <InlineMessage tone="warning" live="off">
+                        {reviewReasonText(job.reviewReason)}
+                      </InlineMessage>
+                    ) : null}
                     {job.error ? (
                       <TechnicalDetails>
                         <p>{job.error}</p>
@@ -217,11 +222,6 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
                   </>
                 }
               />
-              {job.status === "review" ? (
-                <InlineMessage tone="warning" live="off" className="social-history-held-reason">
-                  {reviewReasonText(job.reviewReason)}
-                </InlineMessage>
-              ) : null}
             </div>
           );
         }

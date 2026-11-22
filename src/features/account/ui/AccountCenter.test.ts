@@ -266,31 +266,11 @@ describe("account rail row", () => {
     expect(container.querySelector("button")?.getAttribute("aria-current")).toBe("true");
   });
 
-  it("lays out a narrow account pane horizontally on the first commit, without waiting for an observer", async () => {
-    // Regression for #593: the wide layout must not be the first commit's answer. The observer is
-    // stubbed silent, so only the synchronous measurement in the layout effect can set the layout.
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      },
+  it("keeps the account tabs in one horizontal strip at any width", async () => {
+    mocks.state = signedIn();
+    await render(AccountScreen);
+    expect(container.querySelector('[role="tablist"]')?.getAttribute("aria-orientation")).toBe(
+      "horizontal",
     );
-    const width = vi
-      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockReturnValue(new DOMRect(0, 0, 480, 600));
-    try {
-      mocks.state = signedIn();
-      await render(AccountScreen);
-      const screen = container.firstElementChild as HTMLElement;
-      expect(screen.hasAttribute("data-wide")).toBe(false);
-      expect(container.querySelector('[role="tablist"]')?.getAttribute("aria-orientation")).toBe(
-        "horizontal",
-      );
-    } finally {
-      width.mockRestore();
-      vi.unstubAllGlobals();
-    }
   });
 });

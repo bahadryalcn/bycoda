@@ -185,7 +185,7 @@ it.each<[string | undefined, string]>([
   [undefined, "Needs review"],
 ])("explains a held job with reason %s as %s", async (reviewReason, text) => {
   await mount({ jobs: [job({ status: "review", reviewReason })] });
-  expect(element.querySelector(".social-history-held-reason")?.textContent).toContain(text);
+  expect(element.textContent).toContain(text);
 });
 
 it("never offers to send a held, failed or uncertain job again", async () => {

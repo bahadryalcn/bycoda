@@ -79,7 +79,9 @@ it("draws a glyph only when one is passed (no default folder)", async () => {
 
 it("maps inset to the Surface padding scale for block and inline states", async () => {
   for (const size of ["block", "inline"] as const) {
-    const row = await mount(createElement(EmptyState, { size, description: "Empty", inset: "row" }));
+    const row = await mount(
+      createElement(EmptyState, { size, description: "Empty", inset: "row" }),
+    );
     const panel = await mount(
       createElement(EmptyState, { size, description: "Empty", inset: "panel" }),
     );

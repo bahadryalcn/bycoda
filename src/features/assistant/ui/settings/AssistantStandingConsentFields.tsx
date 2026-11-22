@@ -41,7 +41,6 @@ export function AssistantStandingConsentFields({
       <Row
         label={t("Assistant authority")}
         controlId={authorityId}
-        descriptionVisible
         description={t(
           "Applies to this workspace and the selected Host. Coding conversations keep their own permissions.",
         )}

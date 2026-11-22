@@ -153,11 +153,7 @@ function assign<T>(ref: Ref<T> | undefined, value: T | null) {
 }
 
 const cssSize = (value: number | string) =>
-  typeof value === "number"
-    ? `${value}px`
-    : value in SIZE
-      ? SIZE[value as SheetSize]
-      : value;
+  typeof value === "number" ? `${value}px` : value in SIZE ? SIZE[value as SheetSize] : value;
 
 /**
  * Container sheets stay off the overlay stack, so they return focus themselves: the control that

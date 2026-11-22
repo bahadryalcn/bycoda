@@ -54,7 +54,8 @@ export function CrewTeamItem({
   const scope = crew.projectId ? t("This project") : t("All projects on this host");
   const work = runs.length
     ? [
-        execution ? crewWorkStatusLabel(execution) : "",
+        // One status: attention already names the state, so the execution label is dropped.
+        execution && !attention ? crewWorkStatusLabel(execution) : "",
         runs.length > 1 ? t("{p0} ongoing", { p0: runs.length }) : "",
       ]
         .filter(Boolean)

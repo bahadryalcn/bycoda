@@ -47,7 +47,7 @@ export function AccountHeader({
       <Surface variant="card" padding="md" className={styles.identityCard}>
         <AccountAvatar user={user} size="lg" />
         <div className={styles.identity}>
-          <Heading size="page" truncate>
+          <Heading size="section" truncate>
             {user.displayName || user.email}
           </Heading>
           <Text size="caption" tone="secondary" leading="inherit" className={styles.email}>

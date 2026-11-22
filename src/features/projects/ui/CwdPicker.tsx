@@ -145,12 +145,7 @@ export function CwdPicker({
         kind: "content",
         id: "none",
         node: (
-          <EmptyState
-            size="inline"
-            kind="empty"
-            inset="row"
-            description={t("No other projects")}
-          />
+          <EmptyState size="inline" kind="empty" inset="row" description={t("No other projects")} />
         ),
       });
     items.push(...previewRecents.map(projectItem));

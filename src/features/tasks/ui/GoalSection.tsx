@@ -29,6 +29,17 @@ export function GoalList({
       disclosure.current.scrollIntoView?.({ block: "nearest" });
     }
   }, [revealKey]);
+  // An epic that is blocked, waiting for approval or failed final acceptance is the owner's next
+  // step, so it must not hide behind a closed heading; finished epics stay collapsed.
+  const needsOwner = goals.goals.some(
+    (goal) =>
+      goal.status === "blocked" ||
+      goal.status === "awaiting-approval" ||
+      (goal.status !== "cancelled" && goal.finalAcceptance?.status === "failed"),
+  );
+  useEffect(() => {
+    if (needsOwner && disclosure.current) disclosure.current.open = true;
+  }, [needsOwner]);
   return (
     <Disclosure
       ref={disclosure}

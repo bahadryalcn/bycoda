@@ -139,7 +139,7 @@ it("adds an account-only computer through the account: shows the code, then the 
   expect(container.textContent).not.toContain("no SSH address");
   await act(async () => addButton().click());
   expect(dialogText()).toContain("482913");
-  expect(dialogText()).toContain("Allow it on {name}");
+  expect(dialogText()).toContain("Allow it on Studio");
   expect(onAdd).not.toHaveBeenCalled();
 
   // The other computer says no: the dialog says so and offers another try.

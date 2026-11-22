@@ -1,4 +1,5 @@
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { DiffStat } from "../../../shared/ui/DiffStat";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
@@ -216,17 +217,17 @@ export function UnifiedDiffView({
 
   if (files.length === 0) {
     return (
-      <EmptyState
-        size="inline"
-        kind="empty"
-        inset="panel"
-        description={t("No file changes")}
-      />
+      <EmptyState size="inline" kind="empty" inset="panel" description={t("No file changes")} />
     );
   }
 
   const count = fileCount ?? files.length;
-  const fileLabel = count === 1 ? t("1 file") : t("{p0} files", { p0: count });
+  const fileLabel =
+    truncated && files.length < count
+      ? t("{p0} of {p1} files", { p0: files.length, p1: count })
+      : count === 1
+        ? t("1 file")
+        : t("{p0} files", { p0: count });
   const additions = totals?.additions ?? files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = totals?.deletions ?? files.reduce((sum, file) => sum + file.deletions, 0);
 
@@ -294,9 +295,9 @@ export function UnifiedDiffView({
         style={zoomStyle}
       >
         {truncated ? (
-          <p className="px-3 py-3 text-ui-caption text-[var(--ui-text-muted)]">
+          <InlineMessage tone="warning" inset="row">
             {t("Diff is too large to display in full. File list is shown without patches.")}
-          </p>
+          </InlineMessage>
         ) : null}
         <div
           ref={bindContent}
@@ -1499,7 +1500,11 @@ function renderLineText(line: UnifiedLine, tokens?: SyntaxToken[]) {
 
 function EmptyBody({ children }: { children: string }) {
   useLocale();
-  return <p className="px-3 py-3 text-ui-caption text-[var(--ui-text-muted)]">{children}</p>;
+  return (
+    <InlineMessage tone="info" inset="row">
+      {children}
+    </InlineMessage>
+  );
 }
 
 function DiffCounts({ additions, deletions }: { additions: number; deletions: number }) {

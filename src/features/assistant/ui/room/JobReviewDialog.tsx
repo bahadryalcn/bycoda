@@ -39,6 +39,25 @@ export function JobReviewDialog() {
     reviewHasAutomation,
   } = room;
   if (!jobReview || !jobDraftVisible) return null;
+  const needsProject = jobReview.some(
+    (item) => item.kind !== "quick" && !(item.projectIds ?? []).length,
+  );
+  const blocked =
+    !jobReview.length ||
+    jobReview.some(
+      (item) =>
+        !assistantJobDraftReady(reviewedDraft(item)) ||
+        !visibleDraft(item) ||
+        (item.kind === "quick" &&
+          (item.quickAction?.kind === "automation"
+            ? snapshot?.capabilities.quickAutomations !== true
+            : snapshot?.capabilities.quickNotes !== true)),
+    );
+  const blockedReason = !blocked
+    ? undefined
+    : needsProject
+      ? t("Choose a project to start")
+      : t("Describe each job to continue");
   return (
     <Modal
       title={t("Review jobs")}
@@ -61,25 +80,15 @@ export function JobReviewDialog() {
         ) : undefined
       }
       footer={
-        <ModalActions>
+        <ModalActions reason={blockedReason}>
           <Button variant="ghost" disabled={Boolean(pending)} onClick={() => setJobReview(null)}>
             {t("Cancel")}
           </Button>
           <Button
             variant="primary"
             loading={pending?.key === "jobs.create"}
-            disabled={
-              !jobReview.length ||
-              jobReview.some(
-                (item) =>
-                  !assistantJobDraftReady(reviewedDraft(item)) ||
-                  !visibleDraft(item) ||
-                  (item.kind === "quick" &&
-                    (item.quickAction?.kind === "automation"
-                      ? snapshot?.capabilities.quickAutomations !== true
-                      : snapshot?.capabilities.quickNotes !== true)),
-              )
-            }
+            disabled={blocked}
+            disabledReason={blockedReason}
             onClick={() =>
               submitJobs().catch((error: unknown) =>
                 room.setError({ key: "jobs.create", text: errorText(error) }),
@@ -146,17 +155,15 @@ export function JobReviewDialog() {
                 />
                 {jobReview.length > 1 && (
                   <Button
-                    iconOnly
                     size="sm"
                     variant="ghost"
-                    label={t("Remove request")}
-                    tooltip={t("Remove request")}
+                    startIcon={<X className="icon-sm" aria-hidden />}
                     disabled={jobReviewFrozen || Boolean(pending)}
                     onClick={() =>
                       setJobReview((current) => current!.filter((item) => item.id !== draft.id))
                     }
                   >
-                    <X className="icon-sm" aria-hidden />
+                    {t("Remove job")}
                   </Button>
                 )}
               </div>
@@ -196,6 +203,7 @@ export function JobReviewDialog() {
                 <SearchableSelect
                   label={t("Participating projects")}
                   multiple
+                  placeholder={t("Choose projects")}
                   showSelectedValues
                   selectionLabels={{ done: t("Done") }}
                   value={draft.projectIds}
@@ -217,6 +225,7 @@ export function JobReviewDialog() {
                 />
                 <SearchableSelect
                   label={t("Lead project")}
+                  placeholder={t("Choose the lead project")}
                   value={draft.projectId}
                   disabled={jobReviewFrozen || !!pending || !draft.projectIds.length}
                   options={projects

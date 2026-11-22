@@ -13,7 +13,7 @@ import { usePollingRefresh } from "../../hooks/usePollingRefresh";
 import { SOCIAL_PLATFORM_NAMES, type SocialAccount, type SocialPlatform } from "../../model/social";
 import type { SocialBrowserWorkflow, SocialRegistrationField } from "../../model/socialBrowser";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
+import { gateReason, type ActionGate } from "../common/DisabledReason";
 import { hostConnection } from "./connectOptions";
 import {
   blockerLabel,
@@ -174,30 +174,34 @@ export function SignupAccountDialog({
       }}
       size="md"
       footer={
-        <ModalActions>
+        <ModalActions
+          reason={live ? gateReason(advanceGate) : canStart ? gateReason(startGate) : undefined}
+        >
           <Button variant="ghost" disabled={busy} onClick={leave}>
             {live ? t("Stop signup") : t("Close")}
           </Button>
           {canStart ? (
-            <DisabledReason
+            <Button
               type="submit"
               form={formId}
               variant="primary"
               loading={is("start")}
-              {...gateProps(startGate)}
+              disabled={startGate.disabled}
+              disabledReason={gateReason(startGate)}
             >
               {workflow ? t("Start again") : t("Open sign-up window")}
-            </DisabledReason>
+            </Button>
           ) : null}
           {live ? (
-            <DisabledReason
+            <Button
               variant="primary"
               loading={is("advance")}
               onClick={advance}
-              {...gateProps(advanceGate)}
+              disabled={advanceGate.disabled}
+              disabledReason={gateReason(advanceGate)}
             >
               {t("Continue")}
-            </DisabledReason>
+            </Button>
           ) : null}
           {workflow?.status === "window_closed" && accountId ? (
             <Button variant="primary" onClick={() => onCreated(accountId)}>

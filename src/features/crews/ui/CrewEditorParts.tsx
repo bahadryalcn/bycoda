@@ -132,7 +132,7 @@ export function CrewMaintenance({
   onDeleted: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-start gap-2">
+    <div className="flex flex-wrap items-start justify-between gap-2">
       <Button
         variant="secondary"
         startIcon={<Copy aria-hidden className="icon-sm" />}

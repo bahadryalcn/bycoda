@@ -157,3 +157,18 @@ it("ignores a late result after changing pull requests", async () => {
   expect(onChange).not.toHaveBeenCalled();
   expect(button(container, "Merge pull request").disabled).toBe(false);
 });
+
+it("shows what blocks a clean merge beside the merge button and keeps the action reachable", async () => {
+  await act(async () =>
+    root.render(
+      createElement(GithubPrActions, {
+        item,
+        baseRef: "main",
+        headRef: "feature",
+        mergeBlocker: "Review required · Failing checks: 1",
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Review required · Failing checks: 1");
+  expect(button(container, "Merge pull request").className).not.toContain("primary");
+});

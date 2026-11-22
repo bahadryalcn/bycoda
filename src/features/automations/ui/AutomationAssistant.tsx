@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t, getLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Alert } from "../../../shared/ui/Alert";
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import type { RecentProject } from "../../projects/model/recents";
@@ -90,21 +91,35 @@ export function AutomationAssistant({
       setBusy(false);
     }
   };
+  const blockedReason = !prompt.trim()
+    ? t("Describe the automation")
+    : scope === "project" && !project
+      ? t("Choose a project")
+      : undefined;
   return (
     <Modal
       title={t("AI assistant")}
-      description={t("Continue in a full AI session with automation tools and approval controls.")}
       size="md"
       onClose={onClose}
       footer={
-        <Button
-          variant="primary"
-          loading={busy}
-          disabled={!prompt.trim() || (scope === "project" && !project)}
-          onClick={() => void launch()}
+        <ModalActions
+          reason={blockedReason}
+          start={
+            <InfoPopover label={t("About the AI assistant")}>
+              {t("Continue in a full AI session with automation tools and approval controls.")}
+            </InfoPopover>
+          }
         >
-          {t("Open assistant")}
-        </Button>
+          <Button
+            variant="primary"
+            loading={busy}
+            disabled={Boolean(blockedReason)}
+            disabledReason={blockedReason}
+            onClick={() => void launch()}
+          >
+            {t("Open assistant")}
+          </Button>
+        </ModalActions>
       }
     >
       <div className="grid gap-3">
@@ -118,8 +133,7 @@ export function AutomationAssistant({
           onChange={(event) => setPrompt(event.target.value)}
         />
         <div className="grid min-w-0 gap-3">
-          <RadioGroup
-            variant="inline"
+          <SegmentedControl
             label={t("Scope")}
             value={scope}
             onValueChange={setScope}

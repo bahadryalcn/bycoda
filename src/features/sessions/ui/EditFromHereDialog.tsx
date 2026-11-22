@@ -39,7 +39,9 @@ export function EditFromHereDialog({
   return (
     <Modal
       title={t("Edit from here?")}
-      description={t("The chat returns to before this message. Your prompt returns to the composer.")}
+      description={t(
+        "The chat returns to before this message. Your prompt returns to the composer.",
+      )}
       size="md"
       onClose={() => {
         if (!pending) onCancel();

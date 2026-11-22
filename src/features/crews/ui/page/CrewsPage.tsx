@@ -118,7 +118,6 @@ export function CrewsPage({
           leading={leading}
           icon={navigation ? undefined : <Bot className="icon-sm" />}
           title={navigation ? undefined : t("Crews")}
-          meta={navigation ? undefined : t("Teams, members and work for this project")}
           actions={
             <Button
               variant={tab === "members" ? "secondary" : "primary"}
