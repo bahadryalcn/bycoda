@@ -8,6 +8,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  writeSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -33,6 +34,12 @@ import { startHostDiagnostics, type HostDiagnostics } from "./diagnostics/host-l
 import { createBootTimer } from "./server/boot-phases";
 import { hostGitExec } from "./git/git-exec-pool";
 import { registerHostProcessExecution } from "./git/host-process-execution";
+import {
+  commitServiceMode,
+  hostParentAlive,
+  readLifecycleMode,
+  watchHostParent,
+} from "./service/lifecycle-mode";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -72,7 +79,7 @@ const readStdinText = async (limit?: number, message = "Input is too large."): P
   }
   return Buffer.concat(chunks).toString("utf8");
 };
-const lifecycle = async (state: Running, action: "status" | "stop") => {
+const lifecycle = async (state: Running, action: "status" | "stop", ifIdle = false) => {
   let response: Response;
   try {
     response = await fetch(`http://127.0.0.1:${state.port}/lifecycle`, {
@@ -81,14 +88,40 @@ const lifecycle = async (state: Running, action: "status" | "stop") => {
         Authorization: `Bearer ${state.secret}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, ifIdle }),
       signal: AbortSignal.timeout(5_000),
     });
   } catch {
     throw new HostUnreachableError("Host is unreachable");
   }
+  if (response.status === 409) throw new Error("The Host is still running work.");
   if (!response.ok) throw new Error("Could not verify the running host");
 };
+
+async function stopAppHost(ifIdle: boolean): Promise<void> {
+  const started = monotonicNow();
+  let stoppingPid: number | undefined;
+  while (elapsedSince(started) < HOST_STOP_WAIT_MS) {
+    if (
+      (await probeHostOwner(directory)) === "stopped" &&
+      (!stoppingPid || !hostParentAlive(stoppingPid))
+    )
+      return;
+    const state = !stoppingPid && readRunning();
+    if (state) {
+      try {
+        await lifecycle(state, "stop", ifIdle);
+        stoppingPid = state.pid;
+      } catch (error) {
+        if (!(error instanceof HostUnreachableError)) throw error;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  await verifyHostStopped(directory);
+  if (stoppingPid && hostParentAlive(stoppingPid))
+    throw new Error("The app-owned Host has not exited after its shutdown.");
+}
 
 /** Keeps host.log bounded: past 10 MB it becomes host.log.old (one copy) before a new log starts. */
 function rotateHostLog(path: string): void {
@@ -126,6 +159,7 @@ async function main() {
   start                 Run detached from this terminal
   service install       Install/start the persistent user service
   service uninstall     Stop the host and remove its service; keeps data
+  service status --json Print lifecycle mode and service registration
   connection-info       Print the running host's port (JSON)
   build-info            Print packaged source identity (no service access)
   status                Check the running host
@@ -137,11 +171,37 @@ async function main() {
   native-admission-enroll           Apply reviewed enrollment
   native-admission-preview-revoke   Review native installation key revocation
   native-admission-revoke           Apply reviewed revocation
-Options: --data-dir <directory> --port <port> (default 3776)
+Options: --data-dir <directory> --port <port> (default 3776) --parent-pid <pid> (serve only)
 Connect another computer using an SSH forward to the loopback port.`);
     return;
   }
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid port");
+  const parentOption = option("parent-pid", "");
+  const parentPid = Number(parentOption);
+  if (
+    parentOption &&
+    (command !== "serve" ||
+      !Number.isSafeInteger(parentPid) ||
+      parentPid < 1 ||
+      parentPid > 0x7fffffff ||
+      parentPid === process.pid)
+  )
+    throw new Error("Invalid --parent-pid");
+  if (parentPid && !hostParentAlive(parentPid)) return;
+  let parentGone = false;
+  let stopForParent: (() => void) | undefined;
+  if (parentPid) {
+    watchHostParent(parentPid, () => {
+      parentGone = true;
+      if (stopForParent) {
+        stopForParent();
+      } else {
+        // The listener may still be booting. Start the normal drain as soon
+        // as it is available and cap how long an orphan can remain in boot.
+        setTimeout(() => process.exit(0), HOST_STOP_WAIT_MS).unref();
+      }
+    });
+  }
   if (
     [
       "native-admission-preview-enroll",
@@ -173,13 +233,43 @@ Connect another computer using an SSH forward to the loopback port.`);
   const {
     connectionInfo,
     installService,
+    serviceRegistered,
     uninstallService,
     stopHostWithServicePolicy,
     stopWindowsHostForUninstall,
+    posixHostPath,
   } = await import("./service");
+  if (parentPid && process.platform !== "win32") process.env.PATH = posixHostPath();
+  if (command === "service" && args[1] === "status") {
+    const state = await readLifecycleMode(directory);
+    const registered = await serviceRegistered();
+    console.log(
+      JSON.stringify({ ...state, registered, mismatch: registered !== (state.mode === "service") }),
+    );
+    return;
+  }
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   if (process.platform === "win32") await protectWindowsDirectory(directory);
   else chmodSync(directory, 0o700);
+  if (command === "app-runtime-prepare") {
+    await verifyHostStopped(directory);
+    if ((await readLifecycleMode(directory)).mode !== "app")
+      throw new Error("Host runtime preparation requires app mode.");
+    if (process.platform === "win32") {
+      const { runPowerShell, windowsNodeSetupScript } = await import("./windows");
+      await runPowerShell(windowsNodeSetupScript(process.execPath, directory));
+    } else {
+      const { preparePosixNode } = await import("./node-engine");
+      await preparePosixNode(process.execPath, directory);
+    }
+    return;
+  }
+  if (command === "app-stop") {
+    if ((await readLifecycleMode(directory)).mode !== "app")
+      throw new Error("Host is in service mode.");
+    await stopAppHost(args.includes("--if-idle"));
+    return;
+  }
   if (command === "native-authority-deploy") {
     try {
       // Local installer/native-owned child only. No HTTP route can select an
@@ -230,10 +320,25 @@ Connect another computer using an SSH forward to the loopback port.`);
     }
   }
   if (command === "connection-info") {
-    console.log(JSON.stringify(await connectionInfo(directory, entryPath)));
+    console.log(
+      JSON.stringify({
+        ...(await connectionInfo(directory, entryPath)),
+        ...(args.includes("--background-service-enabled")
+          ? { enabledBackgroundService: true }
+          : {}),
+      }),
+    );
     return;
   }
   if (command === "service" && args[1] === "uninstall") {
+    if (args.includes("--initialize-app")) {
+      if ((await readLifecycleMode(directory)).mode !== "app")
+        throw new Error("Existing Host installation requires a lifecycle switch.");
+      const owner = await probeHostOwner(directory);
+      if (owner !== "stopped") throw new Error("Host ownership could not be cleared.");
+      await commitServiceMode(directory, "app", serviceRegistered);
+      return;
+    }
     // Legacy administrator-owned tasks may be readable/startable but not removable.
     // Check before sending stop: a failed upgrade must leave the old host serving.
     if (process.platform === "win32") await preflightWindowsHostUninstall();
@@ -241,19 +346,20 @@ Connect another computer using an SSH forward to the loopback port.`);
     // Also stops a manually started host, or one the service manager left.
     const state = readRunning();
     if (!state) await verifyHostStopped(directory);
-    let notes = process.platform === "win32" ? [] : await uninstallService();
     let exitedState: Running | undefined;
     if (state) {
       if (process.platform === "win32") {
         const stopped = await stopWindowsHostForUninstall(state.pid, () =>
-          lifecycle(state, "stop"),
+          lifecycle(state, "stop", args.includes("--if-idle")),
         );
         if (!stopped) {
           if (readHostRecord(directory)?.pid !== state.pid)
             throw new Error("The host restarted during shutdown; retry service uninstall.");
           exitedState = state;
         }
-      } else await lifecycle(state, "stop").catch(() => undefined);
+      } else {
+        await lifecycle(state, "stop", args.includes("--if-idle"));
+      }
       const stopStarted = monotonicNow();
       while (
         !exitedState &&
@@ -261,13 +367,16 @@ Connect another computer using an SSH forward to the loopback port.`);
         !hostStateReleased(directory, state.pid)
       )
         await new Promise((resolve) => setTimeout(resolve, 100));
-      if (process.platform === "win32" && !exitedState && !hostStateReleased(directory, state.pid))
+      if (!exitedState && !hostStateReleased(directory, state.pid))
         throw new Error("The old host did not finish shutting down; service paths were preserved.");
     }
-    if (process.platform === "win32") notes = await uninstallService();
+    const notes = await uninstallService();
     // A Host that exited without its cleanup (forced exit) leaves its record behind.
     if (state && existsSync(statePath) && hostStateReleased(directory, state.pid))
       rmSync(statePath, { force: true });
+    await verifyHostStopped(directory);
+    if (!args.includes("--preserve-mode"))
+      await commitServiceMode(directory, "app", serviceRegistered);
     console.log(
       [
         (await probeHostOwner(directory)) === "stopped"
@@ -280,17 +389,66 @@ Connect another computer using an SSH forward to the loopback port.`);
     return;
   }
   if (command === "service") {
-    if (args[1] !== "install") throw new Error("Use: service install, or service uninstall");
-    console.log(
-      JSON.stringify(
-        await installService({
+    if (args[1] !== "install")
+      throw new Error("Use: service install, service uninstall, or service status --json");
+    const state = args.includes("--ssh-setup") ? await readLifecycleMode(directory) : undefined;
+    const takingFence = state?.mode === "app" && state.persisted;
+    const fence = join(directory, "app-install.lock");
+    if (takingFence) {
+      const fd = openSync(fence, "wx", 0o600);
+      try {
+        const pid = String(process.pid);
+        if (writeSync(fd, pid) !== pid.length)
+          throw new Error("Could not write the Host install lock.");
+      } catch (error) {
+        rmSync(fence, { force: true });
+        throw error;
+      } finally {
+        closeSync(fd);
+      }
+    }
+    try {
+      const enabling = takingFence && (await readLifecycleMode(directory)).mode === "app";
+      const servicePort = enabling ? (readHostRecord(directory)?.port ?? port) : port;
+      if (enabling) await stopAppHost(true);
+      try {
+        const connection = await installService({
           directory,
-          port,
+          port: servicePort,
           executable: process.execPath,
           entry: entryPath,
-        }),
-      ),
-    );
+        });
+        const registered = await serviceRegistered();
+        if (registered) await commitServiceMode(directory, "service", async () => registered);
+        else if (enabling || args.includes("--require-registration"))
+          throw new Error("The running Host is not a registered service.");
+        console.log(
+          JSON.stringify({
+            ...connection,
+            ...(enabling ? { enabledBackgroundService: true } : {}),
+          }),
+        );
+      } catch (error) {
+        if (enabling) {
+          try {
+            const installed = await serviceRegistered();
+            if (installed) {
+              await stopAppHost(false);
+              await uninstallService();
+              await commitServiceMode(directory, "app", serviceRegistered);
+            }
+          } catch (rollback) {
+            throw new AggregateError(
+              [error, rollback],
+              "SSH setup failed and could not restore app mode",
+            );
+          }
+        }
+        throw error;
+      }
+    } finally {
+      if (takingFence) rmSync(fence, { force: true });
+    }
     return;
   }
   if (command === "status" || command === "stop") {
@@ -535,11 +693,35 @@ Connect another computer using an SSH forward to the loopback port.`);
             if (bodyBytes > 128) request.destroy();
             else bodyChunks.push(chunk);
           });
-          request.on("end", () => {
+          const respond = async () => {
             try {
-              const action = JSON.parse(Buffer.concat(bodyChunks).toString("utf8")).action;
+              const { action, ifIdle } = JSON.parse(Buffer.concat(bodyChunks).toString("utf8"));
               if (action !== "status" && action !== "stop") {
                 response.writeHead(400).end();
+                return;
+              }
+              const activity =
+                action === "status" || ifIdle === true
+                  ? await store.db
+                      .prepare(
+                        `SELECT
+                      (SELECT count(*) FROM sessions WHERE status='running') AS sessions,
+                      (SELECT count(*) FROM sessions WHERE shell_running=1) AS shells,
+                      (SELECT count(*) FROM automation_runs WHERE json_extract(value, '$.status')='running') AS automations`,
+                      )
+                      .get()
+                      .catch(() => undefined)
+                  : undefined;
+              if (
+                action === "stop" &&
+                ifIdle === true &&
+                (!activity ||
+                  Number(activity.sessions) +
+                    Number(activity.shells) +
+                    Number(activity.automations) !==
+                    0)
+              ) {
+                response.writeHead(409).end();
                 return;
               }
               response.end(
@@ -548,12 +730,28 @@ Connect another computer using an SSH forward to the loopback port.`);
                   version,
                   runtime: entryPath,
                   buildIdentity,
+                  activity,
+                  ...(action === "status" && activity
+                    ? {
+                        runningSessions: await store.db
+                          .prepare(
+                            `SELECT id, CASE WHEN json_valid(summary) THEN substr(json_extract(summary, '$.title'), 1, 160) END AS title
+                        FROM sessions WHERE status='running' ORDER BY updated_at DESC LIMIT 25`,
+                          )
+                          .all()
+                          .catch(() => undefined),
+                      }
+                    : {}),
                 }),
               );
-              if (action === "stop") void stop();
+              if (action === "stop")
+                stop().catch((error) => console.error("Host shutdown failed:", error));
             } catch {
               response.writeHead(400).end();
             }
+          };
+          request.on("end", () => {
+            respond().catch((error) => console.error("Host lifecycle request failed:", error));
           });
         },
         nativeAuthorityBootstrap: createNativeAuthorityBootstrap({
@@ -662,6 +860,10 @@ Connect another computer using an SSH forward to the loopback port.`);
         releaseOwner();
       }
     };
+    stopForParent = () => {
+      stop("parent-exit").catch((error) => console.error("Host shutdown failed:", error));
+    };
+    if (parentGone) stopForParent();
   } catch (error) {
     boot?.failed();
     const failures: unknown[] = [error];

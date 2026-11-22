@@ -1423,6 +1423,55 @@ class LocalUpdateTests(unittest.TestCase):
             self.assertEqual(stop_windows_host(), 3774)
         lifecycle.assert_not_called()
 
+    def test_app_owned_host_swaps_files_and_uses_the_available_verifier(self):
+        for app_open, fail in ((False, False), (True, False), (True, True)):
+            with self.subTest(app_open=app_open, fail=fail), temp_dir() as folder:
+                root = pathlib.Path(folder)
+                base = root / '.bycoda-host'
+                (base / 'bin').mkdir(parents=True)
+                (base / 'host.db').touch()
+                (base / 'runtime-path').write_text('previous-runtime')
+                write_json(base / 'lifecycle.json', {'version': 1, 'mode': 'app'})
+                launcher = base / 'bin' / ('bycoda-host.cmd' if os.name == 'nt' else 'bycoda-host')
+                launcher.write_text('previous-launcher')
+                release = root / 'release'
+                (release / 'host').mkdir(parents=True)
+                (release / 'host/bycoda-host.mjs').write_text('new host bundle')
+                manifest = {'version': '0.6.60', 'platform': 'fixture', 'id': 'new', 'hostHashes': {}}
+                reports = []
+                with patch('local_install.BASE', base), patch('local_install.verify_tree'), \
+                     patch('local_install.wait_idle'), patch('local_install.backup'), \
+                     patch('local_install.desktop_running', return_value=app_open), \
+                     patch('local_install.run') as command, patch('local_install.verify_offline_host') as offline, \
+                     patch('local_install.verify_host', side_effect=RuntimeError('health failed') if fail else None) as live:
+                    call = lambda: host_install(release, manifest, lambda state, **values: reports.append(state))
+                    if fail:
+                        with self.assertRaisesRegex(RuntimeError, 'health failed'):
+                            call()
+                    else:
+                        call()
+                offline.assert_called_once()
+                self.assertEqual(live.call_count, int(app_open))
+                self.assertEqual('verifying-app-host' in reports, app_open)
+                self.assertTrue(all('service' not in args.args[0] for args in command.call_args_list))
+                if fail:
+                    self.assertEqual((base / 'runtime-path').read_text(), 'previous-runtime')
+                    self.assertEqual(launcher.read_text(), 'previous-launcher')
+                else:
+                    self.assertEqual(reports[-1], 'installed')
+                    self.assertIn('fixture-new', (base / 'runtime-path').read_text())
+
+    def test_first_app_owned_host_install_allows_desktop_install_before_host_boot(self):
+        from local_install import app_active_count
+        with temp_dir() as folder:
+            base = pathlib.Path(folder)
+            (base / 'runtime-path').write_text('prepared runtime')
+            write_json(base / 'lifecycle.json', {'version': 1, 'mode': 'app'})
+            self.assertEqual(app_active_count(base, None), 0)
+            (base / 'owner.db').touch()
+            with self.assertRaises(sqlite3.OperationalError):
+                app_active_count(base, None)
+
     def test_live_windows_host_requires_shutdown_before_installation(self):
         with patch('local_install.read_json', return_value={'pid': 123, 'port': 3774}), \
              patch('local_install.alive', side_effect=[True, False, False]), \

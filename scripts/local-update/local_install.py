@@ -6,6 +6,7 @@ import os
 import pathlib
 import plistlib
 import re
+import shlex
 import shutil
 import sqlite3
 import sys
@@ -60,9 +61,14 @@ def request_windows_app_quit(app, process_filter, seconds=20):
             pipe.write(b'\x03')
     except OSError:
         return False
-    return ps(f'$running = @({process_filter}); '
-              f'if ($running.Count) {{ $running | Wait-Process -Timeout {seconds} -ErrorAction SilentlyContinue }}; '
-              f'@({process_filter}).Count') == '0'
+    while seconds > 0:
+        interval = min(seconds, 50)
+        if ps(f'$running = @({process_filter}); '
+              f'if ($running.Count) {{ $running | Wait-Process -Timeout {interval} -ErrorAction SilentlyContinue }}; '
+              f'@({process_filter}).Count') == '0':
+            return True
+        seconds -= interval
+    return False
 
 def windows_app_snapshot(app, rollback, manifest):
     """Reuse only an intact previous installation, never overwrite recovery data."""
@@ -133,9 +139,112 @@ def host_active_ids(base):
 def host_installation_exists(base):
     return any((base / name).exists() for name in ('runtime-path', 'running.json', 'service.ps1', 'service-launcher.json'))
 
+def host_mode(base):
+    try:
+        state = read_json(base / 'lifecycle.json')
+    except FileNotFoundError:
+        return 'service' if (base / 'runtime-path').exists() else 'app'
+    if not isinstance(state, dict) or type(state.get('version')) is not int or state['version'] != 1 or state.get('mode') not in ('app', 'service'):
+        raise RuntimeError('Invalid Host lifecycle.json; inspect the installation before updating it')
+    return state['mode']
+
+def unbooted_app_host(base):
+    return ((base / 'lifecycle.json').is_file() and host_mode(base) == 'app' and
+            not any((base / name).exists() for name in ('owner.db', 'owner.lock', 'running.json')))
+
+def desktop_running():
+    if os.name == 'nt':
+        app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName'] / (PRODUCT_IDENTITY['binaryName'] + '.exe')
+        return ps('@(' + windows_app_process_filter(app) + ').Count') != '0'
+    executable = MAC_APPLICATIONS / (PRODUCT_IDENTITY['productName'] + '.app') / 'Contents/MacOS' / PRODUCT_IDENTITY['binaryName']
+    return any(line.strip() == str(executable)
+               for line in run(['ps', '-ax', '-o', 'comm='], timeout=15).splitlines())
+
+def app_host_activity():
+    with contextlib.closing(sqlite3.connect((BASE / 'host.db').resolve().as_uri() + '?mode=ro', uri=True, timeout=3)) as conn:
+        return conn.execute("""SELECT
+            (SELECT count(*) FROM sessions WHERE status='running' OR shell_running=1)
+            + (SELECT count(*) FROM automation_runs WHERE json_extract(value, '$.status')='running')""").fetchone()[0]
+
+def app_host_cli(runtime, *args):
+    node = runtime / ('node.exe' if os.name == 'nt' else 'bin/node')
+    return run([str(node), str(runtime / 'host.mjs'), *args, '--data-dir', str(BASE)], timeout=115)
+
+def verify_offline_host(runtime, manifest, fresh):
+    info = json.loads(app_host_cli(runtime, 'build-info').splitlines()[-1])
+    if info.get('version') != manifest['version']:
+        raise RuntimeError('Offline Host runtime version mismatch')
+    if not fresh and count(BASE / 'host.db', 'pragma quick_check') != 'ok':
+        raise RuntimeError('Host database integrity check failed')
+
+def publish_app_file(path, content, mode):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, staging = tempfile.mkstemp(prefix=path.name + '-', suffix='.tmp', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'wb') as file:
+            file.write(content)
+        pathlib.Path(staging).chmod(mode)
+        os.replace(staging, path)
+    finally:
+        pathlib.Path(staging).unlink(missing_ok=True)
+
+def app_owned_host_install(runtime, release, manifest, report):
+    fresh = not (BASE / 'host.db').exists()
+    if fresh and host_installation_exists(BASE) and not unbooted_app_host(BASE):
+        raise RuntimeError('Existing bycoda host database is missing; installation requires recovery')
+    pointer = BASE / 'runtime-path'
+    launcher = BASE / 'bin' / (PRODUCT_IDENTITY['hostLauncher'] + ('.cmd' if os.name == 'nt' else ''))
+    stable = BASE / 'engine' / ('node.exe' if os.name == 'nt' else 'node')
+    previous = pointer.read_text(encoding='utf-8-sig').strip() if pointer.exists() else None
+    rollback = release / 'rollback-host'
+    rollback.mkdir(exist_ok=True)
+    if not fresh:
+        wait_idle(app_host_activity, report)
+        backup(BASE / 'host.db', rollback / 'host.db')
+        wait_idle(app_host_activity, report)
+    report('installing', runtime=str(runtime))
+    if not fresh:
+        app_host_cli(runtime, 'app-stop', '--if-idle')
+    if fresh and not (BASE / 'lifecycle.json').exists():
+        app_host_cli(runtime, 'service', 'uninstall', '--initialize-app')
+    saved = {}
+    for path in (pointer, launcher, stable):
+        if path.exists():
+            saved[path] = pathlib.Path(shutil.copy2(path, rollback / path.name))
+    verifying_live = False
+    try:
+        app_host_cli(runtime, 'app-runtime-prepare')
+        verify_offline_host(runtime, manifest, fresh)
+        if os.name == 'nt':
+            content = ('@echo off\r\nsetlocal DisableDelayedExpansion\r\n'
+                       f'"{runtime / "node.exe"}" "{runtime / "host.mjs"}" %*\r\n'
+                       'exit /b %errorlevel%\r\n')
+        else:
+            content = '#!/bin/sh\nexec ' + shlex.quote(str(runtime / 'bin/node')) + ' ' + shlex.quote(str(runtime / 'host.mjs')) + ' "$@"\n'
+        publish_app_file(launcher, content.encode('utf-8'), 0o755)
+        publish_app_file(pointer, (str(runtime) + '\n').encode('utf-8'), 0o600)
+        if desktop_running():
+            report('verifying-app-host', runtime=str(runtime))
+            verifying_live = True
+            verify_host(runtime)
+    except Exception:
+        if verifying_live:
+            report('installing', runtime=str(runtime))
+            app_host_cli(runtime, 'app-stop', '--if-idle')
+        for path, mode in ((stable, 0o700), (launcher, 0o755), (pointer, 0o600)):
+            if path in saved:
+                publish_app_file(path, saved[path].read_bytes(), mode)
+            else:
+                path.unlink(missing_ok=True)
+        raise
+    pruned = prune_host_runtimes(runtime, previous) if previous else []
+    report('installed', runtime=str(runtime), **({'firstInstall': True} if fresh else {}),
+           **({'prunedRuntimes': pruned} if pruned else {}),
+           **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
+
 def app_active_count(base, desktop):
     active = active_session_ids(desktop, 'SELECT session_id FROM in_flight_sessions') if desktop is not None else set()
-    if (base / 'host.db').exists() or host_installation_exists(base):
+    if (base / 'host.db').exists() or (host_installation_exists(base) and not unbooted_app_host(base)):
         active.update(host_active_ids(base))
     return len(active)
 
@@ -249,6 +358,9 @@ def host_install(release, manifest, report):
         verify_tree(runtime, manifest['hostHashes'])
     else:
         shutil.copytree(source, runtime)
+    if host_mode(BASE) == 'app':
+        app_owned_host_install(runtime, release, manifest, report)
+        return
     if not (BASE / 'host.db').exists():
         # A fresh, independent product has no previous database to read. Never
         # reinterpret a missing DB for an existing installation as idle.
@@ -297,7 +409,7 @@ def host_install(release, manifest, report):
         port = installed_windows_host_port()
         node = runtime / 'node.exe'
         entry = runtime / 'host.mjs'
-        run([str(node), str(entry), 'service', 'uninstall', '--data-dir', str(BASE)])
+        run([str(node), str(entry), 'service', 'uninstall', '--preserve-mode', '--data-dir', str(BASE)])
         try:
             run([str(node), str(entry), 'service', 'install', '--data-dir', str(BASE), '--port', str(port)])
             verify_host(runtime)
@@ -309,7 +421,7 @@ def host_install(release, manifest, report):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(content, encoding='utf-8')
         except Exception:
-            run([str(node), str(entry), 'service', 'uninstall', '--data-dir', str(BASE)])
+            run([str(node), str(entry), 'service', 'uninstall', '--preserve-mode', '--data-dir', str(BASE)])
             for path in saved_configs:
                 shutil.copy2(rollback / path.name, path)
             for path in missing_configs:
@@ -406,6 +518,7 @@ def verify_host(runtime):
     raise RuntimeError('New host did not pass runtime/health/database checks')
 
 def app_install(release, manifest, report):
+    owned_host = host_mode(BASE) == 'app'
     windows = os.name == 'nt'
     app = (pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName'] /
            (PRODUCT_IDENTITY['binaryName']+'.exe') if windows else
@@ -441,7 +554,10 @@ def app_install(release, manifest, report):
         was_running = ps('@(' + process_filter + ').Count') != '0'
         wait_idle(active, report)
         report('installing')
-        if not request_windows_app_quit(app, process_filter):
+        if not (request_windows_app_quit(app, process_filter, seconds=65) if owned_host else
+                request_windows_app_quit(app, process_filter)):
+            if owned_host and was_running and (BASE / 'runtime-path').exists():
+                raise RuntimeError('App did not finish quitting its Host; app installation canceled')
             ps(process_filter + ' | ForEach-Object { [void]$_.CloseMainWindow() }')
             time.sleep(5)
         if active() != 0:
@@ -474,7 +590,7 @@ def app_install(release, manifest, report):
         wait_idle(active, report, phase='installing')
         if not first_install:
             run(['osascript', '-e', f'tell application "{PRODUCT_IDENTITY["productName"]}" to quit'])
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + (65 if owned_host else 30)
         while time.monotonic() < deadline:
             try:
                 run(['pgrep', '-f', re.escape(str(app/'Contents/MacOS'/PRODUCT_IDENTITY['binaryName']))])

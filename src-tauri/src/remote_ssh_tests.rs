@@ -1276,6 +1276,30 @@ fn bootstrap_is_versioned_and_only_explicit_upgrade_restarts_the_host() {
     assert!(upgrade_script(HostPlatform::Windows, 3774)
         .starts_with("$env:BYCODA_HOST_FORCE_UPGRADE = '1'"));
 }
+
+#[test]
+fn app_bootstrap_prepares_the_runtime_without_starting_a_service() {
+    let unix = bootstrap_script(HostPlatform::Unix);
+    assert!(unix.contains("NO_SERVICE=${BYCODA_HOST_NO_SERVICE:-0}"));
+    let app = unix
+        .split("if [ \"$NO_SERVICE\" = 1 ]; then")
+        .nth(1)
+        .unwrap();
+    let app = app
+        .split("  fi\n  if [ -n \"$OLD_RUNTIME\"")
+        .next()
+        .unwrap();
+    assert!(app.contains("app-runtime-prepare"));
+    assert!(!app.contains("service install"));
+    assert!(unix.contains("if [ \"$NO_SERVICE\" != 1 ]; then"));
+
+    let windows = bootstrap_script(HostPlatform::Windows);
+    assert!(windows.contains("$noService = $env:BYCODA_HOST_NO_SERVICE -eq '1'"));
+    let app = windows.split("if ($noService) {").nth(1).unwrap();
+    let app = app.split("    } else {").next().unwrap();
+    assert!(app.contains("app-runtime-prepare"));
+    assert!(!app.contains("'service', 'install'"));
+}
 #[test]
 fn remote_platform_probe_handles_cmd_powershell_and_unix() {
     assert_eq!(

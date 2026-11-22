@@ -65,6 +65,7 @@ function Assert-BycodaTaskRemovalAccess([string] $Name) {
         $principal = ([Security.Principal.NTAccount]::new($principal)).Translate([Security.Principal.SecurityIdentifier]).Value
     }
     if ($principal -ne $sid) { throw 'The existing Bycoda task belongs to a different user.' }
+    if ($task.State -in @(0, 2)) { throw 'The host task has not settled. Wait for its outcome before changing its service runtime.' }
     if (-not [BycodaTaskAccess]::CanDelete($task.GetSecurityDescriptor(7))) {
         $repair = "`$s = New-Object -ComObject Schedule.Service; `$s.Connect(); `$s.GetFolder('\').GetTask('$Name').SetSecurityDescriptor('O:${sid}G:${sid}D:(A;;FA;;;${sid})(A;;FA;;;BA)(A;;FA;;;SY)', 0)"
         throw "This Windows account cannot remove the bycoda Host scheduled task. Repair it once from an elevated (Run as administrator) PowerShell, then retry: $repair -- The running host has not been stopped."
