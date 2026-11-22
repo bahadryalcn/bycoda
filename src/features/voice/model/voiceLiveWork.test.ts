@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { voiceLiveResults, voiceLiveWorkSuggestion } from "./voiceLiveWork";
+import { voiceLiveResults } from "./voiceLiveWork";
 import { currentExecutionTools } from "../../sessions/public/commandInspection";
 import type { Session } from "../../sessions/public/session";
 
@@ -32,20 +32,8 @@ function results(...tools: Session["blocks"]) {
 }
 
 describe("voice live work", () => {
-  it("surfaces only the current turn and keeps the suggestion key stable across output", () => {
-    const session = { id: "session", busy: true, blocks };
+  it("surfaces only tools in the latest submitted turn", () => {
     expect(currentExecutionTools(blocks).tools.map(({ id }) => id)).toEqual(["command"]);
-    expect(voiceLiveWorkSuggestion(session, [])).toBe("turn:session:new");
-    expect(voiceLiveWorkSuggestion({ ...session, blocks: blocks.slice(0, 3) }, [])).toBeUndefined();
-    expect(voiceLiveWorkSuggestion({ ...session, busy: false }, [])).toBeUndefined();
-  });
-
-  it("uses the actual running observation and ignores finished calls", () => {
-    const task = { id: "request", name: "Test", target: "Project", projectPath: "", startedAt: 0 };
-    expect(voiceLiveWorkSuggestion(undefined, [{ ...task, state: "running" }])).toBe(
-      "activity:request",
-    );
-    expect(voiceLiveWorkSuggestion(undefined, [{ ...task, state: "returned" }])).toBeUndefined();
   });
 });
 
@@ -116,8 +104,17 @@ describe("voice live results", () => {
         blocks: [{ id: "turn", role: "user", text: "Go" }, command("a", "pnpm build", "completed")],
       },
       [
-        { ...base, id: "1", name: "workspace.notes.create", state: "failed" },
+        { ...base, id: "1", name: "notes.create", state: "failed" },
         { ...base, id: "2", name: "workspace.running", state: "running" },
+        { ...base, id: "discovery", name: "app_tools_list", state: "returned" },
+        { ...base, id: "submit", name: "submit_work", state: "returned" },
+        {
+          ...base,
+          id: "pending",
+          name: "workspace.sessions.create",
+          outcome: "accepted",
+          state: "returned",
+        },
         { ...base, id: "3", name: "bad name sk-live", state: "returned" },
       ],
     );
@@ -125,7 +122,7 @@ describe("voice live results", () => {
       {
         kind: "actions",
         status: "failed",
-        actions: [{ id: "1", name: "workspace.notes.create", status: "failed" }],
+        actions: [{ id: "1", name: "notes.create", status: "failed" }],
       },
       { kind: "build", status: "done" },
     ]);

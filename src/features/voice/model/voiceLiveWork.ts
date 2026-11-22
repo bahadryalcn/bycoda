@@ -3,31 +3,6 @@ import { currentExecutionTools, inspectCommand } from "../../sessions/public/com
 import type { Session } from "../../sessions/public/session";
 import type { VoiceToolActivityEntry } from "./voiceToolActivity";
 
-export type VoiceWorkspaceTool = "changes" | "browser" | "devices" | "logs";
-
-export const showVoiceWorkTool = {
-  name: "workspace.live_work.open",
-  description:
-    "Open the work panel beside the current full-screen voice call when the owner asks to see work, or when showing an actual result helps answer their request. Keep it closed for ordinary conversation.",
-  parameters: { type: "object", properties: {}, additionalProperties: false },
-};
-
-export function voiceLiveWorkSuggestion(
-  session: Pick<Session, "id" | "busy" | "blocks"> | undefined,
-  activities: readonly VoiceToolActivityEntry[],
-) {
-  if (session?.busy) {
-    const { turnId, tools } = currentExecutionTools(session.blocks);
-    if (turnId && tools.length) return `turn:${session.id}:${turnId}`;
-  }
-  for (let index = activities.length - 1; index >= 0; index--) {
-    const activity = activities[index];
-    if (activity.state === "running" || activity.state === "waiting-owner")
-      return `activity:${activity.id}`;
-  }
-  return undefined;
-}
-
 export type VoiceLiveResultStatus = "done" | "failed" | "interrupted";
 export type VoiceLiveAction = { id: string; name: string; status: VoiceLiveResultStatus };
 
@@ -75,7 +50,17 @@ const diffSummary =
 const testSummary = /^\s*(?:tests?:?\s+\d|=*\s*\d{1,9} (?:passed|failed)\b.* in [\d.]+m?s)/i;
 const cargoSummary = /^\s*test result:/i;
 const testCount = /(\d{1,9}) (passed|failed|skipped|ignored)\b/g;
-const actionName = /^[\w.:-]{1,80}$/;
+const resultActions = new Set([
+  "notes.create",
+  "notes.update",
+  "tasks.create",
+  "tasks.update",
+  "workspace.projects.create",
+  "workspace.projects.select",
+  "workspace.sessions.create",
+  "workspace.sessions.open",
+  "workspace.views.open",
+]);
 const actionStatus = { returned: "done", failed: "failed", uncertain: "interrupted" } as const;
 
 function outputLines(error: string | undefined, output: string) {
@@ -179,7 +164,14 @@ export function voiceLiveResults(
   const actions: VoiceLiveAction[] = [];
   for (const entry of activities) {
     if (entry.state === "running" || entry.state === "waiting-owner") continue;
-    if (actionName.test(entry.name)) {
+    if (
+      entry.state === "returned" &&
+      (entry.outcome === "accepted" ||
+        entry.outcome === "cancelled" ||
+        entry.outcome === "rejected")
+    )
+      continue;
+    if (resultActions.has(entry.name)) {
       actions.push({ id: entry.id, name: entry.name, status: actionStatus[entry.state] });
     }
   }

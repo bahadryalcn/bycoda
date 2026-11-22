@@ -89,6 +89,7 @@ import {
   useState,
   useSyncExternalStore,
   type ClipboardEvent,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -116,7 +117,7 @@ import {
   rewriteTokenMatches,
   tokensForIncoming,
 } from "../model/attachmentTokens";
-import { composerMaxHeight, resizeComposer } from "../model/composerResize";
+import { COMPOSER_MAX_HEIGHT, composerMaxHeight, resizeComposer } from "../model/composerResize";
 import { createComposerResizeFrame } from "./composerResizeFrame";
 import {
   clipboardTextWithAttachments,
@@ -3360,6 +3361,7 @@ export const Composer = memo(function Composer({
       data-usage-guide="composer"
       data-usage-guide-active={hotkeys ? "true" : undefined}
       data-composer-reading={reading ? "true" : undefined}
+      style={{ "--composer-draft-max-height": `${COMPOSER_MAX_HEIGHT}px` } as CSSProperties}
       className={`relative shrink-0 ${shell || compact ? "" : "p-1.5 pt-0"}`}
       onMouseDown={disabled ? undefined : onFocus}
       onKeyDownCapture={disabled ? undefined : onComposerKeyDown}
@@ -3854,7 +3856,7 @@ export const Composer = memo(function Composer({
                 ref={highlightRef}
                 aria-hidden
                 style={{ textIndent: modeIndent }}
-                className={`composer-highlight pointer-events-none absolute inset-0 max-h-40 overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-ui-body leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
+                className={`composer-highlight pointer-events-none absolute inset-0 max-h-(--composer-draft-max-height) overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-ui-body leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
                   shell ? "py-4" : "py-3"
                 } ${hasSubagents ? "pe-16" : ""}`}
               >
@@ -3918,7 +3920,7 @@ export const Composer = memo(function Composer({
               placeholder={composerPlaceholder}
               aria-label={inputAriaLabel ?? t("Message")}
               disabled={disabled}
-              className={`composer-field relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
+              className={`composer-field relative max-h-(--composer-draft-max-height) w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
                 shell ? "py-4" : "py-3"
               } ${hasSubagents ? "pe-16" : ""}`}
               onFocus={onFocus}

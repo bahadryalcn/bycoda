@@ -426,12 +426,7 @@ afterEach(async () => {
 });
 const a = { id: "a", title: "Alpha", cwd: "/a", blocks: [], busy: true } as unknown as Session;
 const b = { id: "b", title: "Beta", cwd: "/b", blocks: [] } as unknown as Session;
-async function setup(
-  initial = a,
-  initialSessions = [a, b],
-  start = true,
-  registerWorkspaceOpener?: Parameters<typeof VoiceCompanion>[0]["registerWorkspaceOpener"],
-) {
+async function setup(initial = a, initialSessions = [a, b], start = true) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -446,7 +441,6 @@ async function setup(
           sessions,
           onSubmit,
           onStop,
-          registerWorkspaceOpener,
         }),
       ),
     );
@@ -457,24 +451,6 @@ async function setup(
   }
   return { render, onSubmit, onStop };
 }
-
-it("opens the exact chat session fullscreen without reconnecting voice", async () => {
-  let opener: ((target: Pick<Session, "id" | "cwd">) => void) | undefined;
-  const other = { ...b, cwd: a.cwd };
-  await setup(a, [a, other], true, (open) => {
-    opener = open;
-  });
-  await act(async () => opener?.({ id: other.id, cwd: "/missing" }));
-  expect(container.querySelector("[data-full-screen]")).toBeNull();
-  await act(async () => opener?.(other));
-  expect(container.querySelector('section[aria-label="Activity"] h2')?.textContent).toBe(
-    other.title,
-  );
-  await click("Exit full screen");
-  expect(container.querySelector("[data-full-screen]")).toBeNull();
-  expect(mock.connect).toHaveBeenCalledTimes(1);
-  expect(mock.close).not.toHaveBeenCalled();
-});
 
 it("opens the companion and starts Talk when the wake phrase is heard during keyboard idle", async () => {
   presence.value = "idle";
@@ -1585,16 +1561,21 @@ it("keeps cloud audio/transcript through project and scope changes without widen
   expect(mock.toolCall.mock.lastCall![0]).not.toHaveProperty("sessionId");
 });
 
-it("lets the voice provider reveal work only inside an open full-screen call", async () => {
+it("presents a result only inside an open full-screen voice call", async () => {
   await setupGlobal("a", "openai", "global");
   await act(() => {
     mock.realtime.captureTurn()();
     mock.realtime.transcript("Show the work beside this call.");
   });
-  const action = "workspace.live_work.open";
+  const action = "workspace.live_work.present";
   const list = () => mock.realtime.tool("app_tools_list", { family: "workspace" });
   const reveal = (requestId: string) =>
-    mock.realtime.tool("app_tool_call", { family: "workspace", action, input: {}, requestId });
+    mock.realtime.tool("app_tool_call", {
+      family: "workspace",
+      action,
+      requestId,
+      input: { title: "Test results", summary: "Two packages finished." },
+    });
   expect(JSON.stringify(await list())).not.toContain(action);
   await click("Full screen");
   expect(container.querySelector("[data-work-panel]")).toBeNull();
@@ -1603,14 +1584,99 @@ it("lets the voice provider reveal work only inside an open full-screen call", a
     expect(await reveal("reveal-voice-work")).toMatchObject({ action, status: "completed" });
   });
   expect(container.querySelector("[data-work-panel]")).not.toBeNull();
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Thanks for checking.");
+  });
+  expect(container.querySelector("[data-work-panel]")).toBeNull();
   await click("Exit full screen");
   await act(async () => {
-    await expect(reveal("closed-voice-work")).rejects.toThrow(
-      "full-screen work panel is unavailable",
-    );
+    await expect(reveal("closed-voice-work")).rejects.toThrow("no active full-screen voice turn");
   });
   expect(container.querySelector("[data-full-screen]")).toBeNull();
 });
+
+it.each(["submit_work", "workspace.sessions.submit", "workspace.sessions.create"])(
+  "shows coding outcomes from %s and drops them on unrelated work",
+  async (submit) => {
+    const { render, workspace } = await setupGlobal();
+    const creating = submit === "workspace.sessions.create";
+    const workSession = creating ? { ...b, id: "new-session" } : a;
+    const command: Session["blocks"][number] = {
+      id: "finished-build",
+      role: "tool",
+      text: "",
+      tool: {
+        status: "completed",
+        preview: { kind: "shell", inspection: { kind: "command", text: "pnpm build" } },
+      },
+    };
+    const oldBlocks: Session["blocks"] = [
+      { id: "old-chat", role: "user", text: "Run the build" },
+      command,
+    ];
+    await render("a", [{ ...a, blocks: oldBlocks }, b]);
+    await click("Full screen");
+    await act(() => {
+      mock.realtime.captureTurn()();
+      mock.realtime.transcript("Run the build.");
+    });
+    await act(async () => {
+      if (submit === "submit_work") {
+        expect(await mock.realtime.tool(submit, { text: "Run the build" })).toEqual({
+          accepted: true,
+        });
+      } else {
+        const receipt = {
+          action: submit,
+          status: "accepted",
+          projectPath: workSession.cwd,
+          sessionId: workSession.id,
+          ...(creating ? { submitted: true } : { accepted: true }),
+        };
+        workspace.execute.mockImplementationOnce(async () => receipt);
+        expect(
+          await mock.realtime.tool("app_tool_call", {
+            family: "workspace",
+            action: submit,
+            requestId: "fixture-work",
+            input: {
+              projectPath: workSession.cwd,
+              ...(creating
+                ? { prompt: "Run the build", submit: true }
+                : { sessionId: a.id, text: "Run the build" }),
+            },
+          }),
+        ).toEqual(receipt);
+      }
+    });
+    expect(container.querySelector("[data-work-panel]")).toBeNull();
+    await render("a", [
+      {
+        ...workSession,
+        blocks: [
+          ...(creating ? [] : oldBlocks),
+          { id: "voice-build", role: "user", text: "Run the build" },
+          { ...command, id: "new-build" },
+        ],
+      },
+      b,
+    ]);
+    expect(container.querySelector("[data-work-panel]")).not.toBeNull();
+    await render("a", [
+      {
+        ...workSession,
+        blocks: [
+          ...oldBlocks,
+          { id: "typed-chat", role: "user", text: "Check project settings" },
+          command,
+        ],
+      },
+      b,
+    ]);
+    expect(container.querySelector("[data-work-panel]")).toBeNull();
+  },
+);
 
 it("waits for the original runtime registration before connecting the cloud provider", async () => {
   const original = assistantHost.request.getMockImplementation()!;

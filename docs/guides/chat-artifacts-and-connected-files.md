@@ -3,8 +3,9 @@
 The session composer and its docked question form let the chat background show through their theme
 fill. Reduced transparency and forced colors use a solid fill.
 
-Markdown formatting appears in the chat composer as you type. Move the caret onto a Markdown
-marker to see and edit it. Sent messages display Markdown, and **Show full content** opens long
+Markdown formatting appears in the chat composer as you type, including drafts with inline
+attachments and links. Move the caret onto a Markdown marker to see and edit it. Sent messages
+display Markdown, and **Show full content** opens long
 messages with the same formatting. **Copy message** and **Save as note** use the original Markdown.
 **Copy message** includes file and image attachments, including those loaded from a connected machine or reopened from a saved conversation.
 If an attachment cannot be read, copying fails with its file name in **Details** and keeps the previous clipboard contents.

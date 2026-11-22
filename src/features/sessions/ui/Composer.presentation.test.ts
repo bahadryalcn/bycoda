@@ -14,7 +14,7 @@ it("uses the visible Cancel edit label and surfaces only its Escape shortcut", (
 it("allows the capped draft to show a scrollbar while keeping its mirror aligned", () => {
   const css = readFileSync(new URL("../../../styles/index.css", import.meta.url), "utf8");
   const fieldClasses = composer.match(/className=\{\x60(composer-field[^${]+)/)?.[1];
-  expect(fieldClasses).toContain("max-h-40");
+  expect(fieldClasses).toContain("max-h-(--composer-draft-max-height)");
   expect(fieldClasses).not.toContain("scrollbar-none");
   expect(css).toMatch(/\.composer-field,\s*\.composer-highlight\s*\{\s*scrollbar-gutter: stable;/);
 });

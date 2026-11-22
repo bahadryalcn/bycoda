@@ -23,15 +23,14 @@ for (const [theme, width] of workViewports) {
     const orb = panel.locator('canvas[data-call-art="orb"]');
     const chat = panel.getByRole("button", { name: "Chat", exact: true });
     const transcript = panel.getByRole("region", { name: "Conversation" });
-    const results = panel.getByRole("region", { name: "Results", exact: true });
+    const results = panel.getByRole("region", { name: "Live results", exact: true });
+    const resultHeading = results.getByRole("heading", { name: "Test results", exact: true });
     const resultsToggle = panel.getByRole("button", { name: "Live results", exact: true });
     const start = panel.getByRole("button", { name: "Start voice", exact: true });
     const capture = (state: string) =>
       panel.screenshot({ path: join(captures, `${theme}-${width}-fullscreen-${state}.png`) });
     const assertNoClipping = () =>
-      expect
-        .poll(() => panel.evaluate((node) => node.scrollWidth <= node.clientWidth))
-        .toBe(true);
+      expect.poll(() => panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
 
     await expect(panel).not.toHaveAttribute("data-full-screen");
     await panel.getByRole("button", { name: "Full screen", exact: true }).click();
@@ -69,16 +68,22 @@ for (const [theme, width] of workViewports) {
       const voice = (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!;
       voice.speech("show live results");
     });
-    await expect(results.getByText("Test results")).toBeVisible();
+    await expect(resultHeading).toBeVisible();
     await expect(results.getByText("Two packages finished.")).toBeVisible();
-    await expect(panel.getByRole("button", { name: "Disconnect voice", exact: true })).toBeVisible();
+    const chartLabels = results.locator('div[aria-hidden="true"] > span');
+    await expect(chartLabels.and(results.getByText("Web", { exact: true }))).toBeVisible();
+    await expect(chartLabels.and(results.getByText("Host", { exact: true }))).toBeVisible();
+    expect((await results.boundingBox())!.width).toBeLessThan(width * 0.55);
+    await expect(
+      panel.getByRole("button", { name: "Disconnect voice", exact: true }),
+    ).toBeVisible();
     await assertNoClipping();
     await capture("results");
     await resultsToggle.click();
     await expect(results).toHaveCount(0);
     await expect(resultsToggle).toHaveAttribute("aria-expanded", "false");
     await resultsToggle.click();
-    await expect(results.getByText("Test results")).toBeVisible();
+    await expect(resultHeading).toBeVisible();
   });
 }
 for (const [theme, width] of workViewports)

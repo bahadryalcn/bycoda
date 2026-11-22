@@ -125,28 +125,29 @@
   text-decoration: none;
 }
 
-.markdownMarker[data-editing-mark] {
+.markdownMarker[data-editing-mark]:not(:global(.cm-editor:not(.cm-focused)) *) {
   color: var(--ui-text-muted);
 }
 
-.markdownMarker:not([data-editing-mark])::after {
+.markdownMarker:is(:not([data-editing-mark]), :global(.cm-editor:not(.cm-focused)) *)::after {
+  content: var(--composer-markdown-glyph, none);
   position: absolute;
   inset-inline-start: 0;
   color: var(--ui-text-secondary);
 }
 
-.markdownMarker[data-draft-markdown="bullet"]:not([data-editing-mark])::after {
-  content: "•";
+.markdownMarker[data-draft-markdown="bullet"] {
+  --composer-markdown-glyph: "•";
 }
 
-.markdownMarker[data-draft-markdown="quote-mark"]:not([data-editing-mark])::after {
-  content: "│";
+.markdownMarker[data-draft-markdown="quote-mark"] {
+  --composer-markdown-glyph: "│";
 }
 
-.markdownMarker[data-draft-markdown="task-open"]:not([data-editing-mark])::after {
-  content: "☐";
+.markdownMarker[data-draft-markdown="task-open"] {
+  --composer-markdown-glyph: "☐";
 }
 
-.markdownMarker[data-draft-markdown="task-done"]:not([data-editing-mark])::after {
-  content: "☑";
+.markdownMarker[data-draft-markdown="task-done"] {
+  --composer-markdown-glyph: "☑";
 }

@@ -13,6 +13,7 @@ import {
   type InlineReferenceContext,
 } from "./composerInlineReferences";
 import { createInlineScan, updateInlineScan, type InlineScan } from "./composerInlineScan";
+import { composerMarkdownDecorations, composerMarkdownMarkAt } from "./ComposerMarkdown";
 import styles from "../../../shared/ui/DraftToken.module.css";
 import { textAttributes } from "../../../shared/ui/Text";
 
@@ -209,16 +210,22 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
     edited?: InlineReference;
     decorations: DecorationSet;
     atomic: DecorationSet;
+    markdown: DecorationSet;
+    editedMark: number | null;
   }>({
     create(state) {
       const scan = createInlineScan(state, initial);
       const decorations = decorate(scan.references);
+      const { from, to } = state.selection.main;
+      const editedMark = composerMarkdownMarkAt(scan.tree, from, to);
       return {
         context: initial,
         scan,
         references: scan.references,
         decorations,
         atomic: atomicDecorations(decorations, scan.references),
+        markdown: composerMarkdownDecorations(scan.tree, scan.text, editedMark),
+        editedMark,
       };
     },
     update(value, transaction) {
@@ -235,11 +242,18 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
             )
           : value.scan;
       const { references } = scan;
-      const { head } = transaction.newSelection.main;
+      const { from, to, head } = transaction.newSelection.main;
+      const editedMark = composerMarkdownMarkAt(scan.tree, from, to);
+      const markdown =
+        scan.tree === value.scan.tree && editedMark === value.editedMark
+          ? value.markdown
+          : composerMarkdownDecorations(scan.tree, scan.text, editedMark);
       const edited = references.find(
         (item) => item.kind === "url" && item.start < head && item.end > head,
       );
-      if (scan === value.scan && edited === value.edited) return value;
+      if (scan === value.scan && edited === value.edited) {
+        return markdown === value.markdown ? value : { ...value, markdown, editedMark };
+      }
       // Typing that leaves every widget as it was keeps their decorations, shifted by the edit.
       const decorations =
         !edited &&
@@ -254,9 +268,14 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
         edited,
         decorations,
         atomic: atomicDecorations(decorations, references),
+        markdown,
+        editedMark,
       };
     },
-    provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+    provide: (field) => [
+      EditorView.decorations.from(field, (value) => value.decorations),
+      EditorView.decorations.from(field, (value) => value.markdown),
+    ],
   });
   const extension: Extension = [
     ranges,

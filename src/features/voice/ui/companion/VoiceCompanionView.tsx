@@ -403,12 +403,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
                     <SectionLabel as="h3" id={chatLabelId}>
                       {t("Conversation")}
                     </SectionLabel>
-                    <Button
-                      touchTarget="control"
-                      iconOnly
-                      label={t("Close")}
-                      onClick={closeChat}
-                    >
+                    <Button touchTarget="control" iconOnly label={t("Close")} onClick={closeChat}>
                       <X className="icon-sm" />
                     </Button>
                   </div>

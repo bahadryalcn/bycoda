@@ -85,7 +85,7 @@ export function VoiceCompanionStatus({
             {tone && <StatusDot tone={tone} size="fixed" appearance="solid" />}
             <LiveText
               size={fullScreen ? "heading" : stage ? "body" : "secondary"}
-              weight={fullScreen ? "semibold" : "medium"}
+              weight="medium"
               leading="snug"
               lines={fullScreen ? 2 : undefined}
               truncate={!fullScreen}

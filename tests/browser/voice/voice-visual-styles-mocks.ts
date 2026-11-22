@@ -180,7 +180,10 @@ export async function converseWithAssistant(input: {
         summary: "Two packages finished.",
         content: {
           kind: "chart",
-          items: [{ label: "Web", value: 5 }, { label: "Host", value: 3 }],
+          items: [
+            { label: "Web", value: 5 },
+            { label: "Host", value: 3 },
+          ],
         },
       },
       requestId: "fixture-live-results",

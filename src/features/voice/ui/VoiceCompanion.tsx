@@ -231,9 +231,7 @@ export type VoiceCompanionProps = {
 export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: VoiceWakeControls }) {
   const locale = useLocale();
   useSyncExternalStore(subscribeGroupLock, getGroupLockView);
-  const {
-    snapshot: assistantSnapshot,
-  } = useAssistantSnapshot();
+  const { snapshot: assistantSnapshot } = useAssistantSnapshot();
   const snapshotRef = useRef(assistantSnapshot);
   snapshotRef.current = assistantSnapshot;
   const identity = assistantIdentity(assistantSnapshot?.profile, locale);
@@ -249,7 +247,10 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const workPanelToggle = useRef<HTMLButtonElement>(null);
   const [voiceResultTurn, setVoiceResultTurn] = useState<{ revision: number; since: number }>();
   const [hiddenResults, setHiddenResults] = useState<number>();
-  const [presentedResult, setPresentedResult] = useState<{ revision: number; result: VoicePresentedResult }>();
+  const [presentedResult, setPresentedResult] = useState<{
+    revision: number;
+    result: VoicePresentedResult;
+  }>();
   const [voiceSubmittedWork, setVoiceSubmittedWork] = useState<{
     revision: number;
     sessionId: string;
@@ -1317,15 +1318,51 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         ],
         execute: async (action, input) => {
           if (action === presentVoiceResultTool.name) {
-            if (!panel.current?.hasAttribute("data-live-call") || !turnCaptured.current || !voiceDisclosureCurrent())
+            if (
+              !panel.current?.hasAttribute("data-live-call") ||
+              !turnCaptured.current ||
+              !voiceDisclosureCurrent()
+            )
               throw new Error("There is no active full-screen voice turn to show this result in.");
             const parsed = VoicePresentedResultSchema.safeParse(input);
-            if (!parsed.success) throw new Error("This result cannot be displayed. Use short, non-sensitive facts.");
+            if (!parsed.success)
+              throw new Error("This result cannot be displayed. Use short, non-sensitive facts.");
             setPresentedResult({ revision: turnRevision.current, result: parsed.data });
             return { action, status: "completed" };
           }
           if (!latest.current.workspace) throw new Error("Workspace actions are unavailable.");
-          return latest.current.workspace.execute(action, input);
+          const submission = action === "workspace.sessions.submit";
+          const creation = action === "workspace.sessions.create" && input.submit === true;
+          const brief = submission ? input.text : creation ? input.prompt : undefined;
+          if (typeof brief !== "string" || !turnCaptured.current)
+            return latest.current.workspace.execute(action, input);
+          const revision = turnRevision.current;
+          const before =
+            submission && typeof input.sessionId === "string"
+              ? findSession(input.sessionId)
+              : undefined;
+          const previousTurnId = before && currentExecutionTools(before.blocks).turnId;
+          const result = await latest.current.workspace.execute(action, input);
+          if (
+            revision === turnRevision.current &&
+            result.status === "accepted" &&
+            result.sessionId &&
+            result.projectPath &&
+            ((submission &&
+              before?.id === result.sessionId &&
+              pathKey(before.cwd) === pathKey(result.projectPath) &&
+              result.accepted === true) ||
+              (creation && result.submitted === true))
+          ) {
+            setVoiceSubmittedWork({
+              revision,
+              sessionId: result.sessionId,
+              cwd: result.projectPath,
+              text: brief.trim(),
+              previousTurnId,
+            });
+          }
+          return result;
         },
       },
       ensureToolSession: latest.current.ensureToolSession,
@@ -1493,7 +1530,13 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       if (generation.current !== epoch || !active()) return { accepted: false };
       const accepted = await latest.current.onSubmit(session.id, text);
       if (accepted && generation.current === epoch && active() && turnRevision.current === revision)
-        setVoiceSubmittedWork({ revision, sessionId: session.id, cwd: session.cwd, text, previousTurnId });
+        setVoiceSubmittedWork({
+          revision,
+          sessionId: session.id,
+          cwd: session.cwd,
+          text,
+          previousTurnId,
+        });
       if (generation.current === epoch && accepted)
         jobs.current.set(session.id, {
           sawBusy: Boolean(session.busy),
@@ -1600,10 +1643,12 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const workspaceOverlay = useOverlay(
     panel,
     fullScreen,
-    fullScreen ? () => {
-      if (workPanelToggle.current?.getAttribute("aria-expanded") === "true") closeWorkPanel();
-      else exitFullScreen();
-    } : undefined,
+    fullScreen
+      ? () => {
+          if (workPanelToggle.current?.getAttribute("aria-expanded") === "true") closeWorkPanel();
+          else exitFullScreen();
+        }
+      : undefined,
     open && !detached,
     undefined,
     false,
@@ -3153,10 +3198,11 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
             ),
       )
     : [];
-  const currentResultTurn = status === "live" && bodyVisible ? voiceResultTurn : undefined;
+  const currentResultTurn =
+    fullScreen && status === "live" && bodyVisible ? voiceResultTurn : undefined;
   const acceptedWork =
     currentResultTurn?.revision === voiceSubmittedWork?.revision ? voiceSubmittedWork : undefined;
-  const storedResultSession = useSession(fullScreen ? acceptedWork?.sessionId : undefined);
+  const storedResultSession = useSession(acceptedWork?.sessionId);
   const resultSession = acceptedWork
     ? [storedResultSession, ...props.sessions].find(
         (session) =>
@@ -3174,15 +3220,16 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     ? currentExecutionTools(resultSession.blocks).turnId
     : undefined;
   const boundedSession =
-    resultSession && acceptedWork && resultTurnId && resultTurnId !== acceptedWork.previousTurnId &&
-    resultSession.blocks.find((block) => block.id === resultTurnId)?.text === acceptedWork.text
+    resultSession &&
+    acceptedWork &&
+    resultTurnId &&
+    resultTurnId !== acceptedWork.previousTurnId &&
+    resultSession.blocks.find((block) => block.id === resultTurnId)?.text.trim() ===
+      acceptedWork.text
       ? resultSession
       : undefined;
   const resultActivities = currentResultTurn
-    ? visibleToolActivities.filter(
-        (entry) =>
-          entry.startedAt >= currentResultTurn.since && entry.name !== presentVoiceResultTool.name,
-      )
+    ? visibleToolActivities.filter((entry) => entry.startedAt >= currentResultTurn.since)
     : [];
   const visiblePresentation =
     currentResultTurn && presentedResult?.revision === currentResultTurn.revision
@@ -3386,7 +3433,11 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         fullScreen={fullScreen}
         workPanelToggleRef={workPanelToggle}
         onToggleWorkPanel={
-          hasLiveResults ? (workPanelOpen ? closeWorkPanel : () => setHiddenResults(undefined)) : undefined
+          hasLiveResults
+            ? workPanelOpen
+              ? closeWorkPanel
+              : () => setHiddenResults(undefined)
+            : undefined
         }
         workPanel={
           fullScreen && workPanelOpen ? (

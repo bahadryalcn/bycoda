@@ -175,7 +175,7 @@
   grid-template-columns: minmax(0, 1fr);
 }
 .panel[data-full-screen]:has(> .workDrawer:not([hidden])) {
-  grid-template-columns: minmax(18rem, 1fr) minmax(0, 62%);
+  grid-template-columns: minmax(18rem, 1fr) clamp(18rem, 40vw, 32rem);
 }
 .panel[data-full-screen]:has(> .chatDrawer:not([hidden])) {
   grid-template-columns: minmax(18rem, 1fr) clamp(16rem, 32vw, 28rem);
