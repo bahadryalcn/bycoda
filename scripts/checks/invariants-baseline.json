@@ -32,7 +32,7 @@
       "oxlint/no-restricted-imports": 1
     },
     "host/cli.ts": {
-      "bycoda/handled-background-promise": 3
+      "bycoda/handled-background-promise": 2
     },
     "host/conversation/conversation-file-mutations.ts": {
       "bycoda/handled-background-promise": 1
