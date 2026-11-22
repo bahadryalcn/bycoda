@@ -10,6 +10,7 @@ import {
 import { orderByIds } from "../../../shared/lib/reorder";
 import { planWorkspaceTabClose } from "../../../features/workspace/model/workspaceTabGroups";
 import { remoteSessionFor } from "../../../features/connections/model/connections";
+import { remoteSessionProjectKey } from "../../../features/connections/model/sessionMachineTarget";
 import { shouldToggleNotesPanel, toggleNotesPanel } from "../../../features/notes/notesPanel";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
@@ -39,7 +40,9 @@ export function useRemoteSessionDeleted(deps: {
             remoteSessionFor(shellId) === remoteSessionId &&
             (!project ||
               sessionsRef.current.some(
-                (session) => session.id === shellId && sameProjectPath(session.cwd, project),
+                (session) =>
+                  session.id === shellId &&
+                  sameProjectPath(remoteSessionProjectKey(session), project),
               )),
         ),
       );

@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
+import { replaceEqualDeep } from "@tanstack/react-query";
 
 export type BundledHostStatus = {
   state: string;
@@ -19,14 +21,16 @@ type BundledHostListener = (status: BundledHostStatus | null) => void;
 // refreshes at once when it becomes visible again or the window gains focus.
 const bundledHostListeners = new Set<BundledHostListener>();
 let bundledHostCurrent: BundledHostStatus | null = null;
-let bundledHostTimer: number | undefined;
+let stopBundledHostPolling: (() => void) | undefined;
 let bundledHostSession = 0;
 // Only the newest request may publish, so a slow older answer cannot overwrite a fresher one.
 let bundledHostLatestRequest = 0;
 
 function publishBundledHost(next: BundledHostStatus | null) {
-  bundledHostCurrent = next;
-  for (const listener of bundledHostListeners) listener(next);
+  const shared = replaceEqualDeep(bundledHostCurrent, next);
+  if (bundledHostCurrent === shared) return;
+  bundledHostCurrent = shared;
+  for (const listener of bundledHostListeners) listener(shared);
 }
 
 function loadBundledHost(): Promise<void> {
@@ -43,42 +47,16 @@ function loadBundledHost(): Promise<void> {
   );
 }
 
-function syncBundledHostPolling() {
-  if (!bundledHostListeners.size) return;
-  if (document.hidden) {
-    window.clearInterval(bundledHostTimer);
-    bundledHostTimer = undefined;
-    return;
-  }
-  if (bundledHostTimer !== undefined) return;
-  const load = () =>
-    void loadBundledHost().catch((error: unknown) =>
-      console.warn("Bundled host status poll failed", error),
-    );
-  load();
-  bundledHostTimer = window.setInterval(load, POLL_MS);
-}
-
-function refreshBundledHostOnFocus() {
-  if (!document.hidden) void loadBundledHost();
-}
-
 function subscribeBundledHost(listener: BundledHostListener): () => void {
-  if (!bundledHostListeners.size) {
-    document.addEventListener("visibilitychange", syncBundledHostPolling);
-    window.addEventListener("focus", refreshBundledHostOnFocus);
-  }
   bundledHostListeners.add(listener);
   // Always hand over the shared value, so a consumer that re-activates after the poller
   // stopped never keeps a status from an ended session.
   listener(bundledHostCurrent);
-  syncBundledHostPolling();
+  stopBundledHostPolling ??= startForegroundPolling(loadBundledHost, POLL_MS).stop;
   return () => {
     if (!bundledHostListeners.delete(listener) || bundledHostListeners.size) return;
-    document.removeEventListener("visibilitychange", syncBundledHostPolling);
-    window.removeEventListener("focus", refreshBundledHostOnFocus);
-    window.clearInterval(bundledHostTimer);
-    bundledHostTimer = undefined;
+    stopBundledHostPolling?.();
+    stopBundledHostPolling = undefined;
     // Results still in flight belong to the ended session and are ignored.
     bundledHostSession++;
     bundledHostCurrent = null;

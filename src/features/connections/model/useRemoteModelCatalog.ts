@@ -20,7 +20,7 @@ import type { HostModelCatalog } from "./protocol";
 export interface RemoteModelCatalogScope {
   machineId: string;
   environmentId: string;
-  projectId: string;
+  projectId?: string;
 }
 
 type CatalogRequest = <T>(method: string, params?: unknown) => Promise<T>;

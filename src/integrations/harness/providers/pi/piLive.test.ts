@@ -126,6 +126,77 @@ describe("Pi live session", () => {
     });
   });
 
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "creates and cold-resumes a $label delegate in its private directory",
+    async (flavor) => {
+      const sessionId = `private-${flavor.id}`;
+      const input = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        delegateHistoryDirectory: "/private/agent",
+        onEvent: () => undefined,
+      };
+      await compactContext(flavor, input);
+      expect(mocks.spawnChild.mock.calls[0][2]).toEqual(
+        expect.arrayContaining(["--session-dir", "/private/agent"]),
+      );
+      expect(mocks.spawnChild.mock.calls[0][2]).not.toContain(flavor.resumeFlag);
+      await forgetSession(flavor, sessionId);
+      bindSession(flavor, sessionId, "pi_session", "/repo");
+      await compactContext(flavor, input);
+      expect(mocks.spawnChild.mock.calls[1][2]).toEqual(
+        expect.arrayContaining([
+          "--session-dir",
+          "/private/agent",
+          flavor.resumeFlag,
+          "pi_session",
+        ]),
+      );
+      expect(mocks.spawnChild.mock.calls[1][3]).toBe("/repo");
+      await forgetSession(flavor, sessionId);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "refuses a replacement for a missing private $label session",
+    async (flavor) => {
+      const sessionId = `private-missing-${flavor.id}`;
+      bindSession(flavor, sessionId, "missing-session", "/repo");
+      mocks.request.mockRejectedValueOnce(new Error("Missing private session"));
+      await expect(
+        compactContext(flavor, {
+          sessionId,
+          cwd: "/repo",
+          model: `${flavor.id}:default`,
+          runtimeMode: "supervised",
+          delegateHistoryDirectory: "/private/agent",
+          onEvent: () => undefined,
+        }),
+      ).rejects.toThrow("Missing private session");
+      expect(mocks.spawnChild).toHaveBeenCalledOnce();
+      await forgetSession(flavor, sessionId);
+    },
+  );
+
+  it("rejects history that a provider opens outside the requested directory", async () => {
+    mocks.request.mockResolvedValueOnce({
+      data: { sessionId: "pi_session", sessionFile: "/shared/history/pi_session.jsonl" },
+    });
+    await expect(
+      compactPiContext({
+        sessionId: "private-escaped-path",
+        cwd: "/repo",
+        model: "pi:default",
+        runtimeMode: "supervised",
+        delegateHistoryDirectory: "/private/agent",
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("outside the delegated history directory");
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects an older Pi before starting a process or sending a prompt", async () => {
     mocks.execChild.mockResolvedValue("--no-tools --no-extensions --help");
     await expect(

@@ -11,7 +11,6 @@ import type { WorkspaceSessionPaneProps } from "./WorkspaceMainArea";
 type P = WorkspaceSessionPaneProps;
 
 export interface SessionPaneDeps {
-  onOpenVoiceWork?: P["onOpenVoiceWork"];
   onKeepSession: (sessionId: string) => void;
   tabs: WorkspaceTab[];
   movingWindows: ReturnType<typeof useMovingWindowsState>["movingWindows"];
@@ -22,6 +21,8 @@ export interface SessionPaneDeps {
   onFocusPane: P["onFocus"];
   onClosePane: P["onClose"];
   onCwdChange: P["onCwdChange"];
+  onSessionMachineChange?: P["onSessionMachineChange"];
+  onSessionMachinePickerTrigger?: P["onSessionMachinePickerTrigger"];
   onBranchChange: P["onBranchChange"];
   onComposerWorktreeChange: P["onWorktreeChange"];
   onRemoteSnapshot: P["onRemoteSnapshot"];
@@ -81,7 +82,6 @@ export interface SessionPaneDeps {
 }
 
 export function useSessionPaneProps({
-  onOpenVoiceWork,
   onKeepSession,
   tabs,
   movingWindows,
@@ -92,6 +92,8 @@ export function useSessionPaneProps({
   onFocusPane,
   onClosePane,
   onCwdChange,
+  onSessionMachineChange,
+  onSessionMachinePickerTrigger,
   onBranchChange,
   onComposerWorktreeChange,
   onRemoteSnapshot,
@@ -159,7 +161,6 @@ export function useSessionPaneProps({
     [tabs, movingWindows, windowTransferPending],
   );
   const sessionPaneProps = {
-    onOpenVoiceWork,
     windowMovingSessionIds,
     workspaceSwitchingSessionId: workspaceNavigation.pending ? active?.id : undefined,
     recents: visibleRecents,
@@ -168,6 +169,8 @@ export function useSessionPaneProps({
     onSessionInteraction: onKeepSession,
     onClose: onClosePane,
     onCwdChange: useKeepSessionAction(onCwdChange, onKeepSession)!,
+    onSessionMachineChange: useKeepSessionAction(onSessionMachineChange, onKeepSession),
+    onSessionMachinePickerTrigger,
     onBranchChange: useKeepSessionAction(onBranchChange, onKeepSession)!,
     onWorktreeChange: onComposerWorktreeChange,
     onRemoteSnapshot,

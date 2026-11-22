@@ -274,8 +274,9 @@ export function buildClaudeSpawnArgs(input: ClaudeSpawnInput): string[] {
     ...(Object.keys(env).length ? { env } : {}),
     ...(input.isolated ? { disableAllHooks: true } : {}),
   };
+  if (input.privateDelegateHistory || (input.isolated && !input.persistSession))
+    args.push("--no-session-persistence");
   if (input.isolated) {
-    if (!input.persistSession) args.push("--no-session-persistence");
     args.push("--strict-mcp-config");
     args.push("--mcp-config", JSON.stringify({ mcpServers: {} }));
     args.push("--settings", JSON.stringify(settings));

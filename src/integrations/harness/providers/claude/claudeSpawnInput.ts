@@ -17,6 +17,8 @@ export type ClaudeSpawnInput = {
   isolated?: boolean;
   /** Retain only the provider transcript while preserving isolated hooks/MCP policy. */
   persistSession?: boolean;
+  /** Bycoda owns the conversation history while normal Claude tools stay available. */
+  privateDelegateHistory?: boolean;
   /** Folders beyond the cwd the session may read and edit. */
   additionalDirs?: readonly string[];
   /** No skill listing and no auto memory: a chat-only delegated child needs neither. */

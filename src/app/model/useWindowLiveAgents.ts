@@ -5,6 +5,7 @@ import { emit, emitTo, listen } from "@tauri-apps/api/event";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import { mergeWindowLiveAgents, type WindowLiveAgents } from "./windowLiveAgents";
+import { foregroundPollsVisible, startForegroundPolling } from "../../shared/lib/foregroundPolling";
 
 const SNAPSHOT = "workspace_live_agents";
 const REQUEST = "workspace_live_agents_request";
@@ -80,7 +81,7 @@ export function useWindowLiveAgents(
         snapshotsRef.current = next;
         setSnapshots(next);
       },
-      visible: () => !document.hidden,
+      visible: foregroundPollsVisible,
     });
     const publish = () =>
       emit(SNAPSHOT, {
@@ -138,26 +139,23 @@ export function useWindowLiveAgents(
     };
     for (const record of snapshotsRef.current.values()) watches.observe(record);
     void register().catch(() => {});
-    const timer = window.setInterval(() => {
-      // Hidden owners still answer REQUEST; periodic publication alone pauses.
-      if (document.hidden) return;
-      void publish().catch(() => {});
-    }, HEARTBEAT_MS);
-    const onVisible = () => {
-      if (document.hidden) return;
-      void publish().catch(() => {});
-      watches.visible();
-    };
+    // Hidden owners still answer REQUEST; periodic publication alone pauses.
+    const polling = startForegroundPolling(
+      (wake) => {
+        if (wake) watches.visible();
+        return publish();
+      },
+      HEARTBEAT_MS,
+      { immediate: false },
+    );
     const onPageHide = () => {
       void emit(GONE, { ownerWindowLabel: label, sourceId }).catch(() => {});
     };
-    document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("pagehide", onPageHide);
     return () => {
       disposed = true;
       watches.dispose();
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
+      polling.stop();
       window.removeEventListener("pagehide", onPageHide);
       unlisteners.forEach((unlisten) => unlisten());
     };

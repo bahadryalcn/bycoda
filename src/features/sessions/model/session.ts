@@ -570,6 +570,8 @@ export type Session = {
   cwd: string;
   /** New projectless chats have a machine-managed working directory of their own. */
   scratchWorkspace?: true;
+  /** Owning Host for a No project draft or conversation on another machine. */
+  remoteExecutionEnvironmentId?: string;
   blocks: Block[];
   /** True while a harness turn is in flight. */
   busy?: boolean;
@@ -876,7 +878,12 @@ export function retargetSessionToProject(session: Session, cwd: string): Session
   return {
     ...session,
     cwd,
-    ...(cwd !== session.cwd ? { scratchWorkspace: cwd === "~" ? true : undefined } : {}),
+    ...(cwd !== session.cwd
+      ? {
+          scratchWorkspace: cwd === "~" ? true : undefined,
+          remoteExecutionEnvironmentId: undefined,
+        }
+      : {}),
     harness,
     model: resolved.id,
     modelSettings: settings,

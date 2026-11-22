@@ -11,6 +11,33 @@ After an app update, open What's new from the expanded sidebar footer. Hover or
 focus the icon to see the installed version, or use the adjacent close button to
 dismiss the notice.
 
+## Session machine
+
+A compact **Run on** picker sits below the new-session composer, to the left of
+the workspace controls. It names the machine that will run the session. Choose
+**This computer** or a connected Host. Offline machines stay listed but cannot be
+chosen. A draft keeps its choice across tab switches and restarts.
+The **New session** menu under **Sessions** also has a **Run on** action.
+
+- **No project** defaults to **This computer**. Its first run uses a private scratch
+  folder on the chosen machine. Local and remote conversations without a project both
+  appear under **No project**; remote rows show their owner.
+- A project draft defaults to the machine that hosts the project's checkout. Choosing
+  another machine opens that machine's folder picker. The folder you confirm becomes
+  the draft's project. The destination's checkout, branch, workspace policy, provider
+  and account apply.
+- The picker is read-only after the first accepted send or Host draft save; the
+  session stays on its owning machine.
+- If the chosen machine is unreachable, the draft keeps its text, references and
+  attachments. Retry, or choose another machine when that is safe. A file that belongs
+  to another machine blocks sending until you remove it or switch back.
+- If a Host cannot start a session without a project, the picker explains that it must
+  be updated before it can be used for **No project** sessions.
+- Changing the machine while a request is uncertain does not move that request. It
+  stays on its original machine and uses the existing reconciliation path.
+
+Cancelling a folder choice keeps the current draft and view.
+
 ## Conversation history
 
 Long conversations open at their recent messages. Scroll toward the top of the

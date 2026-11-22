@@ -6,16 +6,3 @@
   margin-block-start: 8px;
   padding-block-start: 4px;
 }
-
-.nested {
-  margin-inline-start: 12px;
-  min-inline-size: 0;
-}
-
-/* A muted section label between worktree groups, one compact row tall. */
-.groupLabel {
-  display: flex;
-  align-items: center;
-  padding-inline: 6px;
-  min-block-size: var(--ui-control-height-compact);
-}

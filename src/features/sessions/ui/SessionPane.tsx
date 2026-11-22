@@ -12,7 +12,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { useLocale, useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
-import { ChevronDown, GripVertical, Maximize2, StickyNote, X } from "../../../shared/ui/icons";
+import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
 import { useSessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
@@ -127,8 +127,6 @@ import { useMessageRewind } from "./useMessageRewind";
 import { useQuoteRequests } from "./useQuoteRequests";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { Button } from "../../../shared/ui/Button";
-import { currentExecutionTools } from "../model/commandInspection";
-import { SessionWorkSummary } from "./SessionWorkSummary";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { TranscriptFind } from "./TranscriptFind";
 import { syncPaneBackground } from "../../../shared/lib/paneBackground";
@@ -182,6 +180,9 @@ import type { SessionOrganizationResult } from "../model/sessionOrganizationStor
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
 import { RemoteSession } from "../../connections/public/RemoteSession";
 import { useHostSessionBinding } from "../../connections/public/useHostSessionBinding";
+import { SessionMachinePicker } from "../../connections/public/SessionMachinePicker";
+import { remoteExecutionEnvironment } from "../../connections/public/sessionMachineTarget";
+import { isBlankSession } from "../../projects/public/projectReturn";
 import { sameOptionalSessionIgnoringStreamingText, usePaneSession } from "../model/sessionsStore";
 import {
   LiveSessionBackground,
@@ -194,7 +195,6 @@ import { useAdoptedSteerSupport } from "../../connections/public/remoteCapabilit
 import { remoteOrigin } from "./RemoteOriginMark";
 import { SharedQueueRecoveryNotice } from "../../connections/public/SharedQueueRecoveryNotice";
 export type SessionPaneProps = {
-  onOpenVoiceWork?: (target: Pick<Session, "id" | "cwd">) => void;
   session: Session;
   workspaceSwitchingSessionId?: string;
   windowMovingSessionIds?: ReadonlySet<string>;
@@ -219,6 +219,8 @@ export type SessionPaneProps = {
   onFocus: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
+  onSessionMachineChange?: (sessionId: string, environmentId: string | undefined) => void;
+  onSessionMachinePickerTrigger?: (sessionId: string, trigger: HTMLButtonElement | null) => void;
   onBranchChange: (sessionId: string) => void;
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
   onRemoteSnapshot?: (shellId: string, snapshot?: HostSession) => void;
@@ -341,6 +343,7 @@ type Props = SessionPaneProps & {
   /** An opened host conversation whose transcript has not arrived yet. */
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
+  remoteSessionRetargetBlocked?: boolean;
   managedWorkspaceCreationReady?: boolean;
   headerStatus?: ReactNode;
   /** A host chat whose last turn the host lost: shows Continue, as a quit turn does locally. */
@@ -393,7 +396,11 @@ const OwnedSessionPane = memo(function OwnedSessionPane(props: SessionPaneProps)
   const hostBinding = useHostSessionBinding(props.session);
   // Sessions in a project on another machine render this same pane, backed by
   // the host instead of this computer's session runtime.
-  if (hostBinding || isRemoteProjectPath(props.session.cwd))
+  if (
+    hostBinding ||
+    paneSession.remoteExecutionEnvironmentId ||
+    isRemoteProjectPath(paneSession.cwd)
+  )
     return (
       <RemoteSession
         shell={props.session}
@@ -402,6 +409,11 @@ const OwnedSessionPane = memo(function OwnedSessionPane(props: SessionPaneProps)
         onOpenFile={props.onOpenFile}
         onOpenDiff={props.onOpenDiff}
         onOpenPlan={props.onOpenPlan}
+        onSelectMachine={
+          !props.embedded && props.onSessionMachineChange
+            ? (environmentId) => props.onSessionMachineChange?.(paneSession.id, environmentId)
+            : undefined
+        }
         render={(remote) => <LocalSessionPane {...props} {...remote} />}
       />
     );
@@ -419,11 +431,11 @@ function approvalContextFor(getSession: () => Session, dispatch: Props["onApprov
 }
 
 const LocalSessionPane = memo(function LocalSessionPane({
-  onOpenVoiceWork,
   remoteSession = false,
   remoteFeatures,
   remoteSessionLoading = false,
   remoteSessionStarted = false,
+  remoteSessionRetargetBlocked = false,
   remoteLifecycleTarget,
   managedWorkspaceCreationReady = false,
   headerStatus,
@@ -450,6 +462,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onFocus,
   onClose,
   onCwdChange: onCwdChangeProp,
+  onSessionMachineChange,
+  onSessionMachinePickerTrigger,
   onBranchChange: onBranchChangeProp,
   onWorktreeChange: onWorktreeChangeProp,
   onRefreshAdoptedSession,
@@ -1356,8 +1370,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const reviewRow = session.queuedMessages?.find((row) => row.deliveryUnknown);
   const reviewInQueue = queueVisible && !!reviewRow && reviewRow.author?.kind !== "delegation";
   const sharedQueueRecovery = <SharedQueueRecoveryNotice key={session.id} sessionId={session.id} />;
-  const currentWork = visible ? currentExecutionTools(stableBlocks) : undefined;
-  const openLiveWork = onOpenVoiceWork ? () => onOpenVoiceWork(session) : undefined;
   const composerNotices = (
     <>
       <ApprovalDecisionProvider {...approvalContext}>
@@ -1382,28 +1394,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           onStopAll={stopDockAll}
           delegatedAgents={delegatedAgents}
           goalControl={goalControl}
-          workControl={
-            currentWork?.tools.length ? (
-              <>
-                <SessionWorkSummary
-                  key={`${session.id}:${currentWork.turnId}`}
-                  tools={currentWork.tools}
-                  busy={turnOpen}
-                  onOpenLiveWork={openLiveWork}
-                />
-                {openLiveWork && (
-                  <Button
-                    iconOnly
-                    variant="ghost"
-                    label={t("View live work")}
-                    onClick={openLiveWork}
-                  >
-                    <Maximize2 className="icon-sm" />
-                  </Button>
-                )}
-              </>
-            ) : null
-          }
         />
       </ApprovalDecisionProvider>
       <InterruptedNotice
@@ -1475,6 +1465,30 @@ const LocalSessionPane = memo(function LocalSessionPane({
         embedded || !!session.inboxAsk || (hideProjectPicker ? !showDeckProjectPicker : false)
       }
       hideBranchPicker={embedded || managed}
+      machineEnvironmentId={
+        remoteExecutionEnvironment(session) ?? session.hostBinding?.environmentId
+      }
+      machinePicker={
+        !embedded && !managed && !session.inboxAsk && onSessionMachineChange
+          ? (locked) => (
+              <SessionMachinePicker
+                environmentId={remoteExecutionEnvironment(session)}
+                triggerRef={(trigger) => onSessionMachinePickerTrigger?.(session.id, trigger)}
+                onSelect={
+                  !locked &&
+                  !remoteSessionStarted &&
+                  !remoteSessionRetargetBlocked &&
+                  !session.hostBinding &&
+                  !session.providerSessionId &&
+                  !session.queuedMessages?.length &&
+                  isBlankSession(session)
+                    ? (environmentId) => onSessionMachineChange(session.id, environmentId)
+                    : undefined
+                }
+              />
+            )
+          : undefined
+      }
       // An inbox Ask keeps the standard composer layout; its folder comes from the
       // inbox working-folder picker and the host refuses app control for it.
       hideOrchestrator={embedded || !!session.inboxAsk}
@@ -1522,6 +1536,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onWorktreeChange={composerWorktreeChange}
       draftWorkspace={
         !embedded &&
+        !session.remoteExecutionEnvironmentId &&
         !session.inboxAsk &&
         !session.worktreeRemoved &&
         !managed &&

@@ -64,7 +64,9 @@ it("exposes the exact value to assistive technology and tooltips, with decorativ
   const root = createRoot(host);
   const path = "src/features/source-control/ui/GitChangesPanel.tsx";
   try {
-    await act(async () => root.render(createElement(MiddleTruncate, { className: "x" }, path)));
+    await act(async () =>
+      root.render(createElement(MiddleTruncate, { className: "x", children: path })),
+    );
     const node = host.firstElementChild as HTMLElement;
     expect(node.hasAttribute("title")).toBe(false);
     expect(node.classList.contains("x")).toBe(true);
@@ -76,7 +78,9 @@ it("exposes the exact value to assistive technology and tooltips, with decorativ
     expect(head.textContent! + tail.textContent!).toBe(path);
     expect(tail.textContent).toBe("/GitChangesPanel.tsx");
 
-    await act(async () => root.render(createElement(MiddleTruncate, { title: false }, "main")));
+    await act(async () =>
+      root.render(createElement(MiddleTruncate, { title: false, children: "main" })),
+    );
     const plain = host.firstElementChild as HTMLElement;
     expect(plain.hasAttribute("title")).toBe(false);
     expect(plain.children).toHaveLength(0);
@@ -96,7 +100,9 @@ it("keeps a visible ellipsis and a shrinkable tail for long branch names", async
   const branch =
     "feature/A-very-long-workspace-folder-name-that-should-truncate-not-push-the-actions-away-from-the-header-row";
   try {
-    await act(async () => root.render(createElement(MiddleTruncate, { mode: "text" }, branch)));
+    await act(async () =>
+      root.render(createElement(MiddleTruncate, { mode: "text", children: branch })),
+    );
     const node = host.firstElementChild as HTMLElement;
     expect(node.hasAttribute("title")).toBe(false);
     const [full, head, tail] = Array.from(node.children) as HTMLElement[];
@@ -123,7 +129,7 @@ it("does not reserve ellipsis room for a head of up to four characters", async (
   const root = createRoot(host);
   try {
     await act(async () =>
-      root.render(createElement(MiddleTruncate, { mode: "text" }, "ab1234567890")),
+      root.render(createElement(MiddleTruncate, { mode: "text", children: "ab1234567890" })),
     );
     const [, head, tail] = Array.from(
       (host.firstElementChild as HTMLElement).children,
@@ -133,7 +139,7 @@ it("does not reserve ellipsis room for a head of up to four characters", async (
     expect(tail.textContent).toBe("1234567890");
     // "fea" + "ture/graph" rendered as "fea ture/graph" when the short head reserved ellipsis room.
     await act(async () =>
-      root.render(createElement(MiddleTruncate, { mode: "text" }, "feature/graph")),
+      root.render(createElement(MiddleTruncate, { mode: "text", children: "feature/graph" })),
     );
     const [, shortHead] = Array.from(
       (host.firstElementChild as HTMLElement).children,

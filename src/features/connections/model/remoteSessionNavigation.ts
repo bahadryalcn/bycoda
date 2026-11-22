@@ -1,6 +1,7 @@
 import type { Session } from "../../sessions";
 import { sameProjectPath } from "../../projects/public/recents";
 import { leafIds, type WorkspaceTab } from "../../workspace/model/layout";
+import { remoteSessionProjectKey } from "./sessionMachineTarget";
 
 /** Host session IDs are resolved only within the selected remote project. */
 export function findRemoteSessionTab(
@@ -13,7 +14,11 @@ export function findRemoteSessionTab(
   for (const tab of tabs) {
     const shellId = leafIds(tab.layout).find((id) => {
       const shell = sessions.find((session) => session.id === id);
-      return shell && sameProjectPath(shell.cwd, project) && remoteSessionFor(id) === sessionId;
+      return (
+        shell &&
+        sameProjectPath(remoteSessionProjectKey(shell), project) &&
+        remoteSessionFor(id) === sessionId
+      );
     });
     if (shellId) return { tab, shellId };
   }

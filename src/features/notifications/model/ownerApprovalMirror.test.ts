@@ -39,6 +39,11 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 function start(decisions: () => { id: string; signature: string; approved: boolean }[]) {
   const calls: { method: string; params: any }[] = [];
   let tick: () => void = () => undefined;
+  const stopTimer = vi.fn();
+  const setTimer = vi.fn((run: () => void) => {
+    tick = run;
+    return stopTimer;
+  });
   const stop = startOwnerApprovalMirror({
     request: async (method, params) => {
       calls.push({ method, params });
@@ -48,13 +53,10 @@ function start(decisions: () => { id: string; signature: string; approved: boole
     subscribe: subscribeOwnerApprovals,
     onOutcome: onOwnerApprovalOutcome,
     settle: settleOwnerApproval,
-    setTimer: (run) => {
-      tick = run;
-      return () => undefined;
-    },
+    setTimer,
   });
   stops.push(stop);
-  return { calls, tick: () => tick() };
+  return { calls, tick: () => tick(), setTimer, stopTimer };
 }
 
 describe("owner approval classification", () => {
@@ -86,6 +88,15 @@ describe("owner approval classification", () => {
 });
 
 describe("owner approval mirror", () => {
+  it("only arms the retry timer while approvals need it", async () => {
+    const { setTimer, stopTimer } = start(() => []);
+    expect(setTimer).not.toHaveBeenCalled();
+    const pending = ask("timer");
+    await flush();
+    expect(setTimer).toHaveBeenCalledOnce();
+    settleOwnerApproval(pending.id, true);
+    await vi.waitFor(() => expect(stopTimer).toHaveBeenCalledOnce());
+  });
   it("publishes pending approvals, including display-only ones, with a signature", async () => {
     const a = ask("a");
     const b = ask("b", "bycoda — Desktop action approval");

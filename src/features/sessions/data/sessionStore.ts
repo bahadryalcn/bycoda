@@ -208,6 +208,7 @@ type SessionUpsertPayload = {
 export function shouldPersistSession(session: Session): boolean {
   return (
     !hostSessionBinding(session) &&
+    !session.remoteExecutionEnvironmentId &&
     !session.historyPartial &&
     !session.historyLoading &&
     !session.inboxAsk &&

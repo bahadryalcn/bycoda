@@ -210,7 +210,7 @@ describe("UsageFooter provider authentication", () => {
     expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
   });
 
-  it("refreshes Claude every two minutes and Codex every ten, and stops on unmount", async () => {
+  it("backs off quota reads when inactive and stops on unmount", async () => {
     vi.useFakeTimers();
     rateLimitsFetch.fetchClaudeRateLimits.mockResolvedValue(connectedLimits("claude"));
     rateLimitsFetch.fetchCodexRateLimits.mockResolvedValue(connectedLimits("codex"));
@@ -218,19 +218,19 @@ describe("UsageFooter provider authentication", () => {
       root.render(createElement(UsageFooter, { providers: ["claude", "codex"] })),
     );
 
-    await act(async () => vi.advanceTimersByTimeAsync(119_999));
+    await act(async () => vi.advanceTimersByTimeAsync(539_999));
     expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(1);
     expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
 
-    await act(async () => vi.advanceTimersByTimeAsync(10));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(2);
     expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
 
-    await act(async () => vi.advanceTimersByTimeAsync(120_000));
+    await act(async () => vi.advanceTimersByTimeAsync(480_000));
     expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(3);
     expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
 
-    await act(async () => vi.advanceTimersByTimeAsync(360_000));
+    await act(async () => vi.advanceTimersByTimeAsync(1_440_000));
     expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
 
     act(() => root.unmount());

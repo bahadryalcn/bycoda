@@ -2,6 +2,7 @@ import { HOST_MODEL_ROUTING } from "../../../shared/model/host-contracts/model-r
 import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { invoke } from "@tauri-apps/api/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useForegroundQueryPolling, useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorText } from "../../../shared/lib/errors";
 import {
@@ -110,9 +111,10 @@ export function useProjectCrews(cwd: string, enabled = true) {
   const client = useQueryClient();
   const key = [HOST_CREWS, cwd];
   const canRead = enabled && !!cwd && cwd !== "~";
+  const visible = useQueryVisible();
   const query = useQuery({
     queryKey: key,
-    enabled: canRead,
+    enabled: canRead && visible,
     queryFn: async (): Promise<CrewsSnapshot> => {
       // Read the owning machine directly so a capability request's failure keeps its
       // reason and is not mistaken for a Host that lacks Crew support.
@@ -143,15 +145,12 @@ export function useProjectCrews(cwd: string, enabled = true) {
         modelPoolsSupported: capabilities.includes(HOST_MODEL_ROUTING),
       };
     },
-    staleTime: 3000,
-    // Active runs change quickly. Without one, this app's own calls invalidate the
-    // query, and a slower poll still picks up runs that agents start through the host.
-    refetchInterval: (query) =>
-      query.state.data?.runs.some((run) => run.status === "active" || crewHasRunningWork(run))
-        ? 5000
-        : 15_000,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
+  const active = query.data?.runs.some((run) => run.status === "active" || crewHasRunningWork(run));
+  useForegroundQueryPolling(query.refetch, active ? 5_000 : 15_000, canRead, active);
   const listFailure = useGracedFailure({
     error: canRead ? query.error : undefined,
     retry: () => query.refetch({ cancelRefetch: false }),

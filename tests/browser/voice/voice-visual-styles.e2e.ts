@@ -8,268 +8,87 @@ const workViewports = [
   ["light", 1280],
   ["dark", 800],
 ] as const;
-for (const [theme, width] of workViewports)
-  test(`voice workspace tracks canonical project work and opens the selected record ${theme} ${width}`, async ({
+type FixtureVoice = typeof import("./voice-visual-styles-mocks").fixtureVoice;
+
+for (const [theme, width] of workViewports) {
+  test(`fullscreen call keeps controls and shows Chat and live results on demand ${theme} ${width}`, async ({
     page,
   }) => {
     await mkdir(captures, { recursive: true });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width, height: 800 });
-    await page.addInitScript(() => {
-      const host = { id: "test-machine", environmentId: "test-environment" };
-      Object.defineProperty(window, "__TAURI_INTERNALS__", {
-        value: {
-          invoke: async (
-            command: string,
-            args?: { method?: string; params?: { state?: unknown; personalData?: boolean } },
-          ) => {
-            if (command === "local_host_connect") return host;
-            if (command === "remote_machines") return [host];
-            if (command !== "remote_request") return undefined;
-            switch (args?.method) {
-              case "environment.describe":
-                return {
-                  environmentId: host.environmentId,
-                  capabilities: ["tasks", "goals", "crews.active.v1"],
-                };
-              case "projects.list":
-                return [{ id: "tracked-project", cwd: "/fixture" }];
-              case "tasks.list":
-                return [
-                  {
-                    id: "tracked-task",
-                    title: "Verify the release",
-                    projectId: "tracked-project",
-                    status: "done",
-                    updatedAt: 1_700_000_002_000,
-                  },
-                ];
-              case "goals.list":
-                return [
-                  {
-                    id: "tracked-goal",
-                    title: "Release the workspace",
-                    projectIds: ["tracked-project"],
-                    leadProjectId: "tracked-project",
-                    status: "running",
-                    taskIds: ["tracked-task"],
-                    updatedAt: 1_700_000_003_000,
-                  },
-                ];
-              case "crews.active.list":
-                return {
-                  items: [
-                    {
-                      runId: "tracked-crew",
-                      projectId: "tracked-project",
-                      definitionId: "definition",
-                      definitionName: "Quality crew",
-                      runStatus: "active",
-                      memberId: "lead",
-                      memberName: "Lead",
-                      memberRole: "coordinator",
-                      kind: "coordinator",
-                    },
-                  ],
-                };
-              case "decisionModels.decide": {
-                const state = JSON.stringify(args.params?.state);
-                if (
-                  !state ||
-                  /Release|tracked|fixture|pnpm/i.test(state) ||
-                  args.params?.personalData !== false
-                ) {
-                  throw new Error("Model received non-aggregate fixture data");
-                }
-                const answer = (value: string) => ({
-                  value,
-                  confidence: 1,
-                  sourceId: "test",
-                  model: "test",
-                });
-                return {
-                  answers: { layout: answer("table_only"), sort: answer("source") },
-                  sourceChain: ["test"],
-                  durationMs: 5,
-                };
-              }
-            }
-          },
-        },
-      });
-    });
-    await page.goto(
-      `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&live-work&tracked-work`,
-    );
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
     await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
     const panel = page.locator("section[data-voice-state]");
-    await panel.getByRole("button", { name: "Full screen", exact: true }).click();
-    await panel.getByRole("button", { name: "Activity", exact: true }).click();
-    const activity = panel.getByRole("region", { name: "Recent activity" });
-    await expect(activity.getByRole("button", { name: /Verify the release/ })).toBeVisible();
-    await expect(activity.getByRole("button", { name: /Quality crew/ })).toBeVisible();
-    await panel.getByRole("tab", { name: "Results" }).click();
-    await panel.getByRole("button", { name: "Generate with AI" }).click();
-    await expect(panel.getByRole("button", { name: "Use default" })).toBeVisible();
-    await expect(
-      panel.getByRole("table", { name: "Results" }).getByText("Quality crew"),
-    ).toBeVisible();
-    await panel.screenshot({ path: join(captures, `${theme}-${width}-voice-model-layout.png`) });
-    await panel.getByRole("tab", { name: "Activity" }).click();
-    await panel.getByRole("tab", { name: "Results" }).click();
-    await panel.getByRole("button", { name: "Use default" }).click();
-    await expect(panel.getByRole("button", { name: "Use default" })).toHaveCount(0);
-    await panel.getByRole("tab", { name: "Activity" }).click();
-    await activity.getByRole("button", { name: /Release the workspace/ }).click();
-    await expect(panel.getByText("Progress · 1/1")).toBeVisible();
-    await panel.screenshot({ path: join(captures, `${theme}-${width}-voice-tracked-work.png`) });
-    await panel.getByRole("button", { name: "Open", exact: true }).click();
-    await expect(panel.getByRole("button", { name: "Full screen", exact: true })).toBeVisible();
-  });
+    const orb = panel.locator('canvas[data-call-art="orb"]');
+    const chat = panel.getByRole("button", { name: "Chat", exact: true });
+    const transcript = panel.getByRole("region", { name: "Conversation" });
+    const results = panel.getByRole("region", { name: "Results", exact: true });
+    const resultsToggle = panel.getByRole("button", { name: "Live results", exact: true });
+    const start = panel.getByRole("button", { name: "Start voice", exact: true });
+    const capture = (state: string) =>
+      panel.screenshot({ path: join(captures, `${theme}-${width}-fullscreen-${state}.png`) });
+    const assertNoClipping = () =>
+      expect
+        .poll(() => panel.evaluate((node) => node.scrollWidth <= node.clientWidth))
+        .toBe(true);
 
-for (const [theme, width] of workViewports) {
-  test(`voice workspace results and tools ${theme} ${width}`, async ({ page }) => {
-    await mkdir(captures, { recursive: true });
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width, height: 800 });
-    await page.goto(
-      `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&live-work&live-jobs`,
-    );
-    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
-    const panel = page.locator("section[data-voice-state]");
+    await expect(panel).not.toHaveAttribute("data-full-screen");
     await panel.getByRole("button", { name: "Full screen", exact: true }).click();
-    await panel.getByRole("button", { name: "Activity", exact: true }).click();
-    const activity = panel.getByRole("region", { name: "Recent activity" });
-    await expect(
-      panel
-        .getByRole("region", { name: "Details" })
-        .getByRole("heading", { name: "Prepare release notes" }),
-    ).toBeVisible();
-    await activity.getByRole("button", { name: /All sources/ }).click();
-    await page.getByRole("option", { name: "Job", exact: true }).click();
-    await expect(activity.getByRole("button", { name: /pnpm lint/ })).toHaveCount(0);
-    await activity.getByRole("button", { name: /Prepare release notes/ }).click();
-    await expect(panel.getByText("Progress · 2/3")).toBeVisible();
-    await panel.getByRole("tab", { name: "Results" }).click();
-    const results = panel.getByRole("table", { name: "Results" });
-    await expect(results.getByText("Prepare release notes")).toBeVisible();
-    await panel.screenshot({ path: join(captures, `${theme}-${width}-voice-results.png`) });
-    await results.getByText("pnpm lint", { exact: true }).click();
-    await expect(panel.getByText("No lint errors.")).toBeVisible();
-    await panel.getByRole("tab", { name: "Compare" }).click();
-    await panel.getByRole("button", { name: /^First:/ }).click();
-    await page.getByRole("option", { name: "pnpm lint" }).click();
-    await expect(panel.getByRole("button", { name: "First: pnpm lint" })).toBeVisible();
-    await expect(panel.getByRole("button", { name: "Second: pnpm typecheck" })).toBeVisible();
-    await panel.getByRole("tab", { name: "Draft", exact: true }).click();
-    await panel.getByRole("textbox", { name: "Draft" }).fill("Owner comment");
-    await panel.getByRole("button", { name: "Insert", exact: true }).click();
-    await expect(panel.getByRole("textbox", { name: "Draft" })).toHaveValue(
-      /Owner comment[\s\S]*No lint errors/,
-    );
-    for (const [label, view] of [
-      ["Browser", "browser"],
-      ["Devices", "devices"],
-      ["Logs", "logs"],
-      ["Changes", "changes"],
-    ]) {
-      await panel.getByRole("tab", { name: label, exact: true }).click();
-      await expect(panel.getByTestId("voice-tool-fixture")).toHaveText(`${view} · fixture`);
-    }
-    await panel.getByRole("button", { name: "Exit full screen" }).click();
-    await panel.getByRole("button", { name: "Full screen", exact: true }).click();
-    await panel.getByRole("button", { name: "Activity", exact: true }).click();
-    await panel.getByRole("tab", { name: "Draft", exact: true }).click();
-    await expect(panel.getByRole("textbox", { name: "Draft" })).toHaveValue(/Owner comment/);
+    await expect(panel).toHaveAttribute("data-full-screen", "true");
+    await expect(results).toHaveCount(0);
+    await expect(resultsToggle).toHaveCount(0);
+    await expect(orb).toHaveAttribute("data-state", "off");
+    expect((await orb.boundingBox())!.width).toBeGreaterThan(300);
+    await capture("ready");
+
+    const startBounds = (await start.boundingBox())!;
+    await chat.click();
+    await expect(chat).toHaveAttribute("aria-expanded", "true");
+    await expect(transcript.getByText("No messages yet")).toBeVisible();
+    await expect(orb).toBeVisible();
+    expect((await start.boundingBox())!.y).toBe(startBounds.y);
+    await assertNoClipping();
+    await transcript.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(chat).toBeFocused();
+    await expect(chat).toHaveAttribute("aria-expanded", "false");
+
+    await start.click();
+    await expect(orb).toHaveAttribute("data-state", "listening");
+    await page.evaluate(() => {
+      const voice = (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!;
+      voice.speech("Show the test totals.");
+    });
+    await chat.click();
+    await expect(transcript.getByRole("list").getByText("Show the test totals.")).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Mute microphone", exact: true })).toBeVisible();
+    await capture("conversation");
+    await chat.click();
+
+    await page.evaluate(() => {
+      const voice = (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!;
+      voice.speech("show live results");
+    });
+    await expect(results.getByText("Test results")).toBeVisible();
+    await expect(results.getByText("Two packages finished.")).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Disconnect voice", exact: true })).toBeVisible();
+    await assertNoClipping();
+    await capture("results");
+    await resultsToggle.click();
+    await expect(results).toHaveCount(0);
+    await expect(resultsToggle).toHaveAttribute("aria-expanded", "false");
+    await resultsToggle.click();
+    await expect(results.getByText("Test results")).toBeVisible();
   });
 }
-for (const theme of ["light", "dark"])
-  for (const width of [1280, 800, 440])
-    test(`live workspace is always manual ${theme} ${width}`, async ({ page, context }) => {
-      await mkdir(captures, { recursive: true });
-      await page.setViewportSize({ width, height: 800 });
-      await page.goto(
-        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&live-work`,
-      );
-      await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
-      const panel = page.locator("section[data-voice-state]");
-      const suggestion = panel.getByRole("button", { name: "View live work" });
-      await expect(suggestion).toBeVisible();
-      await expect(panel).not.toHaveAttribute("data-full-screen");
-      await suggestion.click();
-      await expect(panel).toHaveAttribute("data-full-screen", "true");
-      await expect(panel.getByText("2 voice tests passed")).toBeVisible();
-      await expect(panel.getByText("Working · 1")).toBeVisible();
-      await panel.getByRole("button", { name: "Failed · 1" }).click();
-      await expect(panel.getByText("2 voice tests passed")).toHaveCount(0);
-      await expect(panel.getByText("One fixture has an invalid type.")).toBeVisible();
-      await panel.getByRole("button", { name: "All · 3" }).click();
-      await expect(panel.getByText("2 voice tests passed")).toBeVisible();
-      const activity = panel.getByRole("region", { name: "Recent activity" });
-      const search = activity.getByRole("searchbox", { name: "Search" });
-      await search.fill("lint");
-      await expect(panel.getByText("No lint errors.")).toBeVisible();
-      await activity.getByRole("button", { name: /pnpm lint/ }).press("Enter");
-      await search.fill("");
-      const follow = panel.getByRole("button", { name: "Follow", exact: true });
-      await expect(follow).toHaveAttribute("aria-pressed", "false");
-      await page.evaluate(() => window.dispatchEvent(new Event("fixture-voice-work-update")));
-      await expect(activity.getByRole("button", { name: /pnpm test:browser/ })).toBeVisible();
-      await expect(panel.getByText("No lint errors.")).toBeVisible();
-      await follow.click();
-      await expect(panel.getByText("Chromium ready.")).toBeVisible();
-      await expect(panel.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
-      await activity.getByRole("button", { name: "pnpm test Working", exact: true }).click();
-      await expect(panel.getByText("2 voice tests passed")).toBeVisible();
-      await panel.screenshot({ path: join(captures, `${theme}-${width}-live-workspace.png`) });
-      if (theme === "light" && width === 1280) {
-        await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-        await panel.getByRole("button", { name: "Copy output" }).click();
-        await expect
-          .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-          .toContain("2 voice tests passed");
-      }
-      await page.keyboard.press("Escape");
-      await expect(panel).toHaveAttribute("data-full-screen", "true");
-      const workToggle = panel.getByRole("button", { name: "Activity", exact: true });
-      await expect(workToggle).toBeFocused();
-      await expect(workToggle).toHaveAttribute("aria-expanded", "false");
-      await page.keyboard.press("Escape");
-      await expect(panel).not.toHaveAttribute("data-full-screen");
-      await expect(suggestion).toHaveCount(0);
-      const fullScreen = panel.getByRole("button", { name: "Full screen", exact: true });
-      await expect(fullScreen).toBeFocused();
-      await fullScreen.click();
-      await expect(panel).toHaveAttribute("data-full-screen", "true");
-      await expect(workToggle).toHaveAttribute("aria-expanded", "false");
-      await expect(panel.getByRole("region", { name: "Recent activity" })).toHaveCount(0);
-      const alpha = await panel.evaluate((element: HTMLElement) => {
-        element.style.setProperty("--ui-workspace-canvas", "transparent");
-        const canvas = document.createElement("canvas");
-        const context = canvas.getContext("2d")!;
-        context.fillStyle = getComputedStyle(element).backgroundColor;
-        context.fillRect(0, 0, 1, 1);
-        return context.getImageData(0, 0, 1, 1).data[3];
-      });
-      expect(alpha).toBe(255);
-      await panel.screenshot({ path: join(captures, `${theme}-${width}-voice-full-screen.png`) });
-      await workToggle.click();
-      await panel.getByRole("button", { name: "Workspace", exact: true }).click();
-      const notes = page.getByRole("menuitem", { name: "Notes", exact: true });
-      await expect(notes).toBeVisible();
-      await notes.click();
-      await expect(panel).not.toHaveAttribute("data-full-screen");
-    });
-for (const [theme, width] of [
-  ["light", 1280],
-  ["dark", 800],
-] as const)
+for (const [theme, width] of workViewports)
   test(`call particles and light follow voice ${theme} ${width}`, async ({ page }) => {
     await mkdir(captures, { recursive: true });
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
     await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
     const panel = page.locator("section[data-voice-state]");
+    await panel.getByRole("button", { name: "Full screen", exact: true }).click();
     const orb = panel.locator('canvas[data-call-art="orb"]');
     const light = panel.locator('canvas[data-call-art="backdrop"]');
     const pixels = (part: typeof orb) =>
@@ -299,6 +118,8 @@ for (const [theme, width] of [
     });
     await check("user", true);
     await page.evaluate(() => (window as any).fixtureVoice.callbacks.state("transcribing"));
+    await check("transcribing", true);
+    await page.evaluate(() => (window as any).fixtureVoice.callbacks.state("replying"));
     const thinking = await check("thinking", true);
     expect(thinking[1]).not.toBe(listening[1]);
     await page.evaluate(() => (window as any).fixtureVoice.callbacks.playback(true));

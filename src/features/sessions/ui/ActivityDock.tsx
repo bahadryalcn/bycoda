@@ -82,7 +82,6 @@ type Props = {
   /** Cross-provider children of this session, already mapped to rows. */
   delegatedAgents?: DockAgent[];
   goalControl?: React.ReactNode;
-  workControl?: React.ReactNode;
 };
 
 /**
@@ -109,7 +108,6 @@ export const ActivityDock = memo(function ActivityDock({
   onStopAll,
   delegatedAgents,
   goalControl,
-  workControl,
 }: Props) {
   useLocale();
   const t = useT();
@@ -178,8 +176,14 @@ export const ActivityDock = memo(function ActivityDock({
     dock.backgroundCount === 0 &&
     !backgroundAgents;
 
-  const statusNotice = (
-    <>
+  return (
+    <div ref={root}>
+      {discovery.error ? (
+        <InlineError retry={{ onRetry: discovery.retry }}>{discovery.error}</InlineError>
+      ) : null}
+      {/* Always mounted, so a state change is announced rather than the dock
+          appearing. The ticking clock stays out of it. */}
+      <LiveText className="sr-only" text={questionOnlyNotice ? "" : displayLabel} />
       {dock.state === "idle" || questionOnlyNotice ? (
         goalControl ? (
           <div className="flex justify-end px-3">{goalControl}</div>
@@ -204,24 +208,6 @@ export const ActivityDock = memo(function ActivityDock({
             onAll: onStopAll,
           }}
         />
-      )}
-    </>
-  );
-  return (
-    <div ref={root}>
-      {discovery.error ? (
-        <InlineError retry={{ onRetry: discovery.retry }}>{discovery.error}</InlineError>
-      ) : null}
-      {/* Always mounted, so a state change is announced rather than the dock
-          appearing. The ticking clock stays out of it. */}
-      <LiveText className="sr-only" text={questionOnlyNotice ? "" : displayLabel} />
-      {workControl ? (
-        <div className="flex items-start gap-1">
-          <div className="min-w-0 flex-1">{statusNotice}</div>
-          <div className="flex shrink-0 items-center">{workControl}</div>
-        </div>
-      ) : (
-        statusNotice
       )}
     </div>
   );

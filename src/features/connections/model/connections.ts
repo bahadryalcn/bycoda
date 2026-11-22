@@ -2,6 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { invokeHostRequest } from "./tracedInvoke";
 import { withAccountTunnelRecovery } from "./accountTunnelRecovery";
 import {
+  foregroundPollsVisible,
+  startForegroundPolling,
+} from "../../../shared/lib/foregroundPolling";
+import {
   assertDesktopControlReceipts,
   requiresDesktopControlReceipts,
 } from "./desktopControlCapability";
@@ -18,6 +22,11 @@ import {
 } from "./protocol";
 import { MachineChannelStreamError, subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { remoteProjectFor } from "./remoteProjects";
+import { projectlessMachineProject, remoteSessionProjectAtKey } from "./sessionMachineTarget";
+import {
+  PROJECTLESS_PROJECT_ID,
+  PROJECTLESS_SESSIONS_CAPABILITY,
+} from "../../../shared/model/host-contracts/projectless-sessions";
 import { resetSessionSyncGatesForTests, runSessionSync } from "./coldSyncGate";
 import {
   railEntryAfterFailure,
@@ -1255,15 +1264,13 @@ const STATUS = "bycoda:remote-machine-status";
 const machineOnline = new Map<string, boolean>();
 type StatusWatcher = {
   count: number;
-  timer?: ReturnType<typeof setTimeout>;
   /** Checks now when the machine is down; a focus change is new demand, not new evidence. */
   wake?: () => void;
   /** Removes the window listeners that resume the checks. */
   dispose?: () => void;
 };
-// The status watcher only checks while the computer is online; it checks less while hidden.
+// Reconnection demand still wakes the watcher; hidden windows make no periodic status checks.
 const computerOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
-const windowHidden = () => typeof document !== "undefined" && document.hidden;
 const statusWatchers = new Map<string, StatusWatcher>();
 subscribeMachineFocused((environmentId) => {
   const machineId = cachedMachines.find((entry) => entry.environmentId === environmentId)?.id;
@@ -1306,34 +1313,8 @@ function watchMachineStatus(machineId: string): () => void {
     const watcher: StatusWatcher = { count: 1 };
     statusWatchers.set(machineId, watcher);
     let failures = 0;
-    let polling = false;
-    const schedule = (delay: number) => {
-      clearTimeout(watcher.timer);
-      if (computerOnline() && statusWatchers.get(machineId) === watcher)
-        watcher.timer = setTimeout(() => void poll(), delay);
-    };
-    // Coming back online or to a visible window resumes a check that was held back.
-    const resume = () => void poll();
-    watcher.wake = () => {
-      if (failures) resume();
-    };
-    const visibilityChanged = () => {
-      if (!windowHidden()) resume();
-      else if (!polling) {
-        const environmentId = cachedMachines.find((entry) => entry.id === machineId)?.environmentId;
-        schedule(machineStatusPollDelay(failures, environmentId, true));
-      }
-    };
-    window.addEventListener("online", resume);
-    document.addEventListener("visibilitychange", visibilityChanged);
-    watcher.dispose = () => {
-      window.removeEventListener("online", resume);
-      document.removeEventListener("visibilitychange", visibilityChanged);
-    };
     const poll = async () => {
-      if (polling || !computerOnline() || statusWatchers.get(machineId) !== watcher) return;
-      clearTimeout(watcher.timer);
-      polling = true;
+      if (!computerOnline() || statusWatchers.get(machineId) !== watcher) return;
       const machine = cachedMachines.find((entry) => entry.id === machineId);
       const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
       const current = () =>
@@ -1360,19 +1341,33 @@ function watchMachineStatus(machineId: string): () => void {
           if (machineOnline.get(machineId) === false) failures = Math.min(4, failures + 1);
         }
       }
-      polling = false;
-      // Offline: no timer until `online` resumes the check, so nothing is sent to a machine
-      // while the computer cannot reach it.
-      schedule(
-        !current() ? 0 : machineStatusPollDelay(failures, machine?.environmentId, windowHidden()),
+      if (statusWatchers.get(machineId) !== watcher) return;
+      polling.setPeriod(
+        computerOnline() ? machineStatusPollDelay(failures, machine?.environmentId) : 0,
+        failures > 0,
       );
+      if (!current() && foregroundPollsVisible()) polling.refresh();
     };
-    void poll();
+    const polling = startForegroundPolling(poll, computerOnline() ? 15_000 : 0, {
+      immediate: false,
+    });
+    const resume = () => polling.refresh();
+    const pauseOffline = () => polling.setPeriod(0);
+    watcher.wake = () => {
+      if (failures) resume();
+    };
+    window.addEventListener("online", resume);
+    window.addEventListener("offline", pauseOffline);
+    watcher.dispose = () => {
+      polling.stop();
+      window.removeEventListener("online", resume);
+      window.removeEventListener("offline", pauseOffline);
+    };
+    resume();
   }
   return () => {
     const watcher = statusWatchers.get(machineId);
     if (!watcher || --watcher.count > 0) return;
-    clearTimeout(watcher.timer);
     watcher.dispose?.();
     statusWatchers.delete(machineId);
   };
@@ -1689,16 +1684,41 @@ function useRouteStableMachines(machines: RemoteMachine[]): RemoteMachine[] {
 /** Lists the host sessions of every remote project on the rail, so one that
  * runs on its machine shows up without its project being opened here. A
  * project whose machine does not answer keeps its last list. */
-export function useRemoteRailSessions(projects: readonly string[]): {
+export function useRemoteRailSessions(
+  projects: readonly string[],
+  includeProjectless = false,
+): {
   sessions: RemoteRailSession[];
   freshProjects: readonly string[];
 } {
-  const key = projects.join("\n");
-  const { machines: inventory } = useRemoteMachines(projects.length > 0);
+  const { machines: inventory } = useRemoteMachines(projects.length > 0 || includeProjectless);
+  const projectlessMachines = includeProjectless
+    ? inventory.filter(
+        (machine) => !isLocalSyncMachine(machine) && isMachineEnabled(machine.environmentId),
+      )
+    : [];
+  const projectlessEnvironmentIds = projectlessMachines
+    .map((machine) => machine.environmentId)
+    .join("\n");
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep advertised Host capabilities current as the list gains machine connections.
+  useEffect(() => {
+    for (const environment of projectlessEnvironmentIds.split("\n").filter(Boolean)) {
+      void loadRemoteCapabilities(environment).catch(() => {});
+    }
+  }, [projectlessEnvironmentIds]);
+  const listedProjects = [
+    ...projects,
+    ...projectlessMachines.flatMap((machine) =>
+      cachedRemoteCapabilities(machine.environmentId)?.includes(PROJECTLESS_SESSIONS_CAPABILITY)
+        ? [projectlessMachineProject(machine.environmentId).key]
+        : [],
+    ),
+  ];
+  const key = listedProjects.join("\n");
   // Pollers and machine channels restart only when a machine they reach changes its identity
   // or route, not when the inventory is re-read, renamed or gains an unrelated machine.
   const railEnvironments = new Set(
-    projects.map((project) => remoteProjectFor(project)?.environmentId),
+    listedProjects.map((project) => remoteSessionProjectAtKey(project)?.environmentId),
   );
   const machines = useRouteStableMachines(
     inventory.filter((entry) => railEnvironments.has(entry.environmentId)),
@@ -1711,7 +1731,7 @@ export function useRemoteRailSessions(projects: readonly string[]): {
   useEffect(() => subscribeRemoteCapabilities(() => setCapabilityVersion((v) => v + 1)), []);
   useEffect(() => {
     const targets = (key ? key.split("\n") : []).flatMap((project) => {
-      const remote = remoteProjectFor(project);
+      const remote = remoteSessionProjectAtKey(project);
       const machine =
         remote && machines.find((entry) => entry.environmentId === remote.environmentId);
       return remote && machine ? [{ project, remote, machine }] : [];
@@ -1759,8 +1779,10 @@ export function useRemoteRailSessions(projects: readonly string[]): {
       lists.set(project, railEntryAfterFailure(entry, reason));
       publish();
     };
-    const capable = targets.filter(({ machine }) =>
-      cachedRemoteCapabilities(machine.environmentId)?.includes("machine.changes"),
+    const capable = targets.filter(
+      ({ machine, remote }) =>
+        remote.projectId !== PROJECTLESS_PROJECT_ID &&
+        cachedRemoteCapabilities(machine.environmentId)?.includes("machine.changes"),
     );
     const fallback = targets.filter((target) => !capable.includes(target));
     const cleanups: (() => void)[] = [];

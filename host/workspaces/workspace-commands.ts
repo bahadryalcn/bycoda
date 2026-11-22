@@ -24,7 +24,11 @@ import { cp, lstat, mkdir, open, readFile, readdir, realpath, rm, stat } from "n
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../../src/platform/tauri/fs";
 import { hostUnmerged, unmergedMessage } from "../git/git-conflicts";
-import { hostWorktrees, isCurrentProjectWorktree } from "../git/git-worktrees";
+import {
+  hostWorktrees,
+  hostWorktreesWithState,
+  isCurrentProjectWorktree,
+} from "../git/git-worktrees";
 import { workspaceCleanupMembershipGeneration } from "../workspace-cleanup";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps.ts";
 import { sharedHostGitSubmodules } from "../git/git-submodules";
@@ -1836,15 +1840,16 @@ export class WorkspaceCommands {
   }
 
   private async gitWorktrees(cwd: unknown, background: boolean) {
-    const listed = await hostWorktrees(await this.gitRoot(cwd), background);
+    // Probed state stays unknown (`null`) when Git could not say; clients never read it as clean.
+    const listed = await hostWorktreesWithState(await this.gitRoot(cwd), background);
     return {
       defaultRoot: listed.defaultRoot,
       worktrees: listed.worktrees.map((tree) => ({
         ...tree,
         locked: tree.locked,
         prunable: tree.missing,
-        dirty: null,
-        unpushed: null,
+        dirty: tree.dirty ?? null,
+        unpushed: tree.unpushed ?? null,
         sessionIds: [],
       })),
     };

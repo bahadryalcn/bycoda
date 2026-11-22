@@ -36,6 +36,7 @@ import {
 import { syncOwnerFailureText } from "./nativeSyncCompletion";
 import { ROOM_PRIVACY_NOT_CONFIRMED } from "../../connections/model/syncSummary";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
 import { parseSyncRecord, syncPushBatches } from "./syncProtocol";
 import type { SyncPushResult, SyncRecord } from "./syncProtocol";
 
@@ -454,12 +455,6 @@ async function runSyncCycleInner(
 
 export const CYCLE_INTERVAL_MS = 30_000;
 
-/** True while the window is minimized or hidden to the tray. Periodic polling
- * pauses then; ownership, explicit syncs and local-change nudges do not. */
-export function isDocumentHidden(): boolean {
-  return typeof document !== "undefined" && document.hidden;
-}
-
 /** Rounds never start closer together than this; requests inside the window collapse into one trailing round. */
 export const MIN_CYCLE_SPACING_MS = 3_000;
 /** At most this many machines sync at once, so one slow host cannot hold the rest back. */
@@ -823,18 +818,15 @@ export function startSyncLoop(
     const targets = only ? eligible.filter((id) => id === only) : eligible;
     return Promise.all(targets.map((id) => request(id, true))).then(() => undefined);
   };
-  // Nobody sees a hidden window's result; the app's wake on return nudges an immediate catch-up round.
-  const timer = setInterval(() => {
-    if (!isDocumentHidden()) requestRun();
-  }, CYCLE_INTERVAL_MS);
-  requestRun();
+  // Ownership, explicit syncs and local-change nudges are independent of the periodic fallback.
+  const polling = startForegroundPolling(requestRun, CYCLE_INTERVAL_MS);
   activeSyncNow = runNow;
   return {
     stop: () => {
       if (stoppedResult) return stoppedResult;
       stopped = true;
       stopSignal.abort();
-      clearInterval(timer);
+      polling.stop();
       if (trailing !== undefined) clearTimeout(trailing);
       trailing = undefined;
       if (activeSyncNow === runNow) activeSyncNow = undefined;

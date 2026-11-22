@@ -14,6 +14,7 @@ installed acceptance remain separate; a successful slice grants no migration/def
 
 - Host: `host/domains/`, `host/transport/`, `host/storage/` and `host/execution/`; `host/server.ts` and `host/engine.ts` compose the runtime.
 - Windows login tasks: `host/service/windows-task.ts` and `packages/host-service-launcher/`. Keep Node launch direct, preserve per-user authority and refuse live runtime replacement; never compile a launcher during installation or fall back to an encoded shell action.
+- Host lifecycle: `src-tauri/src/host_lifecycle/` and `host/service/lifecycle-mode.ts`.
 - Domain effects: `host/workspaces/`, `host/desktop/`, `host/conversation/`, `host/terminals/` and `host/devices/`; public entries are domain services.
 - Desktop: `src/features/connections/model/` and `src/shared/lib/host-runtime/`; schemas are under `src/shared/model/host-contracts/`.
 - Providers: `src/integrations/harness/core/` and `src/integrations/harness/providers/`.

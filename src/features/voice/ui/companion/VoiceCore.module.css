@@ -82,6 +82,9 @@
   aspect-ratio: 1;
   pointer-events: none;
 }
+.callOrb[data-expanded] {
+  inline-size: min(var(--voice-core-stage-size), 100%);
+}
 .core[data-state="muted"] .avatar {
   opacity: 0.6;
 }

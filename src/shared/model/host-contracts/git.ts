@@ -80,6 +80,8 @@ export const GitWorktreeSchema = z.strictObject({
   isMain: z.boolean(),
   missing: z.boolean(),
   locked: z.boolean().optional(),
+  dirty: z.boolean().nullable().optional(),
+  unpushed: z.number().int().nonnegative().nullable().optional(),
 });
 export const GitWorktreesSchema = z.strictObject({
   worktrees: z.array(GitWorktreeSchema),

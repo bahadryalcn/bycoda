@@ -19,7 +19,11 @@ vi.mock("../../../platform/tauri/fs", () => ({
   },
 }));
 
-import { applyProjectDiffStats, useProjectDiffStats } from "./useProjectDiffStats";
+import {
+  applyProjectDiffStats,
+  useProjectDiffStats,
+  useProjectsDiffStats,
+} from "./useProjectDiffStats";
 import { fetchGitIndex, resetGitIndexStore, notifyGitChangedWith } from "../model/gitIndexStore";
 
 let root: Root;
@@ -146,9 +150,133 @@ it("refreshes known changes immediately but ignores an older in-flight summary",
   expect(container.textContent).toBe("9:90");
 });
 
+it("shares in-flight manual refreshes and reloads for a subsequent repository mutation", async () => {
+  await act(async () => root.render(createElement(View)));
+  let finish!: (value: typeof original) => void;
+  const manual = () => notifyGitChangedWith(cwd, "checkout", { refresh: true });
+  api.stats.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => manual());
+  await act(async () => manual());
+  await act(async () => finish(original));
+  expect(api.stats).toHaveBeenCalledTimes(2);
+
+  api.stats.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => manual());
+  await changed();
+  await act(async () => manual());
+  expect(api.stats).toHaveBeenCalledTimes(3);
+  api.stats.mockResolvedValue({ ...original, additions: 12 });
+  await act(async () => finish(original));
+  expect(api.stats).toHaveBeenCalledTimes(4);
+  expect(container.textContent).toBe("1:12");
+});
+
 it("stops polling after the final consumer leaves", async () => {
   await act(async () => root.render(createElement(View)));
   await act(async () => root.render(null));
   await advance(30 * 60_000);
   expect(api.stats).toHaveBeenCalledTimes(1);
+});
+
+it("retains a Git change while the last subscriber leaves and returns during a read", async () => {
+  let complete!: (stats: typeof original) => void;
+  api.stats.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  await act(async () => root.render(createElement(View)));
+  await changed();
+  await act(async () => root.render(null));
+  await act(async () => root.render(createElement(View)));
+  api.stats.mockResolvedValue({ ...original, additions: 9 });
+  await act(async () => complete(original));
+  expect(api.stats).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toBe("1:9");
+});
+
+it("loads all 20 project summaries while starting only four reads per machine at once", async () => {
+  const paths = Array.from({ length: 20 }, (_, index) => `${cwd}/${index}`);
+  const finish = new Map<string, (value: typeof original) => void>();
+  api.stats.mockImplementation(
+    (path: string) => new Promise((resolve) => finish.set(path, resolve)),
+  );
+  function Overview() {
+    return useProjectsDiffStats(paths, true)
+      .map((stats) => stats?.additions ?? "-")
+      .join(",");
+  }
+  await act(async () => root.render(createElement(Overview)));
+  const initiallyStarted = api.stats.mock.calls.length;
+  for (let batch = 0; batch < 5; batch += 1) {
+    await act(async () => {
+      for (const [path, resolve] of finish) {
+        finish.delete(path);
+        resolve({ ...original, additions: paths.indexOf(path) });
+      }
+    });
+  }
+  expect(initiallyStarted).toBe(4);
+  expect(api.stats).toHaveBeenCalledTimes(20);
+  expect(container.textContent).toBe(paths.map((_, index) => index).join(","));
+});
+
+it("prioritizes focused reads and drops queued work after its last subscriber leaves", async () => {
+  const paths = Array.from({ length: 7 }, (_, index) => `${cwd}/${index}`);
+  const finish: ((value: typeof original) => void)[] = [];
+  api.stats.mockImplementation(() => new Promise((resolve) => finish.push(resolve)));
+  function Background({ paths: visible }: { paths: readonly string[] }) {
+    useProjectsDiffStats(visible, true);
+    return null;
+  }
+  function Focus({ path }: { path: string }) {
+    useProjectDiffStats(path, true);
+    return null;
+  }
+  const view = (visible: readonly string[], focused: boolean) =>
+    createElement(
+      "div",
+      null,
+      createElement(Background, { paths: visible }),
+      focused ? createElement(Focus, { path: paths[6] }) : null,
+    );
+  await act(async () => root.render(view(paths, true)));
+  const started = api.stats.mock.calls.map(([path]) => path);
+  await act(async () => root.render(view(paths.slice(0, 5), true)));
+  await act(async () => finish.splice(0).forEach((resolve) => resolve(original)));
+  await act(async () => finish.splice(0).forEach((resolve) => resolve(original)));
+  expect(started).toEqual([paths[6], ...paths.slice(0, 3)]);
+  expect(api.stats.mock.calls.map(([path]) => path)).toEqual([paths[6], ...paths.slice(0, 5)]);
+});
+
+it("publishes line-only overview updates and keeps identical snapshots stable", async () => {
+  let renders = 0;
+  applyProjectDiffStats(cwd, original);
+  function Overview() {
+    renders += 1;
+    const [stats] = useProjectsDiffStats([cwd], true);
+    return `${stats?.files}:${stats?.additions}:${stats?.deletions}`;
+  }
+  await act(async () => root.render(createElement(Overview)));
+  expect(container.textContent).toBe("1:2:3");
+  const additions = { ...original, additions: 9 };
+  await act(async () => applyProjectDiffStats(cwd, additions));
+  expect(container.textContent).toBe("1:9:3");
+  const deletions = { ...additions, deletions: 7 };
+  await act(async () => applyProjectDiffStats(cwd, deletions));
+  expect(container.textContent).toBe("1:9:7");
+  const before = renders;
+  await act(async () => applyProjectDiffStats(cwd, { ...deletions }));
+  expect(renders).toBe(before);
 });

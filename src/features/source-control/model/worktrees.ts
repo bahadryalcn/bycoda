@@ -48,8 +48,35 @@ export const reviewWorktreeRemoval = async (cwd: string, path: string) => {
   return invoke<WorktreeRemovalReview>("git_worktree_removal_review", { cwd, path });
 };
 
-export const listWorktrees = (cwd: string, background = false) =>
-  invokeWorkspace<Worktrees>("git_worktrees", background ? { cwd, background } : { cwd });
+/**
+ * A Host older than the state fields lists worktrees without `dirty`, `unpushed` and
+ * `sessionIds`: those stay unknown (`null`), never clean.
+ */
+export function normalizeWorktrees(listed: {
+  worktrees: (Omit<Worktree, "dirty" | "unpushed" | "sessionIds"> &
+    Partial<Pick<Worktree, "dirty" | "unpushed" | "sessionIds">>)[];
+  defaultRoot: string;
+}): Worktrees {
+  return {
+    ...listed,
+    worktrees: listed.worktrees.map((tree) => ({
+      ...tree,
+      locked: tree.locked ?? false,
+      prunable: tree.prunable ?? false,
+      dirty: tree.dirty ?? null,
+      unpushed: tree.unpushed ?? null,
+      sessionIds: tree.sessionIds ?? [],
+    })),
+  };
+}
+
+export const listWorktrees = async (cwd: string, background = false) =>
+  normalizeWorktrees(
+    await invokeWorkspace<Parameters<typeof normalizeWorktrees>[0]>(
+      "git_worktrees",
+      background ? { cwd, background } : { cwd },
+    ),
+  );
 
 /** A missing parent may be an unmounted volume, not a deleted worktree. */
 export async function worktreeDeletedExternally(path: string): Promise<boolean> {

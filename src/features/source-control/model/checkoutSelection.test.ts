@@ -8,7 +8,6 @@ import {
   dropLegacyCheckoutSelections,
   isMissingPathError,
   missingPathNamedIn,
-  groupCheckouts,
   sessionCheckout,
 } from "./checkoutSelection";
 import type { Worktree } from "./worktrees";
@@ -52,21 +51,6 @@ it("resolves the deepest checkout containing the session cwd", () => {
   const paths = ["/repo", "/repo/.trees/a"];
   expect(sessionCheckout("/repo/.trees/a/src", paths)).toBe("/repo/.trees/a");
   expect(sessionCheckout("/elsewhere", paths)).toBeUndefined();
-});
-
-it("orders session, main, active, then idle checkouts", () => {
-  const trees = [
-    tree("/t/idle"),
-    tree("/t/dirty", { dirty: true }),
-    main,
-    tree("/t/mine"),
-    tree("/t/ahead", { unpushed: 2 }),
-    tree("/t/busy", { sessionIds: ["s"] }),
-  ];
-  const groups = groupCheckouts(trees, "/t/mine/src");
-  expect(groups.primary.map((item) => item.path)).toEqual(["/t/mine", "/repo"]);
-  expect(groups.active.map((item) => item.path)).toEqual(["/t/dirty", "/t/ahead", "/t/busy"]);
-  expect(groups.idle.map((item) => item.path)).toEqual(["/t/idle"]);
 });
 
 it("drops folder names that only repeat the branch and leads detached rows with the folder", () => {

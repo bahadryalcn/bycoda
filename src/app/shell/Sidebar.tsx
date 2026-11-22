@@ -9,7 +9,16 @@ import { motionAttributes } from "../../shared/ui/Motion";
 import { ClampText } from "../../shared/ui/ClampText";
 import { useHoverCard } from "../../shared/ui/HoverCard";
 import { useCrewManagedIndex } from "../../features/crews/public/managed";
-import { folderCandidates, projectSessionCollection } from "./sidebarSessionCollections";
+import {
+  folderCandidates,
+  projectSessionCollection,
+  remoteSessionSummary,
+} from "./sidebarSessionCollections";
+import { SplitButton } from "../../shared/ui/SplitButton";
+import {
+  projectlessMachineSession,
+  remoteSessionProjectAtKey,
+} from "../../features/connections/model/sessionMachineTarget";
 import { isUserConversation } from "../../shared/model/host-contracts/delegation";
 import { snapshotSessionList } from "../../features/sessions/ui/sessionListDropZones";
 import { NewSessionProjectDialog } from "../../features/projects/ui/NewSessionProjectDialog";
@@ -101,6 +110,7 @@ import {
   GitPullRequest,
   Inbox,
   ListFilter,
+  NewSession,
   PanelLeft,
   Pin,
   PinOff,
@@ -391,7 +401,9 @@ import {
   sessionAccessForMachine,
   remoteSessionFor,
   useRemoteProjectSessions,
+  useRemoteMachines,
 } from "../../features/connections/model/connections";
+import { machineLabel } from "../../features/connections/model/machineIdentity";
 import {
   parseRemotePath,
   remotePath,
@@ -554,6 +566,7 @@ type Props = {
   onRemoveProject?: (path: string, options: { purgeData: boolean }) => void | Promise<void>;
   onRenameProjectFolder?: (path: string, name: string) => Promise<void>;
   onNew?: () => string | void;
+  onNewOnMachine?: () => void;
   onNewTerminal?: () => void;
   onSearch?: () => void;
   onSearchConversations?: (query?: string) => void;
@@ -692,6 +705,7 @@ function SidebarComponent({
   onRemoveProject,
   onRenameProjectFolder,
   onNew,
+  onNewOnMachine,
   onSearch,
   onSearchConversations,
   onOpenInbox,
@@ -732,6 +746,12 @@ function SidebarComponent({
   const t = useT();
   const format = useFormat();
   const remoteProject = isRemoteProjectPath(cwd);
+  const { machines: sessionMachines } = useRemoteMachines(cwd === "~" || lastSessionsOpen);
+  const projectlessMachineName = (project: string) => {
+    const environment = projectlessMachineSession(project)?.remoteExecutionEnvironmentId;
+    const machine = sessionMachines.find((entry) => entry.environmentId === environment);
+    return machine ? machineLabel(sessionMachines, machine) : undefined;
+  };
   const tab: SidebarTabId = requestedTab;
   const machineAvailability = useMachineAvailability(remoteProject ? cwd : undefined);
   // An offline machine keeps its last session list unread until it answers again; one this
@@ -1232,7 +1252,7 @@ function SidebarComponent({
   ) => {
     if (isProjectPasswordLocked(session.cwd) || crewManagedIndex.has(session.id)) return;
     if (isRemoteProjectPath(session.cwd)) {
-      const project = remoteProjectFor(session.cwd);
+      const project = remoteSessionProjectAtKey(session.cwd);
       const machine = project && knownRemoteMachine(project.environmentId);
       const boundId = remoteSessionFor(session.id);
       const listed = lastSessionsRemoteRows?.find(
@@ -1244,7 +1264,7 @@ function SidebarComponent({
       const available = () =>
         !isProjectPasswordLocked(session.cwd) &&
         readMachineAvailability(session.cwd).available &&
-        remoteProjectFor(session.cwd)?.projectId === project?.projectId;
+        remoteSessionProjectAtKey(session.cwd)?.projectId === project?.projectId;
       if (!machine || !project || !listed?.fresh || !available()) {
         toast.show({
           tone: "warning",
@@ -3280,6 +3300,34 @@ function SidebarComponent({
       />
     );
   };
+  const projectlessRemoteRows =
+    !lastSessionsOpen && cwd === "~"
+      ? filterSessionsByQuery(
+          filterSessionsByStatus(
+            filterSessionsByTime(
+              filterSessionsByHarness(
+                filterSessionsByArchive(
+                  (lastSessionsRemoteRows ?? [])
+                    .filter(
+                      ({ project, session }) =>
+                        projectlessMachineSession(project) && isUserConversation(session),
+                    )
+                    .map(({ project, session }) => remoteSessionSummary(session, project)),
+                  sessionFilters.showArchived,
+                ),
+                sessionFilters.hiddenHarnesses,
+              ),
+              sessionFilters.time,
+              now,
+            ),
+            sessionFilters.status,
+            busySessionIds,
+            approvalSessionIds,
+            unseenFinishedIds,
+          ),
+          deferredSearchQuery,
+        ).filter((session) => sessionFilters.showSettled === isGlobalSessionSettled(session))
+      : [];
   const onSessionFiltersChange = (next: SessionSidebarFilters) => {
     setSessionFilters(next);
     saveSessionSidebarFilters(next);
@@ -3529,7 +3577,7 @@ function SidebarComponent({
                   size="sm"
                   tone="accent"
                   appearance="subtle"
-                  max={99}
+                  max={999}
                   data-workspace-tab-file-count=""
                   role="img"
                   label={[changeScopeLabel, changedFilesText].filter(Boolean).join(", ")}
@@ -3599,6 +3647,7 @@ function SidebarComponent({
             <WorkspaceNewSessionButton
               onNew={createSession}
               onChooseProject={chooseNewSessionProject}
+              onChooseMachine={createSession ? onNewOnMachine : undefined}
             />
           ) : null
         }
@@ -3753,6 +3802,7 @@ function SidebarComponent({
               onRemoveProject={onRemoveProject}
               onNew={onNew}
               onChooseNewSessionProject={chooseNewSessionProject}
+              onNewOnMachine={onNewOnMachine}
               onSearch={onSearch}
               onOpenInbox={onOpenInbox}
               onOpenNotificationSettings={onOpenNotificationSettings}
@@ -4049,6 +4099,7 @@ function SidebarComponent({
                           showModel={listDisplay.showModel}
                           showBranch={listDisplay.showBranch}
                           showProjectAppearance
+                          remoteMachineName={projectlessMachineName(session.cwd)}
                           settleable={!isRemoteProjectPath(session.cwd)}
                           onContextMenu={(_, event) => {
                             event.preventDefault();
@@ -4154,7 +4205,7 @@ function SidebarComponent({
                   </Alert>
                 ) : status === "error" && projectSessions.length === 0 ? (
                   <Alert tone="danger">{t("Couldn’t load sessions")}</Alert>
-                ) : visibleSessions.length === 0 ? (
+                ) : visibleSessions.length === 0 && projectlessRemoteRows.length === 0 ? (
                   // A narrowed-down result is a transient answer to what the user
                   // just typed, so it stays compact. Only the genuine
                   // "this project has nothing in it" case earns the illustration.
@@ -4207,12 +4258,42 @@ function SidebarComponent({
                     <SessionsEmpty message="Sessions you start will show up here" />
                   )
                 ) : (
-                  <SessionListWindow
-                    rows={flatSessionRows}
-                    scrollRef={sessionsScrollRef}
-                    activeKey={activeListedSessionId ?? null}
-                    renderRow={renderSessionListRow}
-                  />
+                  <>
+                    <SessionListWindow
+                      rows={flatSessionRows}
+                      scrollRef={sessionsScrollRef}
+                      activeKey={activeListedSessionId ?? null}
+                      renderRow={renderSessionListRow}
+                    />
+                    {projectlessRemoteRows.map((session) => (
+                      <SessionCard
+                        key={`${session.cwd}:${session.id}`}
+                        session={session}
+                        isActive={session.id === activeRemoteId}
+                        isSelected={false}
+                        busy={busySessionIds.has(session.id)}
+                        done={unseenFinishedIds.has(session.id)}
+                        linkedUpdate={linkedSessionUpdateIds.has(session.id)}
+                        needsApproval={approvalSessionIds.has(session.id)}
+                        groupDelayMs={listDisplay.groupDelayMs}
+                        density={listDisplay.density}
+                        showModel={listDisplay.showModel}
+                        showBranch={false}
+                        remoteMachineName={projectlessMachineName(session.cwd)}
+                        onSelect={(id, event) => {
+                          onSelectRemoteSession?.(session.cwd, id, {
+                            preview: (event.detail ?? 0) < 2,
+                          });
+                        }}
+                        onArchive={(_, archived) => {
+                          void runGlobalSessionAction(session, "archive", archived).catch(() => {});
+                        }}
+                        onDelete={() => {
+                          void runGlobalSessionAction(session, "delete").catch(() => {});
+                        }}
+                      />
+                    ))}
+                  </>
                 )}
               </div>
             </SessionSearchQueryContext.Provider>
@@ -4883,6 +4964,7 @@ function SidebarProjectPicker({
   onRemoveProject,
   onNew,
   onChooseNewSessionProject,
+  onNewOnMachine,
   onSearch,
   onOpenInbox,
   onOpenNotificationSettings,
@@ -4909,6 +4991,7 @@ function SidebarProjectPicker({
   onRemoveProject?: Props["onRemoveProject"];
   onNew?: () => string | void;
   onChooseNewSessionProject?: () => void;
+  onNewOnMachine?: () => void;
   onSearch?: () => void;
   onOpenInbox?: () => void;
   onOpenNotificationSettings?: (projectPath?: string) => void;
@@ -4938,7 +5021,11 @@ function SidebarProjectPicker({
       actions={
         <>
           {onNew ? (
-            <WorkspaceNewSessionButton onNew={onNew} onChooseProject={onChooseNewSessionProject} />
+            <WorkspaceNewSessionButton
+              onNew={onNew}
+              onChooseProject={onChooseNewSessionProject}
+              onChooseMachine={onNewOnMachine}
+            />
           ) : null}
           {onSearch ? (
             <IconButton
@@ -5378,13 +5465,36 @@ function CompactRailAction({
 function WorkspaceNewSessionButton({
   onNew,
   onChooseProject,
+  onChooseMachine,
 }: {
   onNew?: () => void;
   onChooseProject?: () => void;
+  onChooseMachine?: () => void;
 }) {
   const t = useT();
   const shortcut = useKeybindingShortcut("Tab: New");
   const label = t("New session");
+  if (onNew && onChooseMachine)
+    return (
+      <SplitButton
+        label={label}
+        menuLabel={t("Session actions")}
+        tone="accent"
+        motion="none"
+        padding={{ inline: "sm" }}
+        startIcon={<NewSession className="icon-sm" />}
+        onClick={onNew}
+        shortcut={shortcut || undefined}
+        data-session-selection-keep
+        data-usage-guide="new-session"
+        actions={[
+          ...(onChooseProject
+            ? [{ id: "project", label: t("Choose project"), onSelect: onChooseProject }]
+            : []),
+          { id: "machine", label: t("Run on"), onSelect: onChooseMachine },
+        ]}
+      />
+    );
   const primary = (
     <Button
       aria-label={label}
@@ -5395,9 +5505,7 @@ function WorkspaceNewSessionButton({
       padding={{ inline: "sm" }}
       variant={onNew && onChooseProject ? "ghost" : undefined}
       tone="accent"
-      startIcon={
-        <img src={`${import.meta.env.BASE_URL}new-session.png`} alt="" className="icon-sm" />
-      }
+      startIcon={<NewSession className="icon-sm" />}
       onClick={onNew ?? onChooseProject}
       onContextMenu={
         onChooseProject &&
@@ -5672,6 +5780,7 @@ const YIELD_WIDTH = [
 ];
 
 const SessionCard = memo(function SessionCard({
+  remoteMachineName,
   showProjectAppearance = false,
   session,
   isActive,
@@ -5710,6 +5819,7 @@ const SessionCard = memo(function SessionCard({
   renameEditor,
   titleFeedback,
 }: {
+  remoteMachineName?: string;
   showProjectAppearance?: boolean;
   session: SessionSummary;
   isActive: boolean;
@@ -5764,7 +5874,8 @@ const SessionCard = memo(function SessionCard({
   titleFeedback?: ReactNode;
 }) {
   const t = useT();
-  const project = useSessionProjectAppearance(session.cwd);
+  const projectless = !!projectlessMachineSession(session.cwd);
+  const project = useSessionProjectAppearance(projectless ? "~" : session.cwd);
   const providerHistory = sessionProviderHistory(session);
   const skipClickUntil = useRef(0);
   const skipNextClick = useRef(false);
@@ -5844,7 +5955,11 @@ const SessionCard = memo(function SessionCard({
   });
   const working = statusKind === "working" || statusKind === "waiting";
   const idle = statusKind === "idle";
-  const detailPath = session.worktreeCwd && worktree ? session.worktreeCwd : session.cwd;
+  const detailPath = projectless
+    ? (remoteMachineName ?? t("Remote computer"))
+    : session.worktreeCwd && worktree
+      ? session.worktreeCwd
+      : session.cwd;
   const status = (
     <SessionRowStatus
       kind={statusKind}
@@ -6336,7 +6451,7 @@ const SessionCard = memo(function SessionCard({
   } as const;
 
   const remoteSession = isRemoteProjectPath(session.cwd);
-  const remoteLabel = t("On another machine");
+  const remoteLabel = remoteMachineName || t("On another machine");
   const modelLabel =
     showModel || remoteSession ? (
       <span
@@ -6355,6 +6470,11 @@ const SessionCard = memo(function SessionCard({
               <Server className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
             </Text>
           </Tooltip>
+        ) : null}
+        {remoteMachineName ? (
+          <Text as="span" size="inherit" tone="secondary" truncate>
+            {remoteMachineName}
+          </Text>
         ) : null}
         {showModel &&
           providerHistory.providers.map((harness) => (
@@ -6803,7 +6923,7 @@ const SessionCard = memo(function SessionCard({
               }
             >
               <Text as="span" truncate size="inherit" tone="primary" className="min-w-0">
-                {project.name}
+                {projectless ? t("No project") : project.name}
               </Text>
               {/* The full location sits under the name; a long path keeps its last folder. */}
               <Text

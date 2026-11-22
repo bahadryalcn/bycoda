@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { focusManager, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useForegroundQueryPolling, useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { bridgeQueryEvents } from "../../../shared/lib/queryClient";
+import { foregroundPollsVisible } from "../../../shared/lib/foregroundPolling";
 import { getCachedRateLimits, loadRateLimits, subscribeRateLimits } from "./rateLimitsCache";
 import type { RateLimitProvider } from "./rateLimits";
 
@@ -21,7 +22,7 @@ export const loadRateLimitsForQuery = (
   provider: RateLimitProvider,
   accountId = "default",
   force = false,
-) => loadRateLimits(provider, accountId, force, () => focusManager.isFocused(), true);
+) => loadRateLimits(provider, accountId, force, foregroundPollsVisible, true);
 
 export function useRateLimitQuery(
   provider: RateLimitProvider,
@@ -37,8 +38,9 @@ export function useRateLimitQuery(
     staleTime: POLL_MS[provider],
     queryFn: () =>
       loadRateLimitsForQuery(provider, accountId, client.getQueryData(queryKey) !== undefined),
-    refetchInterval: POLL_MS[provider],
+    refetchOnWindowFocus: false,
   });
+  useForegroundQueryPolling(query.refetch, POLL_MS[provider], enabled);
   useEffect(() => {
     let previous = getCachedRateLimits(provider, accountId);
     return bridgeQueryEvents(

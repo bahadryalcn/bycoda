@@ -1,10 +1,8 @@
 import { useMemo } from "react";
 import { useT } from "../../shared/i18n";
 import { useT as useGitT } from "../../shared/i18n/git";
-import {
-  useProjectDiffStats,
-  useProjectsDiffStats,
-} from "../../features/source-control/hooks/useProjectDiffStats";
+import { useChangeTotals } from "../../features/source-control/hooks/useChangeTotals";
+import { changeSectionRoots } from "../../features/source-control/model/worktreeScope";
 import { useProjectWorktrees } from "../../features/source-control/hooks/useProjectWorktrees";
 import {
   checkoutTitleWith,
@@ -59,24 +57,15 @@ export function useCheckoutChangeStats({
       : undefined;
   // A focus that is not listed (deleted, still loading) shows the overview.
   const overview = !!worktrees && !focusedTree;
-  const statsRoot = focusedTree ? focusedTree.path : gitRoot;
-  const singleStats = useProjectDiffStats(statsRoot, active && !overview);
-  const allStats = useProjectsDiffStats(overview ? paths : [], active && overview);
-  const changeStats = overview
-    ? allStats.length !== paths.length || allStats.some((stats) => !stats)
-      ? null
-      : allStats.reduce<{ files: number; additions: number; deletions: number }>(
-          (total, stats) =>
-            stats
-              ? {
-                  files: total.files + stats.files,
-                  additions: total.additions + stats.additions,
-                  deletions: total.deletions + stats.deletions,
-                }
-              : total,
-          { files: 0, additions: 0, deletions: 0 },
-        )
-    : singleStats;
+  // The sections the Changes panel lists: the focused worktree, or every worktree with
+  // uncommitted changes, each with its separate repositories. The badge is their sum.
+  const roots = focusedTree
+    ? [focusedTree.path]
+    : worktrees
+      ? changeSectionRoots(worktrees, gitRoot)
+      : [gitRoot];
+  const totals = useChangeTotals(roots, active);
+  const changeStats = totals.ready ? totals.stats : null;
   const changeScope = ((): ChangeScope | null => {
     if (!worktrees) return null;
     if (overview) return { title: t("All worktrees") };

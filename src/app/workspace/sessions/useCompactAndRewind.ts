@@ -24,7 +24,7 @@ import {
 } from "../../../integrations/harness";
 import { type EditedResendCoordinator } from "../../../features/sessions/model/editLastTurn";
 import { type orchestrator } from "../../../features/orchestration/model/orchestration";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 import { syncDockBadge } from "../../../features/notifications/model/dockBadge";
 import { operatorEnabledInThread } from "../../../features/sessions/model/operatorCommand";
@@ -115,7 +115,7 @@ export function useCompactAndRewind({
   const compactContext = useCallback(
     (sessionId: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
-      if (current && (hostSessionBinding(current) || remoteProjectFor(current.cwd))) {
+      if (current && (hostSessionBinding(current) || remoteSessionProject(current))) {
         if (remoteSessionActions(sessionId)?.compact()) return true;
         say(
           sessionId,
@@ -265,7 +265,7 @@ export function useCompactAndRewind({
         !current ||
         current.workspaceId !== workspaceId ||
         hostSessionBinding(current) ||
-        remoteProjectFor(current.cwd) ||
+        remoteSessionProject(current) ||
         current.busy ||
         windowTransferPendingRef.current ||
         movingSessionIds.current.has(sessionId) ||
@@ -350,7 +350,7 @@ export function useCompactAndRewind({
         say(sessionId, rewindRefusalReason(snapshot, submissionError));
         return false;
       }
-      if (hostSessionBinding(snapshot) || remoteProjectFor(snapshot.cwd)) {
+      if (hostSessionBinding(snapshot) || remoteSessionProject(snapshot)) {
         if (await remoteSessionActions(sessionId)?.rewind(blockId)) return true;
         say(
           sessionId,

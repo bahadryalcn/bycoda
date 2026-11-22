@@ -8,7 +8,6 @@ import HostToolsWindow from "../../../src/features/host-tools/HostToolsWindow";
 import type { ToolsSession } from "../../../src/features/host-tools/toolsSessionRegistry";
 import { calls } from "../host-tools/host-tools-mocks";
 import { AgentTranscript } from "../../../src/features/sessions/ui/AgentTranscript";
-import type { Block } from "../../../src/features/sessions/model/session";
 import { rememberRemoteSession } from "../../../src/features/connections/model/connections";
 import "../../../src/styles/index.css";
 const query = new URLSearchParams(location.search);
@@ -101,58 +100,6 @@ function Source() {
   );
 }
 if (remotePreview) rememberRemoteSession("composer-studio", "host-studio");
-const resultBlocks: Block[] = [
-  { id: "check", role: "user", text: "Check the filter and run the focused tests." },
-  {
-    id: "filter",
-    role: "tool",
-    text: "Edit src/filters.ts",
-    tool: {
-      title: "Edit src/filters.ts",
-      status: "completed",
-      preview: {
-        kind: "write",
-        path: "G:/demo/Atlas/src/filters.ts",
-        inspection: { kind: "diff", text: "-return rows;\n+return rows.filter(matchesQuery);" },
-      },
-    },
-  },
-  {
-    id: "test",
-    role: "tool",
-    text: "pnpm test src/filters.test.ts",
-    tool: {
-      status: "failed",
-      detail: "Filter regression: expected 2 matching rows, received 3.",
-    },
-  },
-  {
-    id: "review",
-    role: "assistant",
-    text: "Updated the filter. The focused test still finds one extra row when the query is empty.",
-  },
-];
-
-function ResultsSource() {
-  const [openFile, setOpenFile] = useState("");
-  return (
-    <main className="flex h-full flex-col bg-background text-content">
-      <AgentTranscript
-        blocks={resultBlocks}
-        cwd="G:/demo/Atlas"
-        sessionId="work-results-fixture"
-        onOpenDiff={setOpenFile}
-      />
-      {openFile && <p>{openFile}</p>}
-    </main>
-  );
-}
 createRoot(document.getElementById("root")!).render(
-  query.has("work-results") ? (
-    <ResultsSource />
-  ) : query.get("role") === "hub" ? (
-    <HostToolsWindow {...sessions[0]} />
-  ) : (
-    <Source />
-  ),
+  query.get("role") === "hub" ? <HostToolsWindow {...sessions[0]} /> : <Source />,
 );

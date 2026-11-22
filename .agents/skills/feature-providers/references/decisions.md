@@ -180,3 +180,16 @@ Other providers keep Host advisor sessions; only Claude Code has a built-in advi
 and never folds into the activity trail. In a Claude conversation the Advisor menu lists each
 Claude model once (`builtInAdvisorChoices`). A Host advisor needs the bridge, so an unready
 bridge tells model and owner (`needsHostDelegation`); its notice is headed "Advisor completion".
+
+## History for Bycoda-managed delegates
+
+Date: 2026-11-22
+
+Owner: "If it is in Bycoda, it is in Bycoda. Being able to work on it from the other providers is not important to us." (translated from Turkish)
+
+New Host-created subagents and advisors keep their user-facing history in Bycoda. Codex and
+Claude Code use nonpersistent provider sessions and restore bounded Bycoda context when the
+provider process is replaced. Pi and OMP keep resumable native history under Host state.
+OpenCode archives the native session before prompting and can continue it by ID. Preserve
+the selected provider account and the storage of existing conversations. Use a provider's
+verified history control before extending this policy to another native adapter.

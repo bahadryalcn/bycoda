@@ -12,7 +12,8 @@ import { Switch } from "../../../shared/ui/Switch";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { QRCodeSVG } from "qrcode.react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { watchPairingView } from "../../account";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
@@ -117,6 +118,8 @@ export function PhonePairingFlow({
   children,
 }: PhonePairingFlowProps) {
   useLocale();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps account mailbox discovery responsive while pairing controls are mounted.
+  useEffect(watchPairingView, []);
   const [confirmDisable, setConfirmDisable] = useState(false);
   const [address, setAddress] = useState("");
   const inline = variant === "inline";

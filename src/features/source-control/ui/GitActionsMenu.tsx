@@ -80,6 +80,8 @@ export type ChangesActions = {
 type Props = {
   toolbar?: boolean;
   onRevealChanges?: () => void;
+  /** Set on a repository section of several: adds the single-repository toggle to the menu. */
+  repositoryScope?: { only: boolean; onToggle: () => void };
   cwd: string;
   index: GitDiffIndex | null;
   busy: string | null;
@@ -146,6 +148,7 @@ async function orElse<T>(work: () => Promise<T>, fallback: T): Promise<T> {
 export function GitActionsMenu({
   toolbar = false,
   onRevealChanges,
+  repositoryScope,
   cwd,
   index,
   busy,
@@ -193,6 +196,7 @@ export function GitActionsMenu({
   }, [open, actions, cwd]);
 
   const branch = index?.branch ?? null;
+  const onlyRepository = repositoryScope?.only;
   const items = useMemo(() => {
     const files = index?.files ?? [];
     const others = (branches?.branches ?? []).filter((item) => !item.current);
@@ -212,9 +216,21 @@ export function GitActionsMenu({
       otherBranchCount: others.length,
       otherLocalBranchCount: others.filter((item) => !item.remote).length,
       autoFetch,
+      repositoryScope: onlyRepository === undefined ? undefined : { only: onlyRepository },
       ...data,
     });
-  }, [actions, autoFetch, branch, branches, busy, data, generating, index, supported]);
+  }, [
+    actions,
+    autoFetch,
+    branch,
+    branches,
+    busy,
+    data,
+    generating,
+    index,
+    onlyRepository,
+    supported,
+  ]);
 
   const run = async (work: () => Promise<unknown>, status?: string, pending?: string) => {
     if (gitPanelRuntime(cwd).state.busy) return;
@@ -373,6 +389,8 @@ export function GitActionsMenu({
     const commit = commitMenuOptions(id);
     if (commit) return void changes.current?.commit(commit);
     switch (id) {
+      case "repository-scope":
+        return repositoryScope?.onToggle();
       case "pull":
         return run(() => gitPull(cwd), undefined, "Pulling…");
       case "pull-rebase":

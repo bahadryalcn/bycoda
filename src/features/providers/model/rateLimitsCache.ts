@@ -92,8 +92,8 @@ export function loadRateLimits(
   const key = keyFor(provider, accountId);
   const running = pending.get(key);
   if (running) {
-    if (oneShot) return running;
-    if (!force) return running;
+    // A focus refresh and a retry resumed by the same focus share this read.
+    if (oneShot || background || !force) return running;
     const queued = queuedRefreshes.get(key);
     if (queued) return queued;
     const generation = generations.get(key);

@@ -16,30 +16,24 @@ import { listBoardTasks, taskMachines } from "../../../features/tasks/model/task
 import { socialClient } from "../../../features/social/model/socialClient";
 import { SOCIAL_CAPABILITY } from "../../../features/social/model/social";
 import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
 import { AUTOMATION_POLL_DEADLINES } from "./automationPollDeadlines";
 import type { InboxAutomationActivityDeps } from "./useInboxAutomationActivity";
+
+const POLL_MS = 30_000;
 
 /** Only reads event sources when the owner has enabled a matching automation. */
 export function useWorkspaceAutomationActivity({
   ensureAutomationRecovery,
   launchAutomation,
 }: InboxAutomationActivityDeps) {
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the automation source timer and pending event claims scoped to the mounted workspace.
   useEffect(() => {
     let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
     let taskStates: Map<string, string> | undefined;
-    let running = false;
     const pending = new Map<string, WorkspaceAutomationEvent>();
     const recoveryToken = crypto.randomUUID();
-    // A hidden window reads no event sources; visibility resumes the poll at once.
-    const resume = () => {
-      if (document.hidden || disposed) return;
-      clearTimeout(timer);
-      void poll().catch((error: unknown) => console.warn("Automation activity poll failed", error));
-    };
     const poll = async () => {
-      if (running || disposed || document.hidden) return;
-      running = true;
       try {
         const lead = await withTimeout(
           isLeadWindow(),
@@ -59,6 +53,7 @@ export function useWorkspaceAutomationActivity({
             automationTriggers(automation).map((trigger) => trigger.kind),
           ),
         );
+        polling.setPeriod(POLL_MS, kinds.has("tasks") || kinds.has("social") || pending.size > 0);
         const events: WorkspaceAutomationEvent[] = [];
         const reads: Promise<void>[] = [];
         if (kinds.has("tasks"))
@@ -150,17 +145,12 @@ export function useWorkspaceAutomationActivity({
         for (const key of pending.keys()) if (!failed.has(key)) pending.delete(key);
       } catch (error) {
         console.warn("Workspace automation activity failed", error);
-      } finally {
-        running = false;
-        if (!disposed && !document.hidden) timer = setTimeout(poll, 30_000);
       }
     };
-    document.addEventListener("visibilitychange", resume);
-    void poll().catch((error: unknown) => console.warn("Automation activity poll failed", error));
+    const polling = startForegroundPolling(poll, POLL_MS);
     return () => {
       disposed = true;
-      document.removeEventListener("visibilitychange", resume);
-      clearTimeout(timer);
+      polling.stop();
     };
   }, [ensureAutomationRecovery, launchAutomation]);
 }

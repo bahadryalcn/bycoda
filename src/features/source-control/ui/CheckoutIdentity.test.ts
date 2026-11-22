@@ -19,8 +19,6 @@ it("draws exactly one leading icon: branch for worktrees, repository for reposit
   const worktree = renderToStaticMarkup(
     createElement(CheckoutIdentity, {
       title: "main",
-      detail: "Project folder",
-      marker: "This session",
     }),
   );
   expect(worktree.match(/<svg/g)).toHaveLength(1);
@@ -36,12 +34,17 @@ it("draws exactly one leading icon: branch for worktrees, repository for reposit
   ).not.toContain("<svg");
 });
 
-it("orders title, muted folder and marker", () => {
+it("orders title and muted detail, with no text marker and an agent icon for agent worktrees", () => {
   const markup = renderToStaticMarkup(
-    createElement(CheckoutIdentity, { title: "main", detail: "monocode", marker: "This session" }),
+    createElement(CheckoutIdentity, { title: "main", detail: "monocode" }),
   );
   expect(markup.indexOf("main")).toBeLessThan(markup.indexOf("monocode"));
-  expect(markup.indexOf("monocode")).toBeLessThan(markup.indexOf("This session"));
+  expect(markup).not.toContain("This session");
+  const agent = renderToStaticMarkup(
+    createElement(CheckoutIdentity, { title: "by/x", agent: true }),
+  );
+  expect(agent.match(/<svg/g)).toHaveLength(1);
+  expect(agent).toContain("lucide-bot");
 });
 
 it("shows the change chip with a dot and count, a dot alone from the record, and muted sync", () => {

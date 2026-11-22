@@ -1689,6 +1689,48 @@ it("transport: creates the host session with the chosen settings on the first me
   expect(document.body.textContent).toContain("Fix the tests");
 });
 
+it("keeps No project on the desktop and sends its first turn to the selected Host scratch scope", async () => {
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    if (command === "remote_machines") {
+      return [{ ...machine, id: "backup", environmentId: "backup", name: "Backup Host" }, machine];
+    }
+    const request = input as { method?: string } | undefined;
+    const result = await original(command, input);
+    if (command === "remote_request" && request?.method === "environment.describe") {
+      const descriptor = result as HostDescriptor;
+      return {
+        ...descriptor,
+        capabilities: [...descriptor.capabilities, "sessions.projectless.v1"],
+      };
+    }
+    return result;
+  });
+  await render({ ...shell(), cwd: "~", remoteExecutionEnvironmentId: machine.environmentId });
+  await sendTransport("Run in scratch");
+  expect(commands[0]).toMatchObject({ type: "create", projectId: "bycoda-projectless-sessions" });
+  expect(commands[0]).not.toHaveProperty("worktreeCwd");
+  expect(commands[1]).toMatchObject({ type: "send", text: "Run in scratch" });
+  const destinations = vi.mocked(invoke).mock.calls.flatMap(([command, input]) => {
+    const request = input as { method?: string; machineId?: string } | undefined;
+    return command === "remote_request" && request?.method === "commands.dispatch"
+      ? [request.machineId]
+      : [];
+  });
+  expect(destinations).toEqual([machine.id, machine.id]);
+  expect(remoteSessionFor("shell")).toBe("host-session");
+});
+
+it("keeps the projectless draft when its Host does not advertise projectless sessions", async () => {
+  await render({ ...shell(), cwd: "~", remoteExecutionEnvironmentId: machine.environmentId });
+  await sendTransport("Keep my draft");
+  expect(commands).toEqual([]);
+  expect(remoteSessionFor("shell")).toBeUndefined();
+  expect(document.body.textContent).toContain(
+    "This host cannot start sessions without a project. Update it and try again.",
+  );
+});
+
 it("transport: keeps a new session on its selected remote provider", async () => {
   providers = ["codex", "cursor"];
   catalog = {

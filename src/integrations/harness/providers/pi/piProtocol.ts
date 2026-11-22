@@ -138,6 +138,8 @@ export function buildPiSpawnArgs(
     isolated?: boolean;
     /** Delegated scratch session: no model tools or ambient resources. */
     chatOnlyCwd?: string;
+    /** Managed native history location. Pass the same directory when resuming. */
+    sessionDir?: string;
     plan?: boolean;
     /** Authoritative enabled native paths; an empty array intentionally disables all skills. */
     skillPaths?: readonly string[];
@@ -146,14 +148,12 @@ export function buildPiSpawnArgs(
   const args = ["--mode", "rpc"];
   if (input.chatOnlyCwd) {
     if (flavor.id !== "pi") throw new Error("Chat-only mode requires stock Pi.");
-    args.push(
-      ...PI_CHAT_ONLY_FLAGS,
-      "--system-prompt",
-      "You are a helpful assistant.",
-      "--session-dir",
-      `${input.chatOnlyCwd.replace(/[\\/]+$/, "")}/.bycoda-pi-sessions`,
-    );
+    args.push(...PI_CHAT_ONLY_FLAGS, "--system-prompt", "You are a helpful assistant.");
   }
+  const sessionDir =
+    input.sessionDir ??
+    (input.chatOnlyCwd && `${input.chatOnlyCwd.replace(/[\\/]+$/, "")}/.bycoda-pi-sessions`);
+  if (sessionDir) args.push("--session-dir", sessionDir);
   if (!input.isolated && !input.chatOnlyCwd && input.skillPaths) {
     args.push("--no-skills");
     for (const path of input.skillPaths) args.push("--skill", path);

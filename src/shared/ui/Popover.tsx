@@ -493,6 +493,13 @@ function WebPopover({
       });
     const trigger = anchorElement(anchorRef.current);
     if (trigger) observer.observe(trigger);
+    // A late sibling can move an anchor in a centered layout without resizing it.
+    const layout = trigger?.closest("[data-popover-anchor-layout]");
+    const layoutObserver = layout ? new MutationObserver(updatePlacement) : undefined;
+    if (layout) {
+      layoutObserver?.observe(layout, { childList: true });
+      observer.observe(layout);
+    }
     // Moving a parent frame does not resize its menu row.
     const parentFrame = trigger?.closest("[data-popover-side]")?.parentElement;
     const parentObserver = new MutationObserver(updatePlacement);
@@ -507,6 +514,7 @@ function WebPopover({
     window.addEventListener("scroll", onScroll, true);
     return () => {
       observer.disconnect();
+      layoutObserver?.disconnect();
       contentObserver.disconnect();
       parentObserver.disconnect();
       cancelAnimationFrame(placementFrame);

@@ -10,7 +10,10 @@ import { Sidebar } from "./Sidebar";
 import { setSessionDeletionStatus } from "../../features/sessions/model/sessionDeletionStatus";
 import { OPEN_CREWS_PAGE_EVENT } from "../../features/crews/model/crewsPage";
 import { loadSessionFolders } from "../../features/sessions/model/sessionFolders";
-import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
+import {
+  useProjectDiffStats,
+  useProjectsDiffStats,
+} from "../../features/source-control/hooks/useProjectDiffStats";
 import { copyText } from "../../platform/tauri/clipboard";
 import { registerAppConfirmHost, type AppConfirmRequest } from "../../shared/model/appConfirm";
 import {
@@ -229,6 +232,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(copyText).mockReset().mockResolvedValue(undefined);
   vi.mocked(useProjectDiffStats).mockReturnValue(null);
+  vi.mocked(useProjectsDiffStats).mockReturnValue([]);
   const stored = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => stored.get(key) ?? null,
@@ -2348,11 +2352,13 @@ describe("collapsed rail Inbox actions", () => {
   });
 
   it("keeps Changes labeled in the horizontal row with full working-tree totals", async () => {
-    vi.mocked(useProjectDiffStats).mockReturnValue({
-      files: 1,
-      additions: 3,
-      deletions: 0,
-    });
+    vi.mocked(useProjectsDiffStats).mockReturnValue([
+      {
+        files: 1,
+        additions: 3,
+        deletions: 0,
+      },
+    ]);
     props.projectRailOpen = false;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
@@ -3212,6 +3218,7 @@ it.each(["arrow", "right-click"] as const)(
     const primary = container.querySelector<HTMLButtonElement>(
       'button[data-usage-guide="new-session"]',
     )!;
+    expect(primary.querySelector('svg[stroke="currentColor"]')).not.toBeNull();
     const disclosure = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Choose project"]',
     )!;

@@ -657,19 +657,65 @@ it.skipIf(process.platform === "win32")("preserves executable and private file m
   }
 });
 
-it("preserves locked and unlocked worktree metadata", async () => {
-  const { projects, commands } = await setup();
-  const cwd = projects[104].cwd;
-  vi.mocked(hostWorktrees).mockResolvedValue({
-    defaultRoot: cwd,
-    worktrees: [
-      { path: cwd, locked: true },
-      { path: `${cwd}-other`, locked: false },
-    ],
-  } as never);
-  expect(await commands.run("git_worktrees", { cwd })).toMatchObject({
-    worktrees: [{ locked: true }, { locked: false }],
-  });
+it("lists worktrees with probed state, lock metadata and unknown state kept null", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-wt-state-")));
+  roots.push(root);
+  const project = join(root, "project");
+  const remote = join(root, "remote.git");
+  const dirtyTree = join(root, "dirty");
+  const aheadTree = join(root, "ahead");
+  const lockedTree = join(root, "locked");
+  const goneTree = join(root, "gone");
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true }).trim();
+  await mkdir(project);
+  git(root, "init", "-q", "--bare", "-b", "main", remote);
+  git(project, "init", "-q", "-b", "main");
+  git(project, "config", "user.name", "Test");
+  git(project, "config", "user.email", "test@example.test");
+  git(project, "config", "commit.gpgsign", "false");
+  git(project, "commit", "-q", "--allow-empty", "-m", "base");
+  git(project, "remote", "add", "origin", remote);
+  git(project, "push", "-q", "origin", "main");
+  for (const [name, tree] of [
+    ["dirty", dirtyTree],
+    ["ahead", aheadTree],
+    ["locked", lockedTree],
+    ["gone", goneTree],
+  ])
+    git(project, "worktree", "add", "-q", "-b", name, tree);
+  await writeFile(join(dirtyTree, "draft.txt"), "draft");
+  git(aheadTree, "commit", "-q", "--allow-empty", "-m", "local only");
+  git(project, "worktree", "lock", lockedTree);
+  await rm(goneTree, { recursive: true, force: true });
+
+  const commands = new WorkspaceCommands(
+    {
+      projects: () => [{ id: "p", cwd: project }],
+      attachmentDir: join(root, "attachments"),
+    } as never,
+    (async (_id: string, action: () => Promise<unknown>) => await action()) as never,
+  );
+  const listed = (await commands.run("git_worktrees", { cwd: project })) as {
+    worktrees: {
+      path: string;
+      locked?: boolean;
+      prunable: boolean;
+      dirty: boolean | null;
+      unpushed: number | null;
+      sessionIds: string[];
+    }[];
+  };
+  const norm = (path: string) => path.replaceAll("\\", "/").toLowerCase();
+  const byPath = (path: string) => listed.worktrees.find((tree) => norm(tree.path) === norm(path))!;
+  expect(listed.worktrees).toHaveLength(5);
+  expect(byPath(project)).toMatchObject({ dirty: false, unpushed: 0, prunable: false });
+  expect(byPath(dirtyTree)).toMatchObject({ dirty: true, unpushed: 0 });
+  expect(byPath(aheadTree)).toMatchObject({ dirty: false, unpushed: 1 });
+  expect(byPath(lockedTree)).toMatchObject({ locked: true, dirty: false });
+  // A checkout Git cannot read stays unknown, never clean or zero.
+  expect(byPath(goneTree)).toMatchObject({ prunable: true, dirty: null, unpushed: null });
+  expect(listed.worktrees.flatMap((tree) => tree.sessionIds)).toEqual([]);
 });
 
 it("blocks all working-tree stash mutations while project is busy", async () => {

@@ -20,6 +20,7 @@ import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
 import { DeliveryProgressIndicator } from "./DeliveryProgressNotice";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
+import { hasForeignMachineAttachment } from "../../connections/public/sessionMachineTarget";
 import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
 import type { MountedComposerAction } from "../data/composerClosure";
 import {
@@ -298,7 +299,11 @@ import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
 import { useComposerMentionSources } from "./useComposerMentionSources";
 import { workItemMentionOf } from "../model/workItemMentionRows";
 import { CREWS_MENTION_SCOPE, crewMentionOf } from "../model/crewMentions";
-import { composerMentionScopeHintOf, scopedNoteMentionLabel } from "../model/composerMentionScopes";
+import {
+  composerMentionScopeHintOf,
+  deleteScopedMentionAtCaret,
+  scopedNoteMentionLabel,
+} from "../model/composerMentionScopes";
 import {
   parseServerMentionQuery,
   serverMentionAliasHint,
@@ -312,6 +317,7 @@ import { useComposerSlashInventory } from "./useComposerSlashInventory";
 import {
   applyTextareaEdit,
   applyUndoableTextareaEdit,
+  applyMentionDeletion,
   insertDictatedText,
 } from "./composerTextareaEdit";
 import { installAttachmentSelectionPolicy } from "./attachmentSelectionPolicy";
@@ -358,6 +364,8 @@ type Props = {
   recents?: RecentProject[];
   hideProjectPicker?: boolean;
   hideBranchPicker?: boolean;
+  machinePicker?: (locked: boolean) => ReactNode;
+  machineEnvironmentId?: string;
   hideTopBar?: boolean;
   /** Embedded conversations show their fixed execution identity in the panel header. */
   hideIdentityControls?: boolean;
@@ -577,6 +585,8 @@ export const Composer = memo(function Composer({
   recents = [],
   hideProjectPicker = false,
   hideBranchPicker = false,
+  machinePicker,
+  machineEnvironmentId,
   hideTopBar = false,
   hideIdentityControls = false,
   hideOrchestrator = false,
@@ -1406,16 +1416,32 @@ export const Composer = memo(function Composer({
       userEditBeforeRef.current = el.value;
       const back = event.inputType === "deleteContentBackward";
       if (
+        event.defaultPrevented ||
         event.isComposing ||
         (!back && event.inputType !== "deleteContentForward") ||
         el.selectionStart !== el.selectionEnd
       ) {
         return;
       }
+      const direction = back ? "back" : "forward";
+      const mentionEdit =
+        event.cancelable && canMutateDraft()
+          ? deleteScopedMentionAtCaret(
+              el.value,
+              el.selectionStart,
+              direction,
+              mentionRef.current !== null,
+            )
+          : null;
+      if (mentionEdit) {
+        event.preventDefault();
+        applyMentionDeletion(el, mentionEdit);
+        return;
+      }
       const edit = deleteTokenAtCaret(
         el.value,
         el.selectionStart,
-        back ? "back" : "forward",
+        direction,
         attachmentsRef.current,
         chatCitationTokens(citationsRef.current.length),
         skillInvocationTokens(el.value).filter((token) => skillNames.has(token.name)),
@@ -1429,7 +1455,7 @@ export const Composer = memo(function Composer({
       removeSelectionPolicy();
       el.removeEventListener("beforeinput", onBeforeInput);
     };
-  }, [skillNames]);
+  }, [canMutateDraft, skillNames]);
 
   // An accepted external draft takes the same projection path as a native edit:
   // the textarea stays the authority and writes first, then the draft text,
@@ -2194,6 +2220,15 @@ export const Composer = memo(function Composer({
   const completeSubmit = (submittedValue: string, queue = false, original?: ParentAdmission) => {
     const value = ref.current?.value ?? submittedValue;
     if (!canMutateDraft()) return;
+    if (
+      machinePicker &&
+      hasForeignMachineAttachment(attachmentsRef.current, machineEnvironmentId)
+    ) {
+      setPasteError(
+        t("This file belongs to another machine. Remove it or switch back before sending."),
+      );
+      return;
+    }
     // Preserve public callback arguments while open. Only an actually closed
     // logical root needs the explicit private downstream continuation.
     const continuation = canMutateParentInputs(logicalParentSessionId) ? undefined : original;
@@ -2698,6 +2733,29 @@ export const Composer = memo(function Composer({
     }
     const escapeArmedAt = escapeArmedRef.current;
     escapeArmedRef.current = null;
+    const field = e.currentTarget;
+    if (
+      inlineActive &&
+      (e.key === "Backspace" || e.key === "Delete") &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.shiftKey &&
+      field.selectionStart === field.selectionEnd
+    ) {
+      const edit = deleteScopedMentionAtCaret(
+        field.value,
+        field.selectionStart,
+        e.key === "Backspace" ? "back" : "forward",
+        mentionRef.current !== null,
+      );
+      if (edit) {
+        e.preventDefault();
+        userEditBeforeRef.current = field.value;
+        applyMentionDeletion(field, edit);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && consumeBtwCommand(e.currentTarget.value).matched) {
       e.preventDefault();
       submit(e.currentTarget.value);
@@ -4318,7 +4376,7 @@ export const Composer = memo(function Composer({
             </div>
           </div>
         </div>
-        {!hideTopBar && hideBranchPicker && projectContextPicker ? (
+        {!hideTopBar && hideBranchPicker && (machinePicker || projectContextPicker) ? (
           <div
             data-composer-secondary=""
             data-composer-attention={workspaceNeedsAttention ? "" : undefined}
@@ -4326,6 +4384,7 @@ export const Composer = memo(function Composer({
             aria-label={t("Chat workspace")}
             className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-1 pt-1.5"
           >
+            {machinePicker?.(!!submission || busy)}
             {projectContextPicker}
           </div>
         ) : null}
@@ -4346,6 +4405,7 @@ export const Composer = memo(function Composer({
               data-composer-workspace-controls
               className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-x-3 gap-y-1"
             >
+              {machinePicker?.(!!submission || busy)}
               {projectContextPicker}
               {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
                 <>

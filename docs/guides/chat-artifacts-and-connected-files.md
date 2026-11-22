@@ -41,6 +41,7 @@ reference a note, or `@crews:` to find a crew or member. Sending a crew or
 member mention delegates work through the existing project permissions.
 Complete references are highlighted in the draft and sent message. You can
 still edit or copy the reference text.
+Backspace after a reference or Delete before it removes the whole reference.
 
 ## Image attachments
 

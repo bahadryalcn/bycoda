@@ -37,6 +37,7 @@ import {
 import { collectSkippedAttachments } from "../model/attachmentSkips";
 import { attachmentDraftTokens } from "../model/attachmentTokens";
 import { ComposerHighlight, type ComposerReferenceContext } from "./ComposerHighlight";
+import { applyMentionDeletion } from "./composerTextareaEdit";
 import {
   addDraftAttachments,
   applyQueuedEdit,
@@ -311,6 +312,11 @@ function QueueEditContent({
     );
     if (!edit) return;
     event.preventDefault();
+    if (
+      edit.mentionEnd !== undefined &&
+      applyMentionDeletion(el, { text: edit.draft.text, caret: edit.caret, end: edit.mentionEnd })
+    )
+      return;
     pendingCaret.current = edit.caret;
     updateDraft(edit.draft);
   };

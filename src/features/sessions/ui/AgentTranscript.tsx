@@ -23,7 +23,6 @@ import { DelegationNoticeRow, SessionMessageAuthor } from "./SessionMessageAutho
 import { InlineError } from "../../../shared/ui/InlineError";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
 import { InlineVisual } from "./InlineVisual";
-import { TranscriptWorkResults } from "./TranscriptWorkResults";
 import { InlineVisualHost, type InlineVisualHostRoute } from "../hooks/useInlineVisualSource";
 import { Badge } from "../../../shared/ui/Badge";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -1393,29 +1392,6 @@ const Turn = memo(function Turn({
       ) : null}
       {/* The accessory keeps the pane's props, which go stale once parked. */}
       {latestTurnAccessory ? latestTurnAccessory : null}
-      {settled && userBlock && !userBlock.draft && !userBlock.internal ? (
-        <TranscriptWorkResults
-          turnId={turnId}
-          turn={turn}
-          cwd={cwd}
-          onOpenFile={onOpenFile}
-          onOpenDiff={onOpenDiff}
-          renderRemoteLoad={
-            onLoadRemoteBlock
-              ? (block) =>
-                  block.remoteContent && (
-                    <RemoteBlockLoad
-                      key={block.remoteContent.revision}
-                      blockId={block.id}
-                      revision={block.remoteContent.revision}
-                      bytes={block.remoteContent.bytes}
-                      onLoad={onLoadRemoteBlock}
-                    />
-                  )
-              : undefined
-          }
-        />
-      ) : null}
       {durationMs != null && settled ? (
         <TurnDuration
           elapsedMs={durationMs}

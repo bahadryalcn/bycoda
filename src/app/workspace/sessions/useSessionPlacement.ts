@@ -8,6 +8,7 @@ import {
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
 import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProjectKey } from "../../../features/connections/model/sessionMachineTarget";
 import { remoteSessionFor } from "../../../features/connections/model/connections";
 import {
   remoteSessionOwnershipKey,
@@ -126,10 +127,11 @@ export function useSessionPlacement({
         return;
       const remoteId = remoteSessionFor(session.id);
       const sourceCwd = session.cwd;
+      const executionProject = remoteSessionProjectKey(session);
       const sourceWorktree = sessionWorkCwd(session);
       const remoteKey =
-        remoteId && parseRemotePath(session.cwd)
-          ? remoteSessionOwnershipKey(session.cwd, remoteId)
+        remoteId && parseRemotePath(executionProject)
+          ? remoteSessionOwnershipKey(executionProject, remoteId)
           : null;
       let release: Awaited<ReturnType<typeof reserveSessionWindow>>;
       try {
@@ -143,9 +145,10 @@ export function useSessionPlacement({
       try {
         const current = sessionsRef.current.find((entry) => entry.id === sessionId);
         const currentRemoteId = current && remoteSessionFor(current.id);
+        const currentProject = current ? remoteSessionProjectKey(current) : "";
         const currentRemoteKey =
-          current && currentRemoteId && parseRemotePath(current.cwd)
-            ? remoteSessionOwnershipKey(current.cwd, currentRemoteId)
+          currentRemoteId && parseRemotePath(currentProject)
+            ? remoteSessionOwnershipKey(currentProject, currentRemoteId)
             : null;
         const currentSourceTabId = tabsRef.current.find((entry) =>
           leafIds(entry.layout).includes(sessionId),
@@ -154,6 +157,7 @@ export function useSessionPlacement({
           !current ||
           current.inboxAsk ||
           current.cwd !== sourceCwd ||
+          currentProject !== executionProject ||
           sessionWorkCwd(current) !== sourceWorktree ||
           currentRemoteKey !== remoteKey ||
           currentSourceTabId !== sourceTabId ||

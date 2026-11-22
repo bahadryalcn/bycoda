@@ -30,6 +30,7 @@ vi.mock("../hooks/useProjectBranches", () => ({
       branches: [{ name: "main", remote: null, current: true }],
     },
     settled: true,
+    unreachable: false,
   })),
 }));
 vi.mock("../../../platform/tauri/fs", async (original) => ({
@@ -107,6 +108,7 @@ beforeEach(() => {
       branches: [{ name: "main", remote: null, current: true }],
     },
     settled: true,
+    unreachable: false,
   });
   vi.mocked(listWorktrees).mockResolvedValue({
     worktrees: [{ ...tree, path: "/repo", branch: "main", isMain: true }, tree],
@@ -137,7 +139,7 @@ async function tooltipText(element: HTMLElement): Promise<string> {
   return text;
 }
 
-/** Visible text of the highlighted working copy option: branch, folder name and marker (the path is its hint). */
+/** Visible text of the highlighted working copy option: branch and detail (the path is its hint). */
 function highlightedPath(): string | null {
   const option = document.querySelector<HTMLElement>('[data-active][role="option"]');
   return option?.textContent ?? null;
@@ -396,6 +398,7 @@ it("keeps the selected worktree base visible beside the workspace mode", async (
       ],
     },
     settled: true,
+    unreachable: false,
   });
   await act(async () =>
     root.render(
@@ -489,7 +492,7 @@ it.each(["/repo", tree.path])(
     await act(async () => trigger.click());
     const selected = document.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')!;
     const other = document.querySelector<HTMLElement>('[role="option"][aria-selected="false"]')!;
-    expect(selected.textContent).toContain(executionCwd === "/repo" ? "Project folder" : "feature");
+    expect(selected.textContent).toContain(executionCwd === "/repo" ? "main" : "feature");
     expect(selected.hasAttribute("data-active")).toBe(true);
     expect(other.hasAttribute("data-active")).toBe(false);
     await act(async () =>
@@ -543,13 +546,13 @@ it("highlights the current worktree after a cold load and keeps navigation throu
   await act(async () =>
     search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })),
   );
-  expect(highlightedPath()).toContain("Project folder");
+  expect(highlightedPath()).toContain("main");
   vi.mocked(listWorktrees).mockResolvedValue({
     ...result(),
     worktrees: [tree, main],
   });
   await act(async () => notifyGitChanged());
-  expect(highlightedPath()).toContain("Project folder");
+  expect(highlightedPath()).toContain("main");
 });
 
 it("highlights search results and restores the current worktree when search is cleared", async () => {
@@ -565,7 +568,7 @@ it("highlights search results and restores the current worktree when search is c
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
   const search = document.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
   await act(async () => type(search, "main"));
-  expect(highlightedPath()).toContain("Project folder");
+  expect(highlightedPath()).toContain("main");
   await act(async () => type(search, "no matches"));
   expect(document.querySelector('[data-active][role="option"]')).toBeNull();
   await act(async () => type(search, ""));
@@ -588,6 +591,7 @@ it.each([
         branches: [{ name: "main", remote: null, current: current === "main" }],
       },
       settled: true,
+      unreachable: false,
     });
     await act(async () =>
       root.render(
@@ -846,6 +850,7 @@ it("can return to the main working copy after a worktree is deleted externally",
   vi.mocked(useProjectBranchesState).mockReturnValue({
     branches: null,
     settled: true,
+    unreachable: true,
   });
   const onSelect = vi.fn(async () => {});
   await act(async () =>
@@ -1131,6 +1136,7 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
       ],
     },
     settled: true,
+    unreachable: false,
   });
   const onCancel = vi.fn();
   await act(async () =>
@@ -1313,7 +1319,7 @@ it("creates on the owning Host but keeps delete off for a project on a connected
   ).toBe(false);
 });
 
-it("lists worktrees as the sidebar picker does: main first, work before clean, missing hidden", async () => {
+it("lists worktrees as the sidebar picker does: changes first, then main and clean, missing hidden", async () => {
   const main = {
     ...tree,
     path: "/parity",
@@ -1346,7 +1352,8 @@ it("lists worktrees as the sidebar picker does: main first, work before clean, m
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
   const rows = [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
   expect(rows).toHaveLength(3);
-  expect(rows[0]).toContain("main");
-  expect(rows[1]).toContain("feature");
+  // Work first (uncommitted changes lead), then the project folder, then clean ones.
+  expect(rows[0]).toContain("feature");
+  expect(rows[1]).toContain("main");
   expect(rows[2]).toContain("clean");
 });

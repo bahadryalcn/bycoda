@@ -190,6 +190,7 @@ function retainWireRetirement(
 }
 
 type Live = {
+  archiveDelegateHistory: boolean;
   operation?: object;
   /** v2 uses an external service and owns no child process. */
   handle?: ChildProcessHandle;
@@ -794,6 +795,7 @@ async function ensureLive(
   if (
     existing &&
     existing.cwd === input.cwd &&
+    existing.archiveDelegateHistory === (input.archiveDelegateHistory === true) &&
     existing.chatOnly === leanContext(input.modelSettings) &&
     existing.autoCompact === input.modelSettings?.autoCompact
   ) {
@@ -945,6 +947,7 @@ async function ensureLive(
       bootstrapClient,
       {
         resume: canResume ? resume : undefined,
+        archiveDelegateHistory: input.archiveDelegateHistory,
         permission: leanContext(input.modelSettings)
           ? [{ permission: "*", pattern: "*", action: "deny" }]
           : openCodeTurnRules(input),
@@ -964,15 +967,24 @@ async function ensureLive(
       birthControlClient,
     });
     checkStartup();
-    if (canResume) {
-      const recoveryClient = hostRun ? client.withHostRun(hostRun, openCodeSession.id) : client;
-      await repairUnsupportedFileTurn(recoveryClient, openCodeSession.id).catch((error: unknown) =>
-        console.debug("[bycoda] opencode attachment recovery", error),
-      );
+    if (input.archiveDelegateHistory || canResume) {
+      const sessionClient = hostRun ? client.withHostRun(hostRun, openCodeSession.id) : client;
+      if (input.archiveDelegateHistory) {
+        // Retain the exact session after a failed acknowledgement so retry does not create another.
+        resumeByThread.set(input.sessionId, { sessionId: openCodeSession.id, cwd: input.cwd });
+        await sessionClient.archiveDelegatedSession(openCodeSession);
+        checkStartup();
+      }
+      if (canResume) {
+        await repairUnsupportedFileTurn(sessionClient, openCodeSession.id).catch((error: unknown) =>
+          console.debug("[bycoda] opencode attachment recovery", error),
+        );
+      }
     }
 
     checkStartup();
     const live: Live = {
+      archiveDelegateHistory: input.archiveDelegateHistory === true,
       operation: input.operationContext?.operation,
       handle: startup.handle,
       client,
@@ -1091,6 +1103,7 @@ async function resolveSession(
   client: OpenCodeClient,
   input: {
     resume?: Resume;
+    archiveDelegateHistory?: boolean;
     permission: OpenCodePermissionRule[];
     cwd: string;
   },
@@ -1100,6 +1113,9 @@ async function resolveSession(
   if (input.resume) {
     try {
       const adopted = await client.getSession(input.resume.sessionId);
+      if (input.archiveDelegateHistory && adopted?.id !== input.resume.sessionId) {
+        throw new Error("OpenCode returned a different session for the delegated history.");
+      }
       if (!adopted.directory || sameDirectory(adopted.directory, input.cwd)) {
         await client.updateSession(adopted.id, { permission });
         return adopted;
@@ -1108,7 +1124,10 @@ async function resolveSession(
       await client.updateSession(forked.id, { permission });
       return forked;
     } catch (error) {
-      if (!isOpenCodeNotFound(error) && !isHttpNotFound(error) && !isEmptySessionFork(error))
+      if (
+        input.archiveDelegateHistory ||
+        (!isOpenCodeNotFound(error) && !isHttpNotFound(error) && !isEmptySessionFork(error))
+      )
         throw error;
     }
   }

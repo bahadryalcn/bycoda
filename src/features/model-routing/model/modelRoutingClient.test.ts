@@ -7,6 +7,38 @@ import { remoteRequest } from "../../connections/public/connections";
 import { useModelRoutingStatus } from "./modelRoutingClient";
 vi.mock("../../connections/public/connections", () => ({ remoteRequest: vi.fn() }));
 
+it("keeps one quota interval through equal replies without rerendering", async () => {
+  vi.useFakeTimers();
+  const arm = vi.spyOn(globalThis, "setInterval");
+  const hostRead = vi.mocked(remoteRequest);
+  hostRead.mockReset();
+  hostRead.mockImplementation(async () => ({ entries: [{ entryId: "a", leftPercent: 42 }] }));
+  const renders = vi.fn();
+  function Probe() {
+    renders(useModelRoutingStatus("host", true).entries);
+    return null;
+  }
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () =>
+      root.render(createElement(QueryClientProvider, { client }, createElement(Probe))),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(10));
+    expect(renders.mock.lastCall?.[0]).toEqual([{ entryId: "a", leftPercent: 42 }]);
+    renders.mockClear();
+    await act(async () => vi.advanceTimersByTimeAsync(300_000));
+    expect(hostRead).toHaveBeenCalledTimes(2);
+    expect(arm.mock.calls.map(([, period]) => period)).toEqual([60_000, 240_000]);
+    expect(renders).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+    arm.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it("retains quota on failed refresh and retries with fresh data", async () => {
   let latest!: ReturnType<typeof useModelRoutingStatus>;
   function Probe() {

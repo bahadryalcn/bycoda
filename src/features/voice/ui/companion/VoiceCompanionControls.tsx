@@ -40,9 +40,9 @@ export function VoiceCompanionControls({
   muted: boolean;
   speakerMuted: boolean;
   manual: boolean;
-  /** The transcript is shown instead of the large call stage. */
+  /** Floating panel transcript replaces its stage. Fullscreen has a header toggle. */
   chatShown: boolean;
-  onToggleChat: () => void;
+  onToggleChat?: () => void;
   onStart: () => void;
   onClose: () => void;
   onToggleMute: () => void;
@@ -53,7 +53,7 @@ export function VoiceCompanionControls({
 }) {
   const canTalk = status === "idle" || status === "sleeping" || status === "ready";
   const connecting = status === "connecting" || status === "reconnecting";
-  const chat = (
+  const chat = onToggleChat && (
     <Button
       iconOnly
       shape="pill"

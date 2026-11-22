@@ -1,4 +1,4 @@
-import { applyComposerInlineCut } from "./composerInlineInput";
+import { applyComposerInlineDeletion } from "./composerInlineInput";
 
 /** Edits the textarea the way typing would, so React and every draft listener see it. */
 export function applyTextareaEdit(el: HTMLTextAreaElement, text: string, caret: number) {
@@ -14,7 +14,7 @@ export function applyUndoableTextareaEdit(
   caret: number,
   applying: { current: boolean },
 ): boolean {
-  if (applyComposerInlineCut(el, text, caret)) return true;
+  if (applyComposerInlineDeletion(el, text, caret)) return true;
   applying.current = true;
   try {
     let native = false;
@@ -30,6 +30,20 @@ export function applyUndoableTextareaEdit(
   } finally {
     applying.current = false;
   }
+}
+
+/** Delete only the reference range, preserving native or CodeMirror undo history. */
+export function applyMentionDeletion(
+  field: HTMLTextAreaElement,
+  edit: { text: string; caret: number; end: number },
+) {
+  if (applyComposerInlineDeletion(field, edit.text, edit.caret, "delete")) return true;
+  if (field.ownerDocument.activeElement === field) {
+    field.setSelectionRange(edit.caret, edit.end);
+    if (field.ownerDocument.execCommand?.("delete")) return true;
+  }
+  applyTextareaEdit(field, edit.text, edit.caret);
+  return false;
 }
 
 /** Type directly before an existing skill without joining the invocation to the new word. */

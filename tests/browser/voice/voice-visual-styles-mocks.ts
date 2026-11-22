@@ -171,6 +171,23 @@ export async function converseWithAssistant(input: {
     fixtureVoice.observations.push(result);
     return { action: "reply", reply: "The selected assistant job was deleted." };
   }
+  if (input.transcript === "show live results") {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      input: {
+        title: "Test results",
+        summary: "Two packages finished.",
+        content: {
+          kind: "chart",
+          items: [{ label: "Web", value: 5 }, { label: "Host", value: 3 }],
+        },
+      },
+      requestId: "fixture-live-results",
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "Two packages finished." };
+  }
   if (input.transcript === "show choices") {
     const selected = await input.execute("present_choices", {
       question: "Which project should I follow?",

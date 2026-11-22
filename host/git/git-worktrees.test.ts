@@ -8,6 +8,7 @@ import { HostStore } from "../store";
 import {
   createHostWorktree,
   hostWorktrees,
+  hostWorktreesWithState,
   invalidateHostWorktrees,
   renameHostWorktreeBranch,
   resolveHostWorktreeAsync,
@@ -262,4 +263,27 @@ it("reuses a worktree list briefly and refreshes it after this host changes work
   await expect(resolveHostWorktreeAsync(cwd, outside)).rejects.toThrow(
     "Choose an available worktree",
   );
+});
+
+it("lists dirty and unpushed state for every worktree so remote clients see what the desktop does", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "bycoda-host-state-"));
+  cleanups.push(() => rmSync(cwd, { recursive: true, force: true }));
+  const git = (...args: string[]) => execFileSync("git", args, { cwd });
+  git("init", "-q");
+  git("checkout", "-q", "-b", "main");
+  writeFileSync(join(cwd, "file.txt"), "initial\n");
+  git("add", "file.txt");
+  git("-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-q", "-m", "initial");
+  const side = `${cwd}-side`;
+  cleanups.push(() => rmSync(side, { recursive: true, force: true }));
+  git("worktree", "add", "-q", "-b", "side", side);
+  writeFileSync(join(side, "new.txt"), "x\n");
+  invalidateHostWorktrees();
+  const listed = await hostWorktreesWithState(cwd);
+  const byBranch = Object.fromEntries(listed.worktrees.map((tree) => [tree.branch, tree]));
+  // No remote: both commits are on no remote, and only the side worktree has an untracked file.
+  expect(byBranch.main).toMatchObject({ dirty: false, unpushed: 1 });
+  expect(byBranch.side).toMatchObject({ dirty: true, unpushed: 1 });
+  // Host-internal callers keep the cheap list without per-checkout Git state.
+  expect((await hostWorktrees(cwd)).worktrees[0]).not.toHaveProperty("dirty");
 });

@@ -1,6 +1,13 @@
 import { expect, it } from "vitest";
-import { worktreeGroupLabel, worktreeRows } from "./worktreeRows";
-import type { Worktree } from "./worktrees";
+import {
+  AGENT_ROWS_SHOWN,
+  collapseAgentRows,
+  isAgentWorktree,
+  worktreeGroupLabel,
+  worktreeRows,
+} from "./worktreeRows";
+import { changeSectionRoots, totalChangedFiles } from "./worktreeScope";
+import { normalizeWorktrees, type Worktree } from "./worktrees";
 
 const tree = (path: string, extra: Partial<Worktree> = {}): Worktree => ({
   path,
@@ -25,20 +32,23 @@ const trees = [
   tree("/t/detached", { branch: null, dirty: true }),
 ];
 
-it("hides missing and prunable worktrees and orders main, active, clean", () => {
+it("hides missing and prunable worktrees and leads with the ones that have changes", () => {
   expect(worktreeRows(trees, "/repo").map((row) => row.path)).toEqual([
-    "/repo",
     "/t/dirty",
     "/t/detached",
+    "/repo",
     "/t/clean",
   ]);
 });
 
-it("keeps the checkout containing cwd first and is stable for the same cwd", () => {
-  expect(worktreeRows(trees, "/t/clean/sub").map((row) => row.path)[0]).toBe("/t/clean");
-  expect(worktreeRows(trees, "/repo")).toEqual(
-    worktreeRows([...trees].reverse().reverse(), "/repo"),
-  );
+it("keeps the session's checkout first in its group and is stable for the same cwd", () => {
+  expect(worktreeRows(trees, "/t/clean/sub").map((row) => row.path)).toEqual([
+    "/t/dirty",
+    "/t/detached",
+    "/t/clean",
+    "/repo",
+  ]);
+  expect(worktreeRows(trees, "/repo")).toEqual(worktreeRows([...trees], "/repo"));
 });
 
 it("filters title, detail and path without case or surrounding whitespace", () => {
@@ -48,45 +58,122 @@ it("filters title, detail and path without case or surrounding whitespace", () =
   expect(worktreeRows(undefined, "/repo")).toEqual([]);
 });
 
-it("titles by branch, names the folder and marks the project folder", () => {
-  const [main, , detached] = worktreeRows(trees, "/repo");
-  expect(main).toMatchObject({ title: "repo", folder: "Project folder", isMain: true });
-  expect(detached).toMatchObject({ title: "Detached abcdef1", folder: "detached" });
-  // The full path is not part of the row; only the filter and the tooltip use it.
-  expect(main).not.toHaveProperty("detail");
-  expect(detached!.path).toBe("/t/detached");
+it("titles by branch and shows no text marker or project-folder label", () => {
+  const rows = worktreeRows(trees, "/repo");
+  const main = rows.find((row) => row.isMain)!;
+  expect(main).toMatchObject({ title: "repo", folder: "repo", group: "primary" });
+  expect(main.detail).toBeUndefined();
+  expect(rows.find((row) => row.path === "/t/detached")).toMatchObject({
+    title: "Detached abcdef1",
+    detail: "detached",
+  });
+  expect(main).not.toHaveProperty("marker");
 });
 
-it("marks the session's checkout and assigns the three groups in order", () => {
-  const rows = worktreeRows(trees, "/t/clean/sub");
-  expect(rows.map((row) => [row.path, row.group, row.current])).toEqual([
-    ["/t/clean", "primary", true],
-    ["/repo", "primary", false],
-    ["/t/dirty", "active", false],
-    ["/t/detached", "active", false],
-  ]);
-});
-
-it("labels only the groups that follow the leading one", () => {
-  expect(worktreeGroupLabel("primary", 2)).toBeUndefined();
-  expect(worktreeGroupLabel("active", 2)).toBe("With changes");
-  expect(worktreeGroupLabel("idle", 3)).toBe("Clean · 3");
-});
-
-it("sorts a worktree with sessions or unpushed commits into the active group", () => {
+it("groups changes first, then project folder, other worktrees, agent worktrees", () => {
   const rows = worktreeRows(
     [
       tree("/repo", { isMain: true }),
-      tree("/t/pushed", { unpushed: 2 }),
-      tree("/t/sessions", { sessionIds: ["s1"] }),
-      tree("/t/clean"),
+      tree("/t/agent-a", { branch: "by/agent-a" }),
+      tree("/t/agent-dirty", { branch: "by/agent-dirty", dirty: true }),
+      tree("/t/ahead", { unpushed: 3 }),
+      tree("/t/unknown", { dirty: null, unpushed: null }),
     ],
     "/repo",
   );
-  expect(rows.map((row) => [row.path, row.group])).toEqual([
-    ["/repo", "primary"],
-    ["/t/pushed", "active"],
-    ["/t/sessions", "active"],
-    ["/t/clean", "idle"],
+  expect(rows.map((row) => [row.path, row.group, row.agent])).toEqual([
+    ["/t/agent-dirty", "changes", true],
+    ["/repo", "primary", false],
+    ["/t/ahead", "other", false],
+    ["/t/unknown", "other", false],
+    ["/t/agent-a", "agent", true],
   ]);
+});
+
+it("never reads an unknown state as changes or as clean", () => {
+  const [unknown] = worktreeRows([tree("/t/x", { dirty: null, unpushed: null })], "/repo");
+  expect(unknown!.group).toBe("other");
+  expect(
+    changeSectionRoots([tree("/repo", { isMain: true }), tree("/t/x", { dirty: null })], "/repo"),
+  ).toEqual(["/repo"]);
+});
+
+it("recognises agent worktrees by branch prefix or managed folder, never the project folder", () => {
+  expect(isAgentWorktree(tree("/t/x", { branch: "by/live-games" }))).toBe(true);
+  expect(isAgentWorktree(tree("/t/x", { branch: "bycoda/s/fix-1a2b3c4d5e6f" }))).toBe(true);
+  expect(isAgentWorktree(tree("/t/wt-1a2b3c4d5e6f", { branch: "feature/y" }))).toBe(true);
+  expect(isAgentWorktree(tree("C:/Users/me/.t3/worktrees/p/x", { branch: "feature/y" }))).toBe(
+    true,
+  );
+  expect(isAgentWorktree(tree("/repo", { branch: "by/main", isMain: true }))).toBe(false);
+  expect(isAgentWorktree(tree("/t/feature", { branch: "feat/messaging-chat" }))).toBe(false);
+  // The agent row carries no hash-like folder.
+  expect(
+    worktreeRows([tree("/t/wt-1a2b3c4d5e6f", { branch: "by/z" })], "/repo")[0]!.detail,
+  ).toBeUndefined();
+});
+
+it("labels the changes and agent groups plainly and leaves the others unlabelled", () => {
+  expect(worktreeGroupLabel("changes", 2)).toBe("Uncommitted changes");
+  expect(worktreeGroupLabel("agent", 26)).toBe("Agent worktrees · 26");
+  expect(worktreeGroupLabel("primary", 2)).toBeUndefined();
+  expect(worktreeGroupLabel("other", 2)).toBeUndefined();
+});
+
+it("sorts agent worktrees by activity and collapses long groups after five rows", () => {
+  const agents = Array.from({ length: 8 }, (_, index) =>
+    tree(`/t/a${index}`, { branch: `by/a${index}`, unpushed: index }),
+  );
+  const rows = worktreeRows([tree("/repo", { isMain: true }), ...agents], "/repo");
+  expect(rows.filter((row) => row.group === "agent")[0]!.path).toBe("/t/a7");
+  const collapsed = collapseAgentRows(rows, false);
+  expect(collapsed.hidden).toBe(8 - AGENT_ROWS_SHOWN);
+  expect(collapsed.rows.filter((row) => row.group === "agent")).toHaveLength(AGENT_ROWS_SHOWN);
+  expect(collapseAgentRows(rows, true)).toEqual({ rows, hidden: 0 });
+});
+
+it("lists only worktrees with uncommitted changes as Changes sections, the session's one when none", () => {
+  const all = [
+    tree("/repo", { isMain: true }),
+    tree("/t/ahead", { unpushed: 4 }),
+    tree("/t/dirty", { dirty: true }),
+    tree("/t/mine", { dirty: true }),
+  ];
+  expect(changeSectionRoots(all, "/t/mine/src")).toEqual(["/t/mine", "/t/dirty"]);
+  expect(
+    changeSectionRoots(
+      all.filter((item) => !item.dirty),
+      "/repo",
+    ),
+  ).toEqual(["/repo"]);
+  expect(changeSectionRoots(undefined, "/repo")).toEqual([]);
+});
+
+it("totals the badge as the sum of the section counts", () => {
+  expect(totalChangedFiles([321, 3, undefined])).toBe(324);
+  expect(totalChangedFiles([])).toBe(0);
+});
+
+it("a Host list without state fields stays unknown, never clean", () => {
+  const listed = normalizeWorktrees({
+    defaultRoot: "/r-worktrees",
+    worktrees: [{ path: "/r", branch: "main", head: "a", isMain: true, missing: false }],
+  } as never);
+  expect(listed.worktrees[0]).toMatchObject({ dirty: null, unpushed: null, sessionIds: [] });
+  const known = normalizeWorktrees({
+    defaultRoot: "/r-worktrees",
+    worktrees: [
+      {
+        path: "/r",
+        branch: "main",
+        head: "a",
+        isMain: true,
+        missing: false,
+        dirty: true,
+        unpushed: 2,
+      },
+    ],
+  } as never);
+  expect(known.worktrees[0]).toMatchObject({ dirty: true, unpushed: 2 });
+  expect(worktreeRows(listed.worktrees, "/r")[0]!.group).toBe("primary");
 });

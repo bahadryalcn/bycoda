@@ -55,6 +55,7 @@ export { HARNESSES, HARNESS_TITLE } from "../../shared/model/harnessIdentity";
 export type { SessionProviderHistory } from "./model/sessionProviderHistory";
 export type { AssistantSessionManagement } from "./model/session";
 export type * as dataComposerDraftStoreApi from "./public/composerDraftStore";
+export type * as composerMentionsApi from "./public/composerMentions";
 export type * as dataPersistenceDrainApi from "./public/persistenceDrain";
 export type * as dataSessionStoreApi from "./public/sessionStore";
 export type * as hooksUseTranscriptSelectionApi from "./public/useTranscriptSelection";

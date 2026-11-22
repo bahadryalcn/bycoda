@@ -3,6 +3,7 @@ import {
   HOST_PROTOCOL_VERSION,
   providerSteerCapability,
 } from "../../src/features/connections/model/protocol";
+import { PROJECTLESS_SESSIONS_CAPABILITY } from "../../src/shared/model/host-contracts/projectless-sessions";
 import { createEnvironmentService } from "../domains/environment/service";
 import { reachableAddresses } from "../mobile/mobile-lan";
 import { defaultRouteAddress } from "../mobile/mobile-network";
@@ -84,6 +85,7 @@ export function createEnvironmentRuntime(
         "transport.ws.projects.delta.v1",
         "sessions.approvalOccurrence.v1",
         "sessions.desktopControlReceipts.v1",
+        PROJECTLESS_SESSIONS_CAPABILITY,
         "transport.ws.queue.v2",
         "transport.ws.files.v2",
         "transport.ws.terminals.v2",

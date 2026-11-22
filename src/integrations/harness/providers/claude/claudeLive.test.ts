@@ -101,6 +101,8 @@ async function startTurn(
     providerAccountId?: string;
     modelSettings?: Record<string, string>;
     providerSessionId?: string;
+    privateDelegateHistory?: boolean;
+    privateDelegateReplay?: string;
   } = {},
 ) {
   const events: HarnessEvent[] = [];
@@ -114,6 +116,8 @@ async function startTurn(
     runtimeMode: options.runtimeMode ?? "supervised",
     intent: options.intent,
     providerAccountId: options.providerAccountId,
+    privateDelegateHistory: options.privateDelegateHistory,
+    privateDelegateReplay: options.privateDelegateReplay,
     text: "explore the codebase",
     attachments: [],
     onEvent: (event) => {
@@ -312,6 +316,79 @@ beforeEach(() => {
 afterEach(async () => {
   await stopClaudeSession("s1");
   __claudeTestReset();
+});
+
+describe("Claude private delegated history", () => {
+  it("replays Bycoda context only on the first turn of each fresh private process", async () => {
+    const history = 'User: inspect the cache\nAssistant: found a "stale" entry';
+    bindClaudeSession("s1", "old-provider-session", "/repo");
+    const first = await startTurn("s1", {
+      privateDelegateHistory: true,
+      privateDelegateReplay: history,
+    });
+    expect(spawned[0]).toContain("--no-session-persistence");
+    expect(spawned[0]).not.toContain("--resume");
+    expect(spawned[0]).not.toContain("--strict-mcp-config");
+    expect(spawned[0]).toEqual(expect.arrayContaining(["--permission-mode"]));
+    expect(parse().find((entry) => entry.type === "user")?.message).toMatchObject({
+      content: [
+        { type: "text", text: expect.stringContaining(JSON.stringify(history)) },
+        { type: "text", text: "explore the codebase" },
+      ],
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await first.turn;
+    expect(first.events.some((event) => event.type === "session.providerBound")).toBe(false);
+
+    const warmTurn = sendClaudeTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:claude-sonnet-5",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      privateDelegateHistory: true,
+      privateDelegateReplay: history,
+      text: "continue in the same process",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+    await waitFor(() => parse().filter((entry) => entry.type === "user").length === 2, "warm user");
+    expect(spawned).toHaveLength(1);
+    expect(parse().findLast((entry) => entry.type === "user")?.message).toMatchObject({
+      content: [{ type: "text", text: "continue in the same process" }],
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await warmTurn;
+
+    await stopClaudeSession("s1");
+    const restarted = await startTurn("s1", {
+      providerSessionId: "new-private-session",
+      privateDelegateHistory: true,
+      privateDelegateReplay: history,
+    });
+    expect(spawned[1]).toContain("--no-session-persistence");
+    expect(spawned[1]).not.toContain("--resume");
+    expect(parse().findLast((entry) => entry.type === "user")?.message).toMatchObject({
+      content: [
+        { type: "text", text: expect.stringContaining(JSON.stringify(history)) },
+        { type: "text", text: "explore the codebase" },
+      ],
+    });
+    emit({ type: "result", subtype: "success", session_id: "new-private-session" });
+    await restarted.turn;
+    expect(restarted.events.some((event) => event.type === "session.providerBound")).toBe(false);
+
+    await stopClaudeSession("s1");
+    const persistent = await startTurn("s1", { providerSessionId: "new-persistent-session" });
+    expect(spawned[2]).not.toContain("--no-session-persistence");
+    expect(spawned[2]).not.toContain("--resume");
+    expect(persistent.events).toContainEqual({
+      type: "session.providerBound",
+      providerSessionId: "new-persistent-session",
+    });
+    emit({ type: "result", subtype: "success", session_id: "new-persistent-session" });
+    await persistent.turn;
+  });
 });
 
 describe("claude streamed tool inputs", () => {

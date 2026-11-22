@@ -167,7 +167,7 @@ it("ignores an older inventory reply after a newer refresh and retains the newer
   }
 });
 
-it("skips offline status checks at mount, on timers and on machine focus, and slows down while hidden", async () => {
+it("pauses offline and hidden status checks and catches up when visible", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
@@ -200,11 +200,14 @@ it("skips offline status checks at mount, on timers and on machine focus, and sl
     expect(read).toHaveBeenCalledWith(expect.objectContaining({ method: "environment.describe" }));
     hidden.mockReturnValue(true);
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
-    await advance(29_999);
+    await advance(60_000);
     expect(read).toHaveBeenCalledOnce();
     read.mockRejectedValueOnce("SSH connection failed");
-    await advance(1);
+    hidden.mockReturnValue(false);
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
     expect(read).toHaveBeenCalledTimes(2);
+    hidden.mockReturnValue(true);
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
     online.mockReturnValue(false);
     const releaseFocus = focusMachine(machine.environmentId);
     releaseFocus();

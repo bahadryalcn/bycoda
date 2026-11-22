@@ -2,6 +2,7 @@ import { installAssistantObservationProducers } from "../assistant/observations/
 import { failureFields } from "../diagnostics/failure-fields";
 import { createLogger } from "../diagnostics/logger";
 import { perfMetrics } from "../diagnostics/perf-metrics";
+import { startRuntimeSampler, stopRuntimeSampler } from "../diagnostics/request-trace";
 import type { ServerBindings } from "./bindings";
 import { bootPhase, readyWithin } from "./boot-phases";
 import {
@@ -206,7 +207,10 @@ export async function createLifecycleRuntime(
         ),
         step("conversation-secrets", () => dependencies.conversationSecrets.start()),
         step("assistant", () => dependencies.assistant.start()),
-        step("perf-metrics", () => perfMetrics.start()),
+        step("perf-metrics", () => {
+          perfMetrics.start();
+          startRuntimeSampler();
+        }),
         step("attachment-ownership", () => dependencies.attachmentOwnership.start()),
         step("mobile-lan", () => dependencies.mobileLan.start()),
         step("automatic-tunnel", () => dependencies.tunnels.boot()),
@@ -286,7 +290,10 @@ export async function createLifecycleRuntime(
       drain("devServers", () => dependencies.devServers.close());
       drain("gitWatches", () => dependencies.gitWatches.close());
       drain("diagnostics", () => dependencies.diagnostics.close());
-      drain("perfMetrics", () => perfMetrics.close());
+      drain("perfMetrics", () => {
+        perfMetrics.close();
+        stopRuntimeSampler();
+      });
       drain("devicePreviews", async () => await dependencies.devicePreviews.dispose());
       drain("deviceHost", async () => await dependencies.deviceHost.dispose());
       drain("sharedBrowser", async () => await dependencies.sharedBrowser.close());

@@ -3,6 +3,7 @@ import { type HostSessionSummary } from "../../src/features/connections/model/pr
 import { snapshotWeight } from "../../src/features/connections/model/snapshotWeight";
 import { crewSessionRuns } from "../crews/crew-managed-session";
 import { branchCache } from "../git/git-actions";
+import { isProjectlessScope, PROJECTLESS_SCOPE } from "../sessions/projectless-scope";
 import { withSessionWaits } from "../sessions/session-waits";
 import type { ServerBindings } from "./bindings";
 export async function createSessionListRuntime(
@@ -280,7 +281,11 @@ export async function createSessionListRuntime(
     const summaries = [...own, ...local.filter((session) => !known.has(session.id))].sort(
       (a, b) => b.updatedAt - a.updatedAt,
     );
-    const paths = [...new Set(summaries.map((session) => session.cwd ?? project.cwd))];
+    // Scratch folders are not checkouts: no branch read and no worktree identity.
+    const projectless = isProjectlessScope(projectId);
+    const paths = projectless
+      ? []
+      : [...new Set(summaries.map((session) => session.cwd ?? project.cwd))];
     const branches = new Map(
       await Promise.all(paths.map(async (cwd) => [cwd, await branchCache.get(cwd)] as const)),
     );
@@ -302,7 +307,7 @@ export async function createSessionListRuntime(
         branch: branch || undefined,
         // Desktop rows keep the desktop's path spelling; compare normalized paths.
         worktreeCwd:
-          session.cwd && !dependencies.desktop.samePath(session.cwd, project.cwd)
+          !projectless && session.cwd && !dependencies.desktop.samePath(session.cwd, project.cwd)
             ? session.cwd
             : undefined,
         ...(crewRunId ? { crewRunId } : {}),
@@ -353,10 +358,13 @@ export async function createSessionListRuntime(
     const now = Date.now();
     // The row comes from the registry rows loaded once per registry version, not a scope
     // per poll; an id missing there falls back to the store, which rejects it.
-    const project =
-      (await loadRegistry()).rows.find((row) => row.id === projectId) ??
-      (await dependencies.engine.store.project(projectId));
+    const projectless = isProjectlessScope(projectId);
+    const project = projectless
+      ? PROJECTLESS_SCOPE
+      : ((await loadRegistry()).rows.find((row) => row.id === projectId) ??
+        (await dependencies.engine.store.project(projectId)));
     const currentProject = async () => {
+      if (projectless) return;
       // The one read of a poll: only the database can say whether the folder moved while
       // the list was built (the registry version moves on addProject alone).
       const stored = await dependencies.engine.store.project(projectId);
@@ -366,11 +374,13 @@ export async function createSessionListRuntime(
         throw new Error("Project changed while reading its sessions.");
       }
     };
-    const local = await dependencies.desktop.listSnapshotAsync(
-      project.cwd,
-      projectId,
-      dependencies.providers,
-    );
+    const local = projectless
+      ? { sessions: [], fingerprint: "" }
+      : await dependencies.desktop.listSnapshotAsync(
+          project.cwd,
+          projectId,
+          dependencies.providers,
+        );
     const cached = projectChangeCache.get(projectId);
     const paths = cached?.paths ?? [];
     // Reuse the lightweight branch TTL/singleflight even when this checkout
@@ -381,7 +391,7 @@ export async function createSessionListRuntime(
     const wakeSources = dependencies.pullRequestWatch.wakeSources(projectId);
     // Reuse the registered folder list until its version changes. Every store call
     // shares the database queue with approvals and authorization.
-    const siblingIds = await siblingProjectIds(project);
+    const siblingIds = projectless ? [] : await siblingProjectIds(project);
     const prefix = [
       dependencies.engine.store.projectVersion(projectId),
       siblingIds.map((id) => `${id}:${dependencies.engine.store.projectVersion(id)}`).join(","),

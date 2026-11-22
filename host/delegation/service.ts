@@ -27,6 +27,7 @@ import {
   DELEGATION_LIMITS,
   DELEGATION_CHAT_ONLY_KEY,
   DELEGATION_PARENT_KEY,
+  DELEGATION_PROVIDER_HISTORY_KEY,
   EFFORT_LEVELS,
   decodeAdvisor,
   decodeDelegationParent,
@@ -537,6 +538,13 @@ export class ConversationDelegation {
         ...baseSettings,
         ...lineage,
         ...(chatOnly ? { [DELEGATION_CHAT_ONLY_KEY]: "on" } : {}),
+        ...(ref.harness === "codex" || ref.harness === "claude"
+          ? { [DELEGATION_PROVIDER_HISTORY_KEY]: "ephemeral" }
+          : ref.harness === "pi" || ref.harness === "omp"
+            ? { [DELEGATION_PROVIDER_HISTORY_KEY]: "directory" }
+            : ref.harness === "opencode" && !chatOnly
+              ? { [DELEGATION_PROVIDER_HISTORY_KEY]: "archive" }
+              : {}),
       };
       if (!existing)
         await this.store.add({
