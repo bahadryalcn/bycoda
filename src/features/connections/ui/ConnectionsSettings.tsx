@@ -145,18 +145,18 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           setAddDraft((current) => (current === submitted ? EMPTY_SSH_DRAFT : current));
         setNotice(
           sshSetupSuccessNotice(
-          afterEdit.current
-            ? t("{p0} is connected through its new address.", {
-                p0: next.machine.name,
-              })
-            : updatingMachine
-              ? t("{p0} was updated and reconnected.", {
+            afterEdit.current
+              ? t("{p0} is connected through its new address.", {
                   p0: next.machine.name,
                 })
-              : t(
-                  "{p0} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.",
-                  { p0: next.machine.name },
-                ),
+              : updatingMachine
+                ? t("{p0} was updated and reconnected.", {
+                    p0: next.machine.name,
+                  })
+                : t(
+                    "{p0} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.",
+                    { p0: next.machine.name },
+                  ),
             next,
             next.machine.name,
           ),

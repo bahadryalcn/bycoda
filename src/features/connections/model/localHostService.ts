@@ -4,13 +4,7 @@ import type { RemoteMachine } from "./protocol";
 import { notifyRemoteRecovered } from "./remoteHealth";
 
 /** `stopped` requires evidence the host is down; failed health checks are `unknown`. */
-export type LocalHostState =
-  | "absent"
-  | "running"
-  | "starting"
-  | "stopped"
-  | "updating"
-  | "unknown";
+export type LocalHostState = "absent" | "running" | "starting" | "stopped" | "updating" | "unknown";
 
 const POLL_MS = 15_000;
 

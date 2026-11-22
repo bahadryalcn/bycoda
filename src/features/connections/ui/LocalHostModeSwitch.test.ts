@@ -68,7 +68,10 @@ it("is on while the login service keeps the Host running, and switching off asks
 
 it("shows a change waiting for running sessions and applies it now only after confirming", async () => {
   native.status = { ...base, mode: "app", pendingMode: "service" };
-  native.setMode.mockResolvedValue({ ...base, mode: "service", registered: true });
+  // The desktop's later reads report the applied mode, as the real registration does.
+  native.setMode.mockImplementation(
+    async () => (native.status = { ...base, mode: "service", registered: true }),
+  );
   await render();
   expect(toggle()?.getAttribute("aria-checked")).toBe("true");
   expect(document.body.textContent).toContain("Turning on when running sessions finish");

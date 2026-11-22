@@ -33,7 +33,9 @@ export function hostModeSwitchView(status: HostModeStatus): HostModeSwitchView {
   const error =
     status.lastError ||
     (status.mismatch
-      ? t("This computer's host service does not match its saved setting. Switch it again to repair.")
+      ? t(
+          "This computer's host service does not match its saved setting. Switch it again to repair.",
+        )
       : undefined);
   return {
     checked: status.mode === "service",
