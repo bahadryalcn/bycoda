@@ -116,6 +116,10 @@ export const lint = {
         "bycoda/suppression-has-reason": "error",
         "bycoda/grapheme-safe-truncate": "error",
         "bycoda/handled-background-promise": "error",
+        "bycoda/translation-slot-names": "error",
+        "bycoda/transcript-ink-roles": "error",
+        "bycoda/shared-container-appearance": "error",
+        "bycoda/button-pressed-prop": "error",
         "no-restricted-imports": [
           "error",
           {
@@ -323,6 +327,10 @@ export const lint = {
         "bycoda/effect-names-its-sync": "off",
         "bycoda/compiler-owns-memo": "off",
         "bycoda/suppression-has-reason": "off",
+        "bycoda/translation-slot-names": "off",
+        "bycoda/transcript-ink-roles": "off",
+        "bycoda/shared-container-appearance": "off",
+        "bycoda/button-pressed-prop": "off",
         "bycoda/grapheme-safe-truncate": "off",
         "bycoda/handled-background-promise": "off",
         "no-restricted-imports": "off",

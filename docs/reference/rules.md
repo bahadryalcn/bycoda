@@ -52,6 +52,8 @@ fall. Suppress one line only, always with a reason.
 
 - `bycoda/app-locale-formatting` (`src/**`)
   - Format dates, times, numbers, byte sizes and durations through the shared helpers so every surface agrees on locale, calendar day and density: formatDate / formatNumber (src/shared/i18n/core.ts), formatRelativeTime / formatBytes / formatDuration (src/shared/i18n/format.ts), dateTimeFormat / relativeTimeFormat (src/shared/lib/intl.ts) or the \<Timestamp> component. Direct toLocale*String / new Intl.*Format calls belong only in those helpers.
+- `bycoda/button-pressed-prop` (`src/**/*.tsx`)
+  - Button with both `selected` and `aria-pressed` sets the ARIA state by hand next to the visual state, and the two can drift apart. Use `pressed` on Button instead: it sets `aria-pressed` and the selected look together (src/shared/ui/Button.tsx).
 - `bycoda/compiler-owns-memo` (`src/shared/ui/**, src/features/sessions/ui/**, src/features/sync/**, src/features/terminal/**, src/features/projects/**, src/features/notifications/**, src/app/shell/**`)
   - The React Compiler compiles the components and hooks of this folder and memoizes values, callbacks and components itself. Drop `useMemo`, `useCallback`, `memo()` and the `"use memo"` directive here: compute the value in render and pass plain functions. If the compiler skips this function (a `[react-compiler]` build warning names it), fix what it cannot prove safe, or keep the hook with `// oxlint-disable-next-line bycoda/compiler-owns-memo -- <why the compiler cannot memoize this>` on the line above.
 - `bycoda/compiler-stays-on` (`src/**`)
@@ -64,12 +66,18 @@ fall. Suppress one line only, always with a reason.
   - A `void`-discarded promise with no rejection handler becomes an unhandled rejection; the Host logs it through guardUnhandledRejections (host/server/support.ts) and marks the service degraded, and the failed work is silently lost. Append `.catch(...)` that logs or reports (a `.finally()` alone does not handle the rejection), pass a rejection handler as the second `then` argument, or await it inside a try/catch (an async IIFE whose body has a try/catch is fine).
 - `bycoda/safe-timestamp-render` (`src/**, host/**`)
   - `new Date(value).toISOString()` throws a RangeError on an invalid date and takes the whole React tree down. Use `isoTimestamp(value)` from src/shared/lib/time/timestamps.ts, which returns undefined for invalid input.
+- `bycoda/shared-container-appearance` (`src/features/**/*.tsx, src/app/**/*.tsx`)
+  - Choose the shared variant/prop for appearance; the screen owns only layout, width and scroll. Padding, radius, border, background, shadow, ring, backdrop and text size/colour classes on a shared container fork its look. If no variant fits, add one to the shared component instead of styling the call site, or keep the line with `// oxlint-disable-next-line bycoda/shared-container-appearance -- <why no variant fits>`.
 - `bycoda/shared-formatters-only` (`src/features/**, src/app/**`)
   - Define date, number, byte and duration formatters only in src/shared/i18n. Import the shared formatter instead of defining a local format helper. Preserve existing output through shared options. (Constructing Intl formatters is rule bycoda/app-locale-formatting.)
 - `bycoda/shared-resize-observer` (`src/**`)
   - Every `new ResizeObserver` adds its own observer and callback; a list of measuring rows then runs one per row on each layout. Use `observeResize(element, listener)` from src/shared/lib/observeResize.ts, which shares one observer per window and returns the unsubscribe function for the effect cleanup. If this caller needs observer options the helper lacks, keep it with `// oxlint-disable-next-line bycoda/shared-resize-observer -- <which option and why>` on the line above.
 - `bycoda/suppression-has-reason` (`src/**, host/**, packages/**`)
   - A suppression comment needs a reason so the next reader can tell a justified exception from a silenced defect. Append ` -- <why this line is safe>` in the same comment, for example `// oxlint-disable-next-line no-restricted-imports -- scratch file, not read at startup`.
+- `bycoda/transcript-ink-roles` (`src/features/sessions/ui/**/*.tsx`)
+  - Full text ink (`--color-content`) on transcript chrome flattens the hierarchy: commands, chips and icons read as loud as the emphasis they support. Use `--ui-text-secondary` (or `--ui-text-muted` for the resting state) through `text-(--ui-text-secondary)` / `text-(--ui-text-muted)` or the `Text tone="secondary"` prop. Full ink is for emphasis only; if this is emphasis, keep it with `// oxlint-disable-next-line bycoda/transcript-ink-roles -- <what is emphasized>` on the line above.
+- `bycoda/translation-slot-names` (`src/**`)
+  - Named placeholders such as "{name}" stay on screen as raw text: the translator only fills positional slots. Use positional slots and pass the values by position: t("Add {p0}", { p0: name }).
 - `bycoda/utf8-child-locale` (`src/**, host/**`)
   - `LC_ALL=C` makes git and grep treat input as single-byte text, so case-insensitive matching of non-ASCII letters (ş, İ, ç, ö) never succeeds and binary detection changes. Use `LC_ALL: "C.UTF-8"` (predictable messages, UTF-8 aware matching).
 - `bycoda/whole-sentence-translation` (`src/**`)
@@ -256,7 +264,7 @@ fall. Suppress one line only, always with a reason.
 - `portal-outside-shared` (`src/app, src/features, shared stylesheets`)
   - floating surface outside canonical shared overlay owners (use Popover, Modal, Sheet or Tooltip)
 - `radius-size` (`src/app, src/features, shared stylesheets`)
-  - literal radius/size: rounded-[…], h-/w-/size-[Npx], CSS border-radius px
+  - literal radius/size: rounded-[…], h-/w-/size-[Npx|rem], CSS border-radius px or rem
 - `raw-anchor` (`src/app, src/features, shared stylesheets`)
   - raw \<a href> in feature code (use Link for a real anchor in prose or a chip, Button variant=link for an action, openExternal() from code)
 - `raw-aria-live` (`src/app, src/features, shared stylesheets`)
@@ -269,8 +277,12 @@ fall. Suppress one line only, always with a reason.
   - \<p role=alert> / \<span role=alert> (use the shared inline error)
 - `scrollbar-style` (`src/app, src/features, shared stylesheets`)
   - scrollbar styled in feature code: scrollbar-* properties, ::-webkit-scrollbar or scrollbar-* classes (use ScrollArea)
+- `shared-internal-selector` (`src/app, src/features, shared stylesheets`)
+  - feature/app CSS selects a shared component's class, data hook or role (.modal-panel, .popover-*, .settings-row*, .settings-group*, .bycoda-arc-*, [data-slot], [role=tab|tablist], …); pass a prop, slot or variant to the shared component, or change the component
 - `spacing-step` (`src/app, src/features, shared stylesheets`)
   - gap, padding or margin with a literal off the spacing scale: a bare px/rem value other than 0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 40 or 48 px, or a Tailwind step other than 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12 (var(--space-*) is always allowed)
+- `specificity-doubling` (`src/app, src/features, shared stylesheets`)
+  - doubled class selector (.x.x) used to win the cascade; fix the source order or the owning rule instead
 - `surface-style` (`src/app, src/features, shared stylesheets`)
   - surface drawn in feature code, including badge/chip/progress recipes: border, outline, radius, background or shadow (use Surface, Divider, FieldGroup; Badge for chips, ProgressBar for meters)
 - `target-blank` (`src/app, src/features, shared stylesheets`)
@@ -281,8 +293,10 @@ fall. Suppress one line only, always with a reason.
   - themePalette.hex…/rgb…/hsl…/oklch… literal in feature or app code (use a semantic token: a --color-*/--ui-* CSS role or a semantic themePalette role)
 - `tooltip-repeats-label` (`TSX in src/app, src/features, src/shared (excluding tests)`)
   - tooltip= (or \<Tooltip label>) whose static text equals the visible label of the same control (a hint must add a shortcut, detail or reason; drop it or use tooltipWhen="overflow")
+- `transcript-base-ink` (`src/app, src/features, shared stylesheets`)
+  - transcript text color taken from var(--color-content) (or a color-mix of it); use a --ui-text-* role (later a --transcript-ink-* role) so the reading surface owns its ink
 - `typography` (`src/app, src/features, shared stylesheets`)
-  - literal font size: text-[Npx], text-xs..xl, text-[length:], CSS font-size px
+  - literal font size: text-[Npx|rem], text-xs..xl, text-[length:], CSS font-size px or rem
 - `ui-wrapper-import` (`src/app, src/features, shared stylesheets`)
   - primitive/internal import bypasses shared wrappers (use src/shared/ui/Select, DropdownMenu, Popover, Modal or Tooltip)
 - `undefined-var` (`src/app, src/features, shared stylesheets`)

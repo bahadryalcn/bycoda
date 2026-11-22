@@ -579,3 +579,26 @@ test("class expressions exclude identifiers while retaining painted literal bran
     ["surface-style", "surface-style"],
   );
 });
+
+test("surface-style reads Tailwind paren-var utilities: border, rounded, shadow, ring, outline, bg", () => {
+  for (const name of [
+    "border-(--ui-pane-border)",
+    "border-t-(--ui-pane-border)",
+    "border-(length:--ui-line)",
+    "rounded-(--ui-radius-card)",
+    "rounded-t-(--ui-radius-card)",
+    "shadow-(--ui-elevation-floating)",
+    "ring-(--ui-focus)",
+    "outline-(--ui-focus)",
+    "bg-(--ui-surface-raised)",
+  ])
+    assert.ok(tsx(`const a = <div className="flex ${name}" />;`).includes("surface-style"), name);
+  assert.deepEqual(tsx('const a = <div className="flex gap-2" />;'), []);
+  // One finding per class, not one per rule that could match it.
+  assert.equal(
+    tsx('const a = <div className="border-(--ui-pane-border)" />;').filter(
+      (rule) => rule === "surface-style",
+    ).length,
+    1,
+  );
+});

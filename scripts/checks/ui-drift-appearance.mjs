@@ -908,6 +908,14 @@ const classRules = [
   ["text-truncation", tw(String.raw`line-clamp-${value}`)],
   ["surface-style", tw(String.raw`border(?!-collapse|-separate|-spacing)(?:-[\w\[(/.]+)*` + end)],
   ["surface-style", tw(String.raw`(?:rounded|shadow|ring|outline)(?:-[\w\[(/.]+)*` + end)],
+  // Tailwind v4 paren-var form (border-(--x), rounded-(--x), shadow-(--x), ring-(--x),
+  // outline-(--x)): the generic border/rounded patterns above stop at `-(--`, so name it here.
+  [
+    "surface-style",
+    tw(
+      String.raw`(?:border(?:-[trblxyse])?|rounded(?:-[a-z]{1,2})?|shadow|ring|outline)-\((?:[\w-]+:)?--[\w-]+\)`,
+    ),
+  ],
   ["surface-style", tw(String.raw`(?:bg|divide)-${value}`)],
   ["feature-motion", tw(String.raw`transition(?:-[\w\[(]+)*` + end)],
   ["feature-motion", tw(String.raw`(?:animate|duration|ease|delay)-${value}`)],

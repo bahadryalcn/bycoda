@@ -796,3 +796,98 @@ test("inline help guard limits findings to long translated secondary text direct
     0,
   );
 });
+
+test("shared-internal-selector flags feature CSS that reaches into shared component internals", () => {
+  const file = "src/features/demo/Demo.css";
+  const flagged = (selector) =>
+    rulesOf(file, `${selector} { display: flex; }`).includes("shared-internal-selector");
+  for (const selector of [
+    ".a .modal-panel > div:last-child",
+    ".popover-open .x",
+    ".popover",
+    ":global(.settings-row) .x",
+    ".settings-group-content > :first-child",
+    '.nav [role="tablist"]',
+    ".nav [role=tab]",
+    "[data-slot='button']",
+    "[data-button-size] svg",
+    "[data-pane-header-heading]",
+    ".x .bycoda-arc-select",
+  ])
+    assert.ok(flagged(selector), selector);
+  for (const selector of [
+    ".settings-card",
+    ".popover-menu-demo",
+    ".my-modal",
+    ".bycoda-arc .x",
+    ".x > div:last-child",
+    "[data-wide] .nav",
+  ])
+    assert.ok(!flagged(selector), selector);
+  // Shared and test code answer other rules; token-owning shared CSS is not feature CSS.
+  assert.ok(!rulesOf("src/shared/ui/Demo.module.css", ".modal-panel { gap: 0; }").length);
+  assert.ok(
+    !rulesOf(
+      file,
+      "/* ui-drift-ignore: shared-internal-selector -- legacy */\n.modal-panel { gap: 0; }",
+    ).includes("shared-internal-selector"),
+  );
+});
+
+test("specificity-doubling flags .x.x and leaves distinct compound classes alone", () => {
+  const file = "src/features/demo/Demo.module.css";
+  const flagged = (selector) =>
+    rulesOf(file, `${selector} { gap: 0; }`).includes("specificity-doubling");
+  assert.ok(flagged(".row.row"));
+  assert.ok(flagged(".a .row.row > .b"));
+  assert.ok(flagged(".row-x.row-x:hover"));
+  assert.ok(!flagged(".row.rowTwo"));
+  assert.ok(!flagged(".row.row-x"));
+  assert.ok(!flagged(".a.b"));
+  assert.ok(!flagged(".row .row"));
+});
+
+test("typography and radius-size also read rem lengths in CSS and arbitrary classes", () => {
+  const file = "src/features/demo/Demo.module.css";
+  assert.ok(rulesOf(file, ".a { font-size: 0.6875rem; }").includes("typography"));
+  assert.ok(rulesOf(file, ".a { font-size: 12px; }").includes("typography"));
+  assert.ok(!rulesOf(file, ".a { font-size: var(--text-sm); }").includes("typography"));
+  assert.ok(rulesOf(file, ".a { border-radius: 0.5rem; }").includes("radius-size"));
+  assert.ok(rulesOf(file, ".a { border-top-left-radius: 1rem 2px; }").includes("radius-size"));
+  assert.ok(!rulesOf(file, ".a { border-radius: 0; }").includes("radius-size"));
+  assert.ok(!rulesOf(file, ".a { border-radius: var(--ui-radius-card); }").includes("radius-size"));
+  assert.ok(
+    rulesOf("src/features/demo/Demo.tsx", '<i className="text-[0.75rem]" />').includes(
+      "typography",
+    ),
+  );
+  assert.ok(
+    rulesOf("src/features/demo/Demo.tsx", '<i className="h-[2rem] w-[10px]" />').includes(
+      "radius-size",
+    ),
+  );
+});
+
+test("transcript-base-ink flags content-base text color in transcript CSS only", () => {
+  const sessions = "src/features/sessions/ui/Transcript.css";
+  const ink = (file, text) => rulesOf(file, text).includes("transcript-base-ink");
+  assert.ok(ink(sessions, ".a { color: var(--color-content); }"));
+  assert.ok(
+    ink(sessions, ".a { color: color-mix(in srgb, var(--color-content) 70%, transparent); }"),
+  );
+  assert.ok(!ink(sessions, ".a { color: var(--ui-text-secondary); }"));
+  assert.ok(!ink(sessions, ".a { border-color: var(--color-content); }"));
+  assert.ok(!ink("src/features/files/ui/Files.css", ".a { color: var(--color-content); }"));
+  const styles = "src/styles/index.css";
+  const sheet = (selector) => `${indexCss}\n${selector} { color: var(--color-content); }`;
+  for (const selector of [
+    ".agent-markdown p",
+    '[data-chat-message-surface="user"]',
+    ".transcript-row",
+  ])
+    assert.ok(ink(styles, sheet(selector)), selector);
+  assert.ok(!ink(styles, sheet(".sidebar-title")));
+  assert.ok(
+    !ink(styles, `${indexCss}\n:root { --x: var(--color-content); color: var(--color-content); }`),
+  );
+});

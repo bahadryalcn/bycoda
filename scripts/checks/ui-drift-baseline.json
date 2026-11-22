@@ -2,14 +2,132 @@
   "schemaVersion": 1,
   "purpose": "Existing UI drift counted per file and rule by scripts/checks/check-ui-drift.mjs. Counts may only fall; regenerate with --update-baseline after reducing them.",
   "counts": {
+    "src/app/shell/Sidebar.module.css": {
+      "shared-internal-selector": 4
+    },
     "src/app/shell/Sidebar.tsx": {
       "theme-palette-literal": 1
+    },
+    "src/app/shell/SidebarAccountFooter.module.css": {
+      "shared-internal-selector": 1
+    },
+    "src/app/workspace/layout/WorkspaceSettingsSurface.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/account/ui/FeedbackDialog.module.css": {
+      "specificity-doubling": 2
+    },
+    "src/features/account/ui/account.module.css": {
+      "shared-internal-selector": 3
+    },
+    "src/features/assistant/ui/AssistantAvatar.module.css": {
+      "specificity-doubling": 1
+    },
+    "src/features/assistant/ui/AssistantSettings.module.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/assistant/ui/room/Jobs.module.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/assistant/ui/room/RoomShell.module.css": {
+      "shared-internal-selector": 3
+    },
+    "src/features/automations/ui/automations.css": {
+      "shared-internal-selector": 1,
+      "specificity-doubling": 1
+    },
+    "src/features/connections/ui/ServersView.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/crews/ui/CrewMemberPicker.tsx": {
+      "surface-style": 1
+    },
+    "src/features/files/ui/FilePreview.tsx": {
+      "surface-style": 2
+    },
+    "src/features/files/ui/ViewerFooter.tsx": {
+      "surface-style": 1
+    },
+    "src/features/host-tools/DesktopControlSettings.module.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/host-tools/runtime-logs.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/inbox/ui/InboxPrChecks.tsx": {
+      "surface-style": 2
     },
     "src/features/inbox/ui/InboxProviderMark.tsx": {
       "theme-palette-literal": 5
     },
+    "src/features/inbox/ui/LinkedWorkItemPanel.tsx": {
+      "surface-style": 1
+    },
+    "src/features/messaging/ui/threadMessageItems.tsx": {
+      "surface-style": 1
+    },
+    "src/features/notes/ui/sessionNotes.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/notifications/ui/InboxApprovalPreview.tsx": {
+      "surface-style": 1
+    },
+    "src/features/onboarding/ui/onboarding.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/orchestration/ui/OrchestrationPreview.tsx": {
+      "surface-style": 2
+    },
+    "src/features/orchestration/ui/OrchestrationSidebarAgents.tsx": {
+      "surface-style": 1
+    },
     "src/features/projects/model/projectCodeIcons.ts": {
       "theme-palette-literal": 56
+    },
+    "src/features/projects/ui/ProjectBackgroundDialog.tsx": {
+      "surface-style": 2
+    },
+    "src/features/projects/ui/RailBackgroundControls.tsx": {
+      "surface-style": 2
+    },
+    "src/features/providers/ui/GenericAcpSettings.tsx": {
+      "surface-style": 2
+    },
+    "src/features/search/ui/search.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/sessions/ui/AgentTabView.tsx": {
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/BtwSheet.tsx": {
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/BycodaSession.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/sessions/ui/ModelExtras.tsx": {
+      "surface-style": 2
+    },
+    "src/features/sessions/ui/ModelSwitchRow.tsx": {
+      "surface-style": 2
+    },
+    "src/features/sessions/ui/PromptOutline.css": {
+      "specificity-doubling": 1
+    },
+    "src/features/sessions/ui/ReminderNotices.tsx": {
+      "surface-style": 3
+    },
+    "src/features/sessions/ui/SessionImportDialog.tsx": {
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/SubagentSheet.tsx": {
+      "surface-style": 3
+    },
+    "src/features/sessions/ui/UserLinkPreview.tsx": {
+      "surface-style": 1
+    },
+    "src/features/sessions/ui/chat-controls.css": {
+      "shared-internal-selector": 2
     },
     "src/features/sessions/ui/crewCharacters.ts": {
       "theme-palette-literal": 135
@@ -65,8 +183,29 @@
     "src/features/settings/model/themePalettes.ts": {
       "theme-palette-literal": 6
     },
+    "src/features/settings/ui/AppearanceSettings.css": {
+      "shared-internal-selector": 6
+    },
     "src/features/settings/ui/ArchiveSettings.tsx": {
       "nested-surface": 2
+    },
+    "src/features/settings/ui/BycodaSettings.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/settings/ui/GeneralSettings.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/settings/ui/InboxSettings.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/settings/ui/ProviderDefaults.css": {
+      "shared-internal-selector": 8
+    },
+    "src/features/settings/ui/ProviderSettings.css": {
+      "shared-internal-selector": 3
+    },
+    "src/features/settings/ui/ShortcutSettings.module.css": {
+      "shared-internal-selector": 5
     },
     "src/features/settings/ui/TerminalSettings.tsx": {
       "nested-surface": 1
@@ -74,26 +213,100 @@
     "src/features/settings/ui/appearance/controls/AccentColorPicker.tsx": {
       "theme-palette-literal": 6
     },
+    "src/features/settings/ui/appearance/controls/BackgroundPreview.module.css": {
+      "radius-size": 4
+    },
+    "src/features/settings/ui/appearance/controls/CrewStageCard.css": {
+      "shared-internal-selector": 3
+    },
+    "src/features/settings/ui/appearance/controls/InterfaceSections.css": {
+      "shared-internal-selector": 3,
+      "typography": 2
+    },
+    "src/features/settings/ui/appearance/controls/LayerStack.module.css": {
+      "radius-size": 1,
+      "shared-internal-selector": 6
+    },
+    "src/features/settings/ui/appearance/controls/SceneStrip.module.css": {
+      "radius-size": 1,
+      "shared-internal-selector": 1
+    },
     "src/features/settings/ui/appearance/controls/ScrollbarGroup.tsx": {
       "theme-palette-literal": 1
     },
     "src/features/settings/ui/appearance/controls/StateLadder.tsx": {
       "theme-palette-literal": 2
     },
+    "src/features/settings/ui/appearance/controls/ThemeControls.css": {
+      "radius-size": 6,
+      "shared-internal-selector": 2
+    },
     "src/features/settings/ui/appearance/sections/BackgroundSection.tsx": {
       "nested-surface": 1
+    },
+    "src/features/settings/ui/appearance/sections/ThemeSection.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/settings/ui/integrations/IntegrationsSettings.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/social/ui/shell/social-shell.css": {
+      "shared-internal-selector": 1
     },
     "src/features/source-control/model/gitGraph.ts": {
       "theme-palette-literal": 7
     },
-    "src/features/source-control/ui/ChangeRow.tsx": {
-      "raw-native-control": 1
+    "src/features/source-control/ui/GitGraphCommitInspector.tsx": {
+      "surface-style": 2
+    },
+    "src/features/source-control/ui/GitStashSection.tsx": {
+      "surface-style": 1
+    },
+    "src/features/source-control/ui/WorktreesPage.module.css": {
+      "specificity-doubling": 1
+    },
+    "src/features/source-control/ui/conflict-layout.css": {
+      "radius-size": 1,
+      "specificity-doubling": 1
+    },
+    "src/features/tasks/ui/BackgroundSessionDialog.tsx": {
+      "surface-style": 1
+    },
+    "src/features/tasks/ui/TaskRunInsights.tsx": {
+      "surface-style": 1
+    },
+    "src/features/tasks/ui/TaskStewards.tsx": {
+      "inline-help-text": 1
     },
     "src/features/terminal/model/terminalRenderingPolicy.ts": {
       "theme-palette-literal": 1
     },
     "src/features/terminal/runtime/terminalTheme.ts": {
       "theme-palette-literal": 37
+    },
+    "src/features/terminal/ui/TerminalTools.module.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/usage/ui/UsageAnalytics.css": {
+      "shared-internal-selector": 3
+    },
+    "src/features/usage/ui/UsagePage.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/voice/ui/VoiceCompanion.module.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/voice/ui/VoiceSettings.module.css": {
+      "shared-internal-selector": 6
+    },
+    "src/features/voice/ui/VoiceToolActivityPanel.module.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/workspaces/ui/WorkspaceManagedRow.module.css": {
+      "specificity-doubling": 1
+    },
+    "src/features/workspaces/ui/WorkspacePolicySettings.module.css": {
+      "shared-internal-selector": 2
     },
     "src/shared/ui/ControlBehaviorMatrix.tsx": {
       "one-primary-per-view": 1
@@ -127,8 +340,8 @@
     "src/shared/ui/arc/usage-meter/usage-meter.module.css": {
       "radius-size": 2
     },
-    "src/features/tasks/ui/TaskStewards.tsx": {
-      "inline-help-text": 1
+    "src/styles/index.css": {
+      "transcript-base-ink": 11
     }
   }
 }

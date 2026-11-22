@@ -295,3 +295,86 @@ export function scanViewGuards(file, source, add) {
   };
   visit(tree);
 }
+
+/* ---------- CSS selector guards (feature and app CSS) ---------- */
+
+/*
+ * Shared component internals that feature CSS must not select. Derived from the global
+ * (non-module) classes and data hooks that src/shared/ui and src/styles define or set:
+ *   Modal.tsx / Sheet.tsx / Popover.tsx   .modal, .modal-panel, .modal-backdrop, .sheet,
+ *                                         .popover, .popover-open|backdrop|solid
+ *   shared/ui/settings/settings.css       the settings-group / settings-row family (exact names, so a
+ *                                         feature's own settings-* class is not caught)
+ *   Tabs.tsx                              tab-motion|opening|closing and role=tablist|tab
+ *   Button / PaneHeader / ActionHost      data-slot, data-button-*, data-pane-header-*, data-action-host
+ *   arc components                        .bycoda-arc-* (the bare .bycoda-arc root is an allowed scope)
+ * Change the shared component (a prop, a slot, a variant) instead of reaching into it.
+ */
+const sharedClasses = [
+  "modal",
+  "modal-panel",
+  "modal-backdrop",
+  "sheet",
+  "popover",
+  "popover-open",
+  "popover-backdrop",
+  "popover-solid",
+  "settings",
+  "settings-advanced",
+  "settings-advanced-toggle",
+  "settings-dependency",
+  "settings-feedback",
+  "settings-group",
+  "settings-group-action",
+  "settings-group-content",
+  "settings-group-feedback",
+  "settings-group-heading",
+  "settings-group-title",
+  "settings-help-text",
+  "settings-hint",
+  "settings-row",
+  "settings-row-control",
+  "settings-row-feedback",
+  "settings-row-label",
+  "settings-row-title",
+  "settings-scope",
+  "settings-subheading",
+  "settings-title-line",
+  "settings-topics",
+  "tab-motion",
+  "tab-opening",
+  "tab-closing",
+];
+const sharedInternalSelector = new RegExp(
+  String.raw`\.(?:${sharedClasses.join("|")})(?![\w-])|\.bycoda-arc-[\w-]+` +
+    String.raw`|\[\s*data-(?:slot|button-[\w-]+|pane-header[\w-]*|action-host|fbg-item)\b` +
+    String.raw`|\[\s*role\s*=\s*["']?(?:tablist|tab)["']?\s*\]`,
+);
+
+/** Rules a CSS selector prelude breaks (one entry per rule). */
+export function cssSelectorRules(selector) {
+  const found = [];
+  if (sharedInternalSelector.test(selector)) found.push("shared-internal-selector");
+  // .x.x doubles the specificity to win a cascade fight: fix the order or the owner instead.
+  if (/(\.-?[\w-]+)\1(?![\w-])/.test(selector)) found.push("specificity-doubling");
+  return found;
+}
+
+/** Selector text of an ink rule: the transcript's reading surfaces own their text roles. */
+const transcriptSelector = /\.agent-markdown|\[data-chat-message-surface\b|\.transcript-/;
+/** A text color read straight from the content base (K12): use --ui-text-* or a transcript ink role. */
+const baseContentInk = /var\(\s*--color-content(?![\w-])/;
+
+/**
+ * True for a `color` declaration in transcript CSS that takes its ink from var(--color-content),
+ * directly or through color-mix(). Transcript CSS is src/features/sessions/ui/**, and the
+ * .agent-markdown, [data-chat-message-surface] and .transcript-* rules in the shared stylesheets.
+ */
+export function transcriptBaseInk(file, { property, value, selectors }) {
+  if (property !== "color" || !baseContentInk.test(value)) return false;
+  if (file.startsWith("src/features/sessions/ui/")) return true;
+  return (
+    (file === "src/styles/index.css" || file === "src/styles/bycoda.css") &&
+    selectors.some((selector) => transcriptSelector.test(selector))
+  );
+}

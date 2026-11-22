@@ -321,6 +321,76 @@
       "from": 0,
       "to": 1,
       "reason": "New low-noise inline-help-text guard records existing long translated secondary copy directly under settings labels on 2026-11-15; future per-file counts may only fall."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "shared-internal-selector",
+      "from": 0,
+      "to": 87,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "specificity-doubling",
+      "from": 0,
+      "to": 8,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "transcript-base-ink",
+      "from": 0,
+      "to": 11,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "surface-style",
+      "from": 0,
+      "to": 37,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "radius-size",
+      "from": 11,
+      "to": 24,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "typography",
+      "from": 0,
+      "to": 2,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/shared-container-appearance",
+      "from": 0,
+      "to": 148,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/translation-slot-names",
+      "from": 0,
+      "to": 15,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/button-pressed-prop",
+      "from": 0,
+      "to": 21,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/transcript-ink-roles",
+      "from": 0,
+      "to": 2,
+      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
     }
   ]
 }

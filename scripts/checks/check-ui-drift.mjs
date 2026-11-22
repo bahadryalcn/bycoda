@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { scanViewGuards } from "./ui-drift-view-guards.mjs";
+import { cssSelectorRules, scanViewGuards, transcriptBaseInk } from "./ui-drift-view-guards.mjs";
 import {
   appearanceRuleOfDeclaration,
   appearanceRules,
@@ -59,8 +59,16 @@ export const rules = {
   "undefined-var": "var(--x) / Tailwind (--x) with no definition in src CSS or inline style",
   "arc-var-outside-arc":
     "Arc-only variable (.bycoda-arc block in arc.css) used outside an Arc root",
-  typography: "literal font size: text-[Npx], text-xs..xl, text-[length:], CSS font-size px",
-  "radius-size": "literal radius/size: rounded-[…], h-/w-/size-[Npx], CSS border-radius px",
+  typography:
+    "literal font size: text-[Npx|rem], text-xs..xl, text-[length:], CSS font-size px or rem",
+  "radius-size":
+    "literal radius/size: rounded-[…], h-/w-/size-[Npx|rem], CSS border-radius px or rem",
+  "shared-internal-selector":
+    "feature/app CSS selects a shared component's class, data hook or role (.modal-panel, .popover-*, .settings-row*, .settings-group*, .bycoda-arc-*, [data-slot], [role=tab|tablist], …); pass a prop, slot or variant to the shared component, or change the component",
+  "specificity-doubling":
+    "doubled class selector (.x.x) used to win the cascade; fix the source order or the owning rule instead",
+  "transcript-base-ink":
+    "transcript text color taken from var(--color-content) (or a color-mix of it); use a --ui-text-* role (later a --transcript-ink-* role) so the reading surface owns its ink",
   "icon-size-class": "size-3/3.5/4/5 on a shared icon component (use icon-* sizes)",
   "icon-numeric-size": "numeric size={n} prop",
   "icon-stroke-width": "strokeWidth other than 1.75 or 2",
@@ -272,6 +280,35 @@ function stripComments(text, { lineComments }) {
 }
 const stripCssComments = (text) => stripComments(text, { lineComments: false });
 
+/** Selector preludes of every style rule (at-rules excluded) with their start offsets. */
+export function cssSelectorPreludes(text) {
+  const source = stripCssComments(text);
+  const preludes = [];
+  let start = -1;
+  let quote = null;
+  let parens = 0;
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index];
+    if (quote) {
+      if (char === "\\") index++;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      if (start < 0) start = index;
+      quote = char;
+    } else if (char === "(") parens++;
+    else if (char === ")") parens = Math.max(0, parens - 1);
+    else if (char === "{" && parens === 0) {
+      const selector = start < 0 ? "" : source.slice(start, index).trim().replace(/\s+/g, " ");
+      if (selector && !selector.startsWith("@")) preludes.push({ selector, offset: start });
+      start = -1;
+    } else if ((char === "}" || char === ";") && parens === 0) start = -1;
+    else if (start < 0 && !/\s/.test(char)) start = index;
+  }
+  return preludes;
+}
+
 /** Declarations with their selector chain and absolute offsets. */
 export function cssDeclarations(text) {
   const source = stripCssComments(text);
@@ -472,11 +509,11 @@ const isDefined = (name, definitions) =>
 /* ---------- scanning ---------- */
 
 const twRules = [
-  ["typography", tw(String.raw`text-\[\d+(?:\.\d+)?px\]`)],
+  ["typography", tw(String.raw`text-\[\d*\.?\d+(?:px|rem)\]`)],
   ["typography", tw(String.raw`text-(?:xs|sm|base|lg|xl)` + end)],
   ["typography", tw(String.raw`text-(?:\[length:|\(length:)`)],
   ["radius-size", tw(String.raw`rounded(?:-[a-z]{1,2})?-\[[^\]\s]+\]`)],
-  ["radius-size", tw(String.raw`(?:h|w|size)-\[\d+(?:\.\d+)?px\]`)],
+  ["radius-size", tw(String.raw`(?:h|w|size)-\[\d*\.?\d+(?:px|rem)\]`)],
   // z-[var(--layer-*)] is the token form of a layer; any other literal is drift.
   ["layer", tw(String.raw`-?z-(?:\[(?!var\(--layer-)[^\]\s]+\]|10|20|30|40|50)` + end)],
   [
@@ -633,27 +670,30 @@ export function scanFile(file, text, definitions) {
   };
 
   if (isCss) {
+    if (scope === "app")
+      for (const { selector, offset } of cssSelectorPreludes(text))
+        for (const rule of cssSelectorRules(selector)) add(rule, offset);
     for (const declaration of cssDeclarations(text)) {
       const { property, value, valueOffset, selectors } = declaration;
       const arc = underArc(selectors);
       if (scope === "arc-css") {
         // Arc modules own their layout; only literal type/radius px and motion are tracked.
-        if (property === "font-size" && /\d(?:\.\d+)?px/.test(value))
+        if (property === "font-size" && /\d(?:\.\d+)?(?:px|rem)\b/.test(value))
           add("typography", valueOffset);
         if (
           /^border(?:-[a-z]+)*-radius$/.test(property) &&
-          /(?<![\w.])[1-9]\d*(?:\.\d+)?px/.test(value)
+          /(?<![\w.])(?:0?\.\d+|[1-9]\d*(?:\.\d+)?)(?:px|rem)\b/.test(value)
         )
           add("radius-size", valueOffset);
       } else
         for (const match of value.matchAll(varUse))
           checkVar(match[1], valueOffset + match.index, arc);
       if (scope === "app") {
-        if (property === "font-size" && /\d(?:\.\d+)?px/.test(value))
+        if (property === "font-size" && /\d(?:\.\d+)?(?:px|rem)\b/.test(value))
           add("typography", valueOffset);
         if (
           /^border(?:-[a-z]+)*-radius$/.test(property) &&
-          /(?<![\w.])[1-9]\d*(?:\.\d+)?px/.test(value)
+          /(?<![\w.])(?:0?\.\d+|[1-9]\d*(?:\.\d+)?)(?:px|rem)\b/.test(value)
         )
           add("radius-size", valueOffset);
         for (const match of value.matchAll(
@@ -680,6 +720,8 @@ export function scanFile(file, text, definitions) {
         if (/cubic-bezier\(/.test(value) || (motionProperty && /(?<![\w.])\d+ms\b/.test(value)))
           add("motion-literal", valueOffset);
       }
+      if ((scope === "app" || scope === "styles") && !isTokenBlock(selectors))
+        if (transcriptBaseInk(file, declaration)) add("transcript-base-ink", valueOffset);
       if (appearance && !isTokenBlock(selectors)) {
         const rule = appearanceRuleOfDeclaration(declaration);
         if (rule && !isBespokePart(file, rule, { selectors, text: `${property}:${value}` }))
