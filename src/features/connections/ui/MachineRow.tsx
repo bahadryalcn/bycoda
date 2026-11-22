@@ -16,6 +16,7 @@ import {
   subscribeRemoteAutoReconnect,
 } from "../../settings/public/settings";
 import { ConnectionSyncLine } from "./ConnectionSyncLine";
+import { LocalHostModeSwitch } from "./LocalHostModeSwitch";
 import { MachineRoutesLine } from "./MachineRoutesLine";
 import type { MachineProbe } from "./useMachineProbes";
 import { useMachineRouteSummary } from "./useMachineRouteSummary";
@@ -209,6 +210,7 @@ export function MachineRow({
           ) : null}
         </Text>
         <ConnectionSyncLine machineId={machine.id} onSyncNow={onSyncNow} />
+        {local ? <LocalHostModeSwitch /> : null}
         {showDetails ? (
           <Text
             as="div"

@@ -123,8 +123,8 @@ it("shows the reason when the host cannot be started", async () => {
   expect(notice()?.textContent).toContain("did not start");
 });
 
-it("stays silent while the host runs or updates", async () => {
-  for (const state of ["running", "updating", "absent", "unknown"]) {
+it("stays silent while the host runs, starts or updates", async () => {
+  for (const state of ["running", "starting", "updating", "absent", "unknown"]) {
     host.state = state;
     await render();
     await poll();
