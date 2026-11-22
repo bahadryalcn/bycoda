@@ -8,6 +8,7 @@ import { HOST_CREWS } from "./crew";
 const fixture = vi.hoisted(() => ({
   options: undefined as any,
   data: undefined as any,
+  error: undefined as Error | undefined,
   request: vi.fn(),
   invalidate: vi.fn(),
   catalogArgs: undefined as any,
@@ -28,7 +29,7 @@ vi.mock("../../connections/model/useRemoteModelCatalog", () => ({
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: unknown) => {
     fixture.options = options;
-    return { data: fixture.data };
+    return { data: fixture.data, error: fixture.error };
   },
   useQueryClient: () => ({ invalidateQueries: fixture.invalidate }),
 }));
@@ -131,6 +132,26 @@ it("does not read a catalog before the crew host is known", () => {
   projectCrews("C:/project");
   expect(fixture.catalogArgs.enabled).toBe(false);
   expect(fixture.catalogArgs.scope).toEqual({ machineId: "", environmentId: "", projectId: "" });
+});
+
+it("redacts diagnostics and withholds them until the read failure is visible", () => {
+  try {
+    fixture.error = new Error("[RPC_WS_UNAVAILABLE] Host unavailable token=secretABC123");
+    expect(projectCrews("C:/project")).toMatchObject({
+      pendingFailure: true,
+      visibleError: undefined,
+      errorDetails: undefined,
+    });
+
+    fixture.error = new Error("Host rejected request: Permission denied token=secretABC123");
+    const failure = projectCrews("C:/project");
+    expect(failure.visibleError).toContain("Permission denied");
+    expect(failure.errorDetails).toContain("Host rejected request");
+    expect(failure.visibleError).not.toContain("secretABC123");
+    expect(failure.errorDetails).not.toContain("secretABC123");
+  } finally {
+    fixture.error = undefined;
+  }
 });
 
 it("keeps work controls available when only the model catalog fails", () => {

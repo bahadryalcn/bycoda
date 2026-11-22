@@ -263,9 +263,13 @@ export function useProjectCrews(cwd: string, enabled = true) {
   return {
     ...query,
     data,
-    visibleError: listFailure.visibleError ? redactDiagnosticText(listFailure.visibleError) : undefined,
+    visibleError: listFailure.visibleError
+      ? redactDiagnosticText(listFailure.visibleError)
+      : undefined,
     errorDetails:
-      listFailure.visibleError && query.error ? redactDiagnosticText(errorText(query.error)) : undefined,
+      listFailure.visibleError && query.error
+        ? redactDiagnosticText(errorText(query.error))
+        : undefined,
     pendingFailure: listFailure.pending,
     /** Explicit retry of the model catalog only; `refetch` reads the crew list only. */
     refreshCatalog: catalogRead.refresh,
