@@ -123,6 +123,9 @@ export const lint = {
         "bycoda/no-raw-error-text": "error",
         "bycoda/shared-container-appearance": "error",
         "bycoda/button-pressed-prop": "error",
+        "bycoda/dialog-single-translator": "error",
+        "bycoda/icon-button-needs-label": "error",
+        "bycoda/menu-uses-dropdown": "error",
         "no-restricted-imports": [
           "error",
           {
@@ -337,6 +340,9 @@ export const lint = {
         "bycoda/no-raw-error-text": "off",
         "bycoda/shared-container-appearance": "off",
         "bycoda/button-pressed-prop": "off",
+        "bycoda/dialog-single-translator": "off",
+        "bycoda/icon-button-needs-label": "off",
+        "bycoda/menu-uses-dropdown": "off",
         "bycoda/grapheme-safe-truncate": "off",
         "bycoda/handled-background-promise": "off",
         "no-restricted-imports": "off",

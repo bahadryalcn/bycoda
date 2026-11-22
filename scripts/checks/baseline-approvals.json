@@ -419,6 +419,20 @@
       "from": 0,
       "to": 3,
       "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/dialog-single-translator",
+      "from": 0,
+      "to": 4,
+      "reason": "UI hardening wave 2 2026-11-22: new rule, Git dialogs mix the Git and interface translators (audit 20, K10)."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/menu-uses-dropdown",
+      "from": 0,
+      "to": 4,
+      "reason": "UI hardening wave 2 2026-11-22: new rule, hand-built menus without role wiring or arrow keys (audit 28, K11)."
     }
   ]
 }

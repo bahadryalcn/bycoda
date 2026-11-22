@@ -58,6 +58,8 @@ fall. Suppress one line only, always with a reason.
   - The React Compiler compiles the components and hooks of this folder and memoizes values, callbacks and components itself. Drop `useMemo`, `useCallback`, `memo()` and the `"use memo"` directive here: compute the value in render and pass plain functions. If the compiler skips this function (a `[react-compiler]` build warning names it), fix what it cannot prove safe, or keep the hook with `// oxlint-disable-next-line bycoda/compiler-owns-memo -- <why the compiler cannot memoize this>` on the line above.
 - `bycoda/compiler-stays-on` (`src/**`)
   - `"use no memo"` hides code the React Compiler cannot prove safe instead of fixing it. Remove the directive and fix the cause the `[react-compiler]` build warning names (a mutation after render, a ref read in render, state read outside React). The build guard already opts out functions that read state the compiler cannot see. If the opt-out must stay, put `// oxlint-disable-next-line bycoda/compiler-stays-on -- <what the compiler gets wrong here>` on the line above.
+- `bycoda/dialog-single-translator` (`src/**/*.{ts,tsx}`)
+  - A dialog worded with the Git translator (`i18n/git`) keeps the shared default Cancel, which follows the interface language, so title and button end up in different languages. Pass `cancelLabel: t("Cancel")` from the same translator, or word the whole dialog with one translator; confirmGitAction/confirmNative callers outside the Git feature must use the interface translator for every string, so give them their own confirmInApp call.
 - `bycoda/disabled-needs-reason` (`src/**/*.tsx`)
   - Explain why this Button is disabled through disabledReason and show the reason beside the control so it stays visible.
 - `bycoda/effect-names-its-sync` (`src/**`)
@@ -66,6 +68,10 @@ fall. Suppress one line only, always with a reason.
   - `slice(0, n)` cuts UTF-16 code units and can leave half of an emoji; native (Rust) JSON parsing then rejects the string. Use `truncateGraphemes(text, n)` from src/shared/lib/text/truncate.ts for user-visible or IPC-bound text.
 - `bycoda/handled-background-promise` (`host/**, packages/**`)
   - A `void`-discarded promise with no rejection handler becomes an unhandled rejection; the Host logs it through guardUnhandledRejections (host/server/support.ts) and marks the service degraded, and the failed work is silently lost. Append `.catch(...)` that logs or reports (a `.finally()` alone does not handle the rejection), pass a rejection handler as the second `then` argument, or await it inside a try/catch (an async IIFE whose body has a try/catch is fine).
+- `bycoda/icon-button-needs-label` (`src/**/*.tsx`)
+  - Icon-only Button has no accessible name. Pass `iconOnly` with a translated `label` (it names the button and fills the tooltip), or give the Button text children (src/shared/ui/Button.tsx).
+- `bycoda/menu-uses-dropdown` (`src/app/**/*.tsx, src/features/**/*.tsx`)
+  - Menus are not built by hand: a Popover holding MenuRow items, or a literal role=menu/menuitem, has no menu role wiring and no arrow-key navigation. Use DropdownMenu from src/shared/ui (items/content) or ContextMenu, which own the role, focus and keyboard behavior.
 - `bycoda/no-raw-error-text` (`src/**/*.tsx`)
   - Show what happened in a translated title and put raw error text in the shared ErrorDetails, or use the existing describe/present error helpers. See K1.
 - `bycoda/safe-timestamp-render` (`src/**, host/**`)

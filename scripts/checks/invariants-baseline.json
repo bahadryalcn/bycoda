@@ -382,7 +382,8 @@
     },
     "src/app/shell/MenuBar.tsx": {
       "bycoda/compiler-owns-memo": 3,
-      "bycoda/effect-names-its-sync": 4
+      "bycoda/effect-names-its-sync": 4,
+      "bycoda/menu-uses-dropdown": 1
     },
     "src/app/shell/PiUsage.tsx": {
       "bycoda/disabled-needs-reason": 1,
@@ -1541,6 +1542,9 @@
     "src/features/model-routing/ui/delegation/DelegationKeyMenu.tsx": {
       "bycoda/disabled-needs-reason": 1
     },
+    "src/features/model-routing/ui/delegation/DelegationSettings.fixture.tsx": {
+      "bycoda/menu-uses-dropdown": 1
+    },
     "src/features/model-routing/ui/delegation/DelegationSettings.tsx": {
       "bycoda/disabled-needs-reason": 2
     },
@@ -2536,6 +2540,7 @@
       "bycoda/disabled-needs-reason": 1
     },
     "src/features/skills/ui/SkillsPage.tsx": {
+      "bycoda/dialog-single-translator": 2,
       "bycoda/disabled-needs-reason": 3,
       "bycoda/effect-names-its-sync": 6,
       "bycoda/suppression-has-reason": 2
@@ -2685,6 +2690,12 @@
     },
     "src/features/source-control/hooks/useSubmodulePointers.ts": {
       "bycoda/effect-names-its-sync": 2
+    },
+    "src/features/source-control/model/gitConfirmation.ts": {
+      "bycoda/dialog-single-translator": 1
+    },
+    "src/features/source-control/model/worktreeRemovalControl.ts": {
+      "bycoda/dialog-single-translator": 1
     },
     "src/features/source-control/ui/BranchManagerDialog.tsx": {
       "bycoda/disabled-needs-reason": 5
@@ -2981,6 +2992,7 @@
     "src/features/terminal/ui/TerminalTools.tsx": {
       "bycoda/disabled-needs-reason": 10,
       "bycoda/effect-names-its-sync": 4,
+      "bycoda/menu-uses-dropdown": 1,
       "jsx-a11y/no-static-element-interactions": 2
     },
     "src/features/terminal/ui/TerminalView.tsx": {
@@ -3139,7 +3151,8 @@
       "bycoda/shared-container-appearance": 1
     },
     "src/features/workspace/ui/TabGroupMenu.tsx": {
-      "bycoda/disabled-needs-reason": 1
+      "bycoda/disabled-needs-reason": 1,
+      "bycoda/menu-uses-dropdown": 1
     },
     "src/features/workspace/ui/WorkspacePicker.tsx": {
       "bycoda/disabled-needs-reason": 1,
