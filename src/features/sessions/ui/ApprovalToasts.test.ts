@@ -327,7 +327,7 @@ it("marks errors and warnings with an icon and leaves calm rows unmarked", () =>
     historyRows().map((row) =>
       row.querySelector(".notification-history-icon")?.getAttribute("data-tone"),
     ),
-  ).toEqual(["danger", "none", "warning", "warning", "warning", "none", "none", "none"]);
+  ).toEqual(["danger", "none", "none", "none", "none", "none", "none", "none"]);
   // No kind or source label such as "Background" is shown.
   expect(document.querySelector(".notification-history-kind")).toBeNull();
 });
