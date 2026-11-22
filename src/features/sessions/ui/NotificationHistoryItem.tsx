@@ -19,8 +19,7 @@ import {
 } from "../../../shared/ui/icons";
 import { NoticeGlyph } from "../../../shared/ui/Notice";
 import { useNotificationProjects } from "../../notifications/hooks/useNotificationProjects";
-import type { NotificationHistoryEntry } from "../../notifications/model/notificationHistory";
-import { historyTone } from "../../notifications/model/notificationRows";
+import { historyTone, type NotificationHistoryEntry } from "../../notifications";
 import { HARNESS_LABEL, sessionDisplayTitle, type HarnessId } from "../model/session";
 
 /** Date and time of a pending request; log rows show a relative time instead. */
