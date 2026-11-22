@@ -86,6 +86,27 @@ for (const [theme, width] of workViewports) {
     await expect(resultHeading).toBeVisible();
   });
 }
+test("fullscreen voice questions stay accessible with Chat open on a narrow window", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 560, height: 800 });
+  await page.goto("/tests/browser/voice/voice-visual-styles.html?global");
+  await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+  const panel = page.locator("section[data-voice-state]");
+  await panel.getByRole("button", { name: "Full screen", exact: true }).click();
+  await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+  const chat = panel.getByRole("region", { name: "Conversation" });
+  await panel.getByRole("button", { name: "Chat", exact: true }).click();
+  await expect(chat).toBeVisible();
+  await page.evaluate(() => {
+    (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech("show choices");
+  });
+  await expect(panel.getByRole("group", { name: "Which project should I follow?" })).toBeVisible();
+  await panel.getByRole("radio", { name: /Clinic/ }).click();
+  await panel.getByRole("button", { name: "Send answer", exact: true }).click();
+  await expect(chat.getByText("Your project choice has been recorded.")).toBeVisible();
+});
+
 for (const [theme, width] of workViewports)
   test(`call particles and light follow voice ${theme} ${width}`, async ({ page }) => {
     await mkdir(captures, { recursive: true });
@@ -756,11 +777,20 @@ for (const theme of ["light", "dark"]) {
       await expect(group.getByRole("button")).toHaveCount(2);
       const primaryBox = (await launcher.boundingBox())!;
       const settingsBox = (await trigger.boundingBox())!;
-      expect(settingsBox.x).toBeCloseTo(primaryBox.x + primaryBox.width, 0);
-      expect(settingsBox.y + settingsBox.height / 2).toBeCloseTo(
-        primaryBox.y + primaryBox.height / 2,
-        0,
-      );
+      if (width === 800) {
+        expect(settingsBox.y).toBeCloseTo(primaryBox.y + primaryBox.height, 0);
+        expect(settingsBox.x + settingsBox.width / 2).toBeCloseTo(
+          primaryBox.x + primaryBox.width / 2,
+          0,
+        );
+        await expect(trigger.locator("svg.lucide-chevron-down")).toHaveCount(1);
+      } else {
+        expect(settingsBox.x).toBeCloseTo(primaryBox.x + primaryBox.width, 0);
+        expect(settingsBox.y + settingsBox.height / 2).toBeCloseTo(
+          primaryBox.y + primaryBox.height / 2,
+          0,
+        );
+      }
       expect(settingsBox.width).toBe(24);
       expect(settingsBox.height).toBe(24);
       await expect(trigger.locator("svg")).toHaveCSS("inline-size", "12px");

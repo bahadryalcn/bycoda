@@ -23,8 +23,11 @@
 :global(html[data-control-density="touch"]) .dockedWakeTrigger[data-button-size="xs"] {
   inline-size: var(--ui-control-height-xs);
 }
-:global(html[data-control-density="touch"]) .launcherSlot[data-compact] .dockedLauncherGroup {
+.launcherSlot[data-compact] .dockedLauncherGroup {
   flex-direction: column;
+}
+.launcherSlot[data-compact] .dockedLauncherGroup > * {
+  margin-inline: auto;
 }
 .wakeMenu {
   display: grid;

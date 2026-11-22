@@ -14,7 +14,7 @@ import { t } from "../../../../shared/i18n";
 import { AssistantAvatarMark } from "../../../assistant/public/avatar";
 import { Button } from "../../../../shared/ui/Button";
 import { ButtonGroup } from "../../../../shared/ui/ButtonGroup";
-import { AppWindow } from "../../../../shared/ui/icons";
+import { AppWindow, ChevronDown, ChevronUp } from "../../../../shared/ui/icons";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { Popover } from "../../../../shared/ui/Popover";
 import { Portal } from "../../../../shared/ui/Portal";
@@ -199,7 +199,7 @@ export function VoiceLauncher({
           className={slot ? styles.dockedLauncherGroup : undefined}
         >
           {launchButton}
-          <VoiceWakeMenu controls={wakeControls} docked={Boolean(slot)} />
+          <VoiceWakeMenu controls={wakeControls} docked={Boolean(slot)} compact={compact} />
         </ButtonGroup>
       ) : (
         launchButton
@@ -208,7 +208,15 @@ export function VoiceLauncher({
   );
 }
 
-function VoiceWakeMenu({ controls, docked }: { controls: VoiceWakeControls; docked: boolean }) {
+function VoiceWakeMenu({
+  controls,
+  docked,
+  compact,
+}: {
+  controls: VoiceWakeControls;
+  docked: boolean;
+  compact: boolean;
+}) {
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -234,6 +242,7 @@ function VoiceWakeMenu({ controls, docked }: { controls: VoiceWakeControls; dock
         aria-controls={open ? id : undefined}
         expanded={open}
         opens="up"
+        endIcon={compact ? open ? <ChevronUp /> : <ChevronDown /> : undefined}
         onClick={() => setOpen((current) => !current)}
       />
       {open && (

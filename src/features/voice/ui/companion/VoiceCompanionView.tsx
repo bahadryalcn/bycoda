@@ -134,7 +134,9 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   );
   // Like the phone call screen: a large stage by default, the transcript on request. Kept here,
   // above the compact switch, so the choice survives collapsing the panel.
-  const [chatShown, setChatShown] = useState(false);
+  const [chatRequested, setChatShown] = useState(false);
+  const canShowDrawers = !p.fullScreen || (!p.choice && !p.jobReview);
+  const chatShown = chatRequested && canShowDrawers;
   const chatToggle = useRef<HTMLButtonElement>(null);
   const chatPanel = useRef<HTMLElement>(null);
   const closeChat = () => {
@@ -147,7 +149,10 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   const workPanelId = useId();
   const artwork = p.fullScreen ? callArtworkState(p.status, p.visualState, p.phase) : p.visualState;
   const drawerMotion = motionAttributes(
-    { enter: p.workPanel && !chatShown ? "right" : undefined, duration: "standard" },
+    {
+      enter: canShowDrawers && p.workPanel && !chatShown ? "right" : undefined,
+      duration: "standard",
+    },
     styles.workDrawer,
   );
   const caption = p.chatTurns[p.chatTurns.length - 1]?.text ?? "";
@@ -250,7 +255,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               entries={p.toolActivities}
               onStopWaiting={p.onStopWaiting}
             />
-            {p.fullScreen && (
+            {p.fullScreen && canShowDrawers && (
               <Button
                 ref={chatToggle}
                 touchTarget="control"
@@ -265,7 +270,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               </Button>
             )}
             <VoiceOptionsMenu onFloat={p.canDetach ? p.onFloat : undefined} />
-            {p.fullScreen && p.onToggleWorkPanel ? (
+            {p.fullScreen && canShowDrawers && p.onToggleWorkPanel ? (
               <Button
                 ref={p.workPanelToggleRef}
                 touchTarget="control"
@@ -419,7 +424,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           {p.fullScreen && (
             <div
               id={workPanelId}
-              hidden={!p.workPanel || chatShown}
+              hidden={!canShowDrawers || !p.workPanel || chatShown}
               {...drawerMotion}
               {...surfaceAttributes(
                 { variant: "opaque-canvas", frame: "pane", edge: "responsive-start" },
