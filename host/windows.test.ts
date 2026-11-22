@@ -167,10 +167,11 @@ it("uses an unlimited, unelevated per-user task and preserves literal paths", ()
   expect(script).toContain("-LogonType Interactive -RunLevel Limited");
   expect(script).toContain("-ExecutionTimeLimit ([TimeSpan]::Zero)");
   expect(script).toContain("-MultipleInstances IgnoreNew");
+  expect(script).toContain("-Priority 4");
   expect(script).not.toMatch(/Add-Type|EncodedCommand|ScriptBlock|service\.ps1/);
   expect(script).toContain("bycoda-host-launcher.exe");
   expect(script).toContain("service-launcher.json");
-  expect(script).toContain("Set-ScheduledTask -TaskName $name -Action $action");
+  expect(script).toContain("Set-ScheduledTask -TaskName $name @taskUpdate");
   expect(script).not.toMatch(/Stop-ScheduledTask|Unregister-ScheduledTask|S4U|RunLevel Highest/);
   // The descriptor must not depend on whether the registering token was elevated.
   const secured = script.indexOf(
@@ -407,17 +408,24 @@ $script:registeredTask = $null
 $script:registrations = 0
 $script:starts = 0
 $script:migrations = 0
+$script:priorityRepairs = 0
 function Get-ScheduledTask { param($TaskName, $ErrorAction) return $script:registeredTask }
 function Set-ScheduledTask {
-  param($TaskName, $Action, $ErrorAction)
-  $script:migrations++
-  $script:registeredTask.Actions = @($Action)
+  param($TaskName, $Action, $Settings, $ErrorAction)
+  if ($PSBoundParameters.ContainsKey('Action')) {
+    $script:migrations++
+    $script:registeredTask.Actions = @($Action)
+  }
+  if ($PSBoundParameters.ContainsKey('Settings')) {
+    $script:priorityRepairs++
+    $script:registeredTask.Settings = $Settings
+  }
 }
 function Register-ScheduledTask {
   param($TaskName, $Action, $Principal, $Trigger, $Settings, $Description)
   $script:registrations++
-  $script:registeredTask = [PSCustomObject]@{ Principal = $Principal; Actions = @($Action); State = 'Ready' }
-  @{ user = $Principal.UserId; sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; logon = $Principal.LogonType.ToString(); limit = $Settings.ExecutionTimeLimit; instances = $Settings.MultipleInstances.ToString(); executable = $Action.Execute; action = $Action.Arguments } | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psQuote(join(directory, "task.json"))}
+  $script:registeredTask = [PSCustomObject]@{ Principal = $Principal; Actions = @($Action); State = 'Ready'; Settings = $Settings }
+  @{ user = $Principal.UserId; sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; logon = $Principal.LogonType.ToString(); limit = $Settings.ExecutionTimeLimit; instances = $Settings.MultipleInstances.ToString(); executable = $Action.Execute; action = $Action.Arguments; priority = $Settings.Priority } | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psQuote(join(directory, "task.json"))}
 }
 function Start-ScheduledTask { param($TaskName) $script:starts++ }
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -425,9 +433,17 @@ ${fakeScheduler(elevatedDescriptor)}
 ${windowsTaskScript(options, process.env.PATH ?? "")}
 $script:registeredTask.Actions = @([PSCustomObject]@{ Execute = 'powershell.exe'; Arguments = 'old' })
 ${windowsTaskScript(options, process.env.PATH ?? "")}
+$script:registeredTask.Settings = New-ScheduledTaskSettingsSet -Priority 7 -WakeToRun
 ${windowsTaskScript(options, process.env.PATH ?? "")}
+$repairedPriority = $script:registeredTask.Settings.Priority
+$preservedWakeToRun = $script:registeredTask.Settings.WakeToRun
+$script:registeredTask.Settings.Priority = 6
+${windowsTaskScript(options, process.env.PATH ?? "")}
+$customPriority = $script:registeredTask.Settings.Priority
+$script:registeredTask.Settings.Priority = 7
 $script:registeredTask.State = 'Running'
 ${windowsTaskScript(options, process.env.PATH ?? "")}
+$runningPriority = $script:registeredTask.Settings.Priority
 [IO.File]::WriteAllText(${psQuote(join(directory, "bycoda-host-launcher.exe"))}, 'changed launcher')
 $liveRejected = $false
 try { ${windowsTaskScript(options, process.env.PATH ?? "")} } catch {
@@ -443,7 +459,7 @@ try {
   if ($_.Exception.Message -notlike '*different user*') { throw }
   $rejected = $true
 }
-@{ sid = $sid; sddl = $script:sddl; descriptorSets = $script:descriptorSets; definition = $definition; registrations = $script:registrations; migrations = $script:migrations; starts = $script:starts; rejected = $rejected; liveRejected = $liveRejected; userSid = if ($definition.user -match '^S-1-') { $definition.user } else { ([Security.Principal.NTAccount]::new($definition.user)).Translate([Security.Principal.SecurityIdentifier]).Value } } | ConvertTo-Json -Compress
+@{ sid = $sid; sddl = $script:sddl; descriptorSets = $script:descriptorSets; definition = $definition; registrations = $script:registrations; migrations = $script:migrations; priorityRepairs = $script:priorityRepairs; repairedPriority = $repairedPriority; preservedWakeToRun = $preservedWakeToRun; customPriority = $customPriority; runningPriority = $runningPriority; starts = $script:starts; rejected = $rejected; liveRejected = $liveRejected; userSid = if ($definition.user -match '^S-1-') { $definition.user } else { ([Security.Principal.NTAccount]::new($definition.user)).Translate([Security.Principal.SecurityIdentifier]).Value } } | ConvertTo-Json -Compress
 `),
     );
     expect(result.userSid).toBe(result.definition.sid);
@@ -453,8 +469,14 @@ try {
     expect(result.sddl).toBe(
       `O:${result.sid}G:${result.sid}D:(A;;FA;;;${result.sid})(A;;FA;;;BA)(A;;FA;;;SY)`,
     );
-    expect(result.starts).toBe(4);
+    expect(result.starts).toBe(5);
     expect(result.migrations).toBe(1);
+    expect(result.definition.priority).toBe(4);
+    expect(result.priorityRepairs).toBe(1);
+    expect(result.repairedPriority).toBe(4);
+    expect(result.preservedWakeToRun).toBe(true);
+    expect(result.customPriority).toBe(6);
+    expect(result.runningPriority).toBe(7);
     expect(result.rejected).toBe(true);
     expect(result.liveRejected).toBe(true);
     expect(["Interactive", "3"]).toContain(result.definition.logon);

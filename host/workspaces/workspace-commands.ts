@@ -534,7 +534,7 @@ export class WorkspaceCommands {
       case "git_diff_files":
         return await this.gitIndex(input.cwd, false);
       case "git_diff_stats":
-        return this.gitIndex(input.cwd, false).then((index) => ({
+        return hostGitIndex(await this.gitRoot(input.cwd), false, false).then((index) => ({
           files: index.files.length + (index.conflicts?.length ?? 0),
           additions: index.additions,
           deletions: index.deletions,

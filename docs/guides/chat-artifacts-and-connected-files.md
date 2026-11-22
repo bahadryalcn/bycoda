@@ -7,6 +7,8 @@ Markdown formatting appears in the chat composer as you type, including drafts w
 attachments and links. Move the caret onto a Markdown marker to see and edit it. Sent messages
 display Markdown, and **Show full content** opens long
 messages with the same formatting. **Copy message** and **Save as note** use the original Markdown.
+Drafts with a very long unbroken line use the native text field so the caret stays visible
+while typing. The draft keeps its text and attachment references.
 **Copy message** includes file and image attachments, including those loaded from a connected machine or reopened from a saved conversation.
 If an attachment cannot be read, copying fails with its file name in **Details** and keeps the previous clipboard contents.
 If copying fails, press **Copy message** again to retry or open **Details** for the reason.

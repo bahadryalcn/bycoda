@@ -50,7 +50,7 @@ function setup() {
     repository: {
       projectList: vi.fn(async () => ({ list: [{ id: "session" }], etag: "etag" })),
       session: vi.fn(async () => value),
-      sync: vi.fn(async () => sync),
+      sessionSync: vi.fn(async () => ({ current: value, sync })),
       readView: vi.fn(async () => value),
       catchUp: vi.fn(async () => {}),
     },
@@ -240,6 +240,13 @@ describe("session read domain", () => {
     // A surviving desktop watch remains the owner projection, matching legacy behavior.
     expect(result).toMatchObject({ kind: "snapshot", value: { executionOwner: "desktop" } });
   });
+  it("loads the stored view and its sync through one cancellable read", async () => {
+    const { service, ports, auth } = setup();
+    const abort = new AbortController();
+    await service.sync({ sessionId: "s", revision: 7 }, { ...auth, signal: abort.signal });
+    expect(ports.repository.sessionSync).toHaveBeenCalledOnce();
+    expect(ports.repository.sessionSync).toHaveBeenCalledWith("s", 7, abort.signal);
+  });
   it("falls back to a bounded snapshot when partial sync cannot be formed", async () => {
     const { service, ports, auth } = setup();
     await service.sync(
@@ -275,12 +282,16 @@ describe("session read domain", () => {
   });
   it("adds the full transcript head and rewind preview to a delta", async () => {
     const { service, ports, auth } = setup();
-    vi.mocked(ports.repository.sync).mockResolvedValue({
-      kind: "delta",
-      base: 7,
-      value: { revision: 8, status: "running", session: { title: "new" } },
-      blockIds: [],
-      blocks: [],
+    const current = await ports.repository.session("s");
+    vi.mocked(ports.repository.sessionSync).mockResolvedValue({
+      current,
+      sync: {
+        kind: "delta",
+        base: 7,
+        value: { revision: 8, status: "running", session: { title: "new" } },
+        blockIds: [],
+        blocks: [],
+      },
     });
     expect(await service.sync({ sessionId: "s", revision: 7, digests: true }, auth)).toMatchObject({
       kind: "delta",

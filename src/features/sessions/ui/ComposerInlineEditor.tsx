@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { flushSync } from "react-dom";
 import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { observeResize } from "../../../shared/lib/observeResize";
@@ -9,7 +10,10 @@ import {
   ComposerSkillReference,
   UnavailableReference,
 } from "./ComposerReferenceActions";
+import { resizeComposer } from "../model/composerResize";
 import { attachComposerInlineInput } from "./composerInlineInput";
+import { attachNativeHistory, type NativeHistory } from "./composerInlineHistory";
+import { INLINE_LINE_LIMIT, hasLongLine, keepsNativeField } from "./composerInlineLongLine";
 import { inlineComposerWidgets } from "./composerInlineWidgets";
 import {
   composerInlineReferences,
@@ -78,11 +82,29 @@ export function ComposerInlineEditor({
       : reference.label,
   );
 
+  // A draft with a very long line stays in the native field (see composerInlineLongLine.ts).
+  const native = useRef(false);
+  // Undo history of the editor that left, applied to the native field until an editor returns.
+  const held = useRef<NativeHistory | null>(null);
+  const settle = useRef<number | null>(null);
+
   const activate = useStableCallback(() => {
     const input = field.current;
     const parent = mount.current;
-    if (!input || !parent || editor.current || !parent.parentElement?.clientWidth || !input.value)
+    if (
+      !input ||
+      !parent ||
+      editor.current ||
+      held.current?.composing ||
+      !parent.parentElement?.clientWidth ||
+      !input.value
+    )
       return;
+    native.current = keepsNativeField(input.value, native.current);
+    if (native.current) {
+      if (!held.current) held.current = attachNativeHistory(input);
+      return;
+    }
     const configuration = current();
     // Highlight-only mentions already work in the textarea and do not need replacement widgets.
     const references = composerInlineReferences(input.value, configuration.references);
@@ -93,21 +115,70 @@ export function ComposerInlineEditor({
       menu: openMenu,
       openLabel,
     });
+    const seed = held.current?.release();
+    held.current = null;
     editor.current = {
       widgets,
-      input: attachComposerInlineInput(input, parent, configuration.settings, widgets.extension),
+      input: attachComposerInlineInput(
+        input,
+        parent,
+        configuration.settings,
+        widgets.extension,
+        seed,
+      ),
     };
     onReady(true);
+  });
+
+  const leave = useStableCallback(() => {
+    const mounted = editor.current;
+    const input = field.current;
+    if (!mounted || !input) return;
+    const { view } = mounted.input;
+    const focused = view.hasFocus || view.root.activeElement === view.contentDOM;
+    const state = view.state;
+    editor.current = null;
+    native.current = true;
+    // The view already wrote its text and selection to the field; destroy restores the field's own methods.
+    mounted.input.destroy();
+    held.current?.release();
+    held.current = attachNativeHistory(input, state);
+    onReady(false);
+    // The parent shows the field again in the re-render this state change flushes before the microtask.
+    queueMicrotask(() => {
+      if (!input.isConnected) return;
+      resizeComposer(input);
+      if (!focused) return;
+      input.focus();
+      if (input.selectionEnd === input.value.length) input.scrollTop = input.scrollHeight;
+    });
+  });
+
+  // An open composition ends in the view that started it; leave once it has settled.
+  const leaveWhenIdle = useStableCallback(() => {
+    const view = editor.current?.input.view;
+    if (view && (view.composing || view.compositionStarted)) return;
+    if (settle.current !== null) window.clearInterval(settle.current);
+    settle.current = null;
+    if (view && hasLongLine(view.state.doc.toString(), INLINE_LINE_LIMIT)) flushSync(leave);
   });
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Mount once when a referenced draft has a visible field, and dispose it with that field.
   useEffect(() => {
     const container = mount.current?.parentElement;
-    if (!container) return;
+    const input = field.current;
+    if (!container || !input) return;
+    const afterComposition = () => queueMicrotask(activate);
+    input.addEventListener("compositionend", afterComposition);
     const stop = observeResize(container, activate);
     activate();
     return () => {
       stop();
+      input.removeEventListener("compositionend", afterComposition);
+      if (settle.current !== null) window.clearInterval(settle.current);
+      settle.current = null;
+      held.current?.release();
+      held.current = null;
       editor.current?.input.destroy();
       editor.current = null;
     };
@@ -116,10 +187,22 @@ export function ComposerInlineEditor({
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronize external drafts and editor settings after the composer writes to its input endpoint.
   useLayoutEffect(() => {
     const mounted = editor.current;
-    if (!mounted) return;
+    if (!mounted) {
+      held.current?.sync();
+      if (native.current) activate();
+      return;
+    }
+    if (hasLongLine(text, INLINE_LINE_LIMIT)) {
+      const { view } = mounted.input;
+      if (!view.composing && !view.compositionStarted) {
+        leave();
+        return;
+      }
+      if (settle.current === null) settle.current = window.setInterval(leaveWhenIdle, 50);
+    }
     mounted.input.sync();
     mounted.input.configure({ label, placeholder, readOnly, disabled, spellCheck });
-  }, [text, label, placeholder, readOnly, disabled, spellCheck]);
+  }, [text, label, placeholder, readOnly, disabled, spellCheck, activate, leave, leaveWhenIdle]);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronize widgets after attachments, files or skill catalogs change in the mounted view.
   useLayoutEffect(() => {

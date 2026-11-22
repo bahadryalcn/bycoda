@@ -92,11 +92,20 @@ if ($null -ne $task -and $task.State -eq 'Running') {
 if ($null -eq $task) {
   $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $sid
-  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
+  $settings = New-ScheduledTaskSettingsSet -Priority 4 -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
   Register-ScheduledTask -TaskName $name -Action $action -Principal $principal -Trigger $trigger -Settings $settings -Description 'Bycoda remote agent host for this user' | Out-Null
-} else {
+} elseif ($task.State -ne 'Running') {
+  $taskUpdate = @{}
   if ($task.Actions.Count -ne 1 -or $task.Actions[0].Execute -ne $action.Execute -or $task.Actions[0].Arguments -ne $action.Arguments) {
-    Set-ScheduledTask -TaskName $name -Action $action -ErrorAction Stop | Out-Null
+    $taskUpdate.Action = $action
+  }
+  # Migrate the scheduler's old default without replacing the task's other settings.
+  if ($task.Settings.Priority -eq 7) {
+    $task.Settings.Priority = 4
+    $taskUpdate.Settings = $task.Settings
+  }
+  if ($taskUpdate.Count -gt 0) {
+    Set-ScheduledTask -TaskName $name @taskUpdate -ErrorAction Stop | Out-Null
   }
 }
 # Task Scheduler's default DACL follows the registering token: an elevated

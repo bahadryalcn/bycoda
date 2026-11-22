@@ -51,7 +51,7 @@ function gitReplies() {
           : command === "symbolic-ref"
             ? "main\n"
             : args.includes("--is-inside-work-tree")
-              ? "true\nhead\n"
+              ? `true\n\n${"a".repeat(40)}\n`
               : args.includes("--verify")
                 ? "head\n"
                 : command === "ls-files" && !args.includes("--deleted")

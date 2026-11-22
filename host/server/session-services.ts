@@ -104,12 +104,20 @@ export function createSessionServicesRuntime(
     repository: {
       projectList: dependencies.projectSessionList,
       session: (id, signal) => dependencies.engine.store.session(id, signal),
-      sync: (id, revision, signal) => dependencies.engine.store.sync(id, revision, signal),
+      sessionSync: (id, revision, signal) =>
+        dependencies.engine.store.sessionSync(id, revision, signal),
       readView: dependencies.readSessionView,
-      catchUp: (id, signal) => dependencies.catchUp(id, undefined, signal),
+      catchUp: async (id, signal) => {
+        // Only a stored desktop copy can be newer; the refresh would load the session to learn that.
+        const metadata = await dependencies.engine.store
+          .sessionReadMetadata(id)
+          .catch(() => undefined);
+        if (metadata && !metadata.desktop) return;
+        await dependencies.catchUp(id, undefined, signal);
+      },
     },
     nativeProjection: {
-      watch: dependencies.desktopWatch,
+      watch: (id, fresh, signal) => dependencies.desktopWatch(id, fresh, signal, true),
       view: dependencies.desktopView,
       sync: dependencies.desktopSync,
       recheckMs: dependencies.desktopRecheckMs,
