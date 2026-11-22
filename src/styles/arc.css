@@ -22,7 +22,7 @@ html:root {
   --ui-field-height-sm: var(--ui-control-height-compact);
   --ui-field-height-md: var(--ui-control-height);
   --ui-field-radius: var(--ui-radius-control);
-  /* Fields rest with a faint frame (about 1.5:1 against the field ground, T3 Code) and a muted
+  /* Fields rest with a faint frame (about 1.5:1 against the field ground) and a muted
      ground (--ui-field-surface) so they stay findable without a focus frame. Check boxes and other
      non-field controls keep the stronger --ui-control-border. */
   --ui-field-surface: var(--ui-surface-muted);

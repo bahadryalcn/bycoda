@@ -35,7 +35,7 @@ import { WorkspaceBootstrapService } from "../workspaces/workspace-bootstrap";
 import { createManagedNativeTurns } from "./managed-native-turns";
 import { createManagedNativeRewind } from "./managed-native-rewind";
 import { createManagedNativeActivity } from "./managed-native-activity";
-import { createNativeBufferPersistence } from "../native-buffer/native-buffer-persistence-factory";
+import { removeRetiredNativeBufferFiles } from "../storage/retired-native-buffer-cleanup";
 import { createExactGitRewindPolicy } from "../git/exact-git-rewind";
 
 export { workspacePathKey } from "../workspaces/workspace-paths";
@@ -92,10 +92,8 @@ export function createManagedWorkspaceRuntime(
           }
         }),
     );
-  const probe = async (workspaceId: string) => [
-    ...((await options.probe?.(await get(workspaceId))) ?? []),
-    ...(await nativeActivity.probe(workspaceId)),
-  ];
+  const probe = async (workspaceId: string) =>
+    (await options.probe?.(await get(workspaceId))) ?? [];
   const pending = async (workspaceId: string, except?: string) => {
     const candidate = except ? await store.workspaceOperation(except) : null;
     const completedDelivery =
@@ -223,7 +221,6 @@ export function createManagedWorkspaceRuntime(
   };
   const history = new GitTurnHistory({ root, workspace });
   const nativeActivity = createManagedNativeActivity({
-    bufferPersistence: createNativeBufferPersistence(store),
     exactGitRewindEnabled: exactGitRewind.enabled,
     root,
     workspace,
@@ -504,10 +501,6 @@ export function createManagedWorkspaceRuntime(
       step: <T>(name: string, work: () => Promise<T>) => Promise<T> = (_name, work) => work(),
     ) {
       const initialStartup = !started;
-      // Actual process-startup data migration completes before server admission
-      // or managed writes. It never reconstructs Native actors or freshness.
-      if (initialStartup)
-        await step("buffer-retention", () => nativeActivity.initializeBufferRetention());
       // Settle only unfenced prior Host turns. The AsyncLocal scope admits startup
       // normalization without exposing managed writes to any transport or caller.
       if (initialStartup)
@@ -569,6 +562,12 @@ export function createManagedWorkspaceRuntime(
         }
       });
       await step("orphan-reservations", () => activity.recoverOrphanReservations());
+      // One-time removal of the retired native buffer directories; failures log and retry
+      // on the next start, never blocking boot.
+      if (initialStartup)
+        await step("retired-native-buffer-files", () =>
+          removeRetiredNativeBufferFiles(dirname(store.attachmentDir), root),
+        );
       started = true;
       if (initialStartup)
         await step("startup-turns-final", () =>

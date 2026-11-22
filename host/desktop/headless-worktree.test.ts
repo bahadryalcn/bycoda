@@ -1,7 +1,7 @@
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { DesktopLive } from "./desktopLive";
 import {
   assertPrivateCheckout,
@@ -122,4 +122,90 @@ it("rejects an interactive Host, an unrelated effective UID match, and unreadabl
   } finally {
     await rm(proc, { recursive: true, force: true });
   }
+});
+
+it("grants the unattended removal path only after the grace period and only on opt-in", async () => {
+  let at = 1_000_000;
+  const live = new DesktopLive(() => at, false, undefined);
+  const lease = (unattended?: boolean, run = async (assert: () => void) => assert()) =>
+    live.withRemovalLease("x", "/repo", run, undefined, { unattended });
+  await expect(lease()).rejects.toThrow("native terminal usage");
+  // Just after a Host start a desktop may still be reconnecting.
+  await expect(lease(true)).rejects.toThrow("native terminal usage");
+  at += 121_000;
+  await expect(lease(true)).resolves.toBeUndefined();
+  live.beat({ clientId: "laptop", sessions: [] });
+  await expect(lease(true)).rejects.toThrow("native terminal usage");
+  at += 60_000;
+  await expect(lease(true)).rejects.toThrow("native terminal usage");
+  at += 61_000;
+  await expect(lease()).rejects.toThrow("native terminal usage");
+  await expect(lease(true)).resolves.toBeUndefined();
+  await expect(
+    lease(true, async (assert) => {
+      live.beat({ clientId: "laptop", sessions: [] });
+      assert();
+    }),
+  ).rejects.toThrow("native terminal usage");
+});
+
+it("keeps the dedicated verifier path when no desktop is known", async () => {
+  const verify = vi.fn(async () => {});
+  const live = new DesktopLive(Date.now, false, verify);
+  await live.withRemovalLease(
+    "1",
+    "/repo",
+    async () => {},
+    async () => "/project",
+    {
+      unattended: false,
+    },
+  );
+  expect(verify).toHaveBeenCalledWith("/repo", "/project");
+});
+
+/** Runs one attended removal lease whose desktop answers with `reply`. */
+async function attendedLease(
+  requireEditorChecks: boolean,
+  reply: { granted: boolean; checks?: string[]; reason?: string },
+) {
+  const live = new DesktopLive(Date.now, false, undefined, requireEditorChecks);
+  const beat = { clientId: "desktop", sessions: [] };
+  live.beat(beat);
+  const removal = live.withRemovalLease("job", "/repo", async (assertLease) => assertLease());
+  await vi.waitFor(() => {
+    const job = live.removalLeaseBeat(beat).jobs.find((entry) => entry.path);
+    expect(job).toBeDefined();
+    live.removalLeaseBeat({
+      ...beat,
+      removalLeaseReplies: [{ id: job!.id, release: false, ...reply }],
+    });
+  });
+  return removal;
+}
+
+it("surfaces the editors refusal instead of the generic terminal message", async () => {
+  await expect(attendedLease(false, { granted: false, reason: "editors" })).rejects.toThrow(
+    "Save or close unsaved files under this worktree",
+  );
+  await expect(attendedLease(false, { granted: false, reason: "terminals" })).rejects.toThrow(
+    "native terminal usage",
+  );
+});
+
+it("accepts a grant with the editors check and, with the flag off, one without it", async () => {
+  await expect(
+    attendedLease(true, { granted: true, checks: ["editors"] }),
+  ).resolves.toBeUndefined();
+  await expect(
+    attendedLease(false, { granted: true, checks: ["editors"] }),
+  ).resolves.toBeUndefined();
+  await expect(attendedLease(false, { granted: true })).resolves.toBeUndefined();
+});
+
+it("refuses a grant without the editors check once the flag is on", async () => {
+  await expect(attendedLease(true, { granted: true })).rejects.toThrow("Update the desktop app");
+  await expect(attendedLease(true, { granted: true, checks: ["other"] })).rejects.toThrow(
+    "Update the desktop app",
+  );
 });

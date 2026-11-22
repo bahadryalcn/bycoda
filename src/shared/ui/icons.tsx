@@ -63,6 +63,7 @@ import {
   FileCode as LucideFileScript,
   FoldVertical as LucideFoldVertical,
   Folder as LucideFolder,
+  FolderGit2 as LucideFolderGit2,
   FolderOpen as LucideFolderOpen,
   Eye as LucideEye,
   EyeOff as LucideEyeOff,
@@ -430,6 +431,7 @@ export const FilePlusCorner = wrap(LucideFilePlusCorner, "FilePlusCorner");
 export const FileScript = wrap(LucideFileScript, "FileScript");
 export const FoldVertical = wrap(LucideFoldVertical, "FoldVertical");
 export const Folder = wrap(LucideFolder, "Folder");
+export const FolderGit2 = wrap(LucideFolderGit2, "FolderGit2");
 export const FolderOpen = wrap(LucideFolderOpen, "FolderOpen");
 export const Eye = wrap(LucideEye, "Eye");
 export const EyeOff = wrap(LucideEyeOff, "EyeOff");

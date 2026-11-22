@@ -10,7 +10,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { rememberWorkItemMention, type InboxItem } from "../../inbox/public/workItemMentions";
 import { takeInboxItemRequest } from "../../inbox/model/inboxItemRequest";
-import { WorkItemMentionText } from "./ChatCitationText";
+import { ScopedMentionText } from "./ChatCitationText";
 import { ComposerWorkItemToken, WorkItemMentionCwd } from "./WorkItemMentionChip";
 
 let host: HTMLDivElement;
@@ -53,7 +53,7 @@ function render(text: string) {
       createElement(
         WorkItemMentionCwd,
         { value: "/repo" },
-        createElement(WorkItemMentionText, { text }),
+        createElement(ScopedMentionText, { text }),
       ),
     ),
   );
@@ -76,7 +76,7 @@ it("shows a sent tracker token as a chip that keeps the full token as text", () 
 
 it("keeps tracker identity visible without a project or lookup authority", () => {
   const text = "@jira:PFDEV-834 @gh:owner/repo#42";
-  act(() => root.render(createElement(WorkItemMentionText, { text })));
+  act(() => root.render(createElement(ScopedMentionText, { text })));
   expect(host.textContent).toBe(text);
   expect(host.querySelectorAll("[data-work-item-mention] svg")).toHaveLength(2);
   expect(host.querySelector("button")).toBeNull();

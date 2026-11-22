@@ -11,6 +11,7 @@ import type { WorkspaceSessionPaneProps } from "./WorkspaceMainArea";
 type P = WorkspaceSessionPaneProps;
 
 export interface SessionPaneDeps {
+  onOpenVoiceWork?: P["onOpenVoiceWork"];
   onKeepSession: (sessionId: string) => void;
   tabs: WorkspaceTab[];
   movingWindows: ReturnType<typeof useMovingWindowsState>["movingWindows"];
@@ -80,6 +81,7 @@ export interface SessionPaneDeps {
 }
 
 export function useSessionPaneProps({
+  onOpenVoiceWork,
   onKeepSession,
   tabs,
   movingWindows,
@@ -157,6 +159,7 @@ export function useSessionPaneProps({
     [tabs, movingWindows, windowTransferPending],
   );
   const sessionPaneProps = {
+    onOpenVoiceWork,
     windowMovingSessionIds,
     workspaceSwitchingSessionId: workspaceNavigation.pending ? active?.id : undefined,
     recents: visibleRecents,

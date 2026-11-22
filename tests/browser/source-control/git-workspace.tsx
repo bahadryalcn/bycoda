@@ -6,7 +6,11 @@ import { GitHistoryGraph } from "../../../src/features/source-control/ui/GitHist
 import { GitGraphWorkspace } from "../../../src/features/source-control/ui/GitGraphWorkspace";
 import { WorkspaceSourceControl } from "../../../src/features/source-control/ui/WorkspaceSourceControl";
 import { SourceControl } from "../../../src/features/source-control/ui/SourceControl";
-import { checkoutOptionLabel } from "../../../src/features/source-control/model/checkoutSelection";
+import { SidebarWorktreeSwitcher } from "../../../src/features/source-control/ui/SidebarWorktreeSwitcher";
+import {
+  setWorktreeFocus,
+  useWorktreeFocus,
+} from "../../../src/features/source-control/model/worktreeFocus";
 import { GitChangesPanel } from "../../../src/features/source-control/ui/GitChangesPanel";
 import { GitConflictCompare } from "../../../src/features/source-control/ui/GitConflictCompare";
 import { AppConfirmHost } from "../../../src/app/shell/AppConfirmHost";
@@ -80,6 +84,18 @@ let branches = [
   { name: "develop", current: false, remote: null },
   { name: "main", current: false, remote: "origin" },
   { name: "feature/team", current: false, remote: "origin" },
+  // Held by another worktree in the checkouts scenarios: listed under "In a worktree".
+  ...(new URLSearchParams(location.search).has("checkouts")
+    ? [
+        {
+          name: new URLSearchParams(location.search).has("all-repositories")
+            ? "bycoda/s/cross-provider-settings-parity"
+            : "audit/2026-10-14-long-branch-name-for-responsive-review",
+          current: false,
+          remote: null,
+        },
+      ]
+    : []),
 ];
 const file = (relative: string, staged = false) => ({
   relative,
@@ -176,7 +192,10 @@ Object.assign(window, {
         return submodules && args.cwd === "/fixture" ? ["core-pack", "core-pack/nested"] : [];
       }
       if (command === "git_worktrees")
-        return { worktrees: [checkoutTrees["/fixture"]], defaultRoot: "/trees" };
+        return {
+          worktrees: checkouts ? Object.values(checkoutTrees) : [checkoutTrees["/fixture"]],
+          defaultRoot: "/trees",
+        };
       if (
         (submodules || checkouts) &&
         [
@@ -381,7 +400,13 @@ document.body.style.cssText =
 const checkoutTrees: Record<string, Worktree> = Object.fromEntries(
   (allRepositories
     ? ["/fixture", "/trees/cross-provider"]
-    : ["/fixture", "/trees/audit/very-long-worktree-folder-name", "/trees/detached"]
+    : [
+        "/fixture",
+        "/trees/audit/very-long-worktree-folder-name",
+        "/trees/detached",
+        // `?idle` adds a worktree with no work, listed under the collapsed "Clean" group.
+        ...(new URLSearchParams(location.search).has("idle") ? ["/trees/clean-one"] : []),
+      ]
   ).map((path, index) => [
     path,
     {
@@ -393,18 +418,46 @@ const checkoutTrees: Record<string, Worktree> = Object.fromEntries(
             ? allRepositories
               ? "bycoda/s/cross-provider-settings-parity"
               : "audit/2026-10-14-long-branch-name-for-responsive-review"
-            : null,
+            : path === "/trees/clean-one"
+              ? "chore/clean-one"
+              : null,
       head: "fd3caac123456",
       isMain: index === 0,
       locked: false,
       prunable: false,
       missing: false,
-      dirty: true,
-      unpushed: 1,
+      dirty: path !== "/trees/clean-one",
+      unpushed: path === "/trees/clean-one" ? 0 : 1,
       sessionIds: [],
     },
   ]),
 );
+// The production composition: the sidebar header is the only worktree selector, and the Changes
+// panel follows its focus (none means the All-worktrees overview).
+function CheckoutsFixture() {
+  const focus = useWorktreeFocus("/fixture");
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 px-2 py-1">
+        <SidebarWorktreeSwitcher
+          cwd="/fixture"
+          onSelect={(next) => setWorktreeFocus("/fixture", next)}
+        />
+      </div>
+      <SourceControl
+        cwd="/fixture"
+        enabled
+        onOpenRepository={() => {}}
+        onOpenFile={() => {}}
+        onOpenAllChanges={() => {}}
+        onOpenCommit={() => {}}
+      />
+      <output aria-label="Header focus" className="sr-only">
+        {focus?.path ?? "all"}
+      </output>
+    </div>
+  );
+}
 const root = createRoot(document.getElementById("root")!);
 const renderFixture = () =>
   root.render(
@@ -482,23 +535,13 @@ const renderFixture = () =>
             onOpenAllChanges={() => {}}
             onOpenCommit={() => {}}
           />
-        ) : new URLSearchParams(location.search).has("checkouts") ||
-          new URLSearchParams(location.search).has("repositories") ? (
+        ) : checkouts ? (
+          <CheckoutsFixture />
+        ) : new URLSearchParams(location.search).has("repositories") ? (
           <WorkspaceSourceControl
             cwd="/fixture"
             paths={Object.keys(checkoutTrees)}
             worktrees={checkoutTrees}
-            labels={
-              allRepositories
-                ? { "/fixture": "fixture", "/trees/cross-provider": "cross-provider" }
-                : Object.fromEntries(
-                    Object.values(checkoutTrees).map((tree) => [
-                      tree.path,
-                      checkoutOptionLabel(tree, tree.path === "/fixture"),
-                    ]),
-                  )
-            }
-            checkouts={new URLSearchParams(location.search).has("checkouts")}
             enabled
             onOpen={() => {}}
           />

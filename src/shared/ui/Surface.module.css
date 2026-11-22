@@ -219,6 +219,10 @@
 .appearance[data-surface-variant="canvas"] {
   background: var(--ui-workspace-canvas);
 }
+.surface[data-variant="opaque-canvas"],
+.appearance[data-surface-variant="opaque-canvas"] {
+  background: var(--ui-tint-base);
+}
 .surface[data-variant="workspace-panel"],
 .appearance[data-surface-variant="workspace-panel"] {
   background: var(--ui-workspace-panel);

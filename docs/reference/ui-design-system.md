@@ -793,7 +793,7 @@ modules read `--ui-font-*`, never Arc `--text-*` directly.
 inline notices, `--ui-icon-md` 16 row leading slot, box/toast notices, `--ui-icon-lg`
 20 empty states only. Stroke 1.75. One lucide set through `icons.tsx`.
 
-**State fills (soft, T3 Code reference):** rest transparent; hover
+**Soft state fills:** rest transparent; hover
 `--ui-surface-hover`; selected `--ui-surface-selected`; pressed `--ui-surface-pressed`.
 Dark: white-alpha steps (hover ~4%, selected ~8%, pressed ~10%); light: zinc-like steps
 with selected/hover >= 1.15 contrast. `--color-selection*` is not used by controls.

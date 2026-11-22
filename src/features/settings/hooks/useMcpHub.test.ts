@@ -11,25 +11,86 @@ vi.mock("../../connections/public/localSync", () => ({ isLocalSyncMachine: () =>
 vi.mock("../../../platform/tauri/openExternal", () => ({ openExternal: mock.open }));
 import { clearMcpSettingsCache } from "../model/mcpSettingsCache";
 import { useMcpHub, type McpHub } from "./useMcpHub";
+import type { RemoteMcpConfigTarget } from "../model/mcpConfigTarget";
 
 let hub: McpHub;
-function Harness({ cwd, globalOnly = false }: { cwd: string; globalOnly?: boolean }) {
-  hub = useMcpHub(cwd, globalOnly);
+function Harness({
+  cwd,
+  globalOnly = false,
+  remote,
+}: {
+  cwd: string;
+  globalOnly?: boolean;
+  remote?: RemoteMcpConfigTarget;
+}) {
+  hub = useMcpHub(cwd, globalOnly, remote);
   return null;
 }
 
 const containers: HTMLElement[] = [];
-async function mount(cwd = "/fixture", globalOnly = false) {
+async function mount(cwd = "/fixture", globalOnly = false, remote?: RemoteMcpConfigTarget) {
   const container = document.createElement("div");
   document.body.append(container);
   containers.push(container);
   const root = createRoot(container);
-  await act(async () => root.render(createElement(Harness, { cwd, globalOnly })));
+  await act(async () => root.render(createElement(Harness, { cwd, globalOnly, remote })));
   return { unmount: () => act(async () => root.unmount()) };
 }
 
 const policy = (direct: string[], mode = "onDemand") => ({ version: 1, mode, direct });
 const gets = (method: string) => mock.remote.mock.calls.filter((c) => c[1] === method);
+
+it("relays the browser callback to the selected project on the remote computer", async () => {
+  let signedIn = false;
+  const authorizationUrl =
+    "https://example.test/oauth?state=fixture-state&redirect_uri=http%3A%2F%2F127.0.0.1%3A45678%2Fcallback";
+  mock.invoke.mockImplementation(async (command: string) => {
+    if (command === "mcp_oauth_callback_bind") return { id: "local-callback", port: 45678 };
+    if (command === "mcp_oauth_callback_wait") return { state: "fixture-state", code: "test-code" };
+  });
+  mock.remote.mockImplementation(async (_host: string, method: string) => {
+    if (method === "mcp.hub.loading.get")
+      return { policy: policy([]), corrupt: false, servers: [] };
+    if (method === "mcp.oauth.status")
+      return { servers: [{ name: "service", state: signedIn ? "signed-in" : "none" }] };
+    if (method === "mcp.oauth.start") return { authorizationUrl };
+    if (method === "mcp.oauth.complete") {
+      signedIn = true;
+      return { status: "success" };
+    }
+  });
+  const { unmount } = await mount("/host/project", false, {
+    machineId: "office",
+    environmentId: "office-env",
+    projectId: "host-project",
+  });
+  await act(async () => hub.signIn("service"));
+  expect(mock.open).toHaveBeenCalledWith(authorizationUrl);
+  expect(mock.invoke).toHaveBeenCalledWith("mcp_oauth_callback_wait", {
+    id: "local-callback",
+    state: "fixture-state",
+  });
+  expect(mock.invoke).toHaveBeenCalledWith("mcp_oauth_callback_cancel", { id: "local-callback" });
+  expect(mock.remote).toHaveBeenCalledWith(
+    "office",
+    "mcp.oauth.start",
+    { name: "service", projectId: "host-project", callbackPort: 45678 },
+    false,
+    true,
+    "office-env",
+  );
+  expect(mock.remote).toHaveBeenCalledWith(
+    "office",
+    "mcp.oauth.complete",
+    { name: "service", projectId: "host-project", state: "fixture-state", code: "test-code" },
+    false,
+    true,
+    "office-env",
+  );
+  expect(hub.oauth?.[0]?.state).toBe("signed-in");
+  expect(hub.waiting).toBe("");
+  await unmount();
+});
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

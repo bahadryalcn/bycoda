@@ -4,15 +4,6 @@
 use super::*;
 use std::sync::Weak;
 
-pub(super) fn native_profile_recovery(method: &str) -> bool {
-    matches!(
-        method,
-        "native.buffers.recovery.list"
-            | "native.buffers.recovery.read"
-            | "native.buffers.recovery.status"
-    )
-}
-
 const MAX_CALLERS: usize = 128;
 const ANCHOR: &str = "native-profile-owner";
 
@@ -111,10 +102,6 @@ fn unavailable() -> WsFailure {
     )
 }
 impl NativeProfileBroker {
-    pub(crate) fn supports_params(method: &str, params: &Value) -> bool {
-        Self::supports_scoped_params(method, params, RequestScope::NativeProfile)
-    }
-
     pub(crate) fn supports_workspace_params(method: &str, params: &Value) -> bool {
         Self::supports_scoped_params(method, params, RequestScope::NativeWorkspace)
     }
@@ -135,19 +122,8 @@ impl NativeProfileBroker {
         Self::supports_scoped_params(method, params, RequestScope::NativePeerService)
     }
 
-    pub(crate) fn validates_workspace_params(method: &str, params: &Value) -> bool {
-        native_workspace_method(method)
-            && Contracts::get().is_ok_and(|contracts| {
-                contracts
-                    .methods
-                    .get(method)
-                    .is_some_and(|descriptor| descriptor.params.is_valid(params))
-            })
-    }
-
     fn supports_scoped_params(method: &str, params: &Value, scope: RequestScope) -> bool {
         let allowed = match scope {
-            RequestScope::NativeProfile => native_profile_recovery(method),
             RequestScope::NativeWorkspace => native_workspace_method(method),
             RequestScope::NativeGateway => native_gateway_method(method),
             RequestScope::NativeService => native_service_method(method),
@@ -169,16 +145,6 @@ impl NativeProfileBroker {
                     )
                     .is_some()
             })
-    }
-
-    /// The caller must pin and recheck the real Native-selected saved route.
-    /// Merely possessing a renderer label or caller-supplied profile ID is not
-    /// a call path to this factory. Remote WSS/SSH destinations are not profiles.
-    pub(crate) fn capture(
-        &self,
-        route: NativeRoute,
-    ) -> Result<Arc<NativeProfileCaller>, WsFailure> {
-        self.capture_scoped(route, RequestScope::NativeProfile)
     }
 
     pub(crate) fn capture_workspace(
@@ -249,10 +215,7 @@ impl NativeProfileBroker {
         });
         // Keep one physical connection for this context across short Native
         // requests. Only route retirement/shutdown removes this private owner.
-        if matches!(
-            request_scope,
-            RequestScope::NativeProfile | RequestScope::NativeWorkspace
-        ) {
+        if matches!(request_scope, RequestScope::NativeWorkspace) {
             self.state.broker.connection(&route, ANCHOR)?;
         }
         lifecycle.callers.push(Arc::downgrade(&scope));
@@ -416,21 +379,6 @@ impl NativeProfileCaller {
         self.begin_delivery_ack(guards, method, params, options)
     }
 
-    pub(crate) fn begin_workspace_with_guards(
-        self: &Arc<Self>,
-        guards: &[&NativeProfileGuard],
-        method: &str,
-        params: Value,
-        options: RequestOptions,
-    ) -> Result<NativeProfilePending, WsFailure> {
-        if !matches!(self.request_scope, RequestScope::NativeWorkspace)
-            || method != "native.buffers.delivery.ack"
-        {
-            return Err(WsFailure::unsupported());
-        }
-        self.begin_delivery_ack(guards, method, params, options)
-    }
-
     fn begin_delivery_ack(
         self: &Arc<Self>,
         guards: &[&NativeProfileGuard],
@@ -572,14 +520,6 @@ impl NativeProfileGuard {
         Self::admit_callers(callers, guards, RequestScope::NativeService, admit)
     }
 
-    pub(crate) fn admit_workspace<T>(
-        callers: &[&NativeProfileCaller],
-        guards: &[&NativeProfileGuard],
-        admit: impl FnOnce() -> Result<T, String>,
-    ) -> Result<T, String> {
-        Self::admit_callers(callers, guards, RequestScope::NativeWorkspace, admit)
-    }
-
     pub(crate) fn admit_peer_service<T>(
         callers: &[&NativeProfileCaller],
         guards: &[&NativeProfileGuard],
@@ -702,33 +642,9 @@ mod commit_tests {
         }
         assert!(
             service
-                .begin_workspace_with_guards(
-                    &[],
-                    "native.buffers.delivery.ack",
-                    json!({}),
-                    RequestOptions::default()
-                )
-                .err()
-                .unwrap()
-                .unsupported
-        );
-        assert!(
-            service
                 .begin_service_with_guards(
                     &[],
                     "native.services.delivery.apply",
-                    json!({}),
-                    RequestOptions::default()
-                )
-                .err()
-                .unwrap()
-                .unsupported
-        );
-        assert!(
-            workspace
-                .begin_workspace_with_guards(
-                    &[],
-                    "native.buffers.update",
                     json!({}),
                     RequestOptions::default()
                 )
@@ -1041,151 +957,121 @@ mod commit_tests {
     fn guarded_ack_prepares_before_resource_gate_and_rejects_concurrent_retirement() {
         use crate::host_ws::tests::{accept, hello, next, result, Server};
         use futures_util::StreamExt;
-        for service in [false, true] {
-            let status_method = if service {
-                "native.services.delivery.status"
-            } else {
-                "native.buffers.delivery.status"
-            };
-            let ack_method = if service {
-                "native.services.delivery.ack"
-            } else {
-                "native.buffers.delivery.ack"
-            };
-            let (done, finished) = mpsc::channel();
-            let (verified, verification) = mpsc::channel();
-            let server = Server::spawn(move |listener| async move {
-                let mut socket = accept(&listener).await;
-                hello(&mut socket, &[status_method, ack_method], "host.1").await;
-                let warm = next(&mut socket).await;
-                let mut recorded = warm["params"].clone();
-                recorded["state"] = json!("recorded");
-                recorded["result"] = if service {
-                    json!({"accepted":true})
-                } else {
-                    json!({"acknowledged":true})
+        let status_method = "native.services.delivery.status";
+        let ack_method = "native.services.delivery.ack";
+        let (done, finished) = mpsc::channel();
+        let (verified, verification) = mpsc::channel();
+        let server = Server::spawn(move |listener| async move {
+            let mut socket = accept(&listener).await;
+            hello(&mut socket, &[status_method, ack_method], "host.1").await;
+            let warm = next(&mut socket).await;
+            let mut recorded = warm["params"].clone();
+            recorded["state"] = json!("recorded");
+            recorded["result"] = json!({"accepted":true});
+            result(&mut socket, &warm, recorded).await;
+            let mut stop = tokio::task::spawn_blocking(move || {
+                finished.recv_timeout(Duration::from_secs(5)).unwrap()
+            });
+            tokio::select! {
+                _ = &mut stop => {verified.send(false).unwrap();}
+                message = socket.next() => {
+                    let mut saw_ack = false;
+                    if let Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) = message {
+                        let request:Value = serde_json::from_str(&text).unwrap();
+                        assert_eq!(request["method"], ack_method);
+                        saw_ack = true;
+                        let mut receipt = request["params"].clone();
+                        receipt["state"] = json!("retired");
+                        result(&mut socket, &request, receipt).await;
+                    }
+                    stop.await.unwrap();
+                    verified.send(saw_ack).unwrap();
+                }
+            }
+        });
+        let broker = NativeProfileBroker::default();
+        let route = NativeRoute::new(
+            "local",
+            "host.1",
+            &server.endpoint,
+            "secret-native-token",
+            "race-fixture",
+        )
+        .unwrap();
+        let caller = broker.capture_service(route.clone()).unwrap();
+        let mut params = json!({"originalId":"11111111-1111-4111-8111-111111111111","sha256":"a".repeat(64),"byteLength":2,
+            "target":"native.services.conversation.desktop.finish"});
+        let (_, guard) = caller
+            .begin(status_method, params.clone(), RequestOptions::default())
+            .unwrap()
+            .wait()
+            .unwrap()
+            .into_guarded();
+        let resource = guard.guard.disclosure.as_ref().unwrap().resource.clone();
+        let handle = caller
+            .state
+            .broker
+            .connections
+            .lock()
+            .unwrap()
+            .get(&route.key)
+            .unwrap()
+            .clone();
+        params["consumedResult"] = json!({"sha256":"b".repeat(64),"byteLength":17});
+        let ack_caller = caller.clone();
+        let ids = handle.shared.ids.clone();
+        let mut worker = None;
+        let mut reached_ids = false;
+        let resource_was_free = handle.shared.permits.with_state_lock_for_test(|revoke| {
+            worker = Some(thread::spawn(move || {
+                let options = RequestOptions {
+                    request_id: Some("ack-lock-order".into()),
+                    ..RequestOptions::default()
                 };
-                result(&mut socket, &warm, recorded).await;
-                let mut stop = tokio::task::spawn_blocking(move || {
-                    finished.recv_timeout(Duration::from_secs(5)).unwrap()
-                });
-                tokio::select! {
-                    _ = &mut stop => {verified.send(false).unwrap();}
-                    message = socket.next() => {
-                        let mut saw_ack = false;
-                        if let Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) = message {
-                            let request:Value = serde_json::from_str(&text).unwrap();
-                            assert_eq!(request["method"], ack_method);
-                            saw_ack = true;
-                            let mut receipt = request["params"].clone();
-                            receipt["state"] = json!("retired");
-                            result(&mut socket, &request, receipt).await;
-                        }
-                        stop.await.unwrap();
-                        verified.send(saw_ack).unwrap();
-                    }
+                ack_caller.begin_service_with_guards(&[&guard], ack_method, params, options)
+            }));
+            let bound = Instant::now() + Duration::from_secs(3);
+            loop {
+                if ids.lock().unwrap().contains_key("ack-lock-order") {
+                    reached_ids = true;
+                    break;
                 }
-            });
-            let broker = NativeProfileBroker::default();
-            let route = NativeRoute::new(
-                "local",
-                "host.1",
-                &server.endpoint,
-                "secret-native-token",
-                "race-fixture",
-            )
-            .unwrap();
-            let caller = if service {
-                broker.capture_service(route.clone())
-            } else {
-                broker.capture_workspace(route.clone())
-            }
-            .unwrap();
-            let mut params = json!({"originalId":"11111111-1111-4111-8111-111111111111","sha256":"a".repeat(64),"byteLength":2});
-            if service {
-                params["target"] = json!("native.services.conversation.desktop.finish");
-            }
-            let (_, guard) = caller
-                .begin(status_method, params.clone(), RequestOptions::default())
-                .unwrap()
-                .wait()
-                .unwrap()
-                .into_guarded();
-            let resource = guard.guard.disclosure.as_ref().unwrap().resource.clone();
-            let handle = caller
-                .state
-                .broker
-                .connections
-                .lock()
-                .unwrap()
-                .get(&route.key)
-                .unwrap()
-                .clone();
-            params["consumedResult"] = json!({"sha256":"b".repeat(64),"byteLength":17});
-            let ack_caller = caller.clone();
-            let ids = handle.shared.ids.clone();
-            let mut worker = None;
-            let mut reached_ids = false;
-            let resource_was_free = handle.shared.permits.with_state_lock_for_test(|revoke| {
-                worker = Some(thread::spawn(move || {
-                    let options = RequestOptions {
-                        request_id: Some("ack-lock-order".into()),
-                        ..RequestOptions::default()
-                    };
-                    if service {
-                        ack_caller.begin_service_with_guards(&[&guard], ack_method, params, options)
-                    } else {
-                        ack_caller.begin_workspace_with_guards(
-                            &[&guard],
-                            ack_method,
-                            params,
-                            options,
-                        )
-                    }
-                }));
-                let bound = Instant::now() + Duration::from_secs(3);
-                loop {
-                    if ids.lock().unwrap().contains_key("ack-lock-order") {
-                        reached_ids = true;
-                        break;
-                    }
-                    if Instant::now() >= bound {
-                        break;
-                    }
-                    thread::yield_now();
+                if Instant::now() >= bound {
+                    break;
                 }
-                // Positive Core ID admission is before Permits.scope. While
-                // that scope allocation is blocked on this real state lock,
-                // the old resource must still be free to retire, not held by
-                // the guarded wrapper. No elapsed timeout is success evidence.
-                let free = reached_ids && resource.commit.try_lock().is_ok();
-                if free {
-                    revoke(&json!({"kind":"environment"}));
-                }
-                free
-            });
-            let outcome = worker.take().unwrap().join().unwrap();
-            let rejected = outcome.is_err();
-            if let Ok(pending) = outcome {
-                let _ = pending.wait();
+                thread::yield_now();
             }
-            done.send(()).unwrap();
-            let sent = verification.recv_timeout(Duration::from_secs(3)).unwrap();
-            assert!(
-                reached_ids && resource_was_free,
-                "ACK allocated Core state while already holding its retained resource gate"
-            );
-            assert!(
-                rejected && !sent,
-                "retirement before guarded enqueue must reject without dispatch"
-            );
-            assert!(!handle
-                .shared
-                .ids
-                .lock()
-                .unwrap()
-                .contains_key("ack-lock-order"));
+            // Positive Core ID admission is before Permits.scope. While
+            // that scope allocation is blocked on this real state lock,
+            // the old resource must still be free to retire, not held by
+            // the guarded wrapper. No elapsed timeout is success evidence.
+            let free = reached_ids && resource.commit.try_lock().is_ok();
+            if free {
+                revoke(&json!({"kind":"environment"}));
+            }
+            free
+        });
+        let outcome = worker.take().unwrap().join().unwrap();
+        let rejected = outcome.is_err();
+        if let Ok(pending) = outcome {
+            let _ = pending.wait();
         }
+        done.send(()).unwrap();
+        let sent = verification.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert!(
+            reached_ids && resource_was_free,
+            "ACK allocated Core state while already holding its retained resource gate"
+        );
+        assert!(
+            rejected && !sent,
+            "retirement before guarded enqueue must reject without dispatch"
+        );
+        assert!(!handle
+            .shared
+            .ids
+            .lock()
+            .unwrap()
+            .contains_key("ack-lock-order"));
     }
 }
 

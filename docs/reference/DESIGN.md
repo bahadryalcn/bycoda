@@ -226,8 +226,7 @@ feedback, container, type, icon, state and motion spec in the desktop design sys
 A component that does a different job may look different, but it is built from the
 same roles and parts; a second recipe for the same job is a defect. Native OS dialogs
 are kept only for boot and updater fatal errors, file pickers and menus that a popover
-cannot fit. T3 Code is the quality reference for state fills, rows, status and
-composer composition.
+cannot fit.
 
 ### Choose the interaction for the task
 

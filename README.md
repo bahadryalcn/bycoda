@@ -118,8 +118,7 @@ in [SECURITY.md](SECURITY.md).
 
 ## Credits
 
-bycoda began as a fork of an MIT-licensed open source project created by Nick and
-has since been developed independently by
+bycoda began as a fork of an MIT-licensed open source project and is independently developed by
 [Bahadır Halil Yalçın](https://github.com/bahadryalcn). Original and imported
 contributions keep their authorship; see [CREDITS.md](CREDITS.md) and
 [NOTICE](NOTICE).

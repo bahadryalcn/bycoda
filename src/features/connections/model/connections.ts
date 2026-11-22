@@ -18,6 +18,7 @@ import {
 } from "./protocol";
 import { MachineChannelStreamError, subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { remoteProjectFor } from "./remoteProjects";
+import { resetSessionSyncGatesForTests, runSessionSync } from "./coldSyncGate";
 import {
   railEntryAfterFailure,
   railSessions,
@@ -514,6 +515,8 @@ export function remoteRequest<T>(
 /** Reads in flight, by machine and then by read identity. The cap applies per machine,
  * so one machine that stops answering cannot refuse the reads of the others. */
 const REMOTE_READS_PER_MACHINE = 64;
+const REMOTE_READ_BUSY =
+  "Host read capacity is busy: too many remote reads are in progress for this machine";
 type PendingReads<T> = Map<string, Map<string, Promise<T>>>;
 type SessionPageRead = {
   sync: SessionSyncResponse;
@@ -527,6 +530,7 @@ const pendingSessionPages: PendingReads<SessionPageRead> = new Map();
 export function resetRemoteSessionReadsForTests(): void {
   pendingSessionSyncs.clear();
   pendingSessionPages.clear();
+  resetSessionSyncGatesForTests();
 }
 /** Joins an identical read already in flight on the machine, or starts one. An entry
  * leaves the map only when its request settles. */
@@ -541,11 +545,7 @@ function sharedRead<T>(
   if (existing) return existing;
   // The text carries the Host's busy marker (remoteFailure.ts): retry later, not a host error.
   if ((reads?.size ?? 0) >= REMOTE_READS_PER_MACHINE)
-    return Promise.reject(
-      new Error(
-        "Host read capacity is busy: too many remote reads are in progress for this machine",
-      ),
-    );
+    return Promise.reject(new Error(REMOTE_READ_BUSY));
   if (!reads) {
     reads = new Map();
     pending.set(machineId, reads);
@@ -627,25 +627,37 @@ async function syncRemoteSession(
       loaded?.map((block) => block.id),
       digests,
     ]);
-    return sharedRead(pendingSessionSyncs, machineId, key, async () => {
-      const options = {
-        revision,
-        ...(known?.sourceEpoch ? { sourceEpoch: known.sourceEpoch } : {}),
-        waitMs,
-        ...(digests ? { digests: true } : {}),
-        ...(partialHistory && known?.history
-          ? {
-              partial: true,
-              loadedBlockIds: [...new Set((loaded ?? []).map((block) => block.id))],
-              windowStart: known.history.before,
-            }
-          : {}),
-      };
-      const response = client
-        ? ((await client.syncSession({ sessionId, ...options })) as unknown as SessionSyncResponse)
-        : await sessionAccessForMachine(machineId).sync(sessionId, options);
-      return assembleSessionSync(machineId, sessionId, response, client?.environmentId);
-    });
+    // Queue before sharedRead: a waiting cold sync must not use up the machine's read capacity.
+    return runSessionSync(
+      machineId,
+      sessionId,
+      revision,
+      () =>
+        sharedRead(pendingSessionSyncs, machineId, key, async () => {
+          const options = {
+            revision,
+            ...(known?.sourceEpoch ? { sourceEpoch: known.sourceEpoch } : {}),
+            waitMs,
+            ...(digests ? { digests: true } : {}),
+            ...(partialHistory && known?.history
+              ? {
+                  partial: true,
+                  loadedBlockIds: [...new Set((loaded ?? []).map((block) => block.id))],
+                  windowStart: known.history.before,
+                }
+              : {}),
+          };
+          const response = client
+            ? ((await client.syncSession({
+                sessionId,
+                ...options,
+              })) as unknown as SessionSyncResponse)
+            : await sessionAccessForMachine(machineId).sync(sessionId, options);
+          return assembleSessionSync(machineId, sessionId, response, client?.environmentId);
+        }),
+      REMOTE_READS_PER_MACHINE,
+      () => new Error(REMOTE_READ_BUSY),
+    );
   } finally {
     done();
   }

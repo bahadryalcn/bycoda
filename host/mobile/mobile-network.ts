@@ -1,5 +1,5 @@
 import { createSocket } from "node:dgram";
-import { execFile } from "node:child_process";
+import { execFileAsync } from "../../src/shared/lib/processExecution.node";
 // oxlint-disable-next-line no-restricted-imports -- the one shared, cached adapter reader
 import { networkInterfaces } from "node:os";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
@@ -96,40 +96,41 @@ export function createWindowsNetworkHint(
       queriedAt = monotonicNow();
       queriedNetwork = current;
     }
-    profiles ??= new Promise((resolve) => {
-      execFile(
-        "powershell.exe",
-        [
-          "-NoLogo",
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = [Text.Encoding]::UTF8; if ((Get-NetFirewallProfile -Name Public).Enabled) { $profiles = @{}; Get-NetConnectionProfile | ForEach-Object { $profiles[$_.InterfaceAlias] = [string]$_.NetworkCategory }; ConvertTo-Json -Compress -InputObject $profiles }",
-        ],
-        { windowsHide: true, timeout: 3000, maxBuffer: 64 * 1024, encoding: "buffer" },
-        (error, stdout) => {
-          if (error) return resolve({});
-          try {
-            // PowerShell emits one compact JSON line. Decode that line lossily.
-            const newline = stdout.indexOf(10);
-            const parsed: unknown = JSON.parse(
-              stdout
-                .subarray(0, newline < 0 ? stdout.length : newline)
-                .toString("utf8")
-                .replace(/^\uFEFF/, ""),
-            );
-            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return resolve({});
-            resolve(
-              Object.fromEntries(
-                Object.entries(parsed).filter(([, value]) => typeof value === "string"),
-              ),
-            );
-          } catch {
-            resolve({});
-          }
-        },
-      );
-    });
+    // Through the Host's process worker: launching PowerShell took ~2 s of main-thread time
+    // on Windows, a full event-loop stall on every profile refresh.
+    profiles ??= execFileAsync(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = [Text.Encoding]::UTF8; if ((Get-NetFirewallProfile -Name Public).Enabled) { $profiles = @{}; Get-NetConnectionProfile | ForEach-Object { $profiles[$_.InterfaceAlias] = [string]$_.NetworkCategory }; ConvertTo-Json -Compress -InputObject $profiles }",
+      ],
+      { windowsHide: true, timeout: 3000, maxBuffer: 64 * 1024, encoding: "buffer" },
+    ).then(
+      ({ stdout }) => {
+        try {
+          // PowerShell emits one compact JSON line. Decode that line lossily.
+          const newline = stdout.indexOf(10);
+          const parsed: unknown = JSON.parse(
+            stdout
+              .subarray(0, newline < 0 ? stdout.length : newline)
+              .toString("utf8")
+              .replace(/^\uFEFF/, ""),
+          );
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+          return Object.fromEntries(
+            Object.entries(parsed).filter(
+              (entry): entry is [string, string] => typeof entry[1] === "string",
+            ),
+          );
+        } catch {
+          return {};
+        }
+      },
+      () => ({}),
+    );
     const answer = await profiles;
     sawPublic = Object.values(answer).includes("Public");
     return answer[interfaceName] === "Public" ? PUBLIC_NETWORK_HINT : undefined;

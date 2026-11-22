@@ -1,5 +1,5 @@
-import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { hostGitExec } from "./git-exec-pool";
 import {
@@ -15,6 +15,7 @@ const GIT_ENV = { GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" };
 async function git(cwd: string, args: string[], timeout = 15_000): Promise<string> {
   if (timeout <= 0) throw new Error("Repository discovery timed out");
   const { stdout } = await hostGitExec.exec("git", ["--no-pager", ...args], {
+    lane: "background",
     cwd,
     windowsHide: true,
     timeout,
@@ -64,6 +65,19 @@ export function sharedHostGitSubmodules(
   return scan;
 }
 
+/**
+ * True when the directory's `.git` is a file pointing into `<common dir>/worktrees/<name>`, which
+ * is how Git links any worktree (of this repository or another) to its repository. Submodules
+ * point into `modules/` and independent repositories have a `.git` directory.
+ */
+async function isLinkedWorktree(directory: string): Promise<boolean> {
+  const text = await readFile(join(directory, ".git"), "utf8").catch(() => "");
+  const gitdir = /^gitdir:\s*(.+?)\s*$/m.exec(text)?.[1];
+  if (!gitdir) return false;
+  const target = resolve(directory, gitdir).split(sep).join("/");
+  return /\/worktrees\/[^/]+\/?$/i.test(target);
+}
+
 /** Initialized gitlinks by default; opt-in source repositories. Never clones or moves a checkout. */
 export async function hostGitSubmodules(
   cwd: string,
@@ -79,6 +93,9 @@ export async function hostGitSubmodules(
   let limit: RepositoryDiscoveryLimit | null = null;
   gitlinks: for (let index = 0; index < queue.length; index++) {
     const parent = queue[index];
+    // Listing the whole index only to find gitlinks is slow on large checkouts; a checkout
+    // without `.gitmodules` registers no submodules (source repositories are found below).
+    if (!(await stat(join(parent, ".gitmodules")).catch(() => null))) continue;
     const entries = await git(parent, ["ls-files", "--stage", "-z", "--", "."], remaining()).catch(
       (error: { stderr?: unknown }) => {
         // A plain folder has no gitlinks, but may still hold source repositories.
@@ -113,8 +130,13 @@ export async function hostGitSubmodules(
     const discovery = await nestedRepositoryCandidates(root, remaining);
     limit ??= discovery.limit;
     const children: string[] = [];
+    // A linked worktree is another checkout, not a repository of this one; nothing inside it counts.
+    const worktrees: string[] = [];
+    for (const candidate of discovery.repositories)
+      if (await isLinkedWorktree(candidate)) worktrees.push(await realpath(candidate));
     for (const candidate of discovery.repositories) {
       const child = await realpath(candidate);
+      if (worktrees.some((tree) => child === tree || child.startsWith(tree + sep))) continue;
       const rel = relative(root, child);
       if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || seen.has(child))
         continue;

@@ -17,7 +17,7 @@ import { CrewScene } from "./crewSurface";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Button } from "../../../shared/ui/Button";
-import { FolderOpen } from "../../../shared/ui/icons";
+import { BookOpen, FolderOpen } from "../../../shared/ui/icons";
 import { runGuideAction } from "../../onboarding/model/guide";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import "./BycodaSession.css";
@@ -79,12 +79,18 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
                 <div className="bycoda-entry-actions bycoda-arc">
                   <Button
                     variant="primary"
-                    startIcon={<FolderOpen className="icon-sm" />}
+                    size="lg"
+                    startIcon={<FolderOpen />}
                     onClick={() => runGuideAction("open-project")}
                   >
                     {t("Open a project")}
                   </Button>
-                  <Button variant="ghost" onClick={openUsageGuide}>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    startIcon={<BookOpen />}
+                    onClick={openUsageGuide}
+                  >
                     {t("Guide")}
                   </Button>
                 </div>

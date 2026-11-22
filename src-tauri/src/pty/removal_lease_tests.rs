@@ -13,6 +13,7 @@ fn desktop_removal_lease_refuses_existing_pty_and_fences_new_spawns() {
         acquire_desktop_removal_lease(
             &host,
             &agents,
+            &crate::native_workspace::editor_buffers::EditorBuffers::default(),
             &target,
             "desktop".into(),
             "lease".into(),
@@ -55,4 +56,45 @@ fn desktop_removal_lease_refuses_existing_pty_and_fences_new_spawns() {
     assert!(reserve_spawn(&child).is_ok());
     acquire(Duration::ZERO).unwrap();
     assert!(reserve_spawn(&child).is_ok());
+}
+
+fn buffer(path: &str, dirty: bool) -> crate::native_workspace::BufferState {
+    serde_json::from_value(serde_json::json!({ "path": path, "dirty": dirty })).unwrap()
+}
+
+#[test]
+fn desktop_removal_lease_refuses_dirty_editors_under_path_only() {
+    use crate::native_workspace::editor_buffers::EditorBuffers;
+    use crate::worktree_lifecycle::{release_desktop_removal_lease, reserve_spawn};
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let sibling = format!("{}-sibling/a.ts", target.display());
+    let inside = format!("{}/src/a.ts", target.display());
+    let host = PtyHost::new();
+    let agents = crate::harness::HarnessHost::new();
+    let editors = EditorBuffers::default();
+    let acquire = || {
+        acquire_desktop_removal_lease(
+            &host,
+            &agents,
+            &editors,
+            &target,
+            "desktop".into(),
+            "lease".into(),
+            Duration::from_secs(30),
+        )
+    };
+    // No window reported: granted.
+    acquire().unwrap();
+    release_desktop_removal_lease("desktop", "lease");
+    // Clean buffer under the path and dirty buffers outside it: granted.
+    editors.report("main", &[buffer(&inside, false), buffer(&sibling, true)]);
+    acquire().unwrap();
+    release_desktop_removal_lease("desktop", "lease");
+    // Dirty buffer under the path: refused with the stable code, no lease left behind.
+    editors.report("main", &[buffer(&inside, true)]);
+    let err = acquire().unwrap_err();
+    assert!(err.starts_with("editors:"), "{err}");
+    assert!(reserve_spawn(&target).is_ok());
 }

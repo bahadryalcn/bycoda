@@ -1,10 +1,13 @@
 import { toolsSessionsFor } from "./useActiveTabContext";
 import { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
-import { memo, useLayoutEffect, type ComponentProps, type RefObject } from "react";
+import { memo, useEffect, useLayoutEffect, type ComponentProps, type RefObject } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ToolsWorkspace } from "../../../features/host-tools/ToolsWorkspace";
+import { requestToolsUi } from "../../../features/host-tools/toolsUiControl";
+import type { VoiceToolsOutlet } from "../bridges/VoiceWorkspacePanels";
+import { errorText } from "../../../shared/lib/errors";
 import { PaneTree } from "../../../features/workspace/ui/PaneTree";
 import type { EditorPane, WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ProjectTerminalDock as ProjectTerminal } from "../../../features/projects/model/projectTerminal";
@@ -19,7 +22,7 @@ import { useShellSessionsSelector } from "../../../features/sessions/model/sessi
 import { LinkedWorkItemPanel } from "../surfaces/lazySurfaces";
 import type { LinkedWorkItemPanelState } from "../helpers/types";
 import { useTabHibernation } from "../tabs/useTabHibernation";
-import { useT } from "../../../shared/i18n";
+import { t as translate, useT } from "../../../shared/i18n";
 import { Heading } from "../../../shared/ui/Heading";
 import { useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 
@@ -62,6 +65,7 @@ export type WorkspaceSessionPaneProps = Omit<
 >;
 
 export interface WorkspaceMainAreaProps {
+  voiceToolsOutlet?: VoiceToolsOutlet;
   // Project terminal dock (markup only; dock state lives in Workspace)
   dockGridRef: RefObject<HTMLDivElement | null>;
   projectCwd: string;
@@ -194,6 +198,7 @@ function WorkspaceMainAreaComponent({
   maximizedPane,
   onToggleMaximizePane,
   sessionPaneProps,
+  voiceToolsOutlet,
   linkedWorkItemPanels,
   repairSessions,
   onRepairChecks,
@@ -214,6 +219,37 @@ function WorkspaceMainAreaComponent({
   );
   const activeToolsConversation =
     toolsSessions.find((session) => session.composerSessionId === activeSessionId) ?? null;
+  const voiceToolsConversation = voiceToolsOutlet
+    ? toolsSessions.find(
+        (session) =>
+          session.composerSessionId === voiceToolsOutlet.sessionId &&
+          sameProjectPath(session.cwd, voiceToolsOutlet.cwd),
+      )
+    : undefined;
+  const voiceTargetId = voiceToolsConversation?.sessionId;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Presents the registered tool when the exact unlocked outlet mounts.
+  useEffect(() => {
+    if (!voiceToolsOutlet) return;
+    if (!voiceTargetId) {
+      voiceToolsOutlet.onError(translate("Project is not available on this Host."));
+      return;
+    }
+    let active = true;
+    const { cwd, tab, onError, onReady } = voiceToolsOutlet;
+    void requestToolsUi({ cwd, sessionId: voiceTargetId, title: "" }, "ui.tools.open", { tab })
+      .then((state) => {
+        if (!active) return;
+        if (state.presentation === "detached")
+          onError(translate("Tool panels are open in another window."));
+        else onReady();
+      })
+      .catch((error) => {
+        if (active) onError(errorText(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [voiceToolsOutlet, voiceTargetId]);
   // Read from the shell store, not a prop: the main area re-renders only when the
   // protected or known sessions change, not on every status change elsewhere.
   const protection = useShellSessionsSelector(
@@ -254,8 +290,10 @@ function WorkspaceMainAreaComponent({
       )}
       <ToolsWorkspace
         followEligible={!routeOpen}
-        activeConversation={activeToolsConversation}
+        activeConversation={voiceToolsConversation ?? activeToolsConversation}
         accessibleSessions={toolsSessions}
+        outlet={voiceToolsConversation ? voiceToolsOutlet?.element : undefined}
+        outletOverlayParent={voiceToolsConversation ? voiceToolsOutlet?.overlayParent : undefined}
       >
         <div className="@container/main-row relative flex min-h-0 min-w-0 flex-1">
           <div ref={dockGridRef} className="grid h-full min-h-0 min-w-0 flex-1">

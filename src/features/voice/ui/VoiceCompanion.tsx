@@ -21,7 +21,7 @@ import type { Session } from "../../sessions/public/session";
 import { sessionsRef as liveSessions, useSession } from "../../sessions/model/sessionsStore";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
-import { useOverlay } from "../../../shared/ui/overlay";
+import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
 import { GripVertical } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { voiceError } from "../model/voiceAssistantNotices";
@@ -31,6 +31,17 @@ import { invalidateFeatureHosts } from "../../connections/model/hostFeatureClien
 import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
 import { VoiceCompanionView } from "./companion/VoiceCompanionView";
+import { VoiceLiveWorkspace } from "./companion/VoiceLiveWorkspace";
+import {
+  showVoiceWorkTool,
+  voiceLiveWorkSuggestion,
+  type VoiceWorkspaceTool,
+} from "../model/voiceLiveWork";
+import { useVoiceWorkspaceJobs } from "../model/voiceWorkspaceJobs";
+import {
+  useVoiceWorkspaceTrackedWork,
+  type VoiceWorkspaceTrackedWork,
+} from "../model/voiceWorkspaceTrackedWork";
 import {
   VoiceLauncher,
   VoiceReturnButton,
@@ -219,11 +230,18 @@ export type VoiceCompanionProps = {
   projectPath?: string;
   ensureToolSession?: (projectPath: string) => Promise<string>;
   assistantSession?: Session;
+  registerWorkspaceOpener?: (open?: (target: Pick<Session, "id" | "cwd">) => void) => void;
+  renderWorkspaceTool?: (panel: VoiceWorkspaceTool, session: Session) => React.ReactNode;
+  openWorkspaceTrackedWork?: (work: VoiceWorkspaceTrackedWork) => boolean;
 };
 export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: VoiceWakeControls }) {
   const locale = useLocale();
   useSyncExternalStore(subscribeGroupLock, getGroupLockView);
-  const { snapshot: assistantSnapshot } = useAssistantSnapshot();
+  const {
+    snapshot: assistantSnapshot,
+    environmentId: assistantEnvironmentId,
+    error: assistantSnapshotError,
+  } = useAssistantSnapshot();
   const snapshotRef = useRef(assistantSnapshot);
   snapshotRef.current = assistantSnapshot;
   const identity = assistantIdentity(assistantSnapshot?.profile, locale);
@@ -235,6 +253,14 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const audioLevel = useRef(0);
   const latest = useRef(props);
   const [open, setOpen] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
+  const [workPanelOpen, setWorkPanelOpen] = useState(false);
+  const workPanelToggle = useRef<HTMLButtonElement>(null);
+  const [workspaceAnchor, setWorkspaceAnchor] = useState<Pick<Session, "id" | "cwd">>();
+  const [workspaceDrafts, setWorkspaceDrafts] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+  const [dismissedWork, setDismissedWork] = useState<ReadonlySet<string>>(() => new Set());
   const [status, setStatus] = useState<
     "idle" | "connecting" | "live" | "reconnecting" | "sleeping" | "ready"
   >("idle");
@@ -492,7 +518,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const [historyNotice, setHistoryNotice] = useState("");
   const [choice, setChoice] = useState<VoiceChoice | null>(null);
   const [jobReview, setJobReview] = useState<VoiceJobReviewState | null>(null);
-  const compact = settings.compact && !choice && !jobReview;
+  const compact = settings.compact && !choice && !jobReview && !fullScreen;
   const pendingJobs = useRef<{
     review: VoiceJobReviewState;
     /** False while jobs start without review; a failed start reveals the review. */
@@ -843,6 +869,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const panel = useRef<HTMLElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const compactToggle = useRef<HTMLButtonElement>(null);
+  const workspaceReturnFocus = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     if (open && panel.current?.contains(document.activeElement)) compactToggle.current?.focus();
   }, [compact]);
@@ -1288,10 +1315,20 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       invalidateCausalContext: async () => {
         await causalGeneration.current?.invalidate("unverified-tool");
       },
-      workspace: latest.current.workspace ?? {
-        tools: [],
-        execute: async () => {
-          throw new Error("Workspace actions are unavailable.");
+      workspace: {
+        tools: [
+          ...(latest.current.workspace?.tools ?? []),
+          ...(panel.current?.hasAttribute("data-full-screen") ? [showVoiceWorkTool] : []),
+        ],
+        execute: async (action, input) => {
+          if (action === showVoiceWorkTool.name) {
+            if (!panel.current?.hasAttribute("data-full-screen") || Object.keys(input).length)
+              throw new Error("The full-screen work panel is unavailable for this request.");
+            setWorkPanelOpen(true);
+            return { action, status: "completed" };
+          }
+          if (!latest.current.workspace) throw new Error("Workspace actions are unavailable.");
+          return latest.current.workspace.execute(action, input);
         },
       },
       ensureToolSession: latest.current.ensureToolSession,
@@ -1538,10 +1575,28 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   }, [connection]);
   function dismiss() {
     close();
+    setFullScreen(false);
     returnFocus.current = true;
     setOpen(false);
   }
-  useOverlay(panel, false, undefined, open && !detached, undefined, false, true);
+  function exitFullScreen() {
+    setFullScreen(false);
+    setWorkPanelOpen(false);
+    compactToggle.current?.focus();
+  }
+  function closeWorkPanel() {
+    setWorkPanelOpen(false);
+    workPanelToggle.current?.focus();
+  }
+  const workspaceOverlay = useOverlay(
+    panel,
+    fullScreen,
+    fullScreen ? (workPanelOpen ? closeWorkPanel : exitFullScreen) : undefined,
+    open && !detached,
+    undefined,
+    false,
+    !fullScreen,
+  );
   useLayoutEffect(() => {
     // The first-run persona dialog owns focus while it is open.
     if (open)
@@ -3036,6 +3091,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     else if (command === "dismissError") setError("");
     else if (command === "disconnect") close();
     else if (command === "dock") dock();
+    else if (command === "openWorkspace") enterFullScreen();
     else if (command === "close") {
       dock();
       dismiss();
@@ -3085,6 +3141,143 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
             ),
       )
     : [];
+  const storedWorkspaceSession = useSession(fullScreen ? workspaceAnchor?.id : undefined);
+  const matchesWorkspaceAnchor = (session: Session) =>
+    session.id === workspaceAnchor?.id && pathKey(session.cwd) === pathKey(workspaceAnchor.cwd);
+  const workspaceSession =
+    storedWorkspaceSession && matchesWorkspaceAnchor(storedWorkspaceSession)
+      ? storedWorkspaceSession
+      : fullScreen && workspaceAnchor
+        ? props.sessions.find(matchesWorkspaceAnchor)
+        : undefined;
+  const workSessionVisible = (session: Session) =>
+    bodyVisible &&
+    !isProjectLocked(session.cwd) &&
+    (props.projects ?? [{ path: props.projectPath ?? target?.cwd ?? "" }]).some(
+      (project) => pathKey(project.path) === pathKey(session.cwd),
+    );
+  const visibleWorkspaceSession =
+    workspaceSession && workSessionVisible(workspaceSession) ? workspaceSession : undefined;
+  const workspaceDraftKey = visibleWorkspaceSession
+    ? JSON.stringify([pathKey(visibleWorkspaceSession.cwd), visibleWorkspaceSession.id])
+    : undefined;
+  const workspacePaths = (props.projects ?? [{ path: props.projectPath ?? target?.cwd ?? "" }]).map(
+    (project) => project.path,
+  );
+  const trackedProjectPath = workspaceAnchor
+    ? visibleWorkspaceSession?.cwd
+    : (target?.cwd ?? props.projectPath);
+  const workspaceTrackedWork = useVoiceWorkspaceTrackedWork({
+    enabled: fullScreen && workPanelOpen && bodyVisible,
+    projectPath: trackedProjectPath,
+    visibleProjectPaths: workspacePaths,
+  });
+  const workspaceJobs = useVoiceWorkspaceJobs({
+    enabled: fullScreen && workPanelOpen && !assistantSnapshotError && bodyVisible,
+    snapshot: assistantSnapshot,
+    environmentId: assistantEnvironmentId,
+    visibleProjectPaths: workspacePaths,
+    scope: globalScope
+      ? { kind: "global" }
+      : {
+          kind: "project",
+          path: visibleWorkspaceSession?.cwd ?? target?.cwd ?? props.projectPath ?? "",
+        },
+    request: assistantRequest,
+    jobVisible: assistantJobVisible,
+    jobProjectIds: assistantJobProjectIds,
+  });
+  const suggestedWork = !fullScreen
+    ? voiceLiveWorkSuggestion(
+        target && workSessionVisible(target) ? target : undefined,
+        visibleToolActivities,
+      )
+    : undefined;
+  function enterFullScreen(showWork = false) {
+    if (showWork && suggestedWork) dismissWorkSuggestion(suggestedWork);
+    showWorkspace(target, showWork);
+    compactToggle.current?.focus();
+  }
+  function showWorkspace(session: Session | undefined, showWork: boolean) {
+    setWorkspaceAnchor(session ? { id: session.id, cwd: session.cwd } : undefined);
+    if (detached) dock();
+    setOpen(true);
+    setWorkPanelOpen(showWork);
+    setFullScreen(true);
+  }
+  const openWorkspaceFromChat = useEffectEvent((anchor: Pick<Session, "id" | "cwd">) => {
+    const session = [...liveSessions.current, ...latest.current.sessions].find(
+      (item) => item.id === anchor.id && pathKey(item.cwd) === pathKey(anchor.cwd),
+    );
+    if (!session || !workSessionVisible(session)) return;
+    workspaceReturnFocus.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    showWorkspace(session, true);
+  });
+  const registerWorkspaceOpener = props.registerWorkspaceOpener;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Registers this window's mounted voice controller with its chat action and releases it on unmount.
+  useEffect(() => {
+    if (!registerWorkspaceOpener) return;
+    registerWorkspaceOpener((anchor) => openWorkspaceFromChat(anchor));
+    return () => registerWorkspaceOpener();
+  }, [registerWorkspaceOpener]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Restores DOM focus after the shared overlay commits the new focus scope.
+  useLayoutEffect(() => {
+    if (fullScreen) compactToggle.current?.focus();
+    else if (workspaceReturnFocus.current) {
+      workspaceReturnFocus.current.focus();
+      workspaceReturnFocus.current = null;
+    }
+  }, [fullScreen]);
+  function dismissWorkSuggestion(key: string) {
+    setDismissedWork((current) => new Set([...current, key].slice(-100)));
+  }
+  async function openWorkspaceSession(session: Session) {
+    const result = await props.workspace?.execute("workspace.sessions.open", {
+      projectPath: session.cwd,
+      sessionId: session.id,
+      requestId: crypto.randomUUID(),
+    });
+    if (result?.status === "completed" || result?.status === "accepted") exitFullScreen();
+    else if (result?.error) setError(result.error);
+  }
+  async function openTrackedWork(item: VoiceWorkspaceTrackedWork) {
+    const current = workspaceTrackedWork.find(
+      (row) =>
+        row.kind === item.kind &&
+        row.id === item.id &&
+        row.machineId === item.machineId &&
+        row.environmentId === item.environmentId &&
+        row.projectId === item.projectId,
+    );
+    if (!current || isProjectLocked(current.projectPath)) return;
+    if (props.openWorkspaceTrackedWork?.(current)) {
+      exitFullScreen();
+      return;
+    }
+    const linked = current.sessionId && findSession(current.sessionId);
+    if (
+      linked &&
+      workSessionVisible(linked) &&
+      pathKey(linked.cwd) === pathKey(current.projectPath)
+    ) {
+      await openWorkspaceSession(linked);
+    }
+  }
+  const workspaceViews = props.workspace?.tools.find((tool) => tool.name === "workspace.views.open")
+    ?.parameters.properties.view;
+  const workspaceViewIds =
+    workspaceViews &&
+    typeof workspaceViews === "object" &&
+    "enum" in workspaceViews &&
+    Array.isArray(workspaceViews.enum)
+      ? workspaceViews.enum.filter((view): view is string => typeof view === "string")
+      : undefined;
+  async function openWorkspaceView(view: string) {
+    const result = await props.workspace?.execute("workspace.views.open", { view });
+    if (result?.status === "completed" || result?.status === "accepted") exitFullScreen();
+    else if (result?.error) setError(result.error);
+  }
   useVoiceOverlayHost({
     detached: open && detached,
     level: audioLevel,
@@ -3236,29 +3429,90 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       leading="inherit"
       ref={panel}
       aria-label={t("Voice companion")}
+      role={fullScreen ? "dialog" : undefined}
+      aria-modal={fullScreen || undefined}
       {...surfaceAttributes(
         {
-          variant: "floating",
+          variant: fullScreen ? "opaque-canvas" : "floating",
           frame: detaching ? "focus" : shownError ? "danger" : "pane",
-          radius: compact ? "pill" : "panel",
+          radius: fullScreen ? undefined : compact ? "pill" : "panel",
         },
         styles.panel,
       )}
       data-compact={compact || undefined}
+      data-full-screen={fullScreen || undefined}
+      data-work-panel={(fullScreen && workPanelOpen) || undefined}
       data-dock={dockMode}
       data-detaching={detaching || undefined}
       data-voice-state={visualState}
       tabIndex={-1}
       style={
-        position ? { left: position.x, top: position.y, right: "auto", bottom: "auto" } : undefined
+        position && !fullScreen
+          ? { left: position.x, top: position.y, right: "auto", bottom: "auto" }
+          : undefined
       }
     >
       <VoiceCompanionView
         compact={compact}
         status={status}
-        handle={handle}
-        headerDrag={panelDrag.header}
-        resize={<VoicePanelResize panel={panel} onPosition={setPosition} />}
+        handle={fullScreen ? null : handle}
+        headerDrag={fullScreen ? undefined : panelDrag.header}
+        resize={fullScreen ? null : <VoicePanelResize panel={panel} onPosition={setPosition} />}
+        fullScreen={fullScreen}
+        workPanelToggleRef={workPanelToggle}
+        onToggleWorkPanel={workPanelOpen ? closeWorkPanel : () => setWorkPanelOpen(true)}
+        workPanel={
+          fullScreen && workPanelOpen ? (
+            <VoiceLiveWorkspace
+              key={workspaceDraftKey}
+              session={visibleWorkspaceSession}
+              activities={visibleToolActivities}
+              jobs={workspaceJobs}
+              trackedWork={workspaceTrackedWork}
+              onOpenTrackedWork={(work) =>
+                void openTrackedWork(work).catch((cause) =>
+                  setError(voiceError(cause, "Unable to open the workspace view.")),
+                )
+              }
+              renderTool={props.renderWorkspaceTool}
+              draft={
+                workspaceDraftKey === undefined
+                  ? undefined
+                  : (workspaceDrafts.get(workspaceDraftKey) ?? "")
+              }
+              onDraftChange={(value) => {
+                if (workspaceDraftKey === undefined) return;
+                setWorkspaceDrafts((current) => {
+                  const next = new Map(current);
+                  if (value) next.set(workspaceDraftKey, value);
+                  else next.delete(workspaceDraftKey);
+                  return next;
+                });
+              }}
+              onStopWaiting={(id) => toolActivity.current?.stopWaiting(id)}
+              onOpenSession={
+                props.workspace && visibleWorkspaceSession
+                  ? () =>
+                      void openWorkspaceSession(visibleWorkspaceSession).catch((cause) =>
+                        setError(voiceError(cause, "Unable to open the conversation.")),
+                      )
+                  : undefined
+              }
+              views={workspaceViewIds}
+              onOpenView={(view) =>
+                void openWorkspaceView(view).catch((cause) =>
+                  setError(voiceError(cause, "Unable to open the workspace view.")),
+                )
+              }
+            />
+          ) : null
+        }
+        workSuggestion={Boolean(suggestedWork && !dismissedWork.has(suggestedWork))}
+        onDismissWorkSuggestion={() => {
+          if (suggestedWork) dismissWorkSuggestion(suggestedWork);
+        }}
+        onOpenSuggestedWork={() => enterFullScreen(true)}
+        onToggleFullScreen={fullScreen ? exitFullScreen : () => enterFullScreen()}
         panel={panel}
         sideKey={choice?.id ?? jobReview?.id}
         visualState={visualState}
@@ -3293,7 +3547,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         }
         workspace={Boolean(props.workspace)}
         globalScope={globalScope}
-        canDetach={canDetach}
+        canDetach={canDetach && !fullScreen}
         toolActivities={visibleToolActivities}
         chatTurns={chatTurns}
         error={shownError}
@@ -3399,7 +3653,10 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         onStart={() => void start()}
         onClose={close}
         onDismiss={dismiss}
-        onToggleCompact={() => setCompact(!compact)}
+        onToggleCompact={() => {
+          compactToggle.current?.focus();
+          setCompact(!compact);
+        }}
         onToggleMute={toggleMute}
         onToggleSpeaker={toggleSpeaker}
         onSilence={() => client.current?.silence()}
@@ -3411,7 +3668,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   return (
     <>
       {launcherControl}
-      {companionPanel}
+      <OverlayParent.Provider value={workspaceOverlay}>{companionPanel}</OverlayParent.Provider>
     </>
   );
 }

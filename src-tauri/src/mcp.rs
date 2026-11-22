@@ -13,6 +13,8 @@ mod discovery_tests;
 pub(crate) mod enablement;
 #[path = "mcp_jsonc.rs"]
 mod jsonc;
+pub(crate) mod oauth_callback;
+pub(crate) mod remote_config;
 pub(crate) mod server_config;
 use config::write_json_config;
 #[cfg(test)]
@@ -109,8 +111,19 @@ pub async fn mcp_add(
     name: String,
     config: String,
 ) -> Result<(), String> {
-    let (name, server) = server_from_json(&provider, &name, &config)?;
     let binary_path = host.runtime_binary_path(&provider);
+    add(cwd, provider, scope, name, config, binary_path).await
+}
+
+async fn add(
+    cwd: String,
+    provider: String,
+    scope: String,
+    name: String,
+    config: String,
+    binary_path: Option<String>,
+) -> Result<(), String> {
+    let (name, server) = server_from_json(&provider, &name, &config)?;
     tauri::async_runtime::spawn_blocking(move || {
         let home = dirs_home().ok_or("Home directory not found")?;
         let project = expand_home(&cwd);

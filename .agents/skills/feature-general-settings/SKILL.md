@@ -16,7 +16,7 @@ Use for General Settings and its language, power, support/import/setup/guide, di
 ## Preserve
 
 - Application, Git and technical-interface languages have separate defaults and scope. Preserve catalog generation/cache/retry and same-/sibling/system updates without changing user/code/OS content.
-- Close-to-tray applicability differs by platform. Preserve close/flush/working-session protection and retained settings where unsupported.
+- On Windows the tray setting applies to Minimize. Close always uses the protected window-close path. Preserve close, flush and running-session protection across platforms.
 - Keep-awake/display/hold choices are local-window intent; preserve dependent values, active-work classification, serialized native transitions, multi-window claims and cleanup.
 - Diagnostics remain opt-in, bounded and privacy-safe. Preserve explicit Copy/Clear, allowlisted timing metadata, retained records on disable and target-local failure recovery.
 - Import, Setup and Guide retain independent opening/dismissal/recovery and existing file-access gates. A support entry is not an implicit operation.

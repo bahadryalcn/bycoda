@@ -10,6 +10,7 @@ allowBuilds:
   core-js: false
   tsc-rs: true
   "@ast-grep/cli": false
+  "@openuidev/lang-core": false
 minimumReleaseAgeExclude:
   - "@tsc-rs/darwin-arm64@0.8.0"
   - "@tsc-rs/darwin-x64@0.8.0"

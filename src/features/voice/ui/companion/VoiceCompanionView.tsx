@@ -1,11 +1,22 @@
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
-import { useState, type HTMLAttributes, type ReactNode, type RefObject } from "react";
+import { useId, useState, type HTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
+import { motionAttributes } from "../../../../shared/ui/Motion";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { OverflowTooltip, Tooltip } from "../../../../shared/ui/Tooltip";
-import { Maximize2, Mic, MicOff, Minimize2, Square, X } from "../../../../shared/ui/icons";
+import {
+  Maximize2,
+  Mic,
+  MicOff,
+  Minimize2,
+  Minus,
+  PanelRight,
+  PanelRightClose,
+  Square,
+  X,
+} from "../../../../shared/ui/icons";
 import { t } from "../../../../shared/i18n";
 import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
 import type { VoiceToolActivityEntry } from "../../model/voiceToolActivity";
@@ -25,6 +36,14 @@ import parts from "./VoiceCompanionParts.module.css";
 
 export type VoiceCompanionViewProps = {
   compact: boolean;
+  fullScreen?: boolean;
+  workPanel?: ReactNode;
+  onToggleWorkPanel?: () => void;
+  workPanelToggleRef?: RefObject<HTMLButtonElement | null>;
+  onOpenSuggestedWork?: () => void;
+  workSuggestion?: boolean;
+  onDismissWorkSuggestion?: () => void;
+  onToggleFullScreen?: () => void;
   status: Status;
   /** The drag handle: the orb in compact mode, the grip when expanded. */
   handle: ReactNode;
@@ -95,10 +114,23 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   const canTalk = p.status === "idle" || p.status === "sleeping" || p.status === "ready";
   const connecting = p.status === "connecting" || p.status === "reconnecting";
   const micLabel = t(canTalk ? (p.status === "idle" ? "Start voice" : "Talk") : "Mute microphone");
-  const toggleLabel = t(p.compact ? "Expand voice companion" : "Compact voice companion");
+  const toggleLabel = t(
+    p.compact
+      ? "Expand voice companion"
+      : p.fullScreen
+        ? "Exit full screen"
+        : p.onToggleFullScreen
+          ? "Full screen"
+          : "Compact voice companion",
+  );
   // Like the phone call screen: a large stage by default, the transcript on request. Kept here,
   // above the compact switch, so the choice survives collapsing the panel.
   const [chatShown, setChatShown] = useState(false);
+  const workPanelId = useId();
+  const drawerMotion = motionAttributes(
+    { enter: p.workPanel ? "right" : undefined, duration: "standard" },
+    styles.workDrawer,
+  );
   const caption = p.chatTurns[p.chatTurns.length - 1]?.text ?? "";
   return (
     <>
@@ -116,6 +148,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           styles.header,
         )}
         {...p.headerDrag}
+        data-work-suggestion={p.workSuggestion || undefined}
       >
         {p.handle}
         {p.error ? (
@@ -198,8 +231,43 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               entries={p.toolActivities}
               onStopWaiting={p.onStopWaiting}
             />
+            {p.workSuggestion ? (
+              <div className={styles.workSuggestion}>
+                <Button onClick={p.onOpenSuggestedWork}>{t("View live work")}</Button>
+                <Button iconOnly label={t("Dismiss")} onClick={p.onDismissWorkSuggestion}>
+                  <X className="icon-sm" />
+                </Button>
+              </div>
+            ) : null}
             <VoiceOptionsMenu onFloat={p.canDetach ? p.onFloat : undefined} />
+            {p.fullScreen && p.onToggleWorkPanel ? (
+              <Button
+                ref={p.workPanelToggleRef}
+                touchTarget="control"
+                iconOnly
+                label={t("Activity")}
+                aria-expanded={Boolean(p.workPanel)}
+                aria-controls={workPanelId}
+                onClick={p.onToggleWorkPanel}
+              >
+                {p.workPanel ? (
+                  <PanelRightClose className="icon-sm" />
+                ) : (
+                  <PanelRight className="icon-sm" />
+                )}
+              </Button>
+            ) : null}
             {p.resize}
+            {p.onToggleFullScreen && !p.fullScreen ? (
+              <Button
+                touchTarget="control"
+                iconOnly
+                label={t("Compact voice companion")}
+                onClick={p.onToggleCompact}
+              >
+                <Minus className="icon-sm" />
+              </Button>
+            ) : null}
           </>
         )}
         <Button
@@ -207,12 +275,17 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           ref={toggleRef}
           iconOnly
           label={toggleLabel}
-          aria-expanded={!p.compact}
-          onClick={p.onToggleCompact}
+          aria-expanded={p.compact || !p.onToggleFullScreen ? !p.compact : undefined}
+          aria-pressed={!p.compact && p.onToggleFullScreen ? Boolean(p.fullScreen) : undefined}
+          onClick={!p.compact && p.onToggleFullScreen ? p.onToggleFullScreen : p.onToggleCompact}
         >
-          {p.compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
+          {p.compact || (p.onToggleFullScreen && !p.fullScreen) ? (
+            <Maximize2 className="icon-sm" />
+          ) : (
+            <Minimize2 className="icon-sm" />
+          )}
         </Button>
-        {!p.compact && (
+        {!p.compact && !p.fullScreen && (
           <Button
             touchTarget="control"
             iconOnly
@@ -265,6 +338,12 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               text={[...new Set(p.error ? [voiceErrorTitle(p.error), p.error] : [])].join(": ")}
             />
             {p.recovery}
+            {p.fullScreen ? (
+              <>
+                {p.choice}
+                {p.jobReview}
+              </>
+            ) : null}
             {p.pushHint ? (
               <Text as="p" size="caption" tone="secondary" leading="snug" className={parts.caption}>
                 {p.pushHint}
@@ -273,7 +352,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           </div>
           {/* Questions and job review open in their own panel beside the companion, so the
               conversation stays readable while they are answered. */}
-          {(p.choice || p.jobReview) && p.panel ? (
+          {!p.fullScreen && (p.choice || p.jobReview) && p.panel ? (
             <VoiceSidePanel
               panel={p.panel}
               label={p.choice ? t("Question") : t("Review jobs before starting")}
@@ -283,6 +362,19 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               {p.jobReview}
             </VoiceSidePanel>
           ) : null}
+          {p.fullScreen && (
+            <div
+              id={workPanelId}
+              hidden={!p.workPanel}
+              {...drawerMotion}
+              {...surfaceAttributes(
+                { variant: "opaque-canvas", frame: "pane", edge: "responsive-start" },
+                drawerMotion.className,
+              )}
+            >
+              {p.workPanel}
+            </div>
+          )}
           <div
             {...surfaceAttributes(
               { frame: chatShown ? "pane" : "none", edge: "block-start" },

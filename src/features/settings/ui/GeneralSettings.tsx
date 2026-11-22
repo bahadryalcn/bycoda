@@ -40,18 +40,18 @@ import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import { getTourSnapshot, startTour, subscribeTour } from "../../onboarding/model/tourState";
 import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import {
-  CLOSE_TO_TRAY_DEFAULT,
+  MINIMIZE_TO_TRAY_DEFAULT,
   KEEP_AWAKE_DEFAULT,
   KEEP_AWAKE_SCREEN_DEFAULT,
   KEEP_AWAKE_HOLD_AFTER,
   KEEP_AWAKE_HOLD_AFTER_DEFAULT,
   isKeepAwakeHoldAfter,
-  loadCloseToTray,
-  subscribeCloseToTray,
+  loadMinimizeToTray,
+  subscribeMinimizeToTray,
   loadKeepAwakeEnabled,
   loadKeepAwakeHoldAfter,
   loadKeepAwakeScreen,
-  saveCloseToTray,
+  saveMinimizeToTray,
   saveKeepAwakeScreen,
   subscribeKeepAwakeEnabled,
   subscribeKeepAwakeHoldAfter,
@@ -79,13 +79,13 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
   useLocale();
   // A tour left part-way is resumed from where it stopped.
   const tourState = useSyncExternalStore(subscribeTour, getTourSnapshot, () => "");
-  const [closeToTray, setCloseToTray] = useStoredPreferenceState(
-    loadCloseToTray,
-    subscribeCloseToTray,
+  const [minimizeToTray, setMinimizeToTray] = useStoredPreferenceState(
+    loadMinimizeToTray,
+    subscribeMinimizeToTray,
   );
-  const onCloseToTray = (next: boolean) => {
-    saveCloseToTray(next);
-    setCloseToTray(next);
+  const onMinimizeToTray = (next: boolean) => {
+    saveMinimizeToTray(next);
+    setMinimizeToTray(next);
   };
   const keepAwake = useSyncExternalStore(
     subscribeKeepAwakeEnabled,
@@ -127,8 +127,8 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       [
         () => {
           if (IS_WIN) {
-            onCloseToTray(CLOSE_TO_TRAY_DEFAULT);
-            return loadCloseToTray() === CLOSE_TO_TRAY_DEFAULT;
+            onMinimizeToTray(MINIMIZE_TO_TRAY_DEFAULT);
+            return loadMinimizeToTray() === MINIMIZE_TO_TRAY_DEFAULT;
           }
         },
         async () => {
@@ -184,19 +184,11 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       {IS_WIN && (
         <Group title={t("Application behavior")}>
           <Row
-            id="close-to-tray"
-            label={t("Close to tray")}
-            info={
-              <InfoPopover className="shrink-0" label={t("Close to tray")}>
-                <p>
-                  {t(
-                    "Keep agents running when you close the window. Reopen or quit the app from the tray icon.",
-                  )}
-                </p>
-              </InfoPopover>
-            }
+            id="minimize-to-tray"
+            label={t("Minimize to tray")}
+            description={t("The Minimize button sends this window to the system tray.")}
           >
-            <Toggle label={t("Close to tray")} on={closeToTray} onChange={onCloseToTray} />
+            <Toggle label={t("Minimize to tray")} on={minimizeToTray} onChange={onMinimizeToTray} />
           </Row>
         </Group>
       )}

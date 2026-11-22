@@ -741,7 +741,7 @@ for (const light of [false, true]) {
       // Options: "No project" (default folder) plus the two fixture projects.
       await expect(dialog.getByRole("option")).toHaveCount(3);
       await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("0");
-      const evidence = path.resolve("temp/verification/2026-11-04-new-session-project");
+      const evidence = path.resolve("temp/verification/new-session-button");
       await mkdir(evidence, { recursive: true });
       await page.screenshot({
         path: path.join(evidence, `${light ? "light" : "dark"}-${width}-project-picker.png`),
@@ -763,7 +763,51 @@ for (const light of [false, true]) {
       await expect(page.getByRole("status", { name: "Created project" })).toHaveText(
         "/fixture/demo-repo",
       );
-      await expect(page.getByRole("status", { name: "Last Sessions mode" })).toHaveText("true");
+      await expect(page.getByRole("status", { name: "Last Sessions mode" })).toHaveText("false");
+    });
+    test(`workspace New session split button at ${width} ${light ? "light" : "dark"}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?${width === 1280 ? "wide&wide-workspace" : "compact"}&${light ? "light" : "dark"}`,
+        { waitUntil: "domcontentloaded" },
+      );
+      const header = page.locator("[data-workspace-header]");
+      const create = header.getByRole("button", { name: "New session", exact: true });
+      const choose = header.getByRole("button", { name: "Choose project", exact: true });
+      await expect(choose).toBeVisible();
+      const labelText = create.getByText("New session", { exact: true });
+      if (width === 1280) await expect(labelText).toBeVisible();
+      else await expect(labelText).toBeHidden();
+      await expect
+        .poll(() =>
+          create.locator("img").evaluate((icon) => (icon as HTMLImageElement).naturalWidth),
+        )
+        .toBe(48);
+      const evidence = path.resolve("temp/verification/new-session-button");
+      await mkdir(evidence, { recursive: true });
+      const label = `${light ? "light" : "dark"}-${width}`;
+      await header.screenshot({ path: path.join(evidence, `${label}-workspace-header.png`) });
+      await choose.focus();
+      await choose.press("Enter");
+      const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
+      const search = dialog.getByRole("combobox", { name: "Search projects" });
+      await expect(search).toBeFocused();
+      await search.press("Escape");
+      await expect(choose).toBeFocused();
+      await create.click({ button: "right" });
+      await expect(search).toBeFocused();
+      await search.fill("demo");
+      await search.press("Enter");
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByRole("status", { name: "Created project" })).toHaveText(
+        "/fixture/demo-repo",
+      );
+      await expect(page.getByRole("status", { name: "Selected Git checkout" })).toHaveText(
+        "/fixture/demo-repo",
+      );
     });
   }
 }
@@ -778,6 +822,7 @@ test("new session accepts explicit current project and preserves project-local d
   await page.getByRole("option", { name: /^bycoda / }).click();
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
   await expect(page.getByRole("status", { name: "Created project" })).toHaveText("/fixture/bycoda");
+  await expect(page.getByRole("status", { name: "Last Sessions mode" })).toHaveText("true");
   await page.goto("/tests/browser/sessions/session-row-layout.html", {
     waitUntil: "domcontentloaded",
   });

@@ -87,9 +87,13 @@ voice and later open the companion. After setup it shows the assistant's avatar
 and name (the narrow rail shows the avatar alone). The avatar has no dot while
 voice is off; the dot pulses green while the assistant listens or speaks, turns
 yellow while connecting, red on an error and grey while the microphone is paused. When
-no sidebar is visible the button floats at the bottom right of the window. Before the first conversation,
-complete the assistant setup: choose its name, spoken language, provider and
-voice, verify playback and a microphone sentence, and review the autonomy budget.
+no sidebar is visible the button floats at the bottom right of the window. For a new
+assistant, set its name and language or use **Set up with AI** to draft its profile
+from a description. Review the proposed profile before applying it. An existing
+assistant goes directly to voice setup. Check the provider connection, then optionally
+preview the speaker and record a local microphone sample. The sample stays on this
+device. Continue to review and start even if you skipped either audio test. Work mode
+and presence settings can be reviewed separately during initial setup or changed later.
 Existing device settings prefill setup; the assistant has no default name.
 The microphone opens only after you choose **Test microphone**, **Start voice**
 or **Talk**. Closing voice never stops coding work.
@@ -386,6 +390,32 @@ disconnecting voice. On Linux Wayland compositors, staying on top depends on the
 compositor.
 
 ### Push to talk and tool activity
+
+The expanded desktop companion offers **Full screen** in its header. The call fills the
+window. Select **Activity** in the header to open the work panel on the right. The assistant
+can open the panel when showing a result helps answer your request. Escape closes the work
+panel first, then exits full screen.
+Search or filter the activity list, then select a row to keep its details open.
+**Follow** returns to the latest visible entry. Copy the command or output from its details.
+The captured project's Tasks, Goals and active or paused Crew runs appear alongside the
+conversation and Assistant jobs when the owning Host supports them. Filter by **Source**
+and select **Open** to reveal a tracked record in its workspace view.
+**Results** groups the visible work by status. Filter by status in the chart, sort the
+table, or select a result to open its details. **Generate with AI** asks the configured
+decision model to choose a chart and table layout using aggregate counts. **Use default**
+restores the standard layout. **Compare** shows two retained command
+outputs side by side. In **Draft**, you can insert the selected result and edit the
+text before copying it.
+**Changes** shows the session's recorded diff. **Browser**, **Devices**, and
+**Logs** use the conversation's existing tool dock and its current access rules.
+When viewable work is active, **View live work** appears in the header. Bycoda displays
+the suggestion silently and waits for you to open it. Escape returns to the previous
+view while the voice session and work continue. Use **Open conversation** to inspect the
+source and its native panels, or open another available workspace view from the activity area.
+The conversation activity bar also offers **View live work** for work with tool output
+when the voice companion is available. In the transcript, open **Results** beneath a
+completed turn to search its retained output and inspect or copy the result. **Full screen** in the expanded floating window
+returns to the app and opens the same workspace.
 
 Assign **Voice: Push to Talk** in Keyboard shortcuts. It has no default binding.
 While voice is connected and the microphone is paused, hold the shortcut to

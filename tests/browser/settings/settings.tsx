@@ -7,6 +7,7 @@ import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core
 import { agentDefaultsFixtureCommand } from "./agent-defaults-fixture";
 import { installSignedInAccountFixture, signedInAccountCommand } from "./settings-account-fixture";
 import { useState } from "react";
+import { rememberRemoteProject } from "../../../src/features/connections/public/remoteProjects";
 import { VoiceAssistantFixture } from "./voice-assistant-fixture";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initAppearancePreferences } from "../../../src/features/settings/model/appearancePreferences";
@@ -146,6 +147,41 @@ const mcpConnections = Array.from({ length: 25 }, (_, index) => ({
   configPath: `/fixture/${"long-project-directory/".repeat(8)}config-${index}.json`,
   enabled: index !== 1,
 }));
+const remoteMcpFixture = new URLSearchParams(location.search).has("mcpRemote");
+const managedMcpFixture = new URLSearchParams(location.search).has("managedMcp");
+const managedMcpServers = new Map<
+  string,
+  { name: string; revision: string; enabled: boolean; config: { url: string } }
+>();
+const remoteMcpMachine = {
+  id: "mcp-host",
+  environmentId: "mcp-office",
+  name: "Office PC",
+  endpoint: "http://mcp-fixture.example",
+};
+const localMcpMachine = {
+  id: "mcp-local",
+  environmentId: "mcp-desktop",
+  name: "This computer",
+  endpoint: "http://127.0.0.1:18076",
+  localHost: true,
+};
+const remoteMcpProject = remoteMcpFixture
+  ? rememberRemoteProject(remoteMcpMachine.environmentId, {
+      id: "mcp-site",
+      name: "storefront",
+      cwd: "/fixture/storefront",
+    })
+  : undefined;
+const remoteMcpConnection = {
+  name: "hostinger",
+  provider: "codex",
+  scope: "user",
+  transport: "http",
+  configPath: "/fixture/.codex/config.toml",
+  enabled: true,
+};
+let remoteMcpCredential = false;
 // Memory-only native consent mirror. No native owner grant or device authority.
 const consentFixture = new Map<
   string,
@@ -176,6 +212,94 @@ const signedInAccount = new URLSearchParams(location.search).get("account") === 
 if (signedInAccount) installSignedInAccountFixture();
 mockIPC(
   (command, args) => {
+    if (remoteMcpFixture) {
+      if (command === "remote_machines") return [localMcpMachine, remoteMcpMachine];
+      if (command === "remote_request" && args.machineId === localMcpMachine.id) {
+        if (args.method === "projects.list")
+          return [
+            { id: "mcp-local-project", name: "Local project", cwd: "/fixture/settings-project" },
+          ];
+        if (args.method === "mcp.tokens.list" || args.method === "mcp.oauth.status")
+          return { tokens: [], servers: [] };
+        if (args.method === "mcp.hub.loading.get")
+          return {
+            policy: { version: 1, mode: "onDemand", direct: [] },
+            corrupt: false,
+            servers: [],
+          };
+      }
+      if (command === "remote_request" && args.machineId === remoteMcpMachine.id) {
+        const input = args.params as {
+          command?: string;
+          projectId?: string;
+          cwd?: string;
+          action?: string;
+          name?: string;
+          revision?: string;
+          config?: { url: string };
+          enabled?: boolean;
+        };
+        if (args.method === "mcp.config.call") {
+          if (input.command === "mcp_discover")
+            return managedMcpFixture
+              ? { connections: [], warnings: [], nativeConfigAvailable: false }
+              : { connections: [remoteMcpConnection], warnings: [] };
+          if (input.command === "codex_mcp_list") return [];
+          if (input.command === "mcp_server_config_read")
+            return { config: '{"url":"https://mcp.example.com"}', revision: "v1" };
+        }
+        if (args.method === "mcp.hub.loading.get")
+          return {
+            policy: { version: 1, mode: "onDemand", direct: [] },
+            corrupt: false,
+            servers: [],
+            managedServers: managedMcpFixture,
+            inventory: managedMcpFixture
+              ? (input.projectId ? [...managedMcpServers.values()] : []).map(
+                  ({ config: _config, ...entry }) => ({
+                    name: `bycoda-${entry.name}`,
+                    kind: "http",
+                    sources: ["bycoda-project"],
+                    aliases: [],
+                    managed: { ...entry, scope: "project" },
+                  }),
+                )
+              : [
+                  {
+                    name: "hostinger",
+                    kind: "http",
+                    sources: ["codex"],
+                    aliases: [{ provider: "codex", name: "hostinger" }],
+                    projectCredentialsConfigured: !!input.projectId && remoteMcpCredential,
+                  },
+                ],
+          };
+        if (args.method === "mcp.hub.servers" && managedMcpFixture) {
+          if (!input.name || input.projectId !== remoteMcpProject?.projectId)
+            throw new Error("Wrong Hub project");
+          const current = managedMcpServers.get(input.name);
+          if (input.action === "get" && current) return current;
+          if (input.action !== "add" && current?.revision !== input.revision)
+            throw new Error("Stale fixture revision");
+          const next = {
+            name: input.name,
+            revision: crypto.randomUUID(),
+            enabled: input.enabled ?? current?.enabled ?? true,
+            config: input.config ?? current?.config ?? { url: "" },
+          };
+          managedMcpServers.set(input.name, next);
+          return next;
+        }
+        if (args.method === "mcp.oauth.status") return { servers: [] };
+        if (
+          args.method === "mcp.projectCredentials.set" &&
+          input.projectId === remoteMcpProject?.projectId
+        ) {
+          remoteMcpCredential = true;
+          return { configured: true, kind: "http" };
+        }
+      }
+    }
     if (signedInAccount) {
       const account = signedInAccountCommand(command);
       if (account !== undefined) return account;
@@ -1010,7 +1134,7 @@ function Fixture() {
       {open ? (
         <SettingsView
           section={section}
-          cwd="/fixture/settings-project"
+          cwd={remoteMcpProject?.key ?? "/fixture/settings-project"}
           sessions={[]}
           recents={[{ path: "/fixture/settings-project", openedAt: 1 }]}
           onSelectSection={setSection}

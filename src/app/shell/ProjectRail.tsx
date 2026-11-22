@@ -2,6 +2,7 @@ import { AddProjectButton } from "./AddProjectButton";
 import { actionContentAttributes } from "../../shared/ui/ActionHost";
 import { Divider } from "../../shared/ui/Divider";
 import { Text } from "../../shared/ui/Text";
+import { ListRow } from "../../shared/ui/ListRow";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { InlineError } from "../../shared/ui/InlineError";
@@ -39,6 +40,7 @@ import {
   Lock,
   LockOpen,
   MoreHorizontal,
+  MessageSquare,
   Pin,
   PinOff,
   CircleAlert,
@@ -258,6 +260,7 @@ type Props = {
   /** Called when a drag ends far below the minimum width; omit to only clamp at the minimum. */
   onCollapse?: () => void;
   onSelectProject: (path: string) => void;
+  onOpenNoProject?: () => void;
   onOpenProject: () => void | Promise<void>;
   /** Lets the user pick this machine's folder for a project only another machine has. */
   onOpenSyncedProject?: (projectId: string, name: string) => void | Promise<void>;
@@ -327,6 +330,7 @@ export function ProjectRail({
   onTogglePanel,
   onCollapse,
   onSelectProject,
+  onOpenNoProject,
   onOpenProject,
   onOpenSyncedProject,
   onRemoveProject,
@@ -986,6 +990,21 @@ export function ProjectRail({
           rail.toggleCollapsed("projects");
         }}
         items={groupedProjectSections.ungrouped}
+        leadingRow={
+          onOpenNoProject && t("No project").toLocaleLowerCase().includes(filterQuery) ? (
+            <ListRow
+              aria-label={t("No project")}
+              selected={cwd === "~" && !lastSessionsOpen && !searchOrPageActive}
+              aria-current={
+                cwd === "~" && !lastSessionsOpen && !searchOrPageActive ? "page" : undefined
+              }
+              icon={<MessageSquare className="icon-sm" />}
+              onClick={onOpenNoProject}
+            >
+              <span className="@max-[140px]/rail:hidden">{t("No project")}</span>
+            </ListRow>
+          ) : undefined
+        }
         muteStatuses={muteStatuses}
         nameCollisions={nameCollisions}
         focusHint={!navigator}
@@ -1337,6 +1356,7 @@ function ProjectSection({
   collapsed = false,
   onToggleCollapsed,
   items,
+  leadingRow,
   muteStatuses,
   nameCollisions,
   focusHint,
@@ -1365,6 +1385,7 @@ function ProjectSection({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   items: RecentProject[];
+  leadingRow?: ReactNode;
   muteStatuses: ReadonlyMap<string, string | null>;
   nameCollisions: ReadonlySet<string>;
   /** Rows show their full detail in the shared keyboard-focus hint (not inside the Projects flyout). */
@@ -1406,7 +1427,7 @@ function ProjectSection({
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
       />
-      {items.length === 0 && emptyLabel && !collapsed ? (
+      {items.length === 0 && emptyLabel && !leadingRow && !collapsed ? (
         <Text
           as="p"
           size="caption"
@@ -1423,6 +1444,7 @@ function ProjectSection({
         data-reorder-fold-body
         className={`flex-col gap-0.5 px-2 ${collapsed ? "hidden" : "flex"}`}
       >
+        {leadingRow}
         {items.map((item) => (
           <ProjectCard
             key={item.path}

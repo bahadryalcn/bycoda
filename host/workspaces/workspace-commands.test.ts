@@ -78,17 +78,47 @@ async function managedDeliverySetup(startMutation?: WorkspaceCommandDelivery["st
     defaultRoot: root,
     worktrees: [{ path: project }, { path: tree }],
   } as never);
+  const projects = [{ id: "p", cwd: project }];
   const commands = new WorkspaceCommands(
     {
-      projects: () => [{ id: "p", cwd: project }],
+      projects: () => projects,
       attachmentDir: join(root, "attachments"),
     } as never,
     async (_id, action) => await action(),
     undefined,
     { registry, service, startMutation } as WorkspaceCommandDelivery,
   );
-  return { commands, registry, service, project, tree, git };
+  return { commands, registry, service, project, tree, git, projects };
 }
+
+it("generates commit context from working changes without staging and prefers a populated index", async () => {
+  const { commands, tree, git } = await managedDeliverySetup();
+  const tracked = join(tree, "tracked.txt");
+  await writeFile(tracked, "baseline\n");
+  git(tree, "add", "tracked.txt");
+  git(tree, "commit", "-qm", "track file");
+  await expect(commands.run("git_staged_context", { cwd: tree })).rejects.toThrow(
+    "No changes to summarize",
+  );
+
+  await writeFile(tracked, "working edit\n");
+  await writeFile(join(tree, "new.txt"), "untracked content\n");
+  await expect(commands.run("git_staged_context", { cwd: tree })).resolves.toMatchObject({
+    summary: expect.stringContaining("Untracked files:\nnew.txt"),
+    patch: expect.stringContaining("+working edit"),
+  });
+  expect(git(tree, "diff", "--cached", "--name-only")).toBe("");
+
+  git(tree, "add", "tracked.txt");
+  await writeFile(tracked, "later edit\n");
+  const context = await commands.run("git_staged_context", { cwd: tree });
+  expect(context).toMatchObject({
+    summary: expect.stringContaining("tracked.txt"),
+    patch: expect.stringContaining("+working edit"),
+  });
+  expect(context).not.toMatchObject({ patch: expect.stringContaining("later edit") });
+  expect(context).not.toMatchObject({ summary: expect.stringContaining("new.txt") });
+});
 
 it("fences Git and editor writes while leaving reads available and releases admission on success or validation failure", async () => {
   const release = vi.fn(async () => {});
@@ -167,6 +197,22 @@ it("blocks legacy delivery from a managed directory even after an external branc
     ).rejects.toThrow("fresh review plan");
   expect(git(project, "rev-parse", "HEAD")).toBe(head);
   expect(git(tree, "status", "--porcelain")).toBe("");
+});
+
+it("synchronizes an ordinary checkout when an unrelated registered project is missing", async () => {
+  const { commands, project, tree, git, projects } = await managedDeliverySetup();
+  const missing = join(project, "..", "removed-project");
+  const origin = join(project, "..", "origin.git");
+  projects.push({ id: "removed", cwd: missing });
+  git(project, "init", "--bare", "-q", origin);
+  git(project, "remote", "add", "origin", origin);
+  git(project, "push", "-qu", "origin", "main");
+  git(project, "commit", "-q", "--allow-empty", "-m", "local change");
+
+  await expect(commands.run("git_sync", { cwd: tree })).rejects.toThrow("fresh review plan");
+  await commands.run("git_sync", { cwd: project });
+
+  expect(git(origin, "rev-parse", "refs/heads/main")).toBe(git(project, "rev-parse", "HEAD"));
 });
 
 it("blocks integration by source SHA after a managed directory is retired and fails closed on unknown ownership", async () => {

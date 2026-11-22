@@ -1,6 +1,6 @@
 import type { LiveBackground } from "../../model/liveBackground";
 import { createLiveBackgroundScene } from "./index";
-import { createReactBitsSurface } from "./reactBitsSurface";
+import { createShaderSurface } from "./shaderSurface";
 import type { LiveBackgroundPalette, LiveSignal } from "./types";
 
 export const isAmbientBackground = (
@@ -25,7 +25,7 @@ export function createBackgroundRenderer(
   palette: LiveBackgroundPalette,
 ): BackgroundRenderer | null {
   if (isAmbientBackground(effect)) {
-    const surface = createReactBitsSurface(effect, canvas, palette);
+    const surface = createShaderSurface(effect, canvas, palette);
     if (surface) {
       canvas.dataset.backgroundRenderer = "webgl";
       return surface;

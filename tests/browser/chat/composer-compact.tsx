@@ -215,7 +215,7 @@ function seedComposer() {
     ]);
     setComposerDraft(
       sessionId,
-      "Önce [image1] ve [file1] dosyasına bak.\n[file2] ile [file3] verilerini karşılaştır.\n@PreviewTunnel.ts ve https://github.com/pingdotgg/t3code örneğini incele.\n/ui-ux-pro-max /group-interface-design ile arayüzü değerlendir.",
+      "Önce [image1] ve [file1] dosyasına bak.\n[file2] ile [file3] verilerini karşılaştır.\n@PreviewTunnel.ts ve https://github.com/example/project örneğini incele.\n/ui-ux-pro-max /group-interface-design ile arayüzü değerlendir.",
     );
     return;
   }

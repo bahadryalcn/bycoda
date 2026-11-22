@@ -12,7 +12,7 @@ import { AttachmentChip } from "../../../src/features/sessions/ui/AttachmentChip
 import { AttachmentTokenText } from "../../../src/features/sessions/ui/AttachmentTokenText";
 import { ComposerAttachmentHighlight } from "../../../src/features/sessions/ui/ComposerAttachmentHighlight";
 import { ComposerHighlight } from "../../../src/features/sessions/ui/ComposerHighlight";
-import { WorkItemMentionText } from "../../../src/features/sessions/ui/ChatCitationText";
+import { ScopedMentionText } from "../../../src/features/sessions/ui/ChatCitationText";
 import { WorkItemMentionCwd } from "../../../src/features/sessions/ui/WorkItemMentionChip";
 import {
   SkillTokenText,
@@ -278,7 +278,7 @@ function ReferenceTokens() {
               />
             </p>
             <p>
-              <WorkItemMentionText text="Track @jira:PFDEV-1196 @gh:owner/repo#42 @gl:group/project!7." />
+              <ScopedMentionText text="Track @jira:PFDEV-1196 @gh:owner/repo#42 @gl:group/project!7. Ask @crews:backend-engineer about @notes:release-checklist." />
             </p>
           </div>
         </section>

@@ -1,6 +1,7 @@
 import type { ComposerReferenceContext } from "./ComposerHighlight";
 import { scanInlineReferences } from "./composerInlineScan";
 import type { Attachment } from "../model/session";
+import type { ScopedMentionKind } from "../model/composerMentionScopes";
 
 export type InlineReferenceKind =
   | "attachment"
@@ -10,7 +11,8 @@ export type InlineReferenceKind =
   | "skill"
   | "group"
   | "quote"
-  | "mcp";
+  | "mcp"
+  | ScopedMentionKind;
 export type InlineReference = {
   start: number;
   end: number;
@@ -26,6 +28,10 @@ export type InlineReferenceContext = ComposerReferenceContext & {
   citations: number;
   modeEnd: number;
 };
+
+export function isInlineMentionMark({ kind }: InlineReference) {
+  return kind === "crew" || kind === "note" || kind === "work-item";
+}
 
 /**
  * Resolve display ranges against the original draft. Widgets never rewrite the document.

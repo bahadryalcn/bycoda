@@ -120,8 +120,8 @@ result clears them without changing your draft.
 Open **Set up** in the tool navigation to choose the assistant's name, language,
 execution provider, working permissions and daily token budget. The chosen name
 also appears in its Room and on messages it writes. Voice setup checks the
-provider, microphone and selected voice separately. Talking always requires an
-explicit microphone action.
+provider connection. Speaker preview and local microphone recording are optional.
+Talking always requires an explicit microphone action.
 
 Setup offers a daily token budget of one million for an unconfigured assistant.
 Choose a preset or enter an exact custom limit; existing chosen values are kept.
@@ -148,11 +148,13 @@ project supervision and computer use are never proposed and stay manual. The
 avatar picker also has **Generate with AI** for a portrait from your own
 description; generated avatars are stored on the Host.
 
-Quick setup has three steps: your name and how the assistant addresses you, a
-**Work mode**, and a review. Voice setup has five steps: Identity (including language and conversation behavior),
-Voice (provider, playback and microphone checks), Work mode, Presence and hours
-(including first rules), and Review. Existing drafts resume in the matching grouped step. The work mode answers one question, how freely the
-assistant may work, and sets the job controls together:
+Quick setup has three steps. Choose your name and how the assistant addresses you,
+choose a work mode, then review. Voice setup starts with identity for new profiles
+and continues through provider, speaker, microphone, and review. Applying an AI
+profile advances to provider selection. New assistants use report-only defaults
+unless you choose **Work mode** in the review. Voice setup preserves an existing
+assistant's profile and rules. The work mode determines how freely the assistant
+may work and sets the job controls together:
 
 - **Only watch** reports what happens and starts no work.
 - **Work and ask** runs jobs you assign and asks before commands, file changes
@@ -160,7 +162,7 @@ assistant may work, and sets the job controls together:
 - **Work freely** runs jobs without asking; commands and file changes run without
   confirmation.
 
-Nothing is selected until you choose one. Models are not asked for: the available
+In the detailed work-mode step, choose a mode explicitly. The available
 default model becomes the worker, and you manage the model list later in
 **Settings > Models > Background work**. If no default model is available, choose a work mode
 that starts no work, or add a model in Settings first. Rules you want the assistant

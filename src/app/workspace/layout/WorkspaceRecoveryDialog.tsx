@@ -7,7 +7,6 @@ import {
   type EditorDraftRecoverySectionProps,
 } from "./EditorDraftRecoverySection";
 import type { SessionRecovery } from "../../../features/workspace/model/sessionRecovery";
-import { BufferRecoveryReports } from "./BufferRecoveryReports";
 import { RecoveryTabs, recoveryPanelId, recoveryTabId, type RecoveryTab } from "./RecoveryLayout";
 
 const PREFIX = "workspace-recovery";
@@ -27,14 +26,10 @@ type Props = Omit<ComponentProps<typeof SessionRecoveryPanel>, "recovery" | "ren
   recovery: SessionRecovery | null | undefined;
   editorDraftRecovery?: EditorDraftRecoverySectionProps["recovery"];
   editorDraftRecords?: EditorDraftRecoverySectionProps["records"];
-  canInspectLegacyReports?: () => boolean;
-  getLegacyReportPrivacySnapshot?: () => unknown;
 };
 export function WorkspaceRecoveryDialog({
   editorDraftRecovery,
   editorDraftRecords = [],
-  canInspectLegacyReports = () => false,
-  getLegacyReportPrivacySnapshot,
   recovery,
   ...props
 }: Props) {
@@ -42,23 +37,13 @@ export function WorkspaceRecoveryDialog({
   const [mode, setMode] = useState(() =>
     recovery?.workspace.sessions.length ? "sessions" : "files",
   );
-  const [reportSelection, setReportSelection] = useState<{
-    paths: readonly string[];
-    privacy: unknown;
-  } | null>(null);
-  const reportPaths =
-    reportSelection && reportSelection.privacy === getLegacyReportPrivacySnapshot?.()
-      ? reportSelection.paths
-      : [];
   if (!editorDraftRecovery?.available)
     return recovery ? <SessionRecoveryPanel {...props} recovery={recovery} /> : null;
   const draftPending = editorDraftRecovery.pendingKeys.size > 0;
-  // A tab exists only when it has something to show. File drafts and reports are the
-  // dialog's home when there are no conversations; reports can only be counted after an
-  // explicit listing, so they ride along with the file copies instead of standing alone.
+  // A tab exists only when it has something to show. File drafts are the dialog's home
+  // when there are no conversations.
   const hasSessions = !!recovery?.workspace.sessions.length;
   const fileSide = editorDraftRecords.length > 0 || !hasSessions;
-  const reportsInspectable = !!getLegacyReportPrivacySnapshot && canInspectLegacyReports();
   return (
     <SessionRecoveryPanel
       {...props}
@@ -74,16 +59,6 @@ export function WorkspaceRecoveryDialog({
                   label: t("File drafts"),
                   count: editorDraftRecords.length,
                   disabled: busy,
-                },
-              ]
-            : []),
-          ...(fileSide && reportsInspectable
-            ? [
-                {
-                  value: "reports",
-                  label: t("Earlier file reports"),
-                  disabled: busy,
-                  disabledReason: t("Available when the current recovery action finishes."),
                 },
               ]
             : []),
@@ -121,17 +96,6 @@ export function WorkspaceRecoveryDialog({
                   <EditorDraftRecoverySection
                     recovery={editorDraftRecovery}
                     records={editorDraftRecords}
-                    reportPaths={reportPaths}
-                    onClearReportPaths={() => setReportSelection(null)}
-                  />
-                ) : activeMode === "reports" && getLegacyReportPrivacySnapshot ? (
-                  <BufferRecoveryReports
-                    canInspect={canInspectLegacyReports}
-                    getPrivacySnapshot={getLegacyReportPrivacySnapshot}
-                    onShowCopies={(paths) => {
-                      setReportSelection({ paths, privacy: getLegacyReportPrivacySnapshot() });
-                      setMode("files");
-                    }}
                   />
                 ) : (
                   sessions

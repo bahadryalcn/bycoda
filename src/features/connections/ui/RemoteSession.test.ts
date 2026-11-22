@@ -261,6 +261,8 @@ let hostQueue: SharedQueue = { messages: [], revision: 0 };
 let queueReadFailed = false;
 let branchFailure: string | undefined;
 let branchActionFailure: string | undefined;
+// False when a test needs "dev" as a free branch rather than one held by a worktree.
+let devWorktree = true;
 let currentBranch: string;
 let createdBranch: string | undefined;
 let createdWorktree: string | undefined;
@@ -335,6 +337,7 @@ beforeEach(() => {
   queueReadFailed = false;
   branchFailure = undefined;
   branchActionFailure = undefined;
+  devWorktree = true;
   currentBranch = "main";
   createdBranch = undefined;
   createdWorktree = undefined;
@@ -516,13 +519,17 @@ beforeEach(() => {
             isMain: true,
             missing: false,
           },
-          {
-            path: "/home/me/repo-worktrees/dev",
-            branch: "dev",
-            head: "def",
-            isMain: false,
-            missing: false,
-          },
+          ...(devWorktree
+            ? [
+                {
+                  path: "/home/me/repo-worktrees/dev",
+                  branch: "dev",
+                  head: "def",
+                  isMain: false,
+                  missing: false,
+                },
+              ]
+            : []),
           ...(createdWorktree
             ? [
                 {
@@ -2125,6 +2132,7 @@ it("searches and creates a host branch from the composer picker", async () => {
 });
 
 it("keeps a failed host branch action in the picker", async () => {
+  devWorktree = false;
   branchActionFailure = "Commit or stash changes on the host before switching branches";
   await render();
   await act(async () => byLabel("Branch main")!.click());
@@ -2327,9 +2335,9 @@ it("asks to connect the machine when it is not set up on this computer", async (
     command === "remote_machines" ? [] : undefined,
   );
   await render();
-  expect(document.body.textContent).toContain(
-    "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.",
-  );
+  // The reason sits behind the info button; the page states the status and offers Connections.
+  expect(document.body.textContent).toContain("Not added on this computer");
+  expect(container.querySelector('[data-machine-unavailable="not-added"]')).not.toBeNull();
   expect(container.querySelector("textarea")).toBeNull();
 });
 

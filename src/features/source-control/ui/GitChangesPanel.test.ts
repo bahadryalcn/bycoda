@@ -902,7 +902,7 @@ it("shows live detached HEAD instead of a stale worktree branch label", async ()
   const header = container.querySelector("header")!;
   expect(header.textContent).toContain("Detached HEAD · 1234567");
   expect(header.textContent).not.toContain("old-branch");
-  expect(header.textContent).toContain("Current");
+  expect(header.textContent).toContain("This session");
   expect(await tooltipText(header.querySelector("button")!)).toContain("/repo-detached");
 });
 
@@ -2711,3 +2711,158 @@ it.each(["Keep my new draft", "  "])(
     expect(gitCommit).not.toHaveBeenCalled();
   },
 );
+
+it("shows one header row for a worktree: its branch picker alone, with no worktree tabs", async () => {
+  vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
+  vi.mocked(gitBranches).mockResolvedValue({
+    current: "feature/row",
+    detached: false,
+    branches: [{ name: "feature/row", current: true, remote: null }],
+  });
+  await act(async () =>
+    root.render(
+      createElement(GitChangesPanel, {
+        cwd: "/single-worktree",
+        enabled: true,
+        checkout: { onRefresh: vi.fn() },
+        onOpenFile: vi.fn(),
+        onOpenAllChanges: vi.fn(),
+        onOpenCommit: vi.fn(),
+      }),
+    ),
+  );
+  const trigger = container.querySelector<HTMLButtonElement>(
+    'header button[aria-label="Branch feature/row"]',
+  )!;
+  expect(trigger).not.toBeNull();
+  await act(async () => trigger.click());
+  const picker = document.querySelector("[data-branch-picker]")!;
+  expect(picker.querySelector('[role="tab"]')).toBeNull();
+  expect(picker.textContent).not.toContain("Worktrees");
+});
+
+it("titles an open worktree row once: the branch picker, with the title for assistive tech", async () => {
+  vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
+  await act(async () =>
+    root.render(
+      createElement(GitChangesPanel, {
+        cwd: "/open-worktree",
+        enabled: true,
+        checkout: { onRefresh: vi.fn() },
+        repository: {
+          name: "feature/row",
+          checkout: {
+            path: "/open-worktree",
+            branch: "feature/row",
+            head: "abcdef0",
+            isMain: false,
+            locked: false,
+            prunable: false,
+            missing: false,
+            dirty: false,
+            unpushed: 0,
+            sessionIds: [],
+          },
+          expanded: true,
+          onToggle: vi.fn(),
+        },
+        onOpenFile: vi.fn(),
+        onOpenAllChanges: vi.fn(),
+        onOpenCommit: vi.fn(),
+      }),
+    ),
+  );
+  const header = container.querySelector("header")!;
+  expect(header.querySelector('button[aria-label="Branch feature/row"]')).not.toBeNull();
+  // The folder name is the visible identity beside the picker; the path is only its hint.
+  const toggle = header.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+  expect(toggle.textContent).toContain("open-worktree");
+  expect(await tooltipText(toggle)).toContain("/open-worktree");
+  // One leading icon (the picker's branch icon), and no "Worktree" label or path in the row.
+  expect(header.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
+  expect(toggle.querySelector("svg.lucide-folder-tree")).toBeNull();
+  expect(header.textContent).not.toContain("Worktree");
+  expect(header.textContent).not.toContain("/open-worktree");
+});
+
+it("shows a collapsed worktree as one row: branch icon, bold branch, muted folder, session marker", async () => {
+  vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
+  await act(async () =>
+    root.render(
+      createElement(GitChangesPanel, {
+        cwd: "/work/open-worktree",
+        enabled: true,
+        embedded: true,
+        repository: {
+          name: "feature/row",
+          checkout: {
+            path: "/work/open-worktree",
+            branch: "feature/row",
+            head: "abcdef0",
+            isMain: false,
+            locked: false,
+            prunable: false,
+            missing: false,
+            dirty: true,
+            unpushed: 0,
+            sessionIds: [],
+          },
+          current: true,
+          expanded: false,
+          onToggle: vi.fn(),
+        },
+        onOpenFile: vi.fn(),
+        onOpenAllChanges: vi.fn(),
+        onOpenCommit: vi.fn(),
+      }),
+    ),
+  );
+  const toggle = container.querySelector<HTMLButtonElement>("header button[aria-expanded]")!;
+  expect(toggle.textContent).toMatch(/feature\/row.*open-worktreeThis session$/);
+  expect(toggle.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
+  expect(await tooltipText(toggle)).toContain("/work/open-worktree");
+  expect(container.querySelector("header")!.textContent).not.toContain("/work");
+});
+
+it("shows a nested separate repository with the repository icon and its marker", async () => {
+  vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "main" }));
+  await act(async () =>
+    root.render(
+      createElement(GitChangesPanel, {
+        cwd: "/repo/mobile",
+        enabled: true,
+        embedded: true,
+        repository: { name: "mobile", nested: true, expanded: false, onToggle: vi.fn() },
+        onOpenFile: vi.fn(),
+        onOpenAllChanges: vi.fn(),
+        onOpenCommit: vi.fn(),
+      }),
+    ),
+  );
+  const toggle = container.querySelector<HTMLButtonElement>("header button[aria-expanded]")!;
+  expect(toggle.textContent).toMatch(/mobile.*mainSeparate repository$/);
+  expect(toggle.querySelector("svg.lucide-folder-git-2")).not.toBeNull();
+  expect(toggle.querySelector("svg.lucide-git-branch")).toBeNull();
+});
+
+it("marks the section header actions as revealed by hover or keyboard focus only", async () => {
+  vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "main" }));
+  await act(async () =>
+    root.render(
+      createElement(GitChangesPanel, {
+        cwd: "/repo/mobile",
+        enabled: true,
+        embedded: true,
+        repository: { name: "mobile", nested: true, expanded: true, onToggle: vi.fn() },
+        onOpenFile: vi.fn(),
+        onOpenAllChanges: vi.fn(),
+        onOpenCommit: vi.fn(),
+      }),
+    ),
+  );
+  const header = container.querySelector("header")!;
+  // The shared row host reveals this slot on hover and :focus-visible only; the buttons stay in the tab order.
+  expect(header.hasAttribute("data-hover-reveal")).toBe(true);
+  const slot = header.querySelector('[data-action-slot="collapse"]')!;
+  expect(slot.querySelector('button[aria-label="Refresh source control"]')).not.toBeNull();
+});

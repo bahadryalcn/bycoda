@@ -3199,6 +3199,44 @@ it("keeps full keyboard navigation order while mounting a bounded row window", (
   expect(container.querySelector('[data-session-card="paged-99"]')).not.toBeNull();
 });
 
+it.each(["arrow", "right-click"] as const)(
+  "opens the shared project selector from the workspace New session %s",
+  async (trigger) => {
+    props.onNew = vi.fn();
+    props.onNewListedSession = vi.fn();
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.compactProjectRail = trigger === "arrow";
+    props.recents = [{ path: "/workspace/other", openedAt: Date.now() }];
+    await act(async () => render());
+    const primary = container.querySelector<HTMLButtonElement>(
+      'button[data-usage-guide="new-session"]',
+    )!;
+    const disclosure = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Choose project"]',
+    )!;
+    expect(disclosure?.getAttribute("aria-haspopup")).toBe("dialog");
+    await act(async () => primary.click());
+    expect(props.onNew).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    const rightClick = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    await act(async () => {
+      if (trigger === "arrow") disclosure.click();
+      else primary.dispatchEvent(rightClick);
+    });
+    if (trigger === "right-click") expect(rightClick.defaultPrevented).toBe(true);
+    expect(props.onNew).toHaveBeenCalledOnce();
+    expect(props.onNewListedSession).not.toHaveBeenCalled();
+    const target = [
+      ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="option"]'),
+    ].find((option) => option.textContent?.includes("/workspace/other"))!;
+    await act(async () => target.click());
+    expect(props.onNewListedSession).toHaveBeenCalledExactlyOnceWith("/workspace/other");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  },
+);
+
 it("opens a project selector for an explicit global New request without creating a session", async () => {
   props.lastSessionsOpen = true;
   props.onNewListedSession = vi.fn();

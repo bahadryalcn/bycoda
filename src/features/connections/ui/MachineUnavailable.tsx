@@ -1,21 +1,66 @@
-import machineOffline from "../../../assets/connections/machine-offline.webp";
+import { useSyncExternalStore, type ReactNode } from "react";
+import connectComputer from "../../../assets/onboarding/connect-computer.webp";
+import connectComputerStill from "../../../assets/onboarding/connect-computer-still.webp?no-inline";
+import errorScene from "../../../assets/connections/error.webp";
+import errorStill from "../../../assets/connections/error-still.webp?no-inline";
+import offlineScene from "../../../assets/connections/offline.webp";
+import offlineStill from "../../../assets/connections/offline-still.webp?no-inline";
+import unreachableScene from "../../../assets/connections/unreachable.webp";
+import unreachableStill from "../../../assets/connections/unreachable-still.webp?no-inline";
 import { t, useLocale } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { FailureState } from "../../../shared/ui/FailureState";
+import { NoticeButton } from "../../../shared/ui/Notice";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { CloudOff } from "../../../shared/ui/icons";
+import { Text } from "../../../shared/ui/Text";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { knownRemoteMachine, OPEN_CONNECTIONS_EVENT } from "../model/connections";
-import type { ReactNode } from "react";
 import {
   machineHidesView,
   useMachineAvailability,
   type MachineUnavailableReason,
 } from "../model/machineAvailability";
 import { parseRemotePath } from "../model/remoteProjects";
+import {
+  isReconnecting,
+  reconnectRemoteMachine,
+  subscribeReconnecting,
+} from "../model/remoteReconnect";
 import { useGracedFailure } from "../model/transientFailure";
 
-/** The one sentence that says why, and what the user can do about it. */
-function reasonText(reason: MachineUnavailableReason): string {
+/** The mobile app's scenes exported for the desktop: animated and still (frame 0) per scene. */
+const SCENES = {
+  "connect-computer": {
+    animated: connectComputer,
+    still: connectComputerStill,
+    width: 240,
+    height: 184,
+  },
+  unreachable: { animated: unreachableScene, still: unreachableStill, width: 203, height: 240 },
+  offline: { animated: offlineScene, still: offlineStill, width: 129, height: 240 },
+  error: { animated: errorScene, still: errorStill, width: 189, height: 240 },
+} as const;
+export type MachineScene = keyof typeof SCENES;
+
+/**
+ * Which scene says this state: a machine that is not added or turned off is "connect a computer",
+ * one that needs sign-in or refused pairing is an error, an offline one is "unreachable" while
+ * this computer has a network and "offline" while the network itself is down.
+ */
+export function machineScene(reason: MachineUnavailableReason, networkDown = false): MachineScene {
+  switch (reason) {
+    case "not-added":
+    case "turned-off":
+      return "connect-computer";
+    case "needs-sign-in":
+    case "pairing-refused":
+      return "error";
+    case "offline":
+      return networkDown ? "offline" : "unreachable";
+  }
+}
+
+/** The explanation behind the info affordance: why, and what the user can do about it. */
+function reasonText(reason: MachineUnavailableReason, networkDown: boolean): string {
   switch (reason) {
     case "not-added":
       return t(
@@ -26,16 +71,64 @@ function reasonText(reason: MachineUnavailableReason): string {
     case "needs-sign-in":
       return t("The machine needs you to sign in again. Open Connections to reconnect.");
     case "offline":
-      return t("The machine isn’t answering. Waiting for it to come back.");
+      return networkDown
+        ? t("This computer has no network connection. bycoda reconnects when it is back.")
+        : t(
+            "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.",
+          );
     case "turned-off":
       return t("The machine is turned off on this computer. Turn it on in Connections.");
   }
 }
 
+/** The short muted line under the title. */
+function statusText(reason: MachineUnavailableReason, reconnecting: boolean): string {
+  switch (reason) {
+    case "not-added":
+      return t("Not added on this computer");
+    case "pairing-refused":
+      return t("Pairing refused");
+    case "needs-sign-in":
+      return t("Needs sign-in");
+    case "turned-off":
+      return t("Turned off on this computer");
+    case "offline":
+      return reconnecting ? t("Reconnecting…") : t("Waiting to reconnect");
+  }
+}
+
+function subscribeNetwork(listener: () => void) {
+  window.addEventListener("online", listener);
+  window.addEventListener("offline", listener);
+  return () => {
+    window.removeEventListener("online", listener);
+    window.removeEventListener("offline", listener);
+  };
+}
+
+/** A scene as a decorative picture: animated, or its still frame while decorative motion is off. */
+function MachineSceneArt({ scene, size }: { scene: MachineScene; size: "page" | "panel" }) {
+  const motion = useDecorativeMotionEnabled();
+  const art = SCENES[scene];
+  return (
+    <img
+      src={motion ? art.animated : art.still}
+      alt=""
+      width={art.width}
+      height={art.height}
+      draggable={false}
+      data-scene={scene}
+      className={["w-auto max-w-full", size === "page" ? "h-48" : "h-28"].join(" ")}
+    />
+  );
+}
+
 /**
  * What every view of a remote project shows instead of its content while the project's
- * machine cannot be asked. `page` (the session pane) shows an illustration, one title, the reason
- * and Manage connections; `panel` (side panels, the session list) shows one centered line.
+ * machine cannot be asked: the scene for the reason, one title, one muted status line (the reason
+ * sits behind the info affordance) and the one next step. `page` (the session pane) is larger and
+ * offers Manage connections; `panel` (side panels, the session list) is compact. An offline machine
+ * shows "Reconnecting…" while an attempt runs and "Try now" between attempts.
  * Renders nothing while the machine is available.
  */
 export function MachineUnavailable({
@@ -51,6 +144,17 @@ export function MachineUnavailable({
   useLocale();
   const availability = useMachineAvailability(cwd);
   const reason = shownReason ?? (availability.available ? undefined : availability.reason);
+  const environmentId = parseRemotePath(cwd)?.environmentId;
+  const reconnecting = useSyncExternalStore(
+    subscribeReconnecting,
+    () => !!environmentId && isReconnecting(environmentId),
+    () => false,
+  );
+  const networkDown = !useSyncExternalStore(
+    subscribeNetwork,
+    () => navigator.onLine,
+    () => true,
+  );
   const offline = useGracedFailure({
     error: reason === "offline" ? "Machine is unreachable" : undefined,
     scope: cwd,
@@ -62,46 +166,45 @@ export function MachineUnavailable({
         <Spinner />
       </div>
     );
-  const environmentId = parseRemotePath(cwd)?.environmentId;
   const name = environmentId ? knownRemoteMachine(environmentId)?.name : undefined;
-  const title = name
-    ? t("{p0} isn’t available", { p0: name })
-    : t("This project’s machine isn’t available");
-  // A side panel only says so in one line; the page beside it carries the illustration, the
-  // reason and Manage connections, so the same notice is not repeated at its side.
-  if (size !== "page")
-    return (
-      <EmptyState
-        data-machine-unavailable={reason}
-        context="panel"
-        role="status"
-        className="h-full"
-        icon={<CloudOff />}
-        description={title}
-      />
-    );
+  // The saved name alone ("evpc") reads as a code; "your computer evpc" says what it is.
+  const title = !name
+    ? t("This project’s machine isn’t available")
+    : reason === "offline"
+      ? t("Your computer {p0} isn’t reachable right now", { p0: name })
+      : t("Your computer {p0} isn’t available", { p0: name });
+  const retryable = reason === "offline" && !!environmentId && !reconnecting;
+  const manage = size === "page" && reason !== "offline";
   return (
-    <FailureState
+    <EmptyState
       data-machine-unavailable={reason}
-      context="page"
+      context={size}
       role="status"
       className="h-full"
-      icon={
-        <img
-          src={machineOffline}
-          alt=""
-          width={320}
-          height={240}
-          draggable={false}
-          className="h-auto w-full max-w-80"
-        />
-      }
+      icon={<MachineSceneArt scene={machineScene(reason, networkDown)} size={size} />}
       title={title}
-      description={reasonText(reason)}
-      action={{
-        label: t("Manage machines"),
-        onClick: () => window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT)),
-      }}
+      description={reasonText(reason, networkDown)}
+      extra={
+        <div className="flex flex-col items-center gap-2">
+          <Text>{statusText(reason, reconnecting)}</Text>
+          {retryable ? (
+            <NoticeButton
+              action={{
+                label: t("Try now"),
+                // The attempt reports its own failure through the connection state shown here.
+                onClick: () => void reconnectRemoteMachine(environmentId).catch(() => undefined),
+              }}
+            />
+          ) : manage ? (
+            <NoticeButton
+              action={{
+                label: t("Manage machines"),
+                onClick: () => window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT)),
+              }}
+            />
+          ) : null}
+        </div>
+      }
     />
   );
 }

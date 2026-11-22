@@ -67,6 +67,23 @@ function seedFolders(folders: unknown[]) {
 const renderStrict = () =>
   act(async () => root.render(createElement(StrictMode, null, createElement(Sidebar, props))));
 
+it("shows projectless sessions and keeps project folder actions unavailable", async () => {
+  props.cwd = "~";
+  props.sessions = [{ ...session("scratch"), cwd: "~" }];
+  await renderStrict();
+  expect(container.textContent).toContain("No project");
+  expect(container.textContent).toContain("Conversation scratch");
+  expect(container.textContent).not.toContain("A project is required for organization changes.");
+  const row = container.querySelector('[data-session-card="scratch"]');
+  expect(row).not.toBeNull();
+  await act(async () =>
+    row?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+  // Folder actions stay visible but disabled, with the reason shown.
+  expect(document.body.textContent).toContain("New folder");
+  expect(document.body.textContent).toContain("Open a project to use folders");
+});
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   storeWrites = [];

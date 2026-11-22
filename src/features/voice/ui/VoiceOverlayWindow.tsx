@@ -8,6 +8,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import {
+  Maximize2,
   Minimize2,
   Mic,
   MicOff,
@@ -465,6 +466,17 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 onClick={() => setCompact(!compact)}
               >
                 <Minimize2 className="icon-sm" />
+              </Button>
+              <Button
+                iconOnly
+                label={t("Full screen")}
+                disabled={!state}
+                onClick={() => {
+                  send("openWorkspace");
+                  showApp();
+                }}
+              >
+                <Maximize2 className="icon-sm" />
               </Button>
               <Button iconOnly label={backLabel} onClick={returnToApp}>
                 <AppWindow className="icon-sm" />

@@ -99,6 +99,12 @@ describe("findCrewMentions", () => {
     expect(tokens("(@pixel) ok")).toEqual([]);
   });
 
+  it("resolves scoped crew and member handles alongside legacy mentions", () => {
+    expect(tokens("Ask @crews:dba and @crews:data-team, then @dba.")).toEqual(["dba", "data-team"]);
+    expect(tokens("@crews: @crews:dba-extra @notes:dba")).toEqual([]);
+    expect(tokens("> @crews:dba")).toEqual([]);
+  });
+
   it("ignores unknown tokens, emails and code", () => {
     expect(tokens("@nobody please")).toEqual([]);
     expect(tokens("mail me at a@dba now")).toEqual([]);

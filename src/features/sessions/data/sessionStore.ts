@@ -162,7 +162,7 @@ type SessionRecord = {
   contextWindow?: number | null;
   branch?: string | null;
   worktreeCwd?: string | null;
-  workspaceMode?: "current" | "worktree" | null;
+  workspaceMode?: "current" | "worktree" | "scratch" | null;
   workspaceId?: string | null;
   workspaceRevision?: number | null;
   worktreeRemoved?: boolean;
@@ -192,7 +192,7 @@ type SessionUpsertPayload = {
   contextWindow?: number;
   branch?: string;
   worktreeCwd?: string;
-  workspaceMode?: "current" | "worktree";
+  workspaceMode?: "current" | "worktree" | "scratch";
   workspaceId?: string;
   workspaceRevision?: number;
   worktreeRemoved?: boolean;
@@ -212,7 +212,7 @@ export function shouldPersistSession(session: Session): boolean {
     !session.historyLoading &&
     !session.inboxAsk &&
     !isRemoteProjectPath(session.cwd) &&
-    session.cwd !== "~" &&
+    (session.cwd !== "~" || session.scratchWorkspace === true) &&
     (session.blocks.some((block) => block.role === "user") ||
       (session.rewindHistory?.length ?? 0) > 0 ||
       // A first message held in the queue (a refused or interrupted send) is the
@@ -256,7 +256,11 @@ function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks">
     ...(session.context?.window ? { contextWindow: session.context.window } : {}),
     ...(session.branch ? { branch: session.branch } : {}),
     ...(session.worktreeCwd ? { worktreeCwd: session.worktreeCwd } : {}),
-    ...(session.workspaceMode ? { workspaceMode: session.workspaceMode } : {}),
+    ...(session.cwd === "~" && session.scratchWorkspace
+      ? { workspaceMode: "scratch" }
+      : session.workspaceMode
+        ? { workspaceMode: session.workspaceMode }
+        : {}),
     ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
     ...(Number.isSafeInteger(session.workspaceRevision) && session.workspaceRevision! >= 0
       ? { workspaceRevision: session.workspaceRevision }
@@ -517,7 +521,7 @@ export function upsertClearedSession(session: Session): Promise<SessionSummary |
     session.historyLoading ||
     session.inboxAsk ||
     isRemoteProjectPath(session.cwd) ||
-    session.cwd === "~"
+    (session.cwd === "~" && !session.scratchWorkspace)
   )
     throw new Error("Invalid cleared conversation");
   return persistSession(session, undefined, true);
@@ -1056,7 +1060,7 @@ function summaryActivityAt(row: { updatedAt: number; lastActivityAt?: number }):
 }
 
 export async function listSessionsByProject(cwd: string): Promise<SessionSummary[]> {
-  if (!cwd || cwd === "~") return [];
+  if (!cwd) return [];
   const rows = await invoke<SessionSummary[]>("session_list_by_project", {
     cwd: normalizeProjectPath(cwd),
   });
@@ -2672,6 +2676,9 @@ function recordToSession(record: SessionRecord): Session {
     ...(record.worktreeCwd ? { worktreeCwd: record.worktreeCwd } : {}),
     ...(record.workspaceMode === "current" || record.workspaceMode === "worktree"
       ? { workspaceMode: record.workspaceMode }
+      : {}),
+    ...(record.cwd === "~"
+      ? { scratchWorkspace: record.workspaceMode === "scratch" ? true : undefined }
       : {}),
     ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
     ...(Number.isSafeInteger(record.workspaceRevision) && record.workspaceRevision! >= 0

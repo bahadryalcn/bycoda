@@ -68,6 +68,30 @@ const render = async (cwd = "G:/wallet/api", paths = ["G:/wallet/api", "G:/walle
 const workspaceButton = () =>
   host.querySelector<HTMLButtonElement>('button[aria-label="Open Wallet"]')!;
 
+it.each(["panel", "navigator"] as const)(
+  "opens the No project list from the %s",
+  async (presentation) => {
+    const onOpenNoProject = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(ProjectRail, {
+          presentation,
+          cwd: "~",
+          recents: [],
+          onSelectProject: select,
+          onOpenProject: vi.fn(),
+          onOpenNoProject,
+        }),
+      ),
+    );
+    const row = host.querySelector<HTMLButtonElement>('button[aria-label="No project"]')!;
+    expect(row.getAttribute("aria-current")).toBe("page");
+    await act(async () => row.click());
+    expect(onOpenNoProject).toHaveBeenCalledOnce();
+    expect(select).not.toHaveBeenCalled();
+  },
+);
+
 it("keeps application chrome on the panel and removes it from the project navigator", async () => {
   await render();
   expect(host.querySelector('[aria-label="Workspace tools"]')).not.toBeNull();

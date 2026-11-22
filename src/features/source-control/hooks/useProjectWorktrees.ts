@@ -6,6 +6,7 @@ import { createStore } from "../../../shared/lib/store";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { pathKey } from "../../../shared/lib/paths";
 import { listWorktrees, type Worktrees } from "../model/worktrees";
+import { missingPathNamedIn } from "../model/checkoutSelection";
 
 type Snapshot = { data?: Worktrees; error?: string; loading?: boolean };
 type Entry = {
@@ -13,7 +14,9 @@ type Entry = {
   snapshot: Snapshot;
   listeners: ReturnType<typeof createStore<[]>>;
   inFlight?: Promise<boolean>;
-  invalidated: boolean;
+  activeLane?: "default" | "background";
+  generation: number;
+  pendingLane?: "default" | "background";
   stop?: () => void;
 };
 
@@ -31,7 +34,7 @@ function entryFor(cwd: string): Entry {
       cwd,
       snapshot: EMPTY,
       listeners: createStore(),
-      invalidated: false,
+      generation: 0,
     };
     entries.set(key, entry);
   }
@@ -46,34 +49,67 @@ function publish(entry: Entry, snapshot: Snapshot) {
   entry.listeners.notify();
 }
 
-function load(entry: Entry, invalidated = false): Promise<boolean> {
+function load(
+  entry: Entry,
+  lane: "default" | "background" = "default",
+  invalidated = false,
+): Promise<boolean> {
   if (entries.get(pathKey(entry.cwd)) !== entry) return Promise.resolve(false);
-  if (entry.inFlight) {
+  if (entry.inFlight && !(lane === "default" && entry.activeLane === "background")) {
     // A Git mutation during a read needs a follow-up; repeated focus/open
     // events can share the request already in progress.
-    entry.invalidated ||= invalidated;
+    if (invalidated && entry.pendingLane !== "default") entry.pendingLane = lane;
     return entry.inFlight;
   }
-  publish(entry, { ...entry.snapshot, loading: true });
+  const generation = ++entry.generation;
+  entry.activeLane = lane;
+  entry.pendingLane = undefined;
   entry.inFlight = (async () => {
     let loaded = false;
     try {
-      const data = await listWorktrees(entry.cwd);
+      const data = await (lane === "background"
+        ? listWorktrees(entry.cwd, true)
+        : listWorktrees(entry.cwd));
+      if (entry.generation !== generation) return false;
       publish(entry, { data, loading: false });
       loaded = true;
     } catch (error) {
+      if (entry.generation !== generation) return false;
+      // One listed worktree deleted from elsewhere fails the whole listing with a
+      // "cannot change to" naming it: keep the list and mark that checkout missing.
+      const listed = entry.snapshot.data;
+      const vanished = missingPathNamedIn(
+        presentRemoteError(error),
+        listed?.worktrees.map((tree) => tree.path) ?? [],
+      );
+      if (listed && vanished) {
+        publish(entry, {
+          data: {
+            ...listed,
+            worktrees: listed.worktrees.map((tree) =>
+              pathKey(tree.path) === pathKey(vanished) ? { ...tree, missing: true } : tree,
+            ),
+          },
+          loading: false,
+        });
+        entry.inFlight = undefined;
+        entries.prune();
+        return true;
+      }
       // A background failure must not replace a usable list with a loading or
       // error screen. The caller can still surface the error beside the list.
       publish(entry, { ...entry.snapshot, error: presentRemoteError(error), loading: false });
     }
     entry.inFlight = undefined;
-    if (entry.invalidated) {
-      entry.invalidated = false;
-      return load(entry);
+    if (entry.pendingLane) {
+      const pendingLane = entry.pendingLane;
+      entry.pendingLane = undefined;
+      return load(entry, pendingLane);
     }
     entries.prune();
     return loaded;
   })();
+  publish(entry, { ...entry.snapshot, loading: true });
   return entry.inFlight;
 }
 
@@ -85,12 +121,12 @@ function start(entry: Entry) {
   const resume = () => {
     if (document.hidden || (!missed && isGitWatched(entry.cwd))) return;
     missed = false;
-    void load(entry);
+    void load(entry, "background");
   };
   const unsubscribe = subscribeGitChanged(
     () => {
       if (document.hidden) missed = true;
-      else void load(entry, true);
+      else void load(entry, "background", true);
     },
     { cwd: entry.cwd, refsOnly: true },
   );
@@ -128,7 +164,7 @@ export function useProjectWorktrees(cwd: string, enabled = true) {
   );
   const getSnapshot = useCallback(() => (active ? entryFor(cwd).snapshot : EMPTY), [active, cwd]);
   const refresh = useCallback(() => {
-    return active && readable ? load(entryFor(cwd), true) : Promise.resolve(false);
+    return active && readable ? load(entryFor(cwd), "default", true) : Promise.resolve(false);
   }, [active, readable, cwd]);
   return {
     ...useSyncExternalStore(subscribe, getSnapshot, getSnapshot),

@@ -3,19 +3,24 @@ import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { useT } from "../../../shared/i18n";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
-import { Server, StickyNote } from "../../../shared/ui/icons";
+import { Code } from "../../../shared/ui/Code";
+import { ChevronRight, Server, StickyNote, UsersRound } from "../../../shared/ui/icons";
 import type { RankedFile } from "../../files";
-import { isNoteMentionPath } from "../../notes";
+import { isNoteMentionPath, NOTES_MENTION_SCOPE } from "../../notes";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { MatchText } from "../../../shared/ui/MatchText";
-import { crewMentionOf } from "../model/crewMentions";
-import { CrewMentionIcon, CrewMentionText } from "./ComposerCrewMentionRow";
+import { CREWS_MENTION_SCOPE, crewMentionOf } from "../model/crewMentions";
+import { CrewMentionIcon, CrewMentionMeta } from "./ComposerCrewMentionRow";
 import { workItemMentionOf, WORK_ITEM_PROVIDER_NAMES } from "../model/workItemMentionRows";
 import { WorkItemMentionText, workItemMentionMeta } from "./ComposerWorkItemMentionRow";
 import { InboxProviderMark, type WorkItemSearchError } from "../../inbox/public/workItemMentions";
 import { workItemSearchNotice } from "../model/workItemSearchNotice";
 import { usePresentationNow } from "./AgentClock";
 import { serverMentionOf } from "../model/serverMentions";
+import {
+  composerMentionScopeHintOf,
+  type ComposerMentionScope,
+} from "../model/composerMentionScopes";
 type Props = {
   files: RankedFile[];
   query: string;
@@ -29,6 +34,7 @@ type Props = {
   includeNotes?: boolean;
   includeWorkItems?: boolean;
   workItemsScoped?: boolean;
+  scope?: ComposerMentionScope;
   /** Why the tracker search found nothing; replaces "No matches" with a short reason. */
   workItemsFailure?: { error: WorkItemSearchError; machine?: string };
   serversScoped?: boolean;
@@ -49,6 +55,7 @@ export function FileMentionPicker({
   includeNotes = false,
   includeWorkItems = false,
   workItemsScoped = false,
+  scope,
   workItemsFailure,
   serversScoped = false,
   includeServers = false,
@@ -59,7 +66,8 @@ export function FileMentionPicker({
   const now = usePresentationNow(
     workItemsFailure?.error.failure === "rate-limited" && !!workItemsFailure.error.retryAt,
   );
-  const includesMentions = includeWorkItems || workItemsScoped || includeServers || serversScoped;
+  const includesMentions =
+    includeWorkItems || workItemsScoped || includeServers || serversScoped || scope;
   // Without a query the list reads as the project tree: root files first, then folders, then
   // notes. Headers only appear when the ranking really keeps each band together.
   const treeRank = (file: RankedFile) =>
@@ -75,7 +83,15 @@ export function FileMentionPicker({
       const crew = crewMentionOf(file);
       const workItem = workItemMentionOf(file);
       const server = serverMentionOf(file);
-      const name = server?.hint ? t("Servers") : file.name;
+      const scopeHint = composerMentionScopeHintOf(file);
+      const name =
+        scopeHint === CREWS_MENTION_SCOPE
+          ? t("Search crews and members")
+          : scopeHint === NOTES_MENTION_SCOPE
+            ? t("Search notes")
+            : server?.hint
+              ? t("Servers")
+              : file.name;
       const note = isNoteMentionPath(file.path);
       const slash = file.relative.lastIndexOf("/");
       return {
@@ -83,14 +99,12 @@ export function FileMentionPicker({
         textValue: name,
         title: workItem ? (
           <WorkItemMentionText target={workItem} name={file.name} positions={file.positions} />
-        ) : crew ? (
-          <CrewMentionText target={crew} positions={file.positions} query={query} />
         ) : (
           <>
             <MatchText
               text={name}
               positions={
-                note
+                note || crew
                   ? file.positions
                   : file.positions.filter((pos) => pos > slash).map((pos) => pos - slash - 1)
               }
@@ -103,9 +117,11 @@ export function FileMentionPicker({
           <InboxProviderMark provider={workItem.provider} className="icon-sm" />
         ) : crew ? (
           <CrewMentionIcon target={crew} />
+        ) : scopeHint === CREWS_MENTION_SCOPE ? (
+          <UsersRound className="icon-sm" />
         ) : server ? (
           <Server className="icon-sm" />
-        ) : note ? (
+        ) : note || scopeHint === NOTES_MENTION_SCOPE ? (
           <StickyNote className="icon-sm" />
         ) : (
           <FileTypeIcon name={file.name} isDir={Boolean(file.isDir)} size="md" />
@@ -114,30 +130,43 @@ export function FileMentionPicker({
           ? workItemsScoped
             ? WORK_ITEM_PROVIDER_NAMES[workItem.provider]
             : t("Work items")
-          : crew
-            ? crew.kind === "member"
-              ? t("Members")
-              : t("Crews")
-            : server && !server.hint
-              ? t("Servers")
-              : treeGroups
-                ? [t("Project root"), t("Folders"), t("Notes")][treeRank(file)]
-                : undefined,
-        meta: workItem ? (
-          workItemMentionMeta(workItem, t("Unassigned"))
-        ) : server ? (
-          <Text size="caption" tone="secondary">
-            @{server.token}
-          </Text>
-        ) : note ? (
-          t("Note")
-        ) : slash < 0 ? undefined : (
-          <MatchText
-            text={file.relative.slice(0, slash)}
-            positions={file.positions.filter((pos) => pos < slash)}
-            active={Boolean(query.trim())}
-          />
-        ),
+          : crew?.kind === "member"
+            ? t("Members")
+            : crew || scopeHint === CREWS_MENTION_SCOPE
+              ? t("Crews")
+              : note || scopeHint === NOTES_MENTION_SCOPE
+                ? t("Notes")
+                : server
+                  ? t("Servers")
+                  : treeGroups
+                    ? [t("Project root"), t("Folders"), t("Notes")][treeRank(file)]
+                    : file.isDir
+                      ? t("Folders")
+                      : t("Files"),
+        meta:
+          workItem?.kind === "hint" || scopeHint ? (
+            <Code size="micro" tone="secondary">
+              @{workItem?.token ?? scopeHint}
+            </Code>
+          ) : workItem ? (
+            workItemMentionMeta(workItem, t("Unassigned"))
+          ) : crew ? (
+            <CrewMentionMeta target={crew} />
+          ) : server ? (
+            <Text size="caption" tone="secondary">
+              @{server.token}
+            </Text>
+          ) : note || slash < 0 ? undefined : (
+            <MatchText
+              text={file.relative.slice(0, slash)}
+              positions={file.positions.filter((pos) => pos < slash)}
+              active={Boolean(query.trim())}
+            />
+          ),
+        trailing:
+          workItem?.kind === "hint" || scopeHint ? (
+            <ChevronRight className="icon-sm" aria-hidden />
+          ) : undefined,
       };
     }),
     value: files[active]?.path ?? null,

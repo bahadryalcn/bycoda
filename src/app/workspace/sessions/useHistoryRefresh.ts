@@ -41,7 +41,7 @@ export function useHistoryRefresh({
 }: HistoryRefreshDeps): HistoryRefresh {
   const refreshSequence = useRef(0);
   const refreshHistory = useCallback(async (cwd: string) => {
-    if (!cwd || cwd === "~") return;
+    if (!cwd) return;
     const sequence = ++refreshSequence.current;
     // `history` holds every visited project's rows and the sidebar filters it
     // by cwd, so a project loaded once paints from cache on the way back and

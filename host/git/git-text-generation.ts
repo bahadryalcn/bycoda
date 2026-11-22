@@ -1,7 +1,11 @@
 import type { z } from "zod";
 import type { GitGenerateTextParamsSchema } from "../../src/shared/model/host-contracts/git";
+import type { AgentModel } from "../../src/shared/model/agentModel";
 import type { GitStagedContext, GitRangeContext } from "../../src/platform/tauri/fs";
-import { automaticGitChoice } from "../../src/features/source-control/model/gitGenerationChoice";
+import {
+  automaticGitChoice,
+  economicalGitChoice,
+} from "../../src/features/source-control/model/gitGenerationChoice";
 import {
   buildCommitMessagePrompt,
   buildPrContentPrompt,
@@ -27,13 +31,25 @@ export async function generateGitText(
   ports: {
     context(kind: Params["kind"]): Promise<Context>;
     authorize(): Promise<void>;
+    catalog?(harness: NonNullable<Params["preferred"]>): Promise<readonly AgentModel[]>;
     run?: typeof runHarnessTextPrompt;
   },
 ) {
   registerBuiltinHarnesses();
-  const choice = params.choice ?? automaticGitChoice(params.preferred);
+  // A standalone Host has its own catalog cache, independent of the desktop picker.
+  const candidates =
+    !params.choice && params.preferred && ports.catalog
+      ? await ports.catalog(params.preferred)
+      : undefined;
+  const choice =
+    params.choice ??
+    (candidates && params.preferred
+      ? economicalGitChoice(params.preferred, candidates)
+      : automaticGitChoice(params.preferred));
   if (!choice) throw new Error("No text generation model is available on this Host");
-  const model = resolveModel(choice.harness, choice.model);
+  const model =
+    candidates?.find((candidate) => candidate.id === choice.model) ??
+    resolveModel(choice.harness, choice.model);
   const context = await ports.context(params.kind);
   await ports.authorize();
   const prompt =

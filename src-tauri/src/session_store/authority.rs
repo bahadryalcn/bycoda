@@ -5,6 +5,7 @@
 
 use super::window_barrier::{BarrierError, NativeOperation, WindowBarrier};
 use super::*;
+use crate::native_workspace::editor_buffers::{EditorBuffers, OpenBuffer};
 use rusqlite::{Transaction, TransactionBehavior};
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
@@ -1220,14 +1221,11 @@ fn checkpoint_blob(
     Ok(Some(raw))
 }
 
-fn buffers_digest(conn: &Connection, session_id: &str) -> Result<String, String> {
-    // A released row is a clean window of an earlier app run, never confirmed again.
-    let rows = conn.prepare(&format!("SELECT b.owner_id,b.snapshot_json,b.confirmed FROM native_workspace_buffers b WHERE {} ORDER BY b.owner_id", crate::native_workspace::UNRELEASED))
-        .map_err(|error|error.to_string())?.query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,i64>(2)?)))
-        .map_err(|error|error.to_string())?.collect::<rusqlite::Result<Vec<_>>>().map_err(|error|error.to_string())?;
-    if rows.iter().any(|(_, _, confirmed)| *confirmed != 1) {
-        return Err("NATIVE_AUTHORITY_NOT_QUIESCENT: unknown editor buffers".into());
-    }
+fn buffers_digest(
+    conn: &Connection,
+    session_id: &str,
+    snapshot: &[OpenBuffer],
+) -> Result<String, String> {
     let cwd: Option<String> = conn
         .query_row(
             "SELECT COALESCE(NULLIF(worktree_cwd,''),cwd) FROM sessions WHERE id=?1",
@@ -1237,31 +1235,17 @@ fn buffers_digest(conn: &Connection, session_id: &str) -> Result<String, String>
         .optional()
         .map_err(|error| error.to_string())?;
     let cwd = crate::fs::expand_home(&cwd.ok_or("NATIVE_AUTHORITY_SESSION_MISSING")?);
-    for (_, raw, _) in &rows {
-        let buffers: Value = serde_json::from_str(raw)
-            .map_err(|_| "NATIVE_AUTHORITY_NOT_QUIESCENT: invalid editor buffers")?;
-        let buffers = buffers
-            .as_array()
-            .ok_or("NATIVE_AUTHORITY_NOT_QUIESCENT: invalid editor buffers")?;
-        for buffer in buffers {
-            let path = buffer["path"]
-                .as_str()
-                .ok_or("NATIVE_AUTHORITY_NOT_QUIESCENT: invalid editor path")?;
-            let dirty = buffer["dirty"]
-                .as_bool()
-                .ok_or("NATIVE_AUTHORITY_NOT_QUIESCENT: unknown editor state")?;
-            if dirty && crate::worktrees::contains_working_dir(&cwd, &crate::fs::expand_home(path))
-            {
-                return Err(
-                    "NATIVE_AUTHORITY_NOT_QUIESCENT: unsaved affected editor buffers".into(),
-                );
-            }
-        }
+    if snapshot.iter().any(|buffer| {
+        buffer.dirty
+            && crate::worktrees::contains_working_dir(&cwd, &crate::fs::expand_home(&buffer.path))
+    }) {
+        return Err("NATIVE_AUTHORITY_NOT_QUIESCENT: unsaved affected editor buffers".into());
     }
-    Ok(sha(encode(
-        &serde_json::to_value(rows).map_err(|error| error.to_string())?,
-    )?
-    .as_bytes()))
+    let rows: Vec<_> = snapshot
+        .iter()
+        .map(|buffer| (&buffer.window, &buffer.path, buffer.dirty))
+        .collect();
+    Ok(sha(encode(&json!(rows))?.as_bytes()))
 }
 
 fn retained_rows(conn: &Connection, session_id: &str) -> Result<Value, String> {
@@ -1483,9 +1467,11 @@ impl SessionStore {
         session_id: &str,
         migration_id: &str,
         host: &crate::harness::HarnessHost,
+        buffers: &EditorBuffers,
         inventory: WriterInventory,
     ) -> Result<IdleProof, String> {
         host.authority_idle(session_id)?;
+        let snapshot = buffers.snapshot();
         let conn = self.lock_conn()?;
         let ids = identity(&conn)?;
         let WriterInventory::Complete {
@@ -1514,7 +1500,7 @@ impl SessionStore {
             return Err("NATIVE_AUTHORITY_CAS".into());
         }
         no_pending(&conn, session_id)?;
-        let current_buffers = buffers_digest(&conn, session_id)?;
+        let current_buffers = buffers_digest(&conn, session_id, &snapshot)?;
         if current_buffers != observed_buffers {
             return Err("NATIVE_AUTHORITY_NOT_QUIESCENT: editor barrier changed".into());
         }
@@ -1532,6 +1518,16 @@ impl SessionStore {
     pub(crate) fn authority_fence_source(
         &self,
         proof: IdleProof,
+        buffers: &EditorBuffers,
+    ) -> Result<SourceSnapshot, String> {
+        // Keep the editor snapshot stable until the new fence is durable.
+        buffers.with_snapshot(|snapshot| self.fence_source_with_snapshot(proof, &snapshot))
+    }
+
+    fn fence_source_with_snapshot(
+        &self,
+        proof: IdleProof,
+        snapshot: &[OpenBuffer],
     ) -> Result<SourceSnapshot, String> {
         let conn = self.lock_conn()?;
         critical(&conn, |tx| {
@@ -1552,7 +1548,7 @@ impl SessionStore {
                 return Err("NATIVE_AUTHORITY_CAS".into());
             }
             no_pending(tx, &proof.session_id)?;
-            if buffers_digest(tx, &proof.session_id)? != proof.buffers_digest {
+            if buffers_digest(tx, &proof.session_id, snapshot)? != proof.buffers_digest {
                 return Err("NATIVE_AUTHORITY_NOT_QUIESCENT: editor barrier changed".into());
             }
             let generation = state
@@ -1615,6 +1611,8 @@ impl SessionStore {
 }
 
 fn source_snapshot(conn: &Connection, migration_id: &str) -> Result<SourceSnapshot, String> {
+    // A finalized fence binds the digest observed at commit. Verify those stored
+    // bytes for both legacy SQLite observations and live registry observations.
     let (raw,snapshot,inventory,buffers,environment,session,store,profile,source_digest):(String,String,String,String,String,String,String,String,String)=conn.query_row(
         "SELECT fence_json,snapshot_json,inventory_digest,buffers_digest,environment_id,session_id,source_store_id,source_profile_id,source_digest
          FROM native_authority_journal WHERE migration_id=?1 AND fence_json IS NOT NULL AND snapshot_json IS NOT NULL",[migration_id],
@@ -1947,13 +1945,14 @@ impl SessionStore {
             }
         }
         self.authority_begin_quiesce(environment_id, session_id, migration_id, 0)?;
+        let buffers = EditorBuffers::default();
         let inventory = {
             let conn = self.lock_conn()?;
             WriterInventory::Complete {
                 identity: identity(&conn)?,
                 protocols: vec![WRITER_PROTOCOL],
                 observation_digest: sha(b"isolated retained source fixture qualification only"),
-                buffers_digest: buffers_digest(&conn, session_id)?,
+                buffers_digest: buffers_digest(&conn, session_id, &[])?,
             }
         };
         let proof = self.authority_verify_idle(
@@ -1961,9 +1960,10 @@ impl SessionStore {
             session_id,
             migration_id,
             &crate::harness::HarnessHost::new(),
+            &buffers,
             inventory,
         )?;
-        self.authority_fence_source(proof)
+        self.authority_fence_source(proof, &buffers)
     }
 
     pub(crate) fn authority_snapshot(&self, migration_id: &str) -> Result<SourceSnapshot, String> {

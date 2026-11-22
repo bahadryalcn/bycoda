@@ -8,6 +8,7 @@ import { attachmentPresentation, formatAttachmentSize } from "../model/attachmen
 import { cachedUserLinkRanges, type UserLink } from "../model/linkPreview";
 import { mcpTagParts } from "../model/mcpPicker";
 import { splitCitationTokens } from "../model/citationTokens";
+import { scopedMentionRanges } from "../model/composerMentionScopes";
 import type { InlineReference, InlineReferenceContext } from "./composerInlineReferences";
 
 /** Scanner order is the tie-break between candidates with the same range: earlier wins. */
@@ -19,7 +20,8 @@ const SKILL = 4;
 const FILE = 5;
 const MCP = 6;
 const QUOTE = 7;
-const SCANNERS = 8;
+const MENTION = 8;
+const SCANNERS = 9;
 
 const NO_CODE: readonly (readonly [number, number])[] = [];
 const CODE_NODES = new Set(["InlineCode", "FencedCode", "CodeBlock"]);
@@ -214,6 +216,16 @@ function scanLines(
       start = end;
     } else start += part.text.length;
   }
+  for (const { start, end, kind } of scopedMentionRanges(slice, { markdownTree: true })) {
+    const token = slice.slice(start, end);
+    found[MENTION]!.push({
+      start: from + start,
+      end: from + end,
+      kind,
+      value: token,
+      label: token,
+    });
+  }
 }
 
 /** Whether a code range overlaps `[start, end)`; `code` is ascending and disjoint. */
@@ -300,7 +312,7 @@ function rescan(
       from: inverse.mapPos(span.from, -1),
       to: inverse.mapPos(span.to, 1),
     }));
-    for (const index of [ATTACHMENT, MISSING, URL, FILE, MCP, QUOTE]) {
+    for (const index of [ATTACHMENT, MISSING, URL, FILE, MCP, QUOTE, MENTION]) {
       for (const item of scan.found[index]!) {
         if (intersects(oldSpans, item.start, item.end)) continue;
         const start = changes.mapPos(item.start, 1);

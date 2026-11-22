@@ -12,7 +12,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { useLocale, useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
-import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
+import { ChevronDown, GripVertical, Maximize2, StickyNote, X } from "../../../shared/ui/icons";
 import { useSessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
@@ -127,6 +127,8 @@ import { useMessageRewind } from "./useMessageRewind";
 import { useQuoteRequests } from "./useQuoteRequests";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { Button } from "../../../shared/ui/Button";
+import { currentExecutionTools } from "../model/commandInspection";
+import { SessionWorkSummary } from "./SessionWorkSummary";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { TranscriptFind } from "./TranscriptFind";
 import { syncPaneBackground } from "../../../shared/lib/paneBackground";
@@ -192,6 +194,7 @@ import { useAdoptedSteerSupport } from "../../connections/public/remoteCapabilit
 import { remoteOrigin } from "./RemoteOriginMark";
 import { SharedQueueRecoveryNotice } from "../../connections/public/SharedQueueRecoveryNotice";
 export type SessionPaneProps = {
+  onOpenVoiceWork?: (target: Pick<Session, "id" | "cwd">) => void;
   session: Session;
   workspaceSwitchingSessionId?: string;
   windowMovingSessionIds?: ReadonlySet<string>;
@@ -416,6 +419,7 @@ function approvalContextFor(getSession: () => Session, dispatch: Props["onApprov
 }
 
 const LocalSessionPane = memo(function LocalSessionPane({
+  onOpenVoiceWork,
   remoteSession = false,
   remoteFeatures,
   remoteSessionLoading = false,
@@ -1352,6 +1356,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const reviewRow = session.queuedMessages?.find((row) => row.deliveryUnknown);
   const reviewInQueue = queueVisible && !!reviewRow && reviewRow.author?.kind !== "delegation";
   const sharedQueueRecovery = <SharedQueueRecoveryNotice key={session.id} sessionId={session.id} />;
+  const currentWork = visible ? currentExecutionTools(stableBlocks) : undefined;
+  const openLiveWork = onOpenVoiceWork ? () => onOpenVoiceWork(session) : undefined;
   const composerNotices = (
     <>
       <ApprovalDecisionProvider {...approvalContext}>
@@ -1376,6 +1382,28 @@ const LocalSessionPane = memo(function LocalSessionPane({
           onStopAll={stopDockAll}
           delegatedAgents={delegatedAgents}
           goalControl={goalControl}
+          workControl={
+            currentWork?.tools.length ? (
+              <>
+                <SessionWorkSummary
+                  key={`${session.id}:${currentWork.turnId}`}
+                  tools={currentWork.tools}
+                  busy={turnOpen}
+                  onOpenLiveWork={openLiveWork}
+                />
+                {openLiveWork && (
+                  <Button
+                    iconOnly
+                    variant="ghost"
+                    label={t("View live work")}
+                    onClick={openLiveWork}
+                  >
+                    <Maximize2 className="icon-sm" />
+                  </Button>
+                )}
+              </>
+            ) : null
+          }
         />
       </ApprovalDecisionProvider>
       <InterruptedNotice

@@ -31,6 +31,7 @@ it("retries discovery without adding the server again after a confirmed write", 
   invoke.mockResolvedValue(undefined);
   onAdded.mockRejectedValueOnce(new Error("Discovery unavailable"));
   await render();
+  await pick("Setup method: Server URL", "JSON configuration");
   const config = dialog().querySelector<HTMLTextAreaElement>("textarea")!;
   const value = '{"mcpServers":{"docs":{"command":"docs"}}}';
   await act(async () => {
@@ -81,22 +82,29 @@ function dialog() {
   return document.querySelector<HTMLElement>('[role="dialog"]')!;
 }
 
+async function pick(trigger: string, option: string) {
+  const button = dialog().querySelector<HTMLButtonElement>(`[aria-label="${trigger}"]`)!;
+  await act(async () => button.click());
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (candidate) => candidate.textContent === option,
+  )!;
+  await act(async () => item.click());
+}
+
 it("keeps global context concise and reveals project identity only for project scope", async () => {
   await render();
+  await pick("Scope: Local project", "Global");
   expect(dialog().textContent).not.toContain("/selected-project");
   expect(dialog().textContent).not.toContain("Advanced: configuration requirements");
-  const scope = dialog().querySelector<HTMLButtonElement>('[aria-label="Scope: Global"]')!;
-  await act(async () => scope.click());
-  const project = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-    (option) => option.textContent === "Project",
-  )!;
-  await act(async () => project.click());
+  await pick("Scope: Global", "Project");
   expect(dialog().textContent).toContain("/selected-project");
 });
 
 it("retains JSON draft and exact provider/scope identity after a rejected save", async () => {
   invoke.mockRejectedValueOnce(new Error("Configuration changed; reload before saving"));
   await render();
+  await pick("Scope: Local project", "Global");
+  await pick("Setup method: Server URL", "JSON configuration");
   const config = dialog().querySelector<HTMLTextAreaElement>("textarea")!;
   const value = '{"mcpServers":{"docs":{"command":"npx","args":["docs"]}}}';
   await act(async () => {

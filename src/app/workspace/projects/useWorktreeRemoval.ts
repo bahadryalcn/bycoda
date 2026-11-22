@@ -105,6 +105,7 @@ export function useWorktreeRemoval({
       force: boolean,
       keepSessions = false,
       expectedReview?: WorktreeRemovalReview,
+      deleteBranch = false,
       valid: () => boolean = () => true,
     ) => {
       const assertCurrent = () => {
@@ -188,7 +189,14 @@ export function useWorktreeRemoval({
         await flushSessionWrites();
         assertCurrent();
         checkOpenWorktreeFiles(path);
-        const removed = await removeWorktree(cwd, path, force, keepSessions, expectedReview);
+        const removed = await removeWorktree(
+          cwd,
+          path,
+          force,
+          keepSessions,
+          expectedReview,
+          deleteBranch,
+        );
         const affected = new Set([...ids, ...removed.sessionIds]);
         if (isEqualOrInside(projectCwdRef.current, path)) {
           setProjectCwd(removed.projectCwd);
@@ -210,6 +218,7 @@ export function useWorktreeRemoval({
         setHistory((current) => current.map(patchSummary));
         setStoredLinkedSessions((current) => current.map(patchSummary));
         for (const id of affected) notifyReviewChanged(id);
+        return removed;
       } catch (error) {
         // Removal may fail after idle agent processes were stopped. Rebind
         // their saved threads so the unchanged working copy can still resume.
@@ -305,7 +314,7 @@ export function useWorktreeRemoval({
           };
         },
         remove: (cwd, path, expected, valid) =>
-          onRemoveWorktree(cwd, path, false, true, expected, valid),
+          onRemoveWorktree(cwd, path, false, true, expected, false, valid).then(() => undefined),
       }),
     [
       checkOpenWorktreeFiles,

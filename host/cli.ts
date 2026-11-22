@@ -32,6 +32,7 @@ import { acquireHostOwner, probeHostOwner } from "./owner";
 import { startHostDiagnostics, type HostDiagnostics } from "./diagnostics/host-lifecycle";
 import { createBootTimer } from "./server/boot-phases";
 import { hostGitExec } from "./git/git-exec-pool";
+import { registerHostProcessExecution } from "./git/host-process-execution";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -126,7 +127,6 @@ async function main() {
   service install       Install/start the persistent user service
   service uninstall     Stop the host and remove its service; keeps data
   connection-info       Print the running host's port (JSON)
-  native-buffer legacy-release --data-dir <dir> [--yes]   Drop legacy SQL buffer content (Host stopped)
   build-info            Print packaged source identity (no service access)
   status                Check the running host
   stop                  Stop the host and interrupt its running turns
@@ -228,20 +228,6 @@ Connect another computer using an SSH forward to the loopback port.`);
       // Parsing/IO failures must not echo private native profile input.
       throw new Error("Native helper deployment unavailable");
     }
-  }
-  if (command === "native-buffer") {
-    if (args[1] !== "legacy-release")
-      throw new Error("Usage: native-buffer legacy-release --data-dir <dir> [--yes]");
-    if (readRunning()) throw new Error("Stop the Host before running legacy-release.");
-    await verifyHostStopped(directory);
-    const { releaseNativeBufferLegacy, formatNativeBufferLegacyRelease } =
-      await import("./native-buffer/native-buffer-legacy-release");
-    console.log(
-      formatNativeBufferLegacyRelease(
-        releaseNativeBufferLegacy(directory, { apply: args.includes("--yes") }),
-      ),
-    );
-    return;
   }
   if (command === "connection-info") {
     console.log(JSON.stringify(await connectionInfo(directory, entryPath)));
@@ -376,6 +362,8 @@ Connect another computer using an SSH forward to the loopback port.`);
     // Use Windows trust for outbound TLS, preserving bundled and explicitly configured CAs.
     setDefaultCACertificates([...getCACertificates("default"), ...getCACertificates("system")]);
   }
+  const unregisterProcessExecution =
+    command === "serve" ? registerHostProcessExecution() : undefined;
   const diagnostics: HostDiagnostics | undefined =
     command === "serve" ? startHostDiagnostics({ dataDir: directory, version }) : undefined;
   const boot = command === "serve" ? createBootTimer() : undefined;
@@ -626,6 +614,7 @@ Connect another computer using an SSH forward to the loopback port.`);
         await drain("tunnels", () => server.tunnels.close());
         await drain("engine", () => engine.close());
         await drain("provider backend", () => backend.close());
+        unregisterProcessExecution?.();
         await drain("git workers", () => hostGitExec.close());
         release();
         await drain("database", cleanup);

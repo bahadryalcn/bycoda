@@ -3,7 +3,7 @@ import { VoiceLauncher } from "../../../src/features/voice/ui/companion/VoiceLau
 import { VoiceToolActivityPanel } from "../../../src/features/voice/ui/VoiceToolActivityPanel";
 import { VoiceChatTranscript } from "../../../src/features/voice/ui/companion/VoiceChatTranscript";
 import { createRoot } from "react-dom/client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../../../src/shared/ui/Button";
 import { VoiceCompanion } from "../../../src/features/voice/ui/VoiceCompanion";
 import { VoiceCompanionGate } from "../../../src/features/voice/ui/VoiceCompanionGate";
@@ -19,7 +19,7 @@ import { setLanguagePreference } from "../../../src/shared/i18n";
 import { noteDisplayRefreshRate } from "../../../src/features/settings/model/decorativeMotion";
 import type { Session } from "../../../src/features/sessions/model/session";
 import { registerVoiceDraftReader } from "../../../src/features/voice/model/voiceDraftContext";
-import { VoiceSetupSteps } from "../../../src/features/voice/ui/VoiceSetupSteps";
+import { AssistantSetup } from "../../../src/features/assistant/ui/AssistantSetup";
 import { saveKeybindingOverride } from "../../../src/features/settings/model/settings";
 import "../../../src/styles/index.css";
 const params = new URLSearchParams(location.search);
@@ -41,15 +41,67 @@ else if (!localStorage.getItem("bycoda.voice.persona"))
   localStorage.setItem("bycoda.voice.persona", JSON.stringify({ status: "skipped" }));
 const session = {
   id: "fixture",
-  title: "Voice visual styles · a long session title to verify truncation",
+  title: params.has("live-work")
+    ? "Voice regression tests"
+    : "Voice visual styles · a long session title to verify truncation",
   cwd: params.has("remote") ? "remote://paired/repo" : "/fixture",
-  blocks: [],
+  blocks: params.has("live-work")
+    ? [
+        {
+          id: "work-turn",
+          role: "user",
+          text: "Run the voice tests",
+          startedAt: 1_700_000_000_000,
+        },
+        {
+          id: "work-lint",
+          role: "tool",
+          text: "pnpm lint",
+          tool: { title: "pnpm lint", status: "completed", detail: "No lint errors." },
+        },
+        {
+          id: "work-types",
+          role: "tool",
+          text: "pnpm typecheck",
+          tool: {
+            title: "pnpm typecheck",
+            status: "failed",
+            detail: "One fixture has an invalid type.",
+          },
+        },
+        {
+          id: "work-command",
+          role: "tool",
+          text: "pnpm test",
+          tool: {
+            title: "pnpm test",
+            status: "running",
+            detail:
+              " RUN  v5.1.0\n\n ✓ voiceLiveWork.test.ts · 2 tests\n ✓ voiceOverlay.test.ts · 4 tests\n\n Test files  2 passed\n 2 voice tests passed",
+          },
+        },
+      ]
+    : [],
   harness: "codex",
   model: "fixture-model",
-  busy: params.get("state") === "working" || params.has("working"),
+  busy: params.get("state") === "working" || params.has("working") || params.has("live-work"),
 } as unknown as Session;
 const navigation = params.has("navigation");
 const global = params.has("global") || navigation;
+if (params.has("live-jobs")) {
+  fixtureVoice.jobs.push({
+    id: "prepare-release",
+    title: "Prepare release notes",
+    updatedAt: 1_700_000_001_000,
+    projectId: "fixture-project",
+    status: "running",
+    progress: { done: 2, total: 3 },
+    summary: "Collecting the final test results.",
+    taskIds: ["release-check"],
+    sessionIds: [session.id],
+    dispatchState: "submitted",
+  });
+}
 if (params.has("control"))
   fixtureVoice.jobs.push({
     id: "control-job",
@@ -86,6 +138,18 @@ const workspace = global
           description: "List fixture projects.",
           parameters: { type: "object", properties: {} },
         },
+        ...(params.has("live-work")
+          ? [
+              {
+                name: "workspace.views.open",
+                description: "Open fixture views.",
+                parameters: {
+                  type: "object",
+                  properties: { view: { enum: ["notes", "tasks"] } },
+                },
+              },
+            ]
+          : []),
       ],
       execute: async (action: string) => {
         fixtureVoice.actions.push(action);
@@ -99,13 +163,33 @@ const workspace = global
   : undefined;
 function FixtureCompanion() {
   const [next, setNext] = useState(false);
+  const [work, setWork] = useState(session);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- The browser fixture accepts one synthetic incoming work update.
+  useEffect(() => {
+    if (!params.has("live-work")) return;
+    const advance = () =>
+      setWork({
+        ...session,
+        blocks: [
+          ...session.blocks,
+          {
+            id: "work-browser",
+            role: "tool",
+            text: "pnpm test:browser",
+            tool: { title: "pnpm test:browser", status: "running", detail: "Chromium ready." },
+          },
+        ],
+      });
+    window.addEventListener("fixture-voice-work-update", advance);
+    return () => window.removeEventListener("fixture-voice-work-update", advance);
+  }, []);
   const second = {
     ...session,
     id: "fixture-next",
     title: "Second fixture project",
     cwd: "/fixture-next",
   };
-  const current = next ? second : session;
+  const current = next ? second : work;
   const Companion = wakeQuickSettings ? VoiceCompanionGate : VoiceCompanion;
   return (
     <main style={{ padding: 24, maxInlineSize: 720 }}>
@@ -130,7 +214,26 @@ function FixtureCompanion() {
       )}
       <Companion
         activeId={params.has("no-active") ? undefined : current.id}
-        sessions={navigation ? [session, second] : [session]}
+        openWorkspaceTrackedWork={
+          params.has("tracked-work")
+            ? (work) => {
+                fixtureVoice.actions.push(
+                  `open-${work.kind}:${work.environmentId}:${work.projectId}:${work.id}`,
+                );
+                return true;
+              }
+            : undefined
+        }
+        renderWorkspaceTool={
+          params.has("live-jobs")
+            ? (tab, source) => (
+                <p data-testid="voice-tool-fixture">
+                  {tab} · {source.id}
+                </p>
+              )
+            : undefined
+        }
+        sessions={navigation ? [work, second] : [work]}
         onSubmit={() => {
           fixtureVoice.submits++;
           return false;
@@ -229,17 +332,8 @@ createRoot(document.getElementById("root")!).render(
         ]}
       />
     </main>
-  ) : params.has("setup-step") ? (
-    <main style={{ padding: 24, maxInlineSize: 560 }}>
-      <p>Fixture evidence · actual setup controls, no microphone/provider acceptance</p>
-      <h1>Assistant Arif · {params.get("setup-step")}</h1>
-      <VoiceSetupSteps
-        step={params.get("setup-step") as "provider" | "voice" | "microphone"}
-        language="tr-TR"
-        name="Arif"
-        onValidChange={() => {}}
-      />
-    </main>
+  ) : params.has("setup-wizard") ? (
+    <AssistantSetup voice onClose={() => {}} />
   ) : (
     <FixtureCompanion />
   ),

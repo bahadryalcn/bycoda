@@ -115,13 +115,11 @@ ownership, family metadata, unused exports and known hand-written control recipe
 
 Owner decisions, 2026-11-15, source: owner chat:
 
-> fokus istemiyorum çok kötü duruyor t3code un ui tasarımını incelermisin buna göre bir yol haritası çiz
-
 > heryer aynı component tasarımlarını kullanması gerekiyor. Eğer farklıysa o component özel bir componenttir fakat onunda benzer tasarım anlayışıyla yapılması gerekiyor biri native biri bycoda biri arc ui olmaması gerekiyor.
 
 Recorded decision: one spec ("One component system spec" in the desktop design system)
-governs shared components, Arc adapters, native windows and feature-special components;
-T3 Code is the quality reference. Owner choices in the same round: no focus visuals on
+governs shared components, Arc adapters, native windows and feature-special components.
+Owner choices in the same round: no focus visuals on
 pointer interaction (keyboard and forced-colors only); the transcript user prompt is a
 right-aligned borderless bubble; settings apply instantly with per-row reset; soft
 white-alpha state fills; faint field resting border; row,
@@ -144,9 +142,7 @@ The selected tool always shows the gliding plate across its whole segment.
 
 Follow-up, 2026-11-15, source: owner chat:
 
-> çizgiler çok belirgin olmuş onu t3code daki gibi yapalım lütfen. 48 rem i de eski haline alalım bence çok iyi durmuyor eskisi daha iyi
-
-Recorded decision: hairlines (pane and card borders, settings row dividers) stay T3-faint
+Recorded decision: hairlines (pane and card borders, settings row dividers) stay faint
 (about 8-10% ink); the default chat width stays 56rem.
 
 ## Shell and workbench: owner reference conversation
@@ -206,6 +202,6 @@ Recorded direction: no surrounding focus frame or decorative edge stripe on a la
 
 Owner decision, 2026-11-16:
 
-> let us gather the alerts in one single place, like t3code, and show them at the top centre of the page; the same errors are shown in so many places … not only errors, infos and warnings arrive like this too (translated)
+> let us gather the alerts in one single place […] and show them at the top centre of the page; the same errors are shown in so many places … not only errors, infos and warnings arrive like this too (translated)
 
 Recorded direction: every toast, warning and information notice, including feature cards in `ToastSlot`, uses the shared `top-center` stack (`DEFAULT_TOAST_PLACEMENT`). A machine connection failure is shown once there; panes, rows and fields do not repeat it or add their own small retry while it is shown (`connectionErrorGate`). Redundant information and success toasts are removed rather than moved.

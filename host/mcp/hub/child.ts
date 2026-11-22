@@ -24,6 +24,7 @@ const LIST_METHODS = new Set(["resources/list", "resources/templates/list", "pro
 
 export type ChildOptions = {
   definition: InventoryDefinition;
+  projectEnv?: Record<string, string>;
   /** "shared" or the session id, which is also the `cwd` source for perSession children. */
   scopeKey: string;
   cwd: string;
@@ -224,10 +225,17 @@ export class McpChild {
   }
 
   private async spawnProcess(): Promise<void> {
-    const { definition, cwd } = this.options;
+    const { definition, cwd, projectEnv } = this.options;
     if (definition.kind !== "stdio" || !definition.command)
       throw new Error("Only stdio servers run as hub children.");
     const env = { ...process.env, ...definition.env };
+    if (process.platform === "win32" && projectEnv) {
+      // Windows treats env names case-insensitively. Node otherwise keeps the first sorted key.
+      const names = new Set(Object.keys(projectEnv).map((name) => name.toUpperCase()));
+      for (const inherited of Object.keys(env))
+        if (names.has(inherited.toUpperCase())) delete env[inherited];
+    }
+    Object.assign(env, projectEnv);
     // Bare `npx`/`uvx` definitions resolve on PATH; Windows .cmd shims need cmd.exe.
     const launch = await resolveHubLaunch(definition.command, definition.args ?? [], env);
     const proc = spawn(launch.shell?.command ?? launch.command, launch.shell?.args ?? launch.args, {

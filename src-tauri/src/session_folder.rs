@@ -1,12 +1,12 @@
-//! The folder where sessions without a project run. Those sessions are stored
-//! with the bare cwd `~`; this module maps that sentinel to the folder the user
-//! chose, or to the home folder when none is set. The choice lives in
-//! `~/.bycoda-host/session-folder.json`, which the Bycoda Host reads too.
+//! Working folders for projectless sessions. New chats use a reserved path under
+//! `~/.bycoda-host/scratch`. Bare `~` still resolves to the legacy folder choice or home.
 
 use std::path::{Path, PathBuf};
 
 use crate::dirs_home;
 use crate::fs::{expand_home, write_text_file_sync};
+
+const SCRATCH_PREFIX: &str = "~/.bycoda-host/scratch/session-";
 
 fn choice_path() -> Option<PathBuf> {
     Some(
@@ -49,11 +49,32 @@ fn resolve_in(cwd: &str, choice: Option<&Path>, home: Option<&Path>) -> PathBuf 
     expand_home(cwd)
 }
 
-/// Like `expand_home`, except the bare `~` of a session without a project
-/// becomes the configured session folder. `~/x` is left to `expand_home`.
-pub(crate) fn resolve_session_cwd(cwd: &str) -> PathBuf {
+/// Like `expand_home`, with on-demand creation for managed scratch paths
+/// and the legacy folder override for bare `~`.
+pub(crate) fn resolve_session_cwd(cwd: &str) -> Result<PathBuf, String> {
     let home = dirs_home().map(PathBuf::from);
-    resolve_in(cwd, choice_path().as_deref(), home.as_deref())
+    if let Some(id) = cwd.strip_prefix(SCRATCH_PREFIX) {
+        return create_scratch_folder(id, &home.ok_or("No home folder")?);
+    }
+    Ok(resolve_in(cwd, choice_path().as_deref(), home.as_deref()))
+}
+
+fn create_scratch_folder(id: &str, home: &Path) -> Result<PathBuf, String> {
+    if id.len() > 180 || crate::session_store::validate_id(id, "session").is_err() {
+        return Err("Invalid session scratch directory".into());
+    }
+    let root = home.join(".bycoda-host").join("scratch");
+    let folder = root.join(format!("session-{id}"));
+    for path in [&root, &folder] {
+        std::fs::create_dir_all(path).map_err(|error| format!("{}: {error}", path.display()))?;
+        if !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir()) {
+            return Err(format!(
+                "Invalid session scratch directory: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(folder)
 }
 
 #[derive(serde::Serialize)]
@@ -119,6 +140,21 @@ mod tests {
         let home = root.join("home");
         let resolved = resolve_in("~", Some(&root.join("missing.json")), Some(&home));
         assert_eq!(resolved, home);
+    }
+
+    #[test]
+    fn scratch_is_stable_per_session_and_rejects_traversal() {
+        let home = temp("scratch-session");
+        let id = "00000000-0000-4000-8000-000000000001";
+        let folder = create_scratch_folder(id, &home).unwrap();
+        std::fs::write(folder.join("output.txt"), "keep").unwrap();
+        assert_eq!(create_scratch_folder(id, &home).unwrap(), folder);
+        assert!(folder.join("output.txt").is_file());
+        assert_ne!(
+            create_scratch_folder("00000000-0000-4000-8000-000000000002", &home).unwrap(),
+            folder
+        );
+        assert!(create_scratch_folder("../elsewhere", &home).is_err());
     }
 
     #[test]

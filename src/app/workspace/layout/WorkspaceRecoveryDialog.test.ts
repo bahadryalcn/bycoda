@@ -15,7 +15,6 @@ vi.mock("../../shell/SessionRecoveryPanel", () => ({
 vi.mock("./EditorDraftRecoverySection", () => ({
   EditorDraftRecoverySection: () => "Retained file drafts",
 }));
-vi.mock("./BufferRecoveryReports", () => ({ BufferRecoveryReports: () => "Earlier reports" }));
 
 type Props = ComponentProps<typeof WorkspaceRecoveryDialog>;
 let root: Root;
@@ -34,18 +33,23 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
-const render = (pending: boolean, reports = false) =>
+const render = (pending: boolean, sessions = false) =>
   act(async () =>
     root.render(
       createElement(WorkspaceRecoveryDialog, {
         sessions: [],
         remoteSessions: [],
-        recovery: null,
+        recovery: sessions
+          ? ({
+              workspace: { sessions: [{ id: "s1" }] },
+            } as unknown as NonNullable<Props["recovery"]>)
+          : null,
+        editorDraftRecords: sessions
+          ? ([{}] as unknown as NonNullable<Props["editorDraftRecords"]>)
+          : [],
         onClose,
         onOpen: async () => {},
         onRemove: async () => {},
-        canInspectLegacyReports: () => reports,
-        getLegacyReportPrivacySnapshot: reports ? () => "visible" : undefined,
         // Only the recovery-shell boundary is exercised; file storage/actions stay mocked.
         editorDraftRecovery: {
           available: true,
@@ -87,7 +91,7 @@ it("preserves tab and panel naming when multiple recovery kinds are available", 
   const panel = document.querySelector('[role="tabpanel"]')!;
   const label = document.getElementById(panel.getAttribute("aria-labelledby")!);
   expect(label?.getAttribute("role")).toBe("tab");
-  expect(label?.textContent).toBe("File drafts0");
+  expect(label?.textContent).toBe("Sessions");
   expect(label?.getAttribute("aria-controls")).toBe(panel.id);
   expect(panel.hasAttribute("aria-label")).toBe(false);
 });

@@ -208,6 +208,24 @@ it("asks once for an image the Host answered it does not hold", async () => {
   }
 });
 
+it("asks once for an image whose id the Host refuses as invalid", async () => {
+  vi.useFakeTimers();
+  try {
+    // An older or desktop-local id is refused on every try; retrying only fills the log.
+    const read = vi.fn(async (): Promise<never> => {
+      throw "Host rejected request: Invalid attachment ID";
+    });
+    let known: HostSession | undefined;
+    for (let i = 0; i < 3; i++) {
+      known = await withRemoteAttachmentPreviews("legacy-machine", snapshot(), known, read);
+      vi.advanceTimersByTime(600_000);
+    }
+    expect(read).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("settles a snapshot whose only unloaded images are missing on the Host", async () => {
   vi.useFakeTimers();
   try {

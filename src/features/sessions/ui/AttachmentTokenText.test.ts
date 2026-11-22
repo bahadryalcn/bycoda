@@ -42,6 +42,20 @@ function render(text: string, attachments: Attachment[] | undefined) {
 }
 
 describe("AttachmentTokenText", () => {
+  it("highlights scoped crew and note references while preserving message text", () => {
+    const text = "Ask @crews:backend-engineer and read @notes:release-checklist. @crews:";
+    render(text, undefined);
+    expect(container.textContent).toBe(text);
+    expect(
+      [...container.querySelectorAll("[data-scoped-mention]")].map((node) => [
+        node.getAttribute("data-scoped-mention"),
+        node.textContent,
+      ]),
+    ).toEqual([
+      ["crew", "@crews:backend-engineer"],
+      ["note", "@notes:release-checklist"],
+    ]);
+  });
   it("renders tracker refs as non-clickable emphasis with literal copy text", () => {
     const text =
       "Review (@jira:PROJ-123), @github:owner/repo#142 and @jira:PROJ-123. @unknown:1 person@jira:PROJ-123";

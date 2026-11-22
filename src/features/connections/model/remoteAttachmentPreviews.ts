@@ -14,11 +14,12 @@ const missingOnHost = new Set<string>();
 const MISSING_ON_HOST = "Attachment file is missing on its machine.";
 
 /** The Host refused the read because the file is absent there (the Host's
- * `ATTACHMENT_MISSING_MESSAGE` refusal, which the native layer forwards as text). A transport
- * or transient Host failure never matches. */
+ * `ATTACHMENT_MISSING_MESSAGE` refusal, which the native layer forwards as text), or because the
+ * id is not one it stores files under ("Invalid attachment ID": an older or desktop-local id that
+ * is refused on every try). A transport or transient Host failure never matches. */
 export function attachmentMissingOnHost(error: unknown): boolean {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return /attachment file is missing on this machine/i.test(message);
+  return /attachment file is missing on this machine|invalid attachment id/i.test(message);
 }
 let activeDownloads = 0;
 const waiting: Array<() => void> = [];

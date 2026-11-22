@@ -1,6 +1,37 @@
+import { win32 } from "node:path";
 import { SHARE_ENV, Worker } from "node:worker_threads";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { createLogger } from "../diagnostics/logger";
 
-type Output = string | Buffer;
+const log = createLogger("git.pool");
+const gitCommands = new Set(
+  "add branch cat-file check-ref-format checkout cherry-pick clean clone commit config diff diff-index diff-tree fetch for-each-ref hash-object init log ls-files ls-remote ls-tree merge merge-base mv pull push read-tree rebase reflog remote reset restore rev-list rev-parse rm show show-ref stash status submodule switch symbolic-ref tag update-index update-ref worktree write-tree".split(
+    " ",
+  ),
+);
+
+function commandLabel({ file, args }: Command): string {
+  const executable = win32
+    .basename(file)
+    .toLowerCase()
+    .replace(/\.exe$/, "");
+  if (executable === "git") {
+    // Skip global options (`-c key=value`, `-C dir`, `--literal-pathspecs`, …) to the subcommand.
+    let subcommand: string | undefined;
+    for (let index = 0; index < args.length; index++) {
+      const arg = args[index];
+      if (arg === "-c" || arg === "-C") index++;
+      else if (!arg.startsWith("-")) {
+        subcommand = arg;
+        break;
+      }
+    }
+    return subcommand && gitCommands.has(subcommand) ? `git ${subcommand}` : "git";
+  }
+  return ["powershell", "pwsh", "node"].includes(executable) ? executable : "other";
+}
+
+type Output = string | Buffer<ArrayBuffer>;
 type Result<T = Output> = { stdout: T; stderr: T };
 type Failure = {
   name: string;
@@ -10,6 +41,7 @@ type Failure = {
   signal?: NodeJS.Signals | null;
   cmd?: string;
   errno?: number;
+  spawnargs?: string[];
   path?: string;
   syscall?: string;
 };
@@ -23,10 +55,11 @@ type CommandOptions = {
   input?: string | Buffer | readonly (string | Buffer)[];
   windowsHide?: boolean;
   replaceEnv?: boolean;
+  nativeTimeout?: boolean;
   streaming?: boolean;
 };
 /** `network` is for long fetch/push/pull/clone calls so they cannot starve short probes. */
-type Lane = "default" | "network";
+type Lane = "default" | "network" | "background" | "control";
 type ExecOptions = Omit<CommandOptions, "streaming"> & {
   signal?: AbortSignal;
   lane?: Lane;
@@ -96,12 +129,13 @@ function report(id, error, stdout, stderr) {
     error: error && {
       name: error.name, message: error.message, code: error.code, killed: error.killed,
       signal: error.signal, cmd: error.cmd, errno: error.errno, path: error.path, syscall: error.syscall,
+      spawnargs: error.spawnargs,
     },
   }, transfer);
 }
 
 function run({ id, file, args, options, deadline, cancelled }) {
-  const { input, encoding = "utf8", env, cwd, maxBuffer, windowsHide = true, streaming, replaceEnv } = options;
+  const { input, encoding = "utf8", env, cwd, maxBuffer, windowsHide = true, streaming, replaceEnv, nativeTimeout, timeout } = options;
   const empty = encoding === "buffer" ? Buffer.alloc(0) : "";
   const remaining = () => Math.ceil(Number(deadline - process.hrtime.bigint()) / 1e6);
   const cmd = [file, ...args].join(" ");
@@ -109,7 +143,7 @@ function run({ id, file, args, options, deadline, cancelled }) {
   const messages = {
     ABORT_ERR: "The operation was aborted",
     ECANCELED: "Git command pool closed",
-    ETIMEDOUT: "Command timed out: " + cmd,
+    ETIMEDOUT: nativeTimeout ? "Command timed out before launch" : "Command timed out: " + cmd,
   };
   const errorFor = (code, killed = false, signal = null) => Object.assign(new Error(messages[code]), {
     name: code === "ABORT_ERR" ? "AbortError" : "Error",
@@ -145,6 +179,7 @@ function run({ id, file, args, options, deadline, cancelled }) {
     } else {
       child = execFile(file, args, {
         ...launch, encoding, maxBuffer: maxBuffer ?? 1024 * 1024,
+        timeout: nativeTimeout ? timeout : 0,
       }, (error, stdout, stderr) => {
         outcome = { error, stdout, stderr };
       });
@@ -186,9 +221,9 @@ function run({ id, file, args, options, deadline, cancelled }) {
   // execFile starts its timer after spawn. Charge synchronous process creation to this deadline.
   const delay = remaining();
   const cancelledDuringLaunch = cancellation();
-  if (cancelledDuringLaunch || delay <= 0) stop(cancelledDuringLaunch ?? "ETIMEDOUT");
+  if (cancelledDuringLaunch || (!nativeTimeout && delay <= 0)) stop(cancelledDuringLaunch ?? "ETIMEDOUT");
   else {
-    timer = setTimeout(() => stop("ETIMEDOUT"), delay);
+    if (!nativeTimeout) timer = setTimeout(() => stop("ETIMEDOUT"), delay);
     if (Array.isArray(input)) {
       for (const piece of input) child.stdin.write(piece);
       child.stdin.end();
@@ -218,6 +253,7 @@ process.on("exit", () => {
 
 type Job = {
   command: Command;
+  submittedAt: number;
   onOutput?: ExecOptions["onOutput"];
   outputFailure?: { error: unknown };
   signal?: AbortSignal;
@@ -230,21 +266,26 @@ type Job = {
 type Slot = { worker: Worker; active: Map<number, Job>; exited: Promise<void>; error?: Error };
 
 /**
- * FIFO admission for buffered commands in two lanes. Slots stay held until children close;
- * the network lane has its own capacity so slow transports never occupy the default lane.
+ * FIFO admission per lane. Slots stay held until children close.
+ * Network, background and process-tree termination have separate capacity.
  */
 export class GitExecPool {
   private readonly queue = new Map<number, Job>();
   private slot: Slot | undefined;
   private closing: Promise<void> | undefined;
   private nextId = 0;
+  private lastBusyWarning = -Infinity;
+  private suppressedWarnings = 0;
 
   constructor(
-    private readonly concurrency = 4,
+    // Process creation dominates on Windows (antivirus scans each launch), so more slots in
+    // flight raise throughput without adding main-thread work.
+    private readonly concurrency = 6,
     private readonly maxQueued = 128,
     private readonly startWorker = (source: string) =>
       new Worker(source, { eval: true, execArgv: [], env: SHARE_ENV }),
     private readonly networkConcurrency = 2,
+    private readonly backgroundConcurrency = 2,
   ) {
     if (
       !Number.isSafeInteger(concurrency) ||
@@ -252,7 +293,9 @@ export class GitExecPool {
       !Number.isSafeInteger(maxQueued) ||
       maxQueued < 0 ||
       !Number.isSafeInteger(networkConcurrency) ||
-      networkConcurrency < 1
+      networkConcurrency < 1 ||
+      !Number.isSafeInteger(backgroundConcurrency) ||
+      backgroundConcurrency < 1
     )
       throw new RangeError("Invalid Git command pool capacity");
   }
@@ -260,14 +303,20 @@ export class GitExecPool {
   private hasCapacity(slot: Slot | undefined, lane: Lane) {
     let active = 0;
     for (const job of slot?.active.values() ?? []) if (job.command.lane === lane) active++;
-    return active < (lane === "network" ? this.networkConcurrency : this.concurrency);
+    const capacity = {
+      default: this.concurrency,
+      network: this.networkConcurrency,
+      background: this.backgroundConcurrency,
+      control: 2,
+    };
+    return active < capacity[lane];
   }
 
   exec(
     file: string,
     args: readonly string[],
     options: ExecOptions & { encoding: "buffer" },
-  ): Promise<Result<Buffer>>;
+  ): Promise<Result<Buffer<ArrayBuffer>>>;
   exec(
     file: string,
     args: readonly string[],
@@ -282,23 +331,33 @@ export class GitExecPool {
     return new Promise((resolve, reject) => {
       if (
         !Number.isSafeInteger(options.timeout) ||
-        options.timeout < 1 ||
+        options.timeout < (options.nativeTimeout ? 0 : 1) ||
         options.timeout > 2 ** 31 - 1
       ) {
         reject(new RangeError("Git command timeout must be a positive timer duration"));
         return;
       }
+      // Native execFile owns the runtime timer. Bound admission separately.
+      const queueTimeout = options.nativeTimeout ? 30_000 : options.timeout;
       const command = {
         id: ++this.nextId,
         lane,
         file,
         args: [...args],
         options: { ...options, streaming: !!onOutput, env: options.env && { ...options.env } },
-        deadline: process.hrtime.bigint() + BigInt(options.timeout) * 1_000_000n,
+        deadline: process.hrtime.bigint() + BigInt(queueTimeout) * 1_000_000n,
         // A posted run can reach the worker before a later cancellation message.
         cancelled: new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)),
       };
-      const job: Job = { command, signal, onOutput, resolve, reject, abort: () => this.abort(job) };
+      const job: Job = {
+        command,
+        submittedAt: monotonicNow(),
+        signal,
+        onOutput,
+        resolve,
+        reject,
+        abort: () => this.abort(job),
+      };
       if (signal?.aborted) {
         this.fail(job, "ABORT_ERR", "The operation was aborted");
         return;
@@ -313,7 +372,7 @@ export class GitExecPool {
         return;
       }
       signal?.addEventListener("abort", job.abort, { once: true });
-      job.queueTimer = setTimeout(() => this.expire(job), options.timeout);
+      job.queueTimer = setTimeout(() => this.expire(job), queueTimeout);
       this.queue.set(command.id, job);
       this.dispatch();
     });
@@ -346,12 +405,13 @@ export class GitExecPool {
     }
     for (const [id, job] of this.queue) {
       if (slot.error) return;
-      // A full lane must not hold back jobs of the other lane queued behind it.
+      // A full lane must not hold back jobs of other lanes queued behind it.
       if (!this.hasCapacity(slot, job.command.lane)) continue;
       if (job.command.deadline <= process.hrtime.bigint()) {
         this.expire(job);
         continue;
       }
+      this.warnBusy(job, false);
       this.queue.delete(id);
       clearTimeout(job.queueTimer);
       slot.active.set(id, job);
@@ -416,11 +476,13 @@ export class GitExecPool {
             new Error(message),
             error,
             result,
-            {
-              killed: error.killed ?? false,
-              code: error.code ?? null,
-              signal: error.signal ?? null,
-            },
+            job.command.options.nativeTimeout
+              ? {}
+              : {
+                  killed: error.killed ?? false,
+                  code: error.code ?? null,
+                  signal: error.signal ?? null,
+                },
             error.code === "ABORT_ERR" ? { cause: job.signal?.reason } : {},
           ),
         );
@@ -445,8 +507,40 @@ export class GitExecPool {
   }
 
   private expire(job: Job) {
-    if (this.queue.delete(job.command.id))
-      this.fail(job, "ETIMEDOUT", "Command timed out before launch");
+    if (!this.queue.has(job.command.id)) return;
+    this.warnBusy(job, true);
+    this.queue.delete(job.command.id);
+    this.fail(job, "ETIMEDOUT", "Command timed out before launch");
+  }
+
+  private warnBusy(job: Job, expired: boolean) {
+    const now = monotonicNow();
+    const waited = elapsedSince(job.submittedAt, now);
+    if (!expired && waited <= 2_000) return;
+    if (elapsedSince(this.lastBusyWarning, now) < 60_000) {
+      this.suppressedWarnings++;
+      return;
+    }
+    const { lane } = job.command;
+    const queued = [...this.queue.values()].filter((entry) => entry.command.lane === lane);
+    const active = [...(this.slot?.active.values() ?? [])].filter(
+      (entry) => entry.command.lane === lane,
+    );
+    const counts = new Map<string, number>();
+    for (const entry of [...queued, ...active]) {
+      const label = commandLabel(entry.command);
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    const top = [...counts]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([label, count]) => `${label}:${count}`)
+      .join(",");
+    log.warn(
+      `git pool busy lane=${lane} waitedMs=${Math.round(waited)} queued=${queued.length} active=${active.length} top=${top} suppressed=${this.suppressedWarnings}`,
+    );
+    this.lastBusyWarning = now;
+    this.suppressedWarnings = 0;
   }
 
   private cleanup(job: Job) {
@@ -463,6 +557,7 @@ export class GitExecPool {
         code,
         killed: false,
         signal: null,
+        cmd: [job.command.file, ...job.command.args].join(" "),
         stdout: empty,
         stderr: empty,
         ...(code === "ABORT_ERR" ? { cause: job.signal?.reason } : {}),

@@ -158,7 +158,9 @@ update actions in the detail header. Settings search opens the relevant part.
 
 ## Guide
 
-Open the Guide from View → Usage guide or Settings → General. **Steps** contains
+In a new session without a project, **Open a project** opens the folder picker and
+**Guide** opens the usage guide. You can also open the Guide from View → Usage guide
+or Settings → General. **Steps** contains
 the interactive walkthrough. **Wiki** contains the searchable product reference,
 including remote access, permissions, background work and troubleshooting.
 Open Wiki from a topic to read its matching article. The bundled reference works

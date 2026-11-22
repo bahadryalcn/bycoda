@@ -1,5 +1,32 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("Windows application menu exposes separate window and tray actions", async ({
+  page,
+}, info) => {
+  await installNavigationFixture(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+  });
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.goto("/tests/browser/app-shell/compact-navigation.html?applicationMenu");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Application menu" }).click();
+      const menu = page.getByRole("menu", { name: "Application menu" });
+      await expect(menu.getByRole("menuitem", { name: /^Close window/ })).toBeVisible();
+      await expect(
+        menu.getByRole("menuitem", { name: "Minimize to tray", exact: true }),
+      ).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "Quit", exact: true })).toBeVisible();
+      await menu.screenshot({ path: info.outputPath(`window-menu-${theme}-${width}.png`) });
+    }
+  }
+});
+
 test("application menu keeps navigation in reach and groups secondary actions", async ({
   page,
 }, info) => {

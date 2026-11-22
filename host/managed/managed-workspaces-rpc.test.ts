@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import * as identity from "../build-identity";
+import { DesktopLive } from "../desktop/desktopLive";
+import { DesktopSessions } from "../desktop/desktopSessions";
 import { HostEngine } from "../engine";
 import type { HostProvider } from "../providers/providers";
 import { createHostServer } from "../server";
@@ -62,7 +64,19 @@ async function fixture(buildIdentity: BuildIdentity | null = null) {
   };
   const engine = new HostEngine(store, { codex: provider });
   const project = await engine.openProject(target);
-  const server = await createHostServer(engine, ["codex"]);
+  const desktop = new DesktopSessions(
+    () => [],
+    process.platform,
+    new DesktopLive(Date.now, false, async () => {}),
+  );
+  const server = await createHostServer(
+    engine,
+    ["codex"],
+    undefined,
+    undefined,
+    undefined,
+    desktop,
+  );
   cleanups.push(async () => {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -718,36 +732,18 @@ it("resumes the same owner-approved publication journal without pushing again an
   expect(createPr).toHaveBeenCalledTimes(2);
 });
 
-it("authenticates clean native close and same-device instance reconciliation without trusting process-death claims", async () => {
+it("requires owner authentication for stateless legacy buffer replies", async () => {
   const f = await fixture();
-  const report = {
-    clientId: "profile",
-    instanceId: "old",
-    processId: process.pid,
-    owners: [{ ownerId: "main", updatedAt: Date.now(), unknown: false, buffers: [] }],
-  };
-  await f.call("native.buffers.update", report);
-  const identity = {
-    clientId: report.clientId,
-    instanceId: report.instanceId,
-    processId: report.processId,
-  };
+  const identity = { clientId: "profile", instanceId: "old", processId: process.pid };
   expect((await f.request("native.buffers.retire", identity, "invalid-token")).status).toBe(401);
-  const other = await f.store.issueDevice("Other buffer device");
-  expect((await f.request("native.buffers.retire", identity, other.token)).status).toBe(400);
-  await f.call("native.buffers.update", { ...report, instanceId: "new" });
-  const reconcile = {
-    clientId: "profile",
-    instanceId: "new",
-    predecessors: [{ instanceId: "old", processId: process.pid }],
-    processDead: true,
-  };
-  expect((await f.request("native.buffers.reconcile", reconcile, other.token)).status).toBe(400);
-  const stillLive = await f.request("native.buffers.reconcile", reconcile);
-  expect(stillLive.status).toBe(400);
-  expect(stillLive.value.error).toMatch(/not proven dead/);
   expect(await f.call("native.buffers.retire", identity)).toEqual({ acknowledged: true });
-  expect(await f.call("native.buffers.reconcile", reconcile)).toEqual({ acknowledged: true });
+  expect(
+    await f.call("native.buffers.reconcile", {
+      clientId: identity.clientId,
+      instanceId: "new",
+      predecessors: [{ instanceId: identity.instanceId, processId: identity.processId }],
+    }),
+  ).toEqual({ acknowledged: true });
 });
 
 it("authenticates preparation cancellation and fences late same-key requests without allowing foreign tombstones", async () => {

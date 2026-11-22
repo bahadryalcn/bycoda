@@ -24,6 +24,7 @@ export function noteTitleError(title: string): string | undefined {
 }
 
 export const NOTE_MENTION_PREFIX = "note/";
+export const NOTES_MENTION_SCOPE = "notes:";
 export const NOTE_PATH_PREFIX = "note:";
 
 export type Note = {
@@ -113,7 +114,7 @@ const MAX_TITLE = 200;
 export const MAX_NOTE_TAGS = 20;
 export const MAX_NOTE_TAG_LENGTH = 48;
 const MAX_NOTE_PICKER = 8;
-const NOTE_SLUG_RE = /(^|\s)@note\/([A-Za-z0-9_-]+)/g;
+const NOTE_SLUG_RE = /(^|\s)@(?:note\/|notes:)([A-Za-z0-9_-]+)/gi;
 
 let cache: Note[] | null = null;
 let inflight: Promise<Note[]> | null = null;

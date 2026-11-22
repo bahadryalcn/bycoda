@@ -10,7 +10,13 @@ import { ConfirmConsequences } from "../../../shared/ui/ConfirmDialog";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { listWorktrees, type Worktree, type RemoveWorktree } from "../model/worktrees";
+import {
+  branchDeleteBlock,
+  listWorktrees,
+  type Worktree,
+  type RemoveWorktree,
+} from "../model/worktrees";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import type { WorktreeManagementRequest } from "../model/worktreeManagement";
 import { GitFeedback, GitLoading } from "./GitFeedback";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -32,6 +38,7 @@ export function QuickDeleteWorktreeDialog({
   const [error, setError] = useState<string>();
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [deleteBranch, setDeleteBranch] = useState(false);
   const tree = trees?.find((entry) => pathKey(entry.path) === pathKey(path));
   const index = status?.path === tree?.path ? status?.value : undefined;
 
@@ -94,7 +101,12 @@ export function QuickDeleteWorktreeDialog({
     setBusy(true);
     setError(undefined);
     try {
-      await onRemove(request.cwd, tree.path, true, true);
+      const block = branchDeleteBlock(tree);
+      if (deleteBranch && !block) {
+        await onRemove(request.cwd, tree.path, true, true, undefined, true);
+      } else {
+        await onRemove(request.cwd, tree.path, true, true);
+      }
       onClose();
     } catch (reason) {
       setError(presentRemoteError(reason, { explicit: true }));
@@ -181,8 +193,31 @@ export function QuickDeleteWorktreeDialog({
                 tone: "warning",
                 content: t("All uncommitted and untracked changes here are discarded."),
               },
-              { key: "branch", tone: "neutral", content: t("The branch is kept.") },
+              {
+                key: "branch",
+                tone: "neutral",
+                content:
+                  deleteBranch && !branchDeleteBlock(tree)
+                    ? t("The branch is deleted if it is fully merged.")
+                    : t("The branch is kept."),
+              },
             ]}
+          />
+        ) : null}
+        {tree?.branch ? (
+          <Checkbox
+            size="caption"
+            label={t("Also delete branch {p0}", { p0: tree.branch })}
+            description={
+              branchDeleteBlock(tree) === "unpushed"
+                ? t("It has unpushed commits.")
+                : branchDeleteBlock(tree) === "default"
+                  ? t("It is the default branch.")
+                  : undefined
+            }
+            checked={deleteBranch && !branchDeleteBlock(tree)}
+            disabled={busy || !!branchDeleteBlock(tree)}
+            onChange={(event) => setDeleteBranch(event.target.checked)}
           />
         ) : null}
         {error ? (

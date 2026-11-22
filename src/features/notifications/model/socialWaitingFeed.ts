@@ -47,7 +47,9 @@ async function readAccounts(machineId: string, client: SocialClient): Promise<Ac
   ) {
     return cached.accounts;
   }
-  const accounts = await client.sectionSnapshot({ section: "accounts", limit: 200 }).then(
+  // The Host's page limit is 1–100 (host/social/social.ts `workspaceSnapshot`); 200 was refused
+  // as "Invalid page limit" on every poll, so due sign-ins were never seen.
+  const accounts = await client.sectionSnapshot({ section: "accounts", limit: 100 }).then(
     (response) => response.snapshot?.accounts,
     () => undefined,
   );

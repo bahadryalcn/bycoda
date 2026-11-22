@@ -110,6 +110,7 @@ type Shared = {
   hideProjectPicker?: boolean;
   onFocus: (paneId: string) => void;
   onSessionInteraction?: (sessionId: string) => void;
+  onOpenVoiceWork?: SessionPaneProps["onOpenVoiceWork"];
   onClose: (sessionId: string) => void;
   onRemoteSnapshot?: SessionPaneProps["onRemoteSnapshot"];
   onRefreshAdoptedSession?: SessionPaneProps["onRefreshAdoptedSession"];
@@ -256,6 +257,7 @@ function PaneTreeComponent({
   workspaceSwitchingSessionId,
   onFocus,
   onSessionInteraction,
+  onOpenVoiceWork,
   onClose,
   onRemoteSnapshot,
   onRefreshAdoptedSession,
@@ -849,6 +851,7 @@ function PaneTreeComponent({
                     >
                       <SessionPane
                         session={session}
+                        onOpenVoiceWork={onOpenVoiceWork}
                         workspaceSwitchingSessionId={workspaceSwitchingSessionId}
                         reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
                         visible={visible && !hidden}

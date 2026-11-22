@@ -150,8 +150,8 @@
 }
 
 /*
- * The sweep (after T3 Code's live activity row). A copy of the label in full ink
- * sits over it, seen through a soft band of mask. The band's element moves right
+ * The sweep overlays a copy of the activity label in full ink, visible through
+ * a soft mask. The mask moves right
  * while the copy inside moves left by the same amount, so the letters stay put
  * and only the light travels. Both are plain transforms, so the compositor runs
  * them, and `steps(30)` swaps about 14 frames a second instead of one per vsync.

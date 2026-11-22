@@ -52,12 +52,23 @@ export async function removeRemoteWorktree(
   review: RemoteWorktreeRemovalReview,
   force: boolean,
   keepSessions: boolean,
+  deleteBranch = false,
 ) {
   const { machine, environmentId, params } = await remoteRemovalTarget(cwd, path);
-  const result = await remoteRequest<{ sessionIds: string[]; projectCwd: string }>(
+  const result = await remoteRequest<{
+    sessionIds: string[];
+    projectCwd: string;
+    branchNotice?: string;
+  }>(
     machine.id,
     "git.worktreeRemove",
-    { ...params, token: review.token, force, keepSessions },
+    {
+      ...params,
+      token: review.token,
+      force,
+      keepSessions,
+      ...(deleteBranch ? { deleteBranch } : {}),
+    },
     false,
     true,
     environmentId,

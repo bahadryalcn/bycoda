@@ -5,7 +5,13 @@ import {
   getDiagnosticsMode,
   setDiagnosticsMode,
 } from "./diagnosticsConsent";
-import { createLogBuffer, isBenignResizeObserverError, sourceLocation } from "./uiLogBuffer";
+import {
+  createLogBuffer,
+  isBenignResizeObserverError,
+  recordUiLog,
+  setUiLogSink,
+  sourceLocation,
+} from "./uiLogBuffer";
 
 describe("benign window errors", () => {
   it("drops only the ResizeObserver loop notices", () => {
@@ -95,5 +101,25 @@ describe("consent", () => {
     setDiagnosticsMode("auto", () => new Date("2026-11-09T00:00:00Z"));
     expect(getDiagnosticsMode()).toBe("auto");
     expect(getDiagnosticsConsent().decidedAt).toBe("2026-11-09T00:00:00.000Z");
+  });
+});
+
+describe("durable sink", () => {
+  it("passes a warning's fields to the log file so a failed call can be attributed", () => {
+    const lines: string[] = [];
+    setUiLogSink((level, category, message) => lines.push(`${level} ${category} ${message}`));
+    try {
+      recordUiLog("warn", "ui.rpc", "request failed", {
+        method: "sessions.list",
+        code: "RPC_TIMEOUT",
+        ms: 30012,
+      });
+      recordUiLog("info", "ui.focus", "routine", { view: "x" });
+    } finally {
+      setUiLogSink(undefined);
+    }
+    expect(lines).toEqual([
+      "warn ui.rpc request failed method=sessions.list code=RPC_TIMEOUT ms=30012",
+    ]);
   });
 });

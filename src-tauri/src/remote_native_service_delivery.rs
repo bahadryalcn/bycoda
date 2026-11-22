@@ -150,7 +150,18 @@ fn compact_epoch(
         Some(params) => (epoch_wire::COMPACT, params),
         None => (epoch_wire::STATUS, epoch_wire::reference(&epoch)),
     };
-    let response = epoch_call(channel, method, params, deadline)?;
+    let response = match epoch_call(channel, method, params, deadline) {
+        Ok(response) => response,
+        Err(error) if method == epoch_wire::COMPACT && epoch_wire::stale_floor(&error) => {
+            epoch_call(
+                channel,
+                epoch_wire::STATUS,
+                epoch_wire::reference(&epoch),
+                deadline,
+            )?
+        }
+        Err(error) => return Err(error),
+    };
     commit_epoch(channel, &response)?;
     Ok(())
 }
@@ -1077,16 +1088,7 @@ fn acknowledge_remote(
     compact_epoch(channel, original, deadline)
 }
 
-/// Retry only already consumed local receipts, never effects or old consumers.
-/// A separate cursor keeps buffer and service outboxes independently fair.
-pub(super) fn reconcile_remote_acks(
-    channel: &Arc<NativeServiceChannel>,
-    deadline: Instant,
-) -> Result<usize, String> {
-    reconcile_remote_acks_noting(channel, deadline, &mut None)
-}
-
-/// `reconcile_remote_acks` that keeps the first refused ACK, for maintenance diagnostics.
+/// Retry consumed local service receipts and keep the first refused ACK for diagnostics.
 fn reconcile_remote_acks_noting(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,

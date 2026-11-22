@@ -14,6 +14,12 @@ import { RemoteConnectionFeedbackProvider } from "../features/connections/ui/Rem
 import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
 import { AssistantBackgroundRoom } from "../features/assistant/model/AssistantBackgroundRoom";
 import { useVoiceAppBridge, useVoiceRailProjects } from "./workspace/bridges/useVoiceAppBridge";
+import {
+  VoiceWorkspacePanel,
+  type OpenVoiceTrackedWork,
+  type OpenVoiceWorkspace,
+  type VoiceToolsOutlet,
+} from "./workspace/bridges/VoiceWorkspacePanels";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
 import {
   createConversationTerminalControl,
@@ -805,7 +811,7 @@ function Workspace({
   });
   const gitCwdBranches = useProjectBranches(
     gitCwd,
-    Boolean(gitCwd) && gitCwd !== "~" && !isRemoteProjectPath(sidebarCwd),
+    Boolean(gitCwd) && sidebarCwd !== "~" && !isRemoteProjectPath(sidebarCwd),
   );
   const explorerRootLabel =
     active?.worktreeCwd && sameProjectPath(gitCwd, sessionWorkCwd(active))
@@ -2049,6 +2055,15 @@ function Workspace({
   });
   useQuickComposerLaunches(launchQuickSession);
   const voiceProjects = useVoiceRailProjects(recents, projectCwd, lockSnapshot);
+  const [voiceToolsOutlet, setVoiceToolsOutlet] = useState<VoiceToolsOutlet>();
+  const [openVoiceWork, setOpenVoiceWork] = useState<OpenVoiceWorkspace | undefined>();
+  const registerVoiceWork = useStableCallback((open?: OpenVoiceWorkspace) =>
+    setOpenVoiceWork(() => open),
+  );
+  const voiceTrackedWorkOpener = useRef<OpenVoiceTrackedWork | undefined>(undefined);
+  const registerVoiceTrackedWork = useStableCallback((open?: OpenVoiceTrackedWork) => {
+    voiceTrackedWorkOpener.current = open;
+  });
   const voiceApp = useVoiceAppBridge({
     projects: voiceProjects,
     sessions,
@@ -2812,6 +2827,7 @@ function Workspace({
   const { onManageWorktrees } = useManageWorktrees({ openSettings });
 
   const { sessionPaneProps } = useSessionPaneProps({
+    onOpenVoiceWork: openVoiceWork,
     onKeepSession,
     tabs,
     movingWindows,
@@ -3052,11 +3068,32 @@ function Workspace({
   });
 
   const sidebarActions = useSidebarActions({
+    onOpenNoProject: () => {
+      setLastSessionsOpen(false);
+      onShowWorkspace();
+      workspaceNavigation.cancel();
+      const session = active?.cwd === "~" ? active : undefined;
+      const tab = session
+        ? activeTab
+        : tabsRef.current.find((entry) =>
+            sessionsRef.current.some(
+              (candidate) => candidate.id === entry.focusedId && candidate.cwd === "~",
+            ),
+          );
+      if (tab) activateTab(tab.id, session?.id);
+      else onNewSessionForProject("~");
+      setSessionSidebarOpen(true);
+      setSidebarTab("sessions", "~");
+    },
     onNewListedSession: (project: string) => {
       if (!canCreateListedSession(project, allowedRecentProjectKeys, getGroupLockView().lock)) {
         throw new Error(t("This project is no longer available."));
       }
       onNewSessionForProject(project);
+      if (!sameProjectPath(project, sidebarCwd)) {
+        setLastSessionsOpen(false);
+        setSidebarTab("sessions", project);
+      }
     },
     onOpenLastSessions: () => {
       setLastSessionsOpen(true);
@@ -3223,6 +3260,15 @@ function Workspace({
               )}
               <VoiceCompanionGate
                 {...voiceApp}
+                renderWorkspaceTool={(panel, session) => (
+                  <VoiceWorkspacePanel
+                    panel={panel}
+                    session={session}
+                    present={setVoiceToolsOutlet}
+                  />
+                )}
+                registerWorkspaceOpener={registerVoiceWork}
+                openWorkspaceTrackedWork={(work) => voiceTrackedWorkOpener.current?.(work) ?? false}
                 activeId={activeSessionId}
                 onSubmit={submitSession}
                 onStop={onStop}
@@ -3236,6 +3282,7 @@ function Workspace({
                     <WorkspaceSidebar
                       newListedSessionRequest={newListedSessionRequest}
                       onNewListedSession={sidebarActions.onNewListedSession}
+                      onOpenNoProject={sidebarActions.onOpenNoProject}
                       lastSessionsData={lastSessionsData}
                       lastSessionsRemoteRows={listedRemoteSessions}
                       lastSessionsOpen={lastSessionsOpen}
@@ -3419,6 +3466,7 @@ function Workspace({
 
                       <SessionPanelTargetsContext.Provider value={socialSessionTargets}>
                         <WorkspaceMainArea
+                          voiceToolsOutlet={voiceToolsOutlet}
                           dockGridRef={dockGridRef}
                           projectCwd={projectCwd}
                           projectTerminals={projectTerminals}
@@ -3517,6 +3565,7 @@ function Workspace({
                       sessionPaneProps={sessionPaneProps}
                     />
                     <WorkspaceToolPanels
+                      registerVoiceTrackedWork={registerVoiceTrackedWork}
                       serverAgent={serverAgentPanel.api}
                       sessionPaneProps={sessionPaneProps}
                       onLoadCrewCoordinator={(target) =>
@@ -3668,11 +3717,6 @@ function Workspace({
                   removeRecoveredSessions={removeRecoveredSessions}
                   editorDraftRecovery={editorDraftRecovery}
                   editorDraftRecords={visibleEditorDraftRecords}
-                  canInspectLegacyReports={() => {
-                    const view = getGroupLockView();
-                    return view.lock.lockedGroupIds.size === 0 && view.hiddenGroupIds.size === 0;
-                  }}
-                  getLegacyReportPrivacySnapshot={getGroupLockView}
                   sessionDeleteDialog={sessionDeleteDialog}
                   setSessionDeleteDialog={setSessionDeleteDialog}
                 />

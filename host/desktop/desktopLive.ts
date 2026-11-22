@@ -35,6 +35,11 @@ const log = createLogger("host.desktop.live");
 /** Past this without a heartbeat, the desktop app is gone (closed or crashed)
  * and none of its sessions is running. */
 export const DESKTOP_BEAT_STALE_MS = 20_000;
+/**
+ * A desktop silent this long no longer blocks a clean, non-forced worktree removal on an
+ * unattended Host (it may only be reconnecting before that). See `withRemovalLease`.
+ */
+export const DESKTOP_UNATTENDED_GRACE_MS = 2 * 60_000;
 const MAX_PENDING_BLOCKS = 50;
 const MAX_COMMANDS = 100;
 const MAX_COMMAND_RECEIPTS = 500;
@@ -50,6 +55,14 @@ export const DESKTOP_WRITER_STALE_MS = 60_000;
 export const DESKTOP_STORED_RUNNING_MS = 75_000;
 /** A window silent after reporting a session busy still runs it this long: its run lease's life. */
 export const DESKTOP_SILENT_BUSY_MS = RUN_LEASE_TTL_MS;
+/** Attended removal requires every desktop grant to confirm it checked open editors. */
+export const REQUIRE_DESKTOP_EDITOR_CHECK = true;
+const EDITORS_REFUSED =
+  "Save or close unsaved files under this worktree in the desktop before removing it.";
+const DESKTOP_UPDATE_REQUIRED = "Update the desktop app to remove worktrees from this Host.";
+
+/** What one desktop answered to a removal-lease request. */
+type RemovalLeaseResult = { granted: boolean; checks: string[]; reason?: string };
 
 export type { DesktopCommand };
 
@@ -230,7 +243,7 @@ export class DesktopLive {
       pageToken?: string;
       path?: string;
       until: number;
-      reply?: (granted: boolean) => void;
+      reply?: (result: RemovalLeaseResult) => void;
     }
   >();
 
@@ -259,7 +272,14 @@ export class DesktopLive {
       if (job.clientId !== clientId || (job.path && job.pageToken !== input.pageToken)) continue;
       const result = replies.find((entry) => entry.id === id && entry.release === !job.path);
       if (result) {
-        job.reply?.(result.granted === true);
+        job.reply?.({
+          granted: result.granted === true,
+          // Extra fields are optional: an older desktop sends neither.
+          checks: Array.isArray(result.checks)
+            ? result.checks.filter((check: unknown): check is string => typeof check === "string")
+            : [],
+          ...(typeof result.reason === "string" ? { reason: result.reason.slice(0, 40) } : {}),
+        });
         if (!job.path) this.removalJobs.delete(key);
       } else if (!job.path || job.reply) {
         jobs.push({ id, clientId: job.clientId, path: job.path });
@@ -273,6 +293,7 @@ export class DesktopLive {
     path: string,
     run: (assertLease: () => void) => Promise<T>,
     project?: () => Promise<string>,
+    options?: { unattended?: boolean },
   ): Promise<T> {
     const clients = [...this.removalPages.keys()];
     const pages = new Map(clients.map((client) => [client, this.removalPages.get(client)]));
@@ -286,6 +307,18 @@ export class DesktopLive {
       assertDedicated();
       return run(assertDedicated);
     }
+    // Unattended Host: no desktop is alive and none was seen within
+    // the grace period, so nobody can hold native terminals here. Only a caller that proved a
+    // non-forced, clean removal opts in; Git's own non-forced refusal stays the backstop. A
+    // desktop that appears during the removal revokes it through the assert callback.
+    if (options?.unattended && this.noDesktopWithinGrace(clients)) {
+      const assertUnattended = () => {
+        if ([...this.removalPages.keys()].some((client) => this.clientAlive(client)))
+          throw new Error(unavailable);
+      };
+      assertUnattended();
+      return run(assertUnattended);
+    }
     if (!clients.length || clients.some((client) => !this.clientAlive(client)))
       throw new Error(unavailable);
     if (clients.includes("legacy")) throw new Error(unavailable);
@@ -295,28 +328,32 @@ export class DesktopLive {
       const results = await Promise.all(
         clients.map(
           (clientId) =>
-            new Promise<boolean>((resolve) => {
+            new Promise<RemovalLeaseResult>((resolve) => {
               const key = JSON.stringify([id, clientId]);
               const pageToken = pages.get(clientId);
-              const timeout = setTimeout(() => resolve(false), 15_000);
+              const timeout = setTimeout(() => resolve({ granted: false, checks: [] }), 15_000);
               const job = {
                 id,
                 clientId,
                 pageToken,
                 path,
                 until,
-                reply: (granted: boolean) => {
+                reply: (result: RemovalLeaseResult) => {
                   clearTimeout(timeout);
                   this.removalJobs.set(key, { id, clientId, pageToken, path, until });
-                  resolve(granted);
+                  resolve(result);
                 },
               };
               this.removalJobs.set(key, job);
             }),
         ),
       );
-      if (performance.now() - startedAt >= 15_000 || !results.every(Boolean))
-        throw new Error(unavailable);
+      if (performance.now() - startedAt >= 15_000) throw new Error(unavailable);
+      if (results.some((result) => !result.granted && result.reason === "editors"))
+        throw new Error(EDITORS_REFUSED);
+      if (!results.every((result) => result.granted)) throw new Error(unavailable);
+      if (this.requireEditorChecks && !results.every((result) => result.checks.includes("editors")))
+        throw new Error(DESKTOP_UPDATE_REQUIRED);
       const assertLease = () => {
         // Leave 150 seconds for a started mutation to finish within the native TTL.
         if (
@@ -342,6 +379,21 @@ export class DesktopLive {
   }
 
   private clients = new Map<string, number>();
+  /** A desktop connected before a Host restart reconnects within seconds: the grace runs from start too. */
+  private startedAwake: number;
+  /** Last beat per desktop client; unlike `clients` it survives stale expiry, for the unattended grace. */
+  private removalSeen = new Map<string, number>();
+  private noDesktopWithinGrace(clients: readonly string[]): boolean {
+    return (
+      this.awake() - this.startedAwake > DESKTOP_UNATTENDED_GRACE_MS &&
+      clients.every(
+        (client) =>
+          !this.clientAlive(client) &&
+          this.awake() - (this.removalSeen.get(client) ?? Number.NEGATIVE_INFINITY) >
+            DESKTOP_UNATTENDED_GRACE_MS,
+      )
+    );
+  }
   private sessions = new Map<string, LiveSession>();
   private commands: (DesktopCommand & { queuedAt: number })[] = [];
   private readonly durablePending = new Map<string, PreparedDesktop>();
@@ -403,8 +455,10 @@ export class DesktopLive {
     private readonly now: () => number = Date.now,
     private readonly watchSuspension: boolean = now === Date.now,
     private readonly verifyHeadless = dedicatedWorktreeVerifier(),
+    private readonly requireEditorChecks: boolean = REQUIRE_DESKTOP_EDITOR_CHECK,
   ) {
     this.clock = new AwakeClock(now);
+    this.startedAwake = this.clock.now();
     this.groupLock = new DesktopGroupLock(now);
     // A grant given or ended changes what a phone sees of the directory.
     this.groupLock.onChange = () => this.onDirectoryChange?.();
@@ -628,6 +682,7 @@ export class DesktopLive {
     );
     this.clients.set(clientId, this.awake());
     this.removalPages.set(clientId, pageToken);
+    this.removalSeen.set(clientId, this.awake());
     this.storedSince.clear();
     for (const [id, beatAt] of this.clients) {
       if (this.awake() - beatAt <= DESKTOP_BEAT_STALE_MS) continue;

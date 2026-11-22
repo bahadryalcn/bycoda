@@ -261,6 +261,28 @@ const SKIP_DIRECTORIES: &[&str] = &[
     "temp",
 ];
 
+/// True when `<dir>/.git` is a file pointing into `<common dir>/worktrees/<name>`, which is how
+/// Git links any worktree (of this repository or another). Submodules point into `modules/`.
+fn is_linked_worktree(directory: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(directory.join(".git")) else {
+        return false;
+    };
+    let Some(gitdir) = text
+        .lines()
+        .find_map(|line| line.strip_prefix("gitdir:"))
+        .map(str::trim)
+    else {
+        return false;
+    };
+    let target = directory.join(gitdir);
+    let Some(name) = target.file_name() else {
+        return false;
+    };
+    let parent = target.parent().and_then(Path::file_name);
+    !name.is_empty()
+        && parent.is_some_and(|parent| parent.to_string_lossy().eq_ignore_ascii_case("worktrees"))
+}
+
 fn linked(metadata: &std::fs::Metadata) -> bool {
     #[cfg(windows)]
     {
@@ -364,6 +386,12 @@ fn discover_repositories(
                 Err(error) if vanished(&error) => None,
                 Err(error) => return Err(error.to_string()),
             };
+            // A linked worktree is another checkout, not a repository of this one: skip it and
+            // do not descend into it.
+            if git.as_ref().is_some_and(|metadata| metadata.is_file()) && is_linked_worktree(&child)
+            {
+                continue;
+            }
             if git.is_some_and(|metadata| {
                 !linked(&metadata) && (metadata.is_file() || metadata.is_dir())
             }) && !seen.contains(&child)
@@ -628,15 +656,46 @@ mod tests {
         let before = run(&parent, &["status", "--porcelain"]);
         let index = run(&mobile, &["diff", "--cached"]);
         assert!(list(&parent).unwrap().is_empty());
-        assert_eq!(
-            list_options(&parent, true).unwrap(),
-            vec!["mobile", "review-copy"]
-        );
+        // `review-copy` is a linked worktree of another repository, so it is not a repository here.
+        assert_eq!(list_options(&parent, true).unwrap(), vec!["mobile"]);
         assert_eq!(run(&parent, &["status", "--porcelain"]), before);
         assert_eq!(run(&mobile, &["diff", "--cached"]), index);
         assert_eq!(
             std::fs::read_to_string(mobile.join("file.txt")).unwrap(),
             "independent unsaved change\n"
+        );
+    }
+
+    #[test]
+    fn opt_in_skips_nested_linked_worktrees_but_keeps_repositories_and_submodules() {
+        let fixture = Fixture::new();
+        let source = fixture.repo("source");
+        let parent = fixture.repo("parent");
+        run(
+            &parent,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "--",
+                source.to_str().unwrap(),
+                "vendor",
+            ],
+        );
+        fixture.repo("parent/mobile");
+        let worktree = parent.join(".claude").join("worktrees").join("x");
+        std::fs::create_dir_all(worktree.parent().unwrap()).unwrap();
+        run(
+            &parent,
+            &["worktree", "add", "-qb", "x", worktree.to_str().unwrap()],
+        );
+        // A repository inside the worktree belongs to that worktree, not to this checkout.
+        std::fs::create_dir_all(worktree.join("inner")).unwrap();
+        run(&worktree.join("inner"), &["init", "-q"]);
+        assert_eq!(
+            list_options(&parent, true).unwrap(),
+            vec!["mobile", "vendor"]
         );
     }
 

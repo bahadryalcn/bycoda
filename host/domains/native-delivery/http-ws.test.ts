@@ -5,7 +5,7 @@ import { deliverySha } from "../../native-delivery/native-delivery.test-support"
 import { nativeDeliveryConsumedResult } from "../../native-delivery/native-delivery-store";
 import { WorkspaceCommands } from "../../workspaces/workspace-commands";
 import { ConversationDesktopRelay } from "../../conversation/conversation-tools";
-import { NATIVE_BUFFER_UPLOAD_LIMITS } from "../../../src/shared/model/host-contracts/native-buffer-upload";
+import { NATIVE_SERVICE_UPLOAD_LIMITS } from "../../../src/shared/model/host-contracts/native-service-upload";
 
 async function pendingFinish(
   f: Awaited<ReturnType<typeof fixture>>,
@@ -37,43 +37,6 @@ async function pendingFinish(
 it("routes finite delivery HTTP/WS through actual captured owners and isolates original credentials", async () => {
   const f = await fixture("2026-10-29-host-native-delivery"),
     ws = await f.connect();
-  const paramsJson = JSON.stringify({
-    clientId: "delivery-wire",
-    instanceId: "first-instance",
-    processId: 1,
-    owners: [],
-  });
-  const identity = deliveryIdentity(paramsJson),
-    params = { ...identity, paramsJson };
-  expect(await f.callHttp("native.buffers.delivery.apply", params)).toEqual({
-    ...identity,
-    state: "recorded",
-    result: { acknowledged: true },
-  });
-  expect(await ws.call("native.buffers.delivery.status", identity)).toEqual({
-    ...identity,
-    state: "recorded",
-    result: { acknowledged: true },
-  });
-  const stored = await f.store.db
-    .prepare("SELECT COUNT(*) AS count FROM native_delivery_receipts")
-    .get();
-  expect(stored?.count).toBe(1);
-  expect(await ws.call("native.buffers.delivery.apply", params)).toMatchObject({
-    state: "recorded",
-  });
-  expect(
-    (await f.store.db.prepare("SELECT COUNT(*) AS count FROM native_delivery_receipts").get())
-      ?.count,
-  ).toBe(1);
-  expect((await f.http("native.buffers.delivery.status", identity, f.other.token)).result).toEqual({
-    state: "absent",
-  });
-  const invalid = await f.http("native.buffers.delivery.apply", {
-    ...params,
-    paramsJson: paramsJson + " ",
-  });
-  expect(invalid.status).toBe(400);
   const pending = await pendingFinish(f, ws);
   const finish = vi.spyOn(ConversationDesktopRelay.prototype, "finish");
   const finishJson = JSON.stringify({ id: pending.id, result: { text: "kept 😀" } });
@@ -98,6 +61,26 @@ it("routes finite delivery HTTP/WS through actual captured owners and isolates o
   expect(await f.callHttp("native.services.delivery.apply", finishParams)).toMatchObject({
     state: "recorded",
   });
+  expect(
+    (
+      await f.http(
+        "native.services.delivery.status",
+        {
+          ...finishIdentity,
+          target: finishParams.target,
+        },
+        f.other.token,
+      )
+    ).result,
+  ).toEqual({ state: "absent" });
+  expect(
+    (
+      await f.http("native.services.delivery.apply", {
+        ...finishParams,
+        paramsJson: finishJson + " ",
+      })
+    ).status,
+  ).toBe(400);
   expect(finish).toHaveBeenCalledTimes(1);
   expect(await pending.waiting).toEqual({ text: "kept 😀" });
   const finishAck = {
@@ -121,20 +104,8 @@ it("routes finite delivery HTTP/WS through actual captured owners and isolates o
     ...finishAck,
     state: "retired",
   });
-  const bufferAck = {
-    ...identity,
-    consumedResult: nativeDeliveryConsumedResult("buffer", { acknowledged: true }),
-  };
-  expect(await ws.call("native.buffers.delivery.ack", bufferAck)).toEqual({
-    ...bufferAck,
-    state: "retired",
-  });
-  expect(await f.callHttp("native.buffers.delivery.status", identity)).toEqual({
-    ...bufferAck,
-    state: "retired",
-  });
   expect(
-    (await f.http("native.buffers.delivery.ack", bufferAck, f.other.token)).error,
+    (await f.http("native.services.delivery.ack", finishAck, f.other.token)).error,
   ).toBeDefined();
   expect(finish).toHaveBeenCalledTimes(1);
 });
@@ -146,12 +117,12 @@ it("stages original large bytes with immutable delivery metadata and exposes rec
   const pending = await pendingFinish(f, ws),
     result = { text: "" };
   const overhead = Buffer.byteLength(JSON.stringify({ id: pending.id, result }));
-  result.text = "x".repeat(NATIVE_BUFFER_UPLOAD_LIMITS.maxBytes - overhead);
+  result.text = "x".repeat(NATIVE_SERVICE_UPLOAD_LIMITS.maxBytes - overhead);
   const paramsJson = JSON.stringify({ id: pending.id, result }),
     bytes = Buffer.from(paramsJson),
     identity = deliveryIdentity(paramsJson),
     uploadId = identity.originalId;
-  expect(bytes.length).toBe(NATIVE_BUFFER_UPLOAD_LIMITS.maxBytes);
+  expect(bytes.length).toBe(NATIVE_SERVICE_UPLOAD_LIMITS.maxBytes);
   const initial = await ws.call("native.services.upload.begin", {
     uploadId,
     target,
@@ -160,12 +131,12 @@ it("stages original large bytes with immutable delivery metadata and exposes rec
     delivery: identity,
   });
   expect(initial.delivery).toEqual(identity);
-  for (let offset = 0; offset < bytes.length; offset += NATIVE_BUFFER_UPLOAD_LIMITS.chunkBytes)
+  for (let offset = 0; offset < bytes.length; offset += NATIVE_SERVICE_UPLOAD_LIMITS.chunkBytes)
     await ws.call("native.services.upload.append", {
       uploadId,
       offset,
       data: bytes
-        .subarray(offset, offset + NATIVE_BUFFER_UPLOAD_LIMITS.chunkBytes)
+        .subarray(offset, offset + NATIVE_SERVICE_UPLOAD_LIMITS.chunkBytes)
         .toString("base64"),
     });
   expect(await ws.call("native.services.upload.commit", { uploadId })).toMatchObject({

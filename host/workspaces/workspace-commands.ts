@@ -385,9 +385,17 @@ export class WorkspaceCommands {
     const key = await hostGitRepositoryKey(cwd);
     const projects = await this.store.projects();
     const matching = await Promise.all(
-      projects.map(async (project) =>
-        (await hostGitRepositoryKey(project.cwd)) === key ? project : null,
-      ),
+      projects.map(async (project) => {
+        try {
+          return (await hostGitRepositoryKey(project.cwd)) === key ? project : null;
+        } catch (failure) {
+          const error = failure as NodeJS.ErrnoException;
+          // A removed project has no checkout to match. Keep Git metadata and other IO errors fatal.
+          if (error.code === "ENOENT" && error.syscall === "realpath" && error.path === project.cwd)
+            return null;
+          throw failure;
+        }
+      }),
     );
     const owners = matching.filter((project) => project !== null);
     if (!owners.length) throw new Error("Project is unavailable");
@@ -622,7 +630,7 @@ export class WorkspaceCommands {
       case "git_create_branch":
         return await this.gitCreateBranch(input.cwd, input.name);
       case "git_worktrees":
-        return await this.gitWorktrees(input.cwd);
+        return await this.gitWorktrees(input.cwd, input.background === true);
       case "git_submodules": {
         const found = await sharedHostGitSubmodules(
           await this.gitRoot(input.cwd),
@@ -1743,10 +1751,24 @@ export class WorkspaceCommands {
   private async gitStagedContext(cwd: unknown) {
     const [index, summary, patch] = await Promise.all([
       this.gitIndex(cwd),
-      this.gitCommand(cwd, ["diff", "--cached", "--stat"]),
-      this.gitCommand(cwd, ["diff", "--cached", "--no-ext-diff"]),
+      this.gitCommand(cwd, ["diff", "--cached", "--stat", "--"]),
+      this.gitCommand(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--"]),
     ]);
-    return { branch: index.branch, summary, patch };
+    if (summary.trim() || patch.trim()) return { branch: index.branch, summary, patch };
+
+    // The desktop already summarizes working changes if the index is empty.
+    // Listing new file names gives the same context without mutating the index.
+    const [workingSummary, workingPatch, untracked] = await Promise.all([
+      this.gitCommand(cwd, ["diff", "--stat", "--"]),
+      this.gitCommand(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--"]),
+      this.gitCommand(cwd, ["ls-files", "--others", "--exclude-standard", "--"]),
+    ]);
+    const names = untracked.trim();
+    const changes = [workingSummary.trim(), names ? `Untracked files:\n${names}` : ""]
+      .filter(Boolean)
+      .join("\n");
+    if (!changes && !workingPatch.trim()) throw new Error("No changes to summarize");
+    return { branch: index.branch, summary: changes, patch: workingPatch };
   }
 
   private async gitRangeContext(cwd: unknown) {
@@ -1813,8 +1835,8 @@ export class WorkspaceCommands {
       : await run();
   }
 
-  private async gitWorktrees(cwd: unknown) {
-    const listed = await hostWorktrees(await this.gitRoot(cwd));
+  private async gitWorktrees(cwd: unknown, background: boolean) {
+    const listed = await hostWorktrees(await this.gitRoot(cwd), background);
     return {
       defaultRoot: listed.defaultRoot,
       worktrees: listed.worktrees.map((tree) => ({

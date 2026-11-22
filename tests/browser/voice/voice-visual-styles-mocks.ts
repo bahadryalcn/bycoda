@@ -244,6 +244,7 @@ export const fixtureAssistant = {
   },
   memory: fixtureVoice.memories,
   notes: [],
+  jobs: fixtureVoice.jobs,
   presence: { state: "present" },
   briefing: null,
 };
@@ -254,6 +255,7 @@ if (new URLSearchParams(location.search).has("confirm-jobs"))
   Object.assign(fixtureAssistant.profile, { confirmJobs: true });
 export const useAssistantSnapshot = () => ({
   snapshot: fixtureAssistant,
+  environmentId: "fixture-host",
   error: "",
   loading: false,
   refresh: async () => {},
@@ -407,6 +409,9 @@ export async function assistantRequest(input: any, expectedEnvironmentId?: strin
   if (expectedEnvironmentId && expectedEnvironmentId !== "fixture-host")
     throw new Error("Synthetic captured Host changed");
   fixtureVoice.ownerRequests.push({ input: structuredClone(input), expectedEnvironmentId });
+  if (input.op === "profile.update" && new URLSearchParams(location.search).has("setup-wizard")) {
+    return { profile: { ...fixtureAssistant.profile, ...input.patch } };
+  }
   if (new URLSearchParams(location.search).has("navigation")) {
     const result = navigationHistoryRequest(input);
     if (result !== undefined) return result;

@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import { fixture } from "../../devices/native-devices.test-support";
 import { deliveryIdentity, deliverySha } from "../../native-delivery/native-delivery.test-support";
 import { nativeDeliveryConsumedResult } from "../../native-delivery/native-delivery-store";
+import { initializeNativeDeliveryStore } from "../../native-delivery/native-delivery-store";
 import { WorkspaceCommands } from "../../workspaces/workspace-commands";
 import { ConversationDesktopRelay } from "../../conversation/conversation-tools";
 import {
@@ -20,7 +21,6 @@ import {
 import { NATIVE_DELIVERY_METHODS } from "../../../src/shared/model/host-contracts/native-delivery";
 import { NATIVE_WORKSPACE_METHODS } from "../../../src/shared/model/host-contracts/native-workspaces";
 import { NATIVE_SERVICE_METHODS } from "../../../src/shared/model/host-contracts/native-services";
-import { NATIVE_BUFFER_UPLOAD_METHODS } from "../../../src/shared/model/host-contracts/native-buffer-upload";
 import { NATIVE_SERVICE_UPLOAD_METHODS } from "../../../src/shared/model/host-contracts/native-service-upload";
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -45,25 +45,11 @@ const ref = (epoch: NativeDeliveryEpochRef) => ({
 });
 const identity = (epoch: NativeDeliveryEpochRef, sequence: number, raw: string) =>
   deliveryIdentity(raw, nativeDeliveryEpochOriginalId({ ...ref(epoch), sequence }));
-const bufferAck = (original: NativeDeliveryIdentity) => ({
-  ...original,
-  consumedResult: nativeDeliveryConsumedResult("buffer", { acknowledged: true }),
-});
 const formatAck = (original: NativeDeliveryIdentity) => ({
   ...original,
   target: formatTarget,
   consumedResult: nativeDeliveryConsumedResult(formatTarget, formatted),
 });
-async function clocks(f: Fixture) {
-  // The clock table is created by the first buffer completion, not at startup.
-  const table = await f.store.db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='native_buffer_clocks'")
-    .get();
-  if (!table) return [];
-  return f.store.db
-    .prepare("SELECT report_id,state_json FROM native_buffer_clocks ORDER BY report_id")
-    .all();
-}
 async function receipts(f: Fixture) {
   return (await f.store.db.prepare("SELECT COUNT(*) AS count FROM native_delivery_receipts").get())
     ?.count;
@@ -101,25 +87,24 @@ async function pendingFinish(f: Fixture, ws: Client) {
 async function stage(
   ws: Client,
   raw: string,
-  target?: typeof formatTarget | typeof finishTarget,
+  target: typeof formatTarget | typeof finishTarget,
   delivery?: NativeDeliveryIdentity,
 ) {
   const uploadId = randomUUID(),
     bytes = Buffer.from(raw);
-  const family = target ? "native.services.upload" : "native.buffers.upload";
-  await ws.call(`${family}.${target ? "begin" : "start"}`, {
+  await ws.call("native.services.upload.begin", {
     uploadId,
-    ...(target ? { target } : {}),
+    target,
     byteLength: bytes.length,
     sha256: deliverySha(bytes),
     ...(delivery ? { delivery } : {}),
   });
-  await ws.call(`${family}.${target ? "append" : "write"}`, {
+  await ws.call("native.services.upload.append", {
     uploadId,
     offset: 0,
     data: bytes.toString("base64"),
   });
-  return () => ws.call(`${family}.commit`, { uploadId });
+  return () => ws.call("native.services.upload.commit", { uploadId });
 }
 
 it("advertises the same complete finite Native catalog through HTTP discovery and the actual WebSocket hello", async () => {
@@ -175,7 +160,6 @@ it("advertises the same complete finite Native catalog through HTTP discovery an
         ...NATIVE_DELIVERY_METHODS,
         ...NATIVE_WORKSPACE_METHODS,
         ...NATIVE_SERVICE_METHODS,
-        ...NATIVE_BUFFER_UPLOAD_METHODS,
         ...NATIVE_SERVICE_UPLOAD_METHODS,
       ]),
     );
@@ -188,56 +172,76 @@ it("advertises the same complete finite Native catalog through HTTP discovery an
   }
 });
 
-it("fences compacted actual buffer deliveries across authenticated HTTP and WebSocket without repeating effects", async () => {
-  const f = await fixture(evidenceId),
-    ws = await f.connect();
-  const epoch = await f.callHttp("native.delivery.epochs.open", { openId: randomUUID() });
-  expect(epoch).toMatchObject({ version: 2, through: 0, highWater: 0, closed: false });
-  const raw = JSON.stringify(report()),
-    original = identity(epoch, 1, raw);
-  const applying = { ...original, paramsJson: raw };
-  expect(await ws.call("native.buffers.delivery.apply", applying)).toEqual({
-    ...original,
-    state: "recorded",
-    result: { acknowledged: true },
-  });
-  expect(await receipts(f)).toBe(1);
-  expect(await f.callHttp("native.buffers.delivery.ack", bufferAck(original))).toMatchObject({
-    state: "retired",
-  });
-  const compacted = await ws.call("native.delivery.epochs.compact", {
-    ...ref(epoch),
-    expectedThrough: 0,
-    through: 1,
-  });
-  expect(compacted).toEqual({ ...epoch, through: 1, highWater: 1 });
-  expect(await receipts(f)).toBe(0);
-  // A device's first authentication records last_seen_at; warm the foreign token so the
-  // version fence only measures delivery effects.
-  await f.store.authenticated(f.other.token);
-  const beforeClocks = await clocks(f),
-    beforeVersion = f.store.db.dataMutationVersion;
-  const fenced = {
-    ...original,
-    state: "fenced",
-    epoch: { ...ref(epoch), through: 1, closed: false },
-  };
-  expect(await f.callHttp("native.buffers.delivery.apply", applying)).toEqual(fenced);
-  expect(await ws.call("native.buffers.delivery.status", original)).toEqual(fenced);
-  expect((await f.http("native.buffers.delivery.ack", bufferAck(original))).error).toBeDefined();
+it("compacts a service delivery across legacy buffer receipts after Host storage upgrade", async () => {
+  const f = await fixture(evidenceId);
+  const ws = await f.connect();
+  const format = formatter();
+  const principal = deliverySha(f.device.token);
+  const epoch = await ws.call("native.delivery.epochs.open", { openId: randomUUID() });
+  const raw = JSON.stringify(report());
+  for (const sequence of [1, 2]) {
+    const original = identity(epoch, sequence, raw);
+    await f.store.db
+      .prepare(`INSERT INTO native_delivery_receipts (
+      environment_id, principal_id, kind, original_id, sha256, byte_length,
+      state, reserved_bytes, epoch_owner_id, epoch_generation, epoch_sequence
+    ) VALUES (?, ?, 'buffer', ?, ?, ?, 'admitted', 21, ?, ?, ?)`)
+      .run(
+        f.store.environmentId,
+        principal,
+        original.originalId,
+        original.sha256,
+        original.byteLength,
+        epoch.ownerId,
+        epoch.generation,
+        sequence,
+      );
+  }
+  const ack = JSON.stringify({ acknowledged: true });
+  await f.store.db
+    .prepare(`UPDATE native_delivery_receipts
+    SET state='recorded', reserved_bytes=0, result_json=?, proof_json='{}',
+        result_sha256=?, result_bytes=?, consumed_sha256=?, consumed_bytes=?
+    WHERE kind='buffer' AND epoch_sequence=2`)
+    .run(ack, deliverySha(ack), Buffer.byteLength(ack), deliverySha(ack), Buffer.byteLength(ack));
+  expect(await receipts(f)).toBe(2);
+  await initializeNativeDeliveryStore(f.store.db);
+  await initializeNativeDeliveryStore(f.store.db);
+  const legacy = identity(epoch, 1, raw);
   expect(
-    (await f.http("native.delivery.epochs.status", ref(epoch), f.other.token)).error,
-  ).toBeDefined();
-  const foreign = await f.connect(f.other.token);
-  const denied = await foreign.request("native.buffers.delivery.status", original);
-  expect(denied.error).toBeDefined();
-  expect(denied.result).toBeUndefined();
-  expect(await clocks(f)).toEqual(beforeClocks);
-  expect(f.store.db.dataMutationVersion).toBe(beforeVersion);
+    await ws.call("native.delivery.epochs.gap.resolve", {
+      ...ref(epoch),
+      sequence: 1,
+      kind: "buffer",
+      sha256: legacy.sha256,
+      byteLength: legacy.byteLength,
+    }),
+  ).toMatchObject({ outcome: "abandoned" });
+  const paramsJson = JSON.stringify(formatParams(f));
+  const service = identity(epoch, 3, paramsJson);
+  expect(
+    await f.callHttp("native.services.delivery.apply", {
+      ...service,
+      target: formatTarget,
+      paramsJson,
+    }),
+  ).toMatchObject({ state: "recorded", result: formatted });
+  await ws.call("native.services.delivery.ack", formatAck(service));
+  expect(
+    await ws.call("native.delivery.epochs.compact", {
+      ...ref(epoch),
+      expectedThrough: 0,
+      through: 3,
+    }),
+  ).toMatchObject({ through: 3, highWater: 3 });
   expect(await receipts(f)).toBe(0);
+  expect(
+    await f.store.db.prepare("SELECT receipts,bytes FROM native_delivery_quota_totals").get(),
+  ).toMatchObject({ receipts: 0, bytes: 0 });
+  expect(format).toHaveBeenCalledTimes(1);
 });
 
-it("holds one shared cross-kind prefix for unacknowledged and missing sequence holes before terminal close", async () => {
+it("holds one shared service prefix for unacknowledged and missing sequence holes before terminal close", async () => {
   const f = await fixture(evidenceId),
     ws = await f.connect(),
     format = formatter();
@@ -251,10 +255,13 @@ it("holds one shared cross-kind prefix for unacknowledged and missing sequence h
       paramsJson: formatJson,
     }),
   ).toMatchObject({ state: "recorded", result: formatted });
-  const bufferJson = JSON.stringify(report()),
-    second = identity(epoch, 2, bufferJson);
-  await ws.call("native.buffers.delivery.apply", { ...second, paramsJson: bufferJson });
-  await f.callHttp("native.buffers.delivery.ack", bufferAck(second));
+  const second = identity(epoch, 2, formatJson);
+  await ws.call("native.services.delivery.apply", {
+    ...second,
+    target: formatTarget,
+    paramsJson: formatJson,
+  });
+  await f.callHttp("native.services.delivery.ack", formatAck(second));
   expect(
     (
       await ws.request("native.delivery.epochs.compact", {
@@ -293,9 +300,13 @@ it("holds one shared cross-kind prefix for unacknowledged and missing sequence h
       })
     ).error,
   ).toBeDefined();
-  const third = identity(epoch, 3, bufferJson);
-  await f.callHttp("native.buffers.delivery.apply", { ...third, paramsJson: bufferJson });
-  await ws.call("native.buffers.delivery.ack", bufferAck(third));
+  const third = identity(epoch, 3, formatJson);
+  await f.callHttp("native.services.delivery.apply", {
+    ...third,
+    target: formatTarget,
+    paramsJson: formatJson,
+  });
+  await ws.call("native.services.delivery.ack", formatAck(third));
   const closed = await ws.call("native.delivery.epochs.close", {
     ...ref(epoch),
     expectedThrough: 2,
@@ -316,7 +327,7 @@ it("holds one shared cross-kind prefix for unacknowledged and missing sequence h
     state: "fenced",
     epoch: { ...ref(epoch), through: 4, closed: true },
   });
-  expect(format).toHaveBeenCalledTimes(2);
+  expect(format).toHaveBeenCalledTimes(4);
   expect(await receipts(f)).toBe(0);
 });
 
@@ -333,22 +344,10 @@ it("enforces the principal v2 floor at actual direct, legacy and pre-staged help
   });
   const pending = await pendingFinish(f, ws),
     finish = vi.spyOn(ConversationDesktopRelay.prototype, "finish");
-  const bufferParams = report(),
-    bufferJson = JSON.stringify(bufferParams);
   // Staging predates the floor. Only the final actual owner may admit its effect.
-  const stagedBuffer = await stage(ws, bufferJson);
   const stagedFormat = await stage(ws, oldJson, formatTarget);
   const stagedFinish = await stage(ws, JSON.stringify(pending.params), finishTarget);
   const epoch = await ws.call("native.delivery.epochs.open", { openId: randomUUID() });
-  const beforeClocks = await clocks(f);
-  expect(
-    (
-      await f.http("native.buffers.delivery.apply", {
-        ...deliveryIdentity(bufferJson),
-        paramsJson: bufferJson,
-      })
-    ).error,
-  ).toBeDefined();
   expect(
     (
       await ws.request("native.services.delivery.apply", {
@@ -358,15 +357,13 @@ it("enforces the principal v2 floor at actual direct, legacy and pre-staged help
       })
     ).error,
   ).toBeDefined();
-  expect((await ws.request("native.buffers.update", bufferParams)).error).toBeDefined();
-  expect((await f.http("native.buffers.update", bufferParams)).error).toBeDefined();
+  expect(await ws.call("native.buffers.update", report())).toEqual({ acknowledged: true });
   expect((await ws.request(formatTarget, formatParams(f))).error).toBeDefined();
   expect((await f.http("workspace.run", formatParams(f))).error).toBeDefined();
   expect((await ws.request(finishTarget, pending.params)).error).toBeDefined();
   expect((await f.http("conversation.desktop.finish", pending.params)).error).toBeDefined();
-  for (const commit of [stagedBuffer, stagedFormat, stagedFinish])
+  for (const commit of [stagedFormat, stagedFinish])
     expect(await commit()).toMatchObject({ state: "failed", outcome: { delivery: "unknown" } });
-  expect(await clocks(f)).toEqual(beforeClocks);
   expect(format).toHaveBeenCalledTimes(1);
   expect(finish).not.toHaveBeenCalled();
   expect(
@@ -398,14 +395,9 @@ it("enforces the principal v2 floor at actual direct, legacy and pre-staged help
     }),
   ).toMatchObject({ state: "recorded", result: { accepted: true } });
   expect(await pending.waiting).toEqual(pending.params.result);
-  const third = identity(epoch, 3, bufferJson);
-  expect(await (await stage(ws, bufferJson, undefined, third))()).toMatchObject({
-    state: "completed",
-    result: { ...third, state: "recorded", result: { acknowledged: true } },
-  });
   expect(format).toHaveBeenCalledTimes(2);
   expect(finish).toHaveBeenCalledTimes(1);
-  expect(await receipts(f)).toBe(4);
+  expect(await receipts(f)).toBe(3);
 });
 
 it("keeps a real committed floor after a lost HTTP compaction acknowledgement and never repeats the effect", async () => {
@@ -441,6 +433,8 @@ it("keeps a real committed floor after a lost HTTP compaction acknowledgement an
     highWater: 1,
   });
   expect(await receipts(f)).toBe(0);
+  // The retry still expects the old floor: a refusal that changed nothing, so the desktop reads
+  // the status instead of holding delivery on an unknown outcome.
   expect(
     (
       await ws.request("native.delivery.epochs.compact", {
@@ -449,7 +443,10 @@ it("keeps a real committed floor after a lost HTTP compaction acknowledgement an
         through: 1,
       })
     ).error,
-  ).toBeDefined();
+  ).toMatchObject({
+    message: expect.stringContaining("NATIVE_DELIVERY_EPOCH_CAS"),
+    data: { category: "conflict", delivery: "not-sent", code: "CONTEXT_CHANGED" },
+  });
   expect(await f.callHttp("native.services.delivery.apply", applying)).toEqual({
     ...original,
     target: formatTarget,

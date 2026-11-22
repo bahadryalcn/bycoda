@@ -103,11 +103,14 @@ it("shows one short line for an orphaned project, leaving the explanation to the
   // Crews read through the same machine; their failure would repeat the notice in red.
   expect(document.body.textContent).not.toContain("Crew");
   // The list shows the one shared notice for a machine this computer does not have, not a
-  // second load status beside it, and no illustration, reason or button the page already has.
+  // second load status beside it, and no reason or button the page already has.
   const notice = container.querySelector('[data-machine-unavailable="not-added"]');
   expect(notice?.textContent).toContain("isn’t available");
   expect(notice?.textContent).not.toContain("Add it in Connections");
-  expect(notice?.querySelector("button, img")).toBeNull();
+  // A panel shows the scene and the info button only: no action beside the page's Manage connections.
+  expect(Array.from(notice?.querySelectorAll("button") ?? []).map((b) => b.textContent)).toEqual([
+    "",
+  ]);
   expect(document.body.textContent).not.toContain("Can’t reach this machine");
   expect(document.body.textContent).not.toContain("Loading sessions");
 });

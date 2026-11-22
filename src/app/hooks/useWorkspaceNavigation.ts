@@ -137,7 +137,7 @@ export function useWorkspaceNavigation(options: Options) {
                 path,
                 branch: next.focus?.branch ?? null,
                 head: "",
-                isMain: !next.focus,
+                isMain: !next.focus || sameProjectPath(next.focus.path, next.project),
                 locked: false,
                 prunable: false,
                 missing: false,

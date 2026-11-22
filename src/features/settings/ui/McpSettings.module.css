@@ -16,6 +16,13 @@
   align-items: center;
   gap: 8px;
 }
+.scopeControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
 /* The filter stays beside the search field at every width. */
 .toolbar {
   display: flex;

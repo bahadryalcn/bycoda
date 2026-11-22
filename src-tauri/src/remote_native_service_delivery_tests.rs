@@ -167,11 +167,127 @@ fn retired_receipt(params: &Value) -> Value {
     value
 }
 
+fn reconcile_remote_acks(
+    channel: &Arc<NativeServiceChannel>,
+    deadline: Instant,
+) -> Result<usize, String> {
+    reconcile_remote_acks_noting(channel, deadline, &mut None)
+}
+
 const EPOCH_OPEN: &str = "native.delivery.epochs.open";
 const EPOCH_STATUS: &str = "native.delivery.epochs.status";
 const EPOCH_COMPACT: &str = "native.delivery.epochs.compact";
 const EPOCH_CLOSE: &str = "native.delivery.epochs.close";
 const EPOCH_OWNER: &str = "22222222-2222-4222-8222-222222222222";
+
+#[test]
+fn v2_service_applies_and_closes_after_legacy_buffer_original() {
+    let (done, finished) = mpsc::channel();
+    let (send_identity, identity) = mpsc::channel::<Value>();
+    let server = serve(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(
+            &mut socket,
+            &[
+                EPOCH_OPEN,
+                epoch_wire::GAP_RESOLVE,
+                EPOCH_COMPACT,
+                EPOCH_CLOSE,
+                "native.services.delivery.apply",
+                "native.services.delivery.ack",
+            ],
+            "host.1",
+        )
+        .await;
+        let open = next(&mut socket).await;
+        assert_eq!(open["method"], EPOCH_OPEN);
+        let open_id = open["params"]["openId"].clone();
+        result(&mut socket, &open, epoch_description(&open_id, 0, 1)).await;
+        let gap = next(&mut socket).await;
+        assert_eq!(gap["method"], epoch_wire::GAP_RESOLVE);
+        let mut proof = identity.recv_timeout(FIXTURE_WAIT).unwrap();
+        assert_eq!(gap["params"], proof);
+        proof["outcome"] = json!("abandoned");
+        result(&mut socket, &gap, proof).await;
+        let compact = next(&mut socket).await;
+        assert_eq!(compact["method"], EPOCH_COMPACT);
+        assert_eq!(compact["params"]["through"], 1);
+        result(&mut socket, &compact, epoch_description(&open_id, 1, 1)).await;
+        let apply = next(&mut socket).await;
+        assert_eq!(apply["method"], "native.services.delivery.apply");
+        let binding = &apply["params"];
+        assert_eq!(binding["originalId"], format!("nd2:{EPOCH_OWNER}:1:2"));
+        result(
+            &mut socket,
+            &apply,
+            recorded(binding, json!({"accepted":true})),
+        )
+        .await;
+        let ack = next(&mut socket).await;
+        assert_eq!(ack["method"], "native.services.delivery.ack");
+        assert_eq!(ack["params"]["originalId"], binding["originalId"]);
+        result(&mut socket, &ack, retired_receipt(&ack["params"])).await;
+        let compact = next(&mut socket).await;
+        assert_eq!(compact["method"], EPOCH_COMPACT);
+        assert_eq!(compact["params"]["expectedThrough"], 1);
+        assert_eq!(compact["params"]["through"], 2);
+        result(&mut socket, &compact, epoch_description(&open_id, 2, 2)).await;
+        let close = next(&mut socket).await;
+        assert_eq!(close["method"], EPOCH_CLOSE);
+        let mut closed = epoch_description(&open_id, 2, 2);
+        closed["closed"] = json!(true);
+        result(&mut socket, &close, closed).await;
+        finish_after(finished).await;
+    });
+    let mut fixture = Fixture::new(&server.endpoint, true);
+    fixture.enable_epochs();
+    let route = ws_fingerprint(&fixture.machine);
+    let open_id = epoch_wire::open_params(fixture.store(), &route).unwrap()["openId"].clone();
+    let description = epoch_wire::description(&epoch_description(&open_id, 0, 0)).unwrap();
+    let epoch = journal::epochs::bind(fixture.store(), &route, &description).unwrap();
+    let original =
+        journal::epochs::prepare_legacy_buffer(fixture.store(), "old-buffer", &route, "{}", &epoch)
+            .unwrap();
+    let original = journal::mark_possible(fixture.store(), &original).unwrap();
+    journal::record_result(fixture.store(), &original, r#"{"recorded":true}"#).unwrap();
+    send_identity
+        .send(epoch_wire::gap_params(&original).unwrap())
+        .unwrap();
+    fixture.reopen();
+    Arc::get_mut(fixture.channel.as_mut().unwrap())
+        .unwrap()
+        .delivery_epoch_gaps_supported = true;
+    fixture
+        .channel()
+        .request(
+            "conversation.desktop.finish",
+            json!({"id":"after-buffer","result":{}}),
+        )
+        .unwrap()
+        .project(|value| {
+            assert_eq!(value, &json!({"accepted":true}));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        retained_count(fixture.store(), "native_delivery_originals"),
+        0
+    );
+    let close = epoch_call(
+        fixture.channel(),
+        EPOCH_CLOSE,
+        json!({"ownerId":EPOCH_OWNER,"generation":1,"expectedThrough":2,"through":2}),
+        Instant::now() + FIXTURE_WAIT,
+    )
+    .unwrap();
+    assert!(
+        commit_epoch(fixture.channel(), &close)
+            .unwrap()
+            .description()
+            .closed
+    );
+    done.send(()).unwrap();
+}
 
 fn epoch_description(open_id: &Value, through: u64, high_water: u64) -> Value {
     json!({"version":2,"openId":open_id,"ownerId":EPOCH_OWNER,"generation":1,
@@ -2049,21 +2165,17 @@ fn chunked_result_ack_uses_consumed_canonical_json_not_raw_source_digest() {
     done.send(()).unwrap();
 }
 
-fn seed_consumed(fixture: &Fixture, index: usize, method: &str) -> Original {
+fn seed_consumed(fixture: &Fixture, index: usize) -> Original {
     let prepared = journal::prepare(
         fixture.store(),
         &format!("consumed-{index}"),
         &ws_fingerprint(&fixture.machine),
-        method,
+        "native.services.conversation.desktop.finish",
         &format!(r#"{{"id":"consumed-{index}"}}"#),
     )
     .unwrap();
     let possible = journal::mark_possible(fixture.store(), &prepared).unwrap();
-    let result = if method == "native.buffers.update" {
-        json!({"acknowledged":true})
-    } else {
-        json!({"accepted":true})
-    };
+    let result = json!({"accepted":true});
     let recorded = journal::record_result(
         fixture.store(),
         &possible,
@@ -2077,7 +2189,7 @@ fn seed_consumed(fixture: &Fixture, index: usize, method: &str) -> Original {
 }
 
 #[test]
-fn ack_deadline_midpage_advances_only_attempted_rows_and_skips_buffer_kind() {
+fn ack_deadline_midpage_advances_only_attempted_rows() {
     let (ids_tx, ids_rx) = mpsc::channel::<Vec<String>>();
     let (hold, held) = mpsc::channel();
     let (locked, wait_locked) = mpsc::channel();
@@ -2106,21 +2218,12 @@ fn ack_deadline_midpage_advances_only_attempted_rows_and_skips_buffer_kind() {
     });
     let mut fixture = Fixture::new(&server.endpoint, true);
     fixture.enable_acks();
-    for index in 0..5 {
-        seed_consumed(
-            &fixture,
-            index,
-            if index == 4 {
-                "native.buffers.update"
-            } else {
-                "native.services.conversation.desktop.finish"
-            },
-        );
+    for index in 0..4 {
+        seed_consumed(&fixture, index);
     }
     let all = fixture.remote_acks();
     let ids = all
         .iter()
-        .filter(|original| original.method() != "native.buffers.update")
         .map(|original| original.id().to_owned())
         .collect::<Vec<_>>();
     let second_service = all
@@ -2161,9 +2264,7 @@ fn ack_deadline_midpage_advances_only_attempted_rows_and_skips_buffer_kind() {
         reconcile_remote_acks(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
         3
     );
-    let remaining = fixture.remote_acks();
-    assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].method(), "native.buffers.update");
+    assert!(fixture.remote_acks().is_empty());
     done.send(()).unwrap();
 }
 
@@ -2206,7 +2307,7 @@ fn remote_ack_rejects_retired_caller_and_replaced_saved_issuer_before_dispatch()
         });
         let mut fixture = Fixture::new(&server.endpoint, true);
         fixture.enable_acks();
-        let original = seed_consumed(&fixture, 0, "native.services.conversation.desktop.finish");
+        let original = seed_consumed(&fixture, 0);
         let reply = fixture
             .channel()
             .wire(

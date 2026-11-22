@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { osSecretValues } from "../../secrets/secret-store";
+import { ManagedMcpServers } from "./managed-servers";
+import { osSecretValues, type SecretValueStore } from "../../secrets/secret-store";
 import { McpOAuth, type OAuthServerRef } from "./oauth/manager";
 import { measure } from "../../diagnostics/perf-metrics";
 import { HubCacheStore, type HubCache } from "./cache";
@@ -9,6 +10,11 @@ import { McpChild, REQUEST_TIMEOUT_MS, STOP_GRACE_MS } from "./child";
 import { McpInventory, type InventoryDefinition } from "./inventory";
 import { readLoadingPolicy, type McpLoadingPolicy } from "./load-policy";
 import { hubIdleMs, hubMode, type HubMode } from "./policy";
+import {
+  osProjectMcpCredentialValues,
+  projectMcpAccount,
+  ProjectMcpCredentials,
+} from "./project-credentials";
 import { readRssBytes } from "./rss";
 import { inventoryFiles, type AccountDirs, type InventoryFiles } from "./inventory-sources";
 
@@ -53,6 +59,7 @@ export type HubOptions = {
   policy?: () => Promise<McpLoadingPolicy>;
   /** Test seam. Defaults to Host-held OAuth backed by the encrypted secrets vault. */
   oauth?: McpOAuth;
+  projectCredentialValues?: SecretValueStore;
 };
 
 /** Longest an on-demand client request waits before giving up; callers may pass less. */
@@ -76,6 +83,9 @@ export class McpHub {
   private readonly now: () => number;
   private readonly maxChildren: number;
   private readonly codexSets: (cwd?: string) => Promise<Set<string>[]>;
+  private readonly refreshInventory: () => void;
+  private readonly projectCredentials: ProjectMcpCredentials;
+  private readonly managed: ManagedMcpServers;
   /** Children that hold a slot before their process exists (between reserve and spawn). */
   private readonly claimed = new Set<McpChild>();
   /** Starts waiting for a slot, oldest first; only the head may take a freed slot. */
@@ -86,6 +96,7 @@ export class McpHub {
 
   constructor(private readonly options: HubOptions) {
     this.cacheStore = new HubCacheStore(options.dataDir);
+    this.managed = new ManagedMcpServers(join(options.dataDir, "mcp-hub", "servers"));
     this.now = options.now ?? Date.now;
     this.maxChildren = options.maxChildren ?? MAX_HUB_CHILDREN;
     const discovered = new McpInventory(
@@ -96,6 +107,10 @@ export class McpHub {
     );
     this.discovery = options.inventory ?? ((cwd) => discovered.definitions(cwd));
     this.codexSets = (cwd) => discovered.codexNameSets(cwd);
+    this.refreshInventory = () => discovered.invalidate();
+    this.projectCredentials = new ProjectMcpCredentials(
+      options.projectCredentialValues ?? osProjectMcpCredentialValues(options.dataDir),
+    );
   }
 
   private oauthManager?: McpOAuth;
@@ -116,17 +131,129 @@ export class McpHub {
   }
 
   /** Bearer header for an http server the owner signed into; undefined otherwise. */
-  httpAuth(server: OAuthServerRef): Promise<Record<string, string> | undefined> {
-    return this.oauth.httpAuth(server);
+  async httpAuth(server: OAuthServerRef): Promise<Record<string, string> | undefined> {
+    return await this.oauth.httpAuth(await this.oauthRuntimeRef(server));
   }
 
   /** A signed-in http server is hub-hosted for loading purposes. */
-  oauthSignedIn(server: OAuthServerRef): Promise<boolean> {
-    return this.oauth.signedIn(server);
+  async oauthSignedIn(server: OAuthServerRef): Promise<boolean> {
+    return await this.oauth.signedIn(await this.oauthRuntimeRef(server));
   }
 
-  inventory(cwd?: string): Promise<InventoryDefinition[]> {
-    return this.discovery(cwd);
+  oauthServerRef(def: Pick<InventoryDefinition, "name" | "url">, cwd?: string): OAuthServerRef {
+    return {
+      name: def.name,
+      url: def.url!,
+      ...(cwd ? { account: projectMcpAccount(cwd), inheritOwner: true } : {}),
+    };
+  }
+
+  private async oauthRuntimeRef(server: OAuthServerRef): Promise<OAuthServerRef> {
+    if (!server.account || !server.inheritOwner || (await this.oauth.hasAccountState(server)))
+      return server;
+    return { name: server.name, url: server.url };
+  }
+
+  async oauthProjectScoped(def: InventoryDefinition, cwd?: string): Promise<boolean> {
+    return (
+      !!cwd &&
+      def.kind === "http" &&
+      (await this.oauth.hasAccountState(this.oauthServerRef(def, cwd)))
+    );
+  }
+
+  async inventory(cwd?: string, includeDisabled = false): Promise<InventoryDefinition[]> {
+    const [inherited, global, project] = await Promise.all([
+      this.discovery(cwd),
+      this.managed.list(),
+      cwd ? this.managed.list(cwd) : [],
+    ]);
+    if (!global.length && !project.length) return inherited;
+    const names = new Set(inherited.map((server) => server.name));
+    const entries: InventoryDefinition[] = [];
+    const projectNames = new Set(project.map((server) => server.name));
+    for (const item of [...project, ...global.filter((server) => !projectNames.has(server.name))]) {
+      if (!item.enabled && !includeDisabled) continue;
+      const isProject = projectNames.has(item.name);
+      const source = isProject ? "bycoda-project" : "bycoda";
+      const base = `bycoda-${item.name}-${item.id.replaceAll("-", "").slice(0, 12)}`;
+      let name = base;
+      for (let n = 2; names.has(name); n++) name = `${base}-${n}`;
+      names.add(name);
+      entries.push({
+        name,
+        source,
+        sources: [source],
+        aliases: [],
+        managed: {
+          name: item.name,
+          scope: isProject ? "project" : "user",
+          revision: item.revision,
+          enabled: item.enabled,
+        },
+        ...("url" in item.config
+          ? { kind: "http" as const, url: item.config.url }
+          : { kind: "stdio" as const, command: item.config.command, args: item.config.args }),
+      });
+    }
+    return [...inherited, ...entries];
+  }
+
+  async manageServer(
+    input: Record<string, unknown>,
+    cwd: string | undefined,
+    authorize: () => Promise<void>,
+  ) {
+    const result = await this.managed.call(input, cwd, authorize);
+    if (input.action !== "get") this.refreshConfiguration();
+    return result;
+  }
+
+  ownCredentialsFor(cwd: string | undefined, definition: InventoryDefinition) {
+    return cwd || definition.managed?.scope === "user"
+      ? this.projectCredentials.get(cwd, definition)
+      : Promise.resolve(undefined);
+  }
+
+  async projectCredentialsFor(cwd: string | undefined, definition: InventoryDefinition) {
+    const own = await this.ownCredentialsFor(cwd, definition);
+    return (
+      own ??
+      (cwd &&
+      definition.managed?.scope === "user" &&
+      !(await this.oauthProjectScoped(definition, cwd))
+        ? await this.ownCredentialsFor(undefined, definition)
+        : undefined)
+    );
+  }
+
+  private async credentialTarget(cwd: string | undefined, name: string) {
+    const definition = (await this.inventory(cwd)).find((item) => item.name === name);
+    if (!definition || (!cwd && definition.managed?.scope !== "user"))
+      throw new Error("Unknown MCP server in this scope.");
+    return definition;
+  }
+
+  async projectCredentialStatus(cwd: string | undefined, name: string) {
+    const definition = await this.credentialTarget(cwd, name);
+    return {
+      kind: definition.kind,
+      configured: !!(await this.projectCredentials.get(cwd, definition)),
+    };
+  }
+
+  async setProjectCredentials(cwd: string | undefined, name: string, values: unknown) {
+    const definition = await this.credentialTarget(cwd, name);
+    await this.projectCredentials.set(cwd, definition, values);
+    this.resetPublications();
+    return { kind: definition.kind, configured: true };
+  }
+
+  async clearProjectCredentials(cwd: string | undefined, name: string) {
+    const definition = await this.credentialTarget(cwd, name);
+    await this.projectCredentials.clear(cwd, definition);
+    this.resetPublications();
+    return { kind: definition.kind, configured: false };
   }
 
   /** Only stdio entries are hubbed; http entries are passed through by the harness. */
@@ -148,16 +275,19 @@ export class McpHub {
       );
       if (!definition) throw new Error("Unknown MCP server.");
       this.prune();
-      const mode = hubMode(name, definition);
+      const credential = await this.projectCredentialsFor(cwd, definition);
+      const mode =
+        definition.managed?.scope === "project" ? "perSession" : hubMode(name, definition);
       const scope = mode === "shared" ? "shared" : scopeKey;
       // Launch identity keeps same-named project servers from different folders apart.
-      const launch = launchKey(definition);
+      const launch = launchKey(definition, credential?.revision);
       const key = `${name}\0${launch}\0${scope}`;
-      const cacheKey = cacheKeyFor(definition);
+      const cacheKey = cacheKeyFor(definition, credential?.revision);
       let child = this.children.get(key);
       if (!child) {
         child = new McpChild({
           definition,
+          projectEnv: credential?.values,
           scopeKey: scope,
           cwd: mode === "perSession" && cwd ? cwd : homedir(),
           idleMs: this.options.idleMs?.[mode] ?? hubIdleMs(mode),
@@ -181,7 +311,8 @@ export class McpHub {
       (def) => def.name === name && def.kind === "stdio",
     );
     if (!definition) return undefined;
-    const cache = await this.loadCache(cacheKeyFor(definition));
+    const credential = await this.projectCredentialsFor(cwd, definition);
+    const cache = await this.loadCache(cacheKeyFor(definition, credential?.revision));
     if (!cache) return undefined;
     const init = cache.initialize as {
       serverInfo?: HubPeek["serverInfo"];
@@ -240,6 +371,15 @@ export class McpHub {
     this.generation++;
     this.publications.clear();
     this.publishing.clear();
+  }
+
+  refreshConfiguration(): void {
+    this.refreshInventory();
+    this.resetPublications();
+  }
+
+  configurationGeneration(): number {
+    return this.generation;
   }
 
   private loadCache(name: string): Promise<HubCache | undefined> {
@@ -402,18 +542,43 @@ export class McpHub {
     const policy = await this.loadingPolicy();
     // On demand, hub-hosted stdio servers are reached through the conversation tools, not
     // wired into the session; their aliases stay in `disable` so native copies stay off.
+    const withCredentials = await Promise.all(
+      definitions.map(async (def) =>
+        (await this.projectCredentialsFor(cwd, def)) || (await this.oauthProjectScoped(def, cwd))
+          ? def
+          : undefined,
+      ),
+    );
+    const privateNames = new Set(withCredentials.flatMap((def) => (def ? [def.name] : [])));
+    const privateAliases = new Set(
+      withCredentials.flatMap(
+        (def) => def?.aliases.map((alias) => `${alias.provider}\0${alias.name}`) ?? [],
+      ),
+    );
+    const sharesPrivateAlias = (def: InventoryDefinition) =>
+      def.aliases.some((alias) => privateAliases.has(`${alias.provider}\0${alias.name}`));
     const hosted = new Set<string>();
     for (const def of definitions)
-      if (def.kind === "http" && (await this.oauthSignedIn({ name: def.name, url: def.url! })))
+      if (
+        def.kind === "http" &&
+        (privateNames.has(def.name) ||
+          sharesPrivateAlias(def) ||
+          (await this.oauthSignedIn(this.oauthServerRef(def, cwd))))
+      )
         hosted.add(def.name);
     const published = definitions.filter(
       (def) =>
-        (def.kind === "http" && !hosted.has(def.name)) ||
-        policy.mode === "always" ||
-        policy.direct.includes(def.name),
+        !(
+          def.kind === "http" &&
+          (def.managed || privateNames.has(def.name) || sharesPrivateAlias(def))
+        ) &&
+        (privateNames.has(def.name) || !sharesPrivateAlias(def)) &&
+        ((def.kind === "http" && !def.managed && !hosted.has(def.name)) ||
+          policy.mode === "always" ||
+          policy.direct.includes(def.name)),
     );
     const servers = published.map((def) => {
-      const mode = def.kind === "http" ? "shared" : hubMode(def.name, def);
+      const mode = def.managed?.scope === "project" ? "perSession" : hubMode(def.name, def);
       const codexName = codexNameFor(def.name, codexNames);
       if (def.kind === "http")
         return {
@@ -444,7 +609,12 @@ export class McpHub {
       for (const alias of def.aliases) {
         // Codex refuses overrides for names a candidate config lacks, so only names every
         // candidate has are safe to disable.
-        if (alias.provider === "codex" && !codexSets.every((set) => set.has(alias.name))) continue;
+        if (
+          alias.provider === "codex" &&
+          !privateAliases.has(`${alias.provider}\0${alias.name}`) &&
+          !codexSets.every((set) => set.has(alias.name))
+        )
+          continue;
         disable[alias.provider].add(alias.name);
       }
     }
@@ -536,11 +706,20 @@ export function codexNameFor(name: string, codexNames: ReadonlySet<string>): str
 
 /** Short digest of what would be launched or fetched. Environment values are excluded. */
 
-function launchKey(def: InventoryDefinition): string {
+function launchKey(def: InventoryDefinition, credentialRevision?: string): string {
   return createHash("sha256")
-    .update(JSON.stringify([def.kind, def.command, def.args, def.url]))
+    .update(
+      JSON.stringify([
+        def.kind,
+        def.command,
+        def.args,
+        def.url,
+        ...(credentialRevision ? [credentialRevision] : []),
+      ]),
+    )
     .digest("hex")
     .slice(0, 10);
 }
 
-const cacheKeyFor = (def: InventoryDefinition) => `${def.name.slice(0, 40)}-${launchKey(def)}`;
+const cacheKeyFor = (def: InventoryDefinition, credentialRevision?: string) =>
+  `${def.name.slice(0, 40)}-${launchKey(def, credentialRevision)}`;

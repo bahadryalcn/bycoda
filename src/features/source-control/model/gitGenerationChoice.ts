@@ -1,4 +1,5 @@
 import type { HarnessId } from "../../sessions";
+import type { AgentModel } from "../../../shared/model/agentModel";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availabilityState";
 import {
   modelsFor,
@@ -31,7 +32,13 @@ export function pickTextHarness(preferred?: HarnessId): HarnessId {
  * not a claim to have measured the cheapest possible request. */
 export function automaticGitChoice(preferred?: HarnessId): GitGenerationChoice | undefined {
   const harness = pickTextHarness(preferred);
-  const candidates = modelsFor(harness);
+  return economicalGitChoice(harness, modelsFor(harness));
+}
+
+export function economicalGitChoice(
+  harness: HarnessId,
+  candidates: readonly AgentModel[],
+): GitGenerationChoice | undefined {
   const economical = [/haiku.*4[.-]5/i, /haiku/i, /luna|nano/i, /mini|flash/i, /auto/i];
   const model =
     economical.flatMap((pattern) =>

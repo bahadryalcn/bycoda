@@ -38,7 +38,11 @@ export function submitClearConversation(ctx: SubmitDeps, sessionId: string): boo
       if (!latest || latest.blocks !== snapshot.blocks || latest.busy)
         throw new Error("The conversation changed while clearing. Try again.");
       const cleared = clearConversation(latest);
-      if (!cleared.inboxAsk && cleared.cwd !== "~" && !(await upsertClearedSession(cleared)))
+      if (
+        !cleared.inboxAsk &&
+        (cleared.cwd !== "~" || cleared.scratchWorkspace) &&
+        !(await upsertClearedSession(cleared))
+      )
         throw new Error("The conversation changed before it could be saved. Try again.");
       ctx.refs.turnGen.current.set(sessionId, (ctx.refs.turnGen.current.get(sessionId) ?? 0) + 1);
       setSessions((sessions) =>

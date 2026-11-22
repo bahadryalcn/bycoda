@@ -3,6 +3,7 @@ import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   memo,
   useCallback,
@@ -13,7 +14,10 @@ import {
 } from "react";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { isImeComposition } from "../../shared/lib/keyboard";
-import { ALT, MOD, SHIFT } from "../../platform/tauri/platform";
+import { ALT, IS_WIN, MOD, SHIFT } from "../../platform/tauri/platform";
+import { useToast } from "../../shared/ui/ToastRegion";
+import { reportFailure } from "../../shared/ui/reportFailure";
+import { hideCurrentWindow } from "../model/appLifecycle";
 import type { TitleBarLayout } from "./TitleBar";
 import {
   SPLIT_DOWN_ID,
@@ -103,6 +107,7 @@ const MemoMenuBar = memo(function MenuBar({
   layout,
 }: Props) {
   const t = useT();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
@@ -254,6 +259,11 @@ const MemoMenuBar = memo(function MenuBar({
       setOpen(false);
       setPopover(null);
 
+      const reportWindowAction = (error: unknown) =>
+        reportFailure(error, { toast }).catch((failure) =>
+          console.warn("Window action failed", failure),
+        );
+
       switch (id) {
         case "new_tab":
           onNew();
@@ -266,6 +276,15 @@ const MemoMenuBar = memo(function MenuBar({
           break;
         case "new_window":
           void invoke("open_new_window").catch(() => {});
+          break;
+        case "close_window":
+          void getCurrentWindow().close().catch(reportWindowAction);
+          break;
+        case "minimize_to_tray":
+          void hideCurrentWindow().catch(reportWindowAction);
+          break;
+        case "quit_app":
+          void invoke("request_app_quit").catch(reportWindowAction);
           break;
         case "open_project":
           onPickProject?.();
@@ -358,6 +377,7 @@ const MemoMenuBar = memo(function MenuBar({
       onZoomIn,
       onZoomOut,
       onZoomReset,
+      toast,
     ],
   );
 
@@ -424,6 +444,15 @@ const MemoMenuBar = memo(function MenuBar({
       ]
     : [];
 
+  const windowActions: ContextMenuItem[] = IS_WIN
+    ? [
+        { kind: "sep" },
+        { kind: "item", id: "close_window", label: t("Close window"), shortcut: "Alt+F4" },
+        { kind: "item", id: "minimize_to_tray", label: t("Minimize to tray") },
+        { kind: "item", id: "quit_app", label: t("Quit") },
+      ]
+    : [];
+
   const getMenuItems = (key: MenuKey, compact = false): ContextMenuItem[] => {
     switch (key) {
       case "file":
@@ -472,7 +501,7 @@ const MemoMenuBar = memo(function MenuBar({
             label: t("Find in Files…"),
             shortcut: shortcut("App: Find in Files", `${MOD}${SHIFT}F`),
           },
-          ...(!compact ? [{ kind: "sep" as const }, ...tabActions] : []),
+          ...(!compact ? [{ kind: "sep" as const }, ...tabActions, ...windowActions] : []),
         ];
       case "view":
         return [
@@ -557,6 +586,7 @@ const MemoMenuBar = memo(function MenuBar({
             label: t("Terminal"),
             submenu: getMenuItems("terminal"),
           },
+          ...windowActions,
         ]}
         ariaLabel={t("Application menu")}
         onPick={handlePick}

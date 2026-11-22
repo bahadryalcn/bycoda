@@ -128,7 +128,6 @@ export function createHttpRuntime(
     | "managed"
     | "nativeWorkspacesService"
     | "nativeDeliveryService"
-    | "nativeBufferUploads"
     | "workspaceOwnerDeviceId"
     | "workspacePolicy"
     | "featureClaims"
@@ -547,7 +546,16 @@ export function createHttpRuntime(
               },
             });
           }
-          if (await dependencies.mcpHttp.rpc(input.method, params, token, response)) return;
+          if (
+            await dependencies.mcpHttp.rpc(
+              input.method,
+              params,
+              token,
+              response,
+              request.socket.remoteAddress,
+            )
+          )
+            return;
           if (peerIdentity) {
             result = await dependencies.engine.store.db.withAuthorization(
               async () => !!(await dependencies.socialPeers.authenticated(transportToken)),

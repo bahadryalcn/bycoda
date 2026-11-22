@@ -65,6 +65,28 @@ it("rechecks authority after diff reads before entering the provider", async () 
   expect(run).not.toHaveBeenCalled();
 });
 
+it("uses the configured Host provider's live catalog with no saved Git model", async () => {
+  const catalog = vi.fn(async () => [
+    {
+      id: "codex:live-economy",
+      harness: "codex" as const,
+      name: "Live Luna",
+      nativeId: "live-model-v2",
+    },
+  ]);
+  await expect(
+    generateGitText(
+      "/remote/repo",
+      { projectId: "p", kind: "commit", preferred: "codex" },
+      { context: async () => staged, authorize, run, catalog },
+    ),
+  ).resolves.toEqual({ message: "Fix remote\n\nDetails" });
+  expect(catalog).toHaveBeenCalledExactlyOnceWith("codex");
+  expect(run).toHaveBeenCalledWith(
+    expect.objectContaining({ harness: "codex", model: "live-model-v2" }),
+  );
+});
+
 it("preserves remote PR base and head", async () => {
   run.mockResolvedValueOnce('{"title":"Fix remote","body":"Details"}');
   await expect(

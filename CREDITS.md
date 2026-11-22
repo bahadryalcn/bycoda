@@ -35,6 +35,22 @@ their owners and do not imply sponsorship or endorsement. See [NOTICE](NOTICE).
 Redistributions must retain the original MIT license, copyright notices, and
 any additional notices required by dependencies.
 
+## Animation and background artwork
+
+The composer tip animation adapts [Fold Text](https://reactbits.dev/text-animations/fold-text)
+from [React Bits](https://github.com/DavidHDev/react-bits) by David Haz. Bycoda's
+live backgrounds adapt [Threads](https://github.com/DavidHDev/react-bits/blob/main/src/content/Backgrounds/Threads/Threads.jsx),
+[Silk](https://github.com/DavidHDev/react-bits/blob/main/src/content/Backgrounds/Silk/Silk.jsx),
+[Dark Veil](https://github.com/DavidHDev/react-bits/blob/main/src/content/Backgrounds/DarkVeil/DarkVeil.jsx),
+[Soft Aurora](https://github.com/DavidHDev/react-bits/blob/main/src/content/Backgrounds/SoftAurora/SoftAurora.jsx), and
+[Floating Lines](https://github.com/DavidHDev/react-bits/blob/main/src/content/Backgrounds/FloatingLines/FloatingLines.jsx). Dark Veil
+retains the original trained CPPN weights. Earlier versions adapted
+[Orb](https://reactbits.dev/backgrounds/orb) and followed the visual design of
+[Letter Glitch](https://reactbits.dev/backgrounds/letter-glitch).
+
+Copyright (c) 2026 David Haz. The artwork is integrated into the application.
+The original terms are preserved in [the artwork license](vendor/background-artwork/LICENSE.md).
+
 ## Sounds
 
 The interface sounds in `public/sounds/bycoda-v2/` come from

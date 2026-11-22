@@ -33,9 +33,7 @@ does not prove reconnection succeeded. Host discovery and desktop heartbeats do
 not wait indefinitely for optional Tailscale route or push-subscription lookups.
 An interrupted HTTP read retries once within its original deadline when the
 shared contract explicitly marks it as a safe query. Writes and unknown methods
-are never replayed by this recovery. Old consumed buffer reports check the Host's
-receipt before sending a cleanup acknowledgement; missing receipts remain held
-locally for recovery instead of repeatedly sending an unprovable acknowledgement.
+are never replayed by this recovery.
 When both ends support separate admission for native service deliveries, the
 desktop checks the original receipt for the final result. A delivery that expires
 before admission leaves no receipt and cannot start later from the Host queue.
@@ -611,12 +609,11 @@ and worker cleanup. Its cached status and Stop control remain available while
 new work is refused. Stopping the local SSH process can still leave the remote
 script's outcome unknown; check that outcome before starting another run.
 
-Development source now retains the original Native editor buffer report and
-desktop finish/format request before sending it. If the connection breaks after
+Development source now retains the original desktop finish/format request before sending it. If the connection breaks after
 the Host may have accepted the request, recovery asks for that original's outcome
 instead of repeating the operation. An unknown outcome stays pending; it does
 not mean the operation failed. In particular, formatting must not be repeated
-automatically and an old buffer receipt cannot mark a newer editor state saved.
+automatically.
 After the local result has been safely consumed, a separate acknowledgement lets
 the Host release its large retained result. If that acknowledgement is interrupted,
 the app retries cleanup without repeating the original operation. Pending cleanup
@@ -624,13 +621,6 @@ does not undo a successful local result. When retained result capacity is full,
 the Host rejects new formatting before starting it.
 This source behavior still requires installed-platform acceptance; it is not a
 claim about the version currently installed on your computer.
-
-In the development source, the Host database also retains buffer reports and
-their recovery metadata. These are paths and dirty/unknown flags, not an extra
-copy of unsaved editor text. Existing report/archive JSON files are legacy copies;
-copying them alone does not back up new reports. Keep a coherent Host database
-backup for restoration. Reading a recovered report does not mark an old editor
-owner current or authorize resolving dirty buffers.
 
 If the Host's helper handler has finished but its result is still unknown,
 development source can release that request's reserved result capacity without
@@ -651,7 +641,7 @@ New development clients can also clean up completed delivery records in ordered
 groups while retaining a permanent guard against replay. Interrupted cleanup does
 not repeat the operation. Missing or uncertain outcomes stop cleanup until their
 original state is known. After a computer connection starts using this protocol,
-older clients must update before sending new buffer reports, finish replies or
+older clients must update before sending new finish replies or
 formatting requests through that connection; existing outcomes can still be read.
 This remains development-source behavior pending installed-platform acceptance.
 

@@ -4,6 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
+vi.mock("../../settings/model/decorativeMotion", () => ({
+  useDecorativeMotionEnabled: () => true,
+}));
 
 import { adoptRemoteMachineInventory } from "../model/connections";
 import { resetMachineAvailability } from "../model/machineAvailability";
@@ -97,7 +100,7 @@ it("shows the content again once the machine answers", async () => {
   expect(notice()).toBeNull();
 });
 
-it("shows a side panel as one line and the page with its explanation", async () => {
+it("shows a side panel as art and one line, and the page with Manage connections", async () => {
   await act(async () => adoptRemoteMachineInventory([]));
   const render = (size: "page" | "panel") =>
     act(async () =>
@@ -110,13 +113,17 @@ it("shows a side panel as one line and the page with its explanation", async () 
         }),
       ),
     );
+  const labels = () =>
+    Array.from(notice()?.querySelectorAll("button") ?? []).map((button) => button.textContent);
 
   await render("panel");
-  expect(notice()?.querySelector("button, img")).toBeNull();
+  expect(notice()?.querySelector("img")).not.toBeNull();
+  // Only the info button; the reason stays behind it and no action repeats the page's.
+  expect(labels()).toEqual([""]);
   expect(notice()?.textContent).not.toContain("Add it in Connections");
 
   await render("page");
   expect(notice()?.querySelector("img")).not.toBeNull();
-  expect(notice()?.querySelector("button")).not.toBeNull();
-  expect(notice()?.textContent).toContain("Add it in Connections");
+  expect(labels()).toContain("Manage connections");
+  expect(notice()?.textContent).not.toContain("Add it in Connections");
 });

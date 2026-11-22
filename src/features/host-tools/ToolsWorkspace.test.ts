@@ -138,6 +138,41 @@ it("preserves an existing remote target by default and can explicitly mount its 
   }
 });
 
+it("moves an existing dock into the voice outlet and restores the same tool node", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const outlet = document.createElement("div");
+  document.body.append(container, outlet);
+  const root = createRoot(container);
+  const source = { cwd: "/voice", sessionId: "voice", title: "Voice" };
+  const render = (target?: HTMLElement) =>
+    act(async () =>
+      root.render(
+        createElement(ToolsWorkspace, {
+          activeConversation: source,
+          outlet: target,
+          children: "Workspace",
+        }),
+      ),
+    );
+  try {
+    await render();
+    await act(async () => dockHostTools({ ...source, initialTab: "browser" }));
+    const pane = container.querySelector(".tools-workspace-pane");
+    expect(pane).not.toBeNull();
+    await render(outlet);
+    expect(outlet.querySelector(".tools-workspace-pane")).toBe(pane);
+    expect(container.querySelector(".tools-workspace-pane")).toBeNull();
+    await render();
+    expect(container.querySelector(".tools-workspace-pane")).toBe(pane);
+    expect(outlet.childElementCount).toBe(0);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    outlet.remove();
+  }
+});
+
 it("detaches the current dock tab and machine rather than its original context", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");

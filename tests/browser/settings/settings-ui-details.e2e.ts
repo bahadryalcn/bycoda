@@ -205,28 +205,32 @@ for (const theme of ["light", "dark"]) {
     });
   }
 
-  test(`general settings keep short cards fitted to their content: ${theme}`, async ({
-    page,
-  }, info) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width: 1280, height: 900 });
-    // Close to tray is a Windows capability; exercise it deterministically
-    // even when the browser fixture runs on a Linux CI worker.
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+  for (const width of [1280, 800]) {
+    test(`general settings minimize to tray: ${theme} ${width}`, async ({ page }, info) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 900 });
+      // Exercise the Windows-only control on any browser test worker.
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+      });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=general&theme=${theme}&lang=en`,
+      );
+      const row = page.locator('[data-setting-id="minimize-to-tray"]');
+      await expect(row).toBeVisible();
+      const card = page
+        .locator(".general-settings > .settings-group > .settings-group-content")
+        .filter({ has: row });
+      const rowBounds = (await row.boundingBox())!;
+      const cardBounds = (await card.boundingBox())!;
+      expect(cardBounds.height - rowBounds.height).toBeLessThan(4);
+      const minimizeToTray = row.getByRole("switch", { name: "Minimize to tray" });
+      await expect(minimizeToTray).not.toBeChecked();
+      await page.screenshot({ path: info.outputPath(`minimize-to-tray-${theme}-${width}.png`) });
+      await minimizeToTray.click();
+      await expect(minimizeToTray).toBeChecked();
     });
-    await page.goto(`/tests/browser/settings/settings.html?section=general&theme=${theme}&lang=en`);
-    const row = page.locator('[data-setting-id="close-to-tray"]');
-    await expect(row).toBeVisible();
-    const card = page
-      .locator(".general-settings > .settings-group > .settings-group-content")
-      .filter({ has: row });
-    const rowBounds = (await row.boundingBox())!;
-    const cardBounds = (await card.boundingBox())!;
-    expect(cardBounds.height - rowBounds.height).toBeLessThan(4);
-    await expect(row.getByRole("switch")).toBeVisible();
-    await page.screenshot({ path: info.outputPath("general-compact-card.png") });
-  });
+  }
 }
 
 for (const theme of ["light", "dark"]) {

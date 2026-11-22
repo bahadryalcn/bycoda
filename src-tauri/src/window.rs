@@ -606,9 +606,12 @@ impl Rgb {
     }
 }
 
-/// Close with a running chat hides the webview so the harness child keeps going.
+/// Hide the webview and keep its work running.
 #[tauri::command]
 pub fn hide_window(window: WebviewWindow) -> Result<(), String> {
+    #[cfg(windows)]
+    return crate::tray::windows::park(&window);
+    #[cfg(not(windows))]
     window.hide().map_err(|err| err.to_string())
 }
 

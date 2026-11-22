@@ -56,7 +56,7 @@ export function QuickWorkspaceControls({
     props.current = { value, onChange, onOpenChange, onClose, onError, canOpen };
   });
   const cwd = value.tree?.path ?? value.cwd ?? "";
-  const { branches, settled } = useProjectBranchesState(cwd, enabled && !!cwd);
+  const { branches, settled, unreachable } = useProjectBranchesState(cwd, enabled && !!cwd);
   const base = value.base || resolvedBase || branches?.current || "HEAD";
 
   const cancel = () => {
@@ -196,8 +196,10 @@ export function QuickWorkspaceControls({
         label={
           resolvedMode === "worktree"
             ? t("From {p0}", { p0: base })
-            : branches?.current || (settled ? t("No repo") : t("Loading…"))
+            : branches?.current ||
+              (unreachable ? t("Unavailable") : settled ? t("No repo") : t("Loading…"))
         }
+        title={unreachable ? t("This machine is unreachable") : undefined}
         aria-label={
           resolvedMode === "worktree"
             ? t("Create worktree from {p0}", { p0: base })
