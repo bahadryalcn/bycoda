@@ -46,11 +46,9 @@ describe("applyCandidate", () => {
     expect(result[1]!.candidates[0]).not.toBe(result[2]!.candidates[0]);
   });
 
-  it("targets everyone for an empty selection", () => {
-    const result = applyCandidate([agent("a"), agent("b")], [], candidate("new"));
-    expect(result.every((m) => m.candidates.length === 1 && m.candidates[0]!.id === "new")).toBe(
-      true,
-    );
+  it("leaves everyone unchanged for an empty selection", () => {
+    const agents = [agent("a"), agent("b")];
+    expect(applyCandidate(agents, [], candidate("new"))).toEqual(agents);
   });
 });
 
@@ -119,11 +117,8 @@ describe("applyPool", () => {
     expect(a!.candidates).toEqual(agent("a").candidates);
     expect(b).toMatchObject({ selection: "fixed" });
   });
-  it("targets everyone when no ids are given", () => {
-    expect(
-      applyPool([agent("a"), agent("b")], [], pool).every(
-        (x) => x.modelChoice?.kind === "pool" && x.modelChoice.poolId === "p1",
-      ),
-    ).toBe(true);
+  it("leaves everyone unchanged when no ids are given", () => {
+    const agents = [agent("a"), agent("b")];
+    expect(applyPool(agents, [], pool)).toEqual(agents);
   });
 });

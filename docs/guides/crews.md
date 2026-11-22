@@ -213,8 +213,10 @@ hosts without crew access support hide the picker and run work supervised.
 Each row has a selection box, the name, a responsibility selector, the model
 picker (model and its options such as reasoning effort) and a remove button, so
 models can be changed directly in the list. The bulk bar above the list applies
-one model with its options to the selected members, or to every member when none
-is selected; those members become fixed-model members. It starts on the model
+one model with its options to the selected members; those members become fixed-model
+members. Select at least one member to apply, and confirm when changing multiple
+members. The library bulk bar follows the same selection and confirmation rules.
+It starts on the model
 most members already use. Expand a row to edit its name, instructions, groups,
 automatic candidates (**More options**), capabilities and library link. Add
 members from the searchable library or create a member; an empty crew also offers

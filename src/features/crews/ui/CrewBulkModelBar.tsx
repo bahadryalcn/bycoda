@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import type { ModelRoutingItemChoice } from "../../../shared/model/host-contracts/model-routing";
@@ -42,6 +43,7 @@ export function CrewBulkModelBar({
   const [applied, setApplied] = useState(false);
   const [pending, setPending] = useState(false);
   const applying = useRef(false);
+  const { confirm, dialog } = useConfirm();
   const first = catalogModels(catalog)[0];
   const candidate =
     chosen ??
@@ -54,6 +56,19 @@ export function CrewBulkModelBar({
     setPending(true);
     setApplied(false);
     try {
+      if (
+        targetCount > 1 &&
+        !(await confirm({
+          title: t("Apply model choice"),
+          message:
+            noun === "members"
+              ? t("Apply this model choice to {p0} selected members?", { p0: targetCount })
+              : t("Apply this model choice to {p0} selected profiles?", { p0: targetCount }),
+          confirmLabel: t("Apply"),
+          danger: false,
+        }))
+      )
+        return;
       const result =
         choice.kind === "fixed"
           ? candidate && (await onApply(candidate))
@@ -101,6 +116,7 @@ export function CrewBulkModelBar({
             disabled={
               disabled || pending || !targetCount || (choice.kind === "fixed" && !candidate)
             }
+            disabledReason={!targetCount ? t("Select at least one member or profile.") : undefined}
             onClick={() => {
               void apply();
             }}
@@ -116,6 +132,7 @@ export function CrewBulkModelBar({
         </div>
       </FieldGroup>
       {applied ? <InlineMessage tone="success">{t("Model choice applied.")}</InlineMessage> : null}
+      {dialog}
     </div>
   );
 }

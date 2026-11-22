@@ -29,10 +29,10 @@ it("carries routing choices through library sync and rejects malformed choices",
   expect(() => parseCrewAgent({ ...agent, modelChoice: { kind: "pool" } })).toThrow();
 });
 it("bulk routing keeps concrete fallback and fixed assignment clears routing pool", () => {
-  const automatic = applyChoice([agent], [], { kind: "order" })[0]!;
+  const automatic = applyChoice([agent], [agent.id], { kind: "order" })[0]!;
   expect(automatic.modelChoice).toEqual({ kind: "order" });
   expect(automatic.candidates).toBe(agent.candidates);
-  const fixed = applyCandidate([automatic], [], candidate)[0]!;
+  const fixed = applyCandidate([automatic], [agent.id], candidate)[0]!;
   expect(fixed.selection).toBe("fixed");
   expect(fixed.modelChoice).toEqual({ kind: "fixed" });
 });

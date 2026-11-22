@@ -16,10 +16,9 @@ import { presentRemoteError } from "../../connections/public/remoteFailure";
 type CrewState = ReturnType<typeof useProjectCrews>;
 export type BulkFailure = { name: string; reason: string };
 
-/** Profiles the bulk action touches: the selected visible ones, or every visible one when none is selected. */
+/** Profiles the bulk action touches: the selected visible ones. */
 export function bulkTargets<T extends { id: string }>(visible: T[], selected: ReadonlySet<string>) {
-  const chosen = visible.filter((agent) => selected.has(agent.id));
-  return chosen.length ? chosen : visible;
+  return visible.filter((agent) => selected.has(agent.id));
 }
 
 /** Saves each profile with the fixed candidate, one after another; a failure does not stop the rest. */
@@ -36,7 +35,7 @@ export async function applyCandidateToProfiles(
     try {
       await save(
         {
-          ...applyChoice([profile], [], choice)[0]!,
+          ...applyChoice([profile], [profile.id], choice)[0]!,
           ...(candidate ? { candidates: [structuredClone(candidate)] } : {}),
         },
         updatedAt,
@@ -112,7 +111,7 @@ export function CrewLibraryBulkBar({
           onApplyChoice={(choice) => apply(undefined, choice).catch(() => false)}
           targetCount={targets.length}
           onApply={(candidate) => apply(candidate).catch(() => false)}
-          disabled={applying || !targets.length}
+          disabled={applying}
           noun="profiles"
           suggested={commonCandidate(targets)}
           leading={

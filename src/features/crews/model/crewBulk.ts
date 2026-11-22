@@ -6,7 +6,7 @@ import type { CrewAgent, CrewCandidate, CrewDefinition } from "./crew";
 
 /**
  * Bulk model assignment: every target member becomes a fixed member pinned to the
- * candidate (model and its settings, e.g. effort). An empty `ids` list targets everyone.
+ * candidate (model and its settings, e.g. effort). An empty `ids` list targets nobody.
  * Other members are returned untouched.
  */
 export function applyCandidate<T extends Pick<CrewAgent, "id" | "selection" | "candidates">>(
@@ -14,9 +14,9 @@ export function applyCandidate<T extends Pick<CrewAgent, "id" | "selection" | "c
   ids: readonly string[],
   candidate: CrewCandidate,
 ): T[] {
-  const targets = ids.length ? new Set(ids) : undefined;
+  const targets = new Set(ids);
   return agents.map((agent) =>
-    !targets || targets.has(agent.id)
+    targets.has(agent.id)
       ? {
           ...agent,
           modelChoice: { kind: "fixed" as const },
@@ -35,9 +35,9 @@ export function applyChoice<T extends Pick<CrewAgent, "id" | "selection" | "cand
   ids: readonly string[],
   modelChoice: ModelRoutingItemChoice,
 ): T[] {
-  const targets = ids.length ? new Set(ids) : undefined;
+  const targets = new Set(ids);
   return agents.map((agent) =>
-    !targets || targets.has(agent.id)
+    targets.has(agent.id)
       ? {
           ...agent,
           modelChoice,
